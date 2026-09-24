@@ -296,4 +296,17 @@ describe("get-aerobic-analysis", () => {
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain("not found");
   });
+
+  it("accepts excludeWarmupMinutes at the 0-120 bounds and rejects outside them", () => {
+    const parse = (excludeWarmupMinutes: number) =>
+      getAerobicAnalysisTool.inputSchema.safeParse({
+        id: "i189807578",
+        excludeWarmupMinutes,
+      });
+
+    expect(parse(0).success).toBe(true);
+    expect(parse(120).success).toBe(true);
+    expect(parse(-1).success).toBe(false);
+    expect(parse(121).success).toBe(false);
+  });
 });
