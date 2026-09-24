@@ -81,7 +81,8 @@ const CompareSideSchema = z.object({
   date: z.string(),
   type: z.string(),
   distance_km: z.number(),
-  moving_time: z.number().describe("Moving time in seconds"),
+  moving_time: z.string(),
+  moving_time_s: z.number().int(),
   pace_min_per_km: z.string().nullable(),
   gap_min_per_km: z.string().nullable(),
   average_hr: z.number().nullable(),
@@ -133,10 +134,10 @@ const AerobicHalfSchema = z.object({
   avg_output: z
     .number()
     .describe("m/s on the pace basis, W on the power basis"),
-  avg_pace_formatted: z
+  avg_pace_min_per_km: z
     .string()
     .nullable()
-    .describe("m:ss /km on the pace basis; null on the power basis"),
+    .describe("m:ss on the pace basis; null on the power basis"),
   avg_hr: z.number(),
   output_per_beat: z
     .number()
@@ -169,7 +170,7 @@ export const AerobicAnalysisOutputSchema = z.object({
         .describe(
           "m/s on the pace basis, W (normalized power) on the power basis",
         ),
-      normalized_output_formatted: z.string().nullable(),
+      normalized_pace_min_per_km: z.string().nullable(),
       moving_minutes: z.number(),
       excluded_stopped_minutes: z.number(),
       excluded_warmup_minutes: z.number(),
@@ -179,7 +180,7 @@ export const AerobicAnalysisOutputSchema = z.object({
       "Null when both decoupling and efficiency factor came from intervals.icu and includeBreakdown was not set",
     ),
   units: z.object({
-    pace: z.literal("m:ss /km"),
+    pace: z.literal("min/km"),
     power: z.literal("W"),
     efficiency_factor: z.string(),
   }),
@@ -282,12 +283,12 @@ const HillSegmentSchema = z.object({
   avg_grade_pct: z.number(),
   moving_time_s: z.number().int(),
   pace_sec_per_km: z.number().nullable(),
-  pace_formatted: z.string().nullable(),
+  pace_min_per_km: z.string().nullable(),
   gap_pace_sec_per_km: z
     .number()
     .nullable()
     .describe("Grade-adjusted (flat-equivalent) pace"),
-  gap_pace_formatted: z.string().nullable(),
+  gap_pace_min_per_km: z.string().nullable(),
   avg_hr: z.number().nullable(),
   avg_cadence: z
     .number()
@@ -435,12 +436,12 @@ const SplitSchema = z.object({
     .number()
     .nullable()
     .describe("Moving pace per km (extrapolated on a partial split)"),
-  pace_formatted: z.string().nullable(),
+  pace_min_per_km: z.string().nullable(),
   gap_pace_sec_per_km: z
     .number()
     .nullable()
     .describe("Grade-adjusted (flat-equivalent) pace per km"),
-  gap_pace_formatted: z.string().nullable(),
+  gap_pace_min_per_km: z.string().nullable(),
   elevation_change_m: z.number().nullable(),
   avg_grade_pct: z.number().nullable(),
   avg_hr: z.number().nullable(),
@@ -468,8 +469,8 @@ export const SplitAnalysisOutputSchema = z.object({
       gap_shape: SplitShapeSchema.describe("Same, corrected for grade"),
       first_half_pace_sec_per_km: z.number(),
       second_half_pace_sec_per_km: z.number(),
-      first_half_pace_formatted: z.string().nullable(),
-      second_half_pace_formatted: z.string().nullable(),
+      first_half_pace_min_per_km: z.string().nullable(),
+      second_half_pace_min_per_km: z.string().nullable(),
       first_half_gap_pace_sec_per_km: z.number().nullable(),
       second_half_gap_pace_sec_per_km: z.number().nullable(),
       delta_pct: z
@@ -501,7 +502,7 @@ export const SplitAnalysisOutputSchema = z.object({
     elapsed_time_s: z.number().int(),
     elevation_gain_m: z.number(),
     avg_pace_sec_per_km: z.number().nullable(),
-    avg_pace_formatted: z.string().nullable(),
+    avg_pace_min_per_km: z.string().nullable(),
     avg_gap_pace_sec_per_km: z.number().nullable(),
   }),
   units: z.object({
@@ -525,7 +526,7 @@ const IntervalRepSchema = z.object({
   moving_time_s: z.number().int(),
   moving_time_formatted: z.string(),
   pace_sec_per_km: z.number().nullable(),
-  pace_formatted: z.string().nullable(),
+  pace_min_per_km: z.string().nullable(),
   avg_hr: z.number().nullable(),
   avg_cadence: z
     .number()
@@ -858,7 +859,7 @@ const BestEffortEntrySchema = z.object({
   rank: z.number().int(),
   time_seconds: z.number(),
   time_formatted: z.string(),
-  pace: z.string().describe("m:ss min/km"),
+  pace_min_per_km: z.string().nullable(),
   date: z.string().describe("ISO date YYYY-MM-DD"),
   activity_id: z.string(),
   activity_name: z.string(),
@@ -872,7 +873,7 @@ export const BestEffortsOutputSchema = z.object({
   }),
   top_n: z.number().int(),
   units: z.object({
-    time: z.literal("seconds"),
+    time: z.literal("s"),
     pace: z.literal("min/km"),
   }),
   note: z
@@ -898,8 +899,8 @@ const KmPaceSchema = z.object({
 const PredictionSourceSchema = z.object({
   name: z.string().describe("A label for the effort, e.g. '5000 m'"),
   distance_m: z.number(),
-  elapsed_time_seconds: z.number().int(),
-  elapsed_time_formatted: z.string(),
+  time_seconds: z.number().int(),
+  time_formatted: z.string(),
   date: z.string().describe("ISO date YYYY-MM-DD"),
   activity_id: z.string(),
   activity_name: z.string(),
@@ -1007,6 +1008,11 @@ export const RacePredictionOutputSchema = z.object({
     .describe(
       "intervals.icu's type: CS model from the athlete's pace curve; null when no fit is available",
     ),
+  units: z.object({
+    distance: z.literal("km"),
+    pace: z.literal("min/km"),
+    time: z.literal("s"),
+  }),
   warnings: z.array(z.string()),
   method: z.string(),
 });

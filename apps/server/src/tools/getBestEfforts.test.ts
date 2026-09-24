@@ -15,7 +15,6 @@ import {
   getBestEffortsTool,
   matchDistance,
   nearestIndex,
-  paceMinPerKm,
   resolveWindow,
 } from "./getBestEfforts";
 
@@ -152,15 +151,6 @@ describe("matchDistance", () => {
   });
 });
 
-describe("paceMinPerKm", () => {
-  it("formats seconds/distance as m:ss min/km, no miles", () => {
-    // 248 s over 1000 m = 248 s/km = 4:08/km
-    expect(paceMinPerKm(248, 1000)).toBe("4:08 min/km");
-    // 1461 s over 5000 m = 292.2 s/km, rounds to 292 s = 4:52/km
-    expect(paceMinPerKm(1461, 5000)).toBe("4:52 min/km");
-  });
-});
-
 describe("getBestEffortsTool.execute", () => {
   it("topN=1 (default): fetches the athlete pace curve for the default window and distances", async () => {
     mockedAthleteCurves.mockResolvedValueOnce(paceCurves);
@@ -186,7 +176,7 @@ describe("getBestEffortsTool.execute", () => {
         Array<{
           rank: number;
           time_seconds: number;
-          pace: string;
+          pace_min_per_km: string | null;
           activity_id: string;
           activity_name: string;
           date: string;
@@ -196,14 +186,15 @@ describe("getBestEffortsTool.execute", () => {
     };
     expect(content.window.id).toBe("1y");
     expect(content.top_n).toBe(1);
-    expect(content.units).toEqual({ time: "seconds", pace: "min/km" });
+    expect(content.units).toEqual({ time: "s", pace: "min/km" });
 
     const oneKm = content.best_efforts["1km"];
     expect(oneKm).toHaveLength(1);
     expect(oneKm?.[0]).toMatchObject({
       rank: 1,
       time_seconds: 248,
-      pace: "4:08 min/km",
+      // 248 s over 1000 m = 4:08/km, bare (unit is in the field name/units block).
+      pace_min_per_km: "4:08",
       activity_id: "i189757802",
       activity_name: "Run 22",
       date: "2026-06-25",
@@ -419,7 +410,7 @@ describe("formatBestEffortsText", () => {
       {
         window: { id: "1y", oldest: "2025-09-25", newest: "2026-09-25" },
         top_n: 1,
-        units: { time: "seconds", pace: "min/km" },
+        units: { time: "s", pace: "min/km" },
         note: "note",
         best_efforts: {},
         missing: [],

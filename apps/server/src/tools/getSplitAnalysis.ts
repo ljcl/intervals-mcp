@@ -74,8 +74,10 @@ const STREAM_TYPES = [
   "watts",
 ] as const;
 
-const formatPace = (secPerKm: number | null) =>
-  secPerKm == null ? null : `${formatPaceSeconds(secPerKm)} /km`;
+/** Bare `m:ss`, no unit suffix; the structured field name (`*_min_per_km`)
+ * carries the unit, `formatPaceSeconds` is the one home for the rendering. */
+const paceMinPerKm = (secPerKm: number | null) =>
+  secPerKm == null ? null : formatPaceSeconds(secPerKm);
 
 function splitOut(split: Split, type: string) {
   return {
@@ -87,9 +89,9 @@ function splitOut(split: Split, type: string) {
     moving_time_s: split.movingTimeS,
     elapsed_time_s: split.elapsedTimeS,
     pace_sec_per_km: split.paceSecPerKm,
-    pace_formatted: formatPace(split.paceSecPerKm),
+    pace_min_per_km: paceMinPerKm(split.paceSecPerKm),
     gap_pace_sec_per_km: split.gapPaceSecPerKm,
-    gap_pace_formatted: formatPace(split.gapPaceSecPerKm),
+    gap_pace_min_per_km: paceMinPerKm(split.gapPaceSecPerKm),
     elevation_change_m: split.elevationChangeM,
     avg_grade_pct: split.avgGradePct,
     avg_hr: split.avgHr,
@@ -100,9 +102,9 @@ function splitOut(split: Split, type: string) {
 
 function splitLine(s: ReturnType<typeof splitOut>): string {
   const parts = [
-    s.pace_formatted ?? "no pace",
-    s.gap_pace_formatted && s.gap_pace_formatted !== s.pace_formatted
-      ? `GAP ${s.gap_pace_formatted}`
+    s.pace_min_per_km ? `${s.pace_min_per_km} /km` : "no pace",
+    s.gap_pace_min_per_km && s.gap_pace_min_per_km !== s.pace_min_per_km
+      ? `GAP ${s.gap_pace_min_per_km} /km`
       : null,
     s.elevation_change_m != null
       ? `${s.elevation_change_m >= 0 ? "+" : ""}${s.elevation_change_m} m`
@@ -182,10 +184,10 @@ export const getSplitAnalysisTool = {
                 analysis.verdict.firstHalfPaceSecPerKm,
               second_half_pace_sec_per_km:
                 analysis.verdict.secondHalfPaceSecPerKm,
-              first_half_pace_formatted: formatPace(
+              first_half_pace_min_per_km: paceMinPerKm(
                 analysis.verdict.firstHalfPaceSecPerKm,
               ),
-              second_half_pace_formatted: formatPace(
+              second_half_pace_min_per_km: paceMinPerKm(
                 analysis.verdict.secondHalfPaceSecPerKm,
               ),
               first_half_gap_pace_sec_per_km:
@@ -211,7 +213,7 @@ export const getSplitAnalysisTool = {
           elapsed_time_s: analysis.totals.elapsedTimeS,
           elevation_gain_m: analysis.totals.elevationGainM,
           avg_pace_sec_per_km: analysis.totals.avgPaceSecPerKm,
-          avg_pace_formatted: formatPace(analysis.totals.avgPaceSecPerKm),
+          avg_pace_min_per_km: paceMinPerKm(analysis.totals.avgPaceSecPerKm),
           avg_gap_pace_sec_per_km: analysis.totals.avgGapPaceSecPerKm,
         },
         units: {
@@ -234,7 +236,7 @@ export const getSplitAnalysisTool = {
       const lines = [
         `Split Analysis: ${structured.name} (${structured.date})`,
         `Grade source: ${structured.grade_source}`,
-        `${distanceLabel} km, ${analysis.splits.length} splits, average ${structured.totals.avg_pace_formatted ?? "n/a"}`,
+        `${distanceLabel} km, ${analysis.splits.length} splits, average ${structured.totals.avg_pace_min_per_km ? `${structured.totals.avg_pace_min_per_km} min/km` : "n/a"}`,
         "",
       ];
 
@@ -243,7 +245,7 @@ export const getSplitAnalysisTool = {
         const sign = (value: number) => (value >= 0 ? "+" : "");
         lines.push(
           `Verdict: ${verdict.shape} split on the clock, ${verdict.gap_shape} grade-adjusted`,
-          `  First half ${verdict.first_half_pace_formatted} → second half ${verdict.second_half_pace_formatted} (${sign(verdict.delta_pct)}${verdict.delta_pct}%)`,
+          `  First half ${verdict.first_half_pace_min_per_km} min/km, second half ${verdict.second_half_pace_min_per_km} min/km (${sign(verdict.delta_pct)}${verdict.delta_pct}%)`,
         );
         if (verdict.gap_delta_pct != null) {
           lines.push(

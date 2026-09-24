@@ -68,7 +68,8 @@ interface ActivitySummary {
   date: string;
   type: string;
   distance_km: number;
-  moving_time: number;
+  moving_time: string;
+  moving_time_s: number;
   pace_min_per_km: string | null;
   gap_min_per_km: string | null;
   average_hr: number | null;
@@ -126,7 +127,8 @@ function extractActivitySummary(activity: IntervalsActivity): ActivitySummary {
       "",
     type,
     distance_km: round((activity.distance ?? 0) / 1000, 2),
-    moving_time: activity.moving_time ?? 0,
+    moving_time: formatDuration(activity.moving_time ?? 0),
+    moving_time_s: activity.moving_time ?? 0,
     pace_min_per_km: isPaceActivity(type)
       ? paceFromDistanceTime(activity.distance, activity.moving_time)
       : null,
@@ -322,9 +324,7 @@ export const compareActivitiesTool = {
 
       const lines = [`Activity 1: ${summary1.name} [${summary1.id}]`];
       lines.push(`  ${summary1.date} | ${summary1.type}`);
-      lines.push(
-        `  ${summary1.distance_km} km in ${formatDuration(summary1.moving_time)}`,
-      );
+      lines.push(`  ${summary1.distance_km} km in ${summary1.moving_time}`);
       if (summary1.pace_min_per_km)
         lines.push(`  Pace: ${summary1.pace_min_per_km} /km`);
       if (summary1.average_hr != null)
@@ -335,9 +335,7 @@ export const compareActivitiesTool = {
 
       lines.push(`Activity 2: ${summary2.name} [${summary2.id}]`);
       lines.push(`  ${summary2.date} | ${summary2.type}`);
-      lines.push(
-        `  ${summary2.distance_km} km in ${formatDuration(summary2.moving_time)}`,
-      );
+      lines.push(`  ${summary2.distance_km} km in ${summary2.moving_time}`);
       if (summary2.pace_min_per_km)
         lines.push(`  Pace: ${summary2.pace_min_per_km} /km`);
       if (summary2.average_hr != null)

@@ -61,13 +61,13 @@ describe("get-hill-analysis", () => {
       grade_source: string;
       descents: Array<{
         avg_cadence: number | null;
-        pace_formatted: string | null;
+        pace_min_per_km: string | null;
       }>;
       totals: { descent_count: number };
     };
     expect(structured.grade_source).toBe("grade_smooth");
     expect(structured.totals.descent_count).toBeGreaterThan(0);
-    expect(structured.descents[0]!.pace_formatted).toMatch(/^\d+:\d{2} \/km$/);
+    expect(structured.descents[0]!.pace_min_per_km).toMatch(/^\d+:\d{2}$/);
     // Run cadence is doubled to spm for display.
     expect(structured.descents[1]!.avg_cadence).toBeGreaterThan(100);
     expect(HillAnalysisOutputSchema.safeParse(structured).success).toBe(true);

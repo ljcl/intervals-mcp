@@ -8,9 +8,9 @@ import {
   type IntervalsActivity,
 } from "../intervalsClient";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
-import { addDays, isValidCalendarDate, todayLocal } from "../utils/localDate";
 import { mapWithConcurrency } from "../utils/concurrency";
-import { formatPaceSeconds } from "../utils/running";
+import { addDays, isValidCalendarDate, todayLocal } from "../utils/localDate";
+import { paceFromDistanceTime } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
 import { toolErrorText } from "./_errors";
 import { BestEffortsOutputSchema, warnOnSchemaDrift } from "./outputs";
@@ -93,7 +93,7 @@ export interface BestEffortEntry {
   rank: number;
   time_seconds: number;
   time_formatted: string;
-  pace: string;
+  pace_min_per_km: string | null;
   date: string;
   activity_id: string;
   activity_name: string;
@@ -103,7 +103,7 @@ export interface BestEffortEntry {
 interface BestEffortsResponse {
   window: { id: string; oldest: string; newest: string };
   top_n: number;
-  units: { time: "seconds"; pace: "min/km" };
+  units: { time: "s"; pace: "min/km" };
   note: string;
   best_efforts: Record<string, BestEffortEntry[]>;
   /** Requested distances with no curve point within tolerance
@@ -204,17 +204,6 @@ export function matchDistance(
   return diff <= toleranceMeters(target) ? idx : null;
 }
 
-/** `m:ss min/km` from a time and distance. No miles: `formatPaceSeconds` is
- * the one home for the `m:ss` rendering, shared with every other pace field
- * in the server. */
-export function paceMinPerKm(
-  timeSeconds: number,
-  distanceMeters: number,
-): string {
-  const secPerKm = (timeSeconds / distanceMeters) * 1000;
-  return `${formatPaceSeconds(secPerKm)} min/km`;
-}
-
 /** `topN === 1`: one call to `getAthletePaceCurves`, whose `activities` map
  * already carries the winning activity's name/race flag/date. */
 async function buildTopOneEfforts(
@@ -259,7 +248,10 @@ async function buildTopOneEfforts(
         rank: 1,
         time_seconds: timeSeconds,
         time_formatted: formatDuration(timeSeconds),
-        pace: paceMinPerKm(timeSeconds, list?.distance[idx] ?? target),
+        pace_min_per_km: paceFromDistanceTime(
+          list?.distance[idx] ?? target,
+          timeSeconds,
+        ),
         date: (activityRef?.start_date_local ?? "").split("T")[0] ?? "",
         activity_id: activityId,
         activity_name: activityRef?.name ?? "Unknown activity",
@@ -387,7 +379,7 @@ async function buildTopNEfforts(
         rank: i + 1,
         time_seconds: c.timeSeconds,
         time_formatted: formatDuration(c.timeSeconds),
-        pace: paceMinPerKm(c.timeSeconds, distanceMeters),
+        pace_min_per_km: paceFromDistanceTime(distanceMeters, c.timeSeconds),
         date: c.date,
         activity_id: c.activityId,
         activity_name: info?.name ?? "Unknown activity",
@@ -415,8 +407,11 @@ export function formatBestEffortsText(
     lines.push(`${label}:`);
     for (const effort of efforts) {
       const raceLabel = effort.race ? " (race)" : "";
+      const paceLabel = effort.pace_min_per_km
+        ? `${effort.pace_min_per_km} min/km`
+        : "n/a";
       lines.push(
-        `  ${effort.rank}. ${effort.time_formatted} (${effort.pace}) - ${effort.date}${raceLabel}`,
+        `  ${effort.rank}. ${effort.time_formatted} (${paceLabel}) - ${effort.date}${raceLabel}`,
       );
       lines.push(`     ${effort.activity_name}`);
     }
@@ -463,7 +458,7 @@ export const getBestEffortsTool = {
           newest: resolved.newest,
         },
         top_n: topN,
-        units: { time: "seconds", pace: "min/km" },
+        units: { time: "s", pace: "min/km" },
         note: TIME_BASIS_NOTE,
         best_efforts,
         missing,

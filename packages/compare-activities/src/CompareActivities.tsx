@@ -215,8 +215,8 @@ export function buildDeltaTiles(compare: CompareData): DeltaTile[] {
     {
       key: "time",
       label: "Time",
-      a: formatTime(a1.moving_time),
-      b: formatTime(a2.moving_time),
+      a: formatTime(a1.moving_time_s),
+      b: formatTime(a2.moving_time_s),
       delta: "",
     },
   ];

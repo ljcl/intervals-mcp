@@ -71,8 +71,10 @@ const STREAM_TYPES = [
   "watts",
 ] as const;
 
-const formatPace = (secPerKm: number | null) =>
-  secPerKm == null ? null : `${formatPaceSeconds(secPerKm)} /km`;
+/** Bare `m:ss`, no unit suffix; the structured field name (`*_min_per_km`)
+ * carries the unit, `formatPaceSeconds` is the one home for the rendering. */
+const paceMinPerKm = (secPerKm: number | null) =>
+  secPerKm == null ? null : formatPaceSeconds(secPerKm);
 
 function segmentOut(segment: HillSegment, type: string) {
   return {
@@ -83,9 +85,9 @@ function segmentOut(segment: HillSegment, type: string) {
     avg_grade_pct: segment.avgGradePct,
     moving_time_s: segment.movingTimeS,
     pace_sec_per_km: segment.paceSecPerKm,
-    pace_formatted: formatPace(segment.paceSecPerKm),
+    pace_min_per_km: paceMinPerKm(segment.paceSecPerKm),
     gap_pace_sec_per_km: segment.gapPaceSecPerKm,
-    gap_pace_formatted: formatPace(segment.gapPaceSecPerKm),
+    gap_pace_min_per_km: paceMinPerKm(segment.gapPaceSecPerKm),
     avg_hr: segment.avgHr,
     avg_cadence: cadenceSpm(segment.avgCadence, type),
     avg_watts: segment.avgWatts,
@@ -95,11 +97,11 @@ function segmentOut(segment: HillSegment, type: string) {
 
 function segmentLine(s: ReturnType<typeof segmentOut>): string {
   const parts = [
-    `km ${s.start_km}–${s.end_km}`,
+    `km ${s.start_km}-${s.end_km}`,
     `${s.length_m} m @ ${s.avg_grade_pct}%`,
     `${s.elevation_change_m >= 0 ? "+" : ""}${s.elevation_change_m} m`,
-    s.pace_formatted ? `pace ${s.pace_formatted}` : null,
-    s.gap_pace_formatted ? `GAP ${s.gap_pace_formatted}` : null,
+    s.pace_min_per_km ? `pace ${s.pace_min_per_km} /km` : null,
+    s.gap_pace_min_per_km ? `GAP ${s.gap_pace_min_per_km} /km` : null,
     s.avg_hr != null ? `${s.avg_hr} bpm` : null,
     s.avg_watts != null ? `${s.avg_watts} W` : null,
   ].filter(Boolean);

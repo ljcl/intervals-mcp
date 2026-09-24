@@ -34,8 +34,10 @@ export interface CompareSide {
   date: string;
   type: string;
   distance_km: number;
+  /** `h:mm:ss` (or `m:ss` under an hour). */
+  moving_time: string;
   /** Moving time in seconds. */
-  moving_time: number;
+  moving_time_s: number;
   pace_min_per_km: string | null;
   gap_min_per_km: string | null;
   average_hr: number | null;

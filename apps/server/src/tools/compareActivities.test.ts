@@ -61,11 +61,12 @@ describe("buildComparison", () => {
     expect(result.warnings).toBeUndefined();
   });
 
-  it("formats the per-side pace as m:ss and moving_time as raw seconds", () => {
+  it("formats the per-side pace as m:ss, moving_time as h:mm:ss/m:ss, and moving_time_s as raw seconds", () => {
     const result = buildComparison(fakeActivity({}), faster);
 
     expect(result.activity_1.pace_min_per_km).toBe("5:20");
-    expect(result.activity_1.moving_time).toBe(3200);
+    expect(result.activity_1.moving_time).toBe("53:20");
+    expect(result.activity_1.moving_time_s).toBe(3200);
     expect(result.activity_2.pace_min_per_km).toBe("5:00");
   });
 

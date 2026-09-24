@@ -24,7 +24,6 @@ import {
   type FitnessTrendAppData,
   mapFitnessTrendApp,
 } from "./fitnessTrendApp";
-import { formatDuration } from "./formatters";
 import { getActivity as getIntervalsActivity } from "./intervalsClient";
 import {
   cumulativeDistances,
@@ -1357,8 +1356,8 @@ async function handleViewCompareActivities(
 ): Promise<ToolCallResult> {
   const data = await loadCompareActivitiesData(args, token);
   const lines = [
-    `Activity 1: ${data.activity_1.name} (${data.activity_1.date}), ${data.activity_1.distance_km} km in ${formatDuration(data.activity_1.moving_time)}`,
-    `Activity 2: ${data.activity_2.name} (${data.activity_2.date}), ${data.activity_2.distance_km} km in ${formatDuration(data.activity_2.moving_time)}`,
+    `Activity 1: ${data.activity_1.name} (${data.activity_1.date}), ${data.activity_1.distance_km} km in ${data.activity_1.moving_time}`,
+    `Activity 2: ${data.activity_2.name} (${data.activity_2.date}), ${data.activity_2.distance_km} km in ${data.activity_2.moving_time}`,
   ];
   if (data.differences.pace) {
     lines.push(

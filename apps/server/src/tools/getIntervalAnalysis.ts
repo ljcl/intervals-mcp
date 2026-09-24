@@ -69,8 +69,10 @@ const STREAM_TYPES = [
   "watts",
 ] as const;
 
-const formatPace = (secPerKm: number | null) =>
-  secPerKm == null ? null : `${formatPaceSeconds(secPerKm)} /km`;
+/** Bare `m:ss`, no unit suffix; the structured field name (`*_min_per_km`)
+ * carries the unit, `formatPaceSeconds` is the one home for the rendering. */
+const paceMinPerKm = (secPerKm: number | null) =>
+  secPerKm == null ? null : formatPaceSeconds(secPerKm);
 
 /**
  * Thin adapter from one `icu_intervals` entry to the module's lap input.
@@ -163,7 +165,7 @@ export const getIntervalAnalysisTool = {
           moving_time_s: rep.movingTimeS,
           moving_time_formatted: formatDuration(rep.movingTimeS),
           pace_sec_per_km: rep.paceSecPerKm,
-          pace_formatted: formatPace(rep.paceSecPerKm),
+          pace_min_per_km: paceMinPerKm(rep.paceSecPerKm),
           avg_hr: rep.avgHr,
           avg_cadence: cadenceSpm(rep.avgCadence, type),
           avg_watts: rep.avgWatts,
@@ -217,7 +219,7 @@ export const getIntervalAnalysisTool = {
         for (const rep of structured.reps) {
           const parts = [
             `${rep.distance_m} m in ${rep.moving_time_formatted}`,
-            rep.pace_formatted,
+            rep.pace_min_per_km ? `${rep.pace_min_per_km} /km` : null,
             rep.avg_hr != null ? `${rep.avg_hr} bpm` : null,
             rep.avg_cadence != null
               ? `${rep.avg_cadence} ${cadenceUnitLabel}`

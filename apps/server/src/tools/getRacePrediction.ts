@@ -99,12 +99,18 @@ function paceFields(seconds: number, distanceMeters: number) {
 const serializeSource = (source: SourceEffort) => ({
   name: source.name,
   distance_m: Math.round(source.distanceMeters * 10) / 10,
-  elapsed_time_seconds: source.elapsedSeconds,
-  elapsed_time_formatted: formatDuration(source.elapsedSeconds),
+  time_seconds: source.elapsedSeconds,
+  time_formatted: formatDuration(source.elapsedSeconds),
   date: source.date,
   activity_id: source.activityId,
   activity_name: source.activityName,
 });
+
+const UNITS = {
+  distance: "km" as const,
+  pace: "min/km" as const,
+  time: "s" as const,
+};
 
 /** The critical-speed prediction for one target distance, or `null` when no
  * model is available or the target does not exceed the model's `dPrime`. */
@@ -257,6 +263,7 @@ export const getRacePredictionTool = {
           target: null,
           sources: [],
           critical_speed_model: criticalSpeedModelField,
+          units: UNITS,
           warnings: [
             ...warnings,
             "No recorded pace-curve points of 1500 m or longer were found.",
@@ -365,6 +372,7 @@ export const getRacePredictionTool = {
         target,
         sources: sources.map(serializeSource),
         critical_speed_model: criticalSpeedModelField,
+        units: UNITS,
         warnings,
         method,
       };

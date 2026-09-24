@@ -89,15 +89,15 @@ const round = (value: number, dp = 2) =>
 const toMinutes = (seconds: number) => Math.round(seconds / 60);
 const signed = (value: number) =>
   `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`;
-const paceFormatted = (metersPerSecond: number) =>
-  metersPerSecond > 0
-    ? `${formatPaceSeconds(1000 / metersPerSecond)} /km`
-    : null;
+/** Bare `m:ss`, no unit suffix; the structured field name (`*_min_per_km`)
+ * carries the unit, `formatPaceSeconds` is the one home for the rendering. */
+const paceMinPerKm = (metersPerSecond: number) =>
+  metersPerSecond > 0 ? formatPaceSeconds(1000 / metersPerSecond) : null;
 
 function halfOut(half: AerobicAnalysis["firstHalf"], basis: "pace" | "power") {
   return {
     avg_output: round(half.avgOutput),
-    avg_pace_formatted: basis === "pace" ? paceFormatted(half.avgOutput) : null,
+    avg_pace_min_per_km: basis === "pace" ? paceMinPerKm(half.avgOutput) : null,
     avg_hr: round(half.avgHeartrate, 0),
     output_per_beat: round(half.ratio * (basis === "pace" ? 60 : 1), 3),
     minutes: toMinutes(half.seconds),
@@ -231,9 +231,9 @@ export const getAerobicAnalysisTool = {
               first_half: halfOut(analysis.firstHalf, basis),
               second_half: halfOut(analysis.secondHalf, basis),
               normalized_output: round(analysis.normalizedOutput),
-              normalized_output_formatted:
+              normalized_pace_min_per_km:
                 basis === "pace"
-                  ? paceFormatted(analysis.normalizedOutput)
+                  ? paceMinPerKm(analysis.normalizedOutput)
                   : null,
               moving_minutes: toMinutes(analysis.movingSeconds),
               excluded_stopped_minutes: toMinutes(
@@ -245,7 +245,7 @@ export const getAerobicAnalysisTool = {
             }
           : null,
         units: {
-          pace: "m:ss /km" as const,
+          pace: "min/km" as const,
           power: "W" as const,
           efficiency_factor: basis === "pace" ? "m/min per beat" : "W/beat",
         },
@@ -264,8 +264,8 @@ export const getAerobicAnalysisTool = {
       if (structured.breakdown) {
         const b = structured.breakdown;
         const outputStr = (h: typeof b.first_half) =>
-          basis === "pace" && h.avg_pace_formatted
-            ? h.avg_pace_formatted
+          basis === "pace" && h.avg_pace_min_per_km
+            ? `${h.avg_pace_min_per_km} /km`
             : `${h.avg_output} W`;
         lines.push(
           `  First half:  ${outputStr(b.first_half)} @ ${b.first_half.avg_hr} bpm`,
@@ -273,7 +273,7 @@ export const getAerobicAnalysisTool = {
           "",
           basis === "power"
             ? `Normalized power: ${b.normalized_output} W`
-            : `Normalized pace: ${b.normalized_output_formatted}`,
+            : `Normalized pace: ${b.normalized_pace_min_per_km} /km`,
         );
       } else {
         lines.push("");

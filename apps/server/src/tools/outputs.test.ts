@@ -142,7 +142,8 @@ describe("schemas align with the real tool rawObjects", () => {
       date: "2026-05-01",
       type: "Run",
       distance_km: 10,
-      moving_time: 3000,
+      moving_time: "50:00",
+      moving_time_s: 3000,
       pace_min_per_km: "5:00",
       gap_min_per_km: "4:58",
       average_hr: 150,
@@ -198,7 +199,7 @@ describe("schemas align with the real tool rawObjects", () => {
     const response = {
       window: { id: "1y", oldest: "2025-09-25", newest: "2026-09-25" },
       top_n: 1,
-      units: { time: "seconds", pace: "min/km" },
+      units: { time: "s", pace: "min/km" },
       note: "Best times come from the recorded time stream (a moving-time style curve), not elapsed time.",
       best_efforts: {
         "5km": [
@@ -206,7 +207,7 @@ describe("schemas align with the real tool rawObjects", () => {
             rank: 1,
             time_seconds: 1080,
             time_formatted: "18m 0s",
-            pace: "3:36 min/km",
+            pace_min_per_km: "3:36",
             date: "2026-05-01",
             activity_id: "i123",
             activity_name: "5K Race",

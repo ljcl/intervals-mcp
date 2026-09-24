@@ -125,7 +125,7 @@ describe("get-interval-analysis", () => {
       is_intervals: boolean;
       source: string;
       confidence: string;
-      reps: Array<{ pace_formatted: string | null }>;
+      reps: Array<{ pace_min_per_km: string | null }>;
       rests: Array<{ kind: string; duration_s: number }>;
       fade: { pace_drift_pct: number; summary: string } | null;
     };
@@ -138,7 +138,7 @@ describe("get-interval-analysis", () => {
       .filter((r) => r.kind === "recovery")
       .map((r) => r.duration_s);
     expect(recoveryDurations).toEqual(expect.arrayContaining([75, 36, 54, 37]));
-    expect(structured.reps.some((r) => r.pace_formatted != null)).toBe(true);
+    expect(structured.reps.some((r) => r.pace_min_per_km != null)).toBe(true);
     expect(structured.fade).not.toBeNull();
     expect(structured.fade!.summary).toContain("slower");
     expect(IntervalAnalysisOutputSchema.safeParse(structured).success).toBe(

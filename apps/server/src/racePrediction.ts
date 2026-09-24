@@ -16,7 +16,7 @@
  */
 
 import { type IntervalsAthletePaceCurves } from "./intervalsClient";
-import { metersPerSecToPace } from "./utils/running";
+import { paceFromDistanceTime } from "./utils/running";
 
 /** Riegel's fatigue exponent. 1.06 is the value from the original paper. */
 export const RIEGEL_EXPONENT = 1.06;
@@ -559,14 +559,14 @@ export function formatRaceTime(seconds: number): string {
     : `${minutes}:${pad(secs)}`;
 }
 
-/** Pace (km only) for a race time, via the shared m/s converter. */
+/** Pace (km only) for a race time, via the shared distance/time converter
+ * (`paceFromDistanceTime`) rather than its own m/s-and-formatting logic. */
 export function racePace(
   seconds: number,
   distanceMeters: number,
 ): { minPerKm: string } | null {
-  if (!(seconds > 0) || !(distanceMeters > 0)) return null;
-  const pace = metersPerSecToPace(distanceMeters / seconds);
-  return pace ? { minPerKm: pace.minPerKm } : null;
+  const minPerKm = paceFromDistanceTime(distanceMeters, seconds);
+  return minPerKm ? { minPerKm } : null;
 }
 
 /**

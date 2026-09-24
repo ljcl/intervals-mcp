@@ -61,13 +61,13 @@ describe("get-split-analysis", () => {
       grade_source: string;
       splits: Array<{
         avg_cadence: number | null;
-        pace_formatted: string | null;
+        pace_min_per_km: string | null;
       }>;
       totals: { distance_m: number };
     };
     expect(structured.grade_source).toBe("grade_smooth");
     expect(structured.splits.length).toBeGreaterThan(0);
-    expect(structured.splits[0]!.pace_formatted).toMatch(/^\d+:\d{2} \/km$/);
+    expect(structured.splits[0]!.pace_min_per_km).toMatch(/^\d+:\d{2}$/);
     expect(structured.totals.distance_m).toBeGreaterThan(1800);
     const cadenced = structured.splits.find((s) => s.avg_cadence != null);
     // Run cadence is doubled to spm for display.

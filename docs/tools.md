@@ -166,8 +166,10 @@ derivation when it is absent or entirely null, and `grade_source` in the
 response names which was used. A null sample in `distance`/`altitude`/grade
 is interpolated between its known neighbours (held flat across a leading or
 trailing gap) rather than treated as zero; a null HR/cadence/velocity sample
-is simply excluded from whatever average it would have fed. Pace is reported
-as `m:ss /km`; splits are kilometres only. An activity with no recorded
+is simply excluded from whatever average it would have fed. Pace is a bare
+`m:ss` string in `pace_min_per_km`/`gap_pace_min_per_km`, the `/km` suffix
+added only in the text output; splits are kilometres only. An activity with
+no recorded
 streams at all (e.g. Pilates, or a manual entry) fails with a message naming
 the activity rather than an empty analysis.
 
@@ -193,8 +195,9 @@ that case skips the stream fetch entirely unless `includeBreakdown: true` is
 passed. Otherwise both are computed from streams
 (`source: "computed"`) using the shared intervals.icu stream adapter. The
 `basis` input picks the output stream: `pace` (default) reads
-`velocity_smooth`, `power` reads `watts`; pace figures render as `m:ss /km`
-strings, never miles. On the power basis a recording device name starting
+`velocity_smooth`, `power` reads `watts`; pace figures render as a bare
+`m:ss` string in `avg_pace_min_per_km`/`normalized_pace_min_per_km`, never
+miles. On the power basis a recording device name starting
 with `Watch` (an Apple Watch) adds a warning that the power stream is
 Apple's own estimate, not a power meter reading. Warm-up exclusion defaults
 to the activity's `icu_warmup_time`, then the athlete's Run sport-settings
@@ -212,7 +215,7 @@ jog-recovery sessions, which never stop moving, and fall back to streams
 when the laps' speeds are not tightly clustered (rain, sweat, a
 non-effort-based auto-lap split). Work reps are reconstructed between
 recoveries, merging straight through traffic lights, and reported with
-per-rep pace (`m:ss /km`), HR, cadence, and power; fade compares the last rep
+per-rep pace (`pace_min_per_km`, bare `m:ss`), HR, cadence, and power; fade compares the last rep
 against the first. An HR-distribution tiebreaker ("was this a workout at
 all") reports the share of moving time at ≥ 88% of the activity's own max HR.
 
@@ -228,7 +231,8 @@ to rank the top N distinct activities per distance locally (intervals.icu
 returns no rank), then resolves the name and race flag for each winning
 activity with one bounded-concurrency `getActivity` call per unique id (at
 most 30, distances x topN), never a `list-activities` sweep over the whole
-window. Pace renders as a single `m:ss min/km` string, never miles. Because
+window. Pace renders as a bare `m:ss` string in `pace_min_per_km`, never
+miles. Because
 the pace curve is built from the recorded time stream (a moving-time style
 curve), `time_seconds`/`time_formatted` are not elapsed time; the response's
 `note` says so. Each requested distance is matched to the nearest point on
