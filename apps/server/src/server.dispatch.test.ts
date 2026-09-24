@@ -143,10 +143,10 @@ describe("dispatchToolCall input validation", () => {
   it("advertises every id argument as a digit string, never a number", async () => {
     // A number branch in the advertised schema is what invited the lossy
     // call above; ids must stay string-only across every tool. intervals.icu
-    // activity ids (get-activity, get-activity-streams, get-activity-laps)
-    // are the exception to the digits-only pattern: they accept an optional
-    // "i" prefix, as list-activities returns them (intervalsActivityIdInput,
-    // tools/_ids.ts).
+    // activity ids (get-activity, get-activity-streams, get-activity-laps,
+    // get-running-summary) are the exception to the digits-only pattern:
+    // they accept an optional "i" prefix, as list-activities returns them
+    // (intervalsActivityIdInput, tools/_ids.ts).
     const { TOOLS } = await import("./server");
     const idSchemas = (
       TOOLS as Array<{
@@ -164,7 +164,8 @@ describe("dispatchToolCall input validation", () => {
       const expectedPattern =
         field === "get-activity.id" ||
         field === "get-activity-streams.id" ||
-        field === "get-activity-laps.id"
+        field === "get-activity-laps.id" ||
+        field === "get-running-summary.id"
           ? "^i?\\d+$"
           : "^\\d+$";
       expect(`${field}: ${schema.type}`).toBe(`${field}: string`);

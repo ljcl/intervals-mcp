@@ -99,52 +99,12 @@ export const TrainingLoadOutputSchema = z.object({
   warnings: z.array(z.string()),
 });
 
-// ---------- get-running-summary ----------
+// get-running-summary's output schema is defined near the end of this file
+// (RunningSummaryOutputSchema), after ActivityDetailOutputSchema and
+// IntervalsLapEntrySchema, which it extends/reuses.
 const PaceSchema = z.object({
   min_per_km: z.string(),
   min_per_mile: z.string(),
-});
-export const RunningSummaryOutputSchema = z.object({
-  activity_id: z
-    .union([z.number(), z.string()])
-    .describe("The requested Strava activity id (as supplied to the tool)"),
-  name: z.string(),
-  date: z.string(),
-  type: z.string(),
-  distance: z.object({
-    meters: z.number(),
-    km: z.number(),
-    miles: z.number(),
-  }),
-  time: z.object({
-    moving_seconds: z.number().int(),
-    moving_formatted: z.string(),
-    elapsed_seconds: z.number().int(),
-    elapsed_formatted: z.string(),
-  }),
-  pace: PaceSchema.extend({ display: z.string() }).nullable(),
-  elevation: z.object({ gain_m: z.number(), gain_ft: z.number() }),
-  cadence: z
-    .object({
-      average_spm: z.number(),
-      assessment: z.string().nullable(),
-    })
-    .nullable(),
-  heart_rate: z
-    .object({
-      average: z.number().nullable(),
-      max: z.number().nullable(),
-      zones: z.unknown().nullable(),
-    })
-    .nullable(),
-  power: z
-    .object({
-      average_watts: z.number(),
-      max_watts: z.number().nullable(),
-    })
-    .nullable(),
-  laps: z.array(z.unknown()),
-  gear: z.string().nullable(),
 });
 
 // ---------- compare-activities ----------
@@ -1027,4 +987,47 @@ export const ActivityLapsOutputSchema = z.object({
     gradient: z.literal("%"),
   }),
   laps: z.array(IntervalsLapEntrySchema),
+});
+
+// ---------- get-running-summary ----------
+// A thin wrapper over get-activity: every ActivityDetailOutputSchema field,
+// plus run-specific assessments and a lap breakdown. No power fields.
+const HrZoneSummaryEntrySchema = z.object({
+  zone: z.number().int().describe("1-based zone number"),
+  min_bpm: z.number().nullable().describe("0 for zone 1"),
+  max_bpm: z.number(),
+  seconds: z.number().int(),
+  percent: z.number().describe("Share of recorded zone time, 1 dp"),
+});
+export const RunningSummaryOutputSchema = ActivityDetailOutputSchema.extend({
+  cadence_assessment: z
+    .string()
+    .nullable()
+    .describe("From average_cadence_spm via assessCadence"),
+  hr_zone_summary: z
+    .object({
+      source: z
+        .union([z.literal("activity"), z.literal("sport_settings")])
+        .describe(
+          "Bounds from the activity's own icu_hr_zones when present, else the Run sport settings group",
+        ),
+      total_seconds: z.number().int(),
+      zones: z.array(HrZoneSummaryEntrySchema),
+    })
+    .nullable()
+    .describe(
+      "Null when no zone bounds match the recorded zone time count; see hr_zone_note",
+    ),
+  hr_zone_note: z
+    .string()
+    .nullable()
+    .describe("Set when hr_zone_summary is omitted, explaining why"),
+  dynamics_assessment: z
+    .object({
+      vertical_oscillation: z.string().nullable(),
+      ground_contact_time: z.string().nullable(),
+    })
+    .nullable()
+    .describe("Only set when running_dynamics is present"),
+  laps: z.array(IntervalsLapEntrySchema).describe("From mapIntervalsToLaps"),
 });

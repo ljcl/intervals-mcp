@@ -1,90 +1,293 @@
 import { z } from "zod";
-import { formatDuration } from "../formatters";
+import { formatDuration, round, STRAVA_STUB_NOTE } from "../formatters";
+import { type LapEntry, mapIntervalsToLaps } from "../intervalLaps";
 import {
-  getActivityById,
-  getActivityLaps,
-  getActivityStreams,
-  getAthleteZones,
-  StreamsUnavailableError,
-} from "../stravaClient";
-import {
-  assessCadence,
-  computeTimeInZones,
-  isRunningActivity,
-  metersPerSecToPace,
-  transformCadence,
-  type ZoneBoundary,
-} from "../utils/running";
+  getActivity as getActivityClient,
+  getSportSettings,
+  type IntervalsActivity,
+  type IntervalsSportSettings,
+} from "../intervalsClient";
+import { NO_PROGRESS, type ReportProgress } from "../progress";
+import { assessCadence } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
 import { toolErrorText } from "./_errors";
-import { stravaIdInput } from "./_ids";
+import { intervalsActivityIdInput } from "./_ids";
+import {
+  type ActivityDetail,
+  formatGearLine,
+  formatLoadLine,
+  formatMetricsLine,
+  mapActivityDetail,
+  truncateDescription,
+} from "./getActivity";
 import { RunningSummaryOutputSchema, warnOnSchemaDrift } from "./outputs";
 
 const name = "get-running-summary";
 
 const description = `
-Retrieves a comprehensive running-focused summary of a Strava activity.
+Returns a run-focused summary of one intervals.icu activity: get-activity's detail fields plus cadence, HR zone, and dynamics assessments and a lap breakdown.
 
-This tool combines data from multiple sources and computes derived metrics specifically for running analysis:
-- Pace in min/km and min/mile (not just speed)
-- Cadence as steps per minute (doubled from Strava's strides)
-- Heart rate zone distribution computed from HR stream
-- Per-lap breakdown with running-specific metrics
-
-Use Cases:
-- Get a complete picture of a run in a single call
-- Analyze heart rate zone distribution
-- Review lap-by-lap performance with pace data
-- Assess cadence efficiency
+A thin wrapper over get-activity's mapper (one activity fetch, plus the
+athlete's Run sport settings) with running-specific additions: a cadence
+assessment, an HR zone time/percent summary, ground contact time and
+vertical oscillation assessments, and laps (from the interval breakdown, the
+same source as get-activity-laps). No power fields.
 
 Parameters:
-- activityId (required): The unique identifier of the Strava activity
+- id (required): the intervals.icu activity id, exactly as returned by list-activities (e.g. "i189807578")
 
 Notes:
-- Returns an error if the activity is not a running type
-- Heart rate zones require the athlete to have zones configured in Strava
-- Zone distribution requires HR stream data to be available
+- Only Run, TrailRun and VirtualRun are accepted; any other type returns an
+  error naming the type and pointing to get-activity
+- The HR zone summary prefers the activity's own recorded icu_hr_zones as
+  zone bounds, falling back to the Run sport settings group when its types
+  include this activity's type; it is omitted (with a note) when no bounds
+  match the recorded zone time count
+- The text response caps the lap list at 20 lines; structuredContent.laps
+  always has the full list
 `;
 
 const inputSchema = z.object({
-  activityId: stravaIdInput(
-    "The unique identifier of the running activity to analyze.",
-  ),
+  id: intervalsActivityIdInput("The intervals.icu activity id."),
 });
 
 type GetRunningSummaryInput = z.infer<typeof inputSchema>;
 
-// Stream types we need for running analysis
-type StreamData = {
-  time?: number[];
-  heartrate?: number[];
-  cadence?: number[];
-  velocity_smooth?: number[];
-};
+/** Run types this tool covers; anything else is rejected in favour of get-activity. */
+const RUN_TYPES = new Set(["Run", "TrailRun", "VirtualRun"]);
 
-async function fetchStreams(
-  token: string,
-  activityId: number | string,
-): Promise<StreamData> {
-  const streamTypes = ["time", "heartrate", "cadence", "velocity_smooth"];
+const MAX_LAP_LINES = 20;
 
-  let streams: Awaited<ReturnType<typeof getActivityStreams>>;
-  try {
-    streams = await getActivityStreams(token, activityId, streamTypes);
-  } catch (error) {
-    // Streams may not be available for all activities — but only a genuinely
-    // sample-less one degrades silently; auth and rate-limit failures
-    // propagate so the summary does not claim the run had no samples.
-    if (error instanceof StreamsUnavailableError) return {};
-    throw error;
+interface HrZoneSummaryEntry {
+  zone: number;
+  min_bpm: number | null;
+  max_bpm: number;
+  seconds: number;
+  percent: number;
+}
+
+interface HrZoneSummary {
+  source: "activity" | "sport_settings";
+  total_seconds: number;
+  zones: HrZoneSummaryEntry[];
+}
+
+interface DynamicsAssessment {
+  vertical_oscillation: string | null;
+  ground_contact_time: string | null;
+}
+
+export interface RunningSummary extends ActivityDetail {
+  cadence_assessment: string | null;
+  hr_zone_summary: HrZoneSummary | null;
+  hr_zone_note: string | null;
+  dynamics_assessment: DynamicsAssessment | null;
+  laps: LapEntry[];
+}
+
+/**
+ * HR zone bounds for the zone summary, distinct from get-activity's
+ * `hr_zones` (which sources bounds from sport settings only): prefers the
+ * activity's own recorded `icu_hr_zones`, falling back to the Run sport
+ * settings group's `hr_zones` only when its `types` names this activity's
+ * type. Omits the summary (with an explanatory note) whenever no bounds are
+ * available, or the bounds count doesn't match the recorded zone time count,
+ * rather than mislabelling zone times under the wrong boundaries.
+ */
+function buildHrZoneSummary(
+  activity: IntervalsActivity,
+  sportSettings: IntervalsSportSettings | null,
+  type: string,
+): { summary: HrZoneSummary | null; note: string | null } {
+  const times = activity.icu_hr_zone_times;
+  if (!times || times.length === 0) return { summary: null, note: null };
+
+  let bounds: number[] | null = null;
+  let source: "activity" | "sport_settings" | null = null;
+  if (activity.icu_hr_zones && activity.icu_hr_zones.length > 0) {
+    bounds = activity.icu_hr_zones;
+    source = "activity";
+  } else if (
+    sportSettings?.types?.includes(type) &&
+    sportSettings.hr_zones &&
+    sportSettings.hr_zones.length > 0
+  ) {
+    bounds = sportSettings.hr_zones;
+    source = "sport_settings";
   }
 
+  if (!bounds || !source) {
+    return {
+      summary: null,
+      note: "HR zone bounds are unavailable; recorded zone times could not be labelled.",
+    };
+  }
+
+  if (bounds.length !== times.length) {
+    return {
+      summary: null,
+      note: `HR zone bounds (${bounds.length} zones) do not match the recorded zone times (${times.length} zones); omitted.`,
+    };
+  }
+
+  const totalSeconds = times.reduce((a, b) => a + (b ?? 0), 0);
+  if (totalSeconds <= 0) {
+    return { summary: null, note: "No time recorded in HR zones." };
+  }
+
+  const zones = bounds.map((maxBpm, i) => ({
+    zone: i + 1,
+    min_bpm: i === 0 ? 0 : (bounds![i - 1] ?? null),
+    max_bpm: maxBpm,
+    seconds: times[i] ?? 0,
+    percent: round(((times[i] ?? 0) / totalSeconds) * 100, 1),
+  }));
+
   return {
-    time: streams.get("time") as number[] | undefined,
-    heartrate: streams.get("heartrate") as number[] | undefined,
-    cadence: streams.get("cadence") as number[] | undefined,
-    velocity_smooth: streams.get("velocity_smooth") as number[] | undefined,
+    summary: { source, total_seconds: totalSeconds, zones },
+    note: null,
   };
+}
+
+/** Vertical oscillation target from the spec: under 100 mm. */
+function assessVerticalOscillation(voMm: number | null): string | null {
+  if (voMm == null) return null;
+  return voMm < 100
+    ? "good - under the 100 mm target"
+    : "high - above the 100 mm target";
+}
+
+/** Ground contact time target range from the spec: 200-260 ms. */
+function assessGroundContactTime(gctMs: number | null): string | null {
+  if (gctMs == null) return null;
+  if (gctMs < 200) return "fast - below the 200-260 ms target range";
+  if (gctMs <= 260) return "good - within the 200-260 ms target range";
+  return "long - above the 200-260 ms target range";
+}
+
+/**
+ * Maps one raw intervals.icu activity (with `icu_intervals` populated) plus
+ * the athlete's Run sport settings into the running summary: get-activity's
+ * `mapActivityDetail` plus run-specific assessments and laps. Exported for
+ * direct testing.
+ */
+export function mapRunningSummary(
+  activity: IntervalsActivity,
+  sportSettings: IntervalsSportSettings | null,
+): RunningSummary {
+  const type = activity.type ?? "Workout";
+  const detail = mapActivityDetail(activity, sportSettings);
+
+  const { summary: hrZoneSummary, note: hrZoneNote } = buildHrZoneSummary(
+    activity,
+    sportSettings,
+    type,
+  );
+
+  const dyn = detail.running_dynamics;
+  const dynamicsAssessment: DynamicsAssessment | null = dyn
+    ? {
+        vertical_oscillation: assessVerticalOscillation(
+          dyn.vertical_oscillation_mm,
+        ),
+        ground_contact_time: assessGroundContactTime(dyn.stance_time_ms),
+      }
+    : null;
+
+  const laps =
+    activity.icu_intervals && activity.icu_intervals.length > 0
+      ? mapIntervalsToLaps(activity, activity.icu_intervals)
+      : [];
+
+  return {
+    ...detail,
+    cadence_assessment: assessCadence(detail.average_cadence_spm),
+    hr_zone_summary: hrZoneSummary,
+    hr_zone_note: hrZoneNote,
+    dynamics_assessment: dynamicsAssessment,
+    laps,
+  };
+}
+
+function formatHrZoneSummaryLine(d: RunningSummary): string | null {
+  if (d.hr_zone_summary) {
+    const zones = d.hr_zone_summary.zones
+      .map((z) => {
+        const range =
+          z.min_bpm != null ? `${z.min_bpm}-${z.max_bpm}` : `<=${z.max_bpm}`;
+        return `Z${z.zone} ${range} ${formatDuration(z.seconds)} (${z.percent}%)`;
+      })
+      .join(", ");
+    return `HR zones: ${zones}`;
+  }
+  if (d.hr_zone_note) return `HR zones: ${d.hr_zone_note}`;
+  return null;
+}
+
+function formatDynamicsAssessmentLine(d: RunningSummary): string | null {
+  if (!d.dynamics_assessment) return null;
+  const parts: string[] = [];
+  if (d.dynamics_assessment.vertical_oscillation)
+    parts.push(`VO ${d.dynamics_assessment.vertical_oscillation}`);
+  if (d.dynamics_assessment.ground_contact_time)
+    parts.push(`GCT ${d.dynamics_assessment.ground_contact_time}`);
+  if (parts.length === 0) return null;
+  return `Dynamics assessment: ${parts.join("; ")}`;
+}
+
+function formatLapLine(lap: LapEntry): string {
+  const parts: string[] = [];
+  if (lap.distance_km != null) parts.push(`${lap.distance_km.toFixed(2)} km`);
+  parts.push(lap.moving_time);
+  if (lap.pace_min_per_km) parts.push(`${lap.pace_min_per_km} /km`);
+  if (lap.gap_min_per_km) parts.push(`GAP ${lap.gap_min_per_km} /km`);
+  if (lap.average_hr != null) {
+    const max = lap.max_hr != null ? `/${Math.round(lap.max_hr)}` : "";
+    parts.push(`HR ${Math.round(lap.average_hr)}${max}`);
+  }
+  if (lap.average_cadence != null)
+    parts.push(`cadence ${lap.average_cadence} spm`);
+  if (lap.elevation_gain_m != null && lap.elevation_gain_m > 0)
+    parts.push(`+${Math.round(lap.elevation_gain_m)} m`);
+  const label = lap.label ?? lap.type ?? "lap";
+  return `${lap.lap_index}. ${label}: ${parts.join(", ")}`;
+}
+
+/** Builds the tool's text response. Exported for direct testing. */
+export function formatRunningSummaryText(d: RunningSummary): string {
+  const lines = [`${d.date} ${d.type} ${d.name} [${d.id}]`];
+  if (d.is_strava_stub) lines.push(STRAVA_STUB_NOTE);
+
+  lines.push(formatMetricsLine(d));
+
+  const loadLine = formatLoadLine(d);
+  if (loadLine) lines.push(loadLine);
+
+  if (d.cadence_assessment)
+    lines.push(`Cadence assessment: ${d.cadence_assessment}`);
+
+  const dynamicsLine = formatDynamicsAssessmentLine(d);
+  if (dynamicsLine) lines.push(dynamicsLine);
+
+  const hrZonesLine = formatHrZoneSummaryLine(d);
+  if (hrZonesLine) lines.push(hrZonesLine);
+
+  const gearLine = formatGearLine(d);
+  if (gearLine) lines.push(gearLine);
+
+  if (d.description) {
+    lines.push(`Description: ${truncateDescription(d.description)}`);
+  }
+
+  if (d.laps.length > 0) {
+    lines.push("Laps:");
+    const shown = d.laps.slice(0, MAX_LAP_LINES);
+    for (const lap of shown) lines.push(formatLapLine(lap));
+    const remaining = d.laps.length - shown.length;
+    if (remaining > 0) lines.push(`(${remaining} more)`);
+  }
+
+  return lines.join("\n");
 }
 
 export const getRunningSummaryTool = {
@@ -93,223 +296,42 @@ export const getRunningSummaryTool = {
   inputSchema,
   annotations: READ_ONLY,
   outputSchema: RunningSummaryOutputSchema,
-  execute: async ({ activityId }: GetRunningSummaryInput, token: string) => {
+  execute: async (
+    { id }: GetRunningSummaryInput,
+    apiKey: string,
+    progress: ReportProgress = NO_PROGRESS,
+  ) => {
     try {
-      console.error(
-        `Fetching running summary for activity ID: ${activityId}...`,
-      );
-
-      // Fetch all data in parallel
-      const [activity, laps, streams, zones] = await Promise.all([
-        getActivityById(token, activityId),
-        getActivityLaps(token, activityId),
-        fetchStreams(token, activityId),
-        getAthleteZones(token).catch(() => null), // Zones may require special permissions
+      progress(`Fetching activity ${id}`);
+      // Same independent-fetch shape as get-activity: sport settings degrade
+      // to null on failure rather than failing the call.
+      const [activity, sportSettingsResult] = await Promise.all([
+        getActivityClient(apiKey, id, { intervals: true }),
+        getSportSettings(apiKey, "Run").catch(
+          (): IntervalsSportSettings | null => null,
+        ),
       ]);
 
-      // Validate this is a running activity
-      if (!isRunningActivity(activity.type)) {
+      const type = activity.type ?? "Workout";
+      if (!RUN_TYPES.has(type)) {
         return {
           content: [
             {
               type: "text" as const,
-              text: `❌ Activity "${activity.name}" is not a running activity (type: ${activity.type}). This tool is designed for running analysis.`,
+              text: `❌ Activity "${activity.name ?? id}" [${id}] is a ${type}, not a run. get-running-summary covers Run, TrailRun and VirtualRun only; use get-activity for other activity types.`,
             },
           ],
           isError: true,
         };
       }
 
-      // Transform core metrics
-      const pace = metersPerSecToPace(activity.average_speed);
-      const cadence = transformCadence(activity.average_cadence, activity.type);
-      const cadenceAssessment = cadence?.spm
-        ? assessCadence(cadence.spm)
-        : null;
-
-      // Compute time in zones if HR data available
-      let hrZones = null;
-      if (streams.time && streams.heartrate && zones?.heart_rate?.zones) {
-        const zoneBoundaries: ZoneBoundary[] = zones.heart_rate.zones.map(
-          (zone) => ({
-            min: zone.min,
-            max: zone.max ?? 999,
-          }),
-        );
-        hrZones = computeTimeInZones(
-          streams.heartrate,
-          streams.time,
-          zoneBoundaries,
-        );
-      }
-
-      // Format laps with running metrics
-      const formattedLaps = laps.map((lap) => {
-        const lapPace = metersPerSecToPace(lap.average_speed);
-        const lapCadence = transformCadence(lap.average_cadence, activity.type);
-
-        return {
-          lap: lap.lap_index,
-          name: lap.name || `Lap ${lap.lap_index}`,
-          distance_km: Math.round((lap.distance / 1000) * 100) / 100,
-          time: formatDuration(lap.moving_time),
-          pace: lapPace
-            ? { min_per_km: lapPace.minPerKm, min_per_mile: lapPace.minPerMile }
-            : null,
-          cadence_spm: lapCadence?.spm ?? null,
-          avg_hr: lap.average_heartrate ?? null,
-          max_hr: lap.max_heartrate ?? null,
-          elevation_gain_m: lap.total_elevation_gain ?? null,
-        };
-      });
-
-      // Build the summary object
-      const summary = {
-        activity_id: activityId,
-        name: activity.name,
-        date: activity.start_date_local,
-        type: activity.sport_type || activity.type,
-
-        distance: {
-          meters: activity.distance ?? 0,
-          km: Math.round((activity.distance ?? 0) / 10) / 100,
-          miles: Math.round((activity.distance ?? 0) / 16.0934) / 100,
-        },
-
-        time: {
-          moving_seconds: activity.moving_time ?? 0,
-          moving_formatted: formatDuration(activity.moving_time),
-          elapsed_seconds: activity.elapsed_time ?? 0,
-          elapsed_formatted: formatDuration(activity.elapsed_time),
-        },
-
-        pace: pace
-          ? {
-              min_per_km: pace.minPerKm,
-              min_per_mile: pace.minPerMile,
-              display: pace.display,
-            }
-          : null,
-
-        elevation: {
-          gain_m: activity.total_elevation_gain ?? 0,
-          gain_ft: Math.round((activity.total_elevation_gain ?? 0) * 3.281),
-        },
-
-        cadence: cadence
-          ? {
-              average_spm: cadence.spm,
-              assessment: cadenceAssessment,
-            }
-          : null,
-
-        heart_rate:
-          activity.average_heartrate || activity.max_heartrate
-            ? {
-                average: activity.average_heartrate ?? null,
-                max: activity.max_heartrate ?? null,
-                zones: hrZones,
-              }
-            : null,
-
-        power:
-          activity.device_watts && activity.average_watts
-            ? {
-                average_watts: activity.average_watts,
-                max_watts: activity.max_watts ?? null,
-              }
-            : null,
-
-        laps: formattedLaps,
-
-        gear: activity.gear?.name ?? null,
-      };
-
-      // Format as readable text output
-      let output = `🏃 **Running Summary: ${summary.name}**\n`;
-      output += `📅 ${new Date(summary.date).toLocaleString()}\n\n`;
-
-      output += `**Distance & Time**\n`;
-      output += `  Distance: ${summary.distance.km} km (${summary.distance.miles} mi)\n`;
-      output += `  Moving Time: ${summary.time.moving_formatted}\n`;
-      output += `  Elapsed Time: ${summary.time.elapsed_formatted}\n\n`;
-
-      if (summary.pace) {
-        output += `**Pace**\n`;
-        output += `  Average: ${summary.pace.min_per_km} /km (${summary.pace.min_per_mile} /mi)\n\n`;
-      }
-
-      if (summary.elevation.gain_m > 0) {
-        output += `**Elevation**\n`;
-        output += `  Gain: ${summary.elevation.gain_m} m (${summary.elevation.gain_ft} ft)\n\n`;
-      }
-
-      if (summary.cadence) {
-        output += `**Cadence**\n`;
-        output += `  Average: ${summary.cadence.average_spm} spm`;
-        if (summary.cadence.assessment) {
-          output += ` (${summary.cadence.assessment})`;
-        }
-        output += `\n\n`;
-      }
-
-      if (summary.heart_rate) {
-        output += `**Heart Rate**\n`;
-        if (summary.heart_rate.average)
-          output += `  Average: ${summary.heart_rate.average} bpm\n`;
-        if (summary.heart_rate.max)
-          output += `  Max: ${summary.heart_rate.max} bpm\n`;
-
-        if (summary.heart_rate.zones) {
-          output += `  Zone Distribution:\n`;
-          const zn = summary.heart_rate.zones.zones;
-          output += `    Zone 1: ${zn.zone_1.formatted} (${zn.zone_1.percentage}%)\n`;
-          output += `    Zone 2: ${zn.zone_2.formatted} (${zn.zone_2.percentage}%)\n`;
-          output += `    Zone 3: ${zn.zone_3.formatted} (${zn.zone_3.percentage}%)\n`;
-          output += `    Zone 4: ${zn.zone_4.formatted} (${zn.zone_4.percentage}%)\n`;
-          output += `    Zone 5: ${zn.zone_5.formatted} (${zn.zone_5.percentage}%)\n`;
-          const d = summary.heart_rate.zones.distribution;
-          output += `  Summary: Easy ${d.easy_1_2}% | Moderate ${d.moderate_3}% | Hard ${d.hard_4_5}%\n`;
-        }
-        output += `\n`;
-      }
-
-      if (summary.power) {
-        output += `**Power**\n`;
-        output += `  Average: ${summary.power.average_watts} W\n`;
-        if (summary.power.max_watts)
-          output += `  Max: ${summary.power.max_watts} W\n`;
-        output += `\n`;
-      }
-
-      if (summary.laps.length > 0) {
-        output += `**Laps (${summary.laps.length})**\n`;
-        for (const lap of summary.laps) {
-          output += `  ${lap.lap}: ${lap.distance_km} km in ${lap.time}`;
-          if (lap.pace) output += ` @ ${lap.pace.min_per_km} /km`;
-          if (lap.cadence_spm) output += ` | ${lap.cadence_spm} spm`;
-          if (lap.avg_hr) output += ` | ${lap.avg_hr} bpm`;
-          output += `\n`;
-        }
-        output += `\n`;
-      }
-
-      if (summary.gear) {
-        output += `**Gear**: ${summary.gear}\n`;
-      }
-
-      console.error(
-        `Successfully generated running summary for: ${activity.name}`,
-      );
-
-      warnOnSchemaDrift(
-        "get-running-summary",
-        RunningSummaryOutputSchema,
-        summary,
-      );
+      const summary = mapRunningSummary(activity, sportSettingsResult);
+      warnOnSchemaDrift(name, RunningSummaryOutputSchema, summary);
 
       return {
-        content: [{ type: "text" as const, text: output }],
+        content: [
+          { type: "text" as const, text: formatRunningSummaryText(summary) },
+        ],
         structuredContent: summary,
       };
     } catch (error) {
@@ -318,8 +340,8 @@ export const getRunningSummaryTool = {
           {
             type: "text" as const,
             text: toolErrorText(error, {
-              context: `summarise run ${activityId}`,
-              notFound: `Activity with ID ${activityId} not found.`,
+              context: `summarise run ${id}`,
+              notFound: `Activity ${id} was not found.`,
             }),
           },
         ],

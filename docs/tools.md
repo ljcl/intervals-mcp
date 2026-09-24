@@ -9,7 +9,7 @@ identity, so renames or schema reshapes re-prompt every user. See
 [architecture.md](architecture.md#tool-metadata) before changing either.
 
 > **Status.** Tools are being ported from Strava to intervals.icu (Phases 1
-> and 2). The six tools below are ported and verified against a real
+> and 2). The seven tools below are ported and verified against a real
 > account; until a remaining tool is ported, it fails with a "not yet
 > ported" error.
 
@@ -26,6 +26,7 @@ Strava port.
 | `list-gear` | The athlete's gear (shoes) with mileage and retirement status |
 | `get-wellness` | Daily wellness (HRV, resting HR, sleep, weight, CTL/ATL/TSB) for a date or range |
 | `get-activity-laps` | Laps of an activity, derived from its intervals, with sport-aware pace/speed, GAP, HR, power, cadence |
+| `get-running-summary` | get-activity's detail fields for a run plus cadence, HR zone, and running-dynamics assessments, and a lap breakdown |
 
 `list-activities` defaults to the last 28 days (today back to 27 days
 earlier) in the server's configured time zone, sorted newest first. Filter
@@ -105,13 +106,27 @@ with the unit named in `units.cadence`. The response also carries
 the interval count differs from the device's lap count. An activity with no
 intervals returns a valid payload with `lap_count: 0`.
 
+`get-running-summary` takes the `id` from `list-activities` and is a thin
+wrapper over `get-activity`'s mapper: every field `get-activity` returns,
+plus a `cadence_assessment` (from `average_cadence_spm`), an `hr_zone_summary`
+(time and percent per zone), a `dynamics_assessment` (vertical oscillation
+and ground contact time against the 100 mm / 200-260 ms targets, only when
+`running_dynamics` is present), and `laps` (from the same interval mapper as
+`get-activity-laps`). No power fields. `hr_zone_summary` prefers the
+activity's own recorded `icu_hr_zones` as zone bounds, falling back to the
+Run sport settings group only when its `types` names this activity's type;
+it is `null` (with `hr_zone_note` explaining why) when no bounds match the
+recorded zone time count. Only Run, TrailRun, and VirtualRun are accepted;
+any other type is rejected with a message naming the type and pointing to
+`get-activity`. The text response caps the lap list at 20 lines;
+`structuredContent.laps` always has the full list.
+
 ## Activity tools
 
 | Tool | Description |
 | ---- | ----------- |
 | `update-activity` | Update an activity's description, title, sport type, gear, or flags |
 | `get-activity-zones` | Time spent in each HR and power zone for an activity |
-| `get-running-summary` | Running-focused summary with HR zones and lap analysis |
 | `get-aerobic-analysis` | Aerobic decoupling, efficiency factor, and intensity factor from HR + power/speed streams |
 | `get-hill-analysis` | Climb/descent detection with GAP and early-vs-late climb effort drift |
 | `get-split-analysis` | Even km/mile splits with a two-halves pacing verdict stated on the clock and grade-adjusted |

@@ -2,11 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   assessCadence,
   cadenceSpm,
-  computeTimeInZones,
   computeWattsPerKg,
   formatPaceSeconds,
   gapPace,
-  getZoneForHr,
   isPaceActivity,
   isRunningActivity,
   isStepCadenceActivity,
@@ -310,87 +308,5 @@ describe("computeWattsPerKg", () => {
   it("classifies high intensity correctly", () => {
     const result = computeWattsPerKg(400, 70); // ~5.7 W/kg
     expect(result?.intensity).toBe("high");
-  });
-});
-
-describe("getZoneForHr", () => {
-  const zones = [
-    { min: 0, max: 120 },
-    { min: 120, max: 140 },
-    { min: 140, max: 160 },
-    { min: 160, max: 180 },
-    { min: 180, max: -1 },
-  ];
-
-  it("returns zone 1 for low HR", () => {
-    expect(getZoneForHr(100, zones)).toBe(1);
-  });
-
-  it("returns zone 2 for HR at boundary", () => {
-    expect(getZoneForHr(120, zones)).toBe(2);
-  });
-
-  it("returns zone 3 for moderate HR", () => {
-    expect(getZoneForHr(150, zones)).toBe(3);
-  });
-
-  it("returns zone 4 for elevated HR", () => {
-    expect(getZoneForHr(170, zones)).toBe(4);
-  });
-
-  it("returns zone 5 for high HR", () => {
-    expect(getZoneForHr(185, zones)).toBe(5);
-  });
-
-  it("handles -1 max as unbounded", () => {
-    expect(getZoneForHr(200, zones)).toBe(5);
-  });
-});
-
-describe("computeTimeInZones", () => {
-  const zones = [
-    { min: 0, max: 120 },
-    { min: 120, max: 140 },
-    { min: 140, max: 160 },
-    { min: 160, max: 180 },
-    { min: 180, max: -1 },
-  ];
-
-  it("computes time in zones correctly", () => {
-    // 10 seconds in each zone
-    const hrStream = [100, 130, 150, 170, 190];
-    const timeStream = [0, 10, 20, 30, 40];
-
-    const result = computeTimeInZones(hrStream, timeStream, zones);
-
-    expect(result).not.toBeNull();
-    expect(result?.totalTimeSeconds).toBe(40);
-  });
-
-  it("returns null for empty streams", () => {
-    expect(computeTimeInZones([], [], zones)).toBeNull();
-  });
-
-  it("returns null for mismatched stream lengths", () => {
-    expect(computeTimeInZones([100, 120], [0], zones)).toBeNull();
-  });
-
-  it("returns null for single-point streams", () => {
-    expect(computeTimeInZones([100], [0], zones)).toBeNull();
-  });
-
-  it("returns null for empty zones", () => {
-    expect(computeTimeInZones([100, 120], [0, 10], [])).toBeNull();
-  });
-
-  it("calculates percentages correctly", () => {
-    // All time in zone 1
-    const hrStream = [100, 100, 100, 100];
-    const timeStream = [0, 10, 20, 30];
-
-    const result = computeTimeInZones(hrStream, timeStream, zones);
-
-    expect(result?.zones.zone_1.percentage).toBe(100);
-    expect(result?.zones.zone_2.percentage).toBe(0);
   });
 });

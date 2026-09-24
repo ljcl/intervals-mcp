@@ -341,7 +341,8 @@ export function mapActivityDetail(
   };
 }
 
-function formatMetricsLine(d: ActivityDetail): string {
+/** Exported for reuse by get-running-summary, which composes its own text response from the same building blocks. */
+export function formatMetricsLine(d: ActivityDetail): string {
   const parts: string[] = [];
   if (d.distance_km != null) parts.push(`${d.distance_km.toFixed(2)} km`);
   parts.push(d.moving_time);
@@ -358,7 +359,8 @@ function formatMetricsLine(d: ActivityDetail): string {
   return parts.join(", ");
 }
 
-function formatLoadLine(d: ActivityDetail): string | null {
+/** Exported for reuse by get-running-summary. */
+export function formatLoadLine(d: ActivityDetail): string | null {
   const parts: string[] = [];
   if (d.load.training_load != null)
     parts.push(`load ${Math.round(d.load.training_load)}`);
@@ -403,15 +405,16 @@ function formatZonesLine(d: ActivityDetail): string | null {
   return `HR zones: ${zones}`;
 }
 
-function formatGearLine(d: ActivityDetail): string | null {
+/** Exported for reuse by get-running-summary. */
+export function formatGearLine(d: ActivityDetail): string | null {
   if (!d.gear_id) return null;
   return d.gear_name
     ? `Gear: ${d.gear_name} [${d.gear_id}]`
     : `Gear: ${d.gear_id}`;
 }
 
-/** Truncates `text` to `DESCRIPTION_MAX_CHARS`, appending `ELLIPSIS` when it was cut. */
-function truncateDescription(text: string): string {
+/** Truncates `text` to `DESCRIPTION_MAX_CHARS`, appending `ELLIPSIS` when it was cut. Exported for reuse by get-running-summary. */
+export function truncateDescription(text: string): string {
   if (text.length <= DESCRIPTION_MAX_CHARS) return text;
   return `${text.slice(0, DESCRIPTION_MAX_CHARS)}${ELLIPSIS}`;
 }
