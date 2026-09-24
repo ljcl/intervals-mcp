@@ -1,12 +1,14 @@
 /**
- * Live check: calls the five intervals.icu read tools' executors directly
- * against a real account, using the key from the root `.env`.
+ * Live check: calls every Phase 1 and Phase 2 intervals.icu read tool's
+ * executor directly against a real account, using the key from the root
+ * `.env`.
  *
  * Prints only a short summary per tool (ok/error plus a handful of numbers)
  * so this is safe to run and paste output from in a public repo. It never
  * prints the API key, and never prints a raw tool payload (names,
- * descriptions, comments, coordinates) since those are the athlete's data,
- * not ours to publish. No write calls are made.
+ * descriptions, comments, coordinates, or any id other than the activity id
+ * argument) since those are the athlete's data, not ours to publish. No
+ * write calls are made.
  *
  * Usage: `bun scripts/live-check.ts [activityId]` (default i189807578).
  */
@@ -31,6 +33,39 @@ const { listActivitiesTool } = await import(
   "../apps/server/src/tools/listActivities"
 );
 const { listGearTool } = await import("../apps/server/src/tools/listGear");
+const { getActivityLapsTool } = await import(
+  "../apps/server/src/tools/getActivityLaps"
+);
+const { getRunningSummaryTool } = await import(
+  "../apps/server/src/tools/getRunningSummary"
+);
+const { getActivityZonesTool } = await import(
+  "../apps/server/src/tools/getActivityZones"
+);
+const { compareActivitiesTool } = await import(
+  "../apps/server/src/tools/compareActivities"
+);
+const { getHillAnalysisTool } = await import(
+  "../apps/server/src/tools/getHillAnalysis"
+);
+const { getSplitAnalysisTool } = await import(
+  "../apps/server/src/tools/getSplitAnalysis"
+);
+const { getAerobicAnalysisTool } = await import(
+  "../apps/server/src/tools/getAerobicAnalysis"
+);
+const { getIntervalAnalysisTool } = await import(
+  "../apps/server/src/tools/getIntervalAnalysis"
+);
+const { getBestEffortsTool } = await import(
+  "../apps/server/src/tools/getBestEfforts"
+);
+const { getRacePredictionTool } = await import(
+  "../apps/server/src/tools/getRacePrediction"
+);
+const { getAthleteStatsTool } = await import(
+  "../apps/server/src/tools/getAthleteStats"
+);
 const { NO_PROGRESS } = await import("../apps/server/src/progress");
 
 const activityId = process.argv[2] ?? "i189807578";
@@ -209,11 +244,326 @@ async function checkGetWellness(): Promise<void> {
   }
 }
 
+async function checkGetActivityLaps(): Promise<void> {
+  const name = "get-activity-laps";
+  try {
+    const result = (await getActivityLapsTool.execute(
+      { id: activityId },
+      apiKey,
+      NO_PROGRESS,
+    )) as {
+      structuredContent?: Record<string, unknown>;
+      isError?: boolean;
+      content?: Array<{ text?: unknown }>;
+    };
+    if (result.isError || !result.structuredContent) {
+      fail(name, errorText(result));
+      return;
+    }
+    const d = result.structuredContent as {
+      lap_count: number;
+      device_lap_count: number | null;
+    };
+    ok(name, `lap_count=${d.lap_count} device_lap_count=${d.device_lap_count}`);
+  } catch (error) {
+    fail(name, error instanceof Error ? error.message : String(error));
+  }
+}
+
+async function checkGetRunningSummary(): Promise<void> {
+  const name = "get-running-summary";
+  try {
+    const result = (await getRunningSummaryTool.execute(
+      { id: activityId },
+      apiKey,
+      NO_PROGRESS,
+    )) as {
+      structuredContent?: Record<string, unknown>;
+      isError?: boolean;
+      content?: Array<{ text?: unknown }>;
+    };
+    if (result.isError || !result.structuredContent) {
+      fail(name, errorText(result));
+      return;
+    }
+    const d = result.structuredContent as {
+      laps: unknown[];
+      hr_zone_summary: { total_seconds: number } | null;
+    };
+    ok(
+      name,
+      `laps=${d.laps.length} hr_zone_total_s=${d.hr_zone_summary?.total_seconds ?? "n/a"}`,
+    );
+  } catch (error) {
+    fail(name, error instanceof Error ? error.message : String(error));
+  }
+}
+
+async function checkGetActivityZones(): Promise<void> {
+  const name = "get-activity-zones";
+  try {
+    const result = (await getActivityZonesTool.execute(
+      { id: activityId },
+      apiKey,
+      NO_PROGRESS,
+    )) as {
+      structuredContent?: Record<string, unknown>;
+      isError?: boolean;
+      content?: Array<{ text?: unknown }>;
+    };
+    if (result.isError || !result.structuredContent) {
+      fail(name, errorText(result));
+      return;
+    }
+    const zoneSets = result.structuredContent.zone_sets as Array<{
+      type: string;
+      total_seconds: number;
+    }>;
+    const totalSeconds = zoneSets.reduce((sum, z) => sum + z.total_seconds, 0);
+    ok(name, `zone_sets=${zoneSets.length} total_seconds=${totalSeconds}`);
+  } catch (error) {
+    fail(name, error instanceof Error ? error.message : String(error));
+  }
+}
+
+async function checkCompareActivities(): Promise<void> {
+  const name = "compare-activities";
+  try {
+    const result = (await compareActivitiesTool.execute(
+      { activityId1: activityId, activityId2: activityId },
+      apiKey,
+      NO_PROGRESS,
+    )) as {
+      structuredContent?: Record<string, unknown>;
+      isError?: boolean;
+      content?: Array<{ text?: unknown }>;
+    };
+    if (result.isError || !result.structuredContent) {
+      fail(name, errorText(result));
+      return;
+    }
+    const d = result.structuredContent as {
+      differences: { distance_km: number };
+      efficiency: unknown;
+    };
+    ok(
+      name,
+      `distance_km_diff=${d.differences.distance_km} efficiency=${d.efficiency ? "present" : "null"}`,
+    );
+  } catch (error) {
+    fail(name, error instanceof Error ? error.message : String(error));
+  }
+}
+
+async function checkGetHillAnalysis(): Promise<void> {
+  const name = "get-hill-analysis";
+  try {
+    const result = (await getHillAnalysisTool.execute(
+      { id: activityId },
+      apiKey,
+      NO_PROGRESS,
+    )) as {
+      structuredContent?: Record<string, unknown>;
+      isError?: boolean;
+      content?: Array<{ text?: unknown }>;
+    };
+    if (result.isError || !result.structuredContent) {
+      fail(name, errorText(result));
+      return;
+    }
+    const d = result.structuredContent as {
+      grade_source: string;
+      totals: { climb_count: number; descent_count: number };
+    };
+    ok(
+      name,
+      `grade_source=${d.grade_source} climbs=${d.totals.climb_count} descents=${d.totals.descent_count}`,
+    );
+  } catch (error) {
+    fail(name, error instanceof Error ? error.message : String(error));
+  }
+}
+
+async function checkGetSplitAnalysis(): Promise<void> {
+  const name = "get-split-analysis";
+  try {
+    const result = (await getSplitAnalysisTool.execute(
+      { id: activityId },
+      apiKey,
+      NO_PROGRESS,
+    )) as {
+      structuredContent?: Record<string, unknown>;
+      isError?: boolean;
+      content?: Array<{ text?: unknown }>;
+    };
+    if (result.isError || !result.structuredContent) {
+      fail(name, errorText(result));
+      return;
+    }
+    const d = result.structuredContent as {
+      splits: unknown[];
+      verdict: { shape: string } | null;
+    };
+    ok(name, `splits=${d.splits.length} shape=${d.verdict?.shape ?? "n/a"}`);
+  } catch (error) {
+    fail(name, error instanceof Error ? error.message : String(error));
+  }
+}
+
+async function checkGetAerobicAnalysis(): Promise<void> {
+  const name = "get-aerobic-analysis";
+  try {
+    const result = (await getAerobicAnalysisTool.execute(
+      { id: activityId, basis: "pace", includeBreakdown: false },
+      apiKey,
+      NO_PROGRESS,
+    )) as {
+      structuredContent?: Record<string, unknown>;
+      isError?: boolean;
+      content?: Array<{ text?: unknown }>;
+    };
+    if (result.isError || !result.structuredContent) {
+      fail(name, errorText(result));
+      return;
+    }
+    const d = result.structuredContent as {
+      decoupling_source: string;
+      decoupling_pct: number;
+    };
+    ok(
+      name,
+      `decoupling_source=${d.decoupling_source} decoupling_pct=${d.decoupling_pct}`,
+    );
+  } catch (error) {
+    fail(name, error instanceof Error ? error.message : String(error));
+  }
+}
+
+async function checkGetIntervalAnalysis(): Promise<void> {
+  const name = "get-interval-analysis";
+  try {
+    const result = (await getIntervalAnalysisTool.execute(
+      { id: activityId },
+      apiKey,
+      NO_PROGRESS,
+    )) as {
+      structuredContent?: Record<string, unknown>;
+      isError?: boolean;
+      content?: Array<{ text?: unknown }>;
+    };
+    if (result.isError || !result.structuredContent) {
+      fail(name, errorText(result));
+      return;
+    }
+    const d = result.structuredContent as {
+      reps: unknown[];
+      source: string;
+      confidence: string;
+    };
+    ok(
+      name,
+      `reps=${d.reps.length} source=${d.source} confidence=${d.confidence}`,
+    );
+  } catch (error) {
+    fail(name, error instanceof Error ? error.message : String(error));
+  }
+}
+
+async function checkGetBestEfforts(): Promise<void> {
+  const name = "get-best-efforts";
+  try {
+    const result = (await getBestEffortsTool.execute(
+      { distances: ["5km"], window: "1y", topN: 1 },
+      apiKey,
+      NO_PROGRESS,
+    )) as {
+      structuredContent?: Record<string, unknown>;
+      isError?: boolean;
+      content?: Array<{ text?: unknown }>;
+    };
+    if (result.isError || !result.structuredContent) {
+      fail(name, errorText(result));
+      return;
+    }
+    const bestEfforts = result.structuredContent.best_efforts as Record<
+      string,
+      Array<{ time_formatted: string }>
+    >;
+    const best5k = bestEfforts["5km"]?.[0];
+    ok(name, `best_5km=${best5k?.time_formatted ?? "none"}`);
+  } catch (error) {
+    fail(name, error instanceof Error ? error.message : String(error));
+  }
+}
+
+async function checkGetRacePrediction(): Promise<void> {
+  const name = "get-race-prediction";
+  try {
+    const result = (await getRacePredictionTool.execute(
+      {},
+      apiKey,
+      NO_PROGRESS,
+    )) as {
+      structuredContent?: Record<string, unknown>;
+      isError?: boolean;
+      content?: Array<{ text?: unknown }>;
+    };
+    if (result.isError || !result.structuredContent) {
+      fail(name, errorText(result));
+      return;
+    }
+    const predictions = result.structuredContent.predictions as Array<{
+      distance: string;
+      predicted_formatted: string;
+    }>;
+    const tenK = predictions.find((p) => p.distance === "10K");
+    ok(name, `predicted_10k=${tenK?.predicted_formatted ?? "none"}`);
+  } catch (error) {
+    fail(name, error instanceof Error ? error.message : String(error));
+  }
+}
+
+async function checkGetAthleteStats(): Promise<void> {
+  const name = "get-athlete-stats";
+  try {
+    const result = (await getAthleteStatsTool.execute(
+      {},
+      apiKey,
+      NO_PROGRESS,
+    )) as {
+      structuredContent?: Record<string, unknown>;
+      isError?: boolean;
+      content?: Array<{ text?: unknown }>;
+    };
+    if (result.isError || !result.structuredContent) {
+      fail(name, errorText(result));
+      return;
+    }
+    const d = result.structuredContent as {
+      ytd: { runs: number; distance_km: number };
+    };
+    ok(name, `ytd_runs=${d.ytd.runs} ytd_distance_km=${d.ytd.distance_km}`);
+  } catch (error) {
+    fail(name, error instanceof Error ? error.message : String(error));
+  }
+}
+
 await checkListActivities();
 await checkGetActivity();
 await checkGetActivityStreams();
 await checkListGear();
 await checkGetWellness();
+await checkGetActivityLaps();
+await checkGetRunningSummary();
+await checkGetActivityZones();
+await checkCompareActivities();
+await checkGetHillAnalysis();
+await checkGetSplitAnalysis();
+await checkGetAerobicAnalysis();
+await checkGetIntervalAnalysis();
+await checkGetBestEfforts();
+await checkGetRacePrediction();
+await checkGetAthleteStats();
 
 if (failures > 0) {
   console.log(`${failures} tool(s) failed.`);
