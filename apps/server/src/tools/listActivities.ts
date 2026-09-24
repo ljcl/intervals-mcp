@@ -6,7 +6,7 @@ import {
   listActivities as listActivitiesClient,
 } from "../intervalsClient";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
-import { addDays, todayLocal } from "../utils/localDate";
+import { addDays, daysBetween, todayLocal } from "../utils/localDate";
 import { metersPerSecToPace } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
 import { toolErrorText } from "./_errors";
@@ -123,15 +123,6 @@ export function mapActivitySummary(a: IntervalsActivity): ActivitySummaryEntry {
     source: a.source ?? null,
     is_strava_stub: a.source === "STRAVA",
   };
-}
-
-/** Days from `oldest` to `newest` (both YYYY-MM-DD), in UTC-midnight math. */
-function daysBetween(oldest: string, newest: string): number {
-  const toUtcMs = (ymd: string) => {
-    const [year, month, day] = ymd.split("-").map(Number);
-    return Date.UTC(year ?? 1970, (month ?? 1) - 1, day ?? 1);
-  };
-  return Math.round((toUtcMs(newest) - toUtcMs(oldest)) / 86_400_000);
 }
 
 interface ActivityListResponse {

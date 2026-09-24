@@ -2,7 +2,7 @@
  * Local-date helpers shared by tools that default a date range to "today" in
  * the athlete's configured time zone (`list-activities`, `get-wellness`).
  *
- * Both functions work on plain `YYYY-MM-DD` strings, the shape every
+ * All three functions work on plain `YYYY-MM-DD` strings, the shape every
  * intervals.icu date-window parameter expects, so a tool never has to carry
  * a `Date` object across its own boundary.
  */
@@ -32,4 +32,17 @@ export function addDays(ymd: string, n: number): string {
   const m = String(shifted.getUTCMonth() + 1).padStart(2, "0");
   const d = String(shifted.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
+}
+
+/**
+ * Days from `oldest` to `newest` (both YYYY-MM-DD), in UTC-midnight math.
+ * Shared by every tool that caps a date-range input (`list-activities`,
+ * `get-wellness`) so the max-range check has exactly one home.
+ */
+export function daysBetween(oldest: string, newest: string): number {
+  const toUtcMs = (ymd: string) => {
+    const [year, month, day] = ymd.split("-").map(Number);
+    return Date.UTC(year ?? 1970, (month ?? 1) - 1, day ?? 1);
+  };
+  return Math.round((toUtcMs(newest) - toUtcMs(oldest)) / 86_400_000);
 }

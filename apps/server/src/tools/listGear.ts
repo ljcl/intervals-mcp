@@ -86,6 +86,9 @@ export function mapGearReminder(
     entry.distance_km = round(distance / 1000, 1);
   if (typeof days === "number") entry.days = days;
   if (typeof percent_used === "number") entry.percent_used = percent_used;
+  // Only numeric extras are carried through; a non-numeric unknown field
+  // (string, boolean, object) is intentionally dropped rather than passed
+  // raw, since the output schema's catchall only models numeric values.
   for (const [key, value] of Object.entries(rest)) {
     if (typeof value === "number") entry[key] = value;
   }
@@ -127,9 +130,23 @@ function formatGearLine(g: GearEntry): string {
   return `${g.name} (${g.type}): ${parts.join(", ")} [${g.id}]`;
 }
 
-/** Builds the tool's text response. Exported for direct testing. */
-export function formatGearListText(response: GearListResponse): string {
-  if (response.count === 0) return EMPTY_TEXT;
+/**
+ * Builds the tool's text response. `retiredHiddenCount` is the number of
+ * items `includeRetired: false` filtered out before `response` was built
+ * (0 when `includeRetired` was true, or when nothing was filtered), so an
+ * account that does have gear but only retired gear gets a message that says
+ * so, rather than the account-has-no-gear message. Exported for direct
+ * testing.
+ */
+export function formatGearListText(
+  response: GearListResponse,
+  retiredHiddenCount = 0,
+): string {
+  if (response.count === 0) {
+    return retiredHiddenCount > 0
+      ? `No active gear (${retiredHiddenCount} retired hidden; pass includeRetired: true to show them).`
+      : EMPTY_TEXT;
+  }
   const lines = [`Gear: ${response.count}`];
   for (const g of response.gear) lines.push(formatGearLine(g));
   return lines.join("\n");
@@ -152,6 +169,7 @@ export const listGearTool = {
       const filtered = includeRetired
         ? gear
         : gear.filter((g) => !isRetired(g));
+      const retiredHiddenCount = gear.length - filtered.length;
       const mapped = filtered.map(mapGear);
 
       const response: GearListResponse = {
@@ -164,7 +182,10 @@ export const listGearTool = {
 
       return {
         content: [
-          { type: "text" as const, text: formatGearListText(response) },
+          {
+            type: "text" as const,
+            text: formatGearListText(response, retiredHiddenCount),
+          },
         ],
         structuredContent: response,
       };

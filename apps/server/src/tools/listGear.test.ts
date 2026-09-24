@@ -37,7 +37,7 @@ describe("mapGear", () => {
     expect(entry.id).toBe("71459");
     expect(entry.name).toBe("Dynafish Xiaonian B");
     expect(entry.type).toBe("Shoes");
-    // 62030.29 m -> 62.0 km
+    // 62030.29 m rounds to 62.0 km
     expect(entry.distance_km).toBe(62.0);
     expect(entry.activities).toBe(1);
     expect(entry.retired).toBeNull();
@@ -46,7 +46,7 @@ describe("mapGear", () => {
 
   it("rounds distance to 1 dp for another real item", () => {
     const entry = mapGear(byId("71460"));
-    // 168000 m -> 168.0 km
+    // 168000 m is exactly 168.0 km
     expect(entry.distance_km).toBe(168.0);
     expect(entry.activities).toBe(0);
   });
@@ -124,6 +124,16 @@ describe("formatGearListText", () => {
     });
     expect(text).toBe(
       "No gear in intervals.icu. Add shoes on the intervals.icu Gear page to track mileage.",
+    );
+  });
+
+  it("reports a different message when the account has gear but includeRetired filtered all of it out", () => {
+    const text = formatGearListText(
+      { count: 0, units: { distance: "km" }, gear: [] },
+      3,
+    );
+    expect(text).toBe(
+      "No active gear (3 retired hidden; pass includeRetired: true to show them).",
     );
   });
 
@@ -219,6 +229,37 @@ describe("listGearTool.execute", () => {
     });
     expect(result.content[0]?.text).toBe(
       "No gear in intervals.icu. Add shoes on the intervals.icu Gear page to track mileage.",
+    );
+  });
+
+  it("reports the retired-hidden message when every item is filtered out", async () => {
+    mockedListGear.mockResolvedValueOnce([
+      {
+        id: "9",
+        name: "Retired Shoe",
+        type: "Shoes",
+        distance: 1000,
+        activities: 1,
+        retired: true,
+        reminders: [],
+      } as IntervalsGear,
+      {
+        id: "10",
+        name: "Another Retired Shoe",
+        type: "Shoes",
+        distance: 2000,
+        activities: 2,
+        retired: "2026-01-01",
+        reminders: [],
+      } as IntervalsGear,
+    ]);
+
+    const result = await listGearTool.execute({ includeRetired: false }, "key");
+
+    expect(result.isError).toBeUndefined();
+    expect(result.structuredContent?.count).toBe(0);
+    expect(result.content[0]?.text).toBe(
+      "No active gear (2 retired hidden; pass includeRetired: true to show them).",
     );
   });
 

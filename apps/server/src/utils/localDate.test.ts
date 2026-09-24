@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDays, todayLocal } from "./localDate";
+import { addDays, daysBetween, todayLocal } from "./localDate";
 
 describe("todayLocal", () => {
   it("formats an injected clock as YYYY-MM-DD in the given zone", () => {
@@ -35,5 +35,27 @@ describe("addDays", () => {
 
   it("returns the same date for n = 0", () => {
     expect(addDays("2026-09-24", 0)).toBe("2026-09-24");
+  });
+});
+
+describe("daysBetween", () => {
+  it("returns 0 for the same date", () => {
+    expect(daysBetween("2026-09-24", "2026-09-24")).toBe(0);
+  });
+
+  it("counts whole days within a month", () => {
+    expect(daysBetween("2026-09-01", "2026-09-24")).toBe(23);
+  });
+
+  it("counts across a month boundary", () => {
+    expect(daysBetween("2026-08-28", "2026-09-24")).toBe(27);
+  });
+
+  it("counts across a year boundary", () => {
+    expect(daysBetween("2025-12-28", "2026-01-02")).toBe(5);
+  });
+
+  it("matches addDays: daysBetween(d, addDays(d, n)) === n", () => {
+    expect(daysBetween("2026-06-26", addDays("2026-06-26", 90))).toBe(90);
   });
 });

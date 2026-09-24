@@ -36,7 +36,7 @@ describe("mapWellnessDay", () => {
     expect(day.hrv_sdnn_ms).toBeCloseTo(43.158802);
     expect(day.hrv_rmssd_ms).toBeNull();
     expect(day.resting_hr).toBe(58);
-    // 24831 s / 3600 = 6.8975 -> 6.9 h
+    // 24831 s / 3600 = 6.8975, rounds to 6.9 h
     expect(day.sleep_hours).toBe(6.9);
     expect(day.weight_kg).toBe(70);
     expect(day.ctl).toBeCloseTo(40.57544);
