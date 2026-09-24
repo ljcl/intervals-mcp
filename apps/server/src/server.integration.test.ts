@@ -16,7 +16,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { type ProtocolEra } from "./mcpTestClient";
 import { getActivityById, getActivityLaps } from "./stravaClient";
-import { STRAVA_ID_HINT } from "./tools/_ids";
+import { INTERVALS_ID_HINT, STRAVA_ID_HINT } from "./tools/_ids";
 
 vi.mock("./stravaClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./stravaClient")>();
@@ -245,22 +245,29 @@ describe.each(ERAS)("tools/list (%s era)", (era) => {
     );
   });
 
-  it("routes every numeric id through stravaIdInput", async () => {
+  it("routes every numeric id through stravaIdInput or intervalsActivityIdInput", async () => {
     const ids = await advertisedIdFields(era);
 
     // Advertising `type: "string"` is only half the convention: `stravaIdInput`
-    // also accepts a safe-integer number at runtime and normalises it, so a
-    // host emitting `routeId: 12345` is not left stuck on "expected string,
-    // received number" (#282). A hand-rolled `z.string().regex(/^\d+$/)`
-    // serialises to the same shape while rejecting that call, so the steer
-    // appended to every id's description is what distinguishes them here.
+    // and `intervalsActivityIdInput` also accept a safe-integer number at
+    // runtime and normalise it, so a host emitting `routeId: 12345` is not
+    // left stuck on "expected string, received number" (#282). A hand-rolled
+    // `z.string().regex(/^\d+$/)` serialises to the same shape while
+    // rejecting that call, so the hint appended to every id's description is
+    // what distinguishes them here: each helper's own hint, matched at the
+    // end of the description so a copy of it would not accidentally pass.
     for (const { tool, field, prop } of ids) {
       if (NON_NUMERIC_ID_FIELDS.has(field)) continue;
-      expect(prop.pattern, `${tool}.${field} pattern`).toBe("^\\d+$");
+      const description = prop.description ?? "";
+      const usesIntervals = description.endsWith(INTERVALS_ID_HINT);
+      const usesStrava = description.endsWith(STRAVA_ID_HINT);
       expect(
-        prop.description ?? "",
-        `${tool}.${field} must use stravaIdInput`,
-      ).toContain(STRAVA_ID_HINT);
+        usesStrava || usesIntervals,
+        `${tool}.${field} must use stravaIdInput or intervalsActivityIdInput`,
+      ).toBe(true);
+      expect(prop.pattern, `${tool}.${field} pattern`).toBe(
+        usesIntervals ? "^i?\\d+$" : "^\\d+$",
+      );
     }
   });
 });

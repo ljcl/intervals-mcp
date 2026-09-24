@@ -77,12 +77,14 @@ const EMPTY_SCHEMA = { type: "object", properties: {}, required: [] } as const;
 /**
  * Build the advertised JSON Schema for a tool's *input*. Uses zod's `io:
  * "input"` projection so schemas that coerce their input (e.g. `stravaIdInput`,
- * which accepts a digit string or a safe-integer number and normalises to a
- * string) advertise the accepted input shape rather than throwing on the
- * output-side transform. Output schemas keep the default (output) projection.
+ * `intervalsActivityIdInput`, which each accept a digit string or a
+ * safe-integer number and normalise to a string) advertise the accepted
+ * input shape rather than throwing on the output-side transform. Output
+ * schemas keep the default (output) projection.
  *
- * `stravaIdJsonSchemaOverride` then narrows every Strava id to the string form
- * so a host cannot generate the lossy number branch for an id above 2^53.
+ * `stravaIdJsonSchemaOverride` then narrows every such id to its string form
+ * (`^\d+$` for Strava, `^i?\d+$` for intervals.icu activities) so a host
+ * cannot generate the lossy number branch for an id above 2^53.
  */
 function toInputSchema(schema: z.ZodType): Record<string, unknown> {
   return z.toJSONSchema(schema, {
