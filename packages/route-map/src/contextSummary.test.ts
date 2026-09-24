@@ -6,7 +6,6 @@ describe("buildRouteMapContextSummary", () => {
     expect(
       buildRouteMapContextSummary({
         name: null,
-        source: "activity",
         activityType: "Run",
         distanceKm: 5,
         elevationGain: 20,
@@ -18,7 +17,6 @@ describe("buildRouteMapContextSummary", () => {
   it("summarises an activity with geometry", () => {
     const summary = buildRouteMapContextSummary({
       name: "Morning Run",
-      source: "activity",
       activityType: "Run",
       distanceKm: 10.23,
       elevationGain: 84,
@@ -29,24 +27,22 @@ describe("buildRouteMapContextSummary", () => {
     );
   });
 
-  it("labels routes and omits zero elevation gain", () => {
+  it("omits zero elevation gain", () => {
     const summary = buildRouteMapContextSummary({
       name: "Flat Loop",
-      source: "route",
       activityType: "Ride",
       distanceKm: 40,
       elevationGain: 0,
       hasGeometry: true,
     });
     expect(summary).toBe(
-      'Viewing the map for Ride route "Flat Loop". Distance 40.0 km.',
+      'Viewing the map for Ride activity "Flat Loop". Distance 40.0 km.',
     );
   });
 
   it("mentions the metric the track is coloured by", () => {
     const summary = buildRouteMapContextSummary({
       name: "Morning Run",
-      source: "activity",
       activityType: "Run",
       distanceKm: 10,
       elevationGain: 84,
@@ -61,7 +57,6 @@ describe("buildRouteMapContextSummary", () => {
   it("notes when there is no GPS track", () => {
     const summary = buildRouteMapContextSummary({
       name: "Treadmill",
-      source: "activity",
       activityType: "Run",
       distanceKm: 0,
       elevationGain: 0,

@@ -1,4 +1,4 @@
-import { formatTime, isRunning, isSwimming, smooth } from "@strava-mcp/data";
+import { formatTime, isRunning, isSwimming, smooth } from "@intervals-mcp/data";
 import {
   type ActivityMeta,
   type ActivityStreamData,

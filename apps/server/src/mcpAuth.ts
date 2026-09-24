@@ -5,7 +5,7 @@ import { timingSafeEqual } from "node:crypto";
  *
  * The README instructs exposing port 3000 publicly (Tailscale Funnel,
  * Cloudflare Tunnel), and without a shared secret anyone who discovers the
- * URL can read all Strava data and call the write tools. When
+ * URL can read all intervals.icu data and call the write tools. When
  * `MCP_AUTH_TOKEN` is set, /mcp requires `Authorization: Bearer <token>`;
  * when unset, behaviour is unchanged (open), with a startup warning if
  * `PUBLIC_URL` suggests the server is internet-facing.
@@ -25,7 +25,7 @@ export function authTokenConfigured(): boolean {
 
 /**
  * Checks the configured secret against a `Authorization: Bearer` header or,
- * for browser-driven routes like /auth/start that cannot set headers, a
+ * for browser-driven routes like /health that cannot set headers, a
  * `?token=` query parameter. False when no secret is configured — callers
  * gate on authTokenConfigured() first.
  */
@@ -80,8 +80,9 @@ export function warnIfMcpUnprotected(): void {
     console.error(
       "WARNING: PUBLIC_URL is set but MCP_AUTH_TOKEN is not. /mcp is " +
         "unauthenticated — anyone who discovers the URL can read your " +
-        "Strava data and modify activities. Set MCP_AUTH_TOKEN and add an " +
-        '"Authorization: Bearer <token>" header to your MCP client config.',
+        "intervals.icu data and modify activities. Set MCP_AUTH_TOKEN and " +
+        'add an "Authorization: Bearer <token>" header to your MCP client ' +
+        "config.",
     );
   }
 }

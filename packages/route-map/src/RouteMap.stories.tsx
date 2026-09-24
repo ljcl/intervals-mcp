@@ -1,16 +1,13 @@
-import preview, { darkGlobals } from "@strava-mcp/design-system/preview";
-import { MobileCardShell, ViewToolRegistry } from "@strava-mcp/ui";
+import preview, { darkGlobals } from "@intervals-mcp/design-system/preview";
+import { MobileCardShell, ViewToolRegistry } from "@intervals-mcp/ui";
 import { useState } from "react";
 import { expect, waitFor } from "storybook/test";
 import {
   annotatedActivity,
   loopActivity,
   noGeometryActivity,
-  pointToPointRoute,
-  profiledRoute,
   streamLoopActivity,
   waypointedActivity,
-  waypointedRoute,
 } from "./__fixtures__/routes";
 import { RouteMap } from "./RouteMap";
 import { type RouteMapData } from "./types";
@@ -60,72 +57,6 @@ export const SwitchColorMetric = meta.story({
         .filter((text) => text.includes("bpm"));
       expect(scaleLabels).toHaveLength(2);
     });
-  },
-});
-
-export const SavedRoute = meta.story({
-  args: { data: pointToPointRoute, basemapEnabled: false },
-});
-
-/**
- * A saved route with the elevation profile the server now resolves for a
- * `route_id` (#264): the strip, elevation colouring, kilometre splits, and the
- * altitude sentence in the narration all light up for a route, none of which
- * the geometry-only `SavedRoute` above can show (#311).
- *
- * A route carries `distance` + `altitude` and nothing else, so elevation is
- * the *only* metric series — and a lone series renders no picker at all, just
- * the metre-unit colour scale. Gradient is not offerable: the server never
- * sends `grade_smooth` for a route.
- */
-export const SavedRouteWithProfile = meta.story({
-  args: { data: profiledRoute, basemapEnabled: false },
-  play: async ({ canvas, canvasElement }) => {
-    const altitude = profiledRoute.streams?.altitude ?? [];
-
-    // The elevation strip is a route's headline win from #264.
-    await expect(
-      canvas.getByRole("img", {
-        name: `Elevation profile of ${profiledRoute.name}`,
-      }),
-    ).toBeInTheDocument();
-
-    // No pace, heart rate, power, or gradient stream to pick between, and a
-    // lone series suppresses the picker entirely.
-    expect(
-      canvas.queryAllByRole("button", {
-        name: /^(Pace|Speed|Heart rate|Power|Elevation|Gradient)$/,
-      }),
-    ).toHaveLength(0);
-
-    // The colour scale still renders, either side of the ramp bar, in the
-    // elevation series' unit. Its endpoints are the 5th/95th percentiles, not
-    // the altitude range, so only the unit is assertable here.
-    const bar = canvasElement.querySelector<HTMLElement>(
-      'span[style*="linear-gradient"]',
-    );
-    expect(bar).not.toBeNull();
-    expect(bar?.previousElementSibling?.textContent).toMatch(/^\d+ m$/);
-    expect(bar?.nextElementSibling?.textContent).toMatch(/^\d+ m$/);
-
-    // Both newly-reachable narration sentences for a route.
-    const description =
-      canvas.getByRole("img", { name: /^Map of/ }).querySelector("desc")
-        ?.textContent ?? "";
-    expect(description).toContain(
-      `Altitude ranges from ${Math.round(Math.min(...altitude))} m to ${Math.round(Math.max(...altitude))} m.`,
-    );
-    expect(description).toContain("The track is coloured by elevation.");
-
-    // The distance stream also earns a route the km-split layer and its
-    // toggle: 12 marks over 12.54 km, the last still clear of the finish.
-    await expect(
-      canvas.getByRole("button", { name: "Toggle Splits" }),
-    ).toBeInTheDocument();
-    const kmMarks = [...canvasElement.querySelectorAll("title")].filter((el) =>
-      /^\d+ km$/.test(el.textContent ?? ""),
-    );
-    expect(kmMarks).toHaveLength(12);
   },
 });
 
@@ -201,10 +132,6 @@ export const WaypointedTrack = meta.story({
   args: { data: waypointedActivity, basemapEnabled: false },
 });
 
-export const WaypointedRoute = meta.story({
-  args: { data: waypointedRoute, basemapEnabled: false },
-});
-
 /**
  * Interaction test: the footer legend's Waypoints item toggles the marker
  * layer. Each waypoint titles both a track diamond and an elevation-strip
@@ -274,32 +201,6 @@ export const MobileAnnotatedTrack = meta.story({
 
 export const MobileMetricColoredTrack = meta.story({
   args: { data: streamLoopActivity, mode: "mobile", basemapEnabled: false },
-  globals: { viewport: { value: "claudeIosCard" } },
-  parameters: { layout: "fullscreen" },
-  decorators: [
-    (StoryFn) => (
-      <MobileCardShell>
-        <StoryFn />
-      </MobileCardShell>
-    ),
-  ],
-});
-
-export const MobileSavedRoute = meta.story({
-  args: { data: pointToPointRoute, mode: "mobile", basemapEnabled: false },
-  globals: { viewport: { value: "claudeIosCard" } },
-  parameters: { layout: "fullscreen" },
-  decorators: [
-    (StoryFn) => (
-      <MobileCardShell>
-        <StoryFn />
-      </MobileCardShell>
-    ),
-  ],
-});
-
-export const MobileSavedRouteWithProfile = meta.story({
-  args: { data: profiledRoute, mode: "mobile", basemapEnabled: false },
   globals: { viewport: { value: "claudeIosCard" } },
   parameters: { layout: "fullscreen" },
   decorators: [

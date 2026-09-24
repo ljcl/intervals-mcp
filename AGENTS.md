@@ -1,6 +1,6 @@
-# Strava MCP Server
+# intervals-mcp
 
-Remote MCP server for connecting AI tools to your Strava data.
+Remote MCP server connecting AI tools to intervals.icu run data.
 
 ## Documentation
 
@@ -12,6 +12,7 @@ this file holds only the invariants that apply to every change.
 | [docs/architecture.md](docs/architecture.md) | Changing server internals (transport, HTTP layer, cache, errors, analysis math, tool metadata) |
 | [docs/mcp-apps.md](docs/mcp-apps.md) | Adding or changing an MCP App package, `packages/ui`, or `packages/data` |
 | [docs/tools.md](docs/tools.md) | Adding, renaming, or describing tools/prompts — it is the single catalog; keep it current |
+| [docs/api-notes.md](docs/api-notes.md) | Calling the intervals.icu API; record verified behaviour here |
 | [docs/operations.md](docs/operations.md) | Configuring or debugging a deployed instance |
 | [docs/development.md](docs/development.md) | Turborepo, coverage gates, Storybook gates, Docker image build |
 | [docs/releasing.md](docs/releasing.md) | Shipping — PR titles are Conventional Commits; release automation does the rest |
@@ -44,16 +45,16 @@ breaking them has shipped bugs — do not work around them locally.
   `after`/`before` bounds to the minute (`quantizedEpochAfter`/`Before`) so a
   pair's two calls share one cache key.
 - **Stream reads go through the `stravaClient.ts` wrappers** (shared
-  `fetchStreamSet`: shape validation, 401 refresh-retry, structured 429). Only
-  genuine 404/empty throws `StreamsUnavailableError` — the one error a caller
-  may degrade on. Catching more misreports failures as absences.
+  `fetchStreamSet`: shape validation, structured 429). `stravaClient.ts` is
+  transitional and sends no `Authorization` header, so every call there fails
+  with 401, mapped to a not-yet-ported message. Only genuine 404/empty throws
+  `StreamsUnavailableError` (the one error a caller may degrade on); catching
+  more misreports failures as absences.
 - **Derived numbers have exactly one home.** GAP: `hillAnalysis.ts`
   (`gapFactor`, `computeGrades`) — `splitAnalysis.ts` imports, never
-  re-derives. Time-free segment/route profiles: `gradientProfile.ts` (+ shared
-  prose in `tools/_profileText.ts`). CTL/ATL/TSB and any projection/taper
-  math: `fitnessTrend.ts`. Route elevation resolves once via `loadRouteProfile`
-  (genuine 404 → GPX `<ele>` fallback). Text tool and app reading different
-  copies is the failure mode these prevent.
+  re-derives. CTL/ATL/TSB and any projection/taper math: `fitnessTrend.ts`.
+  Text tool and app reading different copies is the failure mode these
+  prevent.
 - **Telemetry:** `dispatchToolCall` emits one JSON line per call; timer starts
   before token resolution (not-connected calls count); a returned `isError`
   counts as an error; `recordToolCall` can never fail the call it describes.
@@ -61,11 +62,12 @@ breaking them has shipped bugs — do not work around them locally.
   always present). Tick counter without `total` (spec demands monotonic
   increase; multi-phase calls can't carry two denominators); time-based
   throttle with `important: true` bypass; fire-and-forget.
-- **Tokens come from `getStravaToken()`**, passed to handlers as argument 2 —
-  never read `process.env.STRAVA_ACCESS_TOKEN` in a tool. `NoTokenError` /
-  `TokenRevokedError` map to one not-connected message naming `/auth/start`.
-  OAuth POSTs go through `postOAuthToken`, which retries 5xx only — a timeout
-  may have rotated the refresh token server-side.
+- **The API key comes from `getIntervalsApiKey()`** (`config.ts`), passed to
+  handlers as argument 2; never read `process.env.INTERVALS_API_KEY`
+  elsewhere. A missing key maps to one not-configured message naming the env
+  var.
+- **`stravaClient.ts` is transitional:** tools are being ported to an
+  intervals.icu client (Phases 1 and 2). Do not add new callers.
 - **Ids go through `stravaIdInput`** (`tools/_ids.ts`). Advertised schema is
   string-only (`stravaIdJsonSchemaOverride`) because ids above 2^53 are
   rounded by hosts' `JSON.parse` unrecoverably; safe-int numbers accepted at
@@ -113,15 +115,6 @@ breaking them has shipped bugs — do not work around them locally.
   one upstream promise (failures never cached, write invalidation drops
   in-flight entries, `skipCache` bypasses both). Never return a cached object
   by reference or add a per-tool in-flight map.
-- **Token status is served from memory.** `getTokenStatus` reads
-  `cachedTokens` before disk and never caches "no tokens": authed `/health`
-  and `/auth/status` polls cost no filesystem read and no repeated "Loaded
-  tokens" lines; a `tokens.json` replaced by hand needs a restart, exactly as
-  it does for tool calls.
-- **Auth pages escape at the sink.** `authRoutes.ts` entity-encodes every
-  reflected string inside `errorPage`/`successPage`, never at call sites:
-  `/auth/callback` is public and its `error` branch runs before the state
-  gate, so a new page helper must escape too.
 - **The Bun version has one home: root `packageManager`.** CI reads it via
   `bun-version-file`; `dockerRuntime.test.ts` pins the Dockerfile's
   `FROM oven/bun:<tag>` lines to the same x.y.z, because Dependabot bumps the
@@ -130,16 +123,14 @@ breaking them has shipped bugs — do not work around them locally.
 
 ## Key Directories
 
-- `apps/server/` — MCP server (tools, auth, token management)
+- `apps/server/`: MCP server (tools, HTTP transport, config)
 - `apps/storybook/` — Storybook host rendering the UI packages (co-located stories)
 - `packages/activity-chart/` — React + Recharts MCP App for interactive activity charts
 - `packages/cadence-trends/` — React + Recharts MCP App for cadence trend analysis
 - `packages/training-load/` — React + Recharts MCP App for weekly training volume with trend line and injury-risk warnings
-- `packages/route-map/` — React MCP App for activity/route GPS maps (MapLibre basemap by default, pure-SVG offline grid fallback; no Recharts)
-- `packages/activity-segments/` — React MCP App listing one activity's segment efforts (no Recharts, no MapLibre)
+- `packages/route-map/` — React MCP App for activity GPS maps (MapLibre basemap by default, pure-SVG offline grid fallback; no Recharts)
 - `packages/compare-activities/` — React + Recharts MCP App overlaying two activities' streams with a delta summary
 - `packages/activity-zones/` — React + Recharts MCP App for per-activity HR/power time-in-zone distribution
-- `packages/segment-progress/` — React + Recharts MCP App charting the athlete's own effort history on one segment
 - `packages/fitness-trend/` — React + Recharts MCP App charting CTL/ATL/TSB with warning bands and a dashed taper plan
 - `packages/data/` — Shared pure data utilities (formatting, activity types, smoothing). Formatters live here, once (`formatting.ts`): MCP App packages cannot import each other, so a formatter two apps need has exactly one home; duplicated copies are invisible to knip and Biome. Server-side equivalent: `apps/server/src/formatters.ts`; sport-specific transforms in `utils/running.ts`
 - `packages/ui/` — Shared presentational React components (Pill, Tooltip, Legend, SummaryBar, AppShell, CardHeader, EmptyState, ErrorState, LoadingState, Skeleton) plus the app-shell runtime (`AppRoot`, `useServerToolData`, `useServerToolFetcher`, `useModelContextSync`, `useMobileMode`)
@@ -247,7 +238,6 @@ bun run start        # Start server
 bun run dev          # Watch mode
 bun run test         # Run server tests (Vitest)
 bun run test:watch   # Watch mode
-bun run setup-auth   # Interactive localhost OAuth setup (dev only)
 
 # UI development
 cd apps/storybook

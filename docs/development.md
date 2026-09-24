@@ -8,16 +8,14 @@ Storybook, and the Docker image contract. Day-to-day commands live in
 ## Project structure
 
 ```
-apps/server/                 MCP server (tools, auth, token management)
+apps/server/                 MCP server (tools, HTTP transport, config)
 apps/storybook/              Storybook for UI development
 packages/activity-chart/     Interactive activity chart (MCP App)
 packages/cadence-trends/     Cadence trend analysis (MCP App)
-packages/route-map/          Activity/route GPS map (MCP App)
-packages/activity-segments/  Activity segment-effort list (MCP App)
+packages/route-map/          Activity GPS map (MCP App)
 packages/training-load/      Weekly training volume and trend (MCP App)
 packages/compare-activities/ Two-activity stream overlay (MCP App)
 packages/activity-zones/     Per-activity time-in-zone chart (MCP App)
-packages/segment-progress/   Segment effort history (MCP App)
 packages/fitness-trend/      Fitness/fatigue/form chart with taper plan (MCP App)
 packages/data/               Shared pure data utilities
 packages/ui/                 Shared presentational React components + app shell runtime
@@ -29,7 +27,7 @@ packages/tsconfig/           Shared TypeScript configurations
 Bun workspaces with Turborepo. A `topo` transit node in `turbo.json` keeps
 `test` and `typecheck` cache-correct when upstream JIT packages change source.
 JIT packages (`data`, `ui`, `design-system`) export raw TypeScript; only the
-nine MCP App packages produce build artifacts (single-file HTML via Vite). The
+seven MCP App packages produce build artifacts (single-file HTML via Vite). The
 server has no build step. Biome (`//#lint`) and Knip (`//#knip`) run as root
 tasks — Knip is a whole-graph analyzer that cannot decompose per-package; Biome
 is fast enough to run at root per Turborepo docs.
@@ -89,8 +87,8 @@ Supplementary when the change touches UI:
 - Storybook sweep: look at each affected story in desktop and the
   `claudeIosCard` mobile viewport (`bun run shots <story-id>…` renders PNGs).
 - MCP endpoint smoke test: `cd apps/server && bun run start`, then
-  `curl http://localhost:3000/health`. Needs valid `STRAVA_REFRESH_TOKEN`;
-  skip if tokens are stale and say so explicitly.
+  `curl http://localhost:3000/health`. Needs a valid `INTERVALS_API_KEY`;
+  skip if it is not configured and say so explicitly.
 
 ## Coverage thresholds
 
@@ -124,6 +122,21 @@ unchanged packages, keeping every row of the summary table populated). Only
 jobs that run turbo tasks take the `.turbo` cache, and the key is namespaced
 `<os>-turbo-<workflow>-<job>-<sha>` — otherwise an early-finishing job reserves
 the key and later jobs cannot save, or same-SHA jobs collide.
+
+## Refreshing the intervals.icu API spec
+
+`docs/intervals-openapi.json` is a vendored, pretty-printed copy of
+intervals.icu's OpenAPI document. Re-fetch it when the API changes, or
+periodically to catch drift:
+
+```bash
+curl -s -A "intervals-mcp/0.1.0 (+https://github.com/ljcl/intervals-mcp)" \
+  https://intervals.icu/api/v1/docs | jq . > docs/intervals-openapi.json
+jq -r '.info.title, .info.version, (.paths|keys|length)' docs/intervals-openapi.json
+```
+
+Anything the spec itself does not say (auth quirks, undocumented behaviour,
+open questions) belongs in [api-notes.md](api-notes.md), not here.
 
 ## Clearing a `bun audit` failure
 
@@ -242,20 +255,16 @@ What the sweep that made this repo-wide actually found: all violations were
 - `--color-text-tertiary` is decoration, never an element's only label — at
   12px it falls under 4.5:1 in some host palettes.
 
-Theme-invariant tier backgrounds pair with the invariant foreground
-(`--color-tier-text`), not `--color-text-inverse` (correct in dark, white-on-
-amber in light).
-
 ## Docker image build
 
-Built via `turbo prune @strava-mcp/server --docker`; the builder stage uses
-`--filter=@strava-mcp/server^...` to build only the server's workspace deps
+Built via `turbo prune @intervals-mcp/server --docker`; the builder stage uses
+`--filter=@intervals-mcp/server^...` to build only the server's workspace deps
 (the MCP App packages), excluding the JIT server itself. The prune stage
 derives the package set from the workspace graph — no edit per package needed
 there.
 
 The distroless **runner** stage `COPY`s each app's `dist/` explicitly, and
-covers **JIT dependencies too**: `@strava-mcp/data` exports raw TypeScript with
+covers **JIT dependencies too**: `@intervals-mcp/data` exports raw TypeScript with
 no build output, so the runner copies `packages/data/src`. That per-package
 COPY list is the image's one manual step — adding an MCP App means adding one
 `COPY --from=builder .../packages/<app>/dist` line there.
@@ -264,7 +273,7 @@ Missing a COPY is invisible until the container starts: `bun install` still
 writes the workspace symlink and prune still supplies the manifest, so
 resolution walks to a file that is not in the image and the process dies on
 first import. No image build catches it, which is why
-`apps/server/src/dockerRuntime.test.ts` resolves every `@strava-mcp/*`
+`apps/server/src/dockerRuntime.test.ts` resolves every `@intervals-mcp/*`
 specifier in the server's non-test sources through the target package's
 `exports` map and asserts the file lands inside a runner COPY — in both
 directions (a stale COPY for a removed app fails too), pinning that destinations

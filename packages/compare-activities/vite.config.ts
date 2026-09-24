@@ -1,3 +1,3 @@
-import { mcpAppConfig } from "@strava-mcp/vite-config/mcp-app";
+import { mcpAppConfig } from "@intervals-mcp/vite-config/mcp-app";
 
 export default mcpAppConfig("compare-activities");

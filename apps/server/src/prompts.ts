@@ -78,30 +78,6 @@ const PROMPTS: PromptDefinition[] = [
       ].join("\n");
     },
   },
-  {
-    name: "segment-hunt",
-    description:
-      "Explore segments in an area, compare them with your starred list, and star the best candidates.",
-    arguments: [
-      {
-        name: "area",
-        description:
-          "Where to hunt — a place name or 'south-west lat,lng to north-east lat,lng' bounds",
-        required: true,
-      },
-    ],
-    build: (args) => {
-      return [
-        `Help me find good segments around: ${args.area}.`,
-        "",
-        "Steps:",
-        "1. Work out a bounding box for the area (south-west lat,lng and north-east lat,lng) and call explore-segments with it. Ask me to narrow the area if it is too broad.",
-        "2. Call list-starred-segments so we skip segments I already follow.",
-        "3. For the 2-3 most promising new segments, call get-segment for distance, grade, and my effort history.",
-        "4. Recommend which to add and, for each one I approve, star it with star-segment.",
-      ].join("\n");
-    },
-  },
 ];
 
 /** ListPrompts payload: names, descriptions, and argument declarations. */

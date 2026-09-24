@@ -5,15 +5,8 @@
  * `fetch` stubbed, and count round-trips.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { detailedSegment } from "./__fixtures__";
 import { stravaApi } from "./fetchClient";
-import {
-  getActivityLaps,
-  getActivityZones,
-  getSegmentById,
-  listSegmentEfforts,
-  starSegment,
-} from "./stravaClient";
+import { getActivityLaps, getActivityZones } from "./stravaClient";
 
 const realFetch = globalThis.fetch;
 
@@ -30,8 +23,7 @@ function stubFetch(bodyForUrl: (url: string) => unknown) {
   return fn;
 }
 
-const bodyByPath = (url: string) =>
-  url.includes("/segments/") ? detailedSegment : [];
+const bodyByPath = (_url: string) => [];
 
 beforeEach(() => {
   // The client is a module-level singleton with a shared cache.
@@ -45,45 +37,6 @@ afterEach(() => {
 });
 
 describe("view/data tool pairs share one upstream fetch", () => {
-  it("costs 2 requests, not 4, to load segment-progress twice", async () => {
-    const fetchMock = stubFetch(bodyByPath);
-
-    // What loadSegmentProgressData does, once for `view-` and once for `get-`.
-    for (let i = 0; i < 2; i++) {
-      await getSegmentById("token", "55");
-      await listSegmentEfforts("token", "55", { perPage: 200 });
-    }
-
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-  });
-
-  it("collapses the pair's concurrent segment reads onto one upstream fetch (#355)", async () => {
-    const fetchMock = stubFetch(bodyByPath);
-
-    // An MCP App fires its `view-` and `get-…-data` calls together on open, so
-    // the second read arrives before the first has populated the cache.
-    const [a, b] = await Promise.all([
-      getSegmentById("token", "55"),
-      getSegmentById("token", "55"),
-    ]);
-
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(a).toEqual(b);
-  });
-
-  it("keeps differently-parameterised effort queries distinct", async () => {
-    const fetchMock = stubFetch(bodyByPath);
-
-    await listSegmentEfforts("token", "55", { perPage: 200 });
-    await listSegmentEfforts("token", "55", {
-      perPage: 200,
-      startDateLocal: "2026-01-01T00:00:00Z",
-    });
-
-    // The cache key is the full URL, so a date-windowed query is its own entry.
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-  });
-
   it("serves an activity's zones and laps from cache on the second load", async () => {
     const fetchMock = stubFetch(bodyByPath);
 
@@ -93,17 +46,5 @@ describe("view/data tool pairs share one upstream fetch", () => {
     await getActivityLaps("token", "123");
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
-  });
-
-  it("re-fetches a segment after star-segment writes to it", async () => {
-    const fetchMock = stubFetch(bodyByPath);
-
-    await getSegmentById("token", "55");
-    await starSegment("token", "55", true);
-    await getSegmentById("token", "55");
-
-    // The PUT invalidates the parent, so the cached `starred: false` cannot
-    // outlive the write that changed it.
-    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 });

@@ -1,40 +1,14 @@
 /**
- * Anchor-point resolution for route-map annotations. Lap boundaries, segment
- * efforts, and photos arrive with distances or raw lat/lng, while the map app
- * renders by index into the (downsampled) latlng stream — Strava's
- * `start_index`/`end_index` fields refer to the full-resolution stream, so
- * they cannot be used against a `resolution=medium` response. These helpers
- * map both anchor kinds onto stream indices server-side, keeping the app's
- * bundle lean. Pure math, unit-tested next to `polyline.ts`.
+ * Anchor-point resolution for route-map annotations. Lap boundaries arrive
+ * with distances, while the map app renders by index into the (downsampled)
+ * latlng stream — Strava's `start_index`/`end_index` fields refer to the
+ * full-resolution stream, so they cannot be used against a
+ * `resolution=medium` response. These helpers map distance anchors onto
+ * stream indices server-side, keeping the app's bundle lean. Pure math,
+ * unit-tested next to `polyline.ts`.
  */
 
 const DEG_TO_RAD = Math.PI / 180;
-
-/**
- * Index of the coordinate nearest to (lat, lng). Equirectangular comparison
- * with cos-scaled longitude — accurate at single-activity scale, and
- * monotonic, which is all a nearest-point search needs. Returns -1 for an
- * empty track.
- */
-export function nearestCoordIndex(
-  coordinates: Array<[number, number]>,
-  lat: number,
-  lng: number,
-): number {
-  const lngScale = Math.cos(lat * DEG_TO_RAD);
-  let best = -1;
-  let bestDist = Infinity;
-  for (let i = 0; i < coordinates.length; i++) {
-    const dLat = coordinates[i]![0] - lat;
-    const dLng = (coordinates[i]![1] - lng) * lngScale;
-    const dist = dLat * dLat + dLng * dLng;
-    if (dist < bestDist) {
-      bestDist = dist;
-      best = i;
-    }
-  }
-  return best;
-}
 
 /**
  * First index whose cumulative distance reaches `target` metres. The distance
@@ -62,9 +36,7 @@ const EARTH_RADIUS_M = 6371000;
 
 /**
  * Great-circle distance in metres between two `[lat, lng]` points. The one
- * haversine in the server: `cumulativeDistances` below sums it, and
- * `routeSegments.ts` measures how far an explored segment's endpoint sits from
- * the course with it.
+ * haversine in the server: `cumulativeDistances` below sums it.
  */
 export function haversineMeters(
   a: [number, number],
@@ -83,9 +55,9 @@ export function haversineMeters(
 /**
  * Cumulative haversine distance (metres) along a `[lat, lng]` track, aligned
  * index-for-index with the coordinates. The distance-anchor fallback when no
- * recorded distance stream exists: saved routes and polyline-only activities
- * arrive as bare geometry, so anchors like waypoints need a synthetic
- * cumulative stream to resolve against.
+ * recorded distance stream exists: polyline-only activities arrive as bare
+ * geometry, so anchors like waypoints need a synthetic cumulative stream to
+ * resolve against.
  */
 export function cumulativeDistances(
   coordinates: Array<[number, number]>,

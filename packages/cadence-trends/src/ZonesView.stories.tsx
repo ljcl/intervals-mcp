@@ -1,5 +1,5 @@
-import preview, { darkGlobals } from "@strava-mcp/design-system/preview";
-import { MobileCardShell } from "@strava-mcp/ui";
+import preview, { darkGlobals } from "@intervals-mcp/design-system/preview";
+import { MobileCardShell } from "@intervals-mcp/ui";
 import { mockRuns } from "./__fixtures__/runs";
 import { ZonesView } from "./ZonesView";
 

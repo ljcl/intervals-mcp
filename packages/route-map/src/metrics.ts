@@ -14,11 +14,11 @@ import {
   normalizeValue,
   percentileDomain,
   rampColor,
-} from "@strava-mcp/data";
+} from "@intervals-mcp/data";
 import { type Point } from "./normalize";
 import { type RouteMapData } from "./types";
 
-export { colorForValue, RAMP_GRADIENT_CSS } from "@strava-mcp/data";
+export { colorForValue, RAMP_GRADIENT_CSS } from "@intervals-mcp/data";
 
 export type MetricKey =
   | "pace"
@@ -45,7 +45,7 @@ export interface MetricSeries {
 /**
  * Build the selectable metric series for an activity, in pill display order.
  * Only streams that are present and aligned with the coordinates qualify, so
- * saved routes and stream-less activities yield an empty list (plain track).
+ * stream-less activities yield an empty list (plain track).
  */
 export function buildMetricSeries(data: RouteMapData): MetricSeries[] {
   const streams = data.streams;

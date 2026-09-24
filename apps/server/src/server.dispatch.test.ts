@@ -21,16 +21,16 @@ vi.mock("./stravaClient", async (importOriginal) => {
   };
 });
 
-// dispatchToolCall resolves the access token once per call (#240).
-vi.mock("./tokenManager", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./tokenManager")>();
-  return { ...actual, getStravaToken: vi.fn() };
+// dispatchToolCall resolves the API key once per call (#240).
+vi.mock("./config", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./config")>();
+  return { ...actual, getIntervalsApiKey: vi.fn() };
 });
 
 // Import after the mock so server.ts's tool modules see the mocked client.
 const { dispatchToolCall } = await import("./server");
-const { getStravaToken } = await import("./tokenManager");
-const mockedToken = vi.mocked(getStravaToken);
+const { getIntervalsApiKey, MissingApiKeyError } = await import("./config");
+const mockedToken = vi.mocked(getIntervalsApiKey);
 
 const mockedList = vi.mocked(getAllActivities);
 const mockedById = vi.mocked(getActivityById);
@@ -39,7 +39,7 @@ const mockedStats = vi.mocked(getAthleteStats);
 describe("dispatchToolCall input validation", () => {
   beforeEach(() => {
     mockedToken.mockReset();
-    mockedToken.mockResolvedValue("test-token");
+    mockedToken.mockReturnValue("test-token");
     mockedList.mockReset();
     mockedById.mockReset();
     mockedStats.mockReset();
@@ -111,15 +111,15 @@ describe("dispatchToolCall input validation", () => {
     expect(mockedById).not.toHaveBeenCalled();
   });
 
-  it("explains an oversized route_id sent as a JSON number (view-route-map)", async () => {
-    // Reported failure: a route pasted from https://www.strava.com/routes/
-    // 3516039180561708486 was called as an unquoted number, which the host's
-    // JSON.parse rounded to ...500 before dispatch. The advertised schema is
-    // now string-only so this shape should not be generated at all; when it
-    // is, the error must name the rounded value and the string fix once,
-    // rather than claiming the value is not a whole number.
+  it("explains an oversized activity_id sent as a JSON number (view-route-map)", async () => {
+    // Reported failure: an activity id pasted from a Strava activity URL was
+    // called as an unquoted number, which the host's JSON.parse rounded
+    // before dispatch. The advertised schema is now string-only so this
+    // shape should not be generated at all; when it is, the error must name
+    // the rounded value and the string fix once, rather than claiming the
+    // value is not a whole number.
     const result = await dispatchToolCall("view-route-map", {
-      route_id: JSON.parse("3516039180561708486"),
+      activity_id: JSON.parse("3516039180561708486"),
     });
 
     expect(result.isError).toBe(true);
@@ -130,11 +130,11 @@ describe("dispatchToolCall input validation", () => {
     expect(text).not.toContain("whole number");
   });
 
-  it("accepts an oversized route_id as a digit string", async () => {
+  it("accepts an oversized activity_id as a digit string", async () => {
     // The lossless form the advertised schema now asks for. It gets past
     // validation and fails later, at the (unmocked) Strava fetch.
     const result = await dispatchToolCall("view-route-map", {
-      route_id: "3516039180561708486",
+      activity_id: "3516039180561708486",
     });
 
     expect(result.content[0]?.text ?? "").not.toContain("Invalid arguments");
@@ -155,7 +155,7 @@ describe("dispatchToolCall input validation", () => {
         .map(([key, schema]) => ({ field: `${tool.name}.${key}`, schema })),
     );
 
-    expect(idSchemas.length).toBeGreaterThan(10);
+    expect(idSchemas.length).toBeGreaterThan(6);
     for (const { field, schema } of idSchemas) {
       expect(`${field}: ${schema.type}`).toBe(`${field}: string`);
       expect(`${field}: ${schema.pattern}`).toBe(`${field}: ^\\d+$`);
@@ -246,6 +246,18 @@ describe("dispatchToolCall input validation", () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain("Unknown tool: not-a-tool");
+  });
+
+  it("returns isError naming INTERVALS_API_KEY when the key cannot be resolved", async () => {
+    mockedToken.mockImplementationOnce(() => {
+      throw new MissingApiKeyError();
+    });
+
+    const result = await dispatchToolCall("get-best-efforts", undefined);
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("INTERVALS_API_KEY");
+    expect(mockedList).not.toHaveBeenCalled();
   });
 
   // The app data handlers throw rather than return `isError`, so the

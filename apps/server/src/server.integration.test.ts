@@ -15,25 +15,25 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { type ProtocolEra } from "./mcpTestClient";
-import { getActivityById, getSegmentById } from "./stravaClient";
+import { getActivityById, getActivityLaps } from "./stravaClient";
 import { STRAVA_ID_HINT } from "./tools/_ids";
 
 vi.mock("./stravaClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./stravaClient")>();
-  return { ...actual, getSegmentById: vi.fn(), getActivityById: vi.fn() };
+  return { ...actual, getActivityLaps: vi.fn(), getActivityById: vi.fn() };
 });
 
-// Dispatch resolves the token before any handler runs (#240), so without this
-// an end-to-end tools/call reads the real token store.
-vi.mock("./tokenManager", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./tokenManager")>();
-  return { ...actual, getStravaToken: vi.fn(async () => "test-token") };
+// Dispatch resolves the key before any handler runs (#240), so without this
+// an end-to-end tools/call reads process.env directly.
+vi.mock("./config", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./config")>();
+  return { ...actual, getIntervalsApiKey: vi.fn(() => "test-token") };
 });
 
 const { connectTestClient } = await import("./mcpTestClient");
 const { TOOLS } = await import("./server");
 
-const mockedSegment = vi.mocked(getSegmentById);
+const mockedLaps = vi.mocked(getActivityLaps);
 const mockedActivity = vi.mocked(getActivityById);
 
 beforeEach(() => {
@@ -139,7 +139,7 @@ describe("modern result envelope", () => {
 const ID_FIELD = /(^|_)id(_\d+)?$|Id\d*$/;
 
 /** Id arguments across the advertised surface when this floor was set. */
-const ID_FIELD_COUNT = 43;
+const ID_FIELD_COUNT = 23;
 
 /**
  * Gear ids are alphanumeric (`g123456`), not digit strings, so they are the
@@ -230,8 +230,8 @@ describe.each(ERAS)("tools/list (%s era)", (era) => {
   it("advertises Strava ids as strings, never as numbers", async () => {
     const ids = await advertisedIdFields(era);
 
-    // Route and segment-effort ids already exceed 2^53, so a host that
-    // generates a JSON number loses digits before validation can see them.
+    // Activity ids already exceed 2^53, so a host that generates a JSON
+    // number loses digits before validation can see them.
     for (const { tool, field, prop } of ids) {
       expect(prop.type, `${tool}.${field} must be advertised as a string`).toBe(
         "string",
@@ -267,70 +267,49 @@ describe.each(ERAS)("tools/list (%s era)", (era) => {
 
 describe.each(ERAS)("tools/call (%s era)", (era) => {
   it("round-trips a tool's content through the transport", async () => {
-    mockedSegment.mockResolvedValueOnce({
+    mockedActivity.mockResolvedValueOnce({
       id: "229781",
       name: "Hawk Hill",
-      distance: 2684,
-      average_grade: 5.7,
-      maximum_grade: 14.2,
-      elevation_high: 245.3,
-      elevation_low: 92.4,
-      total_elevation_gain: 155.7,
-      climb_category: 1,
-      city: "San Francisco",
-      state: "CA",
-      country: "United States",
-      private: false,
-      starred: false,
-      effort_count: 60449,
-      athlete_count: 30623,
+      type: "Run",
     } as never);
+    mockedLaps.mockResolvedValueOnce([] as never);
 
     const client = await connectTestClient("integration-test", era);
     const { result, error } = await client.send("tools/call", {
-      name: "get-segment",
-      arguments: { segmentId: "229781" },
+      name: "get-activity-laps",
+      arguments: { id: "229781" },
     });
 
     expect(error).toBeUndefined();
     const content = result?.content as Array<{ type: string; text: string }>;
     expect(content[0]?.type).toBe("text");
-    expect(content[0]?.text).toContain("Hawk Hill");
+    expect(content[0]?.text).toContain("229781");
   });
 
   it("delivers structuredContent alongside the text", async () => {
-    mockedSegment.mockResolvedValueOnce({
+    mockedActivity.mockResolvedValueOnce({
       id: "229781",
       name: "Hawk Hill",
-      distance: 2684,
-      average_grade: 5.7,
-      maximum_grade: 14.2,
-      elevation_high: 245.3,
-      elevation_low: 92.4,
-      total_elevation_gain: 155.7,
-      climb_category: 1,
-      private: false,
-      starred: false,
-      effort_count: 1,
-      athlete_count: 1,
+      type: "Run",
     } as never);
+    mockedLaps.mockResolvedValueOnce([] as never);
 
     const client = await connectTestClient("integration-test", era);
     const { result } = await client.send("tools/call", {
-      name: "get-segment",
-      arguments: { segmentId: "229781" },
+      name: "get-activity-laps",
+      arguments: { id: "229781" },
     });
 
     // The point of #243: a caller chains on fields instead of regexing ids
     // out of prose. That only holds if the SDK actually serialises them.
-    expect(result?.structuredContent).toMatchObject({ id: "229781" });
+    expect(result?.structuredContent).toMatchObject({ activity_id: "229781" });
   });
 
   it("returns a tool error as isError, not a JSON-RPC error", async () => {
     const client = await connectTestClient("integration-test", era);
     const { result, error } = await client.send("tools/call", {
-      name: "get-segment",
-      arguments: { segmentId: "not-an-id" },
+      name: "get-activity-laps",
+      arguments: { id: "not-an-id" },
     });
 
     // A tool that rejects its arguments is a normal result the model can read

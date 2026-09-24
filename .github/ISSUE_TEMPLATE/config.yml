@@ -1,8 +1,8 @@
 blank_issues_enabled: true
 contact_links:
   - name: Project README
-    url: https://github.com/ljcl/strava-mcp#readme
+    url: https://github.com/ljcl/intervals-mcp#readme
     about: Setup, configuration, and usage docs.
   - name: Report a security vulnerability
-    url: https://github.com/ljcl/strava-mcp/security/advisories/new
+    url: https://github.com/ljcl/intervals-mcp/security/advisories/new
     about: Please report security issues privately — see SECURITY.md — not as public issues.

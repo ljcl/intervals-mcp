@@ -1,5 +1,5 @@
-import { formatShortDate } from "@strava-mcp/data";
-import { type SummaryStat } from "@strava-mcp/ui";
+import { formatShortDate } from "@intervals-mcp/data";
+import { type SummaryStat } from "@intervals-mcp/ui";
 import {
   type FitnessTrendData,
   type TaperPlan,

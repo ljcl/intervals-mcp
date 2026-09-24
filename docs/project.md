@@ -1,7 +1,7 @@
 # Backlog and issue tracking
 
 Improvements and changes are tracked as GitHub Issues and triaged on the
-"strava-mcp backlog" Project board (https://github.com/users/ljcl/projects/1).
+"intervals-mcp backlog" Project board (https://github.com/users/ljcl/projects/3).
 
 - File issues via the templates (Improvement, Bug report); blank issues are
   allowed.
@@ -29,13 +29,13 @@ session type:
 `project` scope:
 
 ```bash
-gh project item-edit --project-id PVT_kwHOABzAhM4BZ7u2 --id <item-id> \
+gh project item-edit --project-id PVT_kwHOABzAhM4Bkfpa --id <item-id> \
   --field-id <field-id> --single-select-option-id <option-id>
 ```
 
 Discover item/field/option ids with
-`gh project item-list 1 --owner ljcl --format json` and
-`gh project field-list 1 --owner ljcl --format json`.
+`gh project item-list 3 --owner ljcl --format json` and
+`gh project field-list 3 --owner ljcl --format json`.
 
 **Cloud and iOS sessions** (no gh, no project scope on the built-in GitHub
 credential) — the hosted GitHub MCP server with `GH_MCP_PAT`. The
@@ -71,13 +71,13 @@ ids are no longer needed. Ids stay discoverable via `list_project_fields`.
 
 ### Board constants
 
-Project number 1, owner `ljcl`.
+Project number 3, owner `ljcl`.
 
 | Field | Field id |
 | ----- | -------- |
-| Status | 355919451 |
-| Priority | 355919475 |
-| Effort | 355919489 |
+| Status | PVTSSF_lAHOABzAhM4BkfpazhjQC3o |
+| Priority | PVTSSF_lAHOABzAhM4BkfpazhjQC4Y |
+| Effort | PVTSSF_lAHOABzAhM4BkfpazhjQC4c |
 
 | Status option | id |
 | ------------- | -- |

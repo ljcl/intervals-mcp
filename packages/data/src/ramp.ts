@@ -1,4 +1,4 @@
-/** Cold-to-hot ramp shared by route-map and activity-segments. Fixed hex
+/** Cold-to-hot ramp used by route-map's metric-coloured track. Fixed hex
  * stops (interpolation needs concrete colours, and these read on light and
  * dark backgrounds). Pure: no React, no DOM. */
 const RAMP: Array<[number, number, number]> = [

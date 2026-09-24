@@ -1,5 +1,5 @@
-import { formatDurationShort, formatShortDate } from "@strava-mcp/data";
-import { type SummaryStat } from "@strava-mcp/ui";
+import { formatDurationShort, formatShortDate } from "@intervals-mcp/data";
+import { type SummaryStat } from "@intervals-mcp/ui";
 import { type TrainingLoadData, type WeekSummary } from "./types";
 
 /**

@@ -22,7 +22,7 @@ export function bundledRawWorker(): Plugin {
   // One nested build per entry per process, shared across importers.
   const bundled = new Map<string, Promise<string>>();
   return {
-    name: "strava-mcp:bundled-raw-worker",
+    name: "intervals-mcp:bundled-raw-worker",
     enforce: "pre",
     async resolveId(id, importer) {
       if (!id.endsWith(QUERY)) return;

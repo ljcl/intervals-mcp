@@ -1,5 +1,5 @@
-import preview from "@strava-mcp/design-system/preview";
-import { MobileCardShell } from "@strava-mcp/ui";
+import preview from "@intervals-mcp/design-system/preview";
+import { MobileCardShell } from "@intervals-mcp/ui";
 import {
   mockFitnessTrendData,
   mockNoLoadData,

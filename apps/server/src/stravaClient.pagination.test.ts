@@ -1,13 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { basicRunActivity, rideActivity } from "./__fixtures__";
 import { stravaApi } from "./fetchClient";
-import {
-  getAllActivities,
-  listAllStarredSegments,
-  listStarredSegments,
-  STARRED_SEGMENTS_DEFAULT_PER_PAGE,
-  STARRED_SEGMENTS_MAX_PAGES,
-} from "./stravaClient";
+import { getAllActivities } from "./stravaClient";
 
 vi.mock("./fetchClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./fetchClient")>();
@@ -78,77 +72,5 @@ describe("getAllActivities pagination bounds", () => {
     expect(mockedGet).toHaveBeenCalledTimes(3);
     expect(activities.filter(isRun)).toHaveLength(2);
     expect(activities).toHaveLength(6);
-  });
-});
-
-describe("listStarredSegments paging", () => {
-  beforeEach(() => {
-    mockedGet.mockReset();
-  });
-
-  it("sends explicit page and per_page so page two is reachable", async () => {
-    mockedGet.mockResolvedValueOnce(page([]));
-
-    await listStarredSegments("test-token", 2, 50);
-
-    expect(mockedGet).toHaveBeenCalledWith(
-      "/segments/starred",
-      expect.objectContaining({ params: { page: 2, per_page: 50 } }),
-    );
-  });
-
-  it("defaults to the first page at the documented page size", async () => {
-    mockedGet.mockResolvedValueOnce(page([]));
-
-    await listStarredSegments("test-token");
-
-    expect(mockedGet).toHaveBeenCalledWith(
-      "/segments/starred",
-      expect.objectContaining({
-        params: { page: 1, per_page: STARRED_SEGMENTS_DEFAULT_PER_PAGE },
-      }),
-    );
-  });
-});
-
-describe("listAllStarredSegments", () => {
-  const starred = (id: number) => ({
-    id,
-    name: `Segment ${id}`,
-    activity_type: "Run",
-    distance: 1000,
-    average_grade: 1,
-    maximum_grade: 2,
-    elevation_high: 10,
-    elevation_low: 5,
-    start_latlng: [1, 2],
-    end_latlng: [1.1, 2.1],
-    climb_category: 0,
-    private: false,
-  });
-
-  beforeEach(() => {
-    mockedGet.mockReset();
-  });
-
-  it("walks every page until a short one arrives", async () => {
-    mockedGet
-      .mockResolvedValueOnce(page([starred(1), starred(2)]))
-      .mockResolvedValueOnce(page([starred(3)]));
-
-    const segments = await listAllStarredSegments("test-token", 2);
-
-    expect(mockedGet).toHaveBeenCalledTimes(2);
-    // Ids normalise to digit strings on the way through the schema.
-    expect(segments.map((s) => s.id)).toEqual(["1", "2", "3"]);
-  });
-
-  it("stops at the page cap rather than paging forever", async () => {
-    mockedGet.mockResolvedValue(page([starred(1), starred(2)]));
-
-    const segments = await listAllStarredSegments("test-token", 2);
-
-    expect(mockedGet).toHaveBeenCalledTimes(STARRED_SEGMENTS_MAX_PAGES);
-    expect(segments).toHaveLength(STARRED_SEGMENTS_MAX_PAGES * 2);
   });
 });

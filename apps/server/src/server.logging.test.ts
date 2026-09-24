@@ -5,9 +5,9 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("./tokenManager", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./tokenManager")>();
-  return { ...actual, getStravaToken: vi.fn(async () => "test-token") };
+vi.mock("./config", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./config")>();
+  return { ...actual, getIntervalsApiKey: vi.fn(() => "test-token") };
 });
 
 const { dispatchToolCall } = await import("./server");
@@ -90,9 +90,9 @@ describe("dispatch telemetry", () => {
   });
 
   it("records a rejected argument set separately from a handler failure", async () => {
-    await dispatchToolCall("get-segment", { segmentId: "not-an-id" });
+    await dispatchToolCall("get-activity-laps", { id: "not-an-id" });
 
-    const stats = toolCallStats()["get-segment"]!;
+    const stats = toolCallStats()["get-activity-laps"]!;
     expect(stats.calls).toBe(1);
     expect(stats.errors).toBe(1);
   });
@@ -119,9 +119,9 @@ describe("dispatch telemetry", () => {
   });
 
   it("times the call, including the work before the handler runs", async () => {
-    await dispatchToolCall("get-segment", { segmentId: "not-an-id" });
+    await dispatchToolCall("get-activity-laps", { id: "not-an-id" });
 
-    const stats = toolCallStats()["get-segment"]!;
+    const stats = toolCallStats()["get-activity-laps"]!;
     expect(stats.total_ms).toBeGreaterThanOrEqual(0);
     expect(stats.last_called_at).not.toBe("");
   });

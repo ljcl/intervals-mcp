@@ -88,7 +88,7 @@ describe("HttpError", () => {
 
 describe("parseJsonWithLargeInts", () => {
   it("preserves integers beyond MAX_SAFE_INTEGER as exact strings", () => {
-    // A real-world Strava segment-effort id, well past 2^53 - 1.
+    // A real-world Strava activity id, well past 2^53 - 1.
     const big = "3503400000123456789";
     const out = parseJsonWithLargeInts(`{"id":${big}}`) as { id: unknown };
     expect(out.id).toBe(big);
@@ -484,32 +484,11 @@ describe("stravaCacheTtl policy", () => {
     expect(stravaCacheTtl("/athletes/999/stats")).toBe(5 * 60_000);
   });
 
-  it("caches an activity's laps, zones, and photos like the activity", () => {
+  it("caches an activity's laps and zones like the activity", () => {
     // #238: each is fetched once by a `view-` tool and again by its
     // `get-…-data` twin, so an uncached path doubled the cost of one app open.
     expect(stravaCacheTtl("/activities/123/laps")).toBe(60 * 60_000);
     expect(stravaCacheTtl("/activities/123/zones")).toBe(60 * 60_000);
-    expect(stravaCacheTtl("/activities/123/photos")).toBe(60 * 60_000);
-  });
-
-  it("caches single segments, routes, and effort history briefly", () => {
-    expect(stravaCacheTtl("/segments/55")).toBe(5 * 60_000);
-    expect(stravaCacheTtl("/routes/77")).toBe(5 * 60_000);
-    expect(stravaCacheTtl("/segment_efforts")).toBe(2 * 60_000);
-  });
-
-  it("caches segment streams as long as activity streams", () => {
-    // A segment's course cannot be edited — a change produces a new segment —
-    // so its profile is as immutable as a recorded activity's (#266).
-    expect(stravaCacheTtl("/segments/55/streams/distance,altitude")).toBe(
-      6 * 60 * 60_000,
-    );
-  });
-
-  it("caches a route's stored profile for an hour", () => {
-    // The expensive half of the route pair, wanted by both get-route-preview
-    // and the map, and only invalidated by an athlete editing the route (#264).
-    expect(stravaCacheTtl("/routes/77/streams")).toBe(60 * 60_000);
   });
 
   it("caches the activity listing briefly, so a view-/get-…-data pair costs one scan", () => {
@@ -521,11 +500,7 @@ describe("stravaCacheTtl policy", () => {
 
   it("does not cache listings, exports, or ad-hoc queries", () => {
     expect(stravaCacheTtl("/athlete/clubs")).toBeNull();
-    expect(stravaCacheTtl("/athlete/routes")).toBeNull();
-    expect(stravaCacheTtl("/segments/starred")).toBeNull();
-    expect(stravaCacheTtl("/segments/explore")).toBeNull();
-    expect(stravaCacheTtl("/routes/77/export_gpx")).toBeNull();
-    expect(stravaCacheTtl("/segment_efforts/3503400000123456789")).toBeNull();
+    expect(stravaCacheTtl("/activities/123/photos")).toBeNull();
   });
 });
 
@@ -654,12 +629,12 @@ describe("FetchClient response cache", () => {
   });
 
   it("invalidates a parent resource when a sub-resource is written", async () => {
-    // #238: `star-segment` PUTs /segments/{id}/starred, which flips
-    // `segment.starred` on the parent. A descendants-only rule left the cached
-    // /segments/{id} claiming the pre-star value for its whole TTL.
+    // #238: a PUT to a sub-resource flips a field on the parent. A
+    // descendants-only rule left the cached parent claiming the pre-write
+    // value for its whole TTL.
     const fetchMock = vi
       .fn()
-      .mockImplementation(async () => makeResponse('{"starred":false}'));
+      .mockImplementation(async () => makeResponse('{"id":55}'));
     vi.stubGlobal("fetch", fetchMock);
 
     const client = new FetchClient("https://example.test", {
@@ -668,9 +643,9 @@ describe("FetchClient response cache", () => {
       cache: { ttlForPath: stravaCacheTtl },
     });
 
-    await client.get("/segments/55");
-    await client.put("/segments/55/starred", { starred: true });
-    await client.get("/segments/55");
+    await client.get("/activities/55");
+    await client.put("/activities/55/laps", { note: "edited" });
+    await client.get("/activities/55");
 
     // 1 initial GET + 1 write + 1 re-fetch: the write dropped the parent.
     expect(fetchMock).toHaveBeenCalledTimes(3);

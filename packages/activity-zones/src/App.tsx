@@ -1,4 +1,3 @@
-import { type useApp } from "@modelcontextprotocol/ext-apps/react";
 import {
   CardHeader,
   EmptyState,
@@ -6,7 +5,8 @@ import {
   PillGroup,
   SummaryBar,
   useModelContextSync,
-} from "@strava-mcp/ui";
+} from "@intervals-mcp/ui";
+import { type useApp } from "@modelcontextprotocol/ext-apps/react";
 import { useMemo, useState } from "react";
 import styles from "./App.module.css";
 import { buildZonesContextSummary } from "./contextSummary";

@@ -1,4 +1,4 @@
-import preview, { darkGlobals } from "@strava-mcp/design-system/preview";
+import preview, { darkGlobals } from "@intervals-mcp/design-system/preview";
 import { Skeleton } from "./Skeleton";
 
 const meta = preview.meta({

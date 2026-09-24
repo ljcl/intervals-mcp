@@ -1,5 +1,5 @@
 {
-  "name": "@strava-mcp/storybook",
+  "name": "@intervals-mcp/storybook",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,18 +8,16 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@strava-mcp/activity-chart": "workspace:*",
-    "@strava-mcp/activity-segments": "workspace:*",
-    "@strava-mcp/activity-zones": "workspace:*",
-    "@strava-mcp/cadence-trends": "workspace:*",
-    "@strava-mcp/compare-activities": "workspace:*",
-    "@strava-mcp/design-system": "workspace:*",
-    "@strava-mcp/fitness-trend": "workspace:*",
-    "@strava-mcp/route-map": "workspace:*",
-    "@strava-mcp/segment-progress": "workspace:*",
-    "@strava-mcp/training-load": "workspace:*",
-    "@strava-mcp/ui": "workspace:*",
-    "@strava-mcp/vite-config": "workspace:*"
+    "@intervals-mcp/activity-chart": "workspace:*",
+    "@intervals-mcp/activity-zones": "workspace:*",
+    "@intervals-mcp/cadence-trends": "workspace:*",
+    "@intervals-mcp/compare-activities": "workspace:*",
+    "@intervals-mcp/design-system": "workspace:*",
+    "@intervals-mcp/fitness-trend": "workspace:*",
+    "@intervals-mcp/route-map": "workspace:*",
+    "@intervals-mcp/training-load": "workspace:*",
+    "@intervals-mcp/ui": "workspace:*",
+    "@intervals-mcp/vite-config": "workspace:*"
   },
   "devDependencies": {
     "@storybook/addon-a11y": "10.5.8",
@@ -27,7 +25,7 @@
     "@storybook/addon-mcp": "0.7.0",
     "@storybook/addon-vitest": "10.5.8",
     "@storybook/react-vite": "10.5.8",
-    "@strava-mcp/tsconfig": "workspace:*",
+    "@intervals-mcp/tsconfig": "workspace:*",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
     "@vitest/browser-playwright": "4.1.10",

@@ -85,13 +85,14 @@ describe("useServerToolData", () => {
   });
 
   it("surfaces an isError result's prose instead of a parse failure", async () => {
-    // What a non-subscriber actually gets back from get-segment-progress-data.
+    // What a caller gets back when a server tool answers with a structured
+    // error instead of the expected data payload.
     const { app } = fakeApp(() => ({
       isError: true,
       content: [
         {
           type: "text",
-          text: "Tool error: Segment effort history requires a Strava subscription.",
+          text: "Tool error: Activity zone history requires a Strava subscription.",
         },
       ],
     }));
@@ -103,7 +104,7 @@ describe("useServerToolData", () => {
     await flush();
 
     expect(harness.current().error).toBe(
-      "Tool error: Segment effort history requires a Strava subscription.",
+      "Tool error: Activity zone history requires a Strava subscription.",
     );
     expect(harness.current().data).toBeNull();
     expect(harness.current().loading).toBe(false);

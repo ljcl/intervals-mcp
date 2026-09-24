@@ -1,5 +1,5 @@
 {
-  "name": "@strava-mcp/data",
+  "name": "@intervals-mcp/data",
   "private": true,
   "type": "module",
   "exports": {
@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@strava-mcp/tsconfig": "workspace:*",
+    "@intervals-mcp/tsconfig": "workspace:*",
     "typescript": "7.0.2",
     "vitest": "4.1.10"
   }

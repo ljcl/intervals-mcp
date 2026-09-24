@@ -7,21 +7,11 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HttpError, RateLimitError, stravaApi } from "./fetchClient";
-import {
-  getActivityStreams,
-  getRouteStreams,
-  getSegmentStreams,
-  StreamsUnavailableError,
-} from "./stravaClient";
+import { getActivityStreams, StreamsUnavailableError } from "./stravaClient";
 
 vi.mock("./fetchClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./fetchClient")>();
   return { ...actual, stravaApi: { get: vi.fn() } };
-});
-
-vi.mock("./tokenManager", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./tokenManager")>();
-  return { ...actual, refreshAccessToken: vi.fn() };
 });
 
 const mockedGet = vi.mocked(stravaApi.get);
@@ -65,9 +55,10 @@ describe("getActivityStreams", () => {
 
     expect(streams.get("time")).toEqual([0, 1, 2]);
     expect(streams.get("heartrate")).toEqual([120, 130, 140]);
+    // No Authorization header: the configured credential is an intervals.icu
+    // API key, not a Strava token, and must never be sent to Strava.
     expect(mockedGet).toHaveBeenCalledWith(
       "/activities/123/streams/time,heartrate",
-      { headers: { Authorization: "Bearer token" } },
     );
   });
 
@@ -81,7 +72,6 @@ describe("getActivityStreams", () => {
 
     expect(mockedGet).toHaveBeenCalledWith(
       "/activities/123/streams/time?series_type=time&resolution=medium",
-      expect.anything(),
     );
   });
 
@@ -153,98 +143,6 @@ describe("getActivityStreams", () => {
 
     await expect(getActivityStreams("token", "123", ["time"])).rejects.toThrow(
       /Invalid data format/,
-    );
-  });
-});
-
-/**
- * The route and segment stream reads (#264, #266) share `getActivityStreams`'
- * fetch core, so they inherit the same degrade-on-404-only contract. These pin
- * that the sharing is real rather than three copies that will drift.
- */
-describe("getRouteStreams", () => {
-  it("requests the route's stored streams", async () => {
-    mockedGet.mockResolvedValueOnce({
-      data: [
-        { type: "distance", data: [0, 100] },
-        { type: "altitude", data: [10, 20] },
-      ],
-    });
-
-    const streams = await getRouteStreams("token", "456");
-
-    expect(streams.get("altitude")).toEqual([10, 20]);
-    expect(mockedGet).toHaveBeenCalledWith("/routes/456/streams", {
-      headers: { Authorization: "Bearer token" },
-    });
-  });
-
-  it("reports an older route with no stored profile as unavailable", async () => {
-    mockedGet.mockRejectedValueOnce(notFound());
-
-    const error = await getRouteStreams("token", "456").catch((e) => e);
-
-    expect(error).toBeInstanceOf(StreamsUnavailableError);
-    expect(error.kind).toBe("route");
-    expect(error.resourceId).toBe("456");
-  });
-
-  it("propagates a rate-limit failure rather than claiming no profile", async () => {
-    mockedGet.mockRejectedValueOnce(rateLimited());
-
-    const error = await getRouteStreams("token", "456").catch((e) => e);
-
-    expect(error).not.toBeInstanceOf(StreamsUnavailableError);
-    expect(error.message).toContain("rate limit");
-  });
-
-  it("requires a route id", async () => {
-    await expect(getRouteStreams("token", "")).rejects.toThrow(
-      /Route ID is required/,
-    );
-  });
-});
-
-describe("getSegmentStreams", () => {
-  it("requests distance, altitude, and latlng by default", async () => {
-    mockedGet.mockResolvedValueOnce({
-      data: [{ type: "distance", data: [0, 50] }],
-    });
-
-    await getSegmentStreams("token", "789");
-
-    expect(mockedGet).toHaveBeenCalledWith(
-      "/segments/789/streams/distance,altitude,latlng",
-      { headers: { Authorization: "Bearer token" } },
-    );
-  });
-
-  it("surfaces the subscription sentinel on a 402", async () => {
-    mockedGet.mockRejectedValueOnce(
-      new HttpError("HTTP 402", {
-        status: 402,
-        statusText: "Payment Required",
-        data: "",
-      }),
-    );
-
-    await expect(getSegmentStreams("token", "789")).rejects.toThrow(
-      /SUBSCRIPTION_REQUIRED/,
-    );
-  });
-
-  it("reports a segment with no stored streams as unavailable", async () => {
-    mockedGet.mockResolvedValueOnce({ data: [] });
-
-    const error = await getSegmentStreams("token", "789").catch((e) => e);
-
-    expect(error).toBeInstanceOf(StreamsUnavailableError);
-    expect(error.kind).toBe("segment");
-  });
-
-  it("requires a segment id", async () => {
-    await expect(getSegmentStreams("token", "")).rejects.toThrow(
-      /Segment ID is required/,
     );
   });
 });

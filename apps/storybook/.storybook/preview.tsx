@@ -1,4 +1,4 @@
-export { default } from "@strava-mcp/design-system/preview";
+export { default } from "@intervals-mcp/design-system/preview";
 
 /**
  * Autodocs: generate a "Docs" page for every component from its stories,

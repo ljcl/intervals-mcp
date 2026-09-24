@@ -1,4 +1,4 @@
-import preview from "@strava-mcp/design-system/preview";
+import preview from "@intervals-mcp/design-system/preview";
 
 const allTokens = [
   {
@@ -108,13 +108,6 @@ const allTokens = [
       { var: "--chart-altitude", light: "#b8a48c", dark: "#8c7a66" },
       { var: "--chart-cadence", light: "#f97316", dark: "#fb923c" },
       { var: "--chart-grade", light: "#6b7280", dark: "#9ca3af" },
-    ],
-  },
-  {
-    category: "Tier",
-    tokens: [
-      { var: "--color-tier-pr", light: "#f59e0b", dark: "#f59e0b" },
-      { var: "--color-tier-top10", light: "#a78bfa", dark: "#a78bfa" },
     ],
   },
 ];

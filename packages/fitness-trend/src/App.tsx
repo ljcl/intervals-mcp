@@ -1,12 +1,12 @@
-import { type useApp } from "@modelcontextprotocol/ext-apps/react";
-import { getChartTokens } from "@strava-mcp/design-system";
+import { getChartTokens } from "@intervals-mcp/design-system";
 import {
   CardHeader,
   Legend,
   LegendItem,
   SummaryBar,
   useModelContextSync,
-} from "@strava-mcp/ui";
+} from "@intervals-mcp/ui";
+import { type useApp } from "@modelcontextprotocol/ext-apps/react";
 import { useMemo, useState } from "react";
 import styles from "./App.module.css";
 import { buildFitnessTrendContextSummary } from "./contextSummary";

@@ -1,13 +1,21 @@
-import { AsyncLocalStorage } from "node:async_hooks";
 import { z } from "zod";
 import { HttpError, RateLimitError, stravaApi } from "./fetchClient";
-import { refreshAccessToken, TokenRevokedError } from "./tokenManager";
 import {
-  buildCreateActivityBody,
   buildUpdateActivityBody,
-  type CreateActivityParams,
   type UpdateActivityParams,
 } from "./utils/activityWrite";
+
+/**
+ * Retired transitional client, pending the Phase 1/2 intervals.icu port.
+ *
+ * Every function here still takes an `accessToken` parameter (validated, so
+ * a caller mistake still surfaces immediately) but sends no `Authorization`
+ * header on any request: the credential configured on this server is an
+ * intervals.icu API key, and forwarding it to Strava would leak a full
+ * read/write credential to a third party. Every call below therefore fails
+ * with a 401, translated by {@link handleApiError} into a message naming the
+ * tool as not yet ported.
+ */
 
 /**
  * Strava resource identifier (activity, segment, segment-effort, athlete, etc.).
@@ -210,43 +218,6 @@ const SummarySegmentSchema = z.object({
   starred: z.boolean().optional(),
 });
 
-const DetailedSegmentSchema = SummarySegmentSchema.extend({
-  created_at: z.string().datetime(),
-  updated_at: z.string().datetime(),
-  total_elevation_gain: z.number().optional().nullable(),
-  map: MapSchema, // Now defined above
-  effort_count: z.number().int(),
-  athlete_count: z.number().int(),
-  hazardous: z.boolean(),
-  star_count: z.number().int(),
-});
-
-export type StravaSegment = z.infer<typeof SummarySegmentSchema>;
-export type StravaDetailedSegment = z.infer<typeof DetailedSegmentSchema>;
-const StravaSegmentsResponseSchema = z.array(SummarySegmentSchema);
-
-// --- Explorer Schemas ---
-// Based on https://developers.strava.com/docs/reference/#api-models-ExplorerSegment
-const ExplorerSegmentSchema = z.object({
-  id: StravaIdSchema,
-  name: z.string(),
-  climb_category: z.number().int(),
-  climb_category_desc: z.string(), // e.g., "NC", "4", "3", "2", "1", "HC"
-  avg_grade: z.number(),
-  start_latlng: z.array(z.number()),
-  end_latlng: z.array(z.number()),
-  elev_difference: z.number(),
-  distance: z.number(), // meters
-  points: z.string(), // Encoded polyline
-  starred: z.boolean().optional(), // Only included if authenticated
-});
-
-// Based on https://developers.strava.com/docs/reference/#api-models-ExplorerResponse
-const ExplorerResponseSchema = z.object({
-  segments: z.array(ExplorerSegmentSchema),
-});
-export type StravaExplorerResponse = z.infer<typeof ExplorerResponseSchema>;
-
 // --- Detailed Activity Schema ---
 // Based on https://developers.strava.com/docs/reference/#api-models-DetailedActivity
 const DetailedActivitySchema = z.object({
@@ -333,9 +304,6 @@ const DetailedSegmentEffortSchema = z.object({
   pr_rank: z.number().int().optional().nullable(), // 1, 2, 3, or null
   hidden: z.boolean().optional().nullable(),
 });
-export type StravaDetailedSegmentEffort = z.infer<
-  typeof DetailedSegmentEffortSchema
->;
 
 // --- Best Effort Schema ---
 // Best efforts are different from segment efforts - they represent time-based achievements
@@ -372,61 +340,14 @@ export type StravaDetailedActivity = z.infer<
   typeof ExtendedDetailedActivitySchema
 >;
 
-// --- Route Schema ---
-// Based on https://developers.strava.com/docs/reference/#api-models-Route
-const RouteSchema = z.object({
-  athlete: BaseAthleteSchema, // Reuse BaseAthleteSchema
-  description: z.string().nullable(),
-  distance: z.number(), // meters
-  elevation_gain: z.number().nullable(), // meters
-  id: StravaIdSchema,
-  id_str: z.string(),
-  map: MapSchema, // Reuse MapSchema
-  map_urls: z
-    .object({
-      // Assuming structure based on context
-      retina_url: z.string().url().optional().nullable(),
-      url: z.string().url().optional().nullable(),
-    })
-    .optional()
-    .nullable(),
-  name: z.string(),
-  private: z.boolean(),
-  resource_state: z.number().int(),
-  starred: z.boolean(),
-  sub_type: z.number().int(), // 1 for "road", 2 for "mtb", 3 for "cx", 4 for "trail", 5 for "mixed"
-  type: z.number().int(), // 1 for "ride", 2 for "run"
-  created_at: z.string().datetime(),
-  updated_at: z.string().datetime(),
-  estimated_moving_time: z.number().int().optional().nullable(), // seconds
-  segments: z.array(SummarySegmentSchema).optional().nullable(), // Array of segments within the route
-  timestamp: z.number().int().optional().nullable(), // Added based on common patterns
-});
-export type StravaRoute = z.infer<typeof RouteSchema>;
-const StravaRoutesResponseSchema = z.array(RouteSchema);
-
 // --- Schema Exports for Testing ---
 export {
   ActivityStatsSchema,
   AthleteGearSchema,
   DetailedAthleteSchema,
-  DetailedSegmentSchema,
   ExtendedDetailedActivitySchema as DetailedActivitySchema,
-  RouteSchema,
   SummarySegmentSchema,
 };
-
-// --- Token Refresh Functionality ---
-// Token refresh lives entirely in tokenManager, which owns the single,
-// concurrency-safe refresh path (one in-flight exchange shared across callers)
-// and atomic persistence of tokens.json. handleApiError delegates to it on 401.
-
-// Every retryFn recursively re-enters the public client function, whose own
-// catch would otherwise refresh-and-retry again on another 401 — a
-// scope-stripped token that still refreshes successfully would loop forever.
-// The retried invocation runs inside this context, so nested handleApiError
-// calls see it and skip the refresh path: at most one recovery per call.
-const authRetryContext = new AsyncLocalStorage<true>();
 
 /**
  * A Strava API failure that {@link handleApiError} has already interpreted:
@@ -434,10 +355,10 @@ const authRetryContext = new AsyncLocalStorage<true>();
  *
  * It extends {@link HttpError} so the status survives the translation. Never
  * flatten a failure into a plain `Error` here: a caller that degrades on one
- * specific status — `loadRouteProfile` treats a 404 from the GPX export as
- * "this route stored no profile" and anything else as a real failure — then
- * has nothing to test `instanceof` against, its branch silently never runs,
- * and the 404 surfaces as a raw API error. Degrading on a status is only
+ * specific status (the streams fetcher treats a 404 as "this activity has
+ * no recorded samples" and anything else as a real failure) then has
+ * nothing to test `instanceof` against, its branch silently never runs, and
+ * the 404 surfaces as a raw API error. Degrading on a status is only
  * expressible if the status is still there.
  */
 export class StravaApiError extends HttpError {
@@ -451,52 +372,24 @@ export class StravaApiError extends HttpError {
 }
 
 /**
- * Helper function to handle API errors with token refresh capability
+ * Helper function to handle API errors
  * @param error - The caught error
  * @param context - The context in which the error occurred
- * @param retryFn - Optional retry, called with the freshly-refreshed token
- * @returns Never returns normally, always throws an error or returns via retryFn
+ * @returns Never returns normally, always throws an error
  */
-async function handleApiError<T>(
-  error: unknown,
-  context: string,
-  retryFn?: (accessToken: string) => Promise<T>,
-): Promise<T> {
+async function handleApiError<T>(error: unknown, context: string): Promise<T> {
   // Check if it's a fetch error with response data
   const isHttpError = error instanceof HttpError;
   const status = isHttpError ? error.response.status : undefined;
 
-  // Check if it's an authentication error (401) that might be fixed by refreshing the token
-  if (status === 401 && retryFn && !authRetryContext.getStore()) {
-    let refreshedToken: string | null = null;
-    try {
-      console.error(
-        `🔑 Authentication error in ${context}. Attempting to refresh token...`,
-      );
-      refreshedToken = (await refreshAccessToken()).access_token;
-    } catch (refreshError) {
-      // A revoked refresh token can never recover by retrying — surface the
-      // actionable re-auth instruction instead of the original 401.
-      if (refreshError instanceof TokenRevokedError) {
-        console.error(`❌ ${refreshError.message}`);
-        throw new Error(
-          `Strava authentication failed in ${context}: ${refreshError.message}`,
-        );
-      }
-      console.error(
-        `❌ Token refresh failed: ${
-          refreshError instanceof Error
-            ? refreshError.message
-            : String(refreshError)
-        }`,
-      );
-      // Fall through to normal error handling if refresh fails
-    }
-    if (refreshedToken) {
-      console.error(`🔄 Retrying ${context} after token refresh...`);
-      const token = refreshedToken;
-      return await authRetryContext.run(true, () => retryFn(token));
-    }
+  // Every request through this client sends no Authorization header (see the
+  // module comment), so Strava always answers 401. That is expected: this
+  // tool has not been ported to intervals.icu yet.
+  if (isHttpError && status === 401) {
+    throw new StravaApiError(
+      `${context}: this tool still uses the retired Strava client and has not been ported to intervals.icu yet.`,
+      error.response,
+    );
   }
 
   // Rate limit exhausted (429). The fetch layer has already honoured any
@@ -614,7 +507,6 @@ export async function getAllActivities(
 
       // Fetch current page
       const response = await stravaApi.get<unknown>("/athlete/activities", {
-        headers: { Authorization: `Bearer ${accessToken}` },
         params: queryParams,
       });
 
@@ -661,18 +553,9 @@ export async function getAllActivities(
 
     return allActivities;
   } catch (error) {
-    // Every page, not only the first. Guarding on the first page instead
-    // means a token expiring part-way through a long history scan skips the
-    // refresh and surfaces a raw `HTTP 401` with no mention of /auth/start.
-    // The retry restarts pagination from page one — the same result for a few
-    // extra requests — and `authRetryContext` caps recovery at one attempt per
-    // call, so the guard buys nothing.
     return await handleApiError<StravaSummaryActivity[]>(
       error,
       "getAllActivities",
-      async (newToken) => {
-        return getAllActivities(newToken, params);
-      },
     );
   }
 }
@@ -692,9 +575,7 @@ export async function getAuthenticatedAthlete(
   }
 
   try {
-    const response = await stravaApi.get<unknown>("/athlete", {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    const response = await stravaApi.get<unknown>("/athlete");
 
     // Validate the response data against the Zod schema
     const validationResult = DetailedAthleteSchema.safeParse(response.data);
@@ -719,9 +600,6 @@ export async function getAuthenticatedAthlete(
     return await handleApiError<StravaAthlete>(
       error,
       "getAuthenticatedAthlete",
-      async (newToken) => {
-        return getAuthenticatedAthlete(newToken);
-      },
     );
   }
 }
@@ -748,9 +626,6 @@ export async function getAthleteStats(
   try {
     const response = await stravaApi.get<unknown>(
       `/athletes/${athleteId}/stats`,
-      {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      },
     );
 
     const validationResult = ActivityStatsSchema.safeParse(response.data);
@@ -769,9 +644,6 @@ export async function getAthleteStats(
     return await handleApiError<StravaStats>(
       error,
       `getAthleteStats for ID ${athleteId}`,
-      async (newToken) => {
-        return getAthleteStats(newToken, athleteId);
-      },
     );
   }
 }
@@ -800,7 +672,6 @@ export async function getActivityById(
 
   try {
     const response = await stravaApi.get<unknown>(`/activities/${activityId}`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
       skipCache: options.skipCache,
     });
 
@@ -822,22 +693,18 @@ export async function getActivityById(
     return await handleApiError<StravaDetailedActivity>(
       error,
       `getActivityById for ID ${activityId}`,
-      async (newToken) => {
-        return getActivityById(newToken, activityId, options);
-      },
     );
   }
 }
 
 /** What a stream set can be attached to. */
-export type StreamResourceKind = "activity" | "route" | "segment";
+export type StreamResourceKind = "activity";
 
 /**
  * The resource genuinely has no recorded samples: Strava answered 404, or
  * returned an empty stream set. Distinct from every other failure so callers
- * can degrade (a manual activity really has nothing to analyse, an old saved
- * route really has no stored profile) without also swallowing an expired token
- * or an exhausted rate limit.
+ * can degrade (a manual activity really has nothing to analyse) without also
+ * swallowing an expired token or an exhausted rate limit.
  */
 export class StreamsUnavailableError extends Error {
   resourceId: string;
@@ -866,9 +733,9 @@ export type StravaStreamSet = Map<string, unknown[]>;
  * Fetches an activity's data streams.
  *
  * This is the single stream-fetch path: never reach for `stravaApi.get()`
- * directly behind a bare `catch {}`. That gives a 401 no refresh-and-retry and
- * a 429 no structured message, and surfaces both to the athlete as "this
- * activity has no samples" — wrong, and it hides the one-line fix. Only a
+ * directly behind a bare `catch {}`. That gives neither a 401 nor a 429 a
+ * structured message, and surfaces both to the athlete as "this activity has
+ * no samples", which is wrong and hides the one-line fix. Only a
  * genuine 404 or empty response yields {@link StreamsUnavailableError}; auth,
  * rate-limit, and subscription failures go through {@link handleApiError} like
  * every other client call.
@@ -906,19 +773,16 @@ export async function getActivityStreams(
     kind: "activity",
     resourceId: activityId,
     context: `getActivityStreams for ID ${activityId}`,
-    retry: (newToken) =>
-      getActivityStreams(newToken, activityId, types, options),
   });
 }
 
 /**
  * The one place a stream set is fetched, validated, and error-mapped, for
- * activities, routes, and segments alike. Every caller inherits the same
+ * activities. Every caller inherits the same
  * contract: a genuine 404 or an empty response is
  * {@link StreamsUnavailableError} — the single failure a caller may degrade
  * on — while auth, rate-limit, and subscription failures go through
- * {@link handleApiError} so a 401 refreshes and retries and a 429 gets the
- * structured message.
+ * {@link handleApiError} so a 429 gets the structured message.
  */
 async function fetchStreamSet(args: {
   accessToken: string;
@@ -926,13 +790,10 @@ async function fetchStreamSet(args: {
   kind: StreamResourceKind;
   resourceId: number | string;
   context: string;
-  retry: (newToken: string) => Promise<StravaStreamSet>;
 }): Promise<StravaStreamSet> {
-  const { accessToken, endpoint, kind, resourceId, context, retry } = args;
+  const { endpoint, kind, resourceId, context } = args;
   try {
-    const response = await stravaApi.get<unknown>(endpoint, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    const response = await stravaApi.get<unknown>(endpoint);
 
     const validationResult = StravaStreamSetSchema.safeParse(response.data);
     if (!validationResult.success) {
@@ -960,454 +821,8 @@ async function fetchStreamSet(args: {
     if (error instanceof HttpError && error.response.status === 404) {
       throw new StreamsUnavailableError(resourceId, kind);
     }
-    return await handleApiError<StravaStreamSet>(error, context, retry);
+    return await handleApiError<StravaStreamSet>(error, context);
   }
-}
-
-/**
- * Fetches a saved route's streams.
- *
- * `/routes/{id}/streams` takes no key list — it returns the route's whole
- * stored set (distance, altitude, latlng), so there is nothing to request.
- *
- * A route's stored elevation profile is only reachable here, not from its
- * encoded polyline — rendering a route from the polyline alone leaves the
- * elevation strip, the scrub metrics, and the metric-coloured track as dead
- * code for every `route_id`. Older routes have no stored profile and answer
- * 404, which surfaces as {@link StreamsUnavailableError} for the caller to
- * fall back on.
- *
- * @throws {StreamsUnavailableError} when the route has no stored streams.
- */
-export async function getRouteStreams(
-  accessToken: string,
-  routeId: number | string,
-): Promise<StravaStreamSet> {
-  if (!accessToken) {
-    throw new Error("Strava access token is required.");
-  }
-  if (!routeId) {
-    throw new Error("Route ID is required to fetch streams.");
-  }
-
-  return fetchStreamSet({
-    accessToken,
-    endpoint: `/routes/${routeId}/streams`,
-    kind: "route",
-    resourceId: routeId,
-    context: `getRouteStreams for ID ${routeId}`,
-    retry: (newToken) => getRouteStreams(newToken, routeId),
-  });
-}
-
-/** Stream keys a segment stores: its course plus the elevation along it. */
-export const SEGMENT_STREAM_KEYS = ["distance", "altitude", "latlng"] as const;
-
-/**
- * Fetches a segment's streams.
- *
- * The distance + altitude pair is what turns `get-segment`'s single average
- * grade into a profile: a steady 4% ramp and a flat kilometre followed by a
- * wall report the same scalar. Subscription-gated like `/segment_efforts`, and
- * that 402 flows through {@link handleApiError}'s `SUBSCRIPTION_REQUIRED:`
- * sentinel for the tool to translate.
- *
- * @throws {StreamsUnavailableError} when the segment has no stored streams.
- */
-export async function getSegmentStreams(
-  accessToken: string,
-  segmentId: number | string,
-  types: readonly string[] = SEGMENT_STREAM_KEYS,
-): Promise<StravaStreamSet> {
-  if (!accessToken) {
-    throw new Error("Strava access token is required.");
-  }
-  if (!segmentId) {
-    throw new Error("Segment ID is required to fetch streams.");
-  }
-
-  return fetchStreamSet({
-    accessToken,
-    endpoint: `/segments/${segmentId}/streams/${types.join(",")}`,
-    kind: "segment",
-    resourceId: segmentId,
-    context: `getSegmentStreams for ID ${segmentId}`,
-    retry: (newToken) => getSegmentStreams(newToken, segmentId, types),
-  });
-}
-
-/** Page size `listStarredSegments` requests when the caller names none. */
-export const STARRED_SEGMENTS_DEFAULT_PER_PAGE = 30;
-
-/**
- * Lists the segments starred by the authenticated athlete.
- *
- * Paged explicitly, because `/segments/starred` silently serves only its
- * first page: fetch it without paging and an athlete with more stars than the
- * page size is told the truncated list is everything.
- *
- * @param accessToken - The Strava API access token.
- * @param page - 1-based page number.
- * @param perPage - Items per page (Strava caps this at 200).
- * @returns A promise that resolves to one page of the athlete's starred segments.
- * @throws Throws an error if the API request fails or the response format is unexpected.
- */
-export async function listStarredSegments(
-  accessToken: string,
-  page = 1,
-  perPage: number = STARRED_SEGMENTS_DEFAULT_PER_PAGE,
-): Promise<StravaSegment[]> {
-  if (!accessToken) {
-    throw new Error("Strava access token is required.");
-  }
-
-  try {
-    const response = await stravaApi.get<unknown>("/segments/starred", {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      params: { page, per_page: perPage },
-    });
-
-    const validationResult = StravaSegmentsResponseSchema.safeParse(
-      response.data,
-    );
-
-    if (!validationResult.success) {
-      console.error(
-        "Strava API validation failed (listStarredSegments):",
-        validationResult.error,
-      );
-      throw new Error(
-        `Invalid data format received from Strava API: ${validationResult.error.message}`,
-      );
-    }
-    return validationResult.data;
-  } catch (error) {
-    return await handleApiError<StravaSegment[]>(
-      error,
-      "listStarredSegments",
-      async (newToken) => {
-        return listStarredSegments(newToken, page, perPage);
-      },
-    );
-  }
-}
-
-/** Pages `listStarredSegments` will walk before giving up. */
-export const STARRED_SEGMENTS_MAX_PAGES = 10;
-
-/**
- * Walks `/segments/starred` to completion so callers that need the *whole*
- * starred set (`find-segments-on-route`) cannot silently work from page one.
- * Bounded by {@link STARRED_SEGMENTS_MAX_PAGES} — 2000 stars at the maximum
- * page size — so a pathological account cannot spend the rate limit here.
- */
-export async function listAllStarredSegments(
-  accessToken: string,
-  perPage = 200,
-): Promise<StravaSegment[]> {
-  const all: StravaSegment[] = [];
-  for (let page = 1; page <= STARRED_SEGMENTS_MAX_PAGES; page++) {
-    const batch = await listStarredSegments(accessToken, page, perPage);
-    all.push(...batch);
-    if (batch.length < perPage) break;
-  }
-  return all;
-}
-
-/**
- * Fetches detailed information for a specific segment by its ID.
- *
- * @param accessToken - The Strava API access token.
- * @param segmentId - The ID of the segment to fetch.
- * @returns A promise that resolves to the detailed segment data.
- * @throws Throws an error if the API request fails or the response format is unexpected.
- */
-export async function getSegmentById(
-  accessToken: string,
-  segmentId: number | string,
-): Promise<StravaDetailedSegment> {
-  if (!accessToken) {
-    throw new Error("Strava access token is required.");
-  }
-  if (!segmentId) {
-    throw new Error("Segment ID is required.");
-  }
-
-  try {
-    const response = await stravaApi.get<unknown>(`/segments/${segmentId}`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-
-    const validationResult = DetailedSegmentSchema.safeParse(response.data);
-
-    if (!validationResult.success) {
-      console.error(
-        `Strava API validation failed (getSegmentById: ${segmentId}):`,
-        validationResult.error,
-      );
-      throw new Error(
-        `Invalid data format received from Strava API: ${validationResult.error.message}`,
-      );
-    }
-    return validationResult.data;
-  } catch (error) {
-    return await handleApiError<StravaDetailedSegment>(
-      error,
-      `getSegmentById for ID ${segmentId}`,
-      async (newToken) => {
-        return getSegmentById(newToken, segmentId);
-      },
-    );
-  }
-}
-
-/**
- * Returns the top 10 segments matching a specified query.
- *
- * @param accessToken - The Strava API access token.
- * @param bounds - String representing the latitudes and longitudes for the corners of the search map, `latitude,longitude,latitude,longitude`.
- * @param activityType - Optional filter for activity type ("running" or "riding").
- * @param minCat - Optional minimum climb category filter.
- * @param maxCat - Optional maximum climb category filter.
- * @returns A promise that resolves to the explorer response containing matching segments.
- * @throws Throws an error if the API request fails or the response format is unexpected.
- */
-export async function exploreSegments(
-  accessToken: string,
-  bounds: string,
-  activityType?: "running" | "riding",
-  minCat?: number,
-  maxCat?: number,
-): Promise<StravaExplorerResponse> {
-  if (!accessToken) {
-    throw new Error("Strava access token is required.");
-  }
-  if (
-    !bounds ||
-    !/^-?\d+(\.\d+)?,-?\d+(\.\d+)?,-?\d+(\.\d+)?,-?\d+(\.\d+)?$/.test(bounds)
-  ) {
-    throw new Error(
-      "Valid bounds (lat,lng,lat,lng) are required for exploring segments.",
-    );
-  }
-
-  const params: Record<string, string | number | boolean> = {
-    bounds: bounds,
-  };
-  if (activityType !== undefined) params.activity_type = activityType;
-  if (minCat !== undefined) params.min_cat = minCat;
-  if (maxCat !== undefined) params.max_cat = maxCat;
-
-  try {
-    const response = await stravaApi.get<unknown>("/segments/explore", {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      params: params,
-    });
-
-    const validationResult = ExplorerResponseSchema.safeParse(response.data);
-
-    if (!validationResult.success) {
-      console.error(
-        "Strava API validation failed (exploreSegments):",
-        validationResult.error,
-      );
-      throw new Error(
-        `Invalid data format received from Strava API: ${validationResult.error.message}`,
-      );
-    }
-    return validationResult.data;
-  } catch (error) {
-    return await handleApiError<StravaExplorerResponse>(
-      error,
-      `exploreSegments with bounds ${bounds}`,
-      async (newToken) => {
-        return exploreSegments(newToken, bounds, activityType, minCat, maxCat);
-      },
-    );
-  }
-}
-
-/**
- * Stars or unstars a segment for the authenticated athlete.
- *
- * @param accessToken - The Strava API access token.
- * @param segmentId - The ID of the segment to star/unstar.
- * @param starred - Boolean indicating whether to star (true) or unstar (false) the segment.
- * @returns A promise that resolves to the detailed segment data after the update.
- * @throws Throws an error if the API request fails or the response format is unexpected.
- */
-export async function starSegment(
-  accessToken: string,
-  segmentId: number | string,
-  starred: boolean,
-): Promise<StravaDetailedSegment> {
-  if (!accessToken) {
-    throw new Error("Strava access token is required.");
-  }
-  if (!segmentId) {
-    throw new Error("Segment ID is required to star/unstar.");
-  }
-  if (starred === undefined) {
-    throw new Error("Starred status (true/false) is required.");
-  }
-
-  try {
-    const response = await stravaApi.put<unknown>(
-      `/segments/${segmentId}/starred`,
-      { starred: starred }, // Data payload for the PUT request
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json", // Important for PUT requests with body
-        },
-      },
-    );
-
-    // The response is expected to be the updated DetailedSegment
-    const validationResult = DetailedSegmentSchema.safeParse(response.data);
-
-    if (!validationResult.success) {
-      console.error(
-        `Strava API validation failed (starSegment: ${segmentId}):`,
-        validationResult.error,
-      );
-      throw new Error(
-        `Invalid data format received from Strava API: ${validationResult.error.message}`,
-      );
-    }
-    return validationResult.data;
-  } catch (error) {
-    return await handleApiError<StravaDetailedSegment>(
-      error,
-      `starSegment for ID ${segmentId} with starred=${starred}`,
-      async (newToken) => {
-        return starSegment(newToken, segmentId, starred);
-      },
-    );
-  }
-}
-
-/**
- * Fetches detailed information about a specific segment effort by its ID.
- *
- * @param accessToken - The Strava API access token.
- * @param effortId - The ID of the segment effort to fetch.
- * @returns A promise that resolves to the detailed segment effort data.
- * @throws Throws an error if the API request fails or the response format is unexpected.
- */
-export async function getSegmentEffort(
-  accessToken: string,
-  effortId: number | string,
-): Promise<StravaDetailedSegmentEffort> {
-  if (!accessToken) {
-    throw new Error("Strava access token is required.");
-  }
-  if (!effortId) {
-    throw new Error("Segment Effort ID is required to fetch details.");
-  }
-
-  try {
-    const response = await stravaApi.get<unknown>(
-      `/segment_efforts/${effortId}`,
-      {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      },
-    );
-
-    const validationResult = DetailedSegmentEffortSchema.safeParse(
-      response.data,
-    );
-
-    if (!validationResult.success) {
-      console.error(
-        `Strava API validation failed (getSegmentEffort: ${effortId}):`,
-        validationResult.error,
-      );
-      throw new Error(
-        `Invalid data format received from Strava API: ${validationResult.error.message}`,
-      );
-    }
-    return validationResult.data;
-  } catch (error) {
-    return await handleApiError<StravaDetailedSegmentEffort>(
-      error,
-      `getSegmentEffort for ID ${effortId}`,
-      async (newToken) => {
-        return getSegmentEffort(newToken, effortId);
-      },
-    );
-  }
-}
-
-/**
- * Fetches a list of segment efforts for a given segment, filtered by date range for the authenticated athlete.
- *
- * @param accessToken - The Strava API access token.
- * @param segmentId - The ID of the segment.
- * @param startDateLocal - Optional ISO 8601 start date.
- * @param endDateLocal - Optional ISO 8601 end date.
- * @param perPage - Optional number of items per page.
- * @returns A promise that resolves to an array of segment efforts.
- * @throws Throws an error if the API request fails or the response format is unexpected.
- */
-export async function listSegmentEfforts(
-  accessToken: string,
-  segmentId: number | string,
-  params: SegmentEffortsParams = {},
-): Promise<StravaDetailedSegmentEffort[]> {
-  if (!accessToken) {
-    throw new Error("Strava access token is required.");
-  }
-  if (!segmentId) {
-    throw new Error("Segment ID is required to list efforts.");
-  }
-
-  const { startDateLocal, endDateLocal, perPage } = params;
-
-  const queryParams: Record<string, string | number | boolean> = {
-    segment_id: segmentId,
-  };
-  if (startDateLocal) queryParams.start_date_local = startDateLocal;
-  if (endDateLocal) queryParams.end_date_local = endDateLocal;
-  if (perPage) queryParams.per_page = perPage;
-
-  try {
-    const response = await stravaApi.get<unknown>("/segment_efforts", {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      params: queryParams,
-    });
-
-    // Response is an array of DetailedSegmentEffort
-    const validationResult = z
-      .array(DetailedSegmentEffortSchema)
-      .safeParse(response.data);
-
-    if (!validationResult.success) {
-      console.error(
-        `Strava API validation failed (listSegmentEfforts: segment ${segmentId}):`,
-        validationResult.error,
-      );
-      throw new Error(
-        `Invalid data format received from Strava API: ${validationResult.error.message}`,
-      );
-    }
-    return validationResult.data;
-  } catch (error) {
-    return await handleApiError<StravaDetailedSegmentEffort[]>(
-      error,
-      `listSegmentEfforts for segment ID ${segmentId}`,
-      async (newToken) => {
-        return listSegmentEfforts(newToken, segmentId, params);
-      },
-    );
-  }
-}
-
-// Add the missing interface for segment efforts parameters
-export interface SegmentEffortsParams {
-  startDateLocal?: string;
-  endDateLocal?: string;
-  perPage?: number;
 }
 
 // Interface for getAllActivities parameters
@@ -1430,196 +845,6 @@ export interface GetAllActivitiesParams {
    */
   countActivity?: (activity: StravaSummaryActivity) => boolean;
 }
-
-/**
- * Lists routes created by a specific athlete.
- *
- * @param accessToken - The Strava API access token.
- * @param athleteId - The ID of the athlete whose routes are being requested.
- * @param page - Optional page number for pagination.
- * @param perPage - Optional number of items per page.
- * @returns A promise that resolves to an array of the athlete's routes.
- * @throws Throws an error if the API request fails or the response format is unexpected.
- */
-export async function listAthleteRoutes(
-  accessToken: string,
-  page = 1,
-  perPage = 30,
-): Promise<StravaRoute[]> {
-  if (!accessToken) {
-    throw new Error("Strava access token is required.");
-  }
-
-  try {
-    const response = await stravaApi.get<unknown>("/athlete/routes", {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      params: {
-        page: page,
-        per_page: perPage,
-      },
-    });
-
-    const validationResult = StravaRoutesResponseSchema.safeParse(
-      response.data,
-    );
-
-    if (!validationResult.success) {
-      console.error(
-        "Strava API validation failed (listAthleteRoutes):",
-        validationResult.error,
-      );
-      throw new Error(
-        `Invalid data format received from Strava API: ${validationResult.error.message}`,
-      );
-    }
-    return validationResult.data;
-  } catch (error) {
-    return await handleApiError<StravaRoute[]>(
-      error,
-      "listAthleteRoutes",
-      async (newToken) => {
-        return listAthleteRoutes(newToken, page, perPage);
-      },
-    );
-  }
-}
-
-/**
- * Fetches detailed information for a specific route by its ID.
- *
- * @param accessToken - The Strava API access token.
- * @param routeId - The ID of the route to fetch.
- * @returns A promise that resolves to the detailed route data.
- * @throws Throws an error if the API request fails or the response format is unexpected.
- */
-export async function getRouteById(
-  accessToken: string,
-  routeId: string,
-): Promise<StravaRoute> {
-  const url = `/routes/${routeId}`;
-  try {
-    const response = await stravaApi.get(url, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    // Validate the response against the Zod schema
-    const validatedRoute = RouteSchema.parse(response.data);
-    return validatedRoute;
-  } catch (error) {
-    return await handleApiError<StravaRoute>(
-      error,
-      `fetching route ${routeId}`,
-      async (newToken) => {
-        return getRouteById(newToken, routeId);
-      },
-    );
-  }
-}
-
-/**
- * Fetches the GPX data for a specific route.
- * Note: This endpoint returns raw GPX data (XML string), not JSON.
- * @param accessToken Strava API access token
- * @param routeId The ID of the route to export
- * @returns Promise resolving to the GPX data as a string
- */
-export async function exportRouteGpx(
-  accessToken: string,
-  routeId: string,
-): Promise<string> {
-  const url = `/routes/${routeId}/export_gpx`;
-  try {
-    // Expecting text/xml response, Axios should handle it as string
-    const response = await stravaApi.get<string>(url, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      // Ensure response is treated as text
-      responseType: "text",
-    });
-    if (typeof response.data !== "string") {
-      throw new Error(
-        "Invalid response format received from Strava API for GPX export.",
-      );
-    }
-    return response.data;
-  } catch (error) {
-    return await handleApiError<string>(
-      error,
-      `exporting route ${routeId} as GPX`,
-      async (newToken) => {
-        return exportRouteGpx(newToken, routeId);
-      },
-    );
-  }
-}
-
-/**
- * Fetches the TCX data for a specific route.
- * Note: This endpoint returns raw TCX data (XML string), not JSON.
- * @param accessToken Strava API access token
- * @param routeId The ID of the route to export
- * @returns Promise resolving to the TCX data as a string
- */
-export async function exportRouteTcx(
-  accessToken: string,
-  routeId: string,
-): Promise<string> {
-  const url = `/routes/${routeId}/export_tcx`;
-  try {
-    // Expecting text/xml response, Axios should handle it as string
-    const response = await stravaApi.get<string>(url, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      // Ensure response is treated as text
-      responseType: "text",
-    });
-    if (typeof response.data !== "string") {
-      throw new Error(
-        "Invalid response format received from Strava API for TCX export.",
-      );
-    }
-    return response.data;
-  } catch (error) {
-    return await handleApiError<string>(
-      error,
-      `exporting route ${routeId} as TCX`,
-      async (newToken) => {
-        return exportRouteTcx(newToken, routeId);
-      },
-    );
-  }
-}
-
-// --- Photo Schema ---
-// Based on https://developers.strava.com/docs/reference/#api-models-Photo
-const PhotoSchema = z.object({
-  id: StravaIdSchema.nullable().optional(), // Photo ID (may be null for some sources)
-  unique_id: z.string().nullable().optional(), // Unique identifier
-  urls: z.record(z.string(), z.string()).optional(), // Maps size names (e.g., "100", "600", "1800") to URLs
-  source: z.number().int().optional(), // 1 = Strava, 2 = Instagram
-  uploaded_at: z.string().optional().nullable(),
-  created_at: z.string().optional().nullable(),
-  created_at_local: z.string().optional().nullable(),
-  location: z.array(z.number()).nullable().optional(), // [lat, lng]
-  caption: z.string().nullable().optional(),
-  activity_id: StravaIdSchema.optional(),
-  activity_name: z.string().optional().nullable(),
-  resource_state: z.number().int().optional(),
-  athlete_id: StravaIdSchema.optional().nullable(),
-  post_id: StravaIdSchema.nullable().optional(),
-  default_photo: z.boolean().optional(),
-  type: z.union([z.string(), z.number()]).optional(), // Can be number (1) or string ("InstagramPhoto")
-  status: z.number().int().optional(), // Processing status
-  placeholder_image: z
-    .object({
-      light_url: z.string().optional(),
-      dark_url: z.string().optional(),
-    })
-    .nullable()
-    .optional(),
-  sizes: z.record(z.string(), z.array(z.number())).optional(), // Maps size names to [width, height]
-  cursor: z.unknown().optional(), // Pagination cursor
-});
-
-export type StravaPhoto = z.infer<typeof PhotoSchema>;
-const StravaPhotosResponseSchema = z.array(PhotoSchema);
 
 // --- Lap Schema ---
 // Based on https://developers.strava.com/docs/reference/#api-models-Lap and user-provided image
@@ -1666,9 +891,7 @@ export async function getActivityLaps(
   }
 
   try {
-    const response = await stravaApi.get(`/activities/${activityId}/laps`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    const response = await stravaApi.get(`/activities/${activityId}/laps`);
 
     const validationResult = StravaLapsResponseSchema.safeParse(response.data);
 
@@ -1687,9 +910,6 @@ export async function getActivityLaps(
     return await handleApiError<StravaLap[]>(
       error,
       `getActivityLaps(${activityId})`,
-      async (newToken) => {
-        return getActivityLaps(newToken, activityId);
-      },
     );
   }
 }
@@ -1746,9 +966,7 @@ export async function getAthleteZones(
   }
 
   try {
-    const response = await stravaApi.get<unknown>("/athlete/zones", {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    const response = await stravaApi.get<unknown>("/athlete/zones");
 
     const validationResult = AthleteZonesSchema.safeParse(response.data);
 
@@ -1766,13 +984,7 @@ export async function getAthleteZones(
   } catch (error) {
     // Note: This endpoint requires profile:read_all scope
     // Handle potential 403 Forbidden if scope is missing, or 402 if it becomes sub-only?
-    return await handleApiError<StravaAthleteZones>(
-      error,
-      "getAthleteZones",
-      async (newToken) => {
-        return getAthleteZones(newToken);
-      },
-    );
+    return await handleApiError<StravaAthleteZones>(error, "getAthleteZones");
   }
 }
 
@@ -1818,9 +1030,7 @@ export async function getActivityZones(
   }
 
   try {
-    const response = await stravaApi.get(`/activities/${activityId}/zones`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    const response = await stravaApi.get(`/activities/${activityId}/zones`);
 
     const validationResult = StravaActivityZonesResponseSchema.safeParse(
       response.data,
@@ -1841,72 +1051,6 @@ export async function getActivityZones(
     return await handleApiError<StravaActivityZone[]>(
       error,
       `getActivityZones(${activityId})`,
-      async (newToken) => {
-        return getActivityZones(newToken, activityId);
-      },
-    );
-  }
-}
-
-/**
- * Fetches photos associated with a specific activity.
- *
- * @param accessToken - The Strava API access token.
- * @param activityId - The ID of the activity to fetch photos for.
- * @param size - Size of photos to return in pixels (default: 2048). Required to get actual URLs instead of placeholders.
- * @returns A promise that resolves to an array of photos for the activity.
- * @throws Throws an error if the API request fails or the response format is unexpected.
- */
-export async function getActivityPhotos(
-  accessToken: string,
-  activityId: number | string,
-  size = 2048,
-): Promise<StravaPhoto[]> {
-  if (!accessToken) {
-    throw new Error("Strava access token is required.");
-  }
-  if (!activityId) {
-    throw new Error("Activity ID is required to fetch photos.");
-  }
-
-  // photo_sources=true is required to get native Strava photos (not just Instagram)
-  // size parameter is required to get actual URLs instead of placeholders
-  const params: Record<string, string | number | boolean> = {
-    photo_sources: true,
-    size: size,
-  };
-
-  try {
-    const response = await stravaApi.get<unknown>(
-      `/activities/${activityId}/photos`,
-      {
-        headers: { Authorization: `Bearer ${accessToken}` },
-        params: params,
-      },
-    );
-
-    const validationResult = StravaPhotosResponseSchema.safeParse(
-      response.data,
-    );
-
-    if (!validationResult.success) {
-      console.error(
-        `Strava API validation failed (getActivityPhotos: ${activityId}):`,
-        JSON.stringify(validationResult.error.issues, null, 2),
-      );
-      throw new Error(
-        `Invalid data format received from Strava API: ${validationResult.error.message}`,
-      );
-    }
-
-    return validationResult.data;
-  } catch (error) {
-    return await handleApiError<StravaPhoto[]>(
-      error,
-      `getActivityPhotos for ID ${activityId}`,
-      async (newToken) => {
-        return getActivityPhotos(newToken, activityId, size);
-      },
     );
   }
 }
@@ -1940,10 +1084,7 @@ export async function updateActivity(
       `/activities/${activityId}`,
       body,
       {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
       },
     );
 
@@ -1965,61 +1106,6 @@ export async function updateActivity(
     return await handleApiError<StravaDetailedActivity>(
       error,
       `updateActivity for ID ${activityId}`,
-      async (newToken) => {
-        return updateActivity(newToken, activityId, updates);
-      },
-    );
-  }
-}
-
-/**
- * Creates a manual activity (no device recording) on the authenticated
- * athlete's timeline. Requires the activity:write scope.
- *
- * @param accessToken - The Strava API access token.
- * @param params - The manual entry: name, sport type, local start time,
- *   elapsed time, and optional distance/description/flags.
- * @returns The created detailed activity.
- */
-export async function createActivity(
-  accessToken: string,
-  params: CreateActivityParams,
-): Promise<StravaDetailedActivity> {
-  if (!accessToken) {
-    throw new Error("Strava access token is required.");
-  }
-
-  const body = buildCreateActivityBody(params);
-
-  try {
-    const response = await stravaApi.post<unknown>("/activities", body, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-    });
-
-    const validationResult = ExtendedDetailedActivitySchema.safeParse(
-      response.data,
-    );
-
-    if (!validationResult.success) {
-      console.error(
-        "Strava API validation failed (createActivity):",
-        validationResult.error,
-      );
-      throw new Error(
-        `Invalid data format received from Strava API: ${validationResult.error.message}`,
-      );
-    }
-    return validationResult.data;
-  } catch (error) {
-    return await handleApiError<StravaDetailedActivity>(
-      error,
-      `createActivity "${params.name}"`,
-      async (newToken) => {
-        return createActivity(newToken, params);
-      },
     );
   }
 }

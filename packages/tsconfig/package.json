@@ -1,5 +1,5 @@
 {
-  "name": "@strava-mcp/tsconfig",
+  "name": "@intervals-mcp/tsconfig",
   "private": true,
   "exports": {
     "./base.json": "./base.json",

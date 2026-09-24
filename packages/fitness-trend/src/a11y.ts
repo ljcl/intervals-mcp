@@ -1,4 +1,4 @@
-import { formatShortDate } from "@strava-mcp/data";
+import { formatShortDate } from "@intervals-mcp/data";
 import { BAND_LABELS, isPlanned, planDays, signedTsb } from "./normalize";
 import { type FitnessTrendData, type TrendBand } from "./types";
 

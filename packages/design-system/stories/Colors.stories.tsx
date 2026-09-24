@@ -1,4 +1,4 @@
-import preview from "@strava-mcp/design-system/preview";
+import preview from "@intervals-mcp/design-system/preview";
 
 type ColorToken = { var: string; label: string; note?: string };
 
@@ -29,18 +29,6 @@ const colorTokens: Record<string, ColorToken[]> = {
     { var: "--chart-altitude", label: "Altitude" },
     { var: "--chart-cadence", label: "Cadence" },
     { var: "--chart-grade", label: "Grade" },
-  ],
-  Tier: [
-    {
-      var: "--color-tier-pr",
-      label: "PR (gold)",
-      note: "Personal-record badge in activity-segments; PR effort halo in route-map. Theme-invariant.",
-    },
-    {
-      var: "--color-tier-top10",
-      label: "Top 10 (light purple)",
-      note: "Top-10 badge in activity-segments; top-10 effort halo in route-map. Theme-invariant.",
-    },
   ],
 };
 

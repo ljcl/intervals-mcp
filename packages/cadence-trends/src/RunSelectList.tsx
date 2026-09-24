@@ -1,6 +1,6 @@
 import { Toggle } from "@base-ui/react/toggle";
 import { ToggleGroup } from "@base-ui/react/toggle-group";
-import { formatShortDate } from "@strava-mcp/data";
+import { formatShortDate } from "@intervals-mcp/data";
 import { useId, useMemo } from "react";
 import styles from "./RunSelectList.module.css";
 import { type RunSummary } from "./types";

@@ -21,6 +21,6 @@ body:
     id: version
     attributes:
       label: Version or image tag
-      description: e.g. ghcr.io/ljcl/strava-mcp:1.1.0 or a commit SHA.
+      description: e.g. ghcr.io/ljcl/intervals-mcp:1.1.0 or a commit SHA.
     validations:
       required: false

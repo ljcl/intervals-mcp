@@ -2,22 +2,17 @@ import { describe, expect, it } from "vitest";
 import { getPrompt, listPrompts } from "./prompts";
 
 describe("listPrompts", () => {
-  it("lists the three workflows with argument declarations", () => {
+  it("lists the two workflows with argument declarations", () => {
     const prompts = listPrompts();
 
     expect(prompts.map((p) => p.name)).toEqual([
       "weekly-review",
       "annotate-last-run",
-      "segment-hunt",
     ]);
     for (const prompt of prompts) {
       expect(prompt.description.length).toBeGreaterThan(0);
       expect(Array.isArray(prompt.arguments)).toBe(true);
     }
-    // segment-hunt is the only prompt with a required argument.
-    expect(
-      prompts.find((p) => p.name === "segment-hunt")?.arguments[0]?.required,
-    ).toBe(true);
   });
 });
 
@@ -46,19 +41,6 @@ describe("getPrompt", () => {
 
     expect(withoutId.messages[0]?.content.text).toContain("list_activities");
     expect(withId.messages[0]?.content.text).toContain("activity 12345");
-  });
-
-  it("throws on a missing required argument", () => {
-    expect(() => getPrompt("segment-hunt")).toThrow(
-      'Missing required argument "area"',
-    );
-  });
-
-  it("passes the required argument through", () => {
-    const result = getPrompt("segment-hunt", { area: "Centennial Park" });
-
-    expect(result.messages[0]?.content.text).toContain("Centennial Park");
-    expect(result.messages[0]?.content.text).toContain("explore-segments");
   });
 
   it("throws on unknown prompt names", () => {

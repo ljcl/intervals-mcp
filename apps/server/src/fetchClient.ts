@@ -306,8 +306,8 @@ export interface RetryOptions {
  * Parses a JSON string while preserving integers that exceed
  * `Number.MAX_SAFE_INTEGER` (2^53 - 1).
  *
- * Strava issues 64-bit identifiers — segment-effort ids in particular now run
- * well past 2^53 — which the default number-based `JSON.parse` silently rounds,
+ * Strava issues 64-bit identifiers; some ids (segment efforts, routes) run
+ * well past 2^53, which the default number-based `JSON.parse` silently rounds,
  * corrupting the id before any validation runs (and tripping Zod's safe-integer
  * bound). The reviver's third argument exposes the raw source text for each
  * value (supported by Bun's JavaScriptCore and Node >= 21), so we can detect an
@@ -553,10 +553,9 @@ export class FetchClient {
    * Descendants: updating an activity drops its cached detail, streams, zones
    * and laps so the next read re-fetches fresh.
    *
-   * Ancestors: a write to a sub-resource changes how its parent reads.
-   * `PUT /segments/{id}/starred` is exactly that — it flips `segment.starred`,
-   * so a descendants-only rule would leave the cached `/segments/{id}`
-   * claiming the old value.
+   * Ancestors: a write to a sub-resource changes how its parent reads, so a
+   * descendants-only rule would leave the cached parent claiming a stale
+   * value.
    */
   private invalidateWritten(url: string): void {
     const writePath = this.toPath(url);
@@ -713,9 +712,9 @@ const HOUR_MS = 60 * MINUTE_MS;
  * parameterised, or produce a file).
  *
  * Immutable-once-recorded resources (a completed activity's detail, its data
- * streams, and its laps/zones/photos) get long TTLs; identity and aggregate
- * resources that drift (profile, stats, a segment's effort counts) get short
- * ones. Everything under `/activities/{id}` is additionally invalidated
+ * streams, and its laps/zones) get long TTLs; identity and aggregate
+ * resources that drift (profile, stats) get short ones. Everything under
+ * `/activities/{id}` is additionally invalidated
  * whenever the activity is written (see {@link updateActivity}), so those TTLs
  * only bound staleness from edits made outside this server.
  *
@@ -728,29 +727,13 @@ export function stravaCacheTtl(path: string): number | null {
   if (/^\/activities\/\d+\/streams\//.test(path)) return 6 * HOUR_MS;
   // Detailed activity — immutable-ish; invalidated on update-activity writes.
   if (/^\/activities\/\d+$/.test(path)) return HOUR_MS;
-  // Laps, zones, and photos of a recorded activity — same immutability as the
+  // Laps and zones of a recorded activity — same immutability as the
   // activity itself, and each is fetched twice per app open.
-  if (/^\/activities\/\d+\/(laps|zones|photos)$/.test(path)) return HOUR_MS;
+  if (/^\/activities\/\d+\/(laps|zones)$/.test(path)) return HOUR_MS;
   // Authenticated athlete profile — short; name/weight/gear can change.
   if (path === "/athlete") return 5 * MINUTE_MS;
   // Athlete stats — short; totals accumulate with each new activity.
   if (/^\/athletes\/\d+\/stats$/.test(path)) return 5 * MINUTE_MS;
-  // A segment's course never changes — editing one produces a new segment —
-  // so its streams are as immutable as a recorded activity's.
-  if (/^\/segments\/\d+\/streams\//.test(path)) return 6 * HOUR_MS;
-  // A segment's geometry is fixed but its effort/star counts drift, and
-  // star-segment writes invalidate it outright — so a short TTL is enough.
-  if (/^\/segments\/\d+$/.test(path)) return 5 * MINUTE_MS;
-  // A route's stored profile changes only when the athlete edits the route,
-  // and it is the expensive read of the pair — get-route-preview and the map
-  // both want it. Longer than the route detail beside it for that reason.
-  if (/^\/routes\/\d+\/streams$/.test(path)) return HOUR_MS;
-  // A saved route changes only when the athlete edits it.
-  if (/^\/routes\/\d+$/.test(path)) return 5 * MINUTE_MS;
-  // Effort history grows as the athlete re-runs the segment; short enough that
-  // a new effort shows up promptly, long enough to cover one app open. The
-  // cache key carries the query string, so each date window stays distinct.
-  if (path === "/segment_efforts") return 2 * MINUTE_MS;
   // The activity listing behind the cadence-trends, training-load, and
   // fitness-trend pairs — the three most expensive scans, each a full
   // pagination at up to a year of history. A bare TTL would hit zero times on

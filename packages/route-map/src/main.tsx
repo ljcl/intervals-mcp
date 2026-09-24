@@ -1,4 +1,3 @@
-import { type useApp } from "@modelcontextprotocol/ext-apps/react";
 import {
   type AppMode,
   AppRoot,
@@ -11,7 +10,8 @@ import {
   useServerToolData,
   type ViewToolDefinition,
   type ViewToolRegistry,
-} from "@strava-mcp/ui";
+} from "@intervals-mcp/ui";
+import { type useApp } from "@modelcontextprotocol/ext-apps/react";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { RouteMap } from "./RouteMap";
@@ -105,9 +105,9 @@ function Root() {
       appInfo={{ name: "Route Map", version: "1.0.0" }}
       parseToolInput={(args) => {
         const next = args as ToolArgs | undefined;
-        return next?.activity_id || next?.route_id ? next : null;
+        return next?.activity_id ? next : null;
       }}
-      missingArgsMessage="No activity or route id was provided to the map view."
+      missingArgsMessage="No activity id was provided to the map view."
       viewTools={VIEW_TOOLS}
       loading={<LoadingSkeleton />}
     >

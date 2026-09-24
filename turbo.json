@@ -2,15 +2,13 @@
   "$schema": "https://turborepo.dev/schema.v2.json",
   "globalEnv": ["NODE_ENV"],
   "globalPassThroughEnv": [
-    "STRAVA_CLIENT_ID",
-    "STRAVA_CLIENT_SECRET",
+    "INTERVALS_API_KEY",
+    "INTERVALS_ATHLETE_ID",
+    "TZ",
     "PUBLIC_URL",
     "PORT",
-    "STRAVA_ACCESS_TOKEN",
-    "STRAVA_REFRESH_TOKEN",
     "MCP_AUTH_TOKEN",
     "ROUTE_EXPORT_PATH",
-    "TOKEN_DATA_DIR",
     "PLAYWRIGHT_BROWSERS_PATH",
     "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH"
   ],

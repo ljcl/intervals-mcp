@@ -1,7 +1,7 @@
 import styles from "./RampLegend.module.css";
 
 export interface RampLegendProps {
-  /** CSS gradient for the bar, e.g. `RAMP_GRADIENT_CSS` from `@strava-mcp/data`. */
+  /** CSS gradient for the bar, e.g. `RAMP_GRADIENT_CSS` from `@intervals-mcp/data`. */
   gradient: string;
   /** Label for the low end of the scale. */
   minLabel: string;
@@ -18,10 +18,9 @@ export interface RampLegendProps {
  * Key for a continuous colour ramp: a gradient bar between its two endpoint
  * values.
  *
- * Extracted from route-map's metric scale when activity-segments needed the
- * same thing — it colours every row's dot with the identical shared ramp and
- * rendered no key at all, so the app's primary visual encoding could not be
- * interpreted: nothing said whether green meant fast or slow.
+ * Lives in the shared `ui` package rather than route-map so any app with a
+ * ramp-coloured visual encoding can reuse it instead of rendering a scale
+ * with no key — nothing would otherwise say whether green meant fast or slow.
  *
  * The gradient arrives as a prop rather than imported, so this stays a purely
  * presentational component and `packages/ui` needs no data dependency.

@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { WAYPOINT_COLORS } from "./annotations";
 import {
-  BASEMAP_COLORS,
   nearestLatLngIndex,
-  photosToGeoJson,
-  segmentsToGeoJson,
   splitsToGeoJson,
   trackBounds,
   trackToGeoJson,
@@ -60,72 +57,16 @@ describe("trackBounds", () => {
   });
 });
 
-describe("segmentsToGeoJson", () => {
-  it("colors by achievement tier and titles for the popup", () => {
-    const fc = segmentsToGeoJson(COORDS, [
-      {
-        name: "Climb",
-        startIndex: 0,
-        endIndex: 2,
-        distanceMeters: 800,
-        isPr: true,
-        isTop10: false,
-      },
-      {
-        name: "Sprint",
-        startIndex: 1,
-        endIndex: 3,
-        distanceMeters: 400,
-        isPr: false,
-        isTop10: true,
-      },
-      {
-        name: "Flat",
-        startIndex: 2,
-        endIndex: 3,
-        distanceMeters: 600,
-        isPr: false,
-        isTop10: false,
-      },
-    ]);
-    expect(fc.features.map((f) => f.properties.color)).toEqual([
-      BASEMAP_COLORS.segmentPr,
-      BASEMAP_COLORS.segmentTop10,
-      BASEMAP_COLORS.segment,
-    ]);
-    expect(fc.features[0]!.properties.title).toBe("Climb · PR");
-    expect(fc.features[1]!.properties.title).toBe("Sprint · Top 10");
-    expect(fc.features[2]!.properties.title).toBe("Flat");
-  });
-
-  it("drops spans that collapse to fewer than two points", () => {
-    const fc = segmentsToGeoJson(COORDS, [
-      {
-        name: "Dot",
-        startIndex: 2,
-        endIndex: 2,
-        distanceMeters: 100,
-        isPr: false,
-        isTop10: false,
-      },
-    ]);
-    expect(fc.features).toHaveLength(0);
-  });
-});
-
-describe("splitsToGeoJson / photosToGeoJson", () => {
+describe("splitsToGeoJson", () => {
   it("emits titled points at marker indices, in [lng, lat] order", () => {
     const splits = splitsToGeoJson(COORDS, [{ index: 1, label: "1 km" }]);
     expect(splits.features[0]!.properties.title).toBe("1 km");
     expect(splits.features[0]!.geometry.coordinates).toEqual([-122.5, 37.775]);
+  });
 
-    const photos = photosToGeoJson(COORDS, [
-      { index: 2, count: 2, caption: "Summit" },
-      { index: 99, count: 1, caption: null },
-    ]);
-    // The out-of-range marker is dropped.
-    expect(photos.features).toHaveLength(1);
-    expect(photos.features[0]!.properties.title).toBe("2 photos · Summit");
+  it("drops out-of-range indices", () => {
+    const splits = splitsToGeoJson(COORDS, [{ index: 99, label: "99 km" }]);
+    expect(splits.features).toHaveLength(0);
   });
 });
 

@@ -151,10 +151,10 @@ describe("createMcpEndpoint", () => {
   });
 
   it("preserves a 64-bit id sent as a JSON number instead of rounding it", async () => {
-    // Strava route/segment-effort ids exceed 2^53. `req.json()` would round
-    // 3516039180561708486 to ...500 before any tool schema could see it, so
-    // the raw body is parsed with the large-int-preserving reviver and the
-    // exact digits arrive as a string the id schemas accept.
+    // Strava activity ids exceed 2^53. `req.json()` would
+    // round 3516039180561708486 to ...500 before any tool schema could see
+    // it, so the raw body is parsed with the large-int-preserving reviver
+    // and the exact digits arrive as a string the id schemas accept.
     let received: unknown;
     const endpoint = createMcpEndpoint(() => {
       const server = new Server(
@@ -164,7 +164,7 @@ describe("createMcpEndpoint", () => {
       server.setRequestHandler("tools/call", async (request) => {
         received = (
           request.params.arguments as Record<string, unknown> | undefined
-        )?.route_id;
+        )?.activity_id;
         return { content: [] };
       });
       return server;
@@ -176,7 +176,7 @@ describe("createMcpEndpoint", () => {
         era === "modern" ? `"_meta":${JSON.stringify(MODERN_META)},` : "";
       const response = await endpoint.handleRequest(
         post(
-          `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{${meta}"name":"view-route-map","arguments":{"route_id":3516039180561708486}}}`,
+          `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{${meta}"name":"view-route-map","arguments":{"activity_id":3516039180561708486}}}`,
           era === "modern"
             ? { "Mcp-Method": "tools/call", "Mcp-Name": "view-route-map" }
             : {},

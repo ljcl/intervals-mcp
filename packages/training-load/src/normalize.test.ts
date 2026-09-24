@@ -1,4 +1,4 @@
-import { formatShortDate } from "@strava-mcp/data";
+import { formatShortDate } from "@intervals-mcp/data";
 import { describe, expect, it } from "vitest";
 import { mockTrainingLoadData } from "./__fixtures__/weeks";
 import {

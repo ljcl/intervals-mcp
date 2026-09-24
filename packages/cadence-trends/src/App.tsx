@@ -1,5 +1,4 @@
-import { type useApp } from "@modelcontextprotocol/ext-apps/react";
-import { formatShortDate } from "@strava-mcp/data";
+import { formatShortDate } from "@intervals-mcp/data";
 import {
   CardHeader,
   Pill,
@@ -7,7 +6,8 @@ import {
   SummaryBar,
   useModelContextSync,
   useServerToolFetcher,
-} from "@strava-mcp/ui";
+} from "@intervals-mcp/ui";
+import { type useApp } from "@modelcontextprotocol/ext-apps/react";
 import { useCallback, useMemo, useState } from "react";
 import styles from "./App.module.css";
 import { buildCadenceContextSummary } from "./contextSummary";

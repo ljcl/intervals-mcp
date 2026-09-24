@@ -1,5 +1,5 @@
-import { GRID_DASHARRAY, getChartTokens } from "@strava-mcp/design-system";
-import { EmptyState } from "@strava-mcp/ui";
+import { GRID_DASHARRAY, getChartTokens } from "@intervals-mcp/design-system";
+import { EmptyState } from "@intervals-mcp/ui";
 import { useMemo } from "react";
 import {
   Area,

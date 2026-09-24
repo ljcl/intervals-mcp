@@ -6,7 +6,7 @@
  */
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { loopActivity, profiledRoute } from "./__fixtures__/routes";
+import { loopActivity } from "./__fixtures__/routes";
 import { RouteMap } from "./RouteMap";
 
 vi.mock("maplibre-gl", () => ({
@@ -63,28 +63,6 @@ describe("RouteMap accessibility wiring", () => {
     expect(stripDescribedBy).toBeTruthy();
     expect(markup).toContain(
       `<desc id="${stripDescribedBy}">Altitude ranges from 10 m to ${10 + loopActivity.coordinates.length - 1} m over 8.2 km.</desc>`,
-    );
-  });
-
-  it("labels and describes the elevation strip for a saved route", () => {
-    // The activity case above fakes its streams; this one is the payload a
-    // `route_id` actually returns since #264 (distance + altitude only).
-    const markup = renderToStaticMarkup(
-      <RouteMap data={profiledRoute} basemapEnabled={false} />,
-    );
-    expect(markup).toContain(
-      `aria-label="Elevation profile of ${profiledRoute.name}"`,
-    );
-    const [, stripDescribedBy] =
-      markup.match(
-        /aria-label="Elevation profile[^"]*" aria-describedby="([^"]+)"/,
-      ) ?? [];
-    expect(stripDescribedBy).toBeTruthy();
-    const altitude = profiledRoute.streams?.altitude ?? [];
-    expect(markup).toContain(
-      `<desc id="${stripDescribedBy}">Altitude ranges from ${Math.round(
-        Math.min(...altitude),
-      )} m to ${Math.round(Math.max(...altitude))} m over 12.5 km.</desc>`,
     );
   });
 });

@@ -1,5 +1,5 @@
+import preview from "@intervals-mcp/design-system/preview";
 import { type App } from "@modelcontextprotocol/ext-apps";
-import preview from "@strava-mcp/design-system/preview";
 import { expect } from "storybook/test";
 import { AppRootView } from "./AppShell";
 import { CardHeader } from "./CardHeader";

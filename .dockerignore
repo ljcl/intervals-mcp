@@ -16,9 +16,6 @@
 coverage/
 .coverage
 
-# Local runtime state (token store) — never copy into the build context
-data/
-
 # Test artifacts
 test-results/
 

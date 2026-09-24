@@ -1,31 +1,21 @@
 /**
  * Success and error paths for the MCP App tool handlers in server.ts (#115).
  * Table-driven through dispatchToolCall — the same path the host uses — with
- * the Strava client mocked. The missing-token table pins the regression where
+ * the Strava client mocked. The missing-key table pins the regression where
  * those early returns lacked `isError: true` and surfaced as ordinary content.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { handledRateLimit, handledSubscriptionRequired } from "./__fixtures__";
+import { handledRateLimit } from "./__fixtures__";
 import { HttpError, RateLimitError, stravaApi } from "./fetchClient";
 import {
-  exportRouteGpx,
   getActivityById,
   getActivityLaps,
-  getActivityPhotos,
   getActivityZones,
   getAllActivities,
-  getRouteById,
-  getRouteStreams,
-  getSegmentById,
-  listSegmentEfforts,
   type StravaActivityZone,
   type StravaDetailedActivity,
-  type StravaDetailedSegment,
-  type StravaDetailedSegmentEffort,
   type StravaLap,
-  type StravaRoute,
   type StravaSummaryActivity,
-  StreamsUnavailableError,
 } from "./stravaClient";
 
 vi.mock("./stravaClient", async (importOriginal) => {
@@ -34,14 +24,8 @@ vi.mock("./stravaClient", async (importOriginal) => {
     ...actual,
     getActivityById: vi.fn(),
     getActivityLaps: vi.fn(),
-    getActivityPhotos: vi.fn(),
     getActivityZones: vi.fn(),
     getAllActivities: vi.fn(),
-    getRouteById: vi.fn(),
-    getRouteStreams: vi.fn(),
-    getSegmentById: vi.fn(),
-    listSegmentEfforts: vi.fn(),
-    exportRouteGpx: vi.fn(),
   };
 });
 
@@ -53,27 +37,22 @@ vi.mock("./fetchClient", async (importOriginal) => {
   };
 });
 
-// dispatchToolCall resolves the access token once per call (#240), so the
-// token source is mocked here rather than the env var each handler used to read.
-vi.mock("./tokenManager", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./tokenManager")>();
-  return { ...actual, getStravaToken: vi.fn() };
+// dispatchToolCall resolves the API key once per call (#240), so the
+// key source is mocked here rather than the env var each handler used to read.
+vi.mock("./config", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./config")>();
+  return { ...actual, getIntervalsApiKey: vi.fn() };
 });
 
 // Import after the mocks so server.ts's modules see the mocked client.
 const { dispatchToolCall } = await import("./server");
-const { getStravaToken, NoTokenError } = await import("./tokenManager");
-const mockedToken = vi.mocked(getStravaToken);
+const { getIntervalsApiKey, MissingApiKeyError } = await import("./config");
+const mockedToken = vi.mocked(getIntervalsApiKey);
 
 const mockedById = vi.mocked(getActivityById);
 const mockedLaps = vi.mocked(getActivityLaps);
 const mockedZones = vi.mocked(getActivityZones);
-const mockedPhotos = vi.mocked(getActivityPhotos);
 const mockedList = vi.mocked(getAllActivities);
-const mockedRoute = vi.mocked(getRouteById);
-const mockedRouteStreams = vi.mocked(getRouteStreams);
-const mockedSegment = vi.mocked(getSegmentById);
-const mockedSegmentEfforts = vi.mocked(listSegmentEfforts);
 const mockedApiGet = vi.mocked(stravaApi.get);
 
 // Google's polyline example: three points near (38.5, -120.2).
@@ -118,47 +97,9 @@ function summaryRun(
   } as unknown as StravaSummaryActivity;
 }
 
-function detailedSegment(
-  overrides: Record<string, unknown> = {},
-): StravaDetailedSegment {
-  return {
-    id: "55",
-    name: "Heartbreak Hill",
-    activity_type: "Run",
-    distance: 800,
-    average_grade: 5.4,
-    maximum_grade: 11.2,
-    total_elevation_gain: 43,
-    climb_category: 3,
-    starred: true,
-    ...overrides,
-  } as unknown as StravaDetailedSegment;
-}
-
-function segmentEffort(
-  overrides: Record<string, unknown> = {},
-): StravaDetailedSegmentEffort {
-  return {
-    id: "1",
-    activity: { id: "900" },
-    start_date_local: "2026-01-05T07:00:00Z",
-    elapsed_time: 250,
-    moving_time: 248,
-    distance: 800,
-    ...overrides,
-  } as unknown as StravaDetailedSegmentEffort;
-}
-
 beforeEach(() => {
   vi.clearAllMocks();
-  mockedToken.mockResolvedValue("test-token");
-  // Default a saved route to "no stored profile" (#264), so route cases that
-  // are not about elevation keep rendering from the polyline as before. Tests
-  // that care override the stream mock.
-  mockedRouteStreams.mockRejectedValue(
-    new StreamsUnavailableError("9", "route"),
-  );
-  vi.mocked(exportRouteGpx).mockResolvedValue("");
+  mockedToken.mockReturnValue("test-token");
 });
 
 /** Every app tool with args that pass its input schema. */
@@ -169,34 +110,31 @@ const APP_TOOL_CALLS: Array<[string, Record<string, unknown>]> = [
   ["get-cadence-trend-data", {}],
   ["view-route-map", { activity_id: "123" }],
   ["get-route-map-data", { activity_id: "123" }],
-  ["view-activity-segments", { activity_id: "123" }],
-  ["get-activity-segments-data", { activity_id: "123" }],
   ["view-training-load", {}],
   ["get-training-load-data", {}],
   ["view-activity-zones", { activity_id: "123" }],
   ["get-activity-zones-data", { activity_id: "123" }],
   ["view-compare-activities", { activity_id_1: "1", activity_id_2: "2" }],
   ["get-compare-activities-data", { activity_id_1: "1", activity_id_2: "2" }],
-  ["view-segment-progress", { segment_id: "55" }],
-  ["get-segment-progress-data", { segment_id: "55" }],
 ];
 
-describe("app handlers with no Strava token", () => {
+describe("app handlers with no key configured", () => {
   it.each(APP_TOOL_CALLS)(
     "%s returns isError: true instead of plain content",
     async (name, args) => {
-      mockedToken.mockRejectedValueOnce(new NoTokenError());
+      mockedToken.mockImplementationOnce(() => {
+        throw new MissingApiKeyError();
+      });
 
       const result = await dispatchToolCall(name, args);
 
       expect(result.isError).toBe(true);
       // One message for every tool, naming the one recovery (#240).
-      expect(result.content[0]?.text).toContain("Not connected to Strava");
-      expect(result.content[0]?.text).toContain("/auth/start");
+      expect(result.content[0]?.text).toContain("INTERVALS_API_KEY");
     },
   );
 
-  it("resolves the token once per call and hands it to the handler", async () => {
+  it("resolves the key once per call and hands it to the handler", async () => {
     mockedById.mockResolvedValueOnce(detailedActivity());
 
     await dispatchToolCall("view-activity-chart", { activity_id: "123" });
@@ -205,8 +143,10 @@ describe("app handlers with no Strava token", () => {
     expect(mockedById).toHaveBeenCalledWith("test-token", "123");
   });
 
-  it("does not run the handler when the token cannot be resolved", async () => {
-    mockedToken.mockRejectedValueOnce(new NoTokenError());
+  it("does not run the handler when the key cannot be resolved", async () => {
+    mockedToken.mockImplementationOnce(() => {
+      throw new MissingApiKeyError();
+    });
 
     await dispatchToolCall("view-activity-chart", { activity_id: "123" });
 
@@ -506,110 +446,6 @@ describe("fitness trend handlers", () => {
   });
 });
 
-describe("segment progress handlers", () => {
-  it("view-segment-progress summarises best, latest, and the half-vs-half trend", async () => {
-    mockedSegment.mockResolvedValueOnce(detailedSegment());
-    mockedSegmentEfforts.mockResolvedValueOnce([
-      segmentEffort({
-        id: "1",
-        start_date_local: "2026-01-05T07:00:00Z",
-        elapsed_time: 260,
-        average_heartrate: 172,
-      }),
-      segmentEffort({
-        id: "2",
-        start_date_local: "2026-02-05T07:00:00Z",
-        elapsed_time: 250,
-        average_heartrate: 170,
-      }),
-      segmentEffort({
-        id: "3",
-        start_date_local: "2026-03-05T07:00:00Z",
-        elapsed_time: 250,
-        average_heartrate: 162,
-      }),
-      segmentEffort({
-        id: "4",
-        start_date_local: "2026-04-05T07:00:00Z",
-        elapsed_time: 260,
-        average_heartrate: 160,
-      }),
-    ]);
-
-    const result = await dispatchToolCall("view-segment-progress", {
-      segment_id: "55",
-    });
-
-    expect(result.isError).toBeUndefined();
-    const text = result.content[0]?.text ?? "";
-    expect(text).toContain("Segment: Heartbreak Hill (800 m, 5.4%)");
-    expect(text).toContain("Efforts: 4 from 2026-01-05 to 2026-04-05");
-    expect(text).toContain("Best: 4:10 on 2026-02-05");
-    expect(text).toContain("Latest: 4:20 on 2026-04-05 (+10s vs best)");
-    expect(text).toContain(
-      "Recent half vs early half: same average time, -10 bpm average heart rate",
-    );
-  });
-
-  it("view-segment-progress says so when the range holds no efforts", async () => {
-    mockedSegment.mockResolvedValueOnce(detailedSegment());
-    mockedSegmentEfforts.mockResolvedValueOnce([]);
-
-    const result = await dispatchToolCall("view-segment-progress", {
-      segment_id: "55",
-      start_date_local: "2026-06-01T00:00:00Z",
-    });
-
-    expect(result.isError).toBeUndefined();
-    expect(result.content[0]?.text).toContain("No efforts recorded");
-  });
-
-  it("get-segment-progress-data returns the ranked effort history", async () => {
-    mockedSegment.mockResolvedValueOnce(detailedSegment());
-    mockedSegmentEfforts.mockResolvedValueOnce([
-      segmentEffort({ id: "2", start_date_local: "2026-02-05T07:00:00Z" }),
-      segmentEffort({
-        id: "1",
-        start_date_local: "2026-01-05T07:00:00Z",
-        elapsed_time: 240,
-        pr_rank: 1,
-      }),
-    ]);
-
-    const result = await dispatchToolCall("get-segment-progress-data", {
-      segment_id: "55",
-      end_date_local: "2026-03-01T00:00:00Z",
-    });
-
-    expect(result.isError).toBeUndefined();
-    const parsed = JSON.parse(result.content[0]?.text ?? "");
-    expect(parsed.segment.name).toBe("Heartbreak Hill");
-    expect(parsed.efforts.map((e: { id: string }) => e.id)).toEqual(["1", "2"]);
-    expect(parsed.efforts[0]).toMatchObject({ rank: 1, prRank: 1 });
-    expect(parsed.summary.bestSeconds).toBe(240);
-    expect(mockedSegmentEfforts).toHaveBeenCalledWith("test-token", "55", {
-      startDateLocal: undefined,
-      endDateLocal: "2026-03-01T00:00:00Z",
-      perPage: 200,
-    });
-  });
-
-  it("explains the subscriber-only endpoint instead of leaking the sentinel", async () => {
-    mockedSegment.mockResolvedValueOnce(detailedSegment());
-    mockedSegmentEfforts.mockRejectedValueOnce(
-      handledSubscriptionRequired("listSegmentEfforts for segment 55"),
-    );
-
-    const result = await dispatchToolCall("view-segment-progress", {
-      segment_id: "55",
-    });
-
-    expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toContain("requires a Strava subscription");
-    expect(result.content[0]?.text).not.toContain("SUBSCRIPTION_REQUIRED");
-  });
-});
-
 describe("route map handlers", () => {
   it("view-route-map decodes an activity polyline", async () => {
     mockedById.mockResolvedValueOnce(detailedActivity());
@@ -625,27 +461,6 @@ describe("route map handlers", () => {
     expect(text).not.toContain("No GPS track");
   });
 
-  it("view-route-map maps a saved route by route_id", async () => {
-    mockedRoute.mockResolvedValueOnce({
-      id: "9",
-      name: "River Loop",
-      type: 2,
-      distance: 5000,
-      elevation_gain: 50,
-      created_at: "2026-01-01T00:00:00Z",
-      map: { summary_polyline: POLYLINE },
-    } as unknown as StravaRoute);
-
-    const result = await dispatchToolCall("view-route-map", {
-      route_id: "9",
-    });
-
-    expect(result.isError).toBeUndefined();
-    const text = result.content[0]?.text ?? "";
-    expect(text).toContain("Route: River Loop");
-    expect(mockedRoute).toHaveBeenCalledWith("test-token", "9");
-  });
-
   it("view-route-map flags an empty track", async () => {
     mockedById.mockResolvedValueOnce(detailedActivity({ map: {} }));
 
@@ -657,31 +472,13 @@ describe("route map handlers", () => {
     expect(result.content[0]?.text).toContain("No GPS track is available");
   });
 
-  it("get-route-map-data prefers latlng streams and resolves annotations", async () => {
+  it("get-route-map-data prefers latlng streams over the polyline", async () => {
     const coords: Array<[number, number]> = [
       [38.5, -120.2],
       [40.7, -120.95],
       [43.252, -126.453],
     ];
-    mockedById.mockResolvedValueOnce(
-      detailedActivity({
-        segment_efforts: [
-          {
-            name: "Sprint",
-            distance: 400,
-            elapsed_time: 60,
-            moving_time: 60,
-            pr_rank: 1,
-            kom_rank: null,
-            segment: {
-              id: 77,
-              start_latlng: coords[0],
-              end_latlng: coords[2],
-            },
-          },
-        ],
-      }),
-    );
+    mockedById.mockResolvedValueOnce(detailedActivity());
     mockedApiGet.mockResolvedValueOnce({
       data: [
         { type: "latlng", data: coords },
@@ -689,7 +486,6 @@ describe("route map handlers", () => {
       ],
     } as never);
     mockedLaps.mockResolvedValueOnce([]);
-    mockedPhotos.mockResolvedValueOnce([]);
 
     const result = await dispatchToolCall("get-route-map-data", {
       activity_id: "123",
@@ -700,22 +496,12 @@ describe("route map handlers", () => {
     expect(parsed.source).toBe("activity");
     expect(parsed.coordinates).toEqual(coords);
     expect(parsed.streams.distance).toEqual([0, 5000, 10000]);
-    expect(parsed.annotations.segments).toEqual([
-      {
-        name: "Sprint",
-        startIndex: 0,
-        endIndex: 2,
-        distanceMeters: 400,
-        isPr: true,
-        isTop10: false,
-      },
-    ]);
   });
 
   it("get-route-map-data still renders the map when the lap layer hits a rate limit", async () => {
-    // The lap and photo layers sat behind a bare `catch {}`, so an exhausted
-    // quota lost the markers with nothing said — #237 again, one layer down.
-    // The geometry is already fetched by then, so the fix is a warning naming
+    // The lap layer sat behind a bare `catch {}`, so an exhausted quota lost
+    // the markers with nothing said — #237 again, one layer down. The
+    // geometry is already fetched by then, so the fix is a warning naming
     // the exhausted window, not the loss of the whole map.
     const coords: Array<[number, number]> = [
       [38.5, -120.2],
@@ -730,7 +516,6 @@ describe("route map handlers", () => {
       ],
     } as never);
     mockedLaps.mockRejectedValueOnce(handledRateLimit("getActivityLaps(123)"));
-    mockedPhotos.mockResolvedValueOnce([]);
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const result = await dispatchToolCall("get-route-map-data", {
@@ -746,44 +531,6 @@ describe("route map handlers", () => {
     ]);
     // The bare window description, not the internal call that hit it.
     expect(parsed.layerWarnings[0]).not.toContain("getActivityLaps");
-    logged.mockRestore();
-  });
-
-  it("get-route-map-data drops the photo layer with a reason, not in silence", async () => {
-    const coords: Array<[number, number]> = [
-      [38.5, -120.2],
-      [40.7, -120.95],
-      [43.252, -126.453],
-    ];
-    mockedById.mockResolvedValueOnce(detailedActivity());
-    mockedApiGet.mockResolvedValueOnce({
-      data: [
-        { type: "latlng", data: coords },
-        { type: "distance", data: [0, 5000, 10000] },
-      ],
-    } as never);
-    mockedLaps.mockResolvedValueOnce([]);
-    mockedPhotos.mockRejectedValueOnce(new Error("Invalid data format"));
-    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
-
-    const result = await dispatchToolCall("get-route-map-data", {
-      activity_id: "123",
-    });
-
-    // The map still renders; the failure is on the record rather than nowhere.
-    expect(result.isError).toBeUndefined();
-    expect(
-      logged.mock.calls.some(
-        (call) =>
-          typeof call[0] === "string" &&
-          call[0].includes("photo pins unavailable for activity 123") &&
-          call[0].includes("Invalid data format"),
-      ),
-    ).toBe(true);
-    const parsed = JSON.parse(result.content[0]?.text ?? "");
-    expect(parsed.layerWarnings).toEqual([
-      "Dropped photo pins: Invalid data format. The map renders without them.",
-    ]);
     logged.mockRestore();
   });
 
@@ -843,7 +590,6 @@ describe("route map handlers", () => {
       ],
     } as never);
     mockedLaps.mockResolvedValueOnce([]);
-    mockedPhotos.mockResolvedValueOnce([]);
 
     const result = await dispatchToolCall("get-route-map-data", {
       activity_id: "123",
@@ -863,32 +609,6 @@ describe("route map handlers", () => {
     expect(parsed.waypointWarnings).toHaveLength(1);
     expect(parsed.waypointWarnings[0]).toContain("Botanic Gardens climb");
     expect(parsed.waypointWarnings[0]).toContain("10.0 km");
-  });
-
-  it("get-route-map-data anchors route waypoints via haversine cumulative distance", async () => {
-    mockedRoute.mockResolvedValueOnce({
-      id: "9",
-      name: "River Loop",
-      type: 2,
-      distance: 600000,
-      elevation_gain: 50,
-      created_at: "2026-01-01T00:00:00Z",
-      map: { summary_polyline: POLYLINE },
-    } as unknown as StravaRoute);
-
-    const result = await dispatchToolCall("get-route-map-data", {
-      route_id: "9",
-      waypoints: [{ km: 100, label: "Halfway fuel", kind: "fuel" }],
-    });
-
-    expect(result.isError).toBeUndefined();
-    const parsed = JSON.parse(result.content[0]?.text ?? "");
-    // The polyline's first leg is ~250 km, so a 100 km waypoint anchors to
-    // the second point of the decoded track.
-    expect(parsed.annotations.waypoints).toEqual([
-      { km: 100, label: "Halfway fuel", kind: "fuel", index: 1 },
-    ]);
-    expect(parsed.waypointWarnings).toBeUndefined();
   });
 
   it("view-route-map reports pinned waypoints and warns about dropped ones", async () => {
@@ -921,148 +641,13 @@ describe("route map handlers", () => {
     );
   });
 
-  // #264: before this, the route branch returned coordinates only, so the
-  // elevation strip and metric colouring were dead code for every route_id.
-  it("get-route-map-data attaches a saved route's stored elevation profile", async () => {
-    mockedRoute.mockResolvedValueOnce({
-      id: "9",
-      name: "River Loop",
-      type: 2,
-      distance: 5000,
-      elevation_gain: 50,
-      created_at: "2026-01-01T00:00:00Z",
-      map: { summary_polyline: POLYLINE },
-    } as unknown as StravaRoute);
-    mockedRouteStreams.mockReset();
-    mockedRouteStreams.mockResolvedValueOnce(
-      new Map<string, unknown[]>([
-        ["distance", [0, 100, 200]],
-        ["altitude", [10, 25, 18]],
-        [
-          "latlng",
-          [
-            [38.5, -120.2],
-            [40.7, -120.95],
-            [43.252, -126.453],
-          ],
-        ],
-      ]),
-    );
-
-    const result = await dispatchToolCall("get-route-map-data", {
-      route_id: "9",
-    });
-
-    expect(result.isError).toBeUndefined();
-    const parsed = JSON.parse(result.content[0]?.text ?? "");
-    expect(parsed.streams.altitude).toEqual([10, 25, 18]);
-    expect(parsed.streams.distance).toEqual([0, 100, 200]);
-    // The stream geometry wins over the polyline: it is index-aligned with the
-    // elevation, which is what lets the app colour the track by it.
-    expect(parsed.coordinates).toHaveLength(3);
-  });
-
-  it("get-route-map-data still maps a route with no stored profile", async () => {
-    mockedRoute.mockResolvedValueOnce({
-      id: "9",
-      name: "River Loop",
-      type: 2,
-      distance: 5000,
-      elevation_gain: 50,
-      created_at: "2026-01-01T00:00:00Z",
-      map: { summary_polyline: POLYLINE },
-    } as unknown as StravaRoute);
-
-    const result = await dispatchToolCall("get-route-map-data", {
-      route_id: "9",
-    });
-
-    expect(result.isError).toBeUndefined();
-    const parsed = JSON.parse(result.content[0]?.text ?? "");
-    expect(parsed.streams).toBeUndefined();
-    expect(parsed.coordinates.length).toBeGreaterThan(0);
-  });
-
-  it("get-route-map-data propagates a quota failure rather than dropping elevation", async () => {
-    mockedRoute.mockResolvedValueOnce({
-      id: "9",
-      name: "River Loop",
-      type: 2,
-      distance: 5000,
-      elevation_gain: 50,
-      created_at: "2026-01-01T00:00:00Z",
-      map: { summary_polyline: POLYLINE },
-    } as unknown as StravaRoute);
-    mockedRouteStreams.mockReset();
-    mockedRouteStreams.mockRejectedValueOnce(
-      handledRateLimit("getRouteStreams for ID 9"),
-    );
-
-    const result = await dispatchToolCall("get-route-map-data", {
-      route_id: "9",
-    });
-
-    expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toContain("rate limit");
-  });
-
-  it("get-route-map-data errors when neither id is provided", async () => {
+  it("get-route-map-data errors when activity_id is not provided", async () => {
     const result = await dispatchToolCall("get-route-map-data", {});
 
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain(
-      "Provide either activity_id or route_id",
+      "Invalid arguments for get-route-map-data",
     );
-  });
-});
-
-describe("activity segments handlers", () => {
-  const activityWithEfforts = () =>
-    detailedActivity({
-      segment_efforts: [
-        {
-          name: "Hill Repeat",
-          distance: 800,
-          elapsed_time: 240,
-          moving_time: 235,
-          start_index: 10,
-          pr_rank: 1,
-          kom_rank: null,
-          segment: { id: 55, average_grade: 4.2, maximum_grade: 8.1 },
-        },
-      ],
-    });
-
-  it("get-activity-segments-data flattens the embedded efforts", async () => {
-    mockedById.mockResolvedValueOnce(activityWithEfforts());
-
-    const result = await dispatchToolCall("get-activity-segments-data", {
-      activity_id: "123",
-    });
-
-    expect(result.isError).toBeUndefined();
-    const parsed = JSON.parse(result.content[0]?.text ?? "");
-    expect(parsed.name).toBe("Morning Run");
-    expect(parsed.segments).toHaveLength(1);
-    expect(parsed.segments[0]).toMatchObject({
-      name: "Hill Repeat",
-      segmentId: "55",
-      prRank: 1,
-      startIndex: 10,
-    });
-  });
-
-  it("view-activity-segments counts PRs and top-10s", async () => {
-    mockedById.mockResolvedValueOnce(activityWithEfforts());
-
-    const result = await dispatchToolCall("view-activity-segments", {
-      activity_id: "123",
-    });
-
-    expect(result.isError).toBeUndefined();
-    const text = result.content[0]?.text ?? "";
-    expect(text).toContain("Segments: 1");
-    expect(text).toContain("PRs: 1, top-10s: 0");
   });
 });
 

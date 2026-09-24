@@ -1,30 +1,23 @@
 services:
-  strava-mcp:
+  intervals-mcp:
     build:
       context: .
       dockerfile: apps/server/Dockerfile
-    container_name: strava-mcp-server
+    container_name: intervals-mcp-server
     restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
-      - STRAVA_CLIENT_ID=${STRAVA_CLIENT_ID}
-      - STRAVA_CLIENT_SECRET=${STRAVA_CLIENT_SECRET}
-      - PUBLIC_URL=${PUBLIC_URL}
-      - TOKEN_DATA_DIR=/app/data
-      - ROUTE_EXPORT_PATH=/app/strava-exports
-      - PORT=3000
-      # Optional: Initial tokens (not needed if using web auth at /auth/start)
-      - STRAVA_ACCESS_TOKEN=${STRAVA_ACCESS_TOKEN:-}
-      - STRAVA_REFRESH_TOKEN=${STRAVA_REFRESH_TOKEN:-}
-      # Optional but recommended when exposed through a tunnel: shared secret
-      # gating /mcp and the OAuth web routes. Unset leaves the endpoint open.
+      - INTERVALS_API_KEY=${INTERVALS_API_KEY}
+      - INTERVALS_ATHLETE_ID=${INTERVALS_ATHLETE_ID:-0}
+      - TZ=${TZ:-UTC}
+      - PUBLIC_URL=${PUBLIC_URL:-}
       - MCP_AUTH_TOKEN=${MCP_AUTH_TOKEN:-}
+      - ROUTE_EXPORT_PATH=/app/exports
+      - PORT=3000
     volumes:
-      # Persist token data for automatic refresh across restarts
-      - ./data:/app/data
-      # Optional: persist exported routes
-      - strava-exports:/app/strava-exports
+      # Optional: persist exported GPX files
+      - exports:/app/exports
 
 volumes:
-  strava-exports:
+  exports:

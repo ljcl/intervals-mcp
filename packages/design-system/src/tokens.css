@@ -83,18 +83,6 @@
   --chart-altitude: #b8a48c;
   --chart-cadence: #f97316;
   --chart-grade: #6b7280;
-
-  /* Achievement tiers (gold = PR, light purple = top-10). Intentionally
-   * theme-invariant — no dark override — so tiers read identically against
-   * multi-hue tracks in both themes. Mirrors TIER_COLORS in tokens.ts. */
-  --color-tier-pr: #f59e0b;
-  --color-tier-top10: #a78bfa;
-  /* Foreground for text sitting ON a tier colour. Theme-invariant for the
-   * same reason the backgrounds are: pairing a theme-dependent foreground
-   * (`--color-text-inverse`) with a theme-invariant background was correct in
-   * dark mode and white-on-amber in light, failing contrast at 2.14:1. Near
-   * black clears 4.5:1 on both tiers (8.14 on gold, 6.43 on purple). */
-  --color-tier-text: #1c1917;
 }
 
 /* Dark theme overrides — applied explicitly via `.dark` class or

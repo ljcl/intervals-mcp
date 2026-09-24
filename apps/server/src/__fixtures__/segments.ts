@@ -29,20 +29,3 @@ export const segmentWithNullOptionals = {
   state: null,
   country: null,
 };
-
-export const detailedSegment = {
-  ...summarySegment,
-  id: 12347,
-  created_at: "2015-06-01T10:00:00Z",
-  updated_at: "2026-01-10T12:00:00Z",
-  total_elevation_gain: 124.0,
-  map: {
-    id: "s12347",
-    summary_polyline: "xyz789",
-    resource_state: 2,
-  },
-  effort_count: 150000,
-  athlete_count: 50000,
-  hazardous: false,
-  star_count: 2500,
-};

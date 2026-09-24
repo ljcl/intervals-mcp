@@ -32,15 +32,13 @@ import { HttpError, RateLimitError } from "../fetchClient";
 
 export interface ToolErrorOptions {
   /**
-   * Verb phrase naming what the tool was doing ("fetch segment 789", "list
-   * athlete routes"), read as "while trying to <context>" and
+   * Verb phrase naming what the tool was doing ("fetch activity 789", "list
+   * recent activities"), read as "while trying to <context>" and
    * "Failed to <context>".
    */
   context: string;
   /** Sentence to show on a 404. Defaults to a generic "Not found." */
   notFound?: string;
-  /** Sentence to show on a 402. Defaults to a generic subscription notice. */
-  subscription?: string;
 }
 
 const DEFAULT_NOT_FOUND = "Not found.";
@@ -65,7 +63,7 @@ export function toolErrorText(
   error: unknown,
   options: ToolErrorOptions,
 ): string {
-  const { context, notFound, subscription } = options;
+  const { context, notFound } = options;
   const message = messageOf(error);
   // Operator logs keep the raw detail the athlete-facing line may not carry.
   console.error(`Error while trying to ${context}: ${message}`);
@@ -80,7 +78,7 @@ export function toolErrorText(
     return `${PREFIX} ${notFound ?? DEFAULT_NOT_FOUND}`;
   }
   if (error instanceof HttpError && error.response.status === 402) {
-    return `${PREFIX} ${subscription ?? DEFAULT_SUBSCRIPTION}`;
+    return `${PREFIX} ${DEFAULT_SUBSCRIPTION}`;
   }
   return `${PREFIX} Failed to ${context}: ${message}`;
 }

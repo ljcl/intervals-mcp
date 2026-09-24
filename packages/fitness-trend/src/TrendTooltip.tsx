@@ -1,4 +1,4 @@
-import { Tooltip, TooltipEntry } from "@strava-mcp/ui";
+import { Tooltip, TooltipEntry } from "@intervals-mcp/ui";
 import { type ChartRow, signedTsb } from "./normalize";
 import styles from "./TrendTooltip.module.css";
 

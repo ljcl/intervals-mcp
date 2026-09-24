@@ -55,23 +55,22 @@ export const STRAVA_ID_HINT =
   'Pass the id as a quoted string of digits, exactly as it appears in the Strava URL (e.g. "3516039180561708486") — Strava ids can exceed 2^53, so an unquoted number loses precision.';
 
 /**
- * Tool-input schema for a Strava resource id (activity, segment, effort,
- * athlete, route).
+ * Tool-input schema for a Strava resource id (activity, athlete).
  *
- * Strava ids are 64-bit and both segment-effort and newer route ids already
- * exceed `Number.MAX_SAFE_INTEGER` (2^53 - 1). An id sent as a JSON number can
- * lose precision in the host's JSON round-trip before validation ever sees it,
- * so the digit-string form is the only lossless representation for those — and
- * the only one advertised to hosts (`stravaIdJsonSchemaOverride`).
+ * Strava ids are 64-bit and some already exceed `Number.MAX_SAFE_INTEGER`
+ * (2^53 - 1). An id sent as a JSON number can lose precision in the host's
+ * JSON round-trip before validation ever sees it, so the digit-string form is
+ * the only lossless representation for those, and the only one advertised to
+ * hosts (`stravaIdJsonSchemaOverride`).
  *
  * At runtime the schema accepts either form and normalises to a string:
  *
  * - A digit string is always accepted and passes through unchanged — this is
  *   the lossless form and the one hosts are told to send.
  * - A bare number is accepted only when it is a non-negative *safe* integer,
- *   in which case it is coerced to its digit string. Route and activity ids sit
+ *   in which case it is coerced to its digit string. Most activity ids sit
  *   well below 2^53, so this is exactly the everyday case where a host or model
- *   emits `route_id: 12345`; rejecting it outright (the original string-only
+ *   emits `activity_id: 12345`; rejecting it outright (the original string-only
  *   behaviour) left callers stuck between "expected string, received number"
  *   and quoting the digits into a non-digit string.
  * - A number that is not a safe integer is rejected. By the time such a value

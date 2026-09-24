@@ -1,4 +1,4 @@
-import { MOBILE_BREAKPOINT_PX } from "@strava-mcp/design-system";
+import { MOBILE_BREAKPOINT_PX } from "@intervals-mcp/design-system";
 import { describe, expect, it } from "vitest";
 import { detectMobile, widthFromHost } from "./useMobileMode";
 

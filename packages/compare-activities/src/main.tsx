@@ -1,4 +1,3 @@
-import { type useApp } from "@modelcontextprotocol/ext-apps/react";
 import {
   type AppMode,
   AppRoot,
@@ -8,7 +7,8 @@ import {
   LoadingState,
   Skeleton,
   useServerToolData,
-} from "@strava-mcp/ui";
+} from "@intervals-mcp/ui";
+import { type useApp } from "@modelcontextprotocol/ext-apps/react";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { CompareActivities } from "./CompareActivities";

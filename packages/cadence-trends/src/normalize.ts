@@ -1,4 +1,4 @@
-import { isRunning, smooth } from "@strava-mcp/data";
+import { isRunning, smooth } from "@intervals-mcp/data";
 import {
   type OverlayPoint,
   type OverlayStreamData,

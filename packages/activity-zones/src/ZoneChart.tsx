@@ -1,4 +1,4 @@
-import { GRID_DASHARRAY, getChartTokens } from "@strava-mcp/design-system";
+import { GRID_DASHARRAY, getChartTokens } from "@intervals-mcp/design-system";
 import { useMemo } from "react";
 import {
   Bar,

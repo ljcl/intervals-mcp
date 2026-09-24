@@ -14,15 +14,13 @@ export default {
       // Resolved at runtime via createRequire(...).resolve("<pkg>/app.html"),
       // which knip cannot trace as a static import.
       ignoreDependencies: [
-        "@strava-mcp/activity-chart",
-        "@strava-mcp/activity-segments",
-        "@strava-mcp/activity-zones",
-        "@strava-mcp/cadence-trends",
-        "@strava-mcp/compare-activities",
-        "@strava-mcp/fitness-trend",
-        "@strava-mcp/route-map",
-        "@strava-mcp/segment-progress",
-        "@strava-mcp/training-load",
+        "@intervals-mcp/activity-chart",
+        "@intervals-mcp/activity-zones",
+        "@intervals-mcp/cadence-trends",
+        "@intervals-mcp/compare-activities",
+        "@intervals-mcp/fitness-trend",
+        "@intervals-mcp/route-map",
+        "@intervals-mcp/training-load",
       ],
     },
     "packages/activity-chart": {
@@ -30,10 +28,6 @@ export default {
       project: ["src/**/*.{ts,tsx}"],
     },
     "packages/activity-zones": {
-      entry: ["src/main.tsx"],
-      project: ["src/**/*.{ts,tsx}"],
-    },
-    "packages/activity-segments": {
       entry: ["src/main.tsx"],
       project: ["src/**/*.{ts,tsx}"],
     },
@@ -53,10 +47,6 @@ export default {
       entry: ["src/main.tsx"],
       project: ["src/**/*.{ts,tsx}"],
     },
-    "packages/segment-progress": {
-      entry: ["src/main.tsx"],
-      project: ["src/**/*.{ts,tsx}"],
-    },
     "packages/training-load": {
       entry: ["src/main.tsx"],
       project: ["src/**/*.{ts,tsx}"],
@@ -73,13 +63,11 @@ export default {
         entry: [
           ".storybook/{manager,preview,index,vitest.setup}.{js,jsx,ts,tsx}",
           "../../packages/activity-chart/src/**/*.stories.@(ts|tsx)",
-          "../../packages/activity-segments/src/**/*.stories.@(ts|tsx)",
           "../../packages/activity-zones/src/**/*.stories.@(ts|tsx)",
           "../../packages/cadence-trends/src/**/*.stories.@(ts|tsx)",
           "../../packages/compare-activities/src/**/*.stories.@(ts|tsx)",
           "../../packages/fitness-trend/src/**/*.stories.@(ts|tsx)",
           "../../packages/route-map/src/**/*.stories.@(ts|tsx)",
-          "../../packages/segment-progress/src/**/*.stories.@(ts|tsx)",
           "../../packages/training-load/src/**/*.stories.@(ts|tsx)",
           "../../packages/design-system/stories/**/*.stories.@(ts|tsx)",
           "../../packages/ui/src/**/*.stories.@(ts|tsx)",
@@ -88,18 +76,16 @@ export default {
       },
       // Consumed by Storybook's `stories` directory globs at build time (the
       // story files are co-located in each package and import relatively), so
-      // there is no static `@strava-mcp/*` import for knip to follow.
+      // there is no static `@intervals-mcp/*` import for knip to follow.
       ignoreDependencies: [
-        "@strava-mcp/activity-chart",
-        "@strava-mcp/activity-segments",
-        "@strava-mcp/activity-zones",
-        "@strava-mcp/cadence-trends",
-        "@strava-mcp/compare-activities",
-        "@strava-mcp/fitness-trend",
-        "@strava-mcp/route-map",
-        "@strava-mcp/segment-progress",
-        "@strava-mcp/training-load",
-        "@strava-mcp/ui",
+        "@intervals-mcp/activity-chart",
+        "@intervals-mcp/activity-zones",
+        "@intervals-mcp/cadence-trends",
+        "@intervals-mcp/compare-activities",
+        "@intervals-mcp/fitness-trend",
+        "@intervals-mcp/route-map",
+        "@intervals-mcp/training-load",
+        "@intervals-mcp/ui",
       ],
     },
   },

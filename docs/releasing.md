@@ -13,10 +13,25 @@ workflow rejects non-conforming titles, and the repo squash setting is pinned
 to `PR_TITLE` so the title is always what lands. Branch commits can be messy;
 only the PR title matters.
 
-- `fix:` → patch bump
-- `feat:` → minor bump
-- `feat!:` or a `BREAKING CHANGE:` footer → major bump
-- `chore:` / `docs:` / `refactor:` / `ci:` → no release
+The repo is pre-1.0 with `bump-minor-pre-major: true`
+(`release-please-config.json`), so a breaking change bumps minor, not major,
+until the first 1.0.0 release:
+
+- `fix:` bumps patch
+- `feat:` bumps minor
+- `feat!:` or a `BREAKING CHANGE:` footer bumps minor pre-1.0, major once the
+  package reaches 1.0.0
+- `chore:` / `docs:` / `refactor:` / `ci:` release nothing
+
+## Pre-1.0
+
+Release-please release PRs stay unmerged while tools are still being ported
+(Phases 1 through 3); the package is not ready to ship. The first release is
+cut as `1.0.0` once Phase 3 lands, using the doc's existing escape hatch: land
+an empty commit on `main` with a `Release-As: 1.0.0` footer
+(`git commit --allow-empty -m "chore: force release" -m "Release-As: 1.0.0"`).
+This is a controller ruling, not a config change; `release-as` is not added
+to `release-please-config.json`.
 
 ## What release-please does
 
@@ -29,7 +44,7 @@ part of a string.)
 Merging that PR pushes the `vX.Y.Z` tag (via the `RELEASE_PLEASE_PAT` secret),
 triggering:
 
-- `docker.yml` → publishes `ghcr.io/ljcl/strava-mcp:X.Y.Z` and `:X.Y`
+- `docker.yml` → publishes `ghcr.io/ljcl/intervals-mcp:X.Y.Z` and `:X.Y`
 - `publish-mcp.yml` → publishes `server.json` to the MCP registry via GitHub OIDC
 
 Commits touching only `docs/`, `.agents/`, or `.claude/` are excluded from

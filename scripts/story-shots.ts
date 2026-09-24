@@ -11,8 +11,8 @@
  * misleads, a clipped label, a chart that says the wrong thing — get made.
  *
  *   bun run shots --list
- *   bun run shots segment-progress-app--default
- *   bun run shots --width 380 segment-progress-app--mobile
+ *   bun run shots route-map-routemap--activity-loop
+ *   bun run shots --width 380 route-map-routemap--mobile-activity-loop
  *   bun run shots --dark --hover "svg.recharts-surface" chart--default
  *
  * Renders against a static Storybook build by default (built on demand, then

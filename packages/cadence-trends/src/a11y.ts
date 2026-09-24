@@ -1,4 +1,4 @@
-import { formatPace, formatShortDate } from "@strava-mcp/data";
+import { formatPace, formatShortDate } from "@intervals-mcp/data";
 import { type RunSummary } from "./types";
 
 /**

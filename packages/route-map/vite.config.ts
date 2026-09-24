@@ -1,5 +1,5 @@
-import { bundledRawWorker } from "@strava-mcp/vite-config/maplibre-worker";
-import { mcpAppConfig } from "@strava-mcp/vite-config/mcp-app";
+import { bundledRawWorker } from "@intervals-mcp/vite-config/maplibre-worker";
+import { mcpAppConfig } from "@intervals-mcp/vite-config/mcp-app";
 import { mergeConfig } from "vite";
 
 // bundledRawWorker serves BasemapView's `?bundled-raw` worker import — the
