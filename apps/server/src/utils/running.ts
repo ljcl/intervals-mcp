@@ -79,12 +79,23 @@ export interface PaceResult {
 }
 
 /**
- * Format seconds as M:SS pace string.
+ * Formats a pace given in seconds-per-kilometre as `m:ss`, rounding to the
+ * nearest second first so a value like 299.6 carries into `5:00` rather than
+ * flooring to 4 minutes and rendering an invalid `4:60`.
+ *
+ * The one home for seconds -> pace-string formatting: {@link metersPerSecToPace}
+ * and (transitively) {@link paceFromDistanceTime} both render their `m:ss`
+ * strings through this function rather than each rounding independently.
+ *
+ * Null-safe by returning a value, never throwing or emitting `NaN:NaN`: zero
+ * or a non-finite input (`NaN`, `Infinity`, `-Infinity`) returns `"0:00"`.
+ * Callers that need to distinguish "no pace" from a genuine zero pace decide
+ * that before calling this, the same way {@link metersPerSecToPace} already
+ * returns `null` for `mps <= 0` instead of calling through.
  */
-function formatPaceString(totalSeconds: number): string {
-  // Round first, then split, so 359.5s carries into 6:00 rather than
-  // flooring to 5 minutes and rounding the remainder to an invalid ":60".
-  const rounded = Math.round(totalSeconds);
+export function formatPaceSeconds(secPerKm: number): string {
+  if (!Number.isFinite(secPerKm) || secPerKm <= 0) return "0:00";
+  const rounded = Math.round(secPerKm);
   const minutes = Math.floor(rounded / 60);
   const seconds = rounded % 60;
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
@@ -107,11 +118,11 @@ export function metersPerSecToPace(
   return {
     metersPerSecond: Math.round(mps * 100) / 100,
     kmh: Math.round(mps * 3.6 * 10) / 10,
-    minPerKm: formatPaceString(secondsPerKm),
+    minPerKm: formatPaceSeconds(secondsPerKm),
     minPerKmRaw: Math.round((secondsPerKm / 60) * 100) / 100,
-    minPerMile: formatPaceString(secondsPerMile),
+    minPerMile: formatPaceSeconds(secondsPerMile),
     minPerMileRaw: Math.round((secondsPerMile / 60) * 100) / 100,
-    display: `${formatPaceString(secondsPerKm)} /km`,
+    display: `${formatPaceSeconds(secondsPerKm)} /km`,
   };
 }
 

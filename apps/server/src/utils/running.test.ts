@@ -4,6 +4,7 @@ import {
   cadenceSpm,
   computeTimeInZones,
   computeWattsPerKg,
+  formatPaceSeconds,
   getZoneForHr,
   isPaceActivity,
   isRunningActivity,
@@ -12,6 +13,32 @@ import {
   paceFromDistanceTime,
   transformCadence,
 } from "./running";
+
+describe("formatPaceSeconds", () => {
+  it("formats 282 seconds as 4:42", () => {
+    expect(formatPaceSeconds(282)).toBe("4:42");
+  });
+
+  it("rounds 299.6 seconds up into the next minute as 5:00", () => {
+    expect(formatPaceSeconds(299.6)).toBe("5:00");
+  });
+
+  it("returns 0:00 for zero seconds rather than throwing", () => {
+    expect(formatPaceSeconds(0)).toBe("0:00");
+  });
+
+  it("returns 0:00 for NaN rather than emitting NaN:NaN", () => {
+    expect(formatPaceSeconds(Number.NaN)).toBe("0:00");
+  });
+
+  it("returns 0:00 for Infinity rather than throwing", () => {
+    expect(formatPaceSeconds(Number.POSITIVE_INFINITY)).toBe("0:00");
+  });
+
+  it("returns 0:00 for a negative input", () => {
+    expect(formatPaceSeconds(-5)).toBe("0:00");
+  });
+});
 
 describe("isRunningActivity", () => {
   it("returns true for Run", () => {

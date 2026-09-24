@@ -1,10 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import activities from "./__fixtures__/intervals/activities.json";
 import activity from "./__fixtures__/intervals/activity.json";
+import activityHilly from "./__fixtures__/intervals/activity-hilly.json";
 import intervals from "./__fixtures__/intervals/activity-intervals.json";
+import activityMultilap from "./__fixtures__/intervals/activity-multilap.json";
+import multilapIntervals from "./__fixtures__/intervals/activity-multilap-intervals.json";
 import gearFixture from "./__fixtures__/intervals/gear.json";
 import sportSettings from "./__fixtures__/intervals/sport-settings-run.json";
 import streams from "./__fixtures__/intervals/streams.json";
+import streamsHilly from "./__fixtures__/intervals/streams-hilly.json";
+import streamsMultilap from "./__fixtures__/intervals/streams-multilap.json";
 import wellness from "./__fixtures__/intervals/wellness.json";
 import { intervalsApi, RateLimitError } from "./fetchClient";
 import {
@@ -109,6 +114,27 @@ describe("intervalsClient", () => {
     expect((await getSportSettings("k", "Run")).lthr).toBe(sportSettings.lthr);
     mockJson([]);
     expect(await listGear("k")).toEqual([]);
+    mockJson(activityMultilap);
+    expect((await getActivity("k", activityMultilap.id)).id).toBe(
+      activityMultilap.id,
+    );
+    mockJson(activityHilly);
+    expect((await getActivity("k", activityHilly.id)).id).toBe(
+      activityHilly.id,
+    );
+    mockJson(multilapIntervals);
+    expect(
+      (await getActivityIntervals("k", activityMultilap.id)).icu_intervals
+        .length,
+    ).toBe(multilapIntervals.icu_intervals.length);
+    mockJson(streamsMultilap);
+    expect(
+      (await getActivityStreams("k", activityMultilap.id, ["time"])).length,
+    ).toBe(streamsMultilap.length);
+    mockJson(streamsHilly);
+    expect(
+      (await getActivityStreams("k", activityHilly.id, ["time"])).length,
+    ).toBe(streamsHilly.length);
   });
 
   it("types the fields the read tools use from a detailed activity", async () => {
@@ -135,6 +161,81 @@ describe("intervalsClient", () => {
       distance: null,
       primary: null,
     });
+  });
+
+  it("parses the multi-lap fixture and types the widened activity fields", async () => {
+    mockJson(activityMultilap);
+    const result = await getActivity("k", activityMultilap.id);
+    expect(result.icu_lap_count).toBe(12);
+    expect(result.average_speed).toBeCloseTo(3.372);
+    expect(result.icu_hr_zones).toEqual([147, 160, 169, 178, 197]);
+    expect(result.icu_power_zones).toBeNull();
+    expect(result.pace_zones).toBeNull();
+    expect(result.race).toBe(false);
+    expect(result.sub_type).toBeNull();
+    expect(result.recording_stops).toEqual([164, 431, 530, 2215, 3023, 3283]);
+    expect(result.icu_warmup_time).toBe(300);
+    expect(result.icu_average_watts).toBeNull();
+    expect(result.icu_ftp).toBeNull();
+  });
+
+  it("parses the hilly fixture (largest total_elevation_gain in range)", async () => {
+    mockJson(activityHilly);
+    const result = await getActivity("k", activityHilly.id);
+    expect(result.icu_lap_count).toBe(43);
+    expect(result.total_elevation_gain).toBeCloseTo(692.83905);
+    expect(result.average_speed).toBeCloseTo(3.077);
+    expect(result.recording_stops).toBeNull();
+  });
+
+  it("types the widened interval fields from the multi-lap intervals fixture", async () => {
+    mockJson(multilapIntervals);
+    const result = await getActivityIntervals("k", activityMultilap.id);
+    const firstInterval: IntervalsInterval | undefined =
+      result.icu_intervals[0];
+    expect(firstInterval?.gap).toBeCloseTo(3.427648);
+    expect(firstInterval?.total_elevation_gain).toBeCloseTo(4.2);
+    expect(firstInterval?.average_gradient).toBeCloseTo(0.0039488245);
+    expect(firstInterval?.intensity).toBe(77);
+    expect(firstInterval?.decoupling).toBeNull();
+    expect(firstInterval?.group_id).toBe("311s@139bpm81rpm");
+    expect(firstInterval?.start_time).toBe(0);
+    expect(firstInterval?.end_time).toBe(311);
+    expect(firstInterval?.max_heartrate).toBe(157);
+    expect(firstInterval?.average_speed).toBeCloseTo(3.2055695);
+    expect(firstInterval?.average_watts).toBeNull();
+  });
+
+  it("parses the multi-lap and hilly stream fixtures, including grade_smooth and watts", async () => {
+    mockJson(streamsMultilap);
+    const multilapStreams = await getActivityStreams("k", activityMultilap.id, [
+      "time",
+    ]);
+    expect(multilapStreams.map((s) => s.type)).toEqual(
+      streamsMultilap.map((s) => s.type),
+    );
+    expect(multilapStreams.map((s) => s.type)).toContain("grade_smooth");
+    expect(multilapStreams.map((s) => s.type)).toContain("watts");
+    for (const s of multilapStreams) {
+      expect(s.data.length).toBeLessThanOrEqual(600);
+    }
+
+    mockJson(streamsHilly);
+    const hillyStreams = await getActivityStreams("k", activityHilly.id, [
+      "time",
+    ]);
+    expect(hillyStreams.map((s) => s.type)).toContain("grade_smooth");
+    for (const s of hillyStreams) {
+      expect(s.data.length).toBeLessThanOrEqual(600);
+    }
+  });
+
+  it("types sport-settings ftp and warmup_time", async () => {
+    mockJson(sportSettings);
+    const result = await getSportSettings("k", "Run");
+    expect(result.warmup_time).toBe(300);
+    expect(result.ftp).toBeNull();
+    expect(result.threshold_pace).toBeNull();
   });
 
   it("parses the real gear fixture", async () => {

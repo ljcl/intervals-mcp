@@ -83,6 +83,119 @@ function scrubStreams(streams: Rec[]): Rec[] {
 const STREAM_TYPES =
   "time,distance,heartrate,cadence,velocity_smooth,altitude,latlng,stance_time,vertical_oscillation,vertical_ratio,step_length";
 
+/**
+ * Stream set used for named extra captures (multi-lap, hilly): matches the
+ * columns those fixtures need to exercise the widened schemas plus the hill
+ * and lap analysis tools (grade, power) without pulling in the running-
+ * dynamics streams the base fixture already covers.
+ */
+const EXTRA_STREAM_TYPES =
+  "time,distance,altitude,grade_smooth,heartrate,velocity_smooth,cadence,watts,latlng";
+
+/**
+ * Deterministic pseudo-random generator (mulberry32): same seed always
+ * produces the same sequence, so re-running this script reproduces the same
+ * synthetic wellness fixture rather than a new one every capture.
+ */
+function mulberry32(seed: number): () => number {
+  let state = seed;
+  return () => {
+    state |= 0;
+    state = (state + 0x6d2b79f5) | 0;
+    let t = Math.imul(state ^ (state >>> 15), 1 | state);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * Draws a synthetic value in `[min, max]` from `rng`, nudged by one step
+ * (clamped back into range) if it happens to land exactly on `real`. The
+ * range is narrow enough (e.g. restingHR 50-60) that a coincidental match
+ * with the real reading is plausible across ~15 days, and every day must
+ * read as synthetic, not just most of them.
+ */
+function synthesizeAvoiding(
+  rng: () => number,
+  min: number,
+  max: number,
+  decimals: number,
+  real: number | null | undefined,
+): number {
+  const scale = 10 ** decimals;
+  let value = Math.round((min + rng() * (max - min)) * scale) / scale;
+  if (real != null && value === real) {
+    const step = 1 / scale;
+    value = value + step > max ? value - step : value + step;
+    value = Math.round(value * scale) / scale;
+  }
+  return value;
+}
+
+/**
+ * Replaces every wellness record's `restingHR`, `hrvSDNN` and `sleepSecs`
+ * with deterministic synthetic values in plausible ranges, and `ctl`/`atl`
+ * with a deterministic smooth (small-step) synthetic sequence, so no real
+ * wellness readings are committed to this public repo. Each synthetic value
+ * is nudged away from its real counterpart (see {@link synthesizeAvoiding})
+ * so every day reads as synthetic, not just most of them. Order is preserved
+ * (the caller sorts/filters by date), and the seed is fixed so the output is
+ * reproducible across captures.
+ */
+function synthesizeWellness(wellness: Rec[]): Rec[] {
+  const rng = mulberry32(20260924);
+  let ctl = 35 + rng() * 10;
+  let atl = 25 + rng() * 10;
+  return wellness.map((w) => {
+    ctl += (rng() - 0.5) * 2;
+    atl += (rng() - 0.5) * 4;
+    return {
+      ...w,
+      restingHR: synthesizeAvoiding(
+        rng,
+        50,
+        60,
+        0,
+        w.restingHR as number | null,
+      ),
+      hrvSDNN: synthesizeAvoiding(rng, 35, 60, 2, w.hrvSDNN as number | null),
+      sleepSecs: synthesizeAvoiding(
+        rng,
+        21000,
+        28000,
+        0,
+        w.sleepSecs as number | null,
+      ),
+      ctl: Math.round(ctl * 100) / 100,
+      atl: Math.round(atl * 100) / 100,
+      weight: w.weight == null ? null : 70,
+      comments: null,
+    };
+  });
+}
+
+/** A named extra activity capture: `name:id` or `name:id:intervals` to also
+ * capture the interval breakdown (only the multi-lap fixture needs it). */
+interface NamedCapture {
+  name: string;
+  id: string;
+  captureIntervals: boolean;
+}
+
+function parseNamedCaptures(args: string[]): NamedCapture[] {
+  return args.map((arg) => {
+    const [name, id, flag] = arg.split(":");
+    if (!name || !id) {
+      throw new Error(
+        `invalid extra fixture arg "${arg}"; expected name:id or name:id:intervals`,
+      );
+    }
+    return { name, id, captureIntervals: flag === "intervals" };
+  });
+}
+
+const namedCaptures = parseNamedCaptures(process.argv.slice(3));
+
 mkdirSync(OUT, { recursive: true });
 const write = (file: string, data: unknown) =>
   writeFileSync(path.join(OUT, file), `${JSON.stringify(data, null, 2)}\n`);
@@ -108,14 +221,29 @@ write(
 const wellness = (await get(
   "/athlete/0/wellness?oldest=2026-09-10&newest=2026-09-24",
 )) as Rec[];
-write(
-  "wellness.json",
-  wellness.map((w) => ({
-    ...w,
-    weight: w.weight == null ? null : 70,
-    comments: null,
-  })),
-);
+write("wellness.json", synthesizeWellness(wellness));
+
+for (const capture of namedCaptures) {
+  write(
+    `activity-${capture.name}.json`,
+    scrubActivity((await get(`/activity/${capture.id}`)) as Rec, 0),
+  );
+  if (capture.captureIntervals) {
+    const capturedIntervals = (await get(
+      `/activity/${capture.id}/intervals`,
+    )) as Rec;
+    write(`activity-${capture.name}-intervals.json`, { ...capturedIntervals });
+  }
+  write(
+    `streams-${capture.name}.json`,
+    scrubStreams(
+      (await get(
+        `/activity/${capture.id}/streams.json?types=${EXTRA_STREAM_TYPES}`,
+      )) as Rec[],
+    ),
+  );
+}
+
 function scrubAthleteId(r: Rec): Rec {
   const out: Rec = { ...r };
   if ("athlete_id" in out) out.athlete_id = "i0";

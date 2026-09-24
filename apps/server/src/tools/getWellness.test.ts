@@ -33,14 +33,14 @@ describe("mapWellnessDay", () => {
     const day = mapWellnessDay(byId("2026-09-10"));
 
     expect(day.date).toBe("2026-09-10");
-    expect(day.hrv_sdnn_ms).toBeCloseTo(43.158802);
+    expect(day.hrv_sdnn_ms).toBeCloseTo(41.17);
     expect(day.hrv_rmssd_ms).toBeNull();
-    expect(day.resting_hr).toBe(58);
-    // 24831 s / 3600 = 6.8975, rounds to 6.9 h
-    expect(day.sleep_hours).toBe(6.9);
+    expect(day.resting_hr).toBe(52);
+    // 22194 s / 3600 = 6.165, rounds to 6.2 h
+    expect(day.sleep_hours).toBe(6.2);
     expect(day.weight_kg).toBe(70);
-    expect(day.ctl).toBeCloseTo(40.57544);
-    expect(day.atl).toBeCloseTo(30.010433);
+    expect(day.ctl).toBeCloseTo(41.02);
+    expect(day.atl).toBeCloseTo(30.94);
     expect(day.ramp_rate).toBeCloseTo(-3.81258);
     expect(day.sleep_score).toBeNull();
     expect(day.readiness).toBeNull();
@@ -123,9 +123,9 @@ describe("formatWellnessText", () => {
     });
 
     expect(text).toContain("Wellness 2026-09-10");
-    expect(text).toContain("HRV SDNN 43.2 ms");
-    expect(text).toContain("resting HR 58");
-    expect(text).toContain("sleep 6.9 h");
+    expect(text).toContain("HRV SDNN 41.2 ms");
+    expect(text).toContain("resting HR 52");
+    expect(text).toContain("sleep 6.2 h");
     expect(text.split("\n").length).toBeGreaterThan(1);
   });
 

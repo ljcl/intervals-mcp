@@ -29,6 +29,15 @@ const IntervalsActivityGearRefSchema = z
   })
   .passthrough();
 
+/** One zone's time-in-zone entry within `icu_zone_times` (per the OpenAPI
+ * spec's `ZoneTime`: `{ id, secs }`, not a bare number). */
+const IntervalsZoneTimeSchema = z
+  .object({
+    id: z.string().nullable().optional(),
+    secs: z.number().nullable().optional(),
+  })
+  .passthrough();
+
 // --- Interval (within-activity) schema ---
 // Declared before the activity schema so a detailed activity's embedded
 // `icu_intervals` (present when fetched with `?intervals=true`) can reuse it.
@@ -51,6 +60,15 @@ const IntervalsIntervalSchema = z
     average_vertical_ratio: z.number().nullable().optional(),
     average_step_length: z.number().nullable().optional(),
     zone: z.number().nullable().optional(),
+    gap: z.number().nullable().optional(),
+    total_elevation_gain: z.number().nullable().optional(),
+    average_watts: z.number().nullable().optional(),
+    average_gradient: z.number().nullable().optional(),
+    intensity: z.number().nullable().optional(),
+    decoupling: z.number().nullable().optional(),
+    group_id: z.string().nullable().optional(),
+    start_time: z.number().nullable().optional(),
+    end_time: z.number().nullable().optional(),
   })
   .passthrough();
 
@@ -102,6 +120,18 @@ const IntervalsActivitySchema = z
     icu_athlete_id: z.string().nullable().optional(),
     stream_types: z.array(z.string()).nullable().optional(),
     gear: IntervalsActivityGearRefSchema.nullable().optional(),
+    average_speed: z.number().nullable().optional(),
+    icu_hr_zones: z.array(z.number()).nullable().optional(),
+    icu_power_zones: z.array(z.number()).nullable().optional(),
+    icu_zone_times: z.array(IntervalsZoneTimeSchema).nullable().optional(),
+    pace_zones: z.array(z.number()).nullable().optional(),
+    race: z.boolean().nullable().optional(),
+    sub_type: z.string().nullable().optional(),
+    icu_lap_count: z.number().nullable().optional(),
+    recording_stops: z.array(z.number()).nullable().optional(),
+    icu_warmup_time: z.number().nullable().optional(),
+    icu_average_watts: z.number().nullable().optional(),
+    icu_ftp: z.number().nullable().optional(),
     /** Only present when fetched via `getActivity(..., { intervals: true })`. */
     icu_intervals: z.array(IntervalsIntervalSchema).optional(),
   })
@@ -213,6 +243,8 @@ const IntervalsSportSettingsSchema = z
     hr_zones: z.array(z.number()).nullable().optional(),
     threshold_pace: z.number().nullable().optional(),
     pace_zones: z.array(z.number()).nullable().optional(),
+    ftp: z.number().nullable().optional(),
+    warmup_time: z.number().nullable().optional(),
   })
   .passthrough();
 
