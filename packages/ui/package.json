@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@base-ui/react": "1.7.0",
-    "@modelcontextprotocol/ext-apps": "1.7.5",
+    "@modelcontextprotocol/ext-apps": "2.0.0",
     "@intervals-mcp/design-system": "workspace:*",
     "react": "19.2.8"
   },
