@@ -3,12 +3,12 @@ import activitiesFixture from "../__fixtures__/intervals/activities.json";
 import activityPaceCurvesFixture from "../__fixtures__/intervals/activity-pace-curves.json";
 import paceCurvesFixture from "../__fixtures__/intervals/pace-curves.json";
 import {
+  getActivity,
   getActivityPaceCurves,
   getAthletePaceCurves,
   type IntervalsActivity,
   type IntervalsActivityPaceCurves,
   type IntervalsAthletePaceCurves,
-  listActivities,
 } from "../intervalsClient";
 import {
   formatBestEffortsText,
@@ -28,7 +28,7 @@ vi.mock("../intervalsClient", async () => {
     ...actual,
     getAthletePaceCurves: vi.fn(),
     getActivityPaceCurves: vi.fn(),
-    listActivities: vi.fn(),
+    getActivity: vi.fn(),
   };
 });
 vi.mock("../config", async () => {
@@ -38,7 +38,7 @@ vi.mock("../config", async () => {
 
 const mockedAthleteCurves = vi.mocked(getAthletePaceCurves);
 const mockedActivityCurves = vi.mocked(getActivityPaceCurves);
-const mockedListActivities = vi.mocked(listActivities);
+const mockedGetActivity = vi.mocked(getActivity);
 
 const paceCurves = paceCurvesFixture as unknown as IntervalsAthletePaceCurves;
 const activityCurves =
@@ -48,8 +48,10 @@ const activities = activitiesFixture as unknown as IntervalsActivity[];
 beforeEach(() => {
   mockedAthleteCurves.mockReset();
   mockedActivityCurves.mockReset();
-  mockedListActivities.mockReset();
+  mockedGetActivity.mockReset();
 });
+
+const activityById = new Map(activities.map((a) => [a.id, a]));
 
 describe("resolveWindow", () => {
   it('maps "all" to intervals.icu\'s own lower bound, through today', () => {
@@ -173,7 +175,7 @@ describe("getBestEffortsTool.execute", () => {
       curves: ["1y"],
     });
     expect(mockedActivityCurves).not.toHaveBeenCalled();
-    expect(mockedListActivities).not.toHaveBeenCalled();
+    expect(mockedGetActivity).not.toHaveBeenCalled();
 
     const content = result.structuredContent as {
       window: { id: string };
@@ -218,9 +220,13 @@ describe("getBestEffortsTool.execute", () => {
     expect(result.content[0]?.text).toContain("recorded time stream");
   });
 
-  it("topN>1: fetches activity pace curves and listActivities over the same window, ranking locally", async () => {
+  it("topN>1: fetches activity pace curves, then resolves winning activity names/race flags with one getActivity call per unique id, never listActivities", async () => {
     mockedActivityCurves.mockResolvedValueOnce(activityCurves);
-    mockedListActivities.mockResolvedValueOnce(activities);
+    mockedGetActivity.mockImplementation(async (_apiKey, id) => {
+      const activity = activityById.get(id);
+      if (!activity) throw new Error(`no fixture activity for ${id}`);
+      return activity;
+    });
 
     const result = await getBestEffortsTool.execute(
       { distances: ["1km"], window: "2026-09-01..2026-09-24", topN: 2 },
@@ -234,10 +240,11 @@ describe("getBestEffortsTool.execute", () => {
       type: "Run",
       distances: [1000],
     });
-    expect(mockedListActivities).toHaveBeenCalledWith("k", {
-      oldest: "2026-09-01",
-      newest: "2026-09-24",
-    });
+    // Exactly one getActivity call per winning activity id, never a
+    // listActivities-style sweep over the whole window.
+    expect(mockedGetActivity).toHaveBeenCalledTimes(2);
+    expect(mockedGetActivity).toHaveBeenCalledWith("k", "i189757188");
+    expect(mockedGetActivity).toHaveBeenCalledWith("k", "i189757183");
 
     const content = result.structuredContent as {
       best_efforts: Record<
@@ -328,7 +335,6 @@ describe("getBestEffortsTool.execute", () => {
         { id: "i1", start_date_local: "2026-09-01", weight: 70, secs: [1200] },
       ],
     } as unknown as IntervalsActivityPaceCurves);
-    mockedListActivities.mockResolvedValueOnce([]);
 
     const result = await getBestEffortsTool.execute(
       { distances: ["marathon"], window: "2026-08-01..2026-09-01", topN: 2 },
@@ -341,6 +347,46 @@ describe("getBestEffortsTool.execute", () => {
     };
     expect(content.best_efforts.marathon).toEqual([]);
     expect(content.missing).toEqual(["marathon"]);
+    // No candidates within tolerance means no winning ids, so no name lookup.
+    expect(mockedGetActivity).not.toHaveBeenCalled();
+  });
+
+  it("topN>1 caps name lookups at the number of unique winning activity ids across all requested distances, never per-distance duplicates", async () => {
+    mockedActivityCurves.mockResolvedValueOnce({
+      distances: [1000, 5000],
+      gap: false,
+      curves: [
+        {
+          id: "i189757188",
+          start_date_local: "2026-09-10",
+          weight: 70,
+          secs: [269, 1300],
+        },
+        {
+          id: "i189757183",
+          start_date_local: "2026-09-05",
+          weight: 70,
+          secs: [280, 1400],
+        },
+      ],
+    } as unknown as IntervalsActivityPaceCurves);
+    mockedGetActivity.mockImplementation(async (_apiKey, id) => {
+      const activity = activityById.get(id);
+      if (!activity) throw new Error(`no fixture activity for ${id}`);
+      return activity;
+    });
+
+    await getBestEffortsTool.execute(
+      {
+        distances: ["1km", "5km"],
+        window: "2026-09-01..2026-09-24",
+        topN: 2,
+      },
+      "k",
+    );
+
+    // Both activities place in both distances; still one lookup per unique id.
+    expect(mockedGetActivity).toHaveBeenCalledTimes(2);
   });
 
   it("rejects an invalid window without calling the client", async () => {

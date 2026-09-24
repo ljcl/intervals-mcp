@@ -223,10 +223,12 @@ intervals.icu's pace curves rather than scanning activities. `window` picks
 mapped to the matching pace-curve id. `topN` (1-5, default 1) picks how many
 distinct activities to report per distance: the default makes one call to the
 athlete's own pace curve, whose `activities` map already carries the name,
-date, and race flag; above 1 makes two calls instead, per-activity pace
-curves for the window, plus `list-activities`' underlying fetch, to rank the
-top N distinct activities per distance locally (intervals.icu returns no
-rank). Pace renders as a single `m:ss min/km` string, never miles. Because
+date, and race flag; above 1 fetches per-activity pace curves for the window
+to rank the top N distinct activities per distance locally (intervals.icu
+returns no rank), then resolves the name and race flag for each winning
+activity with one bounded-concurrency `getActivity` call per unique id (at
+most 30, distances x topN), never a `list-activities` sweep over the whole
+window. Pace renders as a single `m:ss min/km` string, never miles. Because
 the pace curve is built from the recorded time stream (a moving-time style
 curve), `time_seconds`/`time_formatted` are not elapsed time; the response's
 `note` says so. Each requested distance is matched to the nearest point on

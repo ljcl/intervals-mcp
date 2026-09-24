@@ -3,9 +3,10 @@
  *
  * Several tools fan out over more than one request: the training-load /
  * fitness-trend feeds page through an athlete's history, and `get-best-efforts`
- * (now backed by intervals.icu pace curves) makes one or two calls per
- * `topN`. Until now every one of them was silent from the first
- * request to the last, so an
+ * (now backed by intervals.icu pace curves) makes one call for `topN === 1`,
+ * or one pace-curve call plus one name lookup per winning activity (bounded
+ * concurrency, at most 30) above that. Until now every one of them was
+ * silent from the first request to the last, so an
  * MCP App showed a bare skeleton for a minute and a host's request timeout had
  * nothing to reset itself against (ext-apps v1.6.0 resets on progress).
  *

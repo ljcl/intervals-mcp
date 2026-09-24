@@ -2,13 +2,14 @@ import { z } from "zod";
 import { getTimeZone } from "../config";
 import { formatDuration } from "../formatters";
 import {
+  getActivity,
   getActivityPaceCurves,
   getAthletePaceCurves,
   type IntervalsActivity,
-  listActivities,
 } from "../intervalsClient";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
 import { addDays, isValidCalendarDate, todayLocal } from "../utils/localDate";
+import { mapWithConcurrency } from "../utils/concurrency";
 import { formatPaceSeconds } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
 import { toolErrorText } from "./_errors";
@@ -25,7 +26,7 @@ Best efforts at standard running distances, from intervals.icu's pace curves.
 Parameters:
 - distances (optional): which distances to report (default: 400m, 1km, 5km, 10km, half marathon, marathon)
 - window (optional): "all", "1y", "90d", or a custom "YYYY-MM-DD..YYYY-MM-DD" range (default: 1y)
-- topN (optional): top N distinct activities per distance, 1-5 (default 1); above 1 also fetches per-activity pace curves for the window, one extra call
+- topN (optional): top N distinct activities per distance, 1-5 (default 1); above 1 also fetches per-activity pace curves for the window plus one name lookup per winning activity (at most 30)
 
 Notes:
 - ${TIME_BASIS_NOTE}
@@ -270,10 +271,17 @@ async function buildTopOneEfforts(
   return { best_efforts, missing, warnings };
 }
 
-/** `topN > 1`: `getActivityPaceCurves` for the per-activity times plus
- * `listActivities` (already in `intervalsClient.ts`) for names/race flags
- * over the same window: two calls total, never one per candidate
- * activity. */
+/** Names/race flags for the winning activities are resolved with at most one
+ * `getActivity` call per unique id (distances x topN, capped at 30), run
+ * through `mapWithConcurrency` so the response cache and the client's own
+ * throttle in `fetchClient.ts` do the pacing; never one `listActivities`
+ * sweep over the whole window (a 40-year "all" window splits into hundreds
+ * of sequential calls). */
+const NAME_LOOKUP_CONCURRENCY = 5;
+
+/** `topN > 1`: one `getActivityPaceCurves` call for the per-activity times,
+ * then a bounded-concurrency `getActivity` per winning activity id for its
+ * name/race flag, never one `listActivities` call per candidate window. */
 async function buildTopNEfforts(
   apiKey: string,
   distances: DistanceLabel[],
@@ -293,32 +301,25 @@ async function buildTopNEfforts(
     `Fetching activity pace curves ${resolved.oldest} to ${resolved.newest}…`,
     { important: true },
   );
-  const [curves, activityList] = await Promise.all([
-    getActivityPaceCurves(apiKey, {
-      oldest: resolved.oldest,
-      newest: resolved.newest,
-      type: "Run",
-      distances: targetMeters,
-    }),
-    listActivities(apiKey, {
-      oldest: resolved.oldest,
-      newest: resolved.newest,
-    }),
-  ]);
-
-  const activityById = new Map<string, IntervalsActivity>(
-    activityList.map((a) => [a.id, a]),
-  );
+  const curves = await getActivityPaceCurves(apiKey, {
+    oldest: resolved.oldest,
+    newest: resolved.newest,
+    type: "Run",
+    distances: targetMeters,
+  });
 
   const missing: string[] = [];
   const warnings: string[] = [];
-  const best_efforts: Record<string, BestEffortEntry[]> = {};
+  const candidatesByLabel = new Map<
+    DistanceLabel,
+    { activityId: string; timeSeconds: number; date: string }[]
+  >();
+  const distanceMetersByLabel = new Map<DistanceLabel, number>();
 
   for (const label of distances) {
     const target = DISTANCE_METERS[label];
     const idx = matchDistance(curves.distances, target);
     if (idx === null) {
-      best_efforts[label] = [];
       missing.push(label);
       warnings.push(
         `No recorded effort within tolerance near ${label} in this window.`,
@@ -326,6 +327,7 @@ async function buildTopNEfforts(
       continue;
     }
     const distanceMeters = curves.distances[idx]!;
+    distanceMetersByLabel.set(label, distanceMeters);
 
     const candidates = curves.curves
       .filter((c) => c.secs.length > idx && c.secs[idx] != null)
@@ -338,13 +340,46 @@ async function buildTopNEfforts(
       .slice(0, topN);
 
     if (candidates.length === 0) {
-      best_efforts[label] = [];
       missing.push(label);
       warnings.push(
         `No recorded effort within tolerance near ${label} in this window.`,
       );
       continue;
     }
+
+    candidatesByLabel.set(label, candidates);
+  }
+
+  const winningIds = new Set<string>();
+  for (const candidates of candidatesByLabel.values()) {
+    for (const c of candidates) winningIds.add(c.activityId);
+  }
+
+  progress(`Resolving ${winningIds.size} activity names…`, {
+    important: true,
+  });
+  const activityById = new Map<string, IntervalsActivity>();
+  await mapWithConcurrency(
+    Array.from(winningIds),
+    NAME_LOOKUP_CONCURRENCY,
+    async (activityId) => {
+      try {
+        activityById.set(activityId, await getActivity(apiKey, activityId));
+      } catch {
+        // Name/race flag are cosmetic; a lookup failure falls back to
+        // "Unknown activity" rather than failing the whole tool call.
+      }
+    },
+  );
+
+  const best_efforts: Record<string, BestEffortEntry[]> = {};
+  for (const label of distances) {
+    const candidates = candidatesByLabel.get(label);
+    if (!candidates) {
+      best_efforts[label] = [];
+      continue;
+    }
+    const distanceMeters = distanceMetersByLabel.get(label) ?? 0;
 
     best_efforts[label] = candidates.map((c, i) => {
       const info = activityById.get(c.activityId);
