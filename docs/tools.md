@@ -9,7 +9,86 @@ identity, so renames or schema reshapes re-prompt every user. See
 [architecture.md](architecture.md#tool-metadata) before changing either.
 
 > **Status.** Tools are being ported from Strava to intervals.icu (Phases 1
-> and 2). Until a tool is ported, it fails with a "not yet ported" error.
+> and 2). The five tools below are ported and verified against a real
+> account; until a remaining tool is ported, it fails with a "not yet
+> ported" error.
+
+## intervals.icu tools
+
+Tools that already talk to intervals.icu directly, rather than through the
+Strava port.
+
+| Tool | Description |
+| ---- | ----------- |
+| `list-activities` | Compact, date-bounded activity list with units; the entry point for finding activity ids |
+| `get-activity` | One activity in detail: metrics, load, HR zones, running dynamics, intervals; use after list-activities |
+| `get-activity-streams` | Time-series streams for one activity, downsampled to a bounded number of points, including running dynamics |
+| `list-gear` | The athlete's gear (shoes) with mileage and retirement status |
+| `get-wellness` | Daily wellness (HRV, resting HR, sleep, weight, CTL/ATL/TSB) for a date or range |
+
+`list-activities` defaults to the last 28 days (today back to 27 days
+earlier) in the server's configured time zone, sorted newest first. Filter
+with `type` (exact, case-insensitive) or `nameContains` (case-insensitive
+substring), and cap the page with `limit` (1-200, default 30). An activity
+synced into intervals.icu from Strava (`source: "STRAVA"`) is a stub: the
+intervals.icu API has no further detail for it, so the response flags it with
+`is_strava_stub` and the text response adds a trailing note. That detection
+is unverified against a real Strava-sourced activity; see docs/api-notes.md's
+Strava stub spike note.
+
+`get-activity` takes the `id` from `list-activities` and returns core
+metrics, training load, HR zone time-in-zone, running dynamics (Run,
+TrailRun, VirtualRun, Walk, Hike, with device support), the WORK/RECOVERY
+interval breakdown (`includeIntervals`, default true), gear id, and
+description, all with units. Gear name is included too when the activity
+payload happens to carry one; intervals.icu does not populate it there
+today, so this is currently always id-only. HR zone boundaries come from
+the athlete's Run sport settings group (`types` Run, VirtualRun, TrailRun);
+`hr_zones` is an empty array for any other activity type, including Walk or
+Hike, or when that settings group isn't configured, rather than failing the
+call. `pace_min_per_km` and `gap_min_per_km` (grade-adjusted pace, derived
+from the activity's `gap` field, which intervals.icu reports in m/s, the
+same unit as `average_speed`) are set for Run/TrailRun/VirtualRun only: a
+Walk or Hike gets a cadence but no pace. The text response truncates
+`description` to 200 characters with a "..." marker;
+`structuredContent.description` is always the full text.
+
+`get-activity-streams` returns selected streams (`types`, default time,
+distance, heartrate, cadence, velocity_smooth, altitude; also available:
+latlng, watts, stance_time, vertical_oscillation, vertical_ratio,
+step_length) as index-aligned arrays with units. Large activities are
+downsampled to `maxPoints` (10-2000, default 120): each bucket reports the
+mean of its non-null samples, except time, distance, and latlng, which take
+the bucket's last sample. `time` is always fetched to size the buckets, but
+only returned when requested. cadence is doubled to steps/min (unit `spm`)
+for Run/TrailRun/VirtualRun/Walk/Hike; other sport types keep the raw rate,
+reported in `rpm`. A requested type the activity's streams don't include
+comes back in `missing` rather than failing the call; an activity with no
+streams at all fails with a clear message naming the id. The text response
+repeats the returned columns as a CSV block (header row of `type_unit`
+column names, one row per point; `latlng` as two columns, `lat` and `lng`)
+after the summary lines, since some hosts pass only that text to the model
+and drop `structuredContent`.
+
+`list-gear` returns each gear item's distance (km, including any starting
+distance entered in the UI when it was added, not just distance logged
+through activities), activity count, retirement status, and any usage
+reminders. Retired gear is excluded by default (`includeRetired`, default
+false). An account with no gear returns `count: 0` and a message pointing to
+the intervals.icu Gear page.
+
+`get-wellness` returns daily wellness: HRV (both `hrv_sdnn_ms` and
+`hrv_rmssd_ms`), resting HR, sleep, weight, training load (`ctl`, `atl`,
+`tsb` = ctl minus atl), and the subjective/device fields (readiness,
+soreness, fatigue, stress, mood, motivation, `spo2` (%), `respiration`
+(breaths/min), comments); `units` names all of these, including `spo2` and
+`respiration`. Takes either a single `date` or an `oldest`/`newest` range
+(max 90 calendar days inclusive); supplying `date` together with a range is
+a validation error. With nothing supplied it defaults to today in the
+server's configured time zone. Apple Watch reports HRV as SDNN, not rMSSD:
+the response's `hrv_note` says so explicitly (and every text line labels it
+"HRV SDNN", never bare "HRV"), since `hrv_rmssd_ms` reads null for those
+athletes and should not be compared against rMSSD norms.
 
 ## Activity tools
 
@@ -74,7 +153,7 @@ so it needs the `activity:write` scope.
 ## Tool permissions
 
 Every tool declares MCP annotations so a host can tell reads from writes. The
-27 read tools set `readOnlyHint: true` and `destructiveHint: false`, which is
+32 read tools set `readOnlyHint: true` and `destructiveHint: false`, which is
 the combination clients use to offer a durable "always allow". Two tools are
 writes and are expected to keep asking:
 

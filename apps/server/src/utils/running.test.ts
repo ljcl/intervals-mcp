@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   assessCadence,
+  cadenceSpm,
   computeTimeInZones,
   computeWattsPerKg,
   getZoneForHr,
+  isPaceActivity,
   isRunningActivity,
+  isStepCadenceActivity,
   metersPerSecToPace,
+  paceFromDistanceTime,
   transformCadence,
 } from "./running";
 
@@ -110,6 +114,87 @@ describe("metersPerSecToPace", () => {
     // 1609.34 / 2.684 ≈ 599.6 s/mile; naive rounding would render "9:60".
     const result = metersPerSecToPace(2.684);
     expect(result?.minPerMile).toBe("10:00");
+  });
+});
+
+describe("isPaceActivity", () => {
+  it("returns true for Run, TrailRun, VirtualRun", () => {
+    expect(isPaceActivity("Run")).toBe(true);
+    expect(isPaceActivity("TrailRun")).toBe(true);
+    expect(isPaceActivity("VirtualRun")).toBe(true);
+  });
+
+  it("returns false for Walk and Hike (cadence but no pace)", () => {
+    expect(isPaceActivity("Walk")).toBe(false);
+    expect(isPaceActivity("Hike")).toBe(false);
+  });
+
+  it("returns false for a non-foot sport", () => {
+    expect(isPaceActivity("Ride")).toBe(false);
+  });
+});
+
+describe("isStepCadenceActivity", () => {
+  it("returns true for runs, walks, and hikes", () => {
+    expect(isStepCadenceActivity("Run")).toBe(true);
+    expect(isStepCadenceActivity("TrailRun")).toBe(true);
+    expect(isStepCadenceActivity("VirtualRun")).toBe(true);
+    expect(isStepCadenceActivity("Walk")).toBe(true);
+    expect(isStepCadenceActivity("Hike")).toBe(true);
+  });
+
+  it("returns false for a non-foot sport", () => {
+    expect(isStepCadenceActivity("Ride")).toBe(false);
+    expect(isStepCadenceActivity("Swim")).toBe(false);
+  });
+});
+
+describe("cadenceSpm", () => {
+  it("doubles strides to steps for a run", () => {
+    expect(cadenceSpm(85, "Run")).toBe(170);
+  });
+
+  it("doubles strides to steps for a walk", () => {
+    expect(cadenceSpm(60, "Walk")).toBe(120);
+  });
+
+  it("doubles strides to steps for a hike", () => {
+    expect(cadenceSpm(50, "Hike")).toBe(100);
+  });
+
+  it("returns the raw rate unchanged for a non-step-cadence type", () => {
+    expect(cadenceSpm(90, "Ride")).toBe(90);
+  });
+
+  it("returns null when strides is null or undefined", () => {
+    expect(cadenceSpm(null, "Run")).toBeNull();
+    expect(cadenceSpm(undefined, "Run")).toBeNull();
+  });
+});
+
+describe("paceFromDistanceTime", () => {
+  it("computes a pace string from distance and moving time", () => {
+    // 5000m in 1500s = 5:00/km.
+    expect(paceFromDistanceTime(5000, 1500)).toBe("5:00");
+  });
+
+  it("returns null when distance is missing or non-positive", () => {
+    expect(paceFromDistanceTime(null, 1500)).toBeNull();
+    expect(paceFromDistanceTime(0, 1500)).toBeNull();
+    expect(paceFromDistanceTime(-5, 1500)).toBeNull();
+  });
+
+  it("returns null when moving time is missing or non-positive", () => {
+    expect(paceFromDistanceTime(5000, null)).toBeNull();
+    expect(paceFromDistanceTime(5000, 0)).toBeNull();
+    expect(paceFromDistanceTime(5000, -5)).toBeNull();
+  });
+
+  it("does not gate on activity type: the caller decides via isPaceActivity", () => {
+    // No type parameter at all -- a Walk's distance/time still produces a
+    // pace string here; get-activity/list-activities decide whether to show
+    // it by checking isPaceActivity(type) before calling this.
+    expect(paceFromDistanceTime(3000, 1800)).toBe("10:00");
   });
 });
 

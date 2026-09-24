@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { HttpError, RateLimitError, stravaApi } from "./fetchClient";
+import {
+  HttpError,
+  NotPortedError,
+  RateLimitError,
+  stravaApi,
+} from "./fetchClient";
 import {
   buildUpdateActivityBody,
   type UpdateActivityParams,
@@ -384,9 +389,12 @@ async function handleApiError<T>(error: unknown, context: string): Promise<T> {
 
   // Every request through this client sends no Authorization header (see the
   // module comment), so Strava always answers 401. That is expected: this
-  // tool has not been ported to intervals.icu yet.
+  // tool has not been ported to intervals.icu yet. Thrown as NotPortedError,
+  // not StravaApiError, so tools/_errors.ts can tell this apart from
+  // intervals.icu itself rejecting an API key (also a 401) without
+  // string-matching the message.
   if (isHttpError && status === 401) {
-    throw new StravaApiError(
+    throw new NotPortedError(
       `${context}: this tool still uses the retired Strava client and has not been ported to intervals.icu yet.`,
       error.response,
     );

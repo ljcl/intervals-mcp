@@ -3,6 +3,7 @@ import {
   describeRateLimit,
   FetchClient,
   HttpError,
+  intervalsCacheTtl,
   parseJsonWithLargeInts,
   parseRateLimitHeaders,
   RateLimitError,
@@ -175,6 +176,31 @@ describe("describeRateLimit", () => {
 
     expect(message).toContain("Daily rate limit reached");
     expect(message).toContain("1000/1000");
+  });
+
+  it("falls back to provider-neutral guidance when no rate-limit headers were seen at all", () => {
+    // intervals.icu sends no X-RateLimit-* headers (docs/api-notes.md); a 429
+    // from it carries an empty snapshot. Guessing at Strava's quarter-hour
+    // reset here would be wrong for that provider.
+    const message = describeRateLimit({ observedAt: Date.now() });
+
+    expect(message).toBe("Rate limit reached; wait a few minutes and retry.");
+    expect(message).not.toContain("Strava");
+    expect(message).not.toContain("15-minute window resets at");
+  });
+
+  it("keeps the 15-minute reset detail when headers are present but neither window is cleanly exhausted", () => {
+    // e.g. Strava's read-only quota tripped, which this snapshot shape
+    // doesn't carry separately from the overall quota.
+    const message = describeRateLimit({
+      shortTerm: { limit: 100, usage: 10 },
+      daily: { limit: 1000, usage: 10 },
+      observedAt: Date.now(),
+    });
+
+    expect(message).toContain("Rate limit reached.");
+    expect(message).toContain("15-minute window resets at");
+    expect(message).not.toContain("Strava");
   });
 });
 
@@ -948,5 +974,161 @@ describe("FetchClient in-flight GET coalescing (#355)", () => {
     // was cached, so the next GET fetches.
     await client.get("/activities/1");
     expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("minIntervalMs throttle", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("spaces request starts, including concurrent calls", async () => {
+    let clock = 0;
+    const sleeps: number[] = [];
+    const starts: number[] = [];
+    const fetchMock = vi.fn(async () => {
+      starts.push(clock);
+      return makeResponse("{}");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new FetchClient("https://example.test", {
+      minIntervalMs: 200,
+      now: () => clock,
+      sleep: async (ms) => {
+        sleeps.push(ms);
+        clock += ms;
+      },
+    });
+
+    await Promise.all([client.get("/a"), client.get("/b"), client.get("/c")]);
+    expect(starts).toEqual([0, 200, 400]);
+    expect(sleeps).toEqual([200, 200]);
+  });
+
+  it("releases the gate on invocation, not on settle, so a slow request doesn't delay the next one", async () => {
+    let clock = 0;
+    const starts: number[] = [];
+    const first = new Promise<Response>(() => {}); // never resolves
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        starts.push(clock);
+        return first;
+      })
+      .mockImplementationOnce(async () => {
+        starts.push(clock);
+        return makeResponse("{}");
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new FetchClient("https://example.test", {
+      minIntervalMs: 200,
+      now: () => clock,
+      sleep: async (ms) => {
+        clock += ms;
+      },
+    });
+
+    // Fire-and-forget: the first request's fetch never resolves.
+    void client.get("/a");
+    await client.get("/b");
+    expect(starts).toEqual([0, 200]);
+  });
+
+  it("releases the gate even when fire throws synchronously, so the next request still goes out", async () => {
+    let clock = 0;
+    const starts: number[] = [];
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(() => {
+        // A synchronous throw, not a rejected promise (e.g. an invalid
+        // AbortSignal.timeout argument, or a fetch stub throwing directly).
+        throw new Error("synchronous boom");
+      })
+      .mockImplementationOnce(async () => {
+        starts.push(clock);
+        return makeResponse("{}");
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new FetchClient("https://example.test", {
+      maxRetries: 0,
+      minIntervalMs: 200,
+      now: () => clock,
+      sleep: async (ms) => {
+        clock += ms;
+      },
+    });
+
+    await expect(client.get("/a")).rejects.toThrow("synchronous boom");
+    // The gate must have been released: this request is not stuck forever.
+    await client.get("/b");
+    expect(starts).toEqual([200]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not delay when unset", async () => {
+    const sleeps: number[] = [];
+    const fetchMock = vi.fn(async () => makeResponse("{}"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new FetchClient("https://example.test", {
+      sleep: async (ms) => void sleeps.push(ms),
+    });
+    await client.get("/a");
+    await client.get("/b");
+    expect(sleeps).toEqual([]);
+  });
+
+  it("spaces a retried attempt from the initial one (a retry counts as a start)", async () => {
+    let clock = 0;
+    const starts: number[] = [];
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        starts.push(clock);
+        return makeResponse("boom", { status: 500 });
+      })
+      .mockImplementationOnce(async () => {
+        starts.push(clock);
+        return makeResponse('{"ok":true}');
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new FetchClient("https://example.test", {
+      maxRetries: 1,
+      baseDelayMs: 0,
+      minIntervalMs: 200,
+      now: () => clock,
+      sleep: async (ms) => {
+        clock += ms;
+      },
+    });
+
+    const result = await client.get<{ ok: boolean }>("/thing");
+    expect(result.data.ok).toBe(true);
+    // The retry's own attempt is spaced from the initial attempt, same as
+    // any other pair of consecutive starts.
+    expect(starts).toEqual([0, 200]);
+  });
+});
+
+describe("intervalsCacheTtl", () => {
+  it.each([
+    ["/activity/i1", 600_000],
+    ["/activity/i1/intervals", 600_000],
+    ["/activity/i1/streams.json", 600_000],
+    ["/athlete/0/gear", 600_000],
+    ["/athlete/0/sport-settings/Run", 3_600_000],
+    ["/athlete/0/activities", 60_000],
+    ["/athlete/0/wellness", 300_000],
+    ["/athlete/0/wellness/2026-09-24", 300_000],
+    ["/athlete/0/wellness.json", 300_000],
+    ["/athlete/0/wellness.csv", 300_000],
+    ["/athlete/0", null],
+  ])("%s", (p, ttl) => {
+    expect(intervalsCacheTtl(p)).toBe(ttl);
   });
 });

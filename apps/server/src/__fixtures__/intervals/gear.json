@@ -1,0 +1,79 @@
+[
+  {
+    "id": "71459",
+    "athlete_id": "i0",
+    "type": "Shoes",
+    "name": "Dynafish Xiaonian B",
+    "purchased": "2026-09-01T00:00:00",
+    "notes": null,
+    "distance": 62030.29,
+    "time": 2372,
+    "activities": 1,
+    "use_elapsed_time": false,
+    "retired": null,
+    "component_ids": null,
+    "reminders": [],
+    "activity_filters": [
+      {
+        "id": 1,
+        "field_id": "type",
+        "code": null,
+        "operator": null,
+        "value": ["Run"],
+        "not": false
+      }
+    ],
+    "component": false
+  },
+  {
+    "id": "71460",
+    "athlete_id": "i0",
+    "type": "Shoes",
+    "name": "BMAI Jingtan Fly",
+    "purchased": "2026-09-24",
+    "notes": null,
+    "distance": 168000,
+    "time": 0,
+    "activities": 0,
+    "use_elapsed_time": false,
+    "retired": null,
+    "component_ids": null,
+    "reminders": [],
+    "activity_filters": null,
+    "component": false
+  },
+  {
+    "id": "71461",
+    "athlete_id": "i0",
+    "type": "Shoes",
+    "name": "Dynafish Xiaonian A",
+    "purchased": "2026-09-24",
+    "notes": null,
+    "distance": 424000,
+    "time": 0,
+    "activities": 0,
+    "use_elapsed_time": false,
+    "retired": null,
+    "component_ids": null,
+    "reminders": [],
+    "activity_filters": null,
+    "component": false
+  },
+  {
+    "id": "71462",
+    "athlete_id": "i0",
+    "type": "Shoes",
+    "name": "Li-Ning Feidian Challenger 5",
+    "purchased": "2026-09-24",
+    "notes": null,
+    "distance": 164000,
+    "time": 0,
+    "activities": 0,
+    "use_elapsed_time": false,
+    "retired": null,
+    "component_ids": null,
+    "reminders": [],
+    "activity_filters": null,
+    "component": false
+  }
+]

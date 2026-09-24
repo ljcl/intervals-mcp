@@ -606,6 +606,254 @@ export const IntervalAnalysisOutputSchema = z.object({
   warnings: z.array(z.string()),
 });
 
+// ---------- intervals.icu reads ----------
+const ActivitySummarySchema = z.object({
+  id: z.string(),
+  date: z
+    .string()
+    .describe("ISO date YYYY-MM-DD, the date part of start_date_local"),
+  start_local: z.string().describe("Full local start timestamp"),
+  type: z.string(),
+  name: z.string(),
+  distance_km: z
+    .number()
+    .nullable()
+    .describe("2 dp; null when the activity recorded no distance"),
+  moving_time_s: z.number().int(),
+  moving_time: z.string().describe("h:mm:ss, or mm:ss under an hour"),
+  pace_min_per_km: z
+    .string()
+    .nullable()
+    .describe("Set for Run/TrailRun/VirtualRun only"),
+  average_hr: z.number().nullable(),
+  load: z.number().nullable().describe("icu_training_load"),
+  gear_id: z.string().nullable(),
+  source: z.string().nullable(),
+  is_strava_stub: z
+    .boolean()
+    .describe(
+      "True when source is STRAVA: details are unavailable through the API",
+    ),
+});
+export const ActivityListOutputSchema = z.object({
+  oldest: z.string().describe("ISO date YYYY-MM-DD, inclusive lower bound"),
+  newest: z.string().describe("ISO date YYYY-MM-DD, inclusive upper bound"),
+  count: z.number().int().describe("Activities included in this response"),
+  matched: z
+    .number()
+    .int()
+    .describe("Activities matching the filters before limit truncated them"),
+  truncated: z.boolean().describe("True when matched > limit"),
+  units: z.object({
+    distance: z.literal("km"),
+    pace: z.literal("min/km"),
+    time: z.literal("s"),
+    hr: z.literal("bpm"),
+  }),
+  activities: z.array(ActivitySummarySchema),
+});
+
+// ---------- get-activity ----------
+const ActivityLoadSchema = z.object({
+  training_load: z.number().nullable().describe("icu_training_load"),
+  hr_load: z.number().nullable(),
+  pace_load: z.number().nullable(),
+  trimp: z.number().nullable(),
+  intensity: z.number().nullable().describe("icu_intensity, %"),
+});
+const HrZoneEntrySchema = z.object({
+  zone: z.number().int().describe("1-based zone number"),
+  min_bpm: z.number().nullable().describe("0 for zone 1"),
+  max_bpm: z.number().nullable(),
+  seconds: z.number().int(),
+});
+const RunningDynamicsSchema = z.object({
+  stance_time_ms: z.number().nullable(),
+  vertical_oscillation_mm: z.number().nullable(),
+  vertical_ratio_pct: z.number().nullable(),
+  step_length_mm: z.number().nullable(),
+  stride_m: z.number().nullable(),
+});
+const ActivityIntervalEntrySchema = z.object({
+  type: z.string().nullable().describe("e.g. WORK, RECOVERY"),
+  label: z.string().nullable(),
+  distance_km: z.number().nullable(),
+  moving_time_s: z.number().int().nullable(),
+  pace_min_per_km: z.string().nullable().describe("Set for runs only"),
+  average_hr: z.number().nullable(),
+  average_cadence_spm: z
+    .number()
+    .nullable()
+    .describe("Strides doubled to steps/min, runs only"),
+  stance_time_ms: z.number().nullable(),
+  vertical_oscillation_mm: z.number().nullable(),
+  step_length_mm: z.number().nullable(),
+});
+export const ActivityDetailOutputSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  type: z.string(),
+  date: z
+    .string()
+    .describe("ISO date YYYY-MM-DD, the date part of start_date_local"),
+  start_local: z.string().describe("Full local start timestamp"),
+  source: z.string().nullable(),
+  is_strava_stub: z
+    .boolean()
+    .describe(
+      "True when source is STRAVA: details are unavailable through the API",
+    ),
+  device: z.string().nullable(),
+  distance_km: z
+    .number()
+    .nullable()
+    .describe("2 dp; null when the activity recorded no distance"),
+  moving_time_s: z.number().int(),
+  moving_time: z.string().describe("h:mm:ss, or mm:ss under an hour"),
+  elapsed_time_s: z.number().int().nullable(),
+  pace_min_per_km: z
+    .string()
+    .nullable()
+    .describe("Set for Run/TrailRun/VirtualRun only"),
+  gap_min_per_km: z
+    .string()
+    .nullable()
+    .describe(
+      "Grade-adjusted pace, from the activity's gap field (m/s, same unit as average_speed); runs only",
+    ),
+  average_hr: z.number().nullable(),
+  max_hr: z.number().nullable(),
+  average_cadence_spm: z
+    .number()
+    .nullable()
+    .describe("Strides doubled to steps/min, runs only"),
+  elevation_gain_m: z.number().nullable(),
+  load: ActivityLoadSchema,
+  decoupling_pct: z.number().nullable(),
+  efficiency_factor: z.number().nullable(),
+  rpe: z.number().nullable(),
+  feel: z.number().nullable(),
+  hr_zones: z
+    .array(HrZoneEntrySchema)
+    .describe("Empty when sport settings or icu_hr_zone_times are unavailable"),
+  pace_zone_seconds: z.array(z.number()).nullable(),
+  running_dynamics: RunningDynamicsSchema.nullable(),
+  intervals: z
+    .array(ActivityIntervalEntrySchema)
+    .nullable()
+    .describe("Null when not requested or the activity has none"),
+  gear_id: z.string().nullable(),
+  gear_name: z
+    .string()
+    .nullable()
+    .describe(
+      "Resolved from the activity payload alone, never an extra list-gear call; null in practice since intervals.icu doesn't populate it on the activity today",
+    ),
+  weather_temp_c: z.number().nullable(),
+  description: z.string().nullable(),
+  units: z.object({
+    distance: z.literal("km"),
+    pace: z.literal("min/km"),
+    time: z.literal("s"),
+    hr: z.literal("bpm"),
+    elevation: z.literal("m"),
+    cadence: z.literal("spm"),
+    temp: z.literal("C"),
+  }),
+});
+
+// ---------- get-activity-streams ----------
+/** A downsampled sample: a plain value, `null` where every sample in its
+ * bucket was null, or a `[lat, lng]` pair for the `latlng` stream. */
+const StreamValueSchema = z.union([
+  z.number(),
+  z.null(),
+  z.tuple([z.number(), z.number()]),
+]);
+export const ActivityStreamsOutputSchema = z.object({
+  activity_id: z.string(),
+  type: z.string(),
+  original_points: z.number().int(),
+  returned_points: z.number().int(),
+  requested: z.array(z.string()),
+  missing: z
+    .array(z.string())
+    .describe("Requested types the activity's streams don't include"),
+  units: z.record(z.string(), z.string()),
+  streams: z.record(z.string(), z.array(StreamValueSchema)),
+});
+
+// ---------- list-gear ----------
+const GearReminderEntrySchema = z
+  .object({
+    name: z.string().nullable(),
+    distance_km: z.number().optional().describe("1 dp"),
+    days: z.number().optional(),
+    percent_used: z.number().optional(),
+  })
+  .catchall(z.number())
+  .describe(
+    "Known reminder fields mapped; any other numeric field the API sends passes through raw",
+  );
+export const GearListOutputSchema = z.object({
+  count: z.number().int(),
+  units: z.object({ distance: z.literal("km") }),
+  gear: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      type: z.string(),
+      distance_km: z
+        .number()
+        .describe(
+          "1 dp; includes any starting distance entered in the UI, not just distance logged through this API",
+        ),
+      activities: z.number().int(),
+      retired: z.union([z.string(), z.boolean()]).nullable(),
+      reminders: z.array(GearReminderEntrySchema),
+    }),
+  ),
+});
+
+// ---------- get-wellness ----------
+const WellnessDayEntrySchema = z.object({
+  date: z.string().describe("ISO date YYYY-MM-DD"),
+  hrv_sdnn_ms: z.number().nullable(),
+  hrv_rmssd_ms: z.number().nullable(),
+  resting_hr: z.number().nullable(),
+  sleep_hours: z.number().nullable().describe("1 dp"),
+  sleep_score: z.number().nullable(),
+  weight_kg: z.number().nullable(),
+  ctl: z.number().nullable(),
+  atl: z.number().nullable(),
+  tsb: z.number().nullable().describe("ctl minus atl, 1 dp"),
+  ramp_rate: z.number().nullable(),
+  readiness: z.number().nullable(),
+  soreness: z.number().nullable(),
+  fatigue: z.number().nullable(),
+  stress: z.number().nullable(),
+  mood: z.number().nullable(),
+  motivation: z.number().nullable(),
+  spo2: z.number().nullable(),
+  respiration: z.number().nullable(),
+  comments: z.string().nullable(),
+});
+export const WellnessOutputSchema = z.object({
+  oldest: z.string().describe("ISO date YYYY-MM-DD, inclusive lower bound"),
+  newest: z.string().describe("ISO date YYYY-MM-DD, inclusive upper bound"),
+  count: z.number().int(),
+  units: z.object({
+    hrv: z.literal("ms"),
+    resting_hr: z.literal("bpm"),
+    sleep: z.literal("hours"),
+    weight: z.literal("kg"),
+    spo2: z.literal("%"),
+    respiration: z.literal("breaths/min"),
+  }),
+  hrv_note: z.string(),
+  days: z.array(WellnessDayEntrySchema),
+});
+
 // ---------- dev-only schema drift guard ----------
 export function warnOnSchemaDrift<T>(
   toolName: string,
