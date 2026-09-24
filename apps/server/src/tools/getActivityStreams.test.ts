@@ -59,7 +59,7 @@ describe("buildActivityStreamsResult", () => {
     expect(result.returned_points).toBe(100);
     expect(result.requested).toEqual(ALL_TYPES);
     // The fixture activity's stream_types lists "watts", but its actual
-    // streams response has no watts entry — this is the case the fixture
+    // streams response has no watts entry, which is the case the fixture
     // was built to exercise.
     expect(result.missing).toEqual(["watts"]);
     expect(Object.keys(result.streams).sort()).toEqual(
@@ -77,6 +77,7 @@ describe("buildActivityStreamsResult", () => {
         "vertical_ratio",
       ].sort(),
     );
+    // watts is absent from units: it's requested but missing, not returned.
     expect(result.units).toEqual({
       time: "s",
       distance: "m",
@@ -85,7 +86,6 @@ describe("buildActivityStreamsResult", () => {
       velocity_smooth: "m/s",
       altitude: "m",
       latlng: "deg",
-      watts: "W",
       stance_time: "ms",
       vertical_oscillation: "mm",
       vertical_ratio: "%",
@@ -219,6 +219,8 @@ describe("buildActivityStreamsResult", () => {
 
     expect(result.missing).toEqual(["heartrate", "watts"]);
     expect(result.streams).toEqual({});
+    // units maps returned types only; a fully-missing request yields none.
+    expect(result.units).toEqual({});
   });
 });
 

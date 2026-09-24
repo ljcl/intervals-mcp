@@ -203,7 +203,9 @@ export function buildActivityStreamsResult(
     returned_points: returnedPoints,
     requested: requestedTypes,
     missing,
-    units: Object.fromEntries(requestedTypes.map((t) => [t, UNITS[t]])),
+    units: Object.fromEntries(
+      Object.keys(streams).map((t) => [t, UNITS[t as StreamType]]),
+    ),
     streams,
   };
 }

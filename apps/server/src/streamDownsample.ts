@@ -7,7 +7,7 @@
  * `maxPoints` contiguous buckets, reducing each bucket to a single
  * representative value.
  *
- * No knowledge of intervals.icu, MCP, or the tool layer lives here — this
+ * No knowledge of intervals.icu, MCP, or the tool layer lives here: this
  * module only knows about columns of numbers.
  */
 
@@ -18,7 +18,7 @@ export type Columns = Record<string, ColumnValue[]>;
  * Keys whose bucket value is the bucket's *last* sample rather than the mean
  * of its non-null samples. `time` and `distance` are monotonically
  * increasing/cumulative, so the last sample in a bucket is the one that
- * describes "where this bucket ends" — averaging them would produce a value
+ * describes "where this bucket ends"; averaging them would produce a value
  * that never actually occurred in the data.
  */
 const LAST_VALUE_KEYS = new Set(["time", "distance"]);
@@ -77,13 +77,13 @@ function bucketLast(
  *
  * When every column's length is already `<= maxPoints` (including the
  * trivial `columns = {}` case), `columns` is returned unchanged, by
- * reference — there is nothing to bucket.
+ * reference: there is nothing to bucket.
  *
  * All columns are assumed to share one length (intervals.icu's streams are
  * index-aligned); bucket boundaries are computed once, from the first
  * column's length, and reused for every column.
  *
- * `latlng` is not a column this function understands directly — a `[lat,
+ * `latlng` is not a column this function understands directly: a `[lat,
  * lng]` pair isn't a `(number | null)[]`. Callers downsample its two
  * coordinate arrays separately with {@link lastValuePerBucket}, which applies
  * the same last-of-bucket rule as `time`/`distance`, then zip the two
