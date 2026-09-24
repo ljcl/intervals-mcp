@@ -72,3 +72,26 @@ at `apps/server/src/__fixtures__/intervals/`.
   value looks like, not something observed against a live one. Re-verify against a real
   Strava-sourced activity (or ask in the intervals.icu support channel) before relying on
   `is_strava_stub` for anything beyond the advisory note it drives today.
+
+## Phase 2 probes (2026-09-24 research, verified before the analysis tools were built)
+
+| Endpoint | Status | Shape and units |
+| --- | --- | --- |
+| `GET /athlete/0/pace-curves.json?type=Run&curves=all,90d,...` | 200 | Works with athlete id `0`; `{list[{id,label,distance[],values[] s,activity_id[],paceModels[{type:"CS",criticalSpeed m/s,dPrime m,r2}]}], activities{}}`. Curve ids used: `1y` (get-best-efforts default), `all`, `90d` (get-race-prediction) |
+| `GET /athlete/0/activity-pace-curves.json?...` | 403 | Athlete id `0` is denied on this endpoint specifically (unlike `pace-curves.json` above); needs the bare numeric athlete id |
+| `GET /athlete/{numericId}/athlete-summary.json?start&end` | 200 | Weekly rows (Monday-aligned, newest first), totals plus `byCategory[]`; used by get-athlete-stats for run totals |
+| `GET /activity/{id}/interval-stats?start_index&end_index` | 200 | Interval-shaped stats for any stream index range, including `gap` (m/s) |
+| `GET /activity/{id}/time-at-hr` | 200 | `{max_bpm, min_bpm, secs[], cumulative_secs[]}` |
+| `GET /activity/{id}/streams.json` | 200 | `moving` is never returned (silently omitted, not an error); `grade_smooth` (%) and `fixed_altitude` (m) are present; `gap` is not a valid stream type (422 "Invalid stream type") |
+
+- `decoupling` and `icu_efficiency_factor` are null on every activity since 2024-01-01 for this
+  account, so the analysis tools' unit convention for both (`decoupling_pct` as a percent;
+  `efficiency_factor` as pace/power per heartbeat) is an assumption carried over from the
+  intervals.icu UI and the OpenAPI field names, not something observed on a populated value.
+  Re-verify against an activity that actually carries these fields before trusting the unit beyond
+  the advisory framing the tools already give it.
+- `icu_zone_times`'s `{id, secs}` shape (per `IntervalsZoneTimeSchema`) has not been exercised
+  against a real response with power zone times recorded; `activityZones.ts`'s pairing of each
+  entry to its power zone by array index (rather than by `id`) is unverified.
+- `average_gradient` (interval field) is a fraction, not a percent: confirmed in Task 6 by checking
+  elevation gain against `average_gradient * distance` (see `intervalLaps.ts`).

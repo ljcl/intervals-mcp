@@ -10,8 +10,10 @@ identity, so renames or schema reshapes re-prompt every user. See
 
 > **Status.** Tools are being ported from Strava to intervals.icu (Phases 1
 > and 2). The sixteen tools below are ported and verified against a real
-> account; until a remaining tool is ported, it fails with a "not yet
-> ported" error.
+> account. Still Strava-backed, and failing with a "not yet ported" error
+> until a later phase: `get-training-load`, `get-fitness-trend`,
+> `update-activity`, and the Phase 4 `view-*`/`get-*-data` app tools (see
+> [Activity tools](#activity-tools) and [Visualization tools](#visualization-tools)).
 
 ## intervals.icu tools
 
@@ -251,6 +253,8 @@ mile paces or splits.
 
 ## Activity tools
 
+Still Strava-backed; not yet ported to intervals.icu (Phase 3+).
+
 | Tool | Description |
 | ---- | ----------- |
 | `update-activity` | Update an activity's description, title, sport type, gear, or flags |
@@ -260,7 +264,8 @@ mile paces or splits.
 ## Visualization tools
 
 Each `view-*` MCP App has an app-only `get-*-data` companion that fetches what
-the UI renders.
+the UI renders. Every tool in this section is still Strava-backed, pending
+Phase 4.
 
 | Tool | Description |
 | ---- | ----------- |
