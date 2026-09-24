@@ -146,6 +146,65 @@ describe("intervalsClient", () => {
     expect(gear[0]?.distance).toBe(gearFixture[0]?.distance);
   });
 
+  it("types a gear reminder's known fields and keeps an unknown one via passthrough", async () => {
+    mockJson([
+      {
+        ...gearFixture[0],
+        retired: "2026-01-01T00:00:00",
+        reminders: [
+          {
+            name: "Replace soon",
+            distance: 500000,
+            days: 180,
+            percent_used: 92,
+            extra_field: 3,
+          },
+        ],
+      },
+    ]);
+    const gear = await listGear("k");
+    expect(gear[0]?.retired).toBe("2026-01-01T00:00:00");
+    expect(gear[0]?.reminders?.[0]).toMatchObject({
+      name: "Replace soon",
+      distance: 500000,
+      days: 180,
+      percent_used: 92,
+      extra_field: 3,
+    });
+  });
+
+  it("types the wellness subjective/misc fields the get-wellness tool reads", async () => {
+    mockJson([
+      {
+        ...wellness[0],
+        sleepScore: 82,
+        readiness: 75,
+        soreness: 3,
+        fatigue: 2,
+        stress: 1,
+        mood: 4,
+        motivation: 5,
+        spO2: 96,
+        respiration: 14,
+        comments: "Felt good",
+      },
+    ]);
+    const result = await getWellness("k", {
+      oldest: "2026-09-10",
+      newest: "2026-09-10",
+    });
+    expect(result[0]?.sleepScore).toBe(82);
+    expect(result[0]?.readiness).toBe(75);
+    expect(result[0]?.soreness).toBe(3);
+    expect(result[0]?.fatigue).toBe(2);
+    expect(result[0]?.stress).toBe(1);
+    expect(result[0]?.mood).toBe(4);
+    expect(result[0]?.motivation).toBe(5);
+    expect(result[0]?.spO2).toBe(96);
+    expect(result[0]?.respiration).toBe(14);
+    expect(result[0]?.comments).toBe("Felt good");
+  });
+
   it("splits ranges longer than 31 days into sequential windows", async () => {
     const calls = mockJson([]);
     await listActivities("k", { oldest: "2026-01-01", newest: "2026-03-11" });

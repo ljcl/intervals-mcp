@@ -135,6 +135,22 @@ export type IntervalsStream = z.infer<typeof IntervalsStreamSchema>;
 const IntervalsStreamsResponseSchema = z.array(IntervalsStreamSchema);
 
 // --- Gear schema ---
+// A reminder's known fields per the intervals.icu OpenAPI spec's
+// GearReminder (name, distance in metres, days, percent_used); the real
+// account's gear all has `reminders: []`, so this is unverified against a
+// live response and deliberately permissive (`.passthrough()`) so an
+// unrecognised field is preserved rather than dropped.
+const IntervalsGearReminderSchema = z
+  .object({
+    name: z.string().nullable().optional(),
+    distance: z.number().nullable().optional(),
+    days: z.number().nullable().optional(),
+    percent_used: z.number().nullable().optional(),
+  })
+  .passthrough();
+
+export type IntervalsGearReminder = z.infer<typeof IntervalsGearReminderSchema>;
+
 const IntervalsGearSchema = z
   .object({
     id: z.string(),
@@ -142,8 +158,12 @@ const IntervalsGearSchema = z
     type: z.string().nullable().optional(),
     distance: z.number().nullable().optional(),
     activities: z.number().nullable().optional(),
-    retired: z.boolean().nullable().optional(),
-    reminders: z.array(z.unknown()).optional(),
+    // The OpenAPI spec types `retired` as a string (a retirement date); the
+    // real account's gear only ever has it `null` (active). Accepting a
+    // boolean too is defensive: a strict `z.string()` would throw on any
+    // account where the API reports it that way instead.
+    retired: z.union([z.string(), z.boolean()]).nullable().optional(),
+    reminders: z.array(IntervalsGearReminderSchema).optional(),
   })
   .passthrough();
 
@@ -153,6 +173,7 @@ const IntervalsGearResponseSchema = z.array(IntervalsGearSchema);
 // --- Wellness schema ---
 // `id` is the record's date (YYYY-MM-DD). Apple Watch HRV arrives as
 // `hrvSDNN`; `hrv` (rMSSD) is null on those devices (docs/api-notes.md).
+// `spO2` keeps the API's own capitalisation.
 const IntervalsWellnessSchema = z
   .object({
     id: z.string(),
@@ -164,6 +185,16 @@ const IntervalsWellnessSchema = z
     hrv: z.number().nullable().optional(),
     hrvSDNN: z.number().nullable().optional(),
     sleepSecs: z.number().nullable().optional(),
+    sleepScore: z.number().nullable().optional(),
+    readiness: z.number().nullable().optional(),
+    soreness: z.number().nullable().optional(),
+    fatigue: z.number().nullable().optional(),
+    stress: z.number().nullable().optional(),
+    mood: z.number().nullable().optional(),
+    motivation: z.number().nullable().optional(),
+    spO2: z.number().nullable().optional(),
+    respiration: z.number().nullable().optional(),
+    comments: z.string().nullable().optional(),
   })
   .passthrough();
 

@@ -777,6 +777,75 @@ export const ActivityStreamsOutputSchema = z.object({
   streams: z.record(z.string(), z.array(StreamValueSchema)),
 });
 
+// ---------- list-gear ----------
+const GearReminderEntrySchema = z
+  .object({
+    name: z.string().nullable(),
+    distance_km: z.number().optional().describe("1 dp"),
+    days: z.number().optional(),
+    percent_used: z.number().optional(),
+  })
+  .catchall(z.number())
+  .describe(
+    "Known reminder fields mapped; any other numeric field the API sends passes through raw",
+  );
+export const GearListOutputSchema = z.object({
+  count: z.number().int(),
+  units: z.object({ distance: z.literal("km") }),
+  gear: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      type: z.string(),
+      distance_km: z
+        .number()
+        .describe(
+          "1 dp; includes any starting distance entered in the UI, not just distance logged through this API",
+        ),
+      activities: z.number().int(),
+      retired: z.union([z.string(), z.boolean()]).nullable(),
+      reminders: z.array(GearReminderEntrySchema),
+    }),
+  ),
+});
+
+// ---------- get-wellness ----------
+const WellnessDayEntrySchema = z.object({
+  date: z.string().describe("ISO date YYYY-MM-DD"),
+  hrv_sdnn_ms: z.number().nullable(),
+  hrv_rmssd_ms: z.number().nullable(),
+  resting_hr: z.number().nullable(),
+  sleep_hours: z.number().nullable().describe("1 dp"),
+  sleep_score: z.number().nullable(),
+  weight_kg: z.number().nullable(),
+  ctl: z.number().nullable(),
+  atl: z.number().nullable(),
+  tsb: z.number().nullable().describe("ctl minus atl, 1 dp"),
+  ramp_rate: z.number().nullable(),
+  readiness: z.number().nullable(),
+  soreness: z.number().nullable(),
+  fatigue: z.number().nullable(),
+  stress: z.number().nullable(),
+  mood: z.number().nullable(),
+  motivation: z.number().nullable(),
+  spo2: z.number().nullable(),
+  respiration: z.number().nullable(),
+  comments: z.string().nullable(),
+});
+export const WellnessOutputSchema = z.object({
+  oldest: z.string().describe("ISO date YYYY-MM-DD, inclusive lower bound"),
+  newest: z.string().describe("ISO date YYYY-MM-DD, inclusive upper bound"),
+  count: z.number().int(),
+  units: z.object({
+    hrv: z.literal("ms"),
+    resting_hr: z.literal("bpm"),
+    sleep: z.literal("hours"),
+    weight: z.literal("kg"),
+  }),
+  hrv_note: z.string(),
+  days: z.array(WellnessDayEntrySchema),
+});
+
 // ---------- dev-only schema drift guard ----------
 export function warnOnSchemaDrift<T>(
   toolName: string,

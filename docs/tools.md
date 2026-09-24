@@ -21,6 +21,8 @@ Strava port.
 | `list-activities` | Compact, date-bounded activity list with units; the entry point for finding activity ids |
 | `get-activity` | One activity in detail: metrics, load, HR zones, running dynamics, intervals; use after list-activities |
 | `get-activity-streams` | Time-series streams for one activity, downsampled to a bounded number of points, including running dynamics |
+| `list-gear` | The athlete's gear (shoes) with mileage and retirement status |
+| `get-wellness` | Daily wellness (HRV, resting HR, sleep, weight, CTL/ATL/TSB) for a date or range |
 
 `list-activities` defaults to the last 28 days (today back to 27 days
 earlier) in the server's configured time zone, sorted newest first. Filter
@@ -51,6 +53,24 @@ only returned when requested. cadence is doubled to steps/min for run
 activity types. A requested type the activity's streams don't include comes
 back in `missing` rather than failing the call; an activity with no streams
 at all fails with a clear message naming the id.
+
+`list-gear` returns each gear item's distance (km, including any starting
+distance entered in the UI when it was added, not just distance logged
+through activities), activity count, retirement status, and any usage
+reminders. Retired gear is excluded by default (`includeRetired`, default
+false). An account with no gear returns `count: 0` and a message pointing to
+the intervals.icu Gear page.
+
+`get-wellness` returns daily wellness: HRV (both `hrv_sdnn_ms` and
+`hrv_rmssd_ms`), resting HR, sleep, weight, training load (`ctl`, `atl`,
+`tsb` = ctl minus atl), and the subjective/device fields (readiness,
+soreness, fatigue, stress, mood, motivation, SpO2, respiration, comments).
+Takes either a single `date` or an `oldest`/`newest` range (max 90 days);
+supplying `date` together with a range is a validation error. With nothing
+supplied it defaults to today in the server's configured time zone. Apple
+Watch reports HRV as SDNN, not rMSSD: the response's `hrv_note` says so
+explicitly, since `hrv_rmssd_ms` reads null for those athletes and should not
+be compared against rMSSD norms.
 
 ## Activity tools
 
