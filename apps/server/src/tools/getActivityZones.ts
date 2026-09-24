@@ -12,12 +12,11 @@ const name = "get-activity-zones";
 
 const description = `
 Retrieves the time-in-zone distribution for a specific intervals.icu
-activity: how long it spent in each heart rate and/or power zone, using the
-activity's own recorded zone bounds (not the athlete's current sport
-settings).
+activity: how long it spent in each heart rate zone, using the activity's
+own recorded zone bounds (not the athlete's current sport settings).
 
 Use Cases:
-- See how a workout was distributed across HR or power zones
+- See how a workout was distributed across HR zones
 - Quantify time spent in each training zone for a single activity
 - Compare effort distribution between activities
 
@@ -25,11 +24,11 @@ Parameters:
 - id (required): the intervals.icu activity id, exactly as returned by list-activities (e.g. "i189807578")
 
 Notes:
-- Not all activities have zone data (e.g. no HR or power sensor, or the
-  activity carries no recorded zone bounds); those return a message and an
-  empty zone_sets list, not an error
-- Power zones are included only when the activity recorded both zone bounds
-  and zone times; pace zones are not covered by this tool
+- Not all activities have zone data (e.g. no HR sensor, or the activity
+  carries no recorded zone bounds); those return a message and an empty
+  zone_sets list, not an error
+- Power and pace zones are not covered by this tool (see docs/api-notes.md
+  for why power zones are dropped for now)
 - If HR zone bounds and zone times were recorded with different zone
   counts, heart rate is omitted and the text response says so
 `;
@@ -40,9 +39,8 @@ const inputSchema = z.object({
 
 type GetActivityZonesInput = z.infer<typeof inputSchema>;
 
-const ZONE_META: Record<ZoneSet["type"], string> = {
+const ZONE_META: Partial<Record<ZoneSet["type"], string>> = {
   heartrate: "Heart Rate Zones",
-  power: "Power Zones",
 };
 
 function formatZoneSet(set: ZoneSet): string {
@@ -50,7 +48,7 @@ function formatZoneSet(set: ZoneSet): string {
     (bucket) =>
       `   Z${bucket.zone} (${bucket.min}–${bucket.max} ${set.unit}): ${formatDuration(bucket.seconds)} (${bucket.pct}%)`,
   );
-  return `**${ZONE_META[set.type]}**\n${lines.join("\n")}`;
+  return `**${ZONE_META[set.type] ?? set.type}**\n${lines.join("\n")}`;
 }
 
 /**
@@ -73,7 +71,7 @@ export const getActivityZonesTool = {
       const zoneSets = mapIntervalsZones(activity);
       const warning = hrZoneMismatchWarning(activity);
 
-      const units = { heartrate: "bpm" as const, power: "W" as const };
+      const units = { heartrate: "bpm" as const };
 
       if (zoneSets.length === 0) {
         const empty = { activity_id: id, zone_sets: [], units };

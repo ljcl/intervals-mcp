@@ -67,10 +67,12 @@ export function buildZoneSet(
 
 /**
  * Maps one intervals.icu activity to chart-ready zone sets: heart rate from
- * `icu_hr_zones` + `icu_hr_zone_times`, and power from `icu_power_zones` +
- * `icu_zone_times` when both are present. Pace zones are out of scope
- * (Phase 4). The one mapper both `get-activity-zones` and the
- * activity-zones MCP App data handler read, so they can't disagree.
+ * `icu_hr_zones` + `icu_hr_zone_times` only. Pace zones are out of scope
+ * (Phase 4); power zones are dropped for now (see docs/api-notes.md: they
+ * are likely percent-of-FTP with an extra SS time entry, unverifiable on
+ * this account) rather than shipped unverified. The one mapper both
+ * `get-activity-zones` and the activity-zones MCP App data handler read,
+ * so they can't disagree.
  */
 export function mapIntervalsZones(activity: IntervalsActivity): ZoneSet[] {
   const sets: ZoneSet[] = [];
@@ -82,16 +84,6 @@ export function mapIntervalsZones(activity: IntervalsActivity): ZoneSet[] {
     activity.icu_hr_zone_times,
   );
   if (hr) sets.push(hr);
-
-  const powerTimes =
-    activity.icu_zone_times?.map((entry) => entry.secs ?? 0) ?? null;
-  const power = buildZoneSet(
-    "power",
-    "W",
-    activity.icu_power_zones,
-    powerTimes,
-  );
-  if (power) sets.push(power);
 
   return sets;
 }

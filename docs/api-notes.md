@@ -90,8 +90,15 @@ at `apps/server/src/__fixtures__/intervals/`.
   intervals.icu UI and the OpenAPI field names, not something observed on a populated value.
   Re-verify against an activity that actually carries these fields before trusting the unit beyond
   the advisory framing the tools already give it.
-- `icu_zone_times`'s `{id, secs}` shape (per `IntervalsZoneTimeSchema`) has not been exercised
-  against a real response with power zone times recorded; `activityZones.ts`'s pairing of each
-  entry to its power zone by array index (rather than by `id`) is unverified.
+- Power zones are dropped from `mapIntervalsZones` (`activityZones.ts`) and the
+  `get-activity-zones`/activity-zones-app outputs for now, rather than shipped unverified.
+  `icu_zone_times`'s `{id, secs}` shape (per `IntervalsZoneTimeSchema`) has not been exercised
+  against a real response with power zone times recorded on this account, and `icu_power_zones`
+  looks like it may be percent-of-FTP bounds rather than watts, with an extra Sweet Spot (SS)
+  time entry that would misalign a positional pairing against `icu_zone_times`. Before
+  re-adding: confirm on a populated activity whether `icu_power_zones` values are watts or
+  percent of FTP, whether `icu_zone_times` has one entry per `icu_power_zones` bound or one
+  extra (SS), and whether pairing by `id` (rather than by array index, as `activityZones.ts`
+  did before this was dropped) is needed to line entries up correctly.
 - `average_gradient` (interval field) is a fraction, not a percent: confirmed in Task 6 by checking
   elevation gain against `average_gradient * distance` (see `intervalLaps.ts`).

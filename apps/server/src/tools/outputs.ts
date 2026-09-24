@@ -349,7 +349,11 @@ export const ActivityZonesOutputSchema = z.object({
   activity_id: z.union([z.string(), z.number()]),
   zone_sets: z.array(
     z.object({
-      type: z.string().describe("heartrate or power"),
+      type: z
+        .string()
+        .describe(
+          "heartrate (power zones are dropped for now; see docs/api-notes.md)",
+        ),
       sensor_based: z.boolean().nullable(),
       total_seconds: z.number().int(),
       buckets: z.array(
@@ -370,7 +374,6 @@ export const ActivityZonesOutputSchema = z.object({
   ),
   units: z.object({
     heartrate: z.literal("bpm"),
-    power: z.literal("W"),
   }),
 });
 

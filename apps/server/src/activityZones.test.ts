@@ -44,7 +44,7 @@ describe("mapIntervalsZones", () => {
     });
   });
 
-  it("maps power from icu_power_zones + icu_zone_times when both are present", () => {
+  it("drops power zones even when icu_power_zones + icu_zone_times are both present (see docs/api-notes.md)", () => {
     const sets = mapIntervalsZones(
       activity({
         icu_power_zones: [200, 400],
@@ -54,19 +54,10 @@ describe("mapIntervalsZones", () => {
         ],
       }),
     );
-    expect(sets).toHaveLength(1);
-    expect(sets[0]!.type).toBe("power");
-    expect(sets[0]!.unit).toBe("W");
-    expect(sets[0]!.buckets[1]).toEqual({
-      zone: 2,
-      min: 200,
-      max: 400,
-      seconds: 500,
-      pct: expect.closeTo(33.3, 1),
-    });
+    expect(sets).toEqual([]);
   });
 
-  it("includes both HR and power sets when both are present", () => {
+  it("reports HR only when both HR and power data are present", () => {
     const sets = mapIntervalsZones(
       activity({
         icu_hr_zones: [120, 197],
@@ -78,14 +69,7 @@ describe("mapIntervalsZones", () => {
         ],
       }),
     );
-    expect(sets.map((s) => s.type)).toEqual(["heartrate", "power"]);
-  });
-
-  it("omits power when icu_zone_times is missing even if icu_power_zones is present", () => {
-    const sets = mapIntervalsZones(
-      activity({ icu_power_zones: [200, 400], icu_zone_times: null }),
-    );
-    expect(sets).toEqual([]);
+    expect(sets.map((s) => s.type)).toEqual(["heartrate"]);
   });
 
   it("omits HR when bounds and times counts don't match", () => {
