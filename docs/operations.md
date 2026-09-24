@@ -19,11 +19,16 @@ rate limits, and endpoint security. For the code behind these see
 ## intervals.icu API key
 
 Get your key from intervals.icu: Settings, Developer Settings. Set it as
-`INTERVALS_API_KEY`. The server sends it as HTTP Basic auth with the literal
-username `API_KEY`.
+`INTERVALS_API_KEY`. intervals.icu authenticates this key with HTTP Basic
+auth using the literal username `API_KEY`.
 
-The key grants full read/write access on the account it belongs to — there is
-no scoping. Keep `MCP_AUTH_TOKEN` set whenever the server is reachable from
+The tools themselves are in the process of being ported from Strava to
+intervals.icu, so the configured key is not yet used to call the
+intervals.icu API; the server validates and reports on it (`/health`), and
+tools will start using it as each is ported.
+
+The key grants full read/write access on the account it belongs to, with no
+scoping. Keep `MCP_AUTH_TOKEN` set whenever the server is reachable from
 outside localhost, so a stranger who finds the URL cannot use your key.
 
 ## Health check
@@ -38,8 +43,8 @@ Unauthenticated callers get liveness only:
 { "status": "ok", "version": "<release>", "uptime_seconds": 5 }
 ```
 
-With `MCP_AUTH_TOKEN` (`Authorization: Bearer <token>` or `?token=<token>`) —
-or on any server with no secret configured — it also reports config and
+With `MCP_AUTH_TOKEN` (`Authorization: Bearer <token>` or `?token=<token>`),
+or on any server with no secret configured, it also reports config and
 rate-limit state:
 
 ```json

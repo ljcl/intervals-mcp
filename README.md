@@ -18,7 +18,6 @@ A Model Context Protocol (MCP) server that supplements the official Strava MCP c
 - AI-friendly JSON responses via MCP
 - Nine interactive visualizations rendered in MCP-compatible hosts — activity chart, cadence trends, route map, activity segments, training load, compare activities, activity zones, segment progress, and fitness trend
 - Guided prompts for weekly reviews, annotating a run, and segment hunting ([docs/tools.md](docs/tools.md#prompts))
-- Automatic token refresh
 - Streamable HTTP transport for remote deployment
 
 Browse the UI components in the [live Storybook](https://ljcl.github.io/strava-mcp/).
@@ -45,7 +44,7 @@ Edit `.env` with your values:
 INTERVALS_API_KEY=your_api_key
 ```
 
-All variables are listed in [docs/operations.md](docs/operations.md#environment-variables). Prefer the prebuilt image? Pull `ghcr.io/ljcl/strava-mcp:latest` (also on the [MCP registry](https://registry.modelcontextprotocol.io) as `io.github.ljcl/strava-mcp`) and point your compose `image:` at it instead of building; you still supply your own API key. Published images carry SBOM/provenance attestations you can verify — see [operations.md](docs/operations.md#verifying-a-pulled-image).
+All variables are listed in [docs/operations.md](docs/operations.md#environment-variables). Prefer the prebuilt image? Pull `ghcr.io/ljcl/strava-mcp:latest` (also on the [MCP registry](https://registry.modelcontextprotocol.io) as `io.github.ljcl/strava-mcp`) and point your compose `image:` at it instead of building; you still supply your own API key. Published images carry SBOM/provenance attestations you can verify; see [operations.md](docs/operations.md#verifying-a-pulled-image).
 
 ### 3. Start the Server
 
@@ -98,9 +97,9 @@ cloudflared tunnel --url http://localhost:3000
 
 ### Securing the endpoint
 
-A tunnel makes `/mcp` reachable by anyone who discovers the URL — including the `update-activity` write tool and the intervals.icu API key configured on the server. Set `MCP_AUTH_TOKEN` to a long random secret (`openssl rand -hex 32`) and every `/mcp` request requires `Authorization: Bearer <token>`; each client snippet below shows where the header goes. The secret also gates the detailed half of `/health`. Full details: [operations.md](docs/operations.md#securing-the-endpoint).
+A tunnel makes `/mcp` reachable by anyone who discovers the URL, including the `update-activity` write tool and the intervals.icu API key configured on the server. Set `MCP_AUTH_TOKEN` to a long random secret (`openssl rand -hex 32`) and every `/mcp` request requires `Authorization: Bearer <token>`; each client snippet below shows where the header goes. The secret also gates the detailed half of `/health`. Full details: [operations.md](docs/operations.md#securing-the-endpoint).
 
-Set it in `.env` alongside your API key — `docker-compose.yml` forwards it automatically.
+Set it in `.env` alongside your API key; `docker-compose.yml` forwards it automatically.
 
 ```text
 AI Tool (Claude Desktop, Claude Code, etc.)
@@ -224,7 +223,7 @@ Then point any client at `http://localhost:3000/mcp`. Repo layout, task runner, 
 | Doc | Contents |
 | --- | -------- |
 | [docs/tools.md](docs/tools.md) | Full tool catalog, prompts, permission behaviour, example requests |
-| [docs/operations.md](docs/operations.md) | Environment variables, auth/token handling, health endpoint, rate limits, endpoint security |
+| [docs/operations.md](docs/operations.md) | Environment variables, the API key, health endpoint, rate limits, endpoint security |
 | [docs/architecture.md](docs/architecture.md) | Server architecture: transport, HTTP layer, cache, error taxonomy, analysis math |
 | [docs/mcp-apps.md](docs/mcp-apps.md) | MCP App packages: shared shell, mobile, theming, per-app details |
 | [docs/development.md](docs/development.md) | Monorepo mechanics: Turborepo, coverage gates, Storybook gates, Docker build |
@@ -237,9 +236,9 @@ PRs are squash-merged and the **PR title becomes the commit on `main`**, so writ
 
 **AI tool can't reach the server** — MCP requires an HTTPS URL. Use a tunnel (Tailscale Funnel or Cloudflare Tunnel) to expose your local server. See [Connecting to AI Tools](#connecting-to-ai-tools).
 
-**API key errors** — Check `/health` first: `api_key_configured` tells you whether the server has a key set at all. If it is `true` but calls still fail, the key may be wrong or revoked — generate a new one at intervals.icu, Settings, Developer Settings, and update `INTERVALS_API_KEY`. See [operations.md](docs/operations.md#intervalsicu-api-key).
+**API key errors:** Check `/health` first: `api_key_configured` tells you whether the server has a key set at all. If it is `true` but calls still fail, the key may be wrong or revoked; generate a new one at intervals.icu, Settings, Developer Settings, and update `INTERVALS_API_KEY`. See [operations.md](docs/operations.md#intervalsicu-api-key).
 
-**Is the server up and reachable?** — `curl https://your-public-url/health`. It answers without touching the intervals.icu API, so it works even when your rate limit is exhausted.
+**Is the server up and reachable?** `curl https://your-public-url/health`. It answers without touching the intervals.icu API, so it works even when your rate limit is exhausted.
 
 **Client re-prompts for read tools after I granted them** — A release likely renamed a tool or changed its input schema; grants are stored per tool identity, so that drops the grant. Releases say so in the changelog. Otherwise persistence lives in the client — check both connector-level and per-tool settings. See [docs/tools.md](docs/tools.md#tool-permissions).
 

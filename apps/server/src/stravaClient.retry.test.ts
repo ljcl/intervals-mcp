@@ -35,7 +35,7 @@ describe("handled error shapes", () => {
     mockedGet.mockReset();
   });
 
-  it("names INTERVALS_API_KEY on a 401", async () => {
+  it("names the retired client and never sends an Authorization header, since a 401 is the expected outcome", async () => {
     mockedGet.mockRejectedValue(unauthorized());
 
     const error = await getActivityLaps("bad-key", "55").catch((e) => e);
@@ -43,9 +43,16 @@ describe("handled error shapes", () => {
     expect(error).toBeInstanceOf(StravaApiError);
     expect(error.response.status).toBe(401);
     expect(error.message).toBe(
-      "getActivityLaps(55): intervals.icu rejected the API key (401). Check INTERVALS_API_KEY.",
+      "getActivityLaps(55): this tool still uses the retired Strava client and has not been ported to intervals.icu yet.",
     );
     expect(mockedGet).toHaveBeenCalledTimes(1);
+    // The configured credential is an intervals.icu API key, not a Strava
+    // token: it must never be sent to Strava as an Authorization header.
+    const [, config] = mockedGet.mock.calls[0] ?? [];
+    expect(
+      (config as { headers?: Record<string, string> } | undefined)?.headers
+        ?.Authorization,
+    ).toBeUndefined();
   });
 
   it("passes a string activity id above 2^53 through to the request untouched", async () => {
@@ -54,10 +61,7 @@ describe("handled error shapes", () => {
 
     await expect(getActivityLaps("bad-key", bigActivityId)).rejects.toThrow();
 
-    expect(mockedGet).toHaveBeenCalledWith(
-      `/activities/${bigActivityId}/laps`,
-      expect.anything(),
-    );
+    expect(mockedGet).toHaveBeenCalledWith(`/activities/${bigActivityId}/laps`);
   });
 
   const rateLimited = () =>
@@ -104,14 +108,14 @@ describe("handled error shapes", () => {
   });
 
   it("pagination stops cleanly on a 401 mid-scan", async () => {
-    // A token that goes bad part-way through a long history scan surfaces the
-    // 401 immediately — there is no refresh path to fall back to.
+    // A 401 landing part-way through a long history scan surfaces
+    // immediately; there is no refresh path to fall back to.
     mockedGet
       .mockResolvedValueOnce({ data: [{ ...basicRunActivity, id: 1 }] })
       .mockRejectedValueOnce(unauthorized());
 
     await expect(getAllActivities("bad-key", { perPage: 1 })).rejects.toThrow(
-      /INTERVALS_API_KEY/,
+      /not been ported to intervals\.icu yet/,
     );
 
     expect(mockedGet).toHaveBeenCalledTimes(2);

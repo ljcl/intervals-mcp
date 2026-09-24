@@ -29,7 +29,7 @@ vi.mock("./config", async (importOriginal) => {
 
 // Import after the mock so server.ts's tool modules see the mocked client.
 const { dispatchToolCall } = await import("./server");
-const { getIntervalsApiKey } = await import("./config");
+const { getIntervalsApiKey, MissingApiKeyError } = await import("./config");
 const mockedToken = vi.mocked(getIntervalsApiKey);
 
 const mockedList = vi.mocked(getAllActivities);
@@ -246,6 +246,18 @@ describe("dispatchToolCall input validation", () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain("Unknown tool: not-a-tool");
+  });
+
+  it("returns isError naming INTERVALS_API_KEY when the key cannot be resolved", async () => {
+    mockedToken.mockImplementationOnce(() => {
+      throw new MissingApiKeyError();
+    });
+
+    const result = await dispatchToolCall("get-best-efforts", undefined);
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("INTERVALS_API_KEY");
+    expect(mockedList).not.toHaveBeenCalled();
   });
 
   // The app data handlers throw rather than return `isError`, so the

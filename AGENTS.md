@@ -120,7 +120,7 @@ breaking them has shipped bugs — do not work around them locally.
 
 ## Key Directories
 
-- `apps/server/` — MCP server (tools, auth, token management)
+- `apps/server/`: MCP server (tools, HTTP transport, config)
 - `apps/storybook/` — Storybook host rendering the UI packages (co-located stories)
 - `packages/activity-chart/` — React + Recharts MCP App for interactive activity charts
 - `packages/cadence-trends/` — React + Recharts MCP App for cadence trend analysis

@@ -8,7 +8,7 @@ Storybook, and the Docker image contract. Day-to-day commands live in
 ## Project structure
 
 ```
-apps/server/                 MCP server (tools, auth, token management)
+apps/server/                 MCP server (tools, HTTP transport, config)
 apps/storybook/              Storybook for UI development
 packages/activity-chart/     Interactive activity chart (MCP App)
 packages/cadence-trends/     Cadence trend analysis (MCP App)

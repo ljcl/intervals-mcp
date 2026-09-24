@@ -23,10 +23,10 @@ const SRC_DIR = new URL(".", import.meta.url);
 const NEEDLE = "process.env.INTERVALS_API_KEY";
 
 /**
- * `config.ts` owns the variable — that is how the rest of the server gets
- * the key — and `config.test.ts` is what proves that ownership. This file
- * holds the needle as a literal, so without the third entry it would report
- * itself as the offender.
+ * `config.ts` owns the variable (that is how the rest of the server gets the
+ * key), and `config.test.ts` is what proves that ownership. This file holds
+ * the needle as a literal, so without the third entry it would report itself
+ * as the offender.
  */
 const ALLOWED = new Set([
   "config.ts",

@@ -6,6 +6,18 @@ import {
 } from "./utils/activityWrite";
 
 /**
+ * Retired transitional client, pending the Phase 1/2 intervals.icu port.
+ *
+ * Every function here still takes an `accessToken` parameter (validated, so
+ * a caller mistake still surfaces immediately) but sends no `Authorization`
+ * header on any request: the credential configured on this server is an
+ * intervals.icu API key, and forwarding it to Strava would leak a full
+ * read/write credential to a third party. Every call below therefore fails
+ * with a 401, translated by {@link handleApiError} into a message naming the
+ * tool as not yet ported.
+ */
+
+/**
  * Strava resource identifier (activity, segment, segment-effort, athlete, etc.).
  *
  * Strava issues 64-bit ids; segment-effort ids in particular now exceed
@@ -370,12 +382,12 @@ async function handleApiError<T>(error: unknown, context: string): Promise<T> {
   const isHttpError = error instanceof HttpError;
   const status = isHttpError ? error.response.status : undefined;
 
-  // A 401 means the configured key is missing, wrong, or revoked — there is
-  // no refresh flow to fall back to, so this is always the actionable end
-  // state.
+  // Every request through this client sends no Authorization header (see the
+  // module comment), so Strava always answers 401. That is expected: this
+  // tool has not been ported to intervals.icu yet.
   if (isHttpError && status === 401) {
     throw new StravaApiError(
-      `${context}: intervals.icu rejected the API key (401). Check INTERVALS_API_KEY.`,
+      `${context}: this tool still uses the retired Strava client and has not been ported to intervals.icu yet.`,
       error.response,
     );
   }
@@ -495,7 +507,6 @@ export async function getAllActivities(
 
       // Fetch current page
       const response = await stravaApi.get<unknown>("/athlete/activities", {
-        headers: { Authorization: `Bearer ${accessToken}` },
         params: queryParams,
       });
 
@@ -564,9 +575,7 @@ export async function getAuthenticatedAthlete(
   }
 
   try {
-    const response = await stravaApi.get<unknown>("/athlete", {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    const response = await stravaApi.get<unknown>("/athlete");
 
     // Validate the response data against the Zod schema
     const validationResult = DetailedAthleteSchema.safeParse(response.data);
@@ -617,9 +626,6 @@ export async function getAthleteStats(
   try {
     const response = await stravaApi.get<unknown>(
       `/athletes/${athleteId}/stats`,
-      {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      },
     );
 
     const validationResult = ActivityStatsSchema.safeParse(response.data);
@@ -666,7 +672,6 @@ export async function getActivityById(
 
   try {
     const response = await stravaApi.get<unknown>(`/activities/${activityId}`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
       skipCache: options.skipCache,
     });
 
@@ -728,9 +733,9 @@ export type StravaStreamSet = Map<string, unknown[]>;
  * Fetches an activity's data streams.
  *
  * This is the single stream-fetch path: never reach for `stravaApi.get()`
- * directly behind a bare `catch {}`. That gives a 401 no structured message
- * and a 429 no structured message, and surfaces both to the athlete as "this
- * activity has no samples" — wrong, and it hides the one-line fix. Only a
+ * directly behind a bare `catch {}`. That gives neither a 401 nor a 429 a
+ * structured message, and surfaces both to the athlete as "this activity has
+ * no samples", which is wrong and hides the one-line fix. Only a
  * genuine 404 or empty response yields {@link StreamsUnavailableError}; auth,
  * rate-limit, and subscription failures go through {@link handleApiError} like
  * every other client call.
@@ -786,11 +791,9 @@ async function fetchStreamSet(args: {
   resourceId: number | string;
   context: string;
 }): Promise<StravaStreamSet> {
-  const { accessToken, endpoint, kind, resourceId, context } = args;
+  const { endpoint, kind, resourceId, context } = args;
   try {
-    const response = await stravaApi.get<unknown>(endpoint, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    const response = await stravaApi.get<unknown>(endpoint);
 
     const validationResult = StravaStreamSetSchema.safeParse(response.data);
     if (!validationResult.success) {
@@ -888,9 +891,7 @@ export async function getActivityLaps(
   }
 
   try {
-    const response = await stravaApi.get(`/activities/${activityId}/laps`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    const response = await stravaApi.get(`/activities/${activityId}/laps`);
 
     const validationResult = StravaLapsResponseSchema.safeParse(response.data);
 
@@ -965,9 +966,7 @@ export async function getAthleteZones(
   }
 
   try {
-    const response = await stravaApi.get<unknown>("/athlete/zones", {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    const response = await stravaApi.get<unknown>("/athlete/zones");
 
     const validationResult = AthleteZonesSchema.safeParse(response.data);
 
@@ -1031,9 +1030,7 @@ export async function getActivityZones(
   }
 
   try {
-    const response = await stravaApi.get(`/activities/${activityId}/zones`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    const response = await stravaApi.get(`/activities/${activityId}/zones`);
 
     const validationResult = StravaActivityZonesResponseSchema.safeParse(
       response.data,
@@ -1087,10 +1084,7 @@ export async function updateActivity(
       `/activities/${activityId}`,
       body,
       {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
       },
     );
 

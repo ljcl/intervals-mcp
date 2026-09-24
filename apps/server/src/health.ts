@@ -5,9 +5,9 @@ import { toolCallStats } from "./telemetry";
 import { SERVER_VERSION } from "./version";
 
 /**
- * Structured /health. Everything here is served from local state — the
+ * Structured /health. Everything here is served from local state: the
  * configured key/athlete/timezone and the rate-limit snapshot captured off
- * the most recent intervals.icu response — so the endpoint never spends an
+ * the most recent intervals.icu response, so the endpoint never spends an
  * intervals.icu request.
  *
  * When MCP_AUTH_TOKEN is configured, unauthenticated callers (for example

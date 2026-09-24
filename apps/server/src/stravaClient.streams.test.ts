@@ -55,9 +55,10 @@ describe("getActivityStreams", () => {
 
     expect(streams.get("time")).toEqual([0, 1, 2]);
     expect(streams.get("heartrate")).toEqual([120, 130, 140]);
+    // No Authorization header: the configured credential is an intervals.icu
+    // API key, not a Strava token, and must never be sent to Strava.
     expect(mockedGet).toHaveBeenCalledWith(
       "/activities/123/streams/time,heartrate",
-      { headers: { Authorization: "Bearer token" } },
     );
   });
 
@@ -71,7 +72,6 @@ describe("getActivityStreams", () => {
 
     expect(mockedGet).toHaveBeenCalledWith(
       "/activities/123/streams/time?series_type=time&resolution=medium",
-      expect.anything(),
     );
   });
 

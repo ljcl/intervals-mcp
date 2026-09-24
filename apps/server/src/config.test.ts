@@ -3,6 +3,7 @@ import {
   basicAuthHeader,
   getIntervalsApiKey,
   getIntervalsAthleteId,
+  getTimeZone,
   MissingApiKeyError,
 } from "./config";
 
@@ -39,6 +40,27 @@ describe("getIntervalsAthleteId", () => {
   it("uses the configured id", () => {
     process.env.INTERVALS_ATHLETE_ID = "i12345";
     expect(getIntervalsAthleteId()).toBe("i12345");
+  });
+});
+
+describe("getTimeZone", () => {
+  it("returns TZ when set", () => {
+    process.env.TZ = "Australia/Sydney";
+    expect(getTimeZone()).toBe("Australia/Sydney");
+  });
+
+  it("falls back to the process's resolved zone when unset", () => {
+    delete process.env.TZ;
+    expect(getTimeZone()).toBe(
+      Intl.DateTimeFormat().resolvedOptions().timeZone,
+    );
+  });
+
+  it("falls back to the process's resolved zone when blank", () => {
+    process.env.TZ = "   ";
+    expect(getTimeZone()).toBe(
+      Intl.DateTimeFormat().resolvedOptions().timeZone,
+    );
   });
 });
 
