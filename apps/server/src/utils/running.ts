@@ -212,6 +212,33 @@ export function paceFromDistanceTime(
 }
 
 /**
+ * Grade-adjusted pace from an activity's or interval's `gap` field (m/s,
+ * the same unit as `average_speed`). This is undocumented (IntervalsActivity
+ * does not type `average_speed`, so it is not directly cross-checked at
+ * runtime), but confirmed against the fixture: the activity's `gap` (3.478)
+ * sits in the same range as its `average_speed` (3.384), and each interval's
+ * `gap` tracks its `average_speed` up or down with the interval's grade, the
+ * signature of a grade-adjusted speed, not a pace-per-metre value. Converted
+ * with the same `metersPerSecToPace` used for on-the-clock pace.
+ *
+ * `null` for a non-pace activity type (see {@link isPaceActivity}), the same
+ * way {@link paceFromDistanceTime} gates on distance/time being present: a
+ * grade-adjusted pace is meaningless for a sport that doesn't get an
+ * on-the-clock pace either.
+ *
+ * The one home for this transform, shared by `get-activity`
+ * (activity-level `gap_min_per_km`) and `intervalLaps.ts` (per-lap
+ * `gap_min_per_km`), which previously each hand-rolled an identical copy.
+ */
+export function gapPace(
+  gapMps: number | null | undefined,
+  type: string,
+): string | null {
+  if (!isPaceActivity(type) || gapMps == null) return null;
+  return metersPerSecToPace(gapMps)?.minPerKm ?? null;
+}
+
+/**
  * Power-to-weight result.
  */
 export interface WattsPerKgResult {

@@ -5,6 +5,7 @@ import {
   computeTimeInZones,
   computeWattsPerKg,
   formatPaceSeconds,
+  gapPace,
   getZoneForHr,
   isPaceActivity,
   isRunningActivity,
@@ -222,6 +223,24 @@ describe("paceFromDistanceTime", () => {
     // pace string here; get-activity/list-activities decide whether to show
     // it by checking isPaceActivity(type) before calling this.
     expect(paceFromDistanceTime(3000, 1800)).toBe("10:00");
+  });
+});
+
+describe("gapPace", () => {
+  it("converts a pace type's gap (m/s) to a min/km string", () => {
+    // 3.4783862 m/s -> 4:47/km; the fixture value get-activity's
+    // gap_min_per_km rests on.
+    expect(gapPace(3.4783862, "Run")).toBe("4:47");
+  });
+
+  it("returns null for a non-pace sport, even with a gap value", () => {
+    expect(gapPace(9.5, "Ride")).toBeNull();
+    expect(gapPace(9.5, "WeightTraining")).toBeNull();
+  });
+
+  it("returns null when gap is missing", () => {
+    expect(gapPace(null, "Run")).toBeNull();
+    expect(gapPace(undefined, "Run")).toBeNull();
   });
 });
 

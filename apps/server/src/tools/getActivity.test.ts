@@ -62,8 +62,9 @@ describe("mapActivityDetail", () => {
     expect(detail.moving_time).toBe("39:32");
     expect(detail.elapsed_time_s).toBe(2373);
     expect(detail.pace_min_per_km).toBe("4:55");
-    // gap (3.4783862) is m/s, same unit as average_speed; see getActivity.ts's
-    // gapPace() comment for the fixture evidence this rests on.
+    // gap (3.4783862) is m/s, same unit as average_speed; see
+    // utils/running.ts's gapPace() comment for the fixture evidence this
+    // rests on.
     expect(detail.gap_min_per_km).toBe("4:47");
     expect(detail.average_hr).toBe(171);
     expect(detail.max_hr).toBe(185);

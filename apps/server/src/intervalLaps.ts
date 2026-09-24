@@ -15,6 +15,7 @@ import {
 } from "./intervalsClient";
 import {
   cadenceSpm,
+  gapPace,
   isPaceActivity,
   isStepCadenceActivity,
   metersPerSecToPace,
@@ -44,19 +45,6 @@ export interface LapEntry {
   average_watts: number | null;
   elevation_gain_m: number | null;
   average_gradient_pct: number | null;
-}
-
-/**
- * `gap` is a fraction (m/s), the same unit as `average_speed` (see
- * `getActivity.ts`'s `gapPace` for the fixture evidence this rests on).
- * Runs only: a grade-adjusted pace is meaningless for a non-pace sport.
- */
-function gapPace(
-  gapMps: number | null | undefined,
-  isPace: boolean,
-): string | null {
-  if (!isPace || gapMps == null) return null;
-  return metersPerSecToPace(gapMps)?.minPerKm ?? null;
 }
 
 /**
@@ -97,7 +85,7 @@ function mapOneInterval(
     pace_min_per_km: isPace
       ? paceFromDistanceTime(interval.distance, interval.moving_time)
       : null,
-    gap_min_per_km: gapPace(interval.gap, isPace),
+    gap_min_per_km: gapPace(interval.gap, type),
     speed_kmh: speedKmh(interval, isPace),
     average_hr: interval.average_heartrate ?? null,
     max_hr: interval.max_heartrate ?? null,
@@ -107,6 +95,13 @@ function mapOneInterval(
       interval.total_elevation_gain == null
         ? null
         : round(interval.total_elevation_gain),
+    // `average_gradient` is a fraction, not already a percent: confirmed
+    // against the multi-lap fixture's first interval, whose
+    // average_gradient (0.0039488245) times its distance (759.72 m) gives
+    // about 3.0 m of net rise, in line with its recorded
+    // total_elevation_gain (4.2 m, ascent-only so slightly higher). A
+    // percent reading (0.0039%) would be two orders of magnitude too flat
+    // for that climb.
     average_gradient_pct:
       interval.average_gradient == null
         ? null
