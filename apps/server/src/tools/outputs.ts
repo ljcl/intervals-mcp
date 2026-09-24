@@ -317,6 +317,11 @@ export const HillAnalysisOutputSchema = z.object({
   name: z.string(),
   date: z.string(),
   type: z.string(),
+  grade_source: z
+    .enum(["grade_smooth", "computed"])
+    .describe(
+      "grade_smooth when intervals.icu's smoothed-grade stream was used, computed when derived from altitude",
+    ),
   drift: z
     .object({
       basis: z.enum(["hr_per_gap", "gap_pace"]),
@@ -421,18 +426,18 @@ const SplitSchema = z.object({
   distance_m: z.number(),
   partial: z
     .boolean()
-    .describe("True on a trailing split shorter than a full unit"),
+    .describe("True on a trailing split shorter than a full km"),
   moving_time_s: z.number().int(),
   elapsed_time_s: z.number().int(),
-  pace_sec_per_unit: z
+  pace_sec_per_km: z
     .number()
     .nullable()
-    .describe("Moving pace per split unit (extrapolated on a partial split)"),
+    .describe("Moving pace per km (extrapolated on a partial split)"),
   pace_formatted: z.string().nullable(),
-  gap_pace_sec_per_unit: z
+  gap_pace_sec_per_km: z
     .number()
     .nullable()
-    .describe("Grade-adjusted (flat-equivalent) pace per split unit"),
+    .describe("Grade-adjusted (flat-equivalent) pace per km"),
   gap_pace_formatted: z.string().nullable(),
   elevation_change_m: z.number().nullable(),
   avg_grade_pct: z.number().nullable(),
@@ -448,19 +453,23 @@ export const SplitAnalysisOutputSchema = z.object({
   name: z.string(),
   date: z.string(),
   type: z.string(),
-  unit: z.enum(["km", "mile"]),
+  grade_source: z
+    .enum(["grade_smooth", "computed"])
+    .describe(
+      "grade_smooth when intervals.icu's smoothed-grade stream was used, computed when derived from altitude",
+    ),
   verdict: z
     .object({
       shape: SplitShapeSchema.describe(
         "On the clock: positive = second half slower",
       ),
       gap_shape: SplitShapeSchema.describe("Same, corrected for grade"),
-      first_half_pace_sec_per_unit: z.number(),
-      second_half_pace_sec_per_unit: z.number(),
+      first_half_pace_sec_per_km: z.number(),
+      second_half_pace_sec_per_km: z.number(),
       first_half_pace_formatted: z.string().nullable(),
       second_half_pace_formatted: z.string().nullable(),
-      first_half_gap_pace_sec_per_unit: z.number().nullable(),
-      second_half_gap_pace_sec_per_unit: z.number().nullable(),
+      first_half_gap_pace_sec_per_km: z.number().nullable(),
+      second_half_gap_pace_sec_per_km: z.number().nullable(),
       delta_pct: z
         .number()
         .describe("Pace change second half vs first; positive = slower"),
@@ -489,9 +498,9 @@ export const SplitAnalysisOutputSchema = z.object({
     moving_time_s: z.number().int(),
     elapsed_time_s: z.number().int(),
     elevation_gain_m: z.number(),
-    avg_pace_sec_per_unit: z.number().nullable(),
+    avg_pace_sec_per_km: z.number().nullable(),
     avg_pace_formatted: z.string().nullable(),
-    avg_gap_pace_sec_per_unit: z.number().nullable(),
+    avg_gap_pace_sec_per_km: z.number().nullable(),
   }),
   warnings: z.array(z.string()),
 });

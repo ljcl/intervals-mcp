@@ -153,9 +153,10 @@ describe("dispatchToolCall input validation", () => {
     // call above; ids must stay string-only across every tool. intervals.icu
     // activity ids (get-activity, get-activity-streams, get-activity-laps,
     // get-running-summary, get-activity-zones, view-activity-zones,
-    // get-activity-zones-data) are the exception to the digits-only
-    // pattern: they accept an optional "i" prefix, as list-activities
-    // returns them (intervalsActivityIdInput, tools/_ids.ts).
+    // get-activity-zones-data, get-hill-analysis, get-split-analysis) are
+    // the exception to the digits-only pattern: they accept an optional "i"
+    // prefix, as list-activities returns them (intervalsActivityIdInput,
+    // tools/_ids.ts).
     const { TOOLS } = await import("./server");
     const idSchemas = (
       TOOLS as Array<{
@@ -177,7 +178,9 @@ describe("dispatchToolCall input validation", () => {
         field === "get-running-summary.id" ||
         field === "get-activity-zones.id" ||
         field === "view-activity-zones.activity_id" ||
-        field === "get-activity-zones-data.activity_id"
+        field === "get-activity-zones-data.activity_id" ||
+        field === "get-hill-analysis.id" ||
+        field === "get-split-analysis.id"
           ? "^i?\\d+$"
           : "^\\d+$";
       expect(`${field}: ${schema.type}`).toBe(`${field}: string`);

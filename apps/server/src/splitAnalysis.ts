@@ -1,40 +1,40 @@
 /**
- * Even-split math for `get-split-analysis`. Pure functions over Strava
- * streams, unit-tested next to `hillAnalysis.ts`.
+ * Even-split math for `get-split-analysis`. Pure functions over the
+ * intervals.icu stream adapter's named arrays (`intervalsStreams.ts`),
+ * unit-tested next to `hillAnalysis.ts`. Splits are kilometres only.
  *
  * Answers the most common post-run question — "did I positive-split this, and
  * how much of the slowdown was just the hills?" — by binning the streams into
- * fixed distance splits and comparing the two halves twice: once on the clock,
+ * fixed-km splits and comparing the two halves twice: once on the clock,
  * once on grade-adjusted pace. A hilly back half slows raw pace without any
  * fade, and a course that flattens out hides fade; reporting both is what
  * separates the two.
  *
- * Grade handling and the Minetti GAP factor are `hillAnalysis.ts`'s
- * (`computeGrades`, `gapFactor`) — there is one definition of grade-adjusted
- * pace in this server, and the climb tool and this one share it.
+ * Grade handling, null-sample handling, and the Minetti GAP factor are
+ * `hillAnalysis.ts`'s (`computeGrades`, `normalizeHillStreams`, `gapFactor`):
+ * there is one definition of grade-adjusted pace in this server, and the
+ * climb tool and this one share it.
  */
 
 import {
   computeGrades,
+  type GradeSource,
   gapFactor,
   type HillStreams,
   MAX_SAMPLE_GAP_SECONDS,
+  type NormalizedHillStreams,
+  normalizeHillStreams,
   POWER_COVERAGE_MIN,
 } from "./hillAnalysis";
 
-/** Streams as returned by Strava, index-aligned. Same shape the climbs use. */
+/** Streams as returned by the intervals.icu stream adapter. Same shape the climbs use. */
 export type SplitStreams = HillStreams;
 
 /** Raised for inputs the analysis cannot work with; message is user-facing. */
 export class SplitAnalysisError extends Error {}
 
-export type SplitUnit = "km" | "mile";
-
-/** Metres per split unit. */
-export const SPLIT_UNIT_METRES: Record<SplitUnit, number> = {
-  km: 1000,
-  mile: 1609.344,
-};
+/** Metres per split (kilometres only). */
+export const SPLIT_LENGTH_M = 1000;
 
 /**
  * Half-to-half pace change (%) inside which a run counts as evenly paced.
@@ -47,7 +47,7 @@ export const EVEN_SPLIT_PCT = 2;
 export const MIN_HALF_MOVING_SECONDS = 120;
 
 /**
- * Fraction of a unit below which a trailing remainder is folded into the
+ * Fraction of a km below which a trailing remainder is folded into the
  * previous split instead of becoming one. A GPS track ending at 5000.4 m would
  * otherwise produce a 40 cm "split" whose extrapolated pace is meaningless.
  */
@@ -63,14 +63,14 @@ export interface Split {
   endM: number;
   /** Metres actually covered — short on a trailing partial split. */
   distanceM: number;
-  /** True when the split is shorter than a full unit (the run ended). */
+  /** True when the split is shorter than a full km (the run ended). */
   partial: boolean;
   movingTimeS: number;
   elapsedTimeS: number;
-  /** Moving pace in seconds per unit (extrapolated on a partial split). */
-  paceSecPerUnit: number | null;
-  /** Grade-adjusted (flat-equivalent) pace in seconds per unit. */
-  gapPaceSecPerUnit: number | null;
+  /** Moving pace in seconds per km (extrapolated on a partial split). */
+  paceSecPerKm: number | null;
+  /** Grade-adjusted (flat-equivalent) pace in seconds per km. */
+  gapPaceSecPerKm: number | null;
   elevationChangeM: number | null;
   avgGradePct: number | null;
   avgHr: number | null;
@@ -84,10 +84,10 @@ export interface SplitVerdict {
   shape: SplitShape;
   /** Shape once grade is corrected for — the terrain-free read. */
   gapShape: SplitShape;
-  firstHalfPaceSecPerUnit: number;
-  secondHalfPaceSecPerUnit: number;
-  firstHalfGapPaceSecPerUnit: number | null;
-  secondHalfGapPaceSecPerUnit: number | null;
+  firstHalfPaceSecPerKm: number;
+  secondHalfPaceSecPerKm: number;
+  firstHalfGapPaceSecPerKm: number | null;
+  secondHalfGapPaceSecPerKm: number | null;
   /** % pace change, second half vs first. Positive = slower. */
   deltaPct: number;
   /** Same, grade-adjusted. Null without usable grade data. */
@@ -104,9 +104,9 @@ export interface SplitVerdict {
 }
 
 export interface SplitAnalysis {
-  unit: SplitUnit;
   splits: Split[];
   verdict: SplitVerdict | null;
+  gradeSource: GradeSource;
   fastestSplitIndex: number | null;
   slowestSplitIndex: number | null;
   totals: {
@@ -114,15 +114,10 @@ export interface SplitAnalysis {
     movingTimeS: number;
     elapsedTimeS: number;
     elevationGainM: number;
-    avgPaceSecPerUnit: number | null;
-    avgGapPaceSecPerUnit: number | null;
+    avgPaceSecPerKm: number | null;
+    avgGapPaceSecPerKm: number | null;
   };
   warnings: string[];
-}
-
-export interface SplitAnalysisOptions {
-  /** Split length. Defaults to kilometres. */
-  unit?: SplitUnit;
 }
 
 const round = (value: number, dp = 2) =>
@@ -175,7 +170,7 @@ function emptyBin(startM: number, endM: number): Bin {
  * in — and so the same core can bin per-km splits and exact halves alike.
  */
 export function binByDistance(
-  streams: SplitStreams,
+  streams: NormalizedHillStreams,
   grades: number[],
   edges: number[],
 ): Bin[] {
@@ -262,7 +257,7 @@ export function binByDistance(
         bin.wattsSum += w * binWeight;
         bin.wattsW += binWeight;
       }
-      if (speed > 0) {
+      if (speed != null && speed > 0) {
         bin.gapSpeedSum += speed * gapSpeedFactor * binWeight;
         bin.gapW += binWeight;
       }
@@ -275,17 +270,17 @@ export function binByDistance(
   return bins;
 }
 
-/** Seconds per unit from a bin's moving time and distance. */
-function paceFromBin(bin: Bin, unitMetres: number): number | null {
+/** Seconds per km from a bin's moving time and distance. */
+function paceFromBin(bin: Bin): number | null {
   if (bin.movingTimeS <= 0 || bin.distanceM <= 0) return null;
-  return bin.movingTimeS / (bin.distanceM / unitMetres);
+  return bin.movingTimeS / (bin.distanceM / SPLIT_LENGTH_M);
 }
 
-/** Grade-adjusted seconds per unit from a bin's mean flat-equivalent speed. */
-function gapPaceFromBin(bin: Bin, unitMetres: number): number | null {
+/** Grade-adjusted seconds per km from a bin's mean flat-equivalent speed. */
+function gapPaceFromBin(bin: Bin): number | null {
   if (bin.gapW <= 0) return null;
   const gapSpeed = bin.gapSpeedSum / bin.gapW;
-  return gapSpeed > 0 ? unitMetres / gapSpeed : null;
+  return gapSpeed > 0 ? SPLIT_LENGTH_M / gapSpeed : null;
 }
 
 function shapeOf(deltaPct: number): SplitShape {
@@ -370,24 +365,19 @@ function elevationGain(bins: Bin[]): number {
 }
 
 /**
- * Fixed-distance splits plus the two-halves verdict. Halves are binned at the
+ * Fixed-km splits plus the two-halves verdict. Halves are binned at the
  * exact midpoint of recorded distance rather than by grouping splits, so an
  * odd split count or a short trailing split cannot skew the comparison.
  */
-export function computeSplitAnalysis(
-  streams: SplitStreams,
-  options: SplitAnalysisOptions = {},
-): SplitAnalysis {
-  const unit = options.unit ?? "km";
-  const unitMetres = SPLIT_UNIT_METRES[unit];
-
+export function computeSplitAnalysis(streams: SplitStreams): SplitAnalysis {
   if (!streams.distance || streams.distance.length < 2 || !streams.time) {
     throw new SplitAnalysisError(
       "No distance and time streams are available — split analysis needs both.",
     );
   }
 
-  const distance = streams.distance;
+  const normalized = normalizeHillStreams(streams);
+  const distance = normalized.distance;
   const totalM = distance[distance.length - 1]! - distance[0]!;
   if (totalM <= 0) {
     throw new SplitAnalysisError(
@@ -396,14 +386,17 @@ export function computeSplitAnalysis(
   }
 
   const warnings: string[] = [];
-  // Grade comes from hillAnalysis (Strava's grade_smooth, else an altitude
-  // window). With neither, every sample is treated as flat: GAP collapses onto
-  // raw pace, which the warning says outright rather than letting an
-  // uncorrected verdict read as corrected.
-  const hasElevation = Boolean(streams.altitude || streams.grade_smooth);
-  const grades = hasElevation
-    ? computeGrades(streams)
-    : new Array<number>(distance.length).fill(0);
+  // Grade comes from hillAnalysis (intervals.icu's grade_smooth, else an
+  // altitude window). With neither, every sample is treated as flat: GAP
+  // collapses onto raw pace, which the warning says outright rather than
+  // letting an uncorrected verdict read as corrected.
+  const hasElevation = Boolean(normalized.altitude || normalized.grade_smooth);
+  const { grades, source: gradeSource } = hasElevation
+    ? computeGrades(normalized)
+    : {
+        grades: new Array<number>(distance.length).fill(0),
+        source: "computed" as const,
+      };
   if (!hasElevation) {
     warnings.push(
       "No elevation or grade stream — grade-adjusted pace equals raw pace, so the terrain correction is unavailable.",
@@ -413,7 +406,7 @@ export function computeSplitAnalysis(
   const base = distance[0]!;
   const end = base + totalM;
   const splitEdges: number[] = [];
-  for (let edge = base; edge < end; edge += unitMetres) {
+  for (let edge = base; edge < end; edge += SPLIT_LENGTH_M) {
     splitEdges.push(edge);
   }
   splitEdges.push(end);
@@ -421,14 +414,14 @@ export function computeSplitAnalysis(
   const trailing = end - splitEdges[splitEdges.length - 2]!;
   if (
     splitEdges.length > 2 &&
-    trailing < unitMetres * MIN_TRAILING_SPLIT_FRACTION
+    trailing < SPLIT_LENGTH_M * MIN_TRAILING_SPLIT_FRACTION
   ) {
     splitEdges.splice(splitEdges.length - 2, 1);
   }
 
-  const splitBins = binByDistance(streams, grades, splitEdges);
+  const splitBins = binByDistance(normalized, grades, splitEdges);
   const splits: Split[] = splitBins.map((bin, i) => {
-    const partial = bin.endM - bin.startM < unitMetres - 1;
+    const partial = bin.endM - bin.startM < SPLIT_LENGTH_M - 1;
     const change = elevationChange(bin);
     return {
       index: i + 1,
@@ -438,8 +431,8 @@ export function computeSplitAnalysis(
       partial,
       movingTimeS: Math.round(bin.movingTimeS),
       elapsedTimeS: Math.round(bin.elapsedTimeS),
-      paceSecPerUnit: roundOrNull(paceFromBin(bin, unitMetres)),
-      gapPaceSecPerUnit: roundOrNull(gapPaceFromBin(bin, unitMetres)),
+      paceSecPerKm: roundOrNull(paceFromBin(bin)),
+      gapPaceSecPerKm: roundOrNull(gapPaceFromBin(bin)),
       elevationChangeM: change,
       avgGradePct:
         change != null && bin.distanceM > 0
@@ -459,7 +452,7 @@ export function computeSplitAnalysis(
 
   if (splits.length === 1 && splits[0]!.partial) {
     warnings.push(
-      `The activity is shorter than one ${unit} — the single split covers the whole activity.`,
+      "The activity is shorter than one km; the single split covers the whole activity.",
     );
   }
 
@@ -467,20 +460,20 @@ export function computeSplitAnalysis(
   // comparable to a full one over the same ground.
   const fullSplits = splits.filter((split) => !split.partial);
   const ranked = fullSplits
-    .filter((split) => split.paceSecPerUnit != null)
-    .sort((a, b) => a.paceSecPerUnit! - b.paceSecPerUnit!);
+    .filter((split) => split.paceSecPerKm != null)
+    .sort((a, b) => a.paceSecPerKm! - b.paceSecPerKm!);
 
-  const totalBin = binByDistance(streams, grades, [base, base + totalM])[0]!;
-  const halfBins = binByDistance(streams, grades, [
+  const totalBin = binByDistance(normalized, grades, [base, base + totalM])[0]!;
+  const halfBins = binByDistance(normalized, grades, [
     base,
     base + totalM / 2,
     base + totalM,
   ]);
 
   return {
-    unit,
     splits,
-    verdict: buildVerdict(halfBins, unitMetres, warnings),
+    verdict: buildVerdict(halfBins, warnings),
+    gradeSource,
     fastestSplitIndex: ranked[0]?.index ?? null,
     slowestSplitIndex: ranked[ranked.length - 1]?.index ?? null,
     totals: {
@@ -488,8 +481,8 @@ export function computeSplitAnalysis(
       movingTimeS: Math.round(totalBin.movingTimeS),
       elapsedTimeS: Math.round(totalBin.elapsedTimeS),
       elevationGainM: elevationGain(splitBins),
-      avgPaceSecPerUnit: roundOrNull(paceFromBin(totalBin, unitMetres)),
-      avgGapPaceSecPerUnit: roundOrNull(gapPaceFromBin(totalBin, unitMetres)),
+      avgPaceSecPerKm: roundOrNull(paceFromBin(totalBin)),
+      avgGapPaceSecPerKm: roundOrNull(gapPaceFromBin(totalBin)),
     },
     warnings,
   };
@@ -501,14 +494,13 @@ function roundOrNull(value: number | null): number | null {
 
 function buildVerdict(
   halfBins: Bin[],
-  unitMetres: number,
   warnings: string[],
 ): SplitVerdict | null {
   const [first, second] = halfBins;
   if (!first || !second) return null;
 
-  const firstPace = paceFromBin(first, unitMetres);
-  const secondPace = paceFromBin(second, unitMetres);
+  const firstPace = paceFromBin(first);
+  const secondPace = paceFromBin(second);
   if (firstPace == null || secondPace == null || firstPace <= 0) return null;
 
   if (
@@ -521,8 +513,8 @@ function buildVerdict(
     return null;
   }
 
-  const firstGap = gapPaceFromBin(first, unitMetres);
-  const secondGap = gapPaceFromBin(second, unitMetres);
+  const firstGap = gapPaceFromBin(first);
+  const secondGap = gapPaceFromBin(second);
   const deltaPct = ((secondPace - firstPace) / firstPace) * 100;
   const gapDeltaPct =
     firstGap != null && secondGap != null && firstGap > 0
@@ -535,10 +527,10 @@ function buildVerdict(
   return {
     shape,
     gapShape,
-    firstHalfPaceSecPerUnit: Math.round(firstPace),
-    secondHalfPaceSecPerUnit: Math.round(secondPace),
-    firstHalfGapPaceSecPerUnit: roundOrNull(firstGap),
-    secondHalfGapPaceSecPerUnit: roundOrNull(secondGap),
+    firstHalfPaceSecPerKm: Math.round(firstPace),
+    secondHalfPaceSecPerKm: Math.round(secondPace),
+    firstHalfGapPaceSecPerKm: roundOrNull(firstGap),
+    secondHalfGapPaceSecPerKm: roundOrNull(secondGap),
     deltaPct: round(deltaPct, 1),
     gapDeltaPct: gapDeltaPct == null ? null : round(gapDeltaPct, 1),
     terrainPct: gapDeltaPct == null ? null : round(deltaPct - gapDeltaPct, 1),

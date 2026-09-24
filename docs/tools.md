@@ -9,7 +9,7 @@ identity, so renames or schema reshapes re-prompt every user. See
 [architecture.md](architecture.md#tool-metadata) before changing either.
 
 > **Status.** Tools are being ported from Strava to intervals.icu (Phases 1
-> and 2). The nine tools below are ported and verified against a real
+> and 2). The eleven tools below are ported and verified against a real
 > account; until a remaining tool is ported, it fails with a "not yet
 > ported" error.
 
@@ -29,6 +29,8 @@ Strava port.
 | `get-running-summary` | get-activity's detail fields for a run plus cadence, HR zone, and running-dynamics assessments, and a lap breakdown |
 | `get-activity-zones` | Time spent in each HR and power zone for an activity, from the activity's own recorded zone bounds |
 | `compare-activities` | Compare two activities side-by-side: pace, HR, cadence, load, and running dynamics, plus activity2-activity1 differences and an efficiency verdict |
+| `get-hill-analysis` | Climb/descent detection with GAP and early-vs-late climb effort drift |
+| `get-split-analysis` | Even km splits with a two-halves pacing verdict stated on the clock and grade-adjusted |
 
 `list-activities` defaults to the last 28 days (today back to 27 days
 earlier) in the server's configured time zone, sorted newest first. Filter
@@ -147,14 +149,42 @@ rounded or formatted per-side fields; the pace delta renders as a signed
 side degrades to a warning rather than failing the call. The app's stream
 overlay (`get-activity-streams-raw`) is still Strava-backed, pending Phase 4.
 
+`get-hill-analysis` and `get-split-analysis` both read their streams through
+the shared intervals.icu stream adapter (`distance`, `altitude`,
+`grade_smooth`, `heartrate`, `velocity_smooth`, `cadence`, plus a derived
+`moving` flag) and share one grade/GAP implementation
+(`gapFactor`/`computeGrades` in `hillAnalysis.ts`): grade prefers
+intervals.icu's `grade_smooth` stream, falling back to an altitude-window
+derivation when it is absent or entirely null, and `grade_source` in the
+response names which was used. A null sample in `distance`/`altitude`/grade
+is interpolated between its known neighbours (held flat across a leading or
+trailing gap) rather than treated as zero; a null HR/cadence/velocity sample
+is simply excluded from whatever average it would have fed. Pace is reported
+as `m:ss /km`; splits are kilometres only. An activity with no recorded
+streams at all (e.g. Pilates, or a manual entry) fails with a message naming
+the activity rather than an empty analysis.
+
+`get-hill-analysis` detects sustained climbs and descents (grade ≥ 2% for
+≥ 200 m, tolerant of brief dips) and reports per segment: length, average
+grade, elevation change, moving and grade-adjusted pace, HR, cadence, and
+power. The headline is early-vs-late climb drift: HR per unit of
+grade-adjusted speed compared between climbs in the first and second half of
+the activity, or GAP pace alone without HR, positive meaning the same
+climbing cost more late in the run.
+
+`get-split-analysis` bins the streams into fixed 1 km splits (device laps
+are ignored) and states a two-halves verdict twice: once on the clock, once
+grade-adjusted, cut at the exact midpoint of recorded distance rather than
+by grouping splits. `terrain_pct` names how many percentage points of the
+raw change the terrain accounts for, so a hilly back half is not misread as
+fade and a course that flattens out does not hide real fade.
+
 ## Activity tools
 
 | Tool | Description |
 | ---- | ----------- |
 | `update-activity` | Update an activity's description, title, sport type, gear, or flags |
 | `get-aerobic-analysis` | Aerobic decoupling, efficiency factor, and intensity factor from HR + power/speed streams |
-| `get-hill-analysis` | Climb/descent detection with GAP and early-vs-late climb effort drift |
-| `get-split-analysis` | Even km/mile splits with a two-halves pacing verdict stated on the clock and grade-adjusted |
 | `get-interval-analysis` | Interval detection with urban-stop-aware rest classification and rep fade |
 | `get-training-load` | Training load summary with trend analysis |
 | `get-fitness-trend` | Fitness/fatigue/form (CTL/ATL/TSB) from relative effort, with rest projection and a solved taper to a target form on a target date |
