@@ -743,6 +743,12 @@ export const ActivityDetailOutputSchema = z.object({
     .nullable()
     .describe("Null when not requested or the activity has none"),
   gear_id: z.string().nullable(),
+  gear_name: z
+    .string()
+    .nullable()
+    .describe(
+      "Resolved from the activity payload alone, never an extra list-gear call; null in practice since intervals.icu doesn't populate it on the activity today",
+    ),
   weather_temp_c: z.number().nullable(),
   description: z.string().nullable(),
   units: z.object({
@@ -841,6 +847,8 @@ export const WellnessOutputSchema = z.object({
     resting_hr: z.literal("bpm"),
     sleep: z.literal("hours"),
     weight: z.literal("kg"),
+    spo2: z.literal("%"),
+    respiration: z.literal("breaths/min"),
   }),
   hrv_note: z.string(),
   days: z.array(WellnessDayEntrySchema),

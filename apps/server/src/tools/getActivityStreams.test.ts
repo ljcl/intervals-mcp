@@ -158,6 +158,21 @@ describe("buildActivityStreamsResult", () => {
 
     // Same bucket, raw (un-doubled) mean of 63.
     expect(result.streams.cadence?.[0]).toBe(63);
+    expect(result.units.cadence).toBe("rpm");
+  });
+
+  it("doubles cadence and reports spm for a Walk (a step-cadence type, not a pace type)", () => {
+    const walkActivity: IntervalsActivity = { ...runActivity, type: "Walk" };
+    const result = buildActivityStreamsResult(
+      walkActivity,
+      streams,
+      ["cadence"],
+      100,
+    );
+
+    // Same bucket as the "doubles cadence" run test: 63 raw -> 126 doubled.
+    expect(result.streams.cadence?.[0]).toBe(126);
+    expect(result.units.cadence).toBe("spm");
   });
 
   it("returns latlng as [lat, lng] pairs, last point of the bucket, 5 dp", () => {
@@ -239,7 +254,80 @@ describe("formatActivityStreamsText", () => {
     expect(text).toContain("bpm");
     expect(text).toContain("latlng: 100 points");
     expect(text).toContain("missing: watts");
-    expect(text).not.toContain("[");
+    // The summary lines (before the CSV block) never render arrays literally.
+    expect(text.split("\nCSV:")[0]).not.toContain("[");
+  });
+
+  it("appends a CSV block with a header row and one row per point", () => {
+    const result = buildActivityStreamsResult(
+      runActivity,
+      streams,
+      ["heartrate", "cadence"],
+      5,
+    );
+    const text = formatActivityStreamsText(result);
+    const lines = text.split("\n");
+
+    const headerIndex = lines.indexOf("CSV:") + 1;
+    expect(lines[headerIndex]).toBe("heartrate_bpm,cadence_spm");
+    // 5 data rows follow the header.
+    expect(lines.slice(headerIndex + 1)).toHaveLength(5);
+    expect(lines[headerIndex + 1]).toBe(
+      `${result.streams.heartrate?.[0]},${result.streams.cadence?.[0]}`,
+    );
+  });
+
+  it("expands latlng into lat,lng CSV columns", () => {
+    const result = buildActivityStreamsResult(
+      runActivity,
+      streams,
+      ["latlng"],
+      3,
+    );
+    const text = formatActivityStreamsText(result);
+    const lines = text.split("\n");
+
+    const headerIndex = lines.indexOf("CSV:") + 1;
+    expect(lines[headerIndex]).toBe("lat,lng");
+    const point = result.streams.latlng?.[0] as [number, number] | undefined;
+    const [lat, lng] = point ?? [0, 0];
+    expect(lines[headerIndex + 1]).toBe(`${lat},${lng}`);
+  });
+
+  it("omits a missing type's column from the CSV header", () => {
+    const result = buildActivityStreamsResult(
+      runActivity,
+      streams,
+      ["heartrate", "watts"],
+      5,
+    );
+    const text = formatActivityStreamsText(result);
+    const lines = text.split("\n");
+
+    const headerIndex = lines.indexOf("CSV:") + 1;
+    expect(lines[headerIndex]).toBe("heartrate_bpm");
+  });
+
+  it("omits the CSV block entirely when every requested type is missing", () => {
+    const timeOnly: IntervalsStream[] = [{ type: "time", data: [0, 1, 2] }];
+    const result = buildActivityStreamsResult(
+      runActivity,
+      timeOnly,
+      ["watts"],
+      5,
+    );
+    const text = formatActivityStreamsText(result);
+
+    expect(text).not.toContain("CSV:");
+  });
+});
+
+describe("getActivityStreamsTool.inputSchema", () => {
+  it("defaults maxPoints to 120", () => {
+    const parsed = getActivityStreamsTool.inputSchema.parse({
+      id: "i189807578",
+    });
+    expect(parsed.maxPoints).toBe(120);
   });
 });
 

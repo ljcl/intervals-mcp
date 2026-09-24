@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { formatDuration } from "../formatters";
+import { formatDuration, round, STRAVA_STUB_NOTE } from "../formatters";
 import {
   getActivity as getActivityClient,
   getSportSettings,
@@ -8,11 +8,16 @@ import {
   type IntervalsSportSettings,
 } from "../intervalsClient";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
-import { metersPerSecToPace } from "../utils/running";
+import {
+  cadenceSpm,
+  isPaceActivity,
+  isStepCadenceActivity,
+  metersPerSecToPace,
+  paceFromDistanceTime,
+} from "../utils/running";
 import { READ_ONLY } from "./_annotations";
 import { toolErrorText } from "./_errors";
 import { intervalsActivityIdInput } from "./_ids";
-import { RUNNING_TYPES } from "./listActivities";
 import { ActivityDetailOutputSchema, warnOnSchemaDrift } from "./outputs";
 
 const name = "get-activity";
@@ -21,8 +26,10 @@ const description = `
 Returns one intervals.icu activity in detail (metrics, load, HR zones, running dynamics, intervals); use after list-activities.
 
 Returns core metrics, training load, HR zone time-in-zone, running dynamics
-(for runs with device support), and the WORK/RECOVERY interval breakdown,
-all with units.
+(for runs with device support), the WORK/RECOVERY interval breakdown, gear
+id (and name when the activity payload carries one), and the description
+(truncated in the text response, full in structured content), all with
+units.
 
 Parameters:
 - id (required): the intervals.icu activity id, exactly as returned by list-activities (e.g. "i189807578")
@@ -33,6 +40,8 @@ Notes:
   no detail for it through this API
 - HR zones come from the athlete's Run sport settings; if those aren't
   configured, hr_zones is an empty array rather than failing the call
+- The text response truncates description to 200 characters with a "..."
+  marker; structuredContent.description is always the full text
 `;
 
 const inputSchema = z.object({
@@ -46,11 +55,9 @@ const inputSchema = z.object({
 type GetActivityInput = z.infer<typeof inputSchema>;
 
 const MAX_INTERVAL_LINES = 20;
-
-const round = (value: number, decimals = 0) => {
-  const factor = 10 ** decimals;
-  return Math.round(value * factor) / factor;
-};
+/** Longest description shown in the text response, past which it is cut with an ellipsis marker. */
+const DESCRIPTION_MAX_CHARS = 200;
+const ELLIPSIS = "...";
 
 interface ActivityLoad {
   training_load: number | null;
@@ -117,6 +124,13 @@ export interface ActivityDetail {
   running_dynamics: RunningDynamics | null;
   intervals: ActivityIntervalEntry[] | null;
   gear_id: string | null;
+  /**
+   * Resolved from the activity payload alone, never an extra `list-gear`
+   * call: intervals.icu does not populate this on the activity today (see
+   * docs/api-notes.md), so it is `null` in practice, but a future response
+   * that does carry it is picked up here for free.
+   */
+  gear_name: string | null;
   weather_temp_c: number | null;
   description: string | null;
   units: {
@@ -130,23 +144,24 @@ export interface ActivityDetail {
   };
 }
 
-/** Doubles strides/min to steps/min for a run, matching `average_cadence`'s convention elsewhere. */
-function cadenceSpm(
+/**
+ * `average_cadence_spm` is `null` for anything but a step-cadence type: the
+ * field is always in steps/min, and a non-step-cadence type's raw rate would
+ * otherwise be mislabelled as one (a swim's `average_cadence` is a stroke
+ * rate, not steps/min). Rounds to a whole step. Wraps the shared
+ * `cadenceSpm` (`utils/running.ts`), which itself only decides raw vs.
+ * doubled by type; the null-for-non-step-cadence-types gate is specific to
+ * this field's fixed "spm" unit, so it stays here rather than in the shared
+ * helper (get-activity-streams' cadence stream wants the raw, un-nulled rate
+ * for a non-step-cadence type instead).
+ */
+function activityCadenceSpm(
   rawCadence: number | null | undefined,
-  isRun: boolean,
+  type: string,
 ): number | null {
-  if (!isRun || rawCadence == null) return null;
-  return Math.round(rawCadence * 2);
-}
-
-/** Pace string from distance (m) / moving time (s), runs only. */
-function pace(
-  distanceM: number | null | undefined,
-  movingTimeS: number | null | undefined,
-  isRun: boolean,
-): string | null {
-  if (!isRun || !distanceM || !movingTimeS || movingTimeS <= 0) return null;
-  return metersPerSecToPace(distanceM / movingTimeS)?.minPerKm ?? null;
+  if (!isStepCadenceActivity(type)) return null;
+  const spm = cadenceSpm(rawCadence, type);
+  return spm == null ? null : Math.round(spm);
 }
 
 /**
@@ -161,9 +176,9 @@ function pace(
  */
 function gapPace(
   gapMps: number | null | undefined,
-  isRun: boolean,
+  type: string,
 ): string | null {
-  if (!isRun || gapMps == null) return null;
+  if (!isPaceActivity(type) || gapMps == null) return null;
   return metersPerSecToPace(gapMps)?.minPerKm ?? null;
 }
 
@@ -184,9 +199,10 @@ function buildHrZones(
 
 function buildRunningDynamics(
   a: IntervalsActivity,
-  isRun: boolean,
+  type: string,
 ): RunningDynamics | null {
-  if (!isRun || a.average_stance_time == null) return null;
+  if (!isStepCadenceActivity(type) || a.average_stance_time == null)
+    return null;
   return {
     stance_time_ms:
       a.average_stance_time == null ? null : round(a.average_stance_time),
@@ -206,7 +222,7 @@ function buildRunningDynamics(
 
 function mapInterval(
   interval: IntervalsInterval,
-  isRun: boolean,
+  type: string,
 ): ActivityIntervalEntry {
   return {
     type: interval.type ?? null,
@@ -214,9 +230,11 @@ function mapInterval(
     distance_km:
       interval.distance != null ? round(interval.distance / 1000, 2) : null,
     moving_time_s: interval.moving_time ?? null,
-    pace_min_per_km: pace(interval.distance, interval.moving_time, isRun),
+    pace_min_per_km: isPaceActivity(type)
+      ? paceFromDistanceTime(interval.distance, interval.moving_time)
+      : null,
     average_hr: interval.average_heartrate ?? null,
-    average_cadence_spm: cadenceSpm(interval.average_cadence, isRun),
+    average_cadence_spm: activityCadenceSpm(interval.average_cadence, type),
     stance_time_ms:
       interval.average_stance_time == null
         ? null
@@ -244,7 +262,6 @@ export function mapActivityDetail(
   sportSettings: IntervalsSportSettings | null,
 ): ActivityDetail {
   const type = activity.type ?? "Workout";
-  const isRun = RUNNING_TYPES.has(type);
   const movingTimeS = activity.moving_time ?? 0;
 
   const distanceKm =
@@ -254,7 +271,7 @@ export function mapActivityDetail(
 
   const intervals =
     activity.icu_intervals && activity.icu_intervals.length > 0
-      ? activity.icu_intervals.map((iv) => mapInterval(iv, isRun))
+      ? activity.icu_intervals.map((iv) => mapInterval(iv, type))
       : null;
 
   return {
@@ -270,11 +287,13 @@ export function mapActivityDetail(
     moving_time_s: movingTimeS,
     moving_time: formatDuration(movingTimeS),
     elapsed_time_s: activity.elapsed_time ?? null,
-    pace_min_per_km: pace(activity.distance, activity.moving_time, isRun),
-    gap_min_per_km: gapPace(activity.gap, isRun),
+    pace_min_per_km: isPaceActivity(type)
+      ? paceFromDistanceTime(activity.distance, activity.moving_time)
+      : null,
+    gap_min_per_km: gapPace(activity.gap, type),
     average_hr: activity.average_heartrate ?? null,
     max_hr: activity.max_heartrate ?? null,
-    average_cadence_spm: cadenceSpm(activity.average_cadence, isRun),
+    average_cadence_spm: activityCadenceSpm(activity.average_cadence, type),
     elevation_gain_m:
       activity.total_elevation_gain == null
         ? null
@@ -299,9 +318,10 @@ export function mapActivityDetail(
     feel: activity.feel ?? null,
     hr_zones: buildHrZones(sportSettings?.hr_zones, activity.icu_hr_zone_times),
     pace_zone_seconds: activity.pace_zone_times ?? null,
-    running_dynamics: buildRunningDynamics(activity, isRun),
+    running_dynamics: buildRunningDynamics(activity, type),
     intervals,
     gear_id: activity.gear?.id ?? null,
+    gear_name: activity.gear?.name ?? null,
     weather_temp_c: activity.average_weather_temp ?? null,
     description: activity.description ?? null,
     units: {
@@ -378,6 +398,19 @@ function formatZonesLine(d: ActivityDetail): string | null {
   return `HR zones: ${zones}`;
 }
 
+function formatGearLine(d: ActivityDetail): string | null {
+  if (!d.gear_id) return null;
+  return d.gear_name
+    ? `Gear: ${d.gear_name} [${d.gear_id}]`
+    : `Gear: ${d.gear_id}`;
+}
+
+/** Truncates `text` to `DESCRIPTION_MAX_CHARS`, appending `ELLIPSIS` when it was cut. */
+function truncateDescription(text: string): string {
+  if (text.length <= DESCRIPTION_MAX_CHARS) return text;
+  return `${text.slice(0, DESCRIPTION_MAX_CHARS)}${ELLIPSIS}`;
+}
+
 function formatIntervalLine(entry: ActivityIntervalEntry, i: number): string {
   const parts: string[] = [];
   if (entry.distance_km != null)
@@ -396,10 +429,7 @@ function formatIntervalLine(entry: ActivityIntervalEntry, i: number): string {
 /** Builds the tool's text response. Exported for direct testing. */
 export function formatActivityDetailText(d: ActivityDetail): string {
   const lines = [`${d.date} ${d.type} ${d.name} [${d.id}]`];
-  if (d.is_strava_stub)
-    lines.push(
-      "stub: details unavailable through the API; use the HealthFit copy.",
-    );
+  if (d.is_strava_stub) lines.push(STRAVA_STUB_NOTE);
 
   lines.push(formatMetricsLine(d));
 
@@ -411,6 +441,13 @@ export function formatActivityDetailText(d: ActivityDetail): string {
 
   const zonesLine = formatZonesLine(d);
   if (zonesLine) lines.push(zonesLine);
+
+  const gearLine = formatGearLine(d);
+  if (gearLine) lines.push(gearLine);
+
+  if (d.description) {
+    lines.push(`Description: ${truncateDescription(d.description)}`);
+  }
 
   if (d.intervals && d.intervals.length > 0) {
     lines.push("Intervals:");
@@ -453,7 +490,7 @@ export const getActivityTool = {
       ]);
 
       const type = activity.type ?? "Workout";
-      const sportSettings = RUNNING_TYPES.has(type)
+      const sportSettings = isStepCadenceActivity(type)
         ? sportSettingsResult
         : null;
 

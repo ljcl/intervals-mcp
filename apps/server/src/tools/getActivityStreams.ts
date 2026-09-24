@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { round } from "../formatters";
 import {
   getActivity as getActivityClient,
   getActivityStreams as getActivityStreamsClient,
@@ -7,10 +8,10 @@ import {
 } from "../intervalsClient";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
 import { downsampleColumns, lastValuePerBucket } from "../streamDownsample";
+import { cadenceSpm, isStepCadenceActivity } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
 import { toolErrorText } from "./_errors";
 import { intervalsActivityIdInput } from "./_ids";
-import { RUNNING_TYPES } from "./listActivities";
 import { ActivityStreamsOutputSchema, warnOnSchemaDrift } from "./outputs";
 
 const name = "get-activity-streams";
@@ -47,20 +48,24 @@ Returns time-series streams for one activity, downsampled to at most maxPoints, 
 Each requested type comes back as one array, index-aligned across types,
 plus a unit per type. Large activities are downsampled to bound the response:
 each bucket reports the mean of its non-null samples, except time, distance,
-and latlng, which take the bucket's last sample.
+and latlng, which take the bucket's last sample. The text response repeats
+the returned columns as a CSV block (header row of type_unit column names,
+one row per point; latlng as two columns, lat and lng) after the summary
+lines, so the data is readable even when only the text is available.
 
 Parameters:
 - id (required): the intervals.icu activity id, exactly as returned by list-activities (e.g. "i189807578")
 - types (optional): stream types to return. Default: ${DEFAULT_TYPES.join(", ")}
-- maxPoints (optional): cap on points per stream after downsampling, 10 to 2000. Default 200
+- maxPoints (optional): cap on points per stream after downsampling, 10 to 2000. Default 120
 
 Notes:
 - time is always fetched (it sizes the downsample buckets) even when not
   requested, but only appears in the response when requested
 - a requested type the activity's streams don't include comes back in
   \`missing\`, not as an error
-- cadence is doubled to steps/min for run activity types, matching
-  get-activity's convention; other sport types keep the raw rate
+- cadence is doubled to steps/min (unit spm) for step-cadence activity types
+  (Run, TrailRun, VirtualRun, Walk, Hike), matching get-activity's
+  convention; other sport types keep the raw rate, reported in rpm
 `;
 
 const inputSchema = z.object({
@@ -75,9 +80,9 @@ const inputSchema = z.object({
     .int()
     .min(10)
     .max(2000)
-    .default(200)
+    .default(120)
     .describe(
-      "Cap on points per stream after downsampling, 10 to 2000. Default 200.",
+      "Cap on points per stream after downsampling, 10 to 2000. Default 120.",
     ),
 });
 
@@ -98,6 +103,11 @@ const DECIMALS: Record<Exclude<StreamType, "latlng">, number> = {
   step_length: 0,
 };
 
+/**
+ * Default per-type unit. `cadence`'s default ("spm") applies only when the
+ * activity is a step-cadence type; {@link buildActivityStreamsResult}
+ * overrides it to "rpm" otherwise (see {@link isStepCadenceActivity}).
+ */
 const UNITS: Record<StreamType, string> = {
   time: "s",
   distance: "m",
@@ -114,11 +124,6 @@ const UNITS: Record<StreamType, string> = {
 };
 
 const LATLNG_DECIMALS = 5;
-
-function round(value: number, decimals: number): number {
-  const factor = 10 ** decimals;
-  return Math.round(value * factor) / factor;
-}
 
 export type StreamValue = number | null | [number, number];
 
@@ -145,7 +150,7 @@ export function buildActivityStreamsResult(
   maxPoints: number,
 ): ActivityStreamsResult {
   const type = activity.type ?? "Workout";
-  const isRun = RUNNING_TYPES.has(type);
+  const cadenceUnit = isStepCadenceActivity(type) ? "spm" : "rpm";
 
   const streamByType = new Map(rawStreams.map((s) => [s.type, s]));
   const timeStream = streamByType.get("time");
@@ -191,7 +196,7 @@ export function buildActivityStreamsResult(
     const decimals = DECIMALS[t];
     streams[t] = values.map((v): StreamValue => {
       if (v == null) return null;
-      const scaled = t === "cadence" && isRun ? v * 2 : v;
+      const scaled = t === "cadence" ? (cadenceSpm(v, type) ?? v) : v;
       return round(scaled, decimals);
     });
   }
@@ -204,7 +209,10 @@ export function buildActivityStreamsResult(
     requested: requestedTypes,
     missing,
     units: Object.fromEntries(
-      Object.keys(streams).map((t) => [t, UNITS[t as StreamType]]),
+      Object.keys(streams).map((t) => [
+        t,
+        t === "cadence" ? cadenceUnit : UNITS[t as StreamType],
+      ]),
     ),
     streams,
   };
@@ -224,7 +232,72 @@ function statsLine(type: StreamType, values: StreamValue[]): string | null {
   return `${type}: ${round(min, 2)}-${round(max, 2)} ${UNITS[type]} (avg ${round(avg, 2)})`;
 }
 
-/** Builds the tool's text response: summary lines only, no arrays. Exported for direct testing. */
+/**
+ * Header names and value-producing types for the CSV block, in `requested`
+ * order, restricted to types actually present in `streams` (a `missing` type
+ * has no column). `latlng` expands into two columns, `lat` and `lng`, since
+ * it isn't a single scalar value; every other type's header is
+ * `type_unit` (e.g. `heartrate_bpm`).
+ */
+function csvColumns(
+  requestedTypes: StreamType[],
+  streams: Record<string, StreamValue[]>,
+  units: Record<string, string>,
+): { header: string[]; types: StreamType[] } {
+  const header: string[] = [];
+  const types: StreamType[] = [];
+  for (const t of requestedTypes) {
+    if (!(t in streams)) continue;
+    types.push(t);
+    if (t === "latlng") {
+      header.push("lat", "lng");
+    } else {
+      const unit = units[t];
+      header.push(unit ? `${t}_${unit}` : t);
+    }
+  }
+  return { header, types };
+}
+
+/**
+ * Renders the returned columns as a compact CSV block: a header row, then
+ * one row per point. A host may pass only a tool call's `content` text to
+ * the model and drop `structuredContent` entirely, so the stream data has to
+ * be readable from the text response too -- this is that. Empty (`[]`) when
+ * every requested type is missing, so the caller can skip the block
+ * entirely rather than emit a header with no rows.
+ */
+function buildCsvLines(result: ActivityStreamsResult): string[] {
+  const { header, types } = csvColumns(
+    result.requested,
+    result.streams,
+    result.units,
+  );
+  if (types.length === 0) return [];
+
+  const rows: string[] = [header.join(",")];
+  for (let i = 0; i < result.returned_points; i += 1) {
+    const cells: string[] = [];
+    for (const t of types) {
+      const value = result.streams[t]?.[i] ?? null;
+      if (t === "latlng") {
+        const pair = value as [number, number] | null;
+        cells.push(pair ? String(pair[0]) : "", pair ? String(pair[1]) : "");
+      } else {
+        cells.push(value == null ? "" : String(value));
+      }
+    }
+    rows.push(cells.join(","));
+  }
+  return rows;
+}
+
+/**
+ * Builds the tool's text response: summary lines, then a CSV block of the
+ * actual returned columns (see {@link buildCsvLines}) -- some hosts pass
+ * only this text to the model, never `structuredContent`. Exported for
+ * direct testing.
+ */
 export function formatActivityStreamsText(
   result: ActivityStreamsResult,
 ): string {
@@ -241,6 +314,11 @@ export function formatActivityStreamsText(
 
   if (result.missing.length > 0)
     lines.push(`missing: ${result.missing.join(", ")}`);
+
+  const csv = buildCsvLines(result);
+  if (csv.length > 0) {
+    lines.push("", "CSV:", ...csv);
+  }
 
   return lines.join("\n");
 }

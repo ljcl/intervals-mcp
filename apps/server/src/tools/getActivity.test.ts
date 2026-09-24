@@ -82,6 +82,9 @@ describe("mapActivityDetail", () => {
     expect(detail.rpe).toBe(7);
     expect(detail.feel).toBeNull();
     expect(detail.gear_id).toBe("71459");
+    // The fixture's gear entry carries name: null (intervals.icu does not
+    // populate it on the activity today; see docs/api-notes.md).
+    expect(detail.gear_name).toBeNull();
     expect(detail.weather_temp_c).toBeNull();
     expect(detail.description).toBeNull();
     expect(detail.units).toEqual({
@@ -177,6 +180,37 @@ describe("mapActivityDetail", () => {
   it("returns null intervals when the activity has none", () => {
     const detail = mapActivityDetail(runActivity, sportSettingsRun);
     expect(detail.intervals).toBeNull();
+  });
+
+  it("doubles cadence and includes dynamics for a Walk, but reports no pace", () => {
+    // A Walk is a step-cadence type (cadence doubled, dynamics included) but
+    // not a pace type (intervals.icu reports no pace for it).
+    const walkActivity: IntervalsActivity = {
+      ...runActivity,
+      type: "Walk",
+    };
+
+    const detail = mapActivityDetail(walkActivity, sportSettingsRun);
+
+    expect(detail.type).toBe("Walk");
+    expect(detail.pace_min_per_km).toBeNull();
+    expect(detail.gap_min_per_km).toBeNull();
+    // Same raw cadence (83.15543 strides/min) as the run fixture, doubled the
+    // same way: ~166 spm.
+    expect(detail.average_cadence_spm).toBe(166);
+    expect(detail.running_dynamics).not.toBeNull();
+    expect(detail.running_dynamics?.stance_time_ms).toBe(233);
+  });
+
+  it("resolves gear_name from the activity payload when it's present, without an extra call", () => {
+    const withGearName: IntervalsActivity = {
+      ...runActivityWithIntervals,
+      gear: { id: "71459", name: "Dynafish Xiaonian B" },
+    };
+    const detail = mapActivityDetail(withGearName, sportSettingsRun);
+
+    expect(detail.gear_id).toBe("71459");
+    expect(detail.gear_name).toBe("Dynafish Xiaonian B");
   });
 
   it("maps a strength activity with no pace, no cadence doubling, and null dynamics", () => {
@@ -275,6 +309,65 @@ describe("formatActivityDetailText", () => {
     expect(text).toContain(
       "stub: details unavailable through the API; use the HealthFit copy.",
     );
+  });
+
+  it("shows the gear id alone when no name is resolvable", () => {
+    const detail = mapActivityDetail(
+      runActivityWithIntervals,
+      sportSettingsRun,
+    );
+    const text = formatActivityDetailText(detail);
+    expect(text).toContain("Gear: 71459");
+  });
+
+  it("shows the gear name and id when a name is resolvable from the payload", () => {
+    const detail = mapActivityDetail(
+      { ...runActivityWithIntervals, gear: { id: "71459", name: "My Shoes" } },
+      sportSettingsRun,
+    );
+    const text = formatActivityDetailText(detail);
+    expect(text).toContain("Gear: My Shoes [71459]");
+  });
+
+  it("omits the gear line when the activity has no gear", () => {
+    const detail = mapActivityDetail(
+      { ...runActivityWithIntervals, gear: null },
+      sportSettingsRun,
+    );
+    const text = formatActivityDetailText(detail);
+    expect(text).not.toContain("Gear:");
+  });
+
+  it("shows the full description when under 200 characters", () => {
+    const detail = mapActivityDetail(
+      { ...runActivityWithIntervals, description: "Felt strong today." },
+      sportSettingsRun,
+    );
+    const text = formatActivityDetailText(detail);
+    expect(text).toContain("Description: Felt strong today.");
+  });
+
+  it("truncates a description over 200 characters with an ellipsis marker", () => {
+    const longDescription = "x".repeat(250);
+    const detail = mapActivityDetail(
+      { ...runActivityWithIntervals, description: longDescription },
+      sportSettingsRun,
+    );
+    const text = formatActivityDetailText(detail);
+    const line = text.split("\n").find((l) => l.startsWith("Description:"));
+
+    expect(line).toBe(`Description: ${"x".repeat(200)}...`);
+    // structuredContent keeps the full, untruncated text.
+    expect(detail.description).toBe(longDescription);
+  });
+
+  it("omits the description line when the activity has none", () => {
+    const detail = mapActivityDetail(
+      runActivityWithIntervals,
+      sportSettingsRun,
+    );
+    const text = formatActivityDetailText(detail);
+    expect(text).not.toContain("Description:");
   });
 });
 
