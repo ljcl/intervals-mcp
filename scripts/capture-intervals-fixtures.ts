@@ -27,10 +27,19 @@ async function get(p: string): Promise<unknown> {
 
 type Rec = Record<string, unknown>;
 
+/**
+ * Free-text fields nulled on every captured activity, alongside `name` and
+ * `description`: none of them are needed to exercise a tool's mapping logic,
+ * and any of them could carry athlete-identifying or otherwise personal
+ * text (a route name in a comment, a training note in `tags`).
+ */
+const FREE_TEXT_FIELDS = ["tags", "notes", "comments"];
+
 function scrubActivity(a: Rec, i: number): Rec {
   const out: Rec = { ...a };
   out.name = `${String(a.type ?? "Activity")} ${i + 1}`;
   out.description = null;
+  for (const k of FREE_TEXT_FIELDS) if (k in out) out[k] = null;
   delete out.external_id;
   delete out.oauth_client_id;
   for (const k of ["icu_athlete_id", "athlete_id"]) if (k in out) out[k] = "i0";

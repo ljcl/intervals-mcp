@@ -47,6 +47,12 @@ function fail(name: string, detail: string): void {
   console.log(`${name}: error - ${detail}`);
 }
 
+/** The tool's own error text (content[0].text), instead of a generic message, so a live failure is diagnosable from the check output alone. */
+function errorText(result: { content?: Array<{ text?: unknown }> }): string {
+  const text = result.content?.[0]?.text;
+  return typeof text === "string" ? text : "tool returned isError";
+}
+
 async function checkListActivities(): Promise<void> {
   const name = "list-activities";
   const newest = "2026-09-24";
@@ -56,9 +62,13 @@ async function checkListActivities(): Promise<void> {
       { oldest, newest, limit: 30 },
       apiKey,
       NO_PROGRESS,
-    )) as { structuredContent?: Record<string, unknown>; isError?: boolean };
+    )) as {
+      structuredContent?: Record<string, unknown>;
+      isError?: boolean;
+      content?: Array<{ text?: unknown }>;
+    };
     if (result.isError || !result.structuredContent) {
-      fail(name, "tool returned isError");
+      fail(name, errorText(result));
       return;
     }
     const activities = result.structuredContent.activities as Array<{
@@ -83,9 +93,13 @@ async function checkGetActivity(): Promise<void> {
       { id: activityId, includeIntervals: true },
       apiKey,
       NO_PROGRESS,
-    )) as { structuredContent?: Record<string, unknown>; isError?: boolean };
+    )) as {
+      structuredContent?: Record<string, unknown>;
+      isError?: boolean;
+      content?: Array<{ text?: unknown }>;
+    };
     if (result.isError || !result.structuredContent) {
-      fail(name, "tool returned isError");
+      fail(name, errorText(result));
       return;
     }
     const d = result.structuredContent as {
@@ -117,9 +131,13 @@ async function checkGetActivityStreams(): Promise<void> {
       },
       apiKey,
       NO_PROGRESS,
-    )) as { structuredContent?: Record<string, unknown>; isError?: boolean };
+    )) as {
+      structuredContent?: Record<string, unknown>;
+      isError?: boolean;
+      content?: Array<{ text?: unknown }>;
+    };
     if (result.isError || !result.structuredContent) {
-      fail(name, "tool returned isError");
+      fail(name, errorText(result));
       return;
     }
     const streams = result.structuredContent.streams as Record<
@@ -145,9 +163,13 @@ async function checkListGear(): Promise<void> {
       { includeRetired: false },
       apiKey,
       NO_PROGRESS,
-    )) as { structuredContent?: Record<string, unknown>; isError?: boolean };
+    )) as {
+      structuredContent?: Record<string, unknown>;
+      isError?: boolean;
+      content?: Array<{ text?: unknown }>;
+    };
     if (result.isError || !result.structuredContent) {
-      fail(name, "tool returned isError");
+      fail(name, errorText(result));
       return;
     }
     ok(name, `count=${result.structuredContent.count}`);
@@ -164,9 +186,13 @@ async function checkGetWellness(): Promise<void> {
       { date },
       apiKey,
       NO_PROGRESS,
-    )) as { structuredContent?: Record<string, unknown>; isError?: boolean };
+    )) as {
+      structuredContent?: Record<string, unknown>;
+      isError?: boolean;
+      content?: Array<{ text?: unknown }>;
+    };
     if (result.isError || !result.structuredContent) {
-      fail(name, "tool returned isError");
+      fail(name, errorText(result));
       return;
     }
     const days = result.structuredContent.days as Array<{
