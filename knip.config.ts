@@ -8,6 +8,9 @@ export default {
       vitest: {
         config: ["vitest.stories.config.ts"],
       },
+      // Re-runnable fixture capture script, invoked directly with `bun`
+      // rather than through a package.json script.
+      entry: ["scripts/capture-intervals-fixtures.ts"],
     },
     "apps/server": {
       project: ["src/**/*.ts"],

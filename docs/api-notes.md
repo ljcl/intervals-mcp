@@ -41,11 +41,20 @@ Paths below are relative to the base URL above (spec lists them as `/api/v1/...`
 
 ## Rate limits
 - Draft (June 2026, go-live unconfirmed): 5,000 requests/day and 2,500 per rolling 15 minutes per key, about 10/s per IP.
-- Response headers: unverified. Phase 1 records which `X-RateLimit-*` / `Retry-After` headers appear.
+- No `X-RateLimit-*` or `Retry-After` headers observed on 2026-09-24; the client throttles itself (see `intervalsApi` in fetchClient.ts).
 
-## Open questions for Phase 1
-1. Gear write: does `PUT /activity/{id}` accept `{"gear":{"id":"<gearId>"}}` or `{"gear_id":"<gearId>"}`? Re-read the activity and gear totals.
-2. Running-dynamics stream names on a real HealthFit (Apple Watch) upload.
-3. What a Strava-sourced stub looks like, and which field (`source`, `file_type`) marks it. `GET /activity/{id}/file`'s spec summary notes "Strava activities not supported" for the original-file download; confirm what the activity record itself looks like for one.
-4. Rate-limit headers actually sent.
-5. Whether `GET /activity/{id}?intervals=true` is needed for laps and interval averages.
+## Verified (2026-09-24)
+
+Captured with `scripts/capture-intervals-fixtures.ts` against a real account; sanitized fixtures
+at `apps/server/src/__fixtures__/intervals/`.
+
+- `GET /athlete/0/activities?oldest=&newest=` returns an array; no pagination; all sources `OAUTH_CLIENT`, `oauth_client_name: "HealthFit"`, `file_type: "fit"`, `device_name: "Watch7,5"`, `strava_id: null`.
+- `GET /activity/{id}` has `average_cadence` in strides/min (83.2 means 166 spm), running-dynamics averages `average_stance_time` (ms), `average_vertical_oscillation` (mm), `average_vertical_ratio` (%), `average_step_length` (mm), `average_stride` (m); `average_leg_spring_stiffness`, `average_impact_loading_rate`, `average_stance_time_balance` are null for Apple Watch. `icu_intervals` is empty unless `?intervals=true`. `gear` null. `stream_types` lists available streams.
+- `GET /activity/{id}/intervals` returns `{ id, analyzed, icu_intervals[], icu_groups[] }`; intervals carry `type` (`WORK`/`RECOVERY`), `distance`, `moving_time`, `average_heartrate`, `average_cadence`, `average_stance_time`, `average_vertical_oscillation`, `average_step_length`.
+- `GET /activity/{id}/streams.json?types=a,b` returns `[{ type, data, data2, valueTypeIsArray, ... }]`. `latlng` puts latitude in `data` and longitude in `data2`. Apple Watch streams: `time, watts, cadence, heartrate, distance, altitude, latlng, velocity_smooth, stance_time, vertical_oscillation, vertical_ratio, step_length, torque, fixed_altitude`.
+- `GET /athlete/0/wellness?oldest=&newest=` returns an array keyed by `id` (date). Apple Watch HRV arrives in `hrvSDNN`; `hrv` (rMSSD) is null. `restingHR`, `sleepSecs`, `weight`, `ctl`, `atl`, `rampRate` present.
+- `GET /athlete/0/sport-settings/Run`: `lthr` 179, `max_hr` 197, `hr_zones` [147,160,169,178,197]; `threshold_pace` and `pace_zones` null.
+- `GET /athlete/0/gear` returns `[]` today.
+- Missing activity returns HTTP 404 with a small JSON body.
+- Responses carry no `X-RateLimit-*` or `Retry-After` headers (only Cloudflare headers).
+- Gear write: pending controller test.
