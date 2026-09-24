@@ -26,10 +26,10 @@ const description = `
 Returns one intervals.icu activity in detail (metrics, load, HR zones, running dynamics, intervals); use after list-activities.
 
 Returns core metrics, training load, HR zone time-in-zone, running dynamics
-(for runs with device support), the WORK/RECOVERY interval breakdown, gear
-id (and name when the activity payload carries one), and the description
-(truncated in the text response, full in structured content), all with
-units.
+(for Run/TrailRun/VirtualRun/Walk/Hike activities with device support), the
+WORK/RECOVERY interval breakdown, gear id (and name when the activity
+payload carries one), and the description (truncated in the text response,
+full in structured content), all with units.
 
 Parameters:
 - id (required): the intervals.icu activity id, exactly as returned by list-activities (e.g. "i189807578")
@@ -38,8 +38,10 @@ Parameters:
 Notes:
 - An activity synced from Strava (source STRAVA) is a stub: intervals.icu has
   no detail for it through this API
-- HR zones come from the athlete's Run sport settings; if those aren't
-  configured, hr_zones is an empty array rather than failing the call
+- HR zones come from the athlete's Run sport settings group (types Run,
+  VirtualRun, TrailRun); hr_zones is an empty array for any other activity
+  type, including Walk/Hike, or if that settings group isn't configured,
+  rather than failing the call
 - The text response truncates description to 200 characters with a "..."
   marker; structuredContent.description is always the full text
 `;
@@ -182,10 +184,28 @@ function gapPace(
   return metersPerSecToPace(gapMps)?.minPerKm ?? null;
 }
 
+/**
+ * `sportSettings` only applies to this activity's `hr_zones` when its
+ * `types` list actually names the activity's type: `get-activity` always
+ * fetches the *Run* sport settings group (`types` on this athlete is
+ * `["Run","VirtualRun","TrailRun"]`), but a Walk or Hike is a different
+ * settings group with its own zone bounds and zone count (this tool does not
+ * fetch that group), and a non-step-cadence type's zone count need not even
+ * match (7 zones for WeightTraining on this athlete, not the Run group's 5).
+ * Applying the Run group's bounds to any activity type it doesn't cover
+ * would mislabel the athlete's own recorded zone times under the wrong
+ * boundaries. `hr_zones` degrades to `[]` whenever the settings group's
+ * `types` doesn't name this activity's type, the same degrade as settings
+ * being entirely unavailable.
+ */
 function buildHrZones(
-  hrZoneBounds: number[] | null | undefined,
+  sportSettings: IntervalsSportSettings | null,
+  type: string,
   hrZoneTimes: number[] | null | undefined,
 ): HrZoneEntry[] {
+  if (!sportSettings?.types?.includes(type)) return [];
+
+  const hrZoneBounds = sportSettings.hr_zones;
   if (!hrZoneBounds || hrZoneBounds.length === 0) return [];
   if (!hrZoneTimes || hrZoneTimes.length === 0) return [];
 
@@ -253,9 +273,12 @@ function mapInterval(
 /**
  * Maps one raw intervals.icu activity (optionally with `icu_intervals`
  * populated) plus the athlete's Run sport settings into the compact detail
- * view. `sportSettings` is `null` for a non-run activity, or when the
- * settings fetch failed; either way `hr_zones` degrades to `[]`. Exported
- * for direct testing.
+ * view. `sportSettings` is `null` for a non-step-cadence activity, or when
+ * the settings fetch failed; `hr_zones` further degrades to `[]` (see
+ * `buildHrZones`) unless the fetched settings group's `types` actually names
+ * this activity's type, since the Run group's bounds do not apply to every
+ * step-cadence type (a Walk or Hike uses a different settings group this
+ * tool does not fetch). Exported for direct testing.
  */
 export function mapActivityDetail(
   activity: IntervalsActivity,
@@ -316,7 +339,7 @@ export function mapActivityDetail(
         : round(activity.icu_efficiency_factor, 2),
     rpe: activity.icu_rpe ?? null,
     feel: activity.feel ?? null,
-    hr_zones: buildHrZones(sportSettings?.hr_zones, activity.icu_hr_zone_times),
+    hr_zones: buildHrZones(sportSettings, type, activity.icu_hr_zone_times),
     pace_zone_seconds: activity.pace_zone_times ?? null,
     running_dynamics: buildRunningDynamics(activity, type),
     intervals,

@@ -43,8 +43,9 @@ interval breakdown (`includeIntervals`, default true), gear id, and
 description, all with units. Gear name is included too when the activity
 payload happens to carry one; intervals.icu does not populate it there
 today, so this is currently always id-only. HR zone boundaries come from
-the athlete's Run sport settings; when those aren't configured, or the
-activity isn't a run, `hr_zones` is an empty array rather than failing the
+the athlete's Run sport settings group (`types` Run, VirtualRun, TrailRun);
+`hr_zones` is an empty array for any other activity type, including Walk or
+Hike, or when that settings group isn't configured, rather than failing the
 call. `pace_min_per_km` and `gap_min_per_km` (grade-adjusted pace, derived
 from the activity's `gap` field, which intervals.icu reports in m/s, the
 same unit as `average_speed`) are set for Run/TrailRun/VirtualRun only: a

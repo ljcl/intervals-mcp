@@ -200,6 +200,10 @@ describe("mapActivityDetail", () => {
     expect(detail.average_cadence_spm).toBe(166);
     expect(detail.running_dynamics).not.toBeNull();
     expect(detail.running_dynamics?.stance_time_ms).toBe(233);
+    // The fetched sport settings are the Run group (types: ["Run",
+    // "VirtualRun", "TrailRun"]), which does not cover Walk: its zone
+    // bounds must not be applied to a Walk's recorded zone times.
+    expect(detail.hr_zones).toEqual([]);
   });
 
   it("resolves gear_name from the activity payload when it's present, without an extra call", () => {

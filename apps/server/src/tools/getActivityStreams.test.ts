@@ -258,6 +258,21 @@ describe("formatActivityStreamsText", () => {
     expect(text.split("\nCSV:")[0]).not.toContain("[");
   });
 
+  it("reports the cadence stats line in the activity's actual unit (rpm for a Ride)", () => {
+    const rideActivity: IntervalsActivity = { ...runActivity, type: "Ride" };
+    const result = buildActivityStreamsResult(
+      rideActivity,
+      streams,
+      ["cadence"],
+      100,
+    );
+    const text = formatActivityStreamsText(result);
+
+    expect(text).toContain("cadence:");
+    expect(text).toMatch(/cadence:.*rpm/);
+    expect(text).not.toContain("spm");
+  });
+
   it("appends a CSV block with a header row and one row per point", () => {
     const result = buildActivityStreamsResult(
       runActivity,

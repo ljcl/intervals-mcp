@@ -218,7 +218,19 @@ export function buildActivityStreamsResult(
   };
 }
 
-function statsLine(type: StreamType, values: StreamValue[]): string | null {
+/**
+ * `units` is the result's own per-type unit map, not the static `UNITS`
+ * constant: `cadence`'s actual unit depends on the activity type (`spm` for
+ * a step-cadence type, `rpm` otherwise, see `buildActivityStreamsResult`),
+ * and reading it from the static table here would print "spm" on a Ride's
+ * summary line even though its CSV column and structuredContent both say
+ * "rpm".
+ */
+function statsLine(
+  type: StreamType,
+  values: StreamValue[],
+  units: Record<string, string>,
+): string | null {
   if (type === "latlng") {
     const count = values.filter((v) => v != null).length;
     return count > 0 ? `latlng: ${count} points` : null;
@@ -229,7 +241,7 @@ function statsLine(type: StreamType, values: StreamValue[]): string | null {
   const min = Math.min(...nums);
   const max = Math.max(...nums);
   const avg = nums.reduce((sum, v) => sum + v, 0) / nums.length;
-  return `${type}: ${round(min, 2)}-${round(max, 2)} ${UNITS[type]} (avg ${round(avg, 2)})`;
+  return `${type}: ${round(min, 2)}-${round(max, 2)} ${units[type]} (avg ${round(avg, 2)})`;
 }
 
 /**
@@ -308,7 +320,7 @@ export function formatActivityStreamsText(
   for (const t of result.requested) {
     const values = result.streams[t];
     if (!values) continue;
-    const line = statsLine(t, values);
+    const line = statsLine(t, values, result.units);
     if (line) lines.push(line);
   }
 
