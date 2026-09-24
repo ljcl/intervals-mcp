@@ -72,13 +72,19 @@ export function toolErrorText(
     // `detail` is the bare window description; `message` carries the client
     // function's name in front of it, which means nothing to the athlete.
     const detail = error.detail || error.message;
-    return `${PREFIX} Strava rate limit reached while trying to ${context}. ${detail} Retry after the window resets.`;
+    return `${PREFIX} Rate limit reached while trying to ${context}. ${detail} Retry after the window resets.`;
   }
   if (error instanceof HttpError && error.response.status === 404) {
     return `${PREFIX} ${notFound ?? DEFAULT_NOT_FOUND}`;
   }
   if (error instanceof HttpError && error.response.status === 402) {
     return `${PREFIX} ${DEFAULT_SUBSCRIPTION}`;
+  }
+  if (
+    error instanceof HttpError &&
+    (error.response.status === 401 || error.response.status === 403)
+  ) {
+    return `${PREFIX} intervals.icu rejected the API key (HTTP ${error.response.status}). Check INTERVALS_API_KEY.`;
   }
   return `${PREFIX} Failed to ${context}: ${message}`;
 }

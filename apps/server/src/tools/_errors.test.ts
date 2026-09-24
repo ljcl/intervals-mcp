@@ -22,12 +22,13 @@ describe("toolErrorText", () => {
     });
 
     expect(text.startsWith("❌ ")).toBe(true);
-    expect(text).toContain("rate limit");
-    expect(text).toContain("fetch activity 789");
-    expect(text).toContain("15-minute rate limit reached (100/100 requests).");
-    expect(text).toContain("Retry after the window resets.");
+    expect(text).toBe(
+      "❌ Rate limit reached while trying to fetch activity 789. 15-minute rate limit reached (100/100 requests). Retry after the window resets.",
+    );
     // The client function's name is internal detail, not athlete guidance.
     expect(text).not.toContain("getActivityById");
+    // Provider-neutral: no Strava-specific wording.
+    expect(text).not.toContain("Strava");
   });
 
   it("maps a 404 to the caller's not-found sentence", () => {
@@ -73,6 +74,32 @@ describe("toolErrorText", () => {
     });
 
     expect(text).toBe("❌ Failed to fetch activity 404: Activity 404 renamed");
+  });
+
+  it("maps a 401 or 403 to a message naming INTERVALS_API_KEY", () => {
+    const unauthorized = toolErrorText(
+      new HttpError("HTTP 401: Unauthorized", {
+        status: 401,
+        statusText: "Unauthorized",
+        data: "",
+      }),
+      { context: "list recent activities" },
+    );
+    expect(unauthorized).toBe(
+      "❌ intervals.icu rejected the API key (HTTP 401). Check INTERVALS_API_KEY.",
+    );
+
+    const forbidden = toolErrorText(
+      new HttpError("HTTP 403: Forbidden", {
+        status: 403,
+        statusText: "Forbidden",
+        data: "",
+      }),
+      { context: "list recent activities" },
+    );
+    expect(forbidden).toBe(
+      "❌ intervals.icu rejected the API key (HTTP 403). Check INTERVALS_API_KEY.",
+    );
   });
 
   it("reports other HTTP statuses with the message", () => {
