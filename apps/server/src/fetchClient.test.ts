@@ -88,7 +88,7 @@ describe("HttpError", () => {
 
 describe("parseJsonWithLargeInts", () => {
   it("preserves integers beyond MAX_SAFE_INTEGER as exact strings", () => {
-    // A real-world Strava segment-effort id, well past 2^53 - 1.
+    // A real-world Strava activity id, well past 2^53 - 1.
     const big = "3503400000123456789";
     const out = parseJsonWithLargeInts(`{"id":${big}}`) as { id: unknown };
     expect(out.id).toBe(big);

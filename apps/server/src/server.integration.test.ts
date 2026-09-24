@@ -230,8 +230,8 @@ describe.each(ERAS)("tools/list (%s era)", (era) => {
   it("advertises Strava ids as strings, never as numbers", async () => {
     const ids = await advertisedIdFields(era);
 
-    // Route and segment-effort ids already exceed 2^53, so a host that
-    // generates a JSON number loses digits before validation can see them.
+    // Activity ids already exceed 2^53, so a host that generates a JSON
+    // number loses digits before validation can see them.
     for (const { tool, field, prop } of ids) {
       expect(prop.type, `${tool}.${field} must be advertised as a string`).toBe(
         "string",

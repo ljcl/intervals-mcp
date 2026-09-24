@@ -40,7 +40,7 @@ describe("recordToolCall", () => {
 
   it("carries the error class so failures can be grouped", () => {
     recordToolCall({
-      tool: "get-segment",
+      tool: "get-best-efforts",
       duration_ms: 12,
       outcome: "error",
       error_class: "RateLimitError",
@@ -50,7 +50,7 @@ describe("recordToolCall", () => {
   });
 
   it("attaches the rate-limit snapshot without spending a request", () => {
-    recordToolCall({ tool: "get-segment", duration_ms: 5, outcome: "ok" });
+    recordToolCall({ tool: "get-best-efforts", duration_ms: 5, outcome: "ok" });
 
     // Present as a key even when nothing has been fetched yet, so a log
     // consumer can rely on the field existing.
@@ -69,10 +69,18 @@ describe("toolCallStats", () => {
   });
 
   it("accumulates calls, errors, and a mean duration per tool", () => {
-    recordToolCall({ tool: "get-segment", duration_ms: 100, outcome: "ok" });
-    recordToolCall({ tool: "get-segment", duration_ms: 300, outcome: "error" });
+    recordToolCall({
+      tool: "get-best-efforts",
+      duration_ms: 100,
+      outcome: "ok",
+    });
+    recordToolCall({
+      tool: "get-best-efforts",
+      duration_ms: 300,
+      outcome: "error",
+    });
 
-    const stats = toolCallStats()["get-segment"]!;
+    const stats = toolCallStats()["get-best-efforts"]!;
     expect(stats).toMatchObject({ calls: 2, errors: 1, total_ms: 400 });
     expect(stats.mean_ms).toBe(200);
     expect(stats.last_called_at).not.toBe("");
@@ -80,17 +88,17 @@ describe("toolCallStats", () => {
 
   it("counts every non-ok outcome as an error, including a refused call", () => {
     recordToolCall({
-      tool: "get-route",
+      tool: "get-activity-laps",
       duration_ms: 1,
       outcome: "not_connected",
     });
     recordToolCall({
-      tool: "get-route",
+      tool: "get-activity-laps",
       duration_ms: 1,
       outcome: "invalid_args",
     });
 
-    expect(toolCallStats()["get-route"]).toMatchObject({
+    expect(toolCallStats()["get-activity-laps"]).toMatchObject({
       calls: 2,
       errors: 2,
     });
@@ -107,7 +115,7 @@ describe("toolCallStats", () => {
 
   it("holds only tools that were actually dispatched", () => {
     expect(toolCallStats()).toEqual({});
-    recordToolCall({ tool: "get-segment", duration_ms: 1, outcome: "ok" });
-    expect(Object.keys(toolCallStats())).toEqual(["get-segment"]);
+    recordToolCall({ tool: "get-best-efforts", duration_ms: 1, outcome: "ok" });
+    expect(Object.keys(toolCallStats())).toEqual(["get-best-efforts"]);
   });
 });

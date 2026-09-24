@@ -1,6 +1,6 @@
 @import "@intervals-mcp/design-system/reset.css";
 
-/* Theme MapLibre's hover popups (lap/photo markers) with host design tokens.
+/* Theme MapLibre's hover popups (lap/split/waypoint markers) with host design tokens.
  * The library default is a hard-coded white box, unreadable on the dark map.
  * The tip is a CSS-border triangle, so its color is set per anchor direction. */
 .maplibregl-popup-content {

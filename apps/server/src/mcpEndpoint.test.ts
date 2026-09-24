@@ -151,7 +151,7 @@ describe("createMcpEndpoint", () => {
   });
 
   it("preserves a 64-bit id sent as a JSON number instead of rounding it", async () => {
-    // Strava activity/segment-effort ids exceed 2^53. `req.json()` would
+    // Strava activity ids exceed 2^53. `req.json()` would
     // round 3516039180561708486 to ...500 before any tool schema could see
     // it, so the raw body is parsed with the large-int-preserving reviver
     // and the exact digits arrive as a string the id schemas accept.

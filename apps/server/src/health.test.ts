@@ -98,8 +98,16 @@ describe("handleHealth", () => {
     const { recordToolCall, resetToolCallStats } = await import("./telemetry");
     const stderr = vi.spyOn(console, "error").mockImplementation(() => {});
     resetToolCallStats();
-    recordToolCall({ tool: "get-segment", duration_ms: 120, outcome: "ok" });
-    recordToolCall({ tool: "get-segment", duration_ms: 80, outcome: "error" });
+    recordToolCall({
+      tool: "get-best-efforts",
+      duration_ms: 120,
+      outcome: "ok",
+    });
+    recordToolCall({
+      tool: "get-best-efforts",
+      duration_ms: 80,
+      outcome: "error",
+    });
     stderr.mockRestore();
 
     const response = handleHealth(
@@ -108,7 +116,7 @@ describe("handleHealth", () => {
     );
     const body = await response.json();
 
-    expect(body.tools["get-segment"]).toMatchObject({
+    expect(body.tools["get-best-efforts"]).toMatchObject({
       calls: 2,
       errors: 1,
       mean_ms: 100,

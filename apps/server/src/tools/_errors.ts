@@ -32,8 +32,8 @@ import { HttpError, RateLimitError } from "../fetchClient";
 
 export interface ToolErrorOptions {
   /**
-   * Verb phrase naming what the tool was doing ("fetch segment 789", "list
-   * athlete routes"), read as "while trying to <context>" and
+   * Verb phrase naming what the tool was doing ("fetch activity 789", "list
+   * recent activities"), read as "while trying to <context>" and
    * "Failed to <context>".
    */
   context: string;
