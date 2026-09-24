@@ -1,7 +1,7 @@
 /**
  * Pure mapping for the activity-zones MCP App feed. Turns the raw
  * `/activities/{id}/zones` response into the chart-ready payload that
- * `get-activity-zones-data` returns, unit-tested next to `activitySegments.ts`.
+ * `get-activity-zones-data` returns, unit-tested in `activityZones.test.ts`.
  * The `get-activity-zones` text tool formats the same
  * fetch as prose; this feed carries per-bucket seconds and percentages so
  * the chart and the text can never disagree on the numbers.

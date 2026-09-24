@@ -55,7 +55,7 @@ export interface RouteMapData {
    * (e.g. beyond the track length). Informational; the view tool's text
    * surfaces them to the model. */
   waypointWarnings?: string[];
-  /** Server notes about optional annotation layers (laps, photos) that could
+  /** Server notes about optional annotation layers (laps) that could
    * not be fetched — a rate limit, an auth failure — each naming the layer and
    * the reason. Informational, and the map still renders: the geometry was
    * already loaded when the layer failed. Surfaced to the model by the view
@@ -65,8 +65,8 @@ export interface RouteMapData {
 
 /**
  * Annotation anchors, as indices into `coordinates`. Resolved server-side
- * (lap distances and segment/photo lat/lng mapped onto the downsampled
- * stream) so the app only projects and renders.
+ * (lap distances mapped onto the downsampled stream) so the app only
+ * projects and renders.
  */
 export interface RouteAnnotations {
   /** Lap boundaries (each lap's end), present when the activity has 2+ laps. */

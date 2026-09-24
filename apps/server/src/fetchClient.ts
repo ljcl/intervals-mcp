@@ -712,9 +712,9 @@ const HOUR_MS = 60 * MINUTE_MS;
  * parameterised, or produce a file).
  *
  * Immutable-once-recorded resources (a completed activity's detail, its data
- * streams, and its laps/zones/photos) get long TTLs; identity and aggregate
- * resources that drift (profile, stats, a segment's effort counts) get short
- * ones. Everything under `/activities/{id}` is additionally invalidated
+ * streams, and its laps/zones) get long TTLs; identity and aggregate
+ * resources that drift (profile, stats) get short ones. Everything under
+ * `/activities/{id}` is additionally invalidated
  * whenever the activity is written (see {@link updateActivity}), so those TTLs
  * only bound staleness from edits made outside this server.
  *

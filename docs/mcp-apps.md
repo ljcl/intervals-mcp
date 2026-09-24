@@ -110,10 +110,6 @@ dark via the `[data-theme="dark"]` selector on its decorator; a dark story
 variant needs only `globals: darkGlobals` (from `@intervals-mcp/design-system/preview`),
 never a per-story decorator.
 
-New UI sitting on a theme-invariant colour must pair it with the invariant
-foreground token (`--color-tier-text`), not a theme-dependent one — otherwise
-one theme renders white-on-amber.
-
 ## Recharts specifics
 
 - **Tick label margins**: default `bottom: 24` exists because tick labels

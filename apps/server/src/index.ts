@@ -14,6 +14,7 @@ import { createServer } from "./server";
 // Load .env file from monorepo root
 dotenv.config({
   path: path.resolve(import.meta.dirname, "..", "..", "..", ".env"),
+  quiet: true,
 });
 
 if (!apiKeyConfigured()) {

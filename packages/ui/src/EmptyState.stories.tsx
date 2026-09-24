@@ -6,10 +6,10 @@ const meta = preview.meta({
 });
 
 export const Default = meta.story({
-  args: { children: "No segments in this activity" },
+  args: { children: "No laps in this activity" },
 });
 
 export const Dark = meta.story({
   globals: darkGlobals,
-  args: { children: "No segments in this activity" },
+  args: { children: "No laps in this activity" },
 });

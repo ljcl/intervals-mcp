@@ -1,10 +1,10 @@
 /**
  * Tool-call progress notifications.
  *
- * Three tools fan out over Strava: `get-best-efforts` reads up to 200 activity
- * details, `find-segments-on-route` explores up to a dozen map tiles, and the
- * training-load / fitness-trend feeds page through an athlete's history. Until
- * now every one of them was silent from the first request to the last, so an
+ * Two tools fan out over Strava: `get-best-efforts` reads up to 200 activity
+ * details, and the training-load / fitness-trend feeds page through an
+ * athlete's history. Until now every one of them was silent from the first
+ * request to the last, so an
  * MCP App showed a bare skeleton for a minute and a host's request timeout had
  * nothing to reset itself against (ext-apps v1.6.0 resets on progress).
  *

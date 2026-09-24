@@ -110,13 +110,6 @@ const allTokens = [
       { var: "--chart-grade", light: "#6b7280", dark: "#9ca3af" },
     ],
   },
-  {
-    category: "Tier",
-    tokens: [
-      { var: "--color-tier-pr", light: "#f59e0b", dark: "#f59e0b" },
-      { var: "--color-tier-top10", light: "#a78bfa", dark: "#a78bfa" },
-    ],
-  },
 ];
 
 const cellStyle: React.CSSProperties = {

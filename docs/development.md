@@ -255,10 +255,6 @@ What the sweep that made this repo-wide actually found: all violations were
 - `--color-text-tertiary` is decoration, never an element's only label — at
   12px it falls under 4.5:1 in some host palettes.
 
-Theme-invariant tier backgrounds pair with the invariant foreground
-(`--color-tier-text`), not `--color-text-inverse` (correct in dark, white-on-
-amber in light).
-
 ## Docker image build
 
 Built via `turbo prune @intervals-mcp/server --docker`; the builder stage uses

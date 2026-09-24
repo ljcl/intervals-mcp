@@ -1194,7 +1194,7 @@ async function loadRouteMapGeometry(
  *
  * Report every cause, not only the quota, and never swallow one with a bare
  * `catch {}`: a refused token and a malformed response look exactly as much
- * like "this activity has no photos" as a 429 does.
+ * like "this activity has no lap markers" as a 429 does.
  */
 function dropOptionalLayer(
   layer: string,
@@ -1219,11 +1219,10 @@ function dropOptionalLayer(
 }
 
 /**
- * Resolve lap boundaries, segment efforts, and geotagged photos into indices
- * on the (downsampled) coordinate stream. Each layer degrades independently:
- * a failed laps or photos fetch, or efforts without lat/lng, drop that layer —
- * with a log line and a caller-visible `layerWarnings` note saying why — rather
- * than failing the map. See {@link dropOptionalLayer}.
+ * Resolve lap boundaries into indices on the (downsampled) coordinate
+ * stream. The layer degrades independently: a failed laps fetch drops it,
+ * with a log line and a caller-visible `layerWarnings` note saying why,
+ * rather than failing the map. See {@link dropOptionalLayer}.
  */
 async function loadRouteMapAnnotations(
   token: string,

@@ -45,7 +45,7 @@ export interface MetricSeries {
 /**
  * Build the selectable metric series for an activity, in pill display order.
  * Only streams that are present and aligned with the coordinates qualify, so
- * saved routes and stream-less activities yield an empty list (plain track).
+ * stream-less activities yield an empty list (plain track).
  */
 export function buildMetricSeries(data: RouteMapData): MetricSeries[] {
   const streams = data.streams;

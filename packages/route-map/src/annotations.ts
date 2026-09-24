@@ -26,8 +26,8 @@ export interface WaypointMarker {
 /**
  * Per-kind waypoint marker colors. Concrete hex (not CSS vars) because the
  * MapLibre basemap paints canvas and shares these with the SVG grid;
- * theme-invariant for the same reason as TIER_COLORS — pins must read
- * identically over multi-hue metric tracks in both themes.
+ * theme-invariant so pins read identically over multi-hue metric tracks in
+ * both themes.
  */
 export const WAYPOINT_COLORS: Record<WaypointKind, string> = {
   fuel: "#ec4899",

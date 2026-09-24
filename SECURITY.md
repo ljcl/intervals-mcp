@@ -29,14 +29,14 @@ project, so those are targets rather than guarantees.
 
 In scope:
 
-- The MCP server (`apps/server`): config and startup, `/mcp` transport, tool
-  handlers that call the Strava API.
+- The MCP server (`apps/server`): config and startup, `/mcp` transport, and
+  how tool handlers hold and use the intervals.icu API key.
 - The published Docker image (`ghcr.io/ljcl/intervals-mcp`).
 - The MCP App bundles served as resources (`ui://.../app.html`).
 
 Out of scope:
 
-- The Strava API itself — report Strava platform issues to Strava.
+- intervals.icu itself. Report intervals.icu platform issues to intervals.icu.
 - Vulnerabilities that require an already-compromised host or a
   misconfigured deployment (for example, exposing the server publicly without
   the documented reverse proxy / tunnel).

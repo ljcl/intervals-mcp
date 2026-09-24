@@ -355,10 +355,10 @@ export {
  *
  * It extends {@link HttpError} so the status survives the translation. Never
  * flatten a failure into a plain `Error` here: a caller that degrades on one
- * specific status — `loadRouteProfile` treats a 404 from the GPX export as
- * "this route stored no profile" and anything else as a real failure — then
- * has nothing to test `instanceof` against, its branch silently never runs,
- * and the 404 surfaces as a raw API error. Degrading on a status is only
+ * specific status (the streams fetcher treats a 404 as "this activity has
+ * no recorded samples" and anything else as a real failure) then has
+ * nothing to test `instanceof` against, its branch silently never runs, and
+ * the 404 surfaces as a raw API error. Degrading on a status is only
  * expressible if the status is still there.
  */
 export class StravaApiError extends HttpError {

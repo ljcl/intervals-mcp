@@ -31,16 +31,3 @@ export const CHART_COLORS = {
   pace: "#3b82f6",
   power: "#8b5cf6",
 } as const;
-
-/**
- * Achievement-tier colors: gold = PR, light purple = top-10. Intentionally
- * theme-invariant (no dark override) — they flag achievement tiers and must
- * read identically against multi-hue metric tracks in both themes. Exposed
- * as TS constants because MapLibre paints onto canvas and cannot resolve
- * CSS custom properties; `--color-tier-*` in tokens.css mirror these for
- * CSS consumers.
- */
-export const TIER_COLORS = {
-  pr: "#f59e0b",
-  top10: "#a78bfa",
-} as const;

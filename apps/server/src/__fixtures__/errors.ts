@@ -10,7 +10,7 @@ import { HttpError, RateLimitError } from "../fetchClient";
  * abort passed its tests while being dead in the server (the client used to
  * flatten the error into a plain `Error`, so `instanceof RateLimitError` was
  * never true). Building it here keeps the three scan tools testing against one
- * definition of that shape; `stravaClient.retry.test.ts` pins the translation
+ * definition of that shape; `stravaClient.errors.test.ts` pins the translation
  * itself.
  */
 export function handledRateLimit(
