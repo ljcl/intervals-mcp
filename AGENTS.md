@@ -1,6 +1,6 @@
-# Strava MCP Server
+# intervals-mcp
 
-Remote MCP server for connecting AI tools to your Strava data.
+Remote MCP server connecting AI tools to intervals.icu run data.
 
 ## Documentation
 
@@ -12,6 +12,7 @@ this file holds only the invariants that apply to every change.
 | [docs/architecture.md](docs/architecture.md) | Changing server internals (transport, HTTP layer, cache, errors, analysis math, tool metadata) |
 | [docs/mcp-apps.md](docs/mcp-apps.md) | Adding or changing an MCP App package, `packages/ui`, or `packages/data` |
 | [docs/tools.md](docs/tools.md) | Adding, renaming, or describing tools/prompts — it is the single catalog; keep it current |
+| [docs/api-notes.md](docs/api-notes.md) | Calling the intervals.icu API; record verified behaviour here |
 | [docs/operations.md](docs/operations.md) | Configuring or debugging a deployed instance |
 | [docs/development.md](docs/development.md) | Turborepo, coverage gates, Storybook gates, Docker image build |
 | [docs/releasing.md](docs/releasing.md) | Shipping — PR titles are Conventional Commits; release automation does the rest |
@@ -44,16 +45,16 @@ breaking them has shipped bugs — do not work around them locally.
   `after`/`before` bounds to the minute (`quantizedEpochAfter`/`Before`) so a
   pair's two calls share one cache key.
 - **Stream reads go through the `stravaClient.ts` wrappers** (shared
-  `fetchStreamSet`: shape validation, 401 refresh-retry, structured 429). Only
-  genuine 404/empty throws `StreamsUnavailableError` — the one error a caller
-  may degrade on. Catching more misreports failures as absences.
+  `fetchStreamSet`: shape validation, structured 429). `stravaClient.ts` is
+  transitional and sends no `Authorization` header, so every call there fails
+  with 401, mapped to a not-yet-ported message. Only genuine 404/empty throws
+  `StreamsUnavailableError` (the one error a caller may degrade on); catching
+  more misreports failures as absences.
 - **Derived numbers have exactly one home.** GAP: `hillAnalysis.ts`
   (`gapFactor`, `computeGrades`) — `splitAnalysis.ts` imports, never
-  re-derives. Time-free segment/route profiles: `gradientProfile.ts` (+ shared
-  prose in `tools/_profileText.ts`). CTL/ATL/TSB and any projection/taper
-  math: `fitnessTrend.ts`. Route elevation resolves once via `loadRouteProfile`
-  (genuine 404 → GPX `<ele>` fallback). Text tool and app reading different
-  copies is the failure mode these prevent.
+  re-derives. CTL/ATL/TSB and any projection/taper math: `fitnessTrend.ts`.
+  Text tool and app reading different copies is the failure mode these
+  prevent.
 - **Telemetry:** `dispatchToolCall` emits one JSON line per call; timer starts
   before token resolution (not-connected calls count); a returned `isError`
   counts as an error; `recordToolCall` can never fail the call it describes.
@@ -65,6 +66,8 @@ breaking them has shipped bugs — do not work around them locally.
   handlers as argument 2; never read `process.env.INTERVALS_API_KEY`
   elsewhere. A missing key maps to one not-configured message naming the env
   var.
+- **`stravaClient.ts` is transitional:** tools are being ported to an
+  intervals.icu client (Phases 1 and 2). Do not add new callers.
 - **Ids go through `stravaIdInput`** (`tools/_ids.ts`). Advertised schema is
   string-only (`stravaIdJsonSchemaOverride`) because ids above 2^53 are
   rounded by hosts' `JSON.parse` unrecoverably; safe-int numbers accepted at

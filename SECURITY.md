@@ -7,7 +7,7 @@ privately.
 ## Supported versions
 
 Only the latest release receives security fixes. Older tags and the
-corresponding `ghcr.io/ljcl/intervals-mcp` images are not patched — upgrade to
+corresponding `ghcr.io/ljcl/intervals-mcp` images are not patched: upgrade to
 the newest version before reporting an issue you can only reproduce on an old
 one.
 
@@ -51,4 +51,4 @@ Out of scope:
 
 If you find the API key or other secrets leaking anywhere outside the
 environment (logs, error messages, MCP tool output), that is a
-vulnerability — please report it.
+vulnerability, please report it.

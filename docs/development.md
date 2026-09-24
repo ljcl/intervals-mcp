@@ -123,6 +123,21 @@ jobs that run turbo tasks take the `.turbo` cache, and the key is namespaced
 `<os>-turbo-<workflow>-<job>-<sha>` — otherwise an early-finishing job reserves
 the key and later jobs cannot save, or same-SHA jobs collide.
 
+## Refreshing the intervals.icu API spec
+
+`docs/intervals-openapi.json` is a vendored, pretty-printed copy of
+intervals.icu's OpenAPI document. Re-fetch it when the API changes, or
+periodically to catch drift:
+
+```bash
+curl -s -A "intervals-mcp/0.1.0 (+https://github.com/ljcl/intervals-mcp)" \
+  https://intervals.icu/api/v1/docs | jq . > docs/intervals-openapi.json
+jq -r '.info.title, .info.version, (.paths|keys|length)' docs/intervals-openapi.json
+```
+
+Anything the spec itself does not say (auth quirks, undocumented behaviour,
+open questions) belongs in [api-notes.md](api-notes.md), not here.
+
 ## Clearing a `bun audit` failure
 
 `ci.yml`'s `audit` job is advisory on PRs and main pushes and a **hard gate on

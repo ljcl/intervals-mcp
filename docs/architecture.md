@@ -47,9 +47,8 @@ never per-tool.
   a tool can quote). Every other HTTP failure becomes a
   `StravaApiError extends HttpError`, so the status survives the translation.
 - Flattening either into a plain `Error` silently breaks callers that degrade
-  on type or status — e.g. scan tools' `instanceof RateLimitError` abort and
-  `loadRouteProfile`'s 404 GPX fallback. A caller may only degrade on a type
-  or a status that is still there.
+  on type or status (e.g. scan tools' `instanceof RateLimitError` abort). A
+  caller may only degrade on a type or a status that is still there.
 - Tool-facing error text has one home: `toolErrorText` in
   `tools/_errors.ts`. It maps `RateLimitError` to the window/reset line
   (quoting `detail`), `HttpError.status` 404 to the tool's not-found sentence
@@ -86,8 +85,10 @@ per-tool.
   path.
 - A successful write invalidates every cached read on the same branch —
   descendants (so `update-activity` drops the activity's cached
-  detail/streams/zones/laps) **and** ancestors, because `star-segment` PUTs
-  `/segments/{id}/starred` and flips `starred` on the parent.
+  detail/streams/zones/laps) **and** ancestors, since a write to a
+  sub-resource can change how its parent reads. No current tool writes a
+  sub-resource, but `invalidateWritten` (`fetchClient.ts`) still walks both
+  directions so a future one is covered without a second rule.
 - `skipCache: true` bypasses entirely; the `update-activity` append read uses
   it so it never composes onto a stale description.
 - **The cache never shares references.** Every value it hands out (a hit, the
@@ -114,8 +115,11 @@ per-tool.
 Every stream read goes through the `stravaClient.ts` wrapper —
 `getActivityStreams()` — never a bare `stravaApi.get`. It runs through one
 private `fetchStreamSet` core, so the contract is stated once: it validates
-the `[{type, data}]` shape and routes failures through `handleApiError` (a 401
-refreshes and retries; a 429 gets the structured message).
+the `[{type, data}]` shape and routes failures through `handleApiError`.
+`stravaClient.ts` itself is transitional (see its module comment): every
+request sends no `Authorization` header, so it always fails with 401, which
+`handleApiError` turns into a message naming the tool as not yet ported to
+intervals.icu; a 429 still gets the structured rate-limit message.
 
 Only a genuine 404 or empty response throws `StreamsUnavailableError` — the
 one error a caller may degrade on ("this resource has no recorded samples").
@@ -124,18 +128,6 @@ missing. Catching anything broader misreports failures (expired tokens, rate
 limits) as absences.
 
 ## Analysis math: one home per definition
-
-**Distance + altitude analysis.** A segment's stored streams and a saved
-route's carry no `time`, so `hillAnalysis.ts`'s pace/HR machinery cannot serve
-them. `gradientProfile.ts` is the single home for the time-free half —
-gradient bands, sustained climbs (reusing hillAnalysis's `computeGrades` /
-`detectSustained`), the steepest sustained window, and a shape verdict — shared
-by `get-segment-profile` and `get-route-preview`, whose common prose lives in
-`tools/_profileText.ts`. A saved route's elevation resolves once in
-`routeProfile.ts` (`loadRouteProfile`), used by both `get-route-map-data` and
-`get-route-preview` so chart and prose cannot disagree. Routes predating
-Strava's stored profiles 404 and fall back to `<ele>` parsed from the GPX
-export (`gpxTrackPoints.ts`); only that genuine absence degrades.
 
 **Grade-adjusted pace has one definition.** `hillAnalysis.ts`'s `gapFactor`
 (Minetti) and `computeGrades` (Strava's `grade_smooth`, else an altitude
@@ -234,9 +226,10 @@ strings rather than parsing them back.
 A tool that returns data publishes an `outputSchema` and a matching
 `structuredContent`, so a caller chains on fields instead of regexing ids out
 of prose. Schemas live in `tools/outputs.ts`, **grouped, not per file**:
-`SegmentSummarySchema` + `toSegmentSummary` serve get-segment,
-list-starred-segments, and explore-segments alike; the same pattern covers
-efforts, routes, and the two write tools. `warnOnSchemaDrift` validates every
+`PaceSchema` is defined once and reused (extended where a tool needs extra
+fields) across training-load, running-summary, best-efforts, race-prediction,
+and lap output schemas, so pace formatting cannot drift between tools that
+report it. `warnOnSchemaDrift` validates every
 payload outside production, so a shape that stops matching its schema is noisy
 in dev rather than silently wrong in a host. `get-activity-zones` deliberately
 reuses `mapActivityZones` — the activity-zones app's mapper — so the text tool

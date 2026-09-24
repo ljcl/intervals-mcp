@@ -1,38 +1,26 @@
-# Strava MCP
+# Intervals Extra (intervals-mcp)
 
-[![CI](https://github.com/ljcl/strava-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/ljcl/strava-mcp/actions/workflows/ci.yml)
-[![Storybook](https://img.shields.io/badge/Storybook-live-ff4785?logo=storybook&logoColor=white)](https://ljcl.github.io/strava-mcp/)
+[![CI](https://github.com/ljcl/intervals-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/ljcl/intervals-mcp/actions/workflows/ci.yml)
+[![Storybook](https://img.shields.io/badge/Storybook-live-ff4785?logo=storybook&logoColor=white)](https://ljcl.github.io/intervals-mcp/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
-A Model Context Protocol (MCP) server that supplements the official Strava MCP connector. It adds write access, segments, routes, photos, derived analysis, and interactive visualizations that the official connector does not provide.
+A single-user remote MCP server for intervals.icu run data and analysis, with interactive MCP Apps. Continues from [strava-mcp](https://github.com/ljcl/strava-mcp).
 
-## Features
+> **Migration in progress.** The server is being ported from Strava to
+> intervals.icu. Most tools still call the retired Strava client and will
+> fail with a "not yet ported" error until each is moved over in Phases 1 and
+> 2. `INTERVALS_API_KEY` is validated and reported on `/health`, but no tool
+> calls the intervals.icu API yet.
 
-- Write and update activities (title, description, sport type, gear, flags)
-- Create manual activities for sessions with no device recording (strength, yoga, treadmill)
-- Explore, view, star, and manage segments
-- Fetch per-activity photos, zone breakdowns, and running summaries
-- List and view details of saved routes
-- Export routes (GPX/TCX) and activity tracks (GPX built from streams)
-- Derived analysis Strava does not expose: interval detection, climb/descent breakdown, aerobic decoupling, training load, fitness/fatigue/form (CTL/ATL/TSB), and a solved taper to a target race-day form
-- AI-friendly JSON responses via MCP
-- Nine interactive visualizations rendered in MCP-compatible hosts — activity chart, cadence trends, route map, activity segments, training load, compare activities, activity zones, segment progress, and fitness trend
-- Guided prompts for weekly reviews, annotating a run, and segment hunting ([docs/tools.md](docs/tools.md#prompts))
-- Streamable HTTP transport for remote deployment
+## Setup
 
-Browse the UI components in the [live Storybook](https://ljcl.github.io/strava-mcp/).
-
-The full tool catalog, prompts, permission behaviour, and example requests live in [docs/tools.md](docs/tools.md).
-
-## Quick Start (Docker)
-
-### 1. Get an intervals.icu API Key
+### 1. Get an intervals.icu API key
 
 1. Log in to [intervals.icu](https://intervals.icu)
 2. Go to Settings, Developer Settings
 3. Copy your personal API key
 
-### 2. Configure Environment
+### 2. Configure environment
 
 ```bash
 cp .env.example .env
@@ -44,39 +32,43 @@ Edit `.env` with your values:
 INTERVALS_API_KEY=your_api_key
 ```
 
-All variables are listed in [docs/operations.md](docs/operations.md#environment-variables). Prefer the prebuilt image? Pull `ghcr.io/ljcl/strava-mcp:latest` (also on the [MCP registry](https://registry.modelcontextprotocol.io) as `io.github.ljcl/strava-mcp`) and point your compose `image:` at it instead of building; you still supply your own API key. Published images carry SBOM/provenance attestations you can verify; see [operations.md](docs/operations.md#verifying-a-pulled-image).
+All variables are listed in [docs/operations.md](docs/operations.md#environment-variables).
 
-### 3. Start the Server
+### 3. Run it
+
+Local development (needs [Bun](https://bun.sh/)):
+
+```bash
+bun install
+bun run dev
+```
+
+Docker:
 
 ```bash
 docker compose up -d
 ```
 
-`GET /health` reports liveness without spending an intervals.icu API request; with `MCP_AUTH_TOKEN` it also reports config and rate-limit state. Response shapes and monitoring guidance: [operations.md](docs/operations.md#health-check).
+Prefer the prebuilt image? Pull `ghcr.io/ljcl/intervals-mcp:latest` (also on
+the [MCP registry](https://registry.modelcontextprotocol.io) as
+`io.github.ljcl/intervals-mcp`) and point your compose `image:` at it instead
+of building; you still supply your own API key. Published images carry
+SBOM/provenance attestations you can verify; see
+[operations.md](docs/operations.md#verifying-a-pulled-image).
 
-### 4. Connect to Claude Desktop
+`GET /health` reports liveness without spending an intervals.icu API request;
+with `MCP_AUTH_TOKEN` it also reports config and rate-limit state. Response
+shapes and monitoring guidance: [operations.md](docs/operations.md#health-check).
 
-Add to your Claude configuration (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
-
-```json
-{
-  "mcpServers": {
-    "strava": {
-      "type": "url",
-      "url": "https://your-public-url/mcp",
-      "headers": { "Authorization": "Bearer your-mcp-auth-token" }
-    }
-  }
-}
-```
-
-The `headers` entry is only needed when `MCP_AUTH_TOKEN` is set (recommended for tunnel-exposed servers — see [Securing the endpoint](#securing-the-endpoint)).
-
-Restart Claude Desktop to load the new configuration.
+Point any client at `http://localhost:3000/mcp`. Repo layout, task runner,
+tests, coverage gates, and Storybook workflow: [docs/development.md](docs/development.md).
+Agent conventions live in [AGENTS.md](AGENTS.md).
 
 ## Connecting to AI Tools
 
-Most AI tools (Claude Desktop, Claude Code, etc.) need an HTTPS URL to reach your MCP server. Since the server runs on your local network, you'll need a tunnel to expose it.
+Most AI tools (Claude Desktop, Claude Code, etc.) need an HTTPS URL to reach
+your MCP server. Since the server runs on your local network, you'll need a
+tunnel to expose it.
 
 ### Tailscale Funnel (Recommended)
 
@@ -97,28 +89,56 @@ cloudflared tunnel --url http://localhost:3000
 
 ### Securing the endpoint
 
-A tunnel makes `/mcp` reachable by anyone who discovers the URL, including the `update-activity` write tool and the intervals.icu API key configured on the server. Set `MCP_AUTH_TOKEN` to a long random secret (`openssl rand -hex 32`) and every `/mcp` request requires `Authorization: Bearer <token>`; each client snippet below shows where the header goes. The secret also gates the detailed half of `/health`. Full details: [operations.md](docs/operations.md#securing-the-endpoint).
+A tunnel makes `/mcp` reachable by anyone who discovers the URL, including
+the intervals.icu API key configured on the server. Set `MCP_AUTH_TOKEN` to a
+long random secret (`openssl rand -hex 32`) and every `/mcp` request requires
+`Authorization: Bearer <token>`; each client snippet below shows where the
+header goes. The secret also gates the detailed half of `/health`. Full
+details: [operations.md](docs/operations.md#securing-the-endpoint).
 
-Set it in `.env` alongside your API key; `docker-compose.yml` forwards it automatically.
+Set it in `.env` alongside your API key; `docker-compose.yml` forwards it
+automatically.
 
 ```text
 AI Tool (Claude Desktop, Claude Code, etc.)
     │  HTTPS
 HTTPS Tunnel (Tailscale / Cloudflare)
     │  HTTP (localhost:3000)
-Strava MCP Server (Docker / Bun)
+intervals-mcp Server (Docker / Bun)
     │  HTTPS
-Strava API
+intervals.icu API
 ```
 
 ### Client configuration
 
-The server works with any MCP client that supports the Streamable HTTP transport. In every snippet below, replace `https://your-public-url` with your tunnel URL (or `http://localhost:3000` for local development), and include the `Authorization` header only if you set `MCP_AUTH_TOKEN`.
+The server works with any MCP client that supports the Streamable HTTP
+transport. In every snippet below, replace `https://your-public-url` with
+your tunnel URL (or `http://localhost:3000` for local development), and
+include the `Authorization` header only if you set `MCP_AUTH_TOKEN`.
+
+#### Claude Desktop
+
+Add to your Claude configuration
+(`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
+
+```json
+{
+  "mcpServers": {
+    "intervals-mcp": {
+      "type": "url",
+      "url": "https://your-public-url/mcp",
+      "headers": { "Authorization": "Bearer your-mcp-auth-token" }
+    }
+  }
+}
+```
+
+Restart Claude Desktop to load the new configuration.
 
 #### Claude Code
 
 ```bash
-claude mcp add --transport http strava https://your-public-url/mcp \
+claude mcp add --transport http intervals-mcp https://your-public-url/mcp \
   --header "Authorization: Bearer your-mcp-auth-token"
 ```
 
@@ -129,7 +149,7 @@ Add to `.cursor/mcp.json` in your project (or `~/.cursor/mcp.json` for all proje
 ```json
 {
   "mcpServers": {
-    "strava": {
+    "intervals-mcp": {
       "url": "https://your-public-url/mcp",
       "headers": { "Authorization": "Bearer your-mcp-auth-token" }
     }
@@ -144,7 +164,7 @@ Add to `.vscode/mcp.json` in your workspace (or run **MCP: Add Server** from the
 ```json
 {
   "servers": {
-    "strava": {
+    "intervals-mcp": {
       "type": "http",
       "url": "https://your-public-url/mcp",
       "headers": { "Authorization": "Bearer your-mcp-auth-token" }
@@ -157,66 +177,12 @@ Add to `.vscode/mcp.json` in your workspace (or run **MCP: Add Server** from the
 
 Any client that speaks [Streamable HTTP](https://modelcontextprotocol.io/docs/concepts/transports) can connect to the `/mcp` endpoint directly. One URL serves both protocol eras: 2026-07-28 clients send stateless requests carrying the `io.modelcontextprotocol/*` envelope keys (`server/discover` advertises capabilities); 2025-era clients use the ordinary `initialize` handshake. POST JSON-RPC messages with an `Accept: application/json, text/event-stream` header. Protocol details: [docs/architecture.md](docs/architecture.md#runtime-and-transport).
 
-## Using alongside the official Strava MCP
+## Tools
 
-Strava's official MCP connector handles activity discovery and basic reads. This server supplements it with everything the official connector does not offer: writing to activities, segments, routes and GPX/TCX export, photos, derived analysis, and interactive visualizations.
-
-### Install both
-
-- Official: `claude mcp add --transport http strava-mcp https://mcp.strava.com/mcp` (or via claude.ai Connectors / Claude Desktop).
-- This server: see the install steps above.
-
-### Who does what
-
-| Capability | Official | This server |
-| ---------- | -------- | ----------- |
-| List / read activities, streams, profile, zones, gear, clubs, training plan | yes | no (use official) |
-| Update activities, star segments | no | yes |
-| Segment detail / search / efforts | no | yes |
-| Routes plus GPX/TCX export | no | yes |
-| Activity GPX export (synthesized from streams) | no | yes |
-| Activity photos | no | yes |
-| Athlete stats, per-activity zones, best efforts, running summary, training load, compare | no | yes |
-| Interval, hill, and aerobic analysis; fitness/fatigue/form (CTL/ATL/TSB) | no | yes |
-| Interactive apps: activity chart, cadence trends, route map, activity segments, training load, compare activities, activity zones, segment progress, fitness trend | no | yes |
-
-### Caveats
-
-- The official connector requires a Strava subscription and currently runs only in Anthropic clients.
-- With the duplicate reads removed, this server now effectively assumes the official connector is installed for activity discovery. The aggregate analysis tools (`get-best-efforts`, `get-training-load`) fetch their own activity lists, but per-activity tools (`get-running-summary`, `compare-activities`, `get-activity-zones`, etc.) need an activity id from the official `list_activities`.
-- The two use separate rate-limit quotas, so running both spreads API load.
-
-### Recommended workflow
-
-Use the official connector to discover and read activities, then use this server to write, explore segments, manage and export routes, and visualize. The model can pass activity ids from official `list_activities` directly into this server's tools.
-
-## Example requests
-
-Ask your AI assistant questions like these (use the official Strava MCP to discover activity IDs, then pass them to these tools):
-
-- "Update the title of activity 12345678 to 'Morning Threshold'"
-- "Show me the HR zone breakdown for activity 12345678"
-- "Break down the intervals in activity 12345678 — did I fade across the reps?"
-- "Did I positive-split Sunday's long run, or was that just the hills?"
-- "My race is on 13 September — what should the next three weeks look like so I arrive at TSB +10?"
-- "Am I getting faster on segment 8109834? Show my effort history"
-- "Map my race route with fuel stops at 10k, 21k, and 32k, and flag the climb at 28k"
-
-More in [docs/tools.md](docs/tools.md#example-requests).
-
-## Local Development
-
-Prerequisites: [Bun](https://bun.sh/) and an intervals.icu account.
-
-```bash
-bun install
-cp .env.example .env   # add your INTERVALS_API_KEY
-
-# Start dev server (server + MCP App watchers)
-bun run dev
-```
-
-Then point any client at `http://localhost:3000/mcp`. Repo layout, task runner, tests, coverage gates, and Storybook workflow: [docs/development.md](docs/development.md). Agent conventions live in [AGENTS.md](AGENTS.md).
+The full tool catalog, prompts, permission behaviour, and example requests
+live in [docs/tools.md](docs/tools.md). Most of the tools listed there still
+call the transitional Strava client and return a "not yet ported" error until
+Phases 1 and 2 land.
 
 ## Documentation
 
@@ -225,6 +191,7 @@ Then point any client at `http://localhost:3000/mcp`. Repo layout, task runner, 
 | [docs/tools.md](docs/tools.md) | Full tool catalog, prompts, permission behaviour, example requests |
 | [docs/operations.md](docs/operations.md) | Environment variables, the API key, health endpoint, rate limits, endpoint security |
 | [docs/architecture.md](docs/architecture.md) | Server architecture: transport, HTTP layer, cache, error taxonomy, analysis math |
+| [docs/api-notes.md](docs/api-notes.md) | Calling the intervals.icu API: auth, endpoints, open questions for Phase 1 |
 | [docs/mcp-apps.md](docs/mcp-apps.md) | MCP App packages: shared shell, mobile, theming, per-app details |
 | [docs/development.md](docs/development.md) | Monorepo mechanics: Turborepo, coverage gates, Storybook gates, Docker build |
 | [docs/releasing.md](docs/releasing.md) | Release automation: Conventional Commit PR titles, release-please, publishing |
