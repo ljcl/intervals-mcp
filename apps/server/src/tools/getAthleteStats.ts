@@ -1,188 +1,194 @@
 import { z } from "zod";
+import { getTimeZone } from "../config";
+import { formatDuration } from "../formatters";
 import {
-  getAthleteStats as fetchAthleteStats,
-  getAuthenticatedAthlete,
-  type StravaStats,
-} from "../stravaClient";
+  type IntervalsActivity,
+  listActivities as listActivitiesClient,
+} from "../intervalsClient";
+import { NO_PROGRESS, type ReportProgress } from "../progress";
+import { addDays, todayLocal } from "../utils/localDate";
+import { isPaceActivity, paceFromDistanceTime } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
 import { toolErrorText } from "./_errors";
-import { stravaIdInput } from "./_ids";
-import { AthleteStatsOutputSchema, buildAthleteStatsOutput } from "./outputs";
+import {
+  type AthleteStatsOutput,
+  AthleteStatsOutputSchema,
+  warnOnSchemaDrift,
+} from "./outputs";
 
-// Input schema: athleteId is optional and defaults to the authenticated athlete.
-const GetAthleteStatsInputSchema = z.object({
-  athleteId: stravaIdInput(
-    "Optional. The unique identifier of the athlete to fetch stats for. Defaults to the authenticated athlete when omitted (Strava only returns meaningful totals for the authenticated athlete).",
-  ).optional(),
-});
+const name = "get-athlete-stats";
 
-// Define type alias for input
+const description = `
+Run totals for the athlete: this week, the last 4 weeks, this month, and
+year-to-date, aggregated from intervals.icu activities (Run, TrailRun,
+VirtualRun). No inputs.
+
+Each bucket reports run count, distance, moving time, elevation gain,
+training load, and average pace computed from total distance / total moving
+time.
+
+Notes:
+- The week starts Monday in the server's configured time zone
+- "This month" is the local calendar month; YTD is from 1 January local
+`;
+
+const GetAthleteStatsInputSchema = z.object({});
+
 type GetAthleteStatsInput = z.infer<typeof GetAthleteStatsInputSchema>;
 
-// Helper function to format numbers as strings with labels (metric)
-function formatStat(
-  value: number | null | undefined,
-  unit: "km" | "m" | "hrs",
-): string {
-  if (value === null || value === undefined) return "N/A";
-
-  let formattedValue: string;
-  if (unit === "km") {
-    formattedValue = (value / 1000).toFixed(2);
-  } else if (unit === "m") {
-    formattedValue = Math.round(value).toString();
-  } else if (unit === "hrs") {
-    formattedValue = (value / 3600).toFixed(1);
-  } else {
-    formattedValue = value.toString();
-  }
-  return `${formattedValue} ${unit}`;
+export interface RunTotals {
+  runs: number;
+  distance_km: number;
+  moving_time_s: number;
+  moving_time: string;
+  elevation_gain_m: number;
+  load: number;
+  average_pace_min_per_km: string | null;
 }
 
-// Format athlete stats (metric only)
-function formatStats(stats: StravaStats): string {
-  const format = (
-    label: string,
-    total: number | null | undefined,
-    unit: "km" | "m" | "hrs",
-    count?: number | null,
-    time?: number | null,
-  ) => {
-    let line = `   - ${label}: ${formatStat(total, unit)}`;
-    if (count !== undefined && count !== null) line += ` (${count} activities)`;
-    if (time !== undefined && time !== null)
-      line += ` / ${formatStat(time, "hrs")} hours`;
-    return line;
+/**
+ * Monday of the week containing `ymd` (YYYY-MM-DD), in the same UTC-midnight
+ * math as {@link addDays}. `getUTCDay()` returns 0 (Sunday) through 6
+ * (Saturday); `(dow + 6) % 7` turns that into days-since-Monday.
+ */
+export function startOfWeekMonday(ymd: string): string {
+  const [year, month, day] = ymd.split("-").map(Number);
+  const dow = new Date(
+    Date.UTC(year ?? 1970, (month ?? 1) - 1, day ?? 1),
+  ).getUTCDay();
+  const daysSinceMonday = (dow + 6) % 7;
+  return addDays(ymd, -daysSinceMonday);
+}
+
+/** First day of the local calendar month containing `ymd`. */
+export function startOfMonth(ymd: string): string {
+  return `${ymd.slice(0, 7)}-01`;
+}
+
+/** 1 January of the local calendar year containing `ymd`. */
+export function startOfYear(ymd: string): string {
+  return `${ymd.slice(0, 4)}-01-01`;
+}
+
+/**
+ * Sums Run/TrailRun/VirtualRun activities whose local date falls in
+ * `[start, end]` (both inclusive) into one totals bucket. Exported for direct
+ * testing. Average pace comes from total distance / total moving time, not
+ * an average of per-activity paces, per the controller brief.
+ */
+export function aggregateRunTotals(
+  activities: IntervalsActivity[],
+  start: string,
+  end: string,
+): RunTotals {
+  let runs = 0;
+  let distanceM = 0;
+  let movingTimeS = 0;
+  let elevationM = 0;
+  let load = 0;
+
+  for (const activity of activities) {
+    const type = activity.type ?? "";
+    if (!isPaceActivity(type)) continue;
+    const date =
+      activity.start_date_local.split("T")[0] ?? activity.start_date_local;
+    if (date < start || date > end) continue;
+
+    runs += 1;
+    distanceM += activity.distance ?? 0;
+    movingTimeS += activity.moving_time ?? 0;
+    elevationM += activity.total_elevation_gain ?? 0;
+    if (activity.icu_training_load != null) load += activity.icu_training_load;
+  }
+
+  return {
+    runs,
+    distance_km: Math.round((distanceM / 1000) * 100) / 100,
+    moving_time_s: movingTimeS,
+    moving_time: formatDuration(movingTimeS),
+    elevation_gain_m: Math.round(elevationM),
+    load: Math.round(load),
+    average_pace_min_per_km: paceFromDistanceTime(distanceM, movingTimeS),
   };
-
-  let response = "📊 **Your Strava Stats:**\n";
-
-  if (stats.biggest_ride_distance !== undefined) {
-    response += "**Rides:**\n";
-    response += `${format("Biggest Ride", stats.biggest_ride_distance, "km")}\n`;
-  }
-  if (stats.recent_ride_totals) {
-    response += "*Recent Rides (last 4 weeks):*\n";
-    response += `${format(
-      "Distance",
-      stats.recent_ride_totals.distance,
-      "km",
-      stats.recent_ride_totals.count,
-      stats.recent_ride_totals.moving_time,
-    )}\n`;
-    response += `${format("Elevation Gain", stats.recent_ride_totals.elevation_gain, "m")}\n`;
-  }
-  if (stats.ytd_ride_totals) {
-    response += "*Year-to-Date Rides:*\n";
-    response += `${format(
-      "Distance",
-      stats.ytd_ride_totals.distance,
-      "km",
-      stats.ytd_ride_totals.count,
-      stats.ytd_ride_totals.moving_time,
-    )}\n`;
-    response += `${format("Elevation Gain", stats.ytd_ride_totals.elevation_gain, "m")}\n`;
-  }
-  if (stats.all_ride_totals) {
-    response += "*All-Time Rides:*\n";
-    response += `${format(
-      "Distance",
-      stats.all_ride_totals.distance,
-      "km",
-      stats.all_ride_totals.count,
-      stats.all_ride_totals.moving_time,
-    )}\n`;
-    response += `${format("Elevation Gain", stats.all_ride_totals.elevation_gain, "m")}\n`;
-  }
-
-  // Similar blocks for Runs and Swims if needed...
-  if (stats.recent_run_totals || stats.ytd_run_totals || stats.all_run_totals) {
-    response += "\n**Runs:**\n";
-    if (stats.recent_run_totals) {
-      response += "*Recent Runs (last 4 weeks):*\n";
-      response += `${format(
-        "Distance",
-        stats.recent_run_totals.distance,
-        "km",
-        stats.recent_run_totals.count,
-        stats.recent_run_totals.moving_time,
-      )}\n`;
-      response += `${format("Elevation Gain", stats.recent_run_totals.elevation_gain, "m")}\n`;
-    }
-    if (stats.ytd_run_totals) {
-      response += "*Year-to-Date Runs:*\n";
-      response += `${format(
-        "Distance",
-        stats.ytd_run_totals.distance,
-        "km",
-        stats.ytd_run_totals.count,
-        stats.ytd_run_totals.moving_time,
-      )}\n`;
-      response += `${format("Elevation Gain", stats.ytd_run_totals.elevation_gain, "m")}\n`;
-    }
-    if (stats.all_run_totals) {
-      response += "*All-Time Runs:*\n";
-      response += `${format(
-        "Distance",
-        stats.all_run_totals.distance,
-        "km",
-        stats.all_run_totals.count,
-        stats.all_run_totals.moving_time,
-      )}\n`;
-      response += `${format("Elevation Gain", stats.all_run_totals.elevation_gain, "m")}\n`;
-    }
-  }
-
-  // Add Swims similarly if needed
-
-  return response;
 }
 
-// Tool definition
+function formatBucketLine(label: string, totals: RunTotals): string {
+  const parts = [
+    `${totals.runs} runs`,
+    `${totals.distance_km.toFixed(2)} km`,
+    totals.moving_time,
+  ];
+  if (totals.average_pace_min_per_km) {
+    parts.push(`${totals.average_pace_min_per_km} /km avg`);
+  }
+  parts.push(`+${totals.elevation_gain_m} m`);
+  parts.push(`load ${totals.load}`);
+  return `${label}: ${parts.join(", ")}`;
+}
+
+/** Builds the tool's text response. Exported for direct testing. */
+export function formatAthleteStatsText(response: AthleteStatsOutput): string {
+  return [
+    "Run totals",
+    formatBucketLine("This week", response.this_week),
+    formatBucketLine("Last 4 weeks", response.last_4_weeks),
+    formatBucketLine("This month", response.this_month),
+    formatBucketLine("YTD", response.ytd),
+  ].join("\n");
+}
+
 export const getAthleteStatsTool = {
-  name: "get-athlete-stats",
-  description:
-    "Fetches the activity statistics (recent, YTD, all-time) for an athlete. Defaults to the authenticated athlete; pass athleteId to target a specific athlete.",
+  name,
+  description,
   inputSchema: GetAthleteStatsInputSchema,
   outputSchema: AthleteStatsOutputSchema,
   annotations: READ_ONLY,
-  execute: async ({ athleteId }: GetAthleteStatsInput, token: string) => {
-    let resolvedAthleteId = athleteId;
+  execute: async (
+    _input: GetAthleteStatsInput,
+    apiKey: string,
+    progress: ReportProgress = NO_PROGRESS,
+  ) => {
+    const tz = getTimeZone();
+    const today = todayLocal(tz);
+    const weekStart = startOfWeekMonday(today);
+    const last4WeeksStart = addDays(today, -27);
+    const monthStart = startOfMonth(today);
+    const yearStart = startOfYear(today);
+    // The fetch window must cover every bucket. YTD needs 1 January; early
+    // January's rolling 28-day bucket needs further back than that.
+    const fetchOldest =
+      yearStart < last4WeeksStart ? yearStart : last4WeeksStart;
 
     try {
-      if (resolvedAthleteId === undefined) {
-        console.error(
-          "No athleteId provided; resolving authenticated athlete...",
-        );
-        const athlete = await getAuthenticatedAthlete(token);
-        // Athlete ids are normalised to strings by the client schemas; pass
-        // through untouched so oversized ids stay exact.
-        resolvedAthleteId = athlete.id;
-      }
+      progress(`Fetching run activities ${fetchOldest} to ${today}`);
+      const activities = await listActivitiesClient(apiKey, {
+        oldest: fetchOldest,
+        newest: today,
+      });
 
-      console.error(`Fetching stats for athlete ${resolvedAthleteId}...`);
-      const stats = await fetchAthleteStats(token, resolvedAthleteId);
-      const formattedStats = formatStats(stats);
+      const response: AthleteStatsOutput = {
+        this_week: aggregateRunTotals(activities, weekStart, today),
+        last_4_weeks: aggregateRunTotals(activities, last4WeeksStart, today),
+        this_month: aggregateRunTotals(activities, monthStart, today),
+        ytd: aggregateRunTotals(activities, yearStart, today),
+        units: { distance: "km", pace: "min/km", time: "s", elevation: "m" },
+      };
 
-      console.error(
-        `Successfully fetched stats for athlete ${resolvedAthleteId}.`,
-      );
+      warnOnSchemaDrift(name, AthleteStatsOutputSchema, response);
+
       return {
-        content: [{ type: "text" as const, text: formattedStats }],
-        structuredContent: buildAthleteStatsOutput(stats),
+        content: [
+          { type: "text" as const, text: formatAthleteStatsText(response) },
+        ],
+        structuredContent: response,
       };
     } catch (error) {
-      const athleteLabel =
-        resolvedAthleteId !== undefined
-          ? `athlete ${resolvedAthleteId}`
-          : "the authenticated athlete";
       return {
         content: [
           {
             type: "text" as const,
             text: toolErrorText(error, {
-              context: `fetch stats for ${athleteLabel}`,
-              notFound: `Athlete ${resolvedAthleteId !== undefined ? `with ID ${resolvedAthleteId} ` : ""}not found (when fetching stats).`,
+              context: `fetch run stats through ${today}`,
             }),
           },
         ],

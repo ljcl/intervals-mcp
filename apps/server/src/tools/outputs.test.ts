@@ -1,39 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { type StravaStats } from "../stravaClient";
 import {
   AthleteStatsOutputSchema,
   BestEffortsOutputSchema,
-  buildAthleteStatsOutput,
   CompareActivitiesOutputSchema,
   RunningSummaryOutputSchema,
   TrainingLoadOutputSchema,
 } from "./outputs";
-
-describe("buildAthleteStatsOutput", () => {
-  it("flattens totals to schema-valid shape", () => {
-    const stats = {
-      recent_run_totals: {
-        count: 4,
-        distance: 40000,
-        moving_time: 12000,
-        elevation_gain: 300,
-      },
-      biggest_ride_distance: 80000,
-    } as unknown as StravaStats;
-
-    const out = buildAthleteStatsOutput(stats);
-    expect(out.recent_run_totals).toEqual({
-      count: 4,
-      distance_m: 40000,
-      moving_time_s: 12000,
-      elevation_gain_m: 300,
-    });
-    expect(out.ytd_run_totals).toBeNull();
-    expect(out.biggest_ride_distance_m).toBe(80000);
-    expect(AthleteStatsOutputSchema.safeParse(out).success).toBe(true);
-  });
-});
 
 describe("schemas align with the real tool rawObjects", () => {
   it("TrainingLoadOutputSchema matches the training-load result object", () => {

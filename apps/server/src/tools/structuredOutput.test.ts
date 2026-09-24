@@ -6,7 +6,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getActivity } from "../intervalsClient";
-import { getAuthenticatedAthlete, updateActivity } from "../stravaClient";
+import { updateActivity } from "../stravaClient";
 import {
   ActivityLapsOutputSchema,
   ActivityWriteOutputSchema,
@@ -17,7 +17,6 @@ vi.mock("../stravaClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../stravaClient")>();
   return {
     ...actual,
-    getAuthenticatedAthlete: vi.fn(),
     updateActivity: vi.fn(),
   };
 });
@@ -36,9 +35,6 @@ const { dispatchToolCall } = await import("../server");
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(getAuthenticatedAthlete).mockResolvedValue({
-    measurement_preference: "meters",
-  } as never);
 });
 
 describe("activity read tools", () => {

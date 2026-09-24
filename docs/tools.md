@@ -9,7 +9,7 @@ identity, so renames or schema reshapes re-prompt every user. See
 [architecture.md](architecture.md#tool-metadata) before changing either.
 
 > **Status.** Tools are being ported from Strava to intervals.icu (Phases 1
-> and 2). The fifteen tools below are ported and verified against a real
+> and 2). The sixteen tools below are ported and verified against a real
 > account; until a remaining tool is ported, it fails with a "not yet
 > ported" error.
 
@@ -35,6 +35,7 @@ Strava port.
 | `get-interval-analysis` | Interval detection with urban-stop-aware rest classification and rep fade |
 | `get-best-efforts` | Best times at standard running distances, from intervals.icu's pace curves |
 | `get-race-prediction` | Predicted race times from intervals.icu pace-curve points (Riegel) alongside intervals.icu's own critical-speed model, with confidence, source point, and km goal-pace splits |
+| `get-athlete-stats` | Run totals (this week, last 4 weeks, this month, YTD) aggregated from list-activities data |
 
 `list-activities` defaults to the last 28 days (today back to 27 days
 earlier) in the server's configured time zone, sorted newest first. Filter
@@ -255,12 +256,6 @@ mile paces or splits.
 | `update-activity` | Update an activity's description, title, sport type, gear, or flags |
 | `get-training-load` | Training load summary with trend analysis |
 | `get-fitness-trend` | Fitness/fatigue/form (CTL/ATL/TSB) from relative effort, with rest projection and a solved taper to a target form on a target date |
-
-## Athlete tools
-
-| Tool | Description |
-| ---- | ----------- |
-| `get-athlete-stats` | Activity statistics (recent, YTD, all-time) |
 
 ## Visualization tools
 

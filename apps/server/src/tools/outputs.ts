@@ -1,64 +1,28 @@
 import { z } from "zod";
-import { type StravaStats } from "../stravaClient";
 
 // ---------- get-athlete-stats ----------
-const TotalSchema = z.object({
-  count: z.number().int(),
-  distance_m: z.number().describe("Distance in meters"),
+const RunTotalsSchema = z.object({
+  runs: z.number().int(),
+  distance_km: z.number(),
   moving_time_s: z.number().int(),
+  moving_time: z.string(),
   elevation_gain_m: z.number(),
+  load: z.number(),
+  average_pace_min_per_km: z.string().nullable(),
 });
 export const AthleteStatsOutputSchema = z.object({
-  recent_run_totals: TotalSchema.nullable(),
-  ytd_run_totals: TotalSchema.nullable(),
-  all_run_totals: TotalSchema.nullable(),
-  recent_ride_totals: TotalSchema.nullable(),
-  ytd_ride_totals: TotalSchema.nullable(),
-  all_ride_totals: TotalSchema.nullable(),
-  recent_swim_totals: TotalSchema.nullable(),
-  ytd_swim_totals: TotalSchema.nullable(),
-  all_swim_totals: TotalSchema.nullable(),
-  biggest_ride_distance_m: z.number().nullable(),
-  biggest_climb_elevation_gain_m: z.number().nullable(),
+  this_week: RunTotalsSchema,
+  last_4_weeks: RunTotalsSchema,
+  this_month: RunTotalsSchema,
+  ytd: RunTotalsSchema,
+  units: z.object({
+    distance: z.literal("km"),
+    pace: z.literal("min/km"),
+    time: z.literal("s"),
+    elevation: z.literal("m"),
+  }),
 });
 export type AthleteStatsOutput = z.infer<typeof AthleteStatsOutputSchema>;
-
-type RawTotal =
-  | {
-      count: number;
-      distance: number;
-      moving_time: number;
-      elevation_gain: number;
-    }
-  | null
-  | undefined;
-
-function mapTotal(t: RawTotal) {
-  return t
-    ? {
-        count: t.count,
-        distance_m: t.distance,
-        moving_time_s: t.moving_time,
-        elevation_gain_m: t.elevation_gain,
-      }
-    : null;
-}
-
-export function buildAthleteStatsOutput(s: StravaStats): AthleteStatsOutput {
-  return {
-    recent_run_totals: mapTotal(s.recent_run_totals),
-    ytd_run_totals: mapTotal(s.ytd_run_totals),
-    all_run_totals: mapTotal(s.all_run_totals),
-    recent_ride_totals: mapTotal(s.recent_ride_totals),
-    ytd_ride_totals: mapTotal(s.ytd_ride_totals),
-    all_ride_totals: mapTotal(s.all_ride_totals),
-    recent_swim_totals: mapTotal(s.recent_swim_totals),
-    ytd_swim_totals: mapTotal(s.ytd_swim_totals),
-    all_swim_totals: mapTotal(s.all_swim_totals),
-    biggest_ride_distance_m: s.biggest_ride_distance ?? null,
-    biggest_climb_elevation_gain_m: s.biggest_climb_elevation_gain ?? null,
-  };
-}
 
 // ---------- get-training-load ----------
 const TrainingActivitySchema = z.object({

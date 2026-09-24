@@ -148,9 +148,6 @@ const DetailedAthleteSchema = BaseAthleteSchema.extend({
   bikes: z.array(AthleteGearSchema).optional(),
 });
 
-// Type alias for the inferred athlete type
-export type StravaAthlete = z.infer<typeof DetailedAthleteSchema>;
-
 // --- Stats Schemas ---
 // Schema for individual activity totals (like runs, rides, swims)
 const ActivityTotalSchema = z.object({
@@ -176,7 +173,6 @@ const ActivityStatsSchema = z.object({
   all_run_totals: ActivityTotalSchema,
   all_swim_totals: ActivityTotalSchema,
 });
-export type StravaStats = z.infer<typeof ActivityStatsSchema>;
 
 // --- Gear Schema ---
 const SummaryGearSchema = z
@@ -536,94 +532,6 @@ export async function getAllActivities(
     return await handleApiError<StravaSummaryActivity[]>(
       error,
       "getAllActivities",
-    );
-  }
-}
-
-/**
- * Fetches profile information for the authenticated athlete.
- *
- * @param accessToken - The Strava API access token.
- * @returns A promise that resolves to the detailed athlete profile.
- * @throws Throws an error if the API request fails or the response format is unexpected.
- */
-export async function getAuthenticatedAthlete(
-  accessToken: string,
-): Promise<StravaAthlete> {
-  if (!accessToken) {
-    throw new Error("Strava access token is required.");
-  }
-
-  try {
-    const response = await stravaApi.get<unknown>("/athlete");
-
-    // Validate the response data against the Zod schema
-    const validationResult = DetailedAthleteSchema.safeParse(response.data);
-
-    if (!validationResult.success) {
-      // Log the raw response data on validation failure for debugging
-      console.error(
-        "Strava API raw response data (getAuthenticatedAthlete):",
-        JSON.stringify(response.data, null, 2),
-      );
-      console.error(
-        "Strava API response validation failed (getAuthenticatedAthlete):",
-        validationResult.error,
-      );
-      throw new Error(
-        `Invalid data format received from Strava API: ${validationResult.error.message}`,
-      );
-    }
-    // Type assertion is safe here due to successful validation
-    return validationResult.data;
-  } catch (error) {
-    return await handleApiError<StravaAthlete>(
-      error,
-      "getAuthenticatedAthlete",
-    );
-  }
-}
-
-/**
- * Fetches activity statistics for a specific athlete.
- *
- * @param accessToken - The Strava API access token.
- * @param athleteId - The ID of the athlete whose stats are being requested.
- * @returns A promise that resolves to the athlete's activity statistics.
- * @throws Throws an error if the API request fails or the response format is unexpected.
- */
-export async function getAthleteStats(
-  accessToken: string,
-  athleteId: number | string,
-): Promise<StravaStats> {
-  if (!accessToken) {
-    throw new Error("Strava access token is required.");
-  }
-  if (!athleteId) {
-    throw new Error("Athlete ID is required to fetch stats.");
-  }
-
-  try {
-    const response = await stravaApi.get<unknown>(
-      `/athletes/${athleteId}/stats`,
-    );
-
-    const validationResult = ActivityStatsSchema.safeParse(response.data);
-
-    if (!validationResult.success) {
-      console.error(
-        "Strava API response validation failed (getAthleteStats):",
-        validationResult.error,
-      );
-      throw new Error(
-        `Invalid data format received from Strava API: ${validationResult.error.message}`,
-      );
-    }
-    return validationResult.data;
-  } catch (error) {
-    return await handleApiError<StravaStats>(
-      error,
-      `getAthleteStats for ID ${athleteId}`,
     );
   }
 }

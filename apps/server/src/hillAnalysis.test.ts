@@ -195,7 +195,7 @@ describe("computeHillAnalysis", () => {
 
   it("excludes null heart rate and cadence samples from a climb's average rather than treating them as zero", () => {
     const streams = buildStreams([flat(1000), climb(500), flat(1000)]);
-    const climbStart = streams.grade_smooth!.findIndex((g) => g === 6);
+    const climbStart = streams.grade_smooth!.indexOf(6);
     // Null out half the climb's HR and cadence samples.
     const withGaps: HillStreams = {
       ...streams,

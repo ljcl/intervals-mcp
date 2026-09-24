@@ -10,11 +10,7 @@ import {
   getActivity as getIntervalsActivity,
   type IntervalsAthletePaceCurves,
 } from "./intervalsClient";
-import {
-  getActivityById,
-  getAllActivities,
-  getAthleteStats,
-} from "./stravaClient";
+import { getActivityById, getAllActivities } from "./stravaClient";
 
 vi.mock("./stravaClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./stravaClient")>();
@@ -22,7 +18,6 @@ vi.mock("./stravaClient", async (importOriginal) => {
     ...actual,
     getAllActivities: vi.fn(),
     getActivityById: vi.fn(),
-    getAthleteStats: vi.fn(),
   };
 });
 
@@ -44,7 +39,6 @@ const mockedToken = vi.mocked(getIntervalsApiKey);
 
 const mockedList = vi.mocked(getAllActivities);
 const mockedById = vi.mocked(getActivityById);
-const mockedStats = vi.mocked(getAthleteStats);
 const mockedIntervalsActivity = vi.mocked(getIntervalsActivity);
 const mockedAthleteCurves = vi.mocked(getAthletePaceCurves);
 
@@ -59,7 +53,6 @@ describe("dispatchToolCall input validation", () => {
     mockedToken.mockReturnValue("test-token");
     mockedList.mockReset();
     mockedById.mockReset();
-    mockedStats.mockReset();
     mockedIntervalsActivity.mockReset();
     mockedAthleteCurves.mockReset();
   });
