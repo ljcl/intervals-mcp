@@ -177,6 +177,31 @@ describe("describeRateLimit", () => {
     expect(message).toContain("Daily rate limit reached");
     expect(message).toContain("1000/1000");
   });
+
+  it("falls back to provider-neutral guidance when no rate-limit headers were seen at all", () => {
+    // intervals.icu sends no X-RateLimit-* headers (docs/api-notes.md); a 429
+    // from it carries an empty snapshot. Guessing at Strava's quarter-hour
+    // reset here would be wrong for that provider.
+    const message = describeRateLimit({ observedAt: Date.now() });
+
+    expect(message).toBe("Rate limit reached; wait a few minutes and retry.");
+    expect(message).not.toContain("Strava");
+    expect(message).not.toContain("15-minute window resets at");
+  });
+
+  it("keeps the 15-minute reset detail when headers are present but neither window is cleanly exhausted", () => {
+    // e.g. Strava's read-only quota tripped, which this snapshot shape
+    // doesn't carry separately from the overall quota.
+    const message = describeRateLimit({
+      shortTerm: { limit: 100, usage: 10 },
+      daily: { limit: 1000, usage: 10 },
+      observedAt: Date.now(),
+    });
+
+    expect(message).toContain("Rate limit reached.");
+    expect(message).toContain("15-minute window resets at");
+    expect(message).not.toContain("Strava");
+  });
 });
 
 function makeResponse(

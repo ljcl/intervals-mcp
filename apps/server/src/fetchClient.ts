@@ -80,6 +80,28 @@ export class RateLimitError extends HttpError {
 }
 
 /**
+ * Thrown by the retired `stravaClient.ts` for every call it makes: that
+ * client sends no `Authorization` header on purpose (see its module comment),
+ * so every request answers 401. That 401 means "this tool has not been
+ * ported to intervals.icu yet", a completely different situation from
+ * intervals.icu itself rejecting an API key, and needs its own type so
+ * `toolErrorText` (`tools/_errors.ts`) can tell the two apart by type rather
+ * than by re-parsing the message. Lives here, not in `stravaClient.ts`, so
+ * `tools/_errors.ts` never has to import from `stravaClient.ts`: tool tests
+ * mock that module with bare factories, which would leave a class imported
+ * from there `undefined`.
+ */
+export class NotPortedError extends HttpError {
+  constructor(
+    message: string,
+    response: { status: number; statusText: string; data: string },
+  ) {
+    super(message, response);
+    this.name = "NotPortedError";
+  }
+}
+
+/**
  * Thrown when a request exceeds its timeout and could not be recovered by a
  * retry. Distinct from a generic network fault so callers can say "Strava did
  * not answer in time" rather than surfacing an opaque `TimeoutError`.
@@ -213,17 +235,25 @@ export function describeRateLimit(
     parts.push(
       `15-minute rate limit reached (${snapshot.shortTerm.usage}/${snapshot.shortTerm.limit} requests). Resets at ${reset.toISOString()} (~${mins} min).`,
     );
-  } else {
-    // 429 without a clearly-exhausted window (e.g. read-quota only, or headers
-    // missing) — fall back to the 15-minute reset, the most likely culprit.
+  } else if (snapshot.shortTerm !== undefined || snapshot.daily !== undefined) {
+    // 429 with rate-limit headers present but neither window cleanly
+    // exhausted (e.g. the read-only quota, which this snapshot doesn't carry
+    // separately), Strava's 15-minute window is the most likely culprit, and
+    // headers being present at all means this is a Strava response.
     const reset = next15MinReset(now);
     const mins = Math.max(
       1,
       Math.round((reset.getTime() - now.getTime()) / 60000),
     );
     parts.push(
-      `Strava rate limit reached. The 15-minute window resets at ${reset.toISOString()} (~${mins} min).`,
+      `Rate limit reached. The 15-minute window resets at ${reset.toISOString()} (~${mins} min).`,
     );
+  } else {
+    // No rate-limit headers at all: intervals.icu sends none (see the
+    // `intervalsApi` client below) and paces requests itself instead, so
+    // there is no window boundary to report. Guessing at Strava's
+    // quarter-hour reset here would be actively wrong for that provider.
+    parts.push("Rate limit reached; wait a few minutes and retry.");
   }
 
   if (snapshot.shortTerm) {

@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { basicRunActivity } from "./__fixtures__";
-import { HttpError, RateLimitError, stravaApi } from "./fetchClient";
+import {
+  HttpError,
+  NotPortedError,
+  RateLimitError,
+  stravaApi,
+} from "./fetchClient";
 import {
   getActivityById,
   getActivityLaps,
@@ -40,7 +45,8 @@ describe("handled error shapes", () => {
 
     const error = await getActivityLaps("bad-key", "55").catch((e) => e);
 
-    expect(error).toBeInstanceOf(StravaApiError);
+    expect(error).toBeInstanceOf(NotPortedError);
+    expect(error).not.toBeInstanceOf(StravaApiError);
     expect(error.response.status).toBe(401);
     expect(error.message).toBe(
       "getActivityLaps(55): this tool still uses the retired Strava client and has not been ported to intervals.icu yet.",

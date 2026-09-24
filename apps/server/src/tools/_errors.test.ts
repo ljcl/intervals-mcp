@@ -4,7 +4,8 @@ import {
   handledRateLimit,
   handledSubscriptionRequired,
 } from "../__fixtures__";
-import { HttpError } from "../fetchClient";
+import { HttpError, NotPortedError } from "../fetchClient";
+import { IntervalsApiError } from "../intervalsClient";
 import { toolErrorText } from "./_errors";
 
 describe("toolErrorText", () => {
@@ -54,7 +55,7 @@ describe("toolErrorText", () => {
       { context: "list recent activities" },
     );
     expect(withDefault).toContain(
-      "❌ This feature requires a Strava subscription.",
+      "❌ This feature requires a paid subscription.",
     );
 
     // A plain Error carrying the prefix is not a 402; only the status counts.
@@ -127,6 +128,37 @@ describe("toolErrorText", () => {
     expect(
       toolErrorText("string failure", { context: "fetch activity 789" }),
     ).toBe("❌ Failed to fetch activity 789: string failure");
+  });
+
+  it("keeps a not-yet-ported error's own message on a 401, rather than the intervals.icu key message", () => {
+    const text = toolErrorText(
+      new NotPortedError(
+        "getActivityLaps(55): this tool still uses the retired Strava client and has not been ported to intervals.icu yet.",
+        { status: 401, statusText: "Unauthorized", data: "" },
+      ),
+      { context: "fetch activity laps 55" },
+    );
+
+    expect(text).toBe(
+      "❌ getActivityLaps(55): this tool still uses the retired Strava client and has not been ported to intervals.icu yet.",
+    );
+    expect(text).not.toContain("INTERVALS_API_KEY");
+  });
+
+  it("names INTERVALS_API_KEY for a real IntervalsApiError 401, not the not-ported text", () => {
+    const text = toolErrorText(
+      new IntervalsApiError("getActivity for ID i1: 401 Unauthorized", {
+        status: 401,
+        statusText: "Unauthorized",
+        data: "",
+      }),
+      { context: "fetch activity i1" },
+    );
+
+    expect(text).toBe(
+      "❌ intervals.icu rejected the API key (HTTP 401). Check INTERVALS_API_KEY.",
+    );
+    expect(text).not.toContain("not been ported");
   });
 
   it("keeps the detail in operator logs", () => {
