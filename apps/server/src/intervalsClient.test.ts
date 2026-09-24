@@ -14,6 +14,7 @@ import {
   getSportSettings,
   getWellness,
   IntervalsApiError,
+  type IntervalsInterval,
   listActivities,
   listGear,
 } from "./intervalsClient";
@@ -90,9 +91,11 @@ describe("intervalsClient", () => {
       activity.id,
     );
     mockJson(intervals);
-    expect(
-      (await getActivityIntervals("k", "i189807578")).icu_intervals.length,
-    ).toBeGreaterThan(0);
+    const parsedIntervals = (await getActivityIntervals("k", "i189807578"))
+      .icu_intervals;
+    expect(parsedIntervals.length).toBeGreaterThan(0);
+    const firstInterval: IntervalsInterval | undefined = parsedIntervals[0];
+    expect(firstInterval?.average_vertical_ratio).toBeCloseTo(8.869921);
     mockJson(streams);
     expect((await getActivityStreams("k", "i189807578", ["time"])).length).toBe(
       streams.length,
@@ -106,6 +109,32 @@ describe("intervalsClient", () => {
     expect((await getSportSettings("k", "Run")).lthr).toBe(sportSettings.lthr);
     mockJson([]);
     expect(await listGear("k")).toEqual([]);
+  });
+
+  it("types the fields the read tools use from a detailed activity", async () => {
+    mockJson(activity);
+    const result = await getActivity("k", "i189807578");
+    expect(result.average_cadence).toBeCloseTo(83.15543);
+    expect(result.average_stance_time).toBeCloseTo(233.21266);
+    expect(result.average_vertical_oscillation).toBeCloseTo(108.36414);
+    expect(result.average_vertical_ratio).toBeCloseTo(8.848502);
+    expect(result.average_step_length).toBeCloseTo(1225.9629);
+    expect(result.average_heartrate).toBe(171);
+    expect(result.max_heartrate).toBe(185);
+    expect(result.icu_hr_zone_times).toEqual([103, 146, 330, 1684, 111]);
+    expect(result.trimp).toBeCloseTo(97.54981);
+    expect(result.icu_rpe).toBe(7);
+    expect(result.total_elevation_gain).toBeCloseTo(85.052216);
+    expect(result.elapsed_time).toBe(2373);
+    expect(result.device_name).toBe("Watch7,5");
+    expect(result.source).toBe("OAUTH_CLIENT");
+    expect(result.stream_types).toContain("heartrate");
+    expect(result.gear).toEqual({
+      id: "71459",
+      name: null,
+      distance: null,
+      primary: null,
+    });
   });
 
   it("parses the real gear fixture", async () => {

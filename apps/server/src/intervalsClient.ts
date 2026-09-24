@@ -28,32 +28,9 @@ const IntervalsActivityGearRefSchema = z
   })
   .passthrough();
 
-// --- Activity schema ---
-// intervals.icu activities carry hundreds of fields (running dynamics,
-// power-meter data, weather, etc.); only the fields a tool reads are typed,
-// everything else passes through untouched.
-const IntervalsActivitySchema = z
-  .object({
-    id: z.string(),
-    start_date: z.string().nullable().optional(),
-    start_date_local: z.string(),
-    type: z.string().nullable().optional(),
-    name: z.string().nullable().optional(),
-    distance: z.number().nullable().optional(),
-    moving_time: z.number().nullable().optional(),
-    elapsed_time: z.number().nullable().optional(),
-    icu_training_load: z.number().nullable().optional(),
-    icu_atl: z.number().nullable().optional(),
-    icu_ctl: z.number().nullable().optional(),
-    icu_athlete_id: z.string().nullable().optional(),
-    gear: IntervalsActivityGearRefSchema.nullable().optional(),
-  })
-  .passthrough();
-
-export type IntervalsActivity = z.infer<typeof IntervalsActivitySchema>;
-const IntervalsActivitiesResponseSchema = z.array(IntervalsActivitySchema);
-
 // --- Interval (within-activity) schema ---
+// Declared before the activity schema so a detailed activity's embedded
+// `icu_intervals` (present when fetched with `?intervals=true`) can reuse it.
 const IntervalsIntervalSchema = z
   .object({
     id: z.number().nullable().optional(),
@@ -70,12 +47,67 @@ const IntervalsIntervalSchema = z
     average_speed: z.number().nullable().optional(),
     average_stance_time: z.number().nullable().optional(),
     average_vertical_oscillation: z.number().nullable().optional(),
+    average_vertical_ratio: z.number().nullable().optional(),
     average_step_length: z.number().nullable().optional(),
     zone: z.number().nullable().optional(),
   })
   .passthrough();
 
 export type IntervalsInterval = z.infer<typeof IntervalsIntervalSchema>;
+
+// --- Activity schema ---
+// intervals.icu activities carry hundreds of fields (running dynamics,
+// power-meter data, weather, etc.); only the fields a tool reads are typed,
+// everything else passes through untouched. Verified against
+// __fixtures__/intervals/activity.json and activities.json (2026-09-24).
+const IntervalsActivitySchema = z
+  .object({
+    id: z.string(),
+    start_date: z.string().nullable().optional(),
+    start_date_local: z.string(),
+    type: z.string().nullable().optional(),
+    name: z.string().nullable().optional(),
+    description: z.string().nullable().optional(),
+    source: z.string().nullable().optional(),
+    distance: z.number().nullable().optional(),
+    moving_time: z.number().nullable().optional(),
+    elapsed_time: z.number().nullable().optional(),
+    total_elevation_gain: z.number().nullable().optional(),
+    gap: z.number().nullable().optional(),
+    device_name: z.string().nullable().optional(),
+    average_heartrate: z.number().nullable().optional(),
+    max_heartrate: z.number().nullable().optional(),
+    average_cadence: z.number().nullable().optional(),
+    average_weather_temp: z.number().nullable().optional(),
+    average_stance_time: z.number().nullable().optional(),
+    average_vertical_oscillation: z.number().nullable().optional(),
+    average_vertical_ratio: z.number().nullable().optional(),
+    average_step_length: z.number().nullable().optional(),
+    average_stride: z.number().nullable().optional(),
+    icu_hr_zone_times: z.array(z.number()).nullable().optional(),
+    pace_zone_times: z.array(z.number()).nullable().optional(),
+    gap_zone_times: z.array(z.number()).nullable().optional(),
+    icu_training_load: z.number().nullable().optional(),
+    hr_load: z.number().nullable().optional(),
+    pace_load: z.number().nullable().optional(),
+    trimp: z.number().nullable().optional(),
+    icu_intensity: z.number().nullable().optional(),
+    decoupling: z.number().nullable().optional(),
+    icu_efficiency_factor: z.number().nullable().optional(),
+    icu_rpe: z.number().nullable().optional(),
+    feel: z.number().nullable().optional(),
+    icu_atl: z.number().nullable().optional(),
+    icu_ctl: z.number().nullable().optional(),
+    icu_athlete_id: z.string().nullable().optional(),
+    stream_types: z.array(z.string()).nullable().optional(),
+    gear: IntervalsActivityGearRefSchema.nullable().optional(),
+    /** Only present when fetched via `getActivity(..., { intervals: true })`. */
+    icu_intervals: z.array(IntervalsIntervalSchema).optional(),
+  })
+  .passthrough();
+
+export type IntervalsActivity = z.infer<typeof IntervalsActivitySchema>;
+const IntervalsActivitiesResponseSchema = z.array(IntervalsActivitySchema);
 
 const IntervalsIntervalsSchema = z
   .object({
