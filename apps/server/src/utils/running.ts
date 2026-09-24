@@ -23,47 +23,6 @@ export function isRunningActivity(activityType: string): boolean {
 }
 
 /**
- * Cadence transformation result.
- */
-export interface CadenceResult {
-  raw: number;
-  spm: number | null; // steps per minute (running)
-  rpm: number | null; // revolutions per minute (cycling)
-  display: string;
-}
-
-/**
- * Transform cadence based on activity type.
- * Running activities get doubled to show steps per minute (Strava returns strides).
- */
-export function transformCadence(
-  rawCadence: number | null | undefined,
-  activityType: string,
-): CadenceResult | null {
-  if (rawCadence === null || rawCadence === undefined) {
-    return null;
-  }
-
-  if (isRunningActivity(activityType)) {
-    const spm = rawCadence * 2;
-    return {
-      raw: rawCadence,
-      spm,
-      rpm: null,
-      display: `${Math.round(spm)} spm`,
-    };
-  }
-
-  // Cycling, swimming, etc. - return as-is
-  return {
-    raw: rawCadence,
-    spm: null,
-    rpm: rawCadence,
-    display: `${Math.round(rawCadence)} rpm`,
-  };
-}
-
-/**
  * Pace conversion result.
  */
 export interface PaceResult {
@@ -136,8 +95,8 @@ export const PACE_ACTIVITY_TYPES = new Set(["Run", "TrailRun", "VirtualRun"]);
  * Activity types whose cadence (and step-based running dynamics: ground
  * contact time, vertical oscillation, step length, stride) intervals.icu
  * tools report in steps/min, doubled from strides/min: runs, plus walks and
- * hikes, matching {@link RUNNING_ACTIVITY_TYPES} above (the Strava-era set
- * `transformCadence` already uses) rather than {@link PACE_ACTIVITY_TYPES}.
+ * hikes, matching {@link RUNNING_ACTIVITY_TYPES} above (the same
+ * Strava-era set) rather than {@link PACE_ACTIVITY_TYPES}.
  * A Walk or Hike has a step cadence worth doubling even though intervals.icu
  * doesn't compute a pace for it.
  */

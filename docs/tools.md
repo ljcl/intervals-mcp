@@ -9,7 +9,7 @@ identity, so renames or schema reshapes re-prompt every user. See
 [architecture.md](architecture.md#tool-metadata) before changing either.
 
 > **Status.** Tools are being ported from Strava to intervals.icu (Phases 1
-> and 2). The eight tools below are ported and verified against a real
+> and 2). The nine tools below are ported and verified against a real
 > account; until a remaining tool is ported, it fails with a "not yet
 > ported" error.
 
@@ -28,6 +28,7 @@ Strava port.
 | `get-activity-laps` | Laps of an activity, derived from its intervals, with sport-aware pace/speed, GAP, HR, power, cadence |
 | `get-running-summary` | get-activity's detail fields for a run plus cadence, HR zone, and running-dynamics assessments, and a lap breakdown |
 | `get-activity-zones` | Time spent in each HR and power zone for an activity, from the activity's own recorded zone bounds |
+| `compare-activities` | Compare two activities side-by-side: pace, HR, cadence, load, and running dynamics, plus activity2-activity1 differences and an efficiency verdict |
 
 `list-activities` defaults to the last 28 days (today back to 27 days
 earlier) in the server's configured time zone, sorted newest first. Filter
@@ -134,6 +135,18 @@ rate is omitted, with a warning in the text, when the activity recorded
 bounds and zone times with different zone counts. An activity with no zone
 data returns a valid empty payload, not an error.
 
+`compare-activities` and the `view-compare-activities`/`get-compare-activities-data`
+MCP App's summary half share one `buildComparison(a, b)`, so text and app
+output can never drift. Each side reports the same fields `get-activity`
+does for one activity: `pace_min_per_km`/`gap_min_per_km` as `m:ss` strings,
+training load (`icu_training_load`), decoupling, efficiency factor, and
+running-dynamics averages when the device recorded them. Differences are
+derived from each activity's raw distance/time/HR/cadence, never from the
+rounded or formatted per-side fields; the pace delta renders as a signed
+`m:ss` string plus the underlying seconds. A non-running activity on either
+side degrades to a warning rather than failing the call. The app's stream
+overlay (`get-activity-streams-raw`) is still Strava-backed, pending Phase 4.
+
 ## Activity tools
 
 | Tool | Description |
@@ -145,7 +158,6 @@ data returns a valid empty payload, not an error.
 | `get-interval-analysis` | Interval detection with urban-stop-aware rest classification and rep fade |
 | `get-training-load` | Training load summary with trend analysis |
 | `get-fitness-trend` | Fitness/fatigue/form (CTL/ATL/TSB) from relative effort, with rest projection and a solved taper to a target form on a target date |
-| `compare-activities` | Compare two running activities side-by-side |
 | `get-best-efforts` | Personal best efforts across all running activities, optionally scoped to a date window |
 | `get-race-prediction` | Predicted race times from recorded best efforts (Riegel), with confidence, source effort, and km/mile goal-pace splits |
 

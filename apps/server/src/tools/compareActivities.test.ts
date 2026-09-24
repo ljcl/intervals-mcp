@@ -73,7 +73,7 @@ describe("buildComparison", () => {
     const result = buildComparison(fakeActivity({}), faster);
 
     expect(result.efficiency).not.toBeNull();
-    // Faster pace at only slightly higher HR -> efficiency improved.
+    // Faster pace at only slightly higher HR, so efficiency improved.
     expect(result.efficiency?.change_percent).toBeLessThan(-3);
     expect(result.efficiency?.interpretation).toBe("improved");
   });

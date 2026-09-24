@@ -10,7 +10,6 @@ import {
   isStepCadenceActivity,
   metersPerSecToPace,
   paceFromDistanceTime,
-  transformCadence,
 } from "./running";
 
 describe("formatPaceSeconds", () => {
@@ -66,33 +65,6 @@ describe("isRunningActivity", () => {
 
   it("returns false for Swim", () => {
     expect(isRunningActivity("Swim")).toBe(false);
-  });
-});
-
-describe("transformCadence", () => {
-  it("doubles cadence for running activities (strides to steps)", () => {
-    const result = transformCadence(85, "Run");
-    expect(result?.spm).toBe(170);
-    expect(result?.display).toBe("170 spm");
-  });
-
-  it("returns rpm unchanged for cycling", () => {
-    const result = transformCadence(90, "Ride");
-    expect(result?.rpm).toBe(90);
-    expect(result?.display).toBe("90 rpm");
-  });
-
-  it("returns null for null input", () => {
-    expect(transformCadence(null, "Run")).toBeNull();
-  });
-
-  it("returns null for undefined input", () => {
-    expect(transformCadence(undefined, "Run")).toBeNull();
-  });
-
-  it("preserves raw value", () => {
-    const result = transformCadence(85, "Run");
-    expect(result?.raw).toBe(85);
   });
 });
 
