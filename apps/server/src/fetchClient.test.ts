@@ -3,6 +3,7 @@ import {
   describeRateLimit,
   FetchClient,
   HttpError,
+  intervalsCacheTtl,
   parseJsonWithLargeInts,
   parseRateLimitHeaders,
   RateLimitError,
@@ -948,5 +949,96 @@ describe("FetchClient in-flight GET coalescing (#355)", () => {
     // was cached, so the next GET fetches.
     await client.get("/activities/1");
     expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("minIntervalMs throttle", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("spaces request starts, including concurrent calls", async () => {
+    let clock = 0;
+    const sleeps: number[] = [];
+    const starts: number[] = [];
+    const fetchMock = vi.fn(async () => {
+      starts.push(clock);
+      return makeResponse("{}");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new FetchClient("https://example.test", {
+      minIntervalMs: 200,
+      now: () => clock,
+      sleep: async (ms) => {
+        sleeps.push(ms);
+        clock += ms;
+      },
+    });
+
+    await Promise.all([client.get("/a"), client.get("/b"), client.get("/c")]);
+    expect(starts).toEqual([0, 200, 400]);
+  });
+
+  it("does not delay when unset", async () => {
+    const sleeps: number[] = [];
+    const fetchMock = vi.fn(async () => makeResponse("{}"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new FetchClient("https://example.test", {
+      sleep: async (ms) => void sleeps.push(ms),
+    });
+    await client.get("/a");
+    await client.get("/b");
+    expect(sleeps).toEqual([]);
+  });
+
+  it("spaces a retried attempt from the initial one (a retry counts as a start)", async () => {
+    let clock = 0;
+    const starts: number[] = [];
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        starts.push(clock);
+        return makeResponse("boom", { status: 500 });
+      })
+      .mockImplementationOnce(async () => {
+        starts.push(clock);
+        return makeResponse('{"ok":true}');
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new FetchClient("https://example.test", {
+      maxRetries: 1,
+      baseDelayMs: 0,
+      minIntervalMs: 200,
+      now: () => clock,
+      sleep: async (ms) => {
+        clock += ms;
+      },
+    });
+
+    const result = await client.get<{ ok: boolean }>("/thing");
+    expect(result.data.ok).toBe(true);
+    // The retry's own attempt is spaced from the initial attempt, same as
+    // any other pair of consecutive starts.
+    expect(starts).toEqual([0, 200]);
+  });
+});
+
+describe("intervalsCacheTtl", () => {
+  it.each([
+    ["/activity/i1", 600_000],
+    ["/activity/i1/intervals", 600_000],
+    ["/activity/i1/streams.json", 600_000],
+    ["/athlete/0/gear", 600_000],
+    ["/athlete/0/sport-settings/Run", 3_600_000],
+    ["/athlete/0/activities", 60_000],
+    ["/athlete/0/wellness", 300_000],
+    ["/athlete/0/wellness/2026-09-24", 300_000],
+    ["/athlete/0", null],
+  ])("%s", (p, ttl) => {
+    expect(intervalsCacheTtl(p)).toBe(ttl);
   });
 });
