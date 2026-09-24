@@ -133,14 +133,55 @@ function synthesizeAvoiding(
 }
 
 /**
- * Replaces every wellness record's `restingHR`, `hrvSDNN` and `sleepSecs`
- * with deterministic synthetic values in plausible ranges, and `ctl`/`atl`
- * with a deterministic smooth (small-step) synthetic sequence, so no real
- * wellness readings are committed to this public repo. Each synthetic value
- * is nudged away from its real counterpart (see {@link synthesizeAvoiding})
- * so every day reads as synthetic, not just most of them. Order is preserved
- * (the caller sorts/filters by date), and the seed is fixed so the output is
- * reproducible across captures.
+ * `[min, max, decimals]` for every wellness field the read tools use and
+ * that should carry a synthetic (not real) value. A field absent from this
+ * map, and not one of the specially-handled `id`/`comments`/`hrv`/`weight`/
+ * `ctl`/`atl` fields below, is nulled outright by {@link synthesizeWellness}:
+ * no real wellness reading beyond these named fields is ever committed.
+ */
+const WELLNESS_SYNTHETIC_RANGES: Record<string, [number, number, number]> = {
+  restingHR: [50, 60, 0],
+  hrvSDNN: [35, 60, 2],
+  sleepSecs: [21000, 28000, 0],
+  sleepScore: [50, 95, 0],
+  ctlLoad: [0, 100, 0],
+  atlLoad: [0, 100, 0],
+  rampRate: [-5, 5, 2],
+  readiness: [50, 95, 0],
+  soreness: [1, 5, 0],
+  fatigue: [1, 5, 0],
+  stress: [1, 5, 0],
+  mood: [1, 5, 0],
+  motivation: [1, 5, 0],
+  spO2: [94, 99, 0],
+  respiration: [12, 20, 0],
+};
+
+/**
+ * Replaces every wellness record's numeric/subjective fields with
+ * deterministic synthetic values (or `null`), so no real wellness reading of
+ * any kind is committed to this public repo:
+ *
+ * - `id` (the record's date) passes through unchanged.
+ * - `comments` and `hrv` (rMSSD; always null on this Apple Watch account) are
+ *   forced null.
+ * - `weight` becomes `70` when the real record had a weight, else `null`.
+ * - `ctl`/`atl` follow a deterministic smooth (small-step) synthetic
+ *   sequence, independent of the real values.
+ * - Every field in {@link WELLNESS_SYNTHETIC_RANGES} (the fields
+ *   `get-wellness` and friends actually read, plus `ctlLoad`/`atlLoad`) gets
+ *   a synthetic value in a plausible range when the real record had a
+ *   reading there, nudged away from that real value (see
+ *   {@link synthesizeAvoiding}) so every day reads as synthetic; a real
+ *   `null` (no reading that day) stays `null` rather than fabricating one.
+ * - Every other field (steps, calories, macros, vo2max, body composition,
+ *   blood pressure/glucose/lactate, hydration, menstrual-cycle fields,
+ *   avgSleepingHR, baevskySI, tempWeight/tempRestingHR, sportInfo, the sync
+ *   `updated` timestamp, etc.) is nulled outright: nothing here is read by
+ *   any tool, and none of it should carry a real reading either.
+ *
+ * Order is preserved (the caller sorts/filters by date), and the seed is
+ * fixed so the output is reproducible across captures.
  */
 function synthesizeWellness(wellness: Rec[]): Rec[] {
   const rng = mulberry32(20260924);
@@ -149,28 +190,31 @@ function synthesizeWellness(wellness: Rec[]): Rec[] {
   return wellness.map((w) => {
     ctl += (rng() - 0.5) * 2;
     atl += (rng() - 0.5) * 4;
-    return {
-      ...w,
-      restingHR: synthesizeAvoiding(
-        rng,
-        50,
-        60,
-        0,
-        w.restingHR as number | null,
-      ),
-      hrvSDNN: synthesizeAvoiding(rng, 35, 60, 2, w.hrvSDNN as number | null),
-      sleepSecs: synthesizeAvoiding(
-        rng,
-        21000,
-        28000,
-        0,
-        w.sleepSecs as number | null,
-      ),
-      ctl: Math.round(ctl * 100) / 100,
-      atl: Math.round(atl * 100) / 100,
-      weight: w.weight == null ? null : 70,
-      comments: null,
-    };
+
+    const out: Rec = {};
+    for (const key of Object.keys(w)) {
+      if (key === "id") {
+        out[key] = w[key];
+      } else if (key === "comments" || key === "hrv") {
+        out[key] = null;
+      } else if (key === "weight") {
+        out[key] = w[key] == null ? null : 70;
+      } else if (key === "ctl") {
+        out[key] = Math.round(ctl * 100) / 100;
+      } else if (key === "atl") {
+        out[key] = Math.round(atl * 100) / 100;
+      } else if (key in WELLNESS_SYNTHETIC_RANGES) {
+        const [min, max, decimals] = WELLNESS_SYNTHETIC_RANGES[key]!;
+        const real = w[key] as number | null | undefined;
+        out[key] =
+          real == null
+            ? null
+            : synthesizeAvoiding(rng, min, max, decimals, real);
+      } else {
+        out[key] = null;
+      }
+    }
+    return out;
   });
 }
 
