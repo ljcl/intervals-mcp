@@ -11,7 +11,7 @@
  * strip comments, then assert the file contains no `Authorization` header
  * construction. A future contributor porting a tool to send real auth must
  * do it somewhere other than this file, or must delete this guard
- * deliberately — either way it cannot happen by accident.
+ * deliberately; either way it cannot happen by accident.
  */
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
