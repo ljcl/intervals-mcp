@@ -8,6 +8,9 @@ Tool names and schemas are a published contract: grants are stored per tool
 identity, so renames or schema reshapes re-prompt every user. See
 [architecture.md](architecture.md#tool-metadata) before changing either.
 
+> **Status.** Tools are being ported from Strava to intervals.icu (Phases 1
+> and 2). Until a tool is ported, it fails with a "not yet ported" error.
+
 ## Activity tools
 
 | Tool | Description |
@@ -93,8 +96,7 @@ level does not always write through to every tool.
 
 ## Example requests
 
-Use the official Strava MCP connector to discover activity ids, then pass them
-to these tools.
+These examples assume you already have an activity id to pass to a tool.
 
 **Activity writing**
 
@@ -110,7 +112,7 @@ to these tools.
 
 **Stats**
 
-- "What are my running stats for this year on Strava?"
+- "What are my running stats for this year?"
 
 **Training analysis**
 

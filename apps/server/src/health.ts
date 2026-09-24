@@ -7,8 +7,9 @@ import { SERVER_VERSION } from "./version";
 /**
  * Structured /health. Everything here is served from local state: the
  * configured key/athlete/timezone and the rate-limit snapshot captured off
- * the most recent intervals.icu response, so the endpoint never spends an
- * intervals.icu request.
+ * the most recent response from the transitional Strava client
+ * (`stravaClient.ts` / `fetchClient.ts`), not intervals.icu, until Phases 1
+ * and 2 land, so the endpoint never spends an intervals.icu request.
  *
  * When MCP_AUTH_TOKEN is configured, unauthenticated callers (for example
  * the Docker HEALTHCHECK) get liveness fields only; config and rate-limit

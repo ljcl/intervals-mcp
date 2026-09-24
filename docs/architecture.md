@@ -211,8 +211,8 @@ Every tool argument naming a Strava id goes through `stravaIdInput`
 (`apps/server/src/tools/_ids.ts`) — never an ad-hoc `z.number()` or
 `z.union([z.number(), z.string()])`.
 
-Strava ids are 64-bit and activity ids already exceed 2^53, so an
-id sent as a JSON number is rounded by the host's `JSON.parse` before
+Strava ids are 64-bit, and some ids (segment efforts, routes) already exceed
+2^53, so an id sent as a JSON number is rounded by the host's `JSON.parse` before
 validation sees it and the true digits are unrecoverable. The schema therefore
 advertises ids as **string only** (`stravaIdJsonSchemaOverride`, applied in
 `toInputSchema`) so a host cannot generate the lossy shape, while still

@@ -34,7 +34,7 @@ FROM base AS prod-deps
 COPY --from=pruner /app/out/json/ ./
 COPY --from=pruner /app/out/bun.lock ./bun.lock
 RUN --mount=type=cache,target=/root/.bun/install/cache bun install --frozen-lockfile --production
-RUN chown -R 65534:65534 /app
+RUN mkdir -p /app/exports && chown -R 65534:65534 /app
 
 # 4) Distroless runner: COPY only. nonroot (65534), no shell, ENTRYPOINT is bun.
 FROM oven/bun:1.4.0-distroless AS runner

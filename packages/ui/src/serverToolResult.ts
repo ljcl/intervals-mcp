@@ -17,9 +17,10 @@ export type ParsedToolResult<T> =
  * where every failure the athlete can act on lives: `dispatchToolCall` answers
  * prose for a rejected argument, for a missing key (naming
  * `INTERVALS_API_KEY`), and as `Tool error: <message>` for a thrown handler,
- * which is how a non-subscriber gets told best-effort history needs a
- * subscription. None of it is JSON, so parsing first reported every one of
- * them as a malformed response and threw the only useful sentence away.
+ * which is how a non-subscriber gets told a feature that needs a paid
+ * subscription is unavailable. None of it is JSON, so parsing first reported
+ * every one of them as a malformed response and threw the only useful
+ * sentence away.
  */
 export function parseTextContent<T>(
   result: ServerToolResult,

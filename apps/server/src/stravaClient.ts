@@ -778,7 +778,7 @@ export async function getActivityStreams(
 
 /**
  * The one place a stream set is fetched, validated, and error-mapped, for
- * activities, routes, and segments alike. Every caller inherits the same
+ * activities. Every caller inherits the same
  * contract: a genuine 404 or an empty response is
  * {@link StreamsUnavailableError} — the single failure a caller may degrade
  * on — while auth, rate-limit, and subscription failures go through

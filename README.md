@@ -9,8 +9,8 @@ A single-user remote MCP server for intervals.icu run data and analysis, with in
 > **Migration in progress.** The server is being ported from Strava to
 > intervals.icu. Most tools still call the retired Strava client and will
 > fail with a "not yet ported" error until each is moved over in Phases 1 and
-> 2. `INTERVALS_API_KEY` is validated and reported on `/health`, but no tool
-> calls the intervals.icu API yet.
+> 2. The presence of `INTERVALS_API_KEY` is checked at startup and reported on
+> `/health`, but no tool calls the intervals.icu API yet.
 
 ## Setup
 
@@ -89,8 +89,9 @@ cloudflared tunnel --url http://localhost:3000
 
 ### Securing the endpoint
 
-A tunnel makes `/mcp` reachable by anyone who discovers the URL, including
-the intervals.icu API key configured on the server. Set `MCP_AUTH_TOKEN` to a
+A tunnel makes `/mcp` reachable by anyone who discovers the URL, so they can
+use the intervals.icu API key configured on the server (the key itself is
+never exposed to them). Set `MCP_AUTH_TOKEN` to a
 long random secret (`openssl rand -hex 32`) and every `/mcp` request requires
 `Authorization: Bearer <token>`; each client snippet below shows where the
 header goes. The secret also gates the detailed half of `/health`. Full
@@ -197,13 +198,13 @@ Phases 1 and 2 land.
 | [docs/releasing.md](docs/releasing.md) | Release automation: Conventional Commit PR titles, release-please, publishing |
 | [docs/project.md](docs/project.md) | Issue tracking and project board |
 
-PRs are squash-merged and the **PR title becomes the commit on `main`**, so write it as a [Conventional Commit](https://www.conventionalcommits.org/) (`feat:` minor, `fix:` patch, `feat!:` major; `chore:`/`docs:`/`refactor:`/`ci:` release nothing). A CI check rejects non-conforming titles; see [docs/releasing.md](docs/releasing.md).
+PRs are squash-merged and the **PR title becomes the commit on `main`**, so write it as a [Conventional Commit](https://www.conventionalcommits.org/) (`feat:` minor, `fix:` patch, `feat!:` minor pre-1.0, major once the package reaches 1.0.0; `chore:`/`docs:`/`refactor:`/`ci:` release nothing). A CI check rejects non-conforming titles; see [docs/releasing.md](docs/releasing.md).
 
 ## Troubleshooting
 
 **AI tool can't reach the server** — MCP requires an HTTPS URL. Use a tunnel (Tailscale Funnel or Cloudflare Tunnel) to expose your local server. See [Connecting to AI Tools](#connecting-to-ai-tools).
 
-**API key errors:** Check `/health` first: `api_key_configured` tells you whether the server has a key set at all. If it is `true` but calls still fail, the key may be wrong or revoked; generate a new one at intervals.icu, Settings, Developer Settings, and update `INTERVALS_API_KEY`. See [operations.md](docs/operations.md#intervalsicu-api-key).
+**API key errors:** Check `/health` first: `api_key_configured` tells you whether the server has a key set at all. This applies once tools are ported to intervals.icu: if `api_key_configured` is `true` but calls still fail, the key may be wrong or revoked; generate a new one at intervals.icu, Settings, Developer Settings, and update `INTERVALS_API_KEY`. Today, every tool fails with a "not yet ported" message regardless of the key. See [operations.md](docs/operations.md#intervalsicu-api-key).
 
 **Is the server up and reachable?** `curl https://your-public-url/health`. It answers without touching the intervals.icu API, so it works even when your rate limit is exhausted.
 

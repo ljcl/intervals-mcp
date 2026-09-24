@@ -306,8 +306,8 @@ export interface RetryOptions {
  * Parses a JSON string while preserving integers that exceed
  * `Number.MAX_SAFE_INTEGER` (2^53 - 1).
  *
- * Strava issues 64-bit identifiers; activity ids in particular can run well
- * past 2^53, which the default number-based `JSON.parse` silently rounds,
+ * Strava issues 64-bit identifiers; some ids (segment efforts, routes) run
+ * well past 2^53, which the default number-based `JSON.parse` silently rounds,
  * corrupting the id before any validation runs (and tripping Zod's safe-integer
  * bound). The reviver's third argument exposes the raw source text for each
  * value (supported by Bun's JavaScriptCore and Node >= 21), so we can detect an
