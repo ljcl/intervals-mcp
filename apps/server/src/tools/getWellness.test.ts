@@ -110,7 +110,14 @@ describe("formatWellnessText", () => {
       oldest: "2026-09-10",
       newest: "2026-09-10",
       count: 1,
-      units: { hrv: "ms", resting_hr: "bpm", sleep: "hours", weight: "kg" },
+      units: {
+        hrv: "ms",
+        resting_hr: "bpm",
+        sleep: "hours",
+        weight: "kg",
+        spo2: "%",
+        respiration: "breaths/min",
+      },
       hrv_note: "note",
       days: [day],
     });
@@ -127,7 +134,14 @@ describe("formatWellnessText", () => {
       oldest: "2026-09-10",
       newest: "2026-09-10",
       count: 0,
-      units: { hrv: "ms", resting_hr: "bpm", sleep: "hours", weight: "kg" },
+      units: {
+        hrv: "ms",
+        resting_hr: "bpm",
+        sleep: "hours",
+        weight: "kg",
+        spo2: "%",
+        respiration: "breaths/min",
+      },
       hrv_note: "note",
       days: [],
     });
@@ -143,7 +157,14 @@ describe("formatWellnessText", () => {
       oldest: "2026-09-10",
       newest: "2026-09-12",
       count: 3,
-      units: { hrv: "ms", resting_hr: "bpm", sleep: "hours", weight: "kg" },
+      units: {
+        hrv: "ms",
+        resting_hr: "bpm",
+        sleep: "hours",
+        weight: "kg",
+        spo2: "%",
+        respiration: "breaths/min",
+      },
       hrv_note: "note",
       days,
     });
@@ -151,6 +172,7 @@ describe("formatWellnessText", () => {
     const lines = text.split("\n");
     expect(lines[0]).toBe("Wellness 2026-09-10 to 2026-09-12: 3 days");
     expect(lines[1]?.startsWith("2026-09-12:")).toBe(true);
+    expect(lines[1]).toContain("HRV SDNN");
     expect(lines[2]?.startsWith("2026-09-11:")).toBe(true);
     expect(lines[3]?.startsWith("2026-09-10:")).toBe(true);
     expect(lines.at(-1)).toContain("Averages:");
@@ -198,6 +220,8 @@ describe("getWellnessTool.execute", () => {
       resting_hr: "bpm",
       sleep: "hours",
       weight: "kg",
+      spo2: "%",
+      respiration: "breaths/min",
     });
   });
 
@@ -248,15 +272,36 @@ describe("getWellnessTool.execute", () => {
     expect(mockedGetWellness).not.toHaveBeenCalled();
   });
 
-  it("accepts a range of exactly 90 days", async () => {
+  it("accepts a range of exactly 90 calendar days (both endpoints inclusive)", async () => {
     mockedGetWellness.mockResolvedValueOnce([]);
 
+    const result = await getWellnessTool.execute(
+      { oldest: "2026-06-27", newest: "2026-09-24" },
+      "key",
+    );
+
+    expect(result.isError).toBeUndefined();
+  });
+
+  it("rejects a non-calendar date (2026-02-30) at the schema level", () => {
+    const result = getWellnessTool.inputSchema.safeParse({
+      date: "2026-02-30",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a range one day past 90 calendar days", async () => {
+    // 2026-06-26 to 2026-09-24 is 91 calendar days inclusive; daysBetween
+    // alone (a difference, not a count) would read this as 90 and wrongly
+    // accept it.
     const result = await getWellnessTool.execute(
       { oldest: "2026-06-26", newest: "2026-09-24" },
       "key",
     );
 
-    expect(result.isError).toBeUndefined();
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("max range is 90 days");
+    expect(mockedGetWellness).not.toHaveBeenCalled();
   });
 
   it("uses date as both oldest and newest for a single-day query", async () => {

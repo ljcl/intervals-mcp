@@ -1,13 +1,18 @@
 import { z } from "zod";
 import { getTimeZone } from "../config";
-import { formatDuration } from "../formatters";
+import { formatDuration, STRAVA_STUB_NOTE } from "../formatters";
 import {
   type IntervalsActivity,
   listActivities as listActivitiesClient,
 } from "../intervalsClient";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
-import { addDays, daysBetween, todayLocal } from "../utils/localDate";
-import { metersPerSecToPace } from "../utils/running";
+import {
+  addDays,
+  dateInputSchema,
+  todayLocal,
+  validateRange,
+} from "../utils/localDate";
+import { isPaceActivity, paceFromDistanceTime } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
 import { toolErrorText } from "./_errors";
 import { ActivityListOutputSchema, warnOnSchemaDrift } from "./outputs";
@@ -35,20 +40,13 @@ Notes:
   already returns
 `;
 
-const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
-const YMD_MESSAGE = "must be a date in YYYY-MM-DD format";
-
 const inputSchema = z.object({
-  oldest: z
-    .string()
-    .regex(YMD_RE, YMD_MESSAGE)
+  oldest: dateInputSchema
     .optional()
     .describe(
       "Inclusive lower bound (YYYY-MM-DD). Defaults to newest minus 27 days.",
     ),
-  newest: z
-    .string()
-    .regex(YMD_RE, YMD_MESSAGE)
+  newest: dateInputSchema
     .optional()
     .describe("Inclusive upper bound (YYYY-MM-DD). Defaults to today."),
   type: z
@@ -72,9 +70,6 @@ const inputSchema = z.object({
 
 type ListActivitiesInput = z.infer<typeof inputSchema>;
 
-/** Activity types intervals.icu reports pace for. Shared with getActivity.ts. */
-export const RUNNING_TYPES = new Set(["Run", "TrailRun", "VirtualRun"]);
-
 const MAX_RANGE_DAYS = 366;
 
 export interface ActivitySummaryEntry {
@@ -97,15 +92,15 @@ export interface ActivitySummaryEntry {
 /** Maps one raw intervals.icu activity to the compact list entry. Exported for direct testing. */
 export function mapActivitySummary(a: IntervalsActivity): ActivitySummaryEntry {
   const type = a.type ?? "Workout";
-  const isRun = RUNNING_TYPES.has(type);
   const distanceM = a.distance ?? 0;
   const movingTimeS = a.moving_time ?? 0;
 
   const distanceKm =
     distanceM > 0 ? Math.round((distanceM / 1000) * 100) / 100 : null;
 
-  const mps = distanceM > 0 && movingTimeS > 0 ? distanceM / movingTimeS : null;
-  const pace = isRun && mps ? metersPerSecToPace(mps) : null;
+  const pace = isPaceActivity(type)
+    ? paceFromDistanceTime(distanceM, movingTimeS)
+    : null;
 
   return {
     id: a.id,
@@ -116,7 +111,7 @@ export function mapActivitySummary(a: IntervalsActivity): ActivitySummaryEntry {
     distance_km: distanceKm,
     moving_time_s: movingTimeS,
     moving_time: formatDuration(movingTimeS),
-    pace_min_per_km: pace?.minPerKm ?? null,
+    pace_min_per_km: pace,
     average_hr: a.average_heartrate ?? null,
     load: a.icu_training_load ?? null,
     gear_id: a.gear?.id ?? null,
@@ -159,9 +154,7 @@ export function formatActivityListText(response: ActivityListResponse): string {
     lines.push(formatActivityLine(entry));
 
   if (response.activities.some((entry) => entry.is_strava_stub)) {
-    lines.push(
-      "stub: details unavailable through the API; use the HealthFit copy.",
-    );
+    lines.push(STRAVA_STUB_NOTE);
   }
 
   return lines.join("\n");
@@ -188,27 +181,10 @@ export const listActivitiesTool = {
     const newest = rawNewest ?? todayLocal(tz);
     const oldest = rawOldest ?? addDays(newest, -27);
 
-    if (oldest > newest) {
+    const rangeError = validateRange(oldest, newest, MAX_RANGE_DAYS);
+    if (rangeError) {
       return {
-        content: [
-          {
-            type: "text" as const,
-            text: `❌ oldest (${oldest}) is after newest (${newest}). Swap them or drop one to use its default.`,
-          },
-        ],
-        isError: true,
-      };
-    }
-
-    const rangeDays = daysBetween(oldest, newest);
-    if (rangeDays > MAX_RANGE_DAYS) {
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `❌ ${oldest} to ${newest} is ${rangeDays} days; the max range is ${MAX_RANGE_DAYS} days. Narrow oldest/newest.`,
-          },
-        ],
+        content: [{ type: "text" as const, text: `❌ ${rangeError.message}` }],
         isError: true,
       };
     }

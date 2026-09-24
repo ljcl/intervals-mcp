@@ -259,6 +259,38 @@ describe("listActivitiesTool.execute", () => {
     expect(mockedListActivities).not.toHaveBeenCalled();
   });
 
+  it("accepts a range of exactly 366 calendar days (both endpoints inclusive)", async () => {
+    mockedListActivities.mockResolvedValueOnce([]);
+
+    const result = await listActivitiesTool.execute(
+      { oldest: "2025-09-24", newest: "2026-09-24", limit: 30 },
+      "key",
+    );
+
+    expect(result.isError).toBeUndefined();
+  });
+
+  it("rejects a non-calendar date (2026-02-30) at the schema level", () => {
+    const result = listActivitiesTool.inputSchema.safeParse({
+      oldest: "2026-02-30",
+      limit: 30,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a range one day past 366 calendar days", async () => {
+    // daysBetween alone (a difference, not a count) would read this as 366
+    // and wrongly accept it; the calendar-inclusive count is 367.
+    const result = await listActivitiesTool.execute(
+      { oldest: "2025-09-23", newest: "2026-09-24", limit: 30 },
+      "key",
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("366 days");
+    expect(mockedListActivities).not.toHaveBeenCalled();
+  });
+
   it("returns a friendly error for a 404", async () => {
     mockedListActivities.mockRejectedValueOnce(
       handledNotFound("listActivities"),

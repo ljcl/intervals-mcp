@@ -1,11 +1,12 @@
 import { z } from "zod";
 import { getTimeZone } from "../config";
+import { round } from "../formatters";
 import {
   getWellness as getWellnessClient,
   type IntervalsWellness,
 } from "../intervalsClient";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
-import { daysBetween, todayLocal } from "../utils/localDate";
+import { dateInputSchema, todayLocal, validateRange } from "../utils/localDate";
 import { READ_ONLY } from "./_annotations";
 import { toolErrorText } from "./_errors";
 import { WellnessOutputSchema, warnOnSchemaDrift } from "./outputs";
@@ -34,25 +35,16 @@ Notes:
 - Apple Watch reports HRV as SDNN, not rMSSD; see hrv_note in the response
 `;
 
-const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
-const YMD_MESSAGE = "must be a date in YYYY-MM-DD format";
-
 const inputSchema = z.object({
-  date: z
-    .string()
-    .regex(YMD_RE, YMD_MESSAGE)
+  date: dateInputSchema
     .optional()
     .describe(
       "A single day (YYYY-MM-DD). Cannot be combined with oldest/newest.",
     ),
-  oldest: z
-    .string()
-    .regex(YMD_RE, YMD_MESSAGE)
+  oldest: dateInputSchema
     .optional()
     .describe("Inclusive lower bound (YYYY-MM-DD). Defaults to newest."),
-  newest: z
-    .string()
-    .regex(YMD_RE, YMD_MESSAGE)
+  newest: dateInputSchema
     .optional()
     .describe("Inclusive upper bound (YYYY-MM-DD). Defaults to today."),
 });
@@ -60,11 +52,6 @@ const inputSchema = z.object({
 type GetWellnessInput = z.infer<typeof inputSchema>;
 
 const MAX_RANGE_DAYS = 90;
-
-const round = (value: number, decimals = 0) => {
-  const factor = 10 ** decimals;
-  return Math.round(value * factor) / factor;
-};
 
 export interface WellnessDayEntry {
   date: string;
@@ -128,6 +115,8 @@ interface WellnessResponse {
     resting_hr: "bpm";
     sleep: "hours";
     weight: "kg";
+    spo2: "%";
+    respiration: "breaths/min";
   };
   hrv_note: string;
   days: WellnessDayEntry[];
@@ -179,7 +168,7 @@ function formatWellnessDayBlock(d: WellnessDayEntry): string {
 
 function formatWellnessLine(d: WellnessDayEntry): string {
   const parts: string[] = [];
-  if (d.hrv_sdnn_ms != null) parts.push(`HRV ${d.hrv_sdnn_ms.toFixed(1)}`);
+  if (d.hrv_sdnn_ms != null) parts.push(`HRV SDNN ${d.hrv_sdnn_ms.toFixed(1)}`);
   if (d.resting_hr != null) parts.push(`RHR ${d.resting_hr}`);
   if (d.sleep_hours != null) parts.push(`sleep ${d.sleep_hours.toFixed(1)}h`);
   if (d.weight_kg != null) parts.push(`wt ${d.weight_kg}kg`);
@@ -248,27 +237,10 @@ export const getWellnessTool = {
     const newest = date ?? rawNewest ?? todayLocal(tz);
     const oldest = date ?? rawOldest ?? newest;
 
-    if (oldest > newest) {
+    const rangeError = validateRange(oldest, newest, MAX_RANGE_DAYS);
+    if (rangeError) {
       return {
-        content: [
-          {
-            type: "text" as const,
-            text: `❌ oldest (${oldest}) is after newest (${newest}). Swap them or drop one to use its default.`,
-          },
-        ],
-        isError: true,
-      };
-    }
-
-    const rangeDays = daysBetween(oldest, newest);
-    if (rangeDays > MAX_RANGE_DAYS) {
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `❌ ${oldest} to ${newest} is ${rangeDays} days; the max range is ${MAX_RANGE_DAYS} days. Narrow oldest/newest.`,
-          },
-        ],
+        content: [{ type: "text" as const, text: `❌ ${rangeError.message}` }],
         isError: true,
       };
     }
@@ -289,6 +261,8 @@ export const getWellnessTool = {
           resting_hr: "bpm",
           sleep: "hours",
           weight: "kg",
+          spo2: "%",
+          respiration: "breaths/min",
         },
         hrv_note: HRV_NOTE,
         days,

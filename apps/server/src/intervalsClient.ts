@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { basicAuthHeader, getIntervalsAthleteId } from "./config";
 import { HttpError, intervalsApi, RateLimitError } from "./fetchClient";
+import { addDays } from "./utils/localDate";
 import { SERVER_VERSION } from "./version";
 
 /**
@@ -330,7 +331,6 @@ function athletePath(suffix: string): string {
   return `/athlete/${getIntervalsAthleteId()}${suffix}`;
 }
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 /** intervals.icu list endpoints paginate by date, not by page; cap a single
  * request's window so a multi-month scan doesn't send one unbounded query. */
 const MAX_WINDOW_DAYS = 31;
@@ -342,44 +342,25 @@ export interface DateRange {
   newest: string;
 }
 
-/** Parses a `YYYY-MM-DD` string as a UTC-midnight timestamp (no TZ math). */
-function parseIsoDate(date: string): number {
-  const [year, month, day] = date.split("-").map(Number);
-  return Date.UTC(year ?? 1970, (month ?? 1) - 1, day ?? 1);
-}
-
-/** Formats a UTC timestamp back to `YYYY-MM-DD`. */
-function formatIsoDate(ms: number): string {
-  const date = new Date(ms);
-  const year = date.getUTCFullYear();
-  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(date.getUTCDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
 /**
  * Splits `[oldest, newest]` into consecutive inclusive windows of at most
- * {@link MAX_WINDOW_DAYS} calendar days each, in UTC. A range that already
- * fits in one window comes back as a single-element array.
+ * {@link MAX_WINDOW_DAYS} calendar days each. A range that already fits in
+ * one window comes back as a single-element array. Built entirely on
+ * `addDays` (`utils/localDate.ts`) rather than its own date parse/format, so
+ * the UTC-midnight day math has one implementation shared with every other
+ * date-window tool.
  */
 export function splitDateRangeIntoWindows(
   oldest: string,
   newest: string,
 ): DateRange[] {
-  const start = parseIsoDate(oldest);
-  const end = parseIsoDate(newest);
   const windows: DateRange[] = [];
-  let windowStart = start;
-  while (windowStart <= end) {
-    const windowEnd = Math.min(
-      windowStart + (MAX_WINDOW_DAYS - 1) * DAY_MS,
-      end,
-    );
-    windows.push({
-      oldest: formatIsoDate(windowStart),
-      newest: formatIsoDate(windowEnd),
-    });
-    windowStart = windowEnd + DAY_MS;
+  let windowStart = oldest;
+  while (windowStart <= newest) {
+    const windowEnd = addDays(windowStart, MAX_WINDOW_DAYS - 1);
+    const cappedEnd = windowEnd > newest ? newest : windowEnd;
+    windows.push({ oldest: windowStart, newest: cappedEnd });
+    windowStart = addDays(cappedEnd, 1);
   }
   return windows;
 }

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { round } from "../formatters";
 import {
   type IntervalsGear,
   type IntervalsGearReminder,
@@ -34,11 +35,6 @@ const inputSchema = z.object({
 });
 
 type ListGearInput = z.infer<typeof inputSchema>;
-
-const round = (value: number, decimals = 0) => {
-  const factor = 10 ** decimals;
-  return Math.round(value * factor) / factor;
-};
 
 export interface GearReminderEntry {
   name: string | null;
