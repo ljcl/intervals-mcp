@@ -14,11 +14,11 @@ import {
   normalizeValue,
   percentileDomain,
   rampColor,
-} from "@strava-mcp/data";
+} from "@intervals-mcp/data";
 import { type Point } from "./normalize";
 import { type RouteMapData } from "./types";
 
-export { colorForValue, RAMP_GRADIENT_CSS } from "@strava-mcp/data";
+export { colorForValue, RAMP_GRADIENT_CSS } from "@intervals-mcp/data";
 
 export type MetricKey =
   | "pace"

@@ -1,4 +1,4 @@
-@import "@strava-mcp/design-system/reset.css";
+@import "@intervals-mcp/design-system/reset.css";
 
 /* Theme MapLibre's hover popups (lap/photo markers) with host design tokens.
  * The library default is a hard-coded white box, unreadable on the dark map.

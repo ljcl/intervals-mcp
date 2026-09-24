@@ -6,7 +6,7 @@
  * fetch as prose; this feed carries per-bucket seconds and percentages so
  * the chart and the text can never disagree on the numbers.
  */
-import { type ZoneSet } from "@strava-mcp/data";
+import { type ZoneSet } from "@intervals-mcp/data";
 import { type StravaActivityZone } from "./stravaClient";
 
 export interface ActivityZonesData {

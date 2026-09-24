@@ -1,4 +1,4 @@
-import preview from "@strava-mcp/design-system/preview";
+import preview from "@intervals-mcp/design-system/preview";
 
 type ColorToken = { var: string; label: string; note?: string };
 

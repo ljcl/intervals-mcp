@@ -1,5 +1,5 @@
-import { formatPace, formatTime } from "@strava-mcp/data";
-import { GRID_DASHARRAY, getChartTokens } from "@strava-mcp/design-system";
+import { formatPace, formatTime } from "@intervals-mcp/data";
+import { GRID_DASHARRAY, getChartTokens } from "@intervals-mcp/design-system";
 import {
   CardHeader,
   EmptyState,
@@ -11,7 +11,7 @@ import {
   TooltipEntry,
   Tooltip as UiTooltip,
   useModelContextSync,
-} from "@strava-mcp/ui";
+} from "@intervals-mcp/ui";
 import { useMemo, useState } from "react";
 import {
   CartesianGrid,

@@ -9,7 +9,7 @@ import { AppShell } from "./AppShell";
  * hand-rolled copies this replaces had drifted (no width clamp, no
  * safe-area padding).
  *
- * Lives in `@strava-mcp/ui` rather than the design-system preview module
+ * Lives in `@intervals-mcp/ui` rather than the design-system preview module
  * because `AppShell` is a ui component and design-system sits below ui in
  * the package boundary graph.
  */

@@ -1,5 +1,5 @@
-import preview, { darkGlobals } from "@strava-mcp/design-system/preview";
-import { MobileCardShell } from "@strava-mcp/ui";
+import preview, { darkGlobals } from "@intervals-mcp/design-system/preview";
+import { MobileCardShell } from "@intervals-mcp/ui";
 import { expect, waitFor } from "storybook/test";
 import { manualEntry, timeOnlyRecording } from "./__fixtures__/manual-entry";
 import { poolSwim } from "./__fixtures__/pool-swim";

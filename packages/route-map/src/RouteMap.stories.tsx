@@ -1,5 +1,5 @@
-import preview, { darkGlobals } from "@strava-mcp/design-system/preview";
-import { MobileCardShell, ViewToolRegistry } from "@strava-mcp/ui";
+import preview, { darkGlobals } from "@intervals-mcp/design-system/preview";
+import { MobileCardShell, ViewToolRegistry } from "@intervals-mcp/ui";
 import { useState } from "react";
 import { expect, waitFor } from "storybook/test";
 import {

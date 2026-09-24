@@ -29,7 +29,7 @@ part of a string.)
 Merging that PR pushes the `vX.Y.Z` tag (via the `RELEASE_PLEASE_PAT` secret),
 triggering:
 
-- `docker.yml` → publishes `ghcr.io/ljcl/strava-mcp:X.Y.Z` and `:X.Y`
+- `docker.yml` → publishes `ghcr.io/ljcl/intervals-mcp:X.Y.Z` and `:X.Y`
 - `publish-mcp.yml` → publishes `server.json` to the MCP registry via GitHub OIDC
 
 Commits touching only `docs/`, `.agents/`, or `.claude/` are excluded from

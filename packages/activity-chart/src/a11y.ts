@@ -1,4 +1,4 @@
-import { formatPace, formatTime } from "@strava-mcp/data";
+import { formatPace, formatTime } from "@intervals-mcp/data";
 import { METRIC_LABELS } from "./contextSummary";
 import {
   type ActivityMeta,

@@ -1,8 +1,8 @@
-import { type ZoneSet } from "@strava-mcp/data";
+import { type ZoneSet } from "@intervals-mcp/data";
 
-// ZoneBucket / ZoneSet are the shared wire types from @strava-mcp/data, the
+// ZoneBucket / ZoneSet are the shared wire types from @intervals-mcp/data, the
 // same definitions the server's feed is built from.
-export type { ZoneBucket, ZoneSet } from "@strava-mcp/data";
+export type { ZoneBucket, ZoneSet } from "@intervals-mcp/data";
 
 /** Response from the get-activity-zones-data tool. */
 export interface ActivityZonesData {

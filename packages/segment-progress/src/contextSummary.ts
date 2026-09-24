@@ -1,4 +1,4 @@
-import { formatClock, formatShortDate } from "@strava-mcp/data";
+import { formatClock, formatShortDate } from "@intervals-mcp/data";
 import { formatSecondsDelta } from "./normalize";
 import { type SegmentProgressData } from "./types";
 

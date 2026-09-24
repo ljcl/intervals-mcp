@@ -1,5 +1,5 @@
 name: Improvement
-description: Propose an enhancement or change to strava-mcp
+description: Propose an enhancement or change to intervals-mcp
 title: "feat: "
 labels: ["type:feat"]
 body:

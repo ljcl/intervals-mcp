@@ -1,9 +1,9 @@
 services:
-  strava-mcp:
+  intervals-mcp:
     build:
       context: .
       dockerfile: apps/server/Dockerfile
-    container_name: strava-mcp-server
+    container_name: intervals-mcp-server
     restart: unless-stopped
     ports:
       - "3000:3000"

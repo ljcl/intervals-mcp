@@ -78,7 +78,7 @@ export function optionalObjectSchema(
   return {
     "~standard": {
       version: 1,
-      vendor: "strava-mcp",
+      vendor: "intervals-mcp",
       validate: (value) => {
         if (value === undefined || value === null) return { value: {} };
         if (typeof value !== "object" || Array.isArray(value)) {

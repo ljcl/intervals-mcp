@@ -1,4 +1,4 @@
-import preview, { darkGlobals } from "@strava-mcp/design-system/preview";
+import preview, { darkGlobals } from "@intervals-mcp/design-system/preview";
 import { expect } from "storybook/test";
 import { AppShell, type DisplayModeApp } from "./AppShell";
 import { CardHeader } from "./CardHeader";

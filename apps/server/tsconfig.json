@@ -1,5 +1,5 @@
 {
-  "extends": "@strava-mcp/tsconfig/base.json",
+  "extends": "@intervals-mcp/tsconfig/base.json",
   "compilerOptions": {
     "types": ["bun"]
   },

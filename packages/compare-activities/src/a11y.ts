@@ -1,4 +1,4 @@
-import { formatPace, formatTime } from "@strava-mcp/data";
+import { formatPace, formatTime } from "@intervals-mcp/data";
 import { alignedKey, type PaceCategory } from "./align";
 import { type AlignedPoint, type AxisKey, type MetricKey } from "./types";
 

@@ -4,7 +4,7 @@ import {
   normalizeValue,
   percentileDomain,
   rampColor,
-} from "@strava-mcp/data";
+} from "@intervals-mcp/data";
 import { type SegmentEffortRow } from "./types";
 
 /** {min,max} speed window for the heat ramp. */

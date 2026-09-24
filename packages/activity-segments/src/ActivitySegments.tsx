@@ -1,5 +1,5 @@
 import { Collapsible } from "@base-ui/react/collapsible";
-import { formatClock, isRunning, RAMP_GRADIENT_CSS } from "@strava-mcp/data";
+import { formatClock, isRunning, RAMP_GRADIENT_CSS } from "@intervals-mcp/data";
 import {
   CardHeader,
   Chevron,
@@ -7,7 +7,7 @@ import {
   type ModelContextApp,
   RampLegend,
   useModelContextSync,
-} from "@strava-mcp/ui";
+} from "@intervals-mcp/ui";
 import { useCallback, useMemo, useState } from "react";
 import styles from "./ActivitySegments.module.css";
 import { buildRowLabel, buildSegmentsA11ySummary } from "./a11y";

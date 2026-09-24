@@ -1,5 +1,5 @@
-import { formatDistance, formatPace, formatTime } from "@strava-mcp/data";
-import { GRID_DASHARRAY, getChartTokens } from "@strava-mcp/design-system";
+import { formatDistance, formatPace, formatTime } from "@intervals-mcp/data";
+import { GRID_DASHARRAY, getChartTokens } from "@intervals-mcp/design-system";
 import {
   CardHeader,
   EmptyState,
@@ -13,7 +13,7 @@ import {
   useModelContextSync,
   useViewTool,
   type ViewToolRegistry,
-} from "@strava-mcp/ui";
+} from "@intervals-mcp/ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Area,

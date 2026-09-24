@@ -23,7 +23,7 @@ const mcp = createMcpEndpoint(createServer);
 
 // --- Server Startup ---
 
-console.error("Starting Strava MCP Server...");
+console.error("Starting Intervals Extra MCP server...");
 warnIfMcpUnprotected();
 console.error("Checking Strava token validity...");
 await ensureValidToken();

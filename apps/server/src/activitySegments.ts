@@ -3,7 +3,7 @@ import { isRunningActivity } from "./utils/running";
 
 /**
  * One segment effort flattened for the activity-segments app. Mirrors
- * `SegmentEffortRow` in `@strava-mcp/activity-segments/src/types.ts`; grade and
+ * `SegmentEffortRow` in `@intervals-mcp/activity-segments/src/types.ts`; grade and
  * climb category come from the nested segment, the rest from the effort itself.
  */
 export interface ActivitySegmentRow {

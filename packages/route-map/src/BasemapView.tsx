@@ -43,7 +43,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 // segment halos — threw in the worker and silently vanished. v5's answer was
 // its pre-built self-contained CSP worker; v6 dropped that build, so the
 // `?bundled-raw` import (the `bundledRawWorker` plugin in
-// @strava-mcp/vite-config) flattens the worker's import graph into one
+// @intervals-mcp/vite-config) flattens the worker's import graph into one
 // self-contained script in a dedicated build, which we hand over as a Blob
 // URL exactly as before. The blob's origin matches the document's, so
 // MapLibre spawns it directly as a module worker.

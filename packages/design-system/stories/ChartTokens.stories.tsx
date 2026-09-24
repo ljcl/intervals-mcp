@@ -2,8 +2,8 @@ import {
   GRID_DASHARRAY,
   getChartTokens,
   MOBILE_BREAKPOINT_PX,
-} from "@strava-mcp/design-system";
-import preview from "@strava-mcp/design-system/preview";
+} from "@intervals-mcp/design-system";
+import preview from "@intervals-mcp/design-system/preview";
 
 const cellStyle: React.CSSProperties = {
   padding: "8px 12px",

@@ -1,5 +1,5 @@
-import { formatTime } from "@strava-mcp/data";
-import { TIER_COLORS } from "@strava-mcp/design-system";
+import { formatTime } from "@intervals-mcp/data";
+import { TIER_COLORS } from "@intervals-mcp/design-system";
 import {
   CardHeader,
   EmptyState,
@@ -14,7 +14,7 @@ import {
   useModelContextSync,
   useViewTool,
   type ViewToolRegistry,
-} from "@strava-mcp/ui";
+} from "@intervals-mcp/ui";
 import {
   type KeyboardEvent,
   type PointerEvent,

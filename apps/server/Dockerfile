@@ -12,12 +12,12 @@ FROM base AS toolchain
 COPY package.json ./
 RUN bun add -g turbo@"$(bun --print 'require("./package.json").devDependencies.turbo')"
 
-# 1) Prune the monorepo to the subset @strava-mcp/server needs.
+# 1) Prune the monorepo to the subset @intervals-mcp/server needs.
 #    Produces /app/out/json (package.json files), /app/out/full (sources),
 #    and /app/out/bun.lock (subset lockfile).
 FROM toolchain AS pruner
 COPY . .
-RUN turbo prune @strava-mcp/server --docker
+RUN turbo prune @intervals-mcp/server --docker
 
 # 2) Build: full deps then turbo build of the server's dependencies, which
 #    runs every MCP App package's vite build (packages/*/dist/app.html).
@@ -26,7 +26,7 @@ COPY --from=pruner /app/out/json/ ./
 COPY --from=pruner /app/out/bun.lock ./bun.lock
 RUN --mount=type=cache,target=/root/.bun/install/cache bun install --frozen-lockfile
 COPY --from=pruner /app/out/full/ ./
-RUN turbo run build --filter=@strava-mcp/server^...
+RUN turbo run build --filter=@intervals-mcp/server^...
 
 # 3) Prod-only deps plus the data dir, prepared in a SHELL stage.
 #    Distroless cannot RUN, so the install, mkdir, and chown happen here.
@@ -43,11 +43,11 @@ WORKDIR /app
 # MCP registry ownership proof: publish-mcp.yml publishes server.json as an OCI
 # package, and the registry pulls the image to check this label matches the
 # server name. Must stay in sync with `name` in server.json.
-LABEL io.modelcontextprotocol.server.name="io.github.ljcl/strava-mcp"
+LABEL io.modelcontextprotocol.server.name="io.github.ljcl/intervals-mcp"
 COPY --from=prod-deps --chown=65534:65534 /app ./
 COPY --from=builder  --chown=65534:65534 /app/apps/server/src ./apps/server/src
 COPY --from=builder  --chown=65534:65534 /app/apps/server/scripts ./apps/server/scripts
-# JIT workspace dependency: @strava-mcp/data has no build step, its
+# JIT workspace dependency: @intervals-mcp/data has no build step, its
 # `exports` points straight at ./src/index.ts, and bun resolves that at
 # runtime. Without the sources the image builds green and dies on the
 # first import (#341 shipped exactly that). dockerRuntime.test.ts pins it.

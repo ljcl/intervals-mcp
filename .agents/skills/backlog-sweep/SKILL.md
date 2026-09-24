@@ -17,7 +17,7 @@ afterwards silently invalidates file paths, line numbers, dependency notes, and
 sometimes whole premises. This sweep finds and fixes that drift so the next
 implementer isn't working from fiction.
 
-Issues live in GitHub Issues and are triaged on the "strava-mcp backlog" Project
+Issues live in GitHub Issues and are triaged on the "intervals-mcp backlog" Project
 board (see docs/project.md for labels and board fields).
 
 ## When to run
@@ -84,10 +84,10 @@ board (see docs/project.md for labels and board fields).
    Two paths, by session type:
 
    - **Local sessions** (gh CLI with `project` scope):
-     `gh project item-edit --project-id PVT_kwHOABzAhM4BZ7u2 --id <item-id>
+     `gh project item-edit --project-id PVT_kwHOABzAhM4Bkfpa --id <item-id>
      --field-id <field-id> --single-select-option-id <option-id>`. Discover
-     item/field/option ids with `gh project item-list 1 --owner ljcl --format
-     json` and `gh project field-list 1 --owner ljcl --format json`.
+     item/field/option ids with `gh project item-list 3 --owner ljcl --format
+     json` and `gh project field-list 3 --owner ljcl --format json`.
    - **Cloud/iOS sessions** (no gh): the `github-projects` MCP server from
      `.mcp.json` (hosted GitHub MCP, projects toolset, auth via the
      `GH_MCP_PAT` env var in the cloud environment config). Hosted-build
@@ -99,11 +99,12 @@ board (see docs/project.md for labels and board fields).
      `issue_number`, so numeric item ids and option ids are no longer
      required. Ids stay discoverable via `list_project_fields`.
 
-   Constants for this board: project number 1, owner `ljcl`; field ids:
-   Status 355919451, Priority 355919475, Effort 355919489; Status options:
-   Backlog f75ad846, Ready a057814c, In progress 47fc9ee4, In review 2ba31d84,
-   Done 98236657; Priority options: P1 fc38b480, P2 d2ef2472, P3 5197fbf4;
-   Effort options: S ed6278ac, M c5c30106, L 7270adf2.
+   Constants for this board: project number 3, owner `ljcl`; field ids:
+   Status PVTSSF_lAHOABzAhM4BkfpazhjQC3o, Priority
+   PVTSSF_lAHOABzAhM4BkfpazhjQC4Y, Effort PVTSSF_lAHOABzAhM4BkfpazhjQC4c;
+   Status options: Backlog f75ad846, Ready a057814c, In progress 47fc9ee4,
+   In review 2ba31d84, Done 98236657; Priority options: P1 fc38b480, P2
+   d2ef2472, P3 5197fbf4; Effort options: S ed6278ac, M c5c30106, L 7270adf2.
 
 ## Conventions
 

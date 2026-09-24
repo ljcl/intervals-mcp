@@ -1,7 +1,7 @@
 import styles from "./RampLegend.module.css";
 
 export interface RampLegendProps {
-  /** CSS gradient for the bar, e.g. `RAMP_GRADIENT_CSS` from `@strava-mcp/data`. */
+  /** CSS gradient for the bar, e.g. `RAMP_GRADIENT_CSS` from `@intervals-mcp/data`. */
   gradient: string;
   /** Label for the low end of the scale. */
   minLabel: string;

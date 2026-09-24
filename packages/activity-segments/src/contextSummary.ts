@@ -1,4 +1,4 @@
-import { formatClock } from "@strava-mcp/data";
+import { formatClock } from "@intervals-mcp/data";
 import { selectHighlights, summaryLine } from "./segments";
 import { type SegmentEffortRow } from "./types";
 

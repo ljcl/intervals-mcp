@@ -1,5 +1,5 @@
 {
-  "name": "@strava-mcp/compare-activities",
+  "name": "@intervals-mcp/compare-activities",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -16,16 +16,16 @@
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "1.7.5",
     "@modelcontextprotocol/sdk": "1.30.0",
-    "@strava-mcp/data": "workspace:*",
-    "@strava-mcp/design-system": "workspace:*",
-    "@strava-mcp/ui": "workspace:*",
+    "@intervals-mcp/data": "workspace:*",
+    "@intervals-mcp/design-system": "workspace:*",
+    "@intervals-mcp/ui": "workspace:*",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "recharts": "3.10.1"
   },
   "devDependencies": {
-    "@strava-mcp/tsconfig": "workspace:*",
-    "@strava-mcp/vite-config": "workspace:*",
+    "@intervals-mcp/tsconfig": "workspace:*",
+    "@intervals-mcp/vite-config": "workspace:*",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
     "storybook": "10.5.8",

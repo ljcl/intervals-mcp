@@ -3,8 +3,8 @@ import {
   formatPaceOrSpeed,
   formatShortDate,
   isRunning,
-} from "@strava-mcp/data";
-import { type SummaryStat } from "@strava-mcp/ui";
+} from "@intervals-mcp/data";
+import { type SummaryStat } from "@intervals-mcp/ui";
 import {
   type ProgressSummary,
   type SegmentEffort,

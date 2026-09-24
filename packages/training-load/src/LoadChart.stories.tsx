@@ -1,5 +1,5 @@
-import preview from "@strava-mcp/design-system/preview";
-import { MobileCardShell } from "@strava-mcp/ui";
+import preview from "@intervals-mcp/design-system/preview";
+import { MobileCardShell } from "@intervals-mcp/ui";
 import { expect } from "storybook/test";
 import { mockWeeks } from "./__fixtures__/weeks";
 import { LoadChart } from "./LoadChart";

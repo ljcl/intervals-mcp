@@ -1,4 +1,4 @@
-import preview, { darkGlobals } from "@strava-mcp/design-system/preview";
+import preview, { darkGlobals } from "@intervals-mcp/design-system/preview";
 import { expect } from "storybook/test";
 import { mockSegmentProgressData } from "./__fixtures__/efforts";
 import { buildChartRows } from "./normalize";

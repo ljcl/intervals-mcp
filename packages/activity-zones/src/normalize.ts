@@ -2,8 +2,8 @@ import {
   dominantBucket,
   formatDurationShort,
   formatShortDate,
-} from "@strava-mcp/data";
-import { type SummaryStat } from "@strava-mcp/ui";
+} from "@intervals-mcp/data";
+import { type SummaryStat } from "@intervals-mcp/ui";
 import { type ActivityZonesData, type ZoneBucket, type ZoneSet } from "./types";
 
 /** One chart row per zone bucket. */

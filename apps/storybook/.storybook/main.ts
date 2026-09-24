@@ -1,9 +1,9 @@
+import { bundledRawWorker } from "@intervals-mcp/vite-config/maplibre-worker";
 import { defineMain } from "@storybook/react-vite/node";
-import { bundledRawWorker } from "@strava-mcp/vite-config/maplibre-worker";
 
 export default defineMain({
   // route-map's BasemapView imports its MapLibre worker via `?bundled-raw`,
-  // served by this plugin (see @strava-mcp/vite-config). Registered here so
+  // served by this plugin (see @intervals-mcp/vite-config). Registered here so
   // Storybook dev/build and the story smoke tests resolve it.
   viteFinal: (config) => {
     config.plugins = [...(config.plugins ?? []), bundledRawWorker()];

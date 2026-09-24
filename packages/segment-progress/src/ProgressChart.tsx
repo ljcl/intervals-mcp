@@ -1,6 +1,6 @@
-import { formatClock } from "@strava-mcp/data";
-import { GRID_DASHARRAY, getChartTokens } from "@strava-mcp/design-system";
-import { EmptyState } from "@strava-mcp/ui";
+import { formatClock } from "@intervals-mcp/data";
+import { GRID_DASHARRAY, getChartTokens } from "@intervals-mcp/design-system";
+import { EmptyState } from "@intervals-mcp/ui";
 import { type ReactNode, useCallback, useMemo } from "react";
 import {
   CartesianGrid,

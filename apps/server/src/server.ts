@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import { createRequire } from "node:module";
+import { dominantBucket } from "@intervals-mcp/data";
 import {
   type CallToolResult,
   type ListResourcesResult,
@@ -10,7 +11,6 @@ import {
   Server,
   type ToolAnnotations,
 } from "@modelcontextprotocol/server";
-import { dominantBucket } from "@strava-mcp/data";
 import { z } from "zod";
 import { mapActivitySegments } from "./activitySegments";
 import { type ActivityZonesData, mapActivityZones } from "./activityZones";
@@ -333,48 +333,54 @@ const APP_RESOURCES: AppResource[] = [
   {
     uri: "ui://activity-chart/app.html",
     name: "Activity Chart",
-    htmlPath: appHtmlRequire.resolve("@strava-mcp/activity-chart/app.html"),
+    htmlPath: appHtmlRequire.resolve("@intervals-mcp/activity-chart/app.html"),
   },
   {
     uri: "ui://cadence-trends/app.html",
     name: "Cadence Trends",
-    htmlPath: appHtmlRequire.resolve("@strava-mcp/cadence-trends/app.html"),
+    htmlPath: appHtmlRequire.resolve("@intervals-mcp/cadence-trends/app.html"),
   },
   {
     uri: "ui://route-map/app.html",
     name: "Route Map",
-    htmlPath: appHtmlRequire.resolve("@strava-mcp/route-map/app.html"),
+    htmlPath: appHtmlRequire.resolve("@intervals-mcp/route-map/app.html"),
     ui: { csp: ROUTE_MAP_CSP },
   },
   {
     uri: "ui://activity-segments/app.html",
     name: "Activity Segments",
-    htmlPath: appHtmlRequire.resolve("@strava-mcp/activity-segments/app.html"),
+    htmlPath: appHtmlRequire.resolve(
+      "@intervals-mcp/activity-segments/app.html",
+    ),
   },
   {
     uri: "ui://training-load/app.html",
     name: "Training Load",
-    htmlPath: appHtmlRequire.resolve("@strava-mcp/training-load/app.html"),
+    htmlPath: appHtmlRequire.resolve("@intervals-mcp/training-load/app.html"),
   },
   {
     uri: "ui://compare-activities/app.html",
     name: "Compare Activities",
-    htmlPath: appHtmlRequire.resolve("@strava-mcp/compare-activities/app.html"),
+    htmlPath: appHtmlRequire.resolve(
+      "@intervals-mcp/compare-activities/app.html",
+    ),
   },
   {
     uri: "ui://activity-zones/app.html",
     name: "Activity Zones",
-    htmlPath: appHtmlRequire.resolve("@strava-mcp/activity-zones/app.html"),
+    htmlPath: appHtmlRequire.resolve("@intervals-mcp/activity-zones/app.html"),
   },
   {
     uri: "ui://segment-progress/app.html",
     name: "Segment Progress",
-    htmlPath: appHtmlRequire.resolve("@strava-mcp/segment-progress/app.html"),
+    htmlPath: appHtmlRequire.resolve(
+      "@intervals-mcp/segment-progress/app.html",
+    ),
   },
   {
     uri: "ui://fitness-trend/app.html",
     name: "Fitness Trend",
-    htmlPath: appHtmlRequire.resolve("@strava-mcp/fitness-trend/app.html"),
+    htmlPath: appHtmlRequire.resolve("@intervals-mcp/fitness-trend/app.html"),
   },
 ];
 
@@ -1927,7 +1933,7 @@ const STATIC_SURFACE_TTL_MS = 60 * 60 * 1000;
 
 export function createServer(): Server {
   const server = new Server(
-    { name: "Strava MCP Server", version: SERVER_VERSION },
+    { name: "Intervals Extra", version: SERVER_VERSION },
     {
       capabilities: {
         tools: {},

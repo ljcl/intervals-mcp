@@ -1,4 +1,3 @@
-import { type useApp } from "@modelcontextprotocol/ext-apps/react";
 import {
   type AppMode,
   AppRoot,
@@ -11,7 +10,8 @@ import {
   useServerToolData,
   type ViewToolDefinition,
   type ViewToolRegistry,
-} from "@strava-mcp/ui";
+} from "@intervals-mcp/ui";
+import { type useApp } from "@modelcontextprotocol/ext-apps/react";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { RouteMap } from "./RouteMap";

@@ -1,6 +1,6 @@
 import { Collapsible } from "@base-ui/react/collapsible";
-import { formatClock, formatShortDate } from "@strava-mcp/data";
-import { Chevron } from "@strava-mcp/ui";
+import { formatClock, formatShortDate } from "@intervals-mcp/data";
+import { Chevron } from "@intervals-mcp/ui";
 import styles from "./EffortList.module.css";
 import {
   cadenceUnit,

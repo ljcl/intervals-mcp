@@ -2,8 +2,8 @@ import {
   formatDurationShort,
   formatPace,
   formatShortDate,
-} from "@strava-mcp/data";
-import { Tooltip, TooltipEntry } from "@strava-mcp/ui";
+} from "@intervals-mcp/data";
+import { Tooltip, TooltipEntry } from "@intervals-mcp/ui";
 import styles from "./SharedTooltip.module.css";
 
 interface RunTooltipPayloadItem {

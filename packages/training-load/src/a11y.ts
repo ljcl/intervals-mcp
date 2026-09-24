@@ -1,4 +1,4 @@
-import { formatShortDate } from "@strava-mcp/data";
+import { formatShortDate } from "@intervals-mcp/data";
 import { type WeekSummary } from "./types";
 
 /**

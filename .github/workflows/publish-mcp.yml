@@ -1,7 +1,7 @@
 name: Publish MCP Registry
 
 # Publishes server.json to the MCP registry on the same v* tag push that makes
-# docker.yml build and ship ghcr.io/ljcl/strava-mcp. The registry proves
+# docker.yml build and ship ghcr.io/ljcl/intervals-mcp. The registry proves
 # ownership of OCI packages by pulling the image and checking its
 # io.modelcontextprotocol.server.name label (set in apps/server/Dockerfile), so
 # this job waits for the multi-arch manifest to appear on GHCR before

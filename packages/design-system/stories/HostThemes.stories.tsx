@@ -1,5 +1,5 @@
-import { HOST_THEMES } from "@strava-mcp/design-system/host-themes";
-import preview, { darkGlobals } from "@strava-mcp/design-system/preview";
+import { HOST_THEMES } from "@intervals-mcp/design-system/host-themes";
+import preview, { darkGlobals } from "@intervals-mcp/design-system/preview";
 
 const colorVars = [
   "--color-background-primary",

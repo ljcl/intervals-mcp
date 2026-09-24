@@ -1,4 +1,4 @@
-import { formatShortDate } from "@strava-mcp/data";
+import { formatShortDate } from "@intervals-mcp/data";
 import { signedTsb } from "./normalize";
 import styles from "./TaperPlanList.module.css";
 import { type TaperPlan } from "./types";

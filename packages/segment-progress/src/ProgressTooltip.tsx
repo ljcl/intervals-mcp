@@ -1,5 +1,5 @@
-import { formatClock } from "@strava-mcp/data";
-import { Tooltip, TooltipEntry } from "@strava-mcp/ui";
+import { formatClock } from "@intervals-mcp/data";
+import { Tooltip, TooltipEntry } from "@intervals-mcp/ui";
 import {
   type ChartRow,
   cadenceUnit,

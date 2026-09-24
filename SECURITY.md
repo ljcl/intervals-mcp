@@ -1,22 +1,23 @@
 # Security Policy
 
-strava-mcp is an OAuth server: it handles a Strava client secret and persists
-athlete tokens to disk. Vulnerabilities in that surface are worth reporting
+intervals-mcp is a single-user MCP server: it holds an intervals.icu API key
+supplied by its operator. Vulnerabilities in that surface are worth reporting
 privately.
 
 ## Supported versions
 
 Only the latest release receives security fixes. Older tags and the
-corresponding `ghcr.io/ljcl/strava-mcp` images are not patched — upgrade to the
-newest version before reporting an issue you can only reproduce on an old one.
+corresponding `ghcr.io/ljcl/intervals-mcp` images are not patched — upgrade to
+the newest version before reporting an issue you can only reproduce on an old
+one.
 
 ## Reporting a vulnerability
 
 Please do **not** open a public issue for security problems.
 
-- Preferred: [report a vulnerability privately via GitHub](https://github.com/ljcl/strava-mcp/security/advisories/new)
+- Preferred: [report a vulnerability privately via GitHub](https://github.com/ljcl/intervals-mcp/security/advisories/new)
   (Security tab → "Report a vulnerability").
-- Fallback: email <luke@lukeclark.com.au> with "strava-mcp security" in the
+- Fallback: email <luke@lukeclark.com.au> with "intervals-mcp security" in the
   subject.
 
 Include what you can: affected version or image tag, reproduction steps, and
@@ -28,9 +29,9 @@ project, so those are targets rather than guarantees.
 
 In scope:
 
-- The MCP server (`apps/server`): OAuth flow, token storage and refresh,
-  `/mcp` transport, tool handlers that call the Strava API.
-- The published Docker image (`ghcr.io/ljcl/strava-mcp`).
+- The MCP server (`apps/server`): config and startup, `/mcp` transport, tool
+  handlers that call the Strava API.
+- The published Docker image (`ghcr.io/ljcl/intervals-mcp`).
 - The MCP App bundles served as resources (`ui://.../app.html`).
 
 Out of scope:
@@ -39,18 +40,15 @@ Out of scope:
 - Vulnerabilities that require an already-compromised host or a
   misconfigured deployment (for example, exposing the server publicly without
   the documented reverse proxy / tunnel).
-- Denial of service via the Strava rate limits.
+- Denial of service via upstream rate limits.
 
-## Token and secret handling
+## Secret handling
 
-- `STRAVA_CLIENT_ID` / `STRAVA_CLIENT_SECRET` are supplied via environment
-  variables only; they are never written to disk by the server.
-- Athlete tokens are persisted to `data/tokens.json`. That file is sensitive:
-  it is gitignored and must never be committed, and the `./data` bind mount
-  should not be world-readable.
-- The container runs as the non-root user UID 65534 on a distroless base, so
-  `data/` must be writable by that UID (see
+- The intervals.icu API key is supplied via an environment variable only; it
+  is never written to disk by the server.
+- The container runs as the non-root user UID 65534 on a distroless base (see
   [docs/operations.md](docs/operations.md#docker-notes)).
 
-If you find tokens or secrets leaking anywhere outside these paths (logs,
-error messages, MCP tool output), that is a vulnerability — please report it.
+If you find the API key or other secrets leaking anywhere outside the
+environment (logs, error messages, MCP tool output), that is a
+vulnerability — please report it.

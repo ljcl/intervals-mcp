@@ -151,11 +151,11 @@ identity:
 
 ```bash
 # Signed provenance — proves which workflow and commit built this image
-gh attestation verify oci://ghcr.io/ljcl/strava-mcp:latest --repo ljcl/strava-mcp
+gh attestation verify oci://ghcr.io/ljcl/intervals-mcp:latest --repo ljcl/intervals-mcp
 
 # What is inside it
-docker buildx imagetools inspect ghcr.io/ljcl/strava-mcp:latest --format '{{ json .SBOM }}'
-docker buildx imagetools inspect ghcr.io/ljcl/strava-mcp:latest --format '{{ json .Provenance }}'
+docker buildx imagetools inspect ghcr.io/ljcl/intervals-mcp:latest --format '{{ json .SBOM }}'
+docker buildx imagetools inspect ghcr.io/ljcl/intervals-mcp:latest --format '{{ json .Provenance }}'
 ```
 
 The SBOM feeds vulnerability scanners directly (Trivy, Grype, Docker Scout).

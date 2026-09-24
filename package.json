@@ -1,5 +1,5 @@
 {
-  "name": "strava-mcp",
+  "name": "intervals-mcp",
   "version": "3.0.0",
   "private": true,
   "type": "module",
@@ -24,8 +24,8 @@
     "build:affected": "turbo run build --affected",
     "typecheck:affected": "turbo run typecheck --affected",
     "knip": "knip",
-    "storybook": "turbo run storybook --filter=@strava-mcp/storybook",
-    "build-storybook": "turbo run build:storybook --filter=@strava-mcp/storybook",
+    "storybook": "turbo run storybook --filter=@intervals-mcp/storybook",
+    "build-storybook": "turbo run build:storybook --filter=@intervals-mcp/storybook",
     "coverage:summary": "bun scripts/coverage-summary.ts",
     "shots": "bun scripts/story-shots.ts"
   },

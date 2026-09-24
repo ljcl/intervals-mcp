@@ -1,10 +1,10 @@
+import { MOBILE_BREAKPOINT_PX } from "@intervals-mcp/design-system";
 import { type McpUiHostContext } from "@modelcontextprotocol/ext-apps";
-import { MOBILE_BREAKPOINT_PX } from "@strava-mcp/design-system";
 import { useSyncExternalStore } from "react";
 
 /**
  * Width (in px) below which we render the mobile layout. Re-exported from
- * design-system so existing `@strava-mcp/ui` consumers keep working.
+ * design-system so existing `@intervals-mcp/ui` consumers keep working.
  *
  * Design-system owns the value (see
  * `packages/design-system/src/chart-tokens.ts`). The detection heuristic

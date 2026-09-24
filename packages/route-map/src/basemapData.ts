@@ -6,7 +6,7 @@
  * MapLibre paints onto canvas and cannot resolve CSS custom properties.
  */
 
-import { TIER_COLORS } from "@strava-mcp/design-system";
+import { TIER_COLORS } from "@intervals-mcp/design-system";
 import {
   type PhotoMarker,
   type SplitMarker,

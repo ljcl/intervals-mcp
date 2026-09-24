@@ -4,19 +4,19 @@
  * an image that builds perfectly green and then dies on its first line of
  * work:
  *
- *     error: Cannot find module '@strava-mcp/data' from '/app/apps/server/src/server.ts'
+ *     error: Cannot find module '@intervals-mcp/data' from '/app/apps/server/src/server.ts'
  *
  * That is what #341 shipped. It gave the server its first import of
- * `@strava-mcp/data` — a JIT package with no build step, whose `exports`
+ * `@intervals-mcp/data` — a JIT package with no build step, whose `exports`
  * points straight at raw TypeScript under `src/` — while the runner only ever
  * copied each MCP App's built `dist/`. `bun install` in the prod-deps stage
- * still creates the `node_modules/@strava-mcp/data` symlink and `turbo prune`
+ * still creates the `node_modules/@intervals-mcp/data` symlink and `turbo prune`
  * still supplies the package.json, so resolution gets all the way to
  * `./src/index.ts` before discovering the file is not in the image.
  *
  * Neither `docker compose build` nor docker.yml can catch that: both assert
  * the image builds, and the missing file is only resolved at container start.
- * So this guard resolves every `@strava-mcp/*` specifier the server's runtime
+ * So this guard resolves every `@intervals-mcp/*` specifier the server's runtime
  * sources reference through the target package's own `exports` map, and
  * asserts the file it lands on is inside something the runner copies.
  *
@@ -126,7 +126,7 @@ function workspaceDirs(): Map<string, string> {
   return dirs;
 }
 
-/** Every `@strava-mcp/*` specifier the server's non-test sources reference. */
+/** Every `@intervals-mcp/*` specifier the server's non-test sources reference. */
 function serverSpecifiers(): Map<string, string[]> {
   const specifiers = new Map<string, string[]>();
   const files = readdirSync(SRC_DIR, { recursive: true, encoding: "utf8" })
@@ -139,7 +139,7 @@ function serverSpecifiers(): Map<string, string[]> {
     // Catches static imports and the `createRequire(...).resolve()` calls
     // behind APP_RESOURCES alike — both are string literals, and both have to
     // resolve inside the container.
-    for (const match of source.matchAll(/["'](@strava-mcp\/[^"']+)["']/g)) {
+    for (const match of source.matchAll(/["'](@intervals-mcp\/[^"']+)["']/g)) {
       const specifier = match[1]!;
       const readers = specifiers.get(specifier) ?? [];
       if (!readers.includes(file)) readers.push(file);
@@ -192,7 +192,7 @@ describe("Dockerfile runner stage", () => {
     const specifiers = serverSpecifiers();
 
     // A broken walk or regex finding nothing must not pass vacuously: the
-    // server resolves the nine MCP App bundles plus @strava-mcp/data.
+    // server resolves the nine MCP App bundles plus @intervals-mcp/data.
     expect(specifiers.size).toBeGreaterThanOrEqual(10);
     expect(copied.length).toBeGreaterThanOrEqual(3);
 

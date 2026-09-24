@@ -1,5 +1,5 @@
 {
-  "name": "@strava-mcp/vite-config",
+  "name": "@intervals-mcp/vite-config",
   "private": true,
   "type": "module",
   "exports": {

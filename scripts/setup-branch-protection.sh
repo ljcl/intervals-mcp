@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Apply branch protection and repo settings for strava-mcp.
+# Apply branch protection and repo settings for intervals-mcp.
 # Safe to re-run. Requires: gh authenticated with admin on the repo, repo already public,
 # and the CI "check" job to have run at least once (so the status context exists).
 set -euo pipefail

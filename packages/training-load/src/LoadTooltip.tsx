@@ -1,4 +1,4 @@
-import { Tooltip, TooltipEntry } from "@strava-mcp/ui";
+import { Tooltip, TooltipEntry } from "@intervals-mcp/ui";
 import styles from "./LoadTooltip.module.css";
 import { formatHours } from "./normalize";
 

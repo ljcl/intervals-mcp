@@ -1,4 +1,4 @@
 {
-  "extends": "@strava-mcp/tsconfig/react.json",
+  "extends": "@intervals-mcp/tsconfig/react.json",
   "include": ["src"]
 }

@@ -248,14 +248,14 @@ amber in light).
 
 ## Docker image build
 
-Built via `turbo prune @strava-mcp/server --docker`; the builder stage uses
-`--filter=@strava-mcp/server^...` to build only the server's workspace deps
+Built via `turbo prune @intervals-mcp/server --docker`; the builder stage uses
+`--filter=@intervals-mcp/server^...` to build only the server's workspace deps
 (the MCP App packages), excluding the JIT server itself. The prune stage
 derives the package set from the workspace graph — no edit per package needed
 there.
 
 The distroless **runner** stage `COPY`s each app's `dist/` explicitly, and
-covers **JIT dependencies too**: `@strava-mcp/data` exports raw TypeScript with
+covers **JIT dependencies too**: `@intervals-mcp/data` exports raw TypeScript with
 no build output, so the runner copies `packages/data/src`. That per-package
 COPY list is the image's one manual step — adding an MCP App means adding one
 `COPY --from=builder .../packages/<app>/dist` line there.
@@ -264,7 +264,7 @@ Missing a COPY is invisible until the container starts: `bun install` still
 writes the workspace symlink and prune still supplies the manifest, so
 resolution walks to a file that is not in the image and the process dies on
 first import. No image build catches it, which is why
-`apps/server/src/dockerRuntime.test.ts` resolves every `@strava-mcp/*`
+`apps/server/src/dockerRuntime.test.ts` resolves every `@intervals-mcp/*`
 specifier in the server's non-test sources through the target package's
 `exports` map and asserts the file lands inside a runner COPY — in both
 directions (a stale COPY for a removed app fails too), pinning that destinations

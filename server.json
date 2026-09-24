@@ -1,17 +1,17 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.ljcl/strava-mcp",
-  "description": "Remote MCP server for your Strava activities, segments, and routes",
+  "name": "io.github.ljcl/intervals-mcp",
+  "description": "Remote MCP server for intervals.icu run data and analysis",
   "repository": {
-    "url": "https://github.com/ljcl/strava-mcp",
+    "url": "https://github.com/ljcl/intervals-mcp",
     "source": "github"
   },
   "version": "3.0.0",
-  "websiteUrl": "https://github.com/ljcl/strava-mcp#readme",
+  "websiteUrl": "https://github.com/ljcl/intervals-mcp#readme",
   "packages": [
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/ljcl/strava-mcp:2.3.0",
+      "identifier": "ghcr.io/ljcl/intervals-mcp:0.1.0",
       "runtimeHint": "docker",
       "transport": {
         "type": "streamable-http",

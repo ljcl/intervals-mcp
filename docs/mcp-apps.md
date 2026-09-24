@@ -56,7 +56,7 @@ model should know about.
 
 ## Targeting mobile
 
-Use `useMobileMode(hostCtx)` from `@strava-mcp/ui`. Do not roll your own
+Use `useMobileMode(hostCtx)` from `@intervals-mcp/ui`. Do not roll your own
 detection. Five signals at a 640px breakpoint, any one triggers mobile:
 
 1. `host.platform === "mobile"` (strongest, rarely populated)
@@ -107,7 +107,7 @@ intentionally has no `@media (prefers-color-scheme: dark)` rule, because
 host-injected vars fight partial overrides from a media query on `:root`. Dark
 mode on Claude iOS comes from the host sending dark vars. Storybook simulates
 dark via the `[data-theme="dark"]` selector on its decorator; a dark story
-variant needs only `globals: darkGlobals` (from `@strava-mcp/design-system/preview`),
+variant needs only `globals: darkGlobals` (from `@intervals-mcp/design-system/preview`),
 never a per-story decorator.
 
 New UI sitting on a theme-invariant colour must pair it with the invariant
