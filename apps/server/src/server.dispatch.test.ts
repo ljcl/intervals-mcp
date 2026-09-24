@@ -5,6 +5,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { handledNotFound, handledRateLimit } from "./__fixtures__";
+import { getActivity as getIntervalsActivity } from "./intervalsClient";
 import {
   getActivityById,
   getAllActivities,
@@ -21,6 +22,11 @@ vi.mock("./stravaClient", async (importOriginal) => {
   };
 });
 
+vi.mock("./intervalsClient", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./intervalsClient")>();
+  return { ...actual, getActivity: vi.fn() };
+});
+
 // dispatchToolCall resolves the API key once per call (#240).
 vi.mock("./config", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./config")>();
@@ -35,6 +41,7 @@ const mockedToken = vi.mocked(getIntervalsApiKey);
 const mockedList = vi.mocked(getAllActivities);
 const mockedById = vi.mocked(getActivityById);
 const mockedStats = vi.mocked(getAthleteStats);
+const mockedIntervalsActivity = vi.mocked(getIntervalsActivity);
 
 describe("dispatchToolCall input validation", () => {
   beforeEach(() => {
@@ -43,6 +50,7 @@ describe("dispatchToolCall input validation", () => {
     mockedList.mockReset();
     mockedById.mockReset();
     mockedStats.mockReset();
+    mockedIntervalsActivity.mockReset();
   });
 
   it("applies zod defaults when optional args are omitted (get-best-efforts)", async () => {
@@ -232,16 +240,15 @@ describe("dispatchToolCall input validation", () => {
       id: "1",
       name: "Run A",
       type: "Run",
-      sport_type: "Run",
-      start_date_local: "2026-06-01T07:00:00Z",
+      start_date_local: "2026-06-01T07:00:00",
       distance: 5000,
       moving_time: 1500,
     };
-    mockedById.mockResolvedValueOnce(
+    mockedIntervalsActivity.mockResolvedValueOnce(
       // biome-ignore lint/suspicious/noExplicitAny: minimal fixture
       activity as any,
     );
-    mockedById.mockResolvedValueOnce(
+    mockedIntervalsActivity.mockResolvedValueOnce(
       // biome-ignore lint/suspicious/noExplicitAny: minimal fixture
       { ...activity, id: "2", name: "Run B" } as any,
     );
@@ -295,7 +302,7 @@ describe("dispatchToolCall input validation", () => {
   });
 
   it("maps a thrown 404 to a not-found line", async () => {
-    mockedById.mockRejectedValue(handledNotFound("getActivityById"));
+    mockedIntervalsActivity.mockRejectedValue(handledNotFound("getActivity"));
 
     const result = await dispatchToolCall("get-compare-activities-data", {
       activity_id_1: "1",

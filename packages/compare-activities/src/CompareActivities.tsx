@@ -215,19 +215,19 @@ export function buildDeltaTiles(compare: CompareData): DeltaTile[] {
     {
       key: "time",
       label: "Time",
-      a: a1.time_formatted,
-      b: a2.time_formatted,
+      a: formatTime(a1.moving_time),
+      b: formatTime(a2.moving_time),
       delta: "",
     },
   ];
 
-  if (a1.pace && a2.pace && differences.pace) {
+  if (a1.pace_min_per_km && a2.pace_min_per_km && differences.pace) {
     tiles.push({
       key: "pace",
       label: "Pace",
-      a: a1.pace.min_per_km,
-      b: a2.pace.min_per_km,
-      delta: `${signed(differences.pace.seconds_per_km)}s/km`,
+      a: a1.pace_min_per_km,
+      b: a2.pace_min_per_km,
+      delta: `${differences.pace.min_per_km}/km`,
       trend:
         differences.pace.interpretation === "faster"
           ? "better"
@@ -236,12 +236,16 @@ export function buildDeltaTiles(compare: CompareData): DeltaTile[] {
             : undefined,
     });
   }
-  if (a1.avg_hr != null && a2.avg_hr != null && differences.avg_hr != null) {
+  if (
+    a1.average_hr != null &&
+    a2.average_hr != null &&
+    differences.avg_hr != null
+  ) {
     tiles.push({
       key: "hr",
       label: "Avg HR",
-      a: `${a1.avg_hr}`,
-      b: `${a2.avg_hr}`,
+      a: `${a1.average_hr}`,
+      b: `${a2.average_hr}`,
       delta: `${signed(differences.avg_hr)}bpm`,
     });
   }

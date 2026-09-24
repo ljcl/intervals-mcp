@@ -1,7 +1,7 @@
 {
   "note": "Permission-relevant identity of every advertised tool (#303). Changing an entry invalidates the stored 'Allow always' grant for that tool. See apps/server/src/toolSurface.test.ts for how to regenerate.",
   "tools": {
-    "compare-activities": "7c5ca08d39de285a",
+    "compare-activities": "a6640210eba873ca",
     "get-activity": "065324dd0b9c4496",
     "get-activity-laps": "994dd306632f23e4",
     "get-activity-streams": "77fc1c30b18dd91f",
@@ -12,7 +12,7 @@
     "get-athlete-stats": "30a3eb17ee7a32b7",
     "get-best-efforts": "4264b1982a4863b1",
     "get-cadence-trend-data": "c8f0ebf6975e8c17",
-    "get-compare-activities-data": "8312423253518126",
+    "get-compare-activities-data": "be4784b2a537c514",
     "get-fitness-trend": "7c0ac91de6f7e1d2",
     "get-fitness-trend-data": "c38dbe2fba194dba",
     "get-hill-analysis": "84299643653649a5",
@@ -30,7 +30,7 @@
     "view-activity-chart": "2ee9eac5f10d8abf",
     "view-activity-zones": "3db69cbf14494a7f",
     "view-cadence-trends": "2c0263e8c4ca662d",
-    "view-compare-activities": "bf50b51103394494",
+    "view-compare-activities": "359100b73b5705b5",
     "view-fitness-trend": "1f80b71635821a42",
     "view-route-map": "769725a377c97dd1",
     "view-training-load": "bf4e278289d4a833"

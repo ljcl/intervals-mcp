@@ -18,6 +18,15 @@ export interface ActivityStreamData {
   };
 }
 
+/** Running dynamics averages, present only for step-cadence types with device support. */
+export interface CompareRunningDynamics {
+  stance_time_ms: number | null;
+  vertical_oscillation_mm: number | null;
+  vertical_ratio_pct: number | null;
+  step_length_mm: number | null;
+  stride_m: number | null;
+}
+
 /** One side of the get-compare-activities-data payload. */
 export interface CompareSide {
   id: string;
@@ -25,25 +34,40 @@ export interface CompareSide {
   date: string;
   type: string;
   distance_km: number;
-  time_formatted: string;
-  pace: {
-    min_per_km: string;
-    min_per_mile: string;
-    raw_min_per_km: number;
-  } | null;
-  avg_hr: number | null;
+  /** Moving time in seconds. */
+  moving_time: number;
+  pace_min_per_km: string | null;
+  gap_min_per_km: string | null;
+  average_hr: number | null;
   max_hr: number | null;
   cadence_spm: number | null;
   elevation_gain_m: number;
+  /** icu_training_load. */
+  load: number | null;
+  decoupling_pct: number | null;
+  efficiency_factor: number | null;
+  running_dynamics: CompareRunningDynamics | null;
 }
 
 /** Aggregate comparison from the server's get-compare-activities-data tool. */
 export interface CompareData {
+  units: {
+    distance: "km";
+    pace: "min/km";
+    time: "s";
+    hr: "bpm";
+    elevation: "m";
+    cadence: "spm";
+  };
   activity_1: CompareSide;
   activity_2: CompareSide;
   differences: {
     distance_km: number;
-    pace: { seconds_per_km: number; interpretation: string } | null;
+    pace: {
+      seconds_per_km: number;
+      min_per_km: string;
+      interpretation: string;
+    } | null;
     avg_hr: number | null;
     cadence_spm: number | null;
     elevation_gain_m: number;

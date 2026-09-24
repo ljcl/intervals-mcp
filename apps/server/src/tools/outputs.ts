@@ -108,20 +108,40 @@ const PaceSchema = z.object({
 });
 
 // ---------- compare-activities ----------
+const CompareRunningDynamicsSchema = z.object({
+  stance_time_ms: z.number().nullable(),
+  vertical_oscillation_mm: z.number().nullable(),
+  vertical_ratio_pct: z.number().nullable(),
+  step_length_mm: z.number().nullable(),
+  stride_m: z.number().nullable(),
+});
 const CompareSideSchema = z.object({
   id: z.string(),
   name: z.string(),
   date: z.string(),
   type: z.string(),
   distance_km: z.number(),
-  time_formatted: z.string(),
-  pace: PaceSchema.extend({ raw_min_per_km: z.number() }).nullable(),
-  avg_hr: z.number().nullable(),
+  moving_time: z.number().describe("Moving time in seconds"),
+  pace_min_per_km: z.string().nullable(),
+  gap_min_per_km: z.string().nullable(),
+  average_hr: z.number().nullable(),
   max_hr: z.number().nullable(),
   cadence_spm: z.number().nullable(),
   elevation_gain_m: z.number(),
+  load: z.number().nullable().describe("icu_training_load"),
+  decoupling_pct: z.number().nullable(),
+  efficiency_factor: z.number().nullable(),
+  running_dynamics: CompareRunningDynamicsSchema.nullable(),
 });
 export const CompareActivitiesOutputSchema = z.object({
+  units: z.object({
+    distance: z.literal("km"),
+    pace: z.literal("min/km"),
+    time: z.literal("s"),
+    hr: z.literal("bpm"),
+    elevation: z.literal("m"),
+    cadence: z.literal("spm"),
+  }),
   activity_1: CompareSideSchema,
   activity_2: CompareSideSchema,
   differences: z.object({
@@ -129,6 +149,7 @@ export const CompareActivitiesOutputSchema = z.object({
     pace: z
       .object({
         seconds_per_km: z.number(),
+        min_per_km: z.string(),
         interpretation: z.string(),
       })
       .nullable(),

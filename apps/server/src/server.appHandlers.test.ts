@@ -658,15 +658,41 @@ describe("route map handlers", () => {
 });
 
 describe("compare activities handlers", () => {
+  function compareActivity(
+    overrides: Partial<IntervalsActivity> = {},
+  ): IntervalsActivity {
+    return {
+      id: "i1",
+      name: "Morning Run",
+      type: "Run",
+      start_date_local: "2026-06-01T07:00:00",
+      distance: 10000,
+      moving_time: 3200,
+      average_heartrate: 150,
+      max_heartrate: 172,
+      average_cadence: 84,
+      total_elevation_gain: 80,
+      icu_training_load: 60,
+      ...overrides,
+    } as unknown as IntervalsActivity;
+  }
+
   it("view-compare-activities reports both sides and the pace delta", async () => {
-    mockedById.mockResolvedValueOnce(detailedActivity({ id: "1" }));
-    mockedById.mockResolvedValueOnce(
-      detailedActivity({ id: "2", name: "Race Day", average_speed: 3.7 }),
+    mockedIntervalsActivity.mockResolvedValueOnce(
+      compareActivity({ id: "i1" }),
+    );
+    mockedIntervalsActivity.mockResolvedValueOnce(
+      compareActivity({
+        id: "i2",
+        name: "Race Day",
+        moving_time: 3000,
+        average_heartrate: 160,
+      }),
     );
 
     const result = await dispatchToolCall("view-compare-activities", {
-      activity_id_1: "1",
-      activity_id_2: "2",
+      activity_id_1: "i1",
+      activity_id_2: "i2",
     });
 
     expect(result.isError).toBeUndefined();
@@ -677,11 +703,13 @@ describe("compare activities handlers", () => {
   });
 
   it("propagates a fetch failure as isError", async () => {
-    mockedById.mockRejectedValue(new Error("Record Not Found"));
+    mockedIntervalsActivity.mockRejectedValueOnce(
+      new Error("Record Not Found"),
+    );
 
     const result = await dispatchToolCall("get-compare-activities-data", {
-      activity_id_1: "1",
-      activity_id_2: "2",
+      activity_id_1: "i1",
+      activity_id_2: "i2",
     });
 
     expect(result.isError).toBe(true);

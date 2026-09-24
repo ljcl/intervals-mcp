@@ -24,6 +24,7 @@ import {
   type FitnessTrendAppData,
   mapFitnessTrendApp,
 } from "./fitnessTrendApp";
+import { formatDuration } from "./formatters";
 import { getActivity as getIntervalsActivity } from "./intervalsClient";
 import {
   cumulativeDistances,
@@ -234,16 +235,16 @@ const APP_TOOL_INPUT_SCHEMAS: Record<string, z.ZodType> = {
     activity_id: intervalsActivityIdInput("The intervals.icu activity id."),
   }),
   "view-compare-activities": z.object({
-    activity_id_1: stravaIdInput(
+    activity_id_1: intervalsActivityIdInput(
       "First activity ID (baseline/older activity).",
     ),
-    activity_id_2: stravaIdInput(
+    activity_id_2: intervalsActivityIdInput(
       "Second activity ID (comparison/newer activity).",
     ),
   }),
   "get-compare-activities-data": z.object({
-    activity_id_1: stravaIdInput("First activity ID (baseline)."),
-    activity_id_2: stravaIdInput("Second activity ID (comparison)."),
+    activity_id_1: intervalsActivityIdInput("First activity ID (baseline)."),
+    activity_id_2: intervalsActivityIdInput("Second activity ID (comparison)."),
   }),
 };
 
@@ -1326,18 +1327,18 @@ async function handleViewRouteMap(
 }
 
 /**
- * Fetch both detailed activities and run the same aggregate comparison the
- * compare-activities text tool uses. getActivityById is TTL-cached in
- * fetchClient, so the view + data-tool pair costs one Strava fetch per
- * activity, not two.
+ * Fetch both intervals.icu activities and run the same aggregate comparison
+ * the compare-activities text tool uses. getIntervalsActivity is TTL-cached
+ * in fetchClient, so the view + data-tool pair costs one fetch per activity,
+ * not two.
  */
 async function loadCompareActivitiesData(
   args: Record<string, unknown>,
   token: string,
 ): Promise<ReturnType<typeof buildComparison>> {
   const [activity1, activity2] = await Promise.all([
-    getActivityById(token, String(args.activity_id_1)),
-    getActivityById(token, String(args.activity_id_2)),
+    getIntervalsActivity(token, String(args.activity_id_1)),
+    getIntervalsActivity(token, String(args.activity_id_2)),
   ]);
   return buildComparison(activity1, activity2);
 }
@@ -1356,8 +1357,8 @@ async function handleViewCompareActivities(
 ): Promise<ToolCallResult> {
   const data = await loadCompareActivitiesData(args, token);
   const lines = [
-    `Activity 1: ${data.activity_1.name} (${data.activity_1.date}) — ${data.activity_1.distance_km} km in ${data.activity_1.time_formatted}`,
-    `Activity 2: ${data.activity_2.name} (${data.activity_2.date}) — ${data.activity_2.distance_km} km in ${data.activity_2.time_formatted}`,
+    `Activity 1: ${data.activity_1.name} (${data.activity_1.date}), ${data.activity_1.distance_km} km in ${formatDuration(data.activity_1.moving_time)}`,
+    `Activity 2: ${data.activity_2.name} (${data.activity_2.date}), ${data.activity_2.distance_km} km in ${formatDuration(data.activity_2.moving_time)}`,
   ];
   if (data.differences.pace) {
     const s = data.differences.pace.seconds_per_km;
