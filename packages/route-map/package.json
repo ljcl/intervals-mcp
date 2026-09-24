@@ -19,7 +19,7 @@
     "@intervals-mcp/data": "workspace:*",
     "@intervals-mcp/design-system": "workspace:*",
     "@intervals-mcp/ui": "workspace:*",
-    "maplibre-gl": "6.4.0",
+    "maplibre-gl": "6.4.1",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
