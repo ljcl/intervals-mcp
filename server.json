@@ -55,12 +55,6 @@
           "description": "Public URL, used only to warn when /mcp is exposed without MCP_AUTH_TOKEN",
           "isRequired": false,
           "format": "string"
-        },
-        {
-          "name": "ROUTE_EXPORT_PATH",
-          "description": "Absolute directory for exported GPX files",
-          "isRequired": false,
-          "format": "filepath"
         }
       ]
     }

@@ -2,7 +2,6 @@
   "note": "Permission-relevant identity of every advertised tool (#303). Changing an entry invalidates the stored 'Allow always' grant for that tool. See apps/server/src/toolSurface.test.ts for how to regenerate.",
   "tools": {
     "compare-activities": "7c5ca08d39de285a",
-    "export-activity-gpx": "dc3905234c92b0c4",
     "get-activity": "065324dd0b9c4496",
     "get-activity-laps": "83e66a79492899a1",
     "get-activity-streams": "77fc1c30b18dd91f",

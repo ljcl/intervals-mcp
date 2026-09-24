@@ -54,12 +54,8 @@ describe("annotation constants", () => {
  * table fails the exhaustiveness check below, so adding one forces a
  * deliberate answer to "does this mutate anything?" — the question the host's
  * permission bucket is derived from.
- *
- * The three `export-*` tools are writes on purpose: they save a file into
- * ROUTE_EXPORT_PATH on the server's own disk. They will keep prompting, and
- * should.
  */
-const EXPECTED_CLASS: Record<string, "read" | "destroy" | "write"> = {
+const EXPECTED_CLASS: Record<string, "read" | "destroy"> = {
   // Reads — the Strava API surface.
   "get-athlete-stats": "read",
   "get-activity-zones": "read",
@@ -100,13 +96,11 @@ const EXPECTED_CLASS: Record<string, "read" | "destroy" | "write"> = {
 
   // Writes.
   "update-activity": "destroy",
-  "export-activity-gpx": "write",
 };
 
 const ANNOTATIONS_FOR_CLASS = {
   read: READ_ONLY,
   destroy: WRITE_DESTRUCTIVE,
-  write: WRITE_IDEMPOTENT,
 } as const;
 
 describe("tool annotations exhaustiveness", () => {

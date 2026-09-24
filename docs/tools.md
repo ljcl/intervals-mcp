@@ -97,7 +97,6 @@ athletes and should not be compared against rMSSD norms.
 | `update-activity` | Update an activity's description, title, sport type, gear, or flags |
 | `get-activity-zones` | Time spent in each HR and power zone for an activity |
 | `get-activity-laps` | Laps of an activity with sport-aware pace/speed, HR, power, cadence |
-| `export-activity-gpx` | Export an activity's recorded track as GPX built from its streams, inline or to a file |
 | `get-running-summary` | Running-focused summary with HR zones and lap analysis |
 | `get-aerobic-analysis` | Aerobic decoupling, efficiency factor, and intensity factor from HR + power/speed streams |
 | `get-hill-analysis` | Climb/descent detection with GAP and early-vs-late climb effort drift |
@@ -154,13 +153,12 @@ so it needs the `activity:write` scope.
 
 Every tool declares MCP annotations so a host can tell reads from writes. The
 32 read tools set `readOnlyHint: true` and `destructiveHint: false`, which is
-the combination clients use to offer a durable "always allow". Two tools are
-writes and are expected to keep asking:
+the combination clients use to offer a durable "always allow". One tool is a
+write and is expected to keep asking:
 
 | Tool | Why it asks |
 | ---- | ----------- |
 | `update-activity` | Overwrites an existing activity's fields |
-| `export-activity-gpx` | Returns the document in the response, or writes a file into `ROUTE_EXPORT_PATH` |
 
 No tool sets `anthropic/requiresUserInteraction`, so nothing opts out of
 "always allow" on purpose.

@@ -98,9 +98,6 @@ breaking them has shipped bugs — do not work around them locally.
   `get-activity-zones` calls `mapActivityZones` from `activityZones.ts`. Empty
   results emit a valid payload (`count: 0`). `warnOnSchemaDrift` keeps dev
   honest.
-- **Exports choose delivery via `_exportOutput.ts`**: omitting `output` picks
-  file when `ROUTE_EXPORT_PATH` is set, content otherwise. Content mode caps
-  bytes and says outright that a truncated GPX will not open.
 - **`sportType` is an enum**: `SPORT_TYPES` (`utils/activityWrite.ts`) backs
   both the advertised schema and the runtime check; rejections name the near
   miss (`Weightlifting` → `WeightTraining`).

@@ -237,17 +237,6 @@ and the chart cannot describe different zones. Empty results still emit a valid
 payload (`count: 0`), because a caller branching on `structuredContent` should
 not have to handle "absent" as a third case.
 
-## Exports
-
-Exports have two delivery modes (`tools/_exportOutput.ts`): the transport is
-remote, so a path inside the container is unreachable and file-only exports
-were dead over the wire. `output: "content"` returns the document, `"file"`
-writes it, and **omitting it** picks file when `ROUTE_EXPORT_PATH` is set and
-content when it is not — a published default could only have been right for
-one deployment. Content mode caps at `MAX_EXPORT_CONTENT_BYTES` and says
-outright that a truncated GPX will not open, rather than handing back something
-that looks complete.
-
 ## Input validation
 
 **`sportType` is an enum, not a string.** `SPORT_TYPES` in

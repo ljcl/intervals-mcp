@@ -429,35 +429,6 @@ export const ActivityWriteOutputSchema = z.object({
   url: z.string().describe("Strava web URL for the activity"),
 });
 
-// ---------- export-activity-gpx ----------
-/**
- * `mode` is what actually happened, not what was asked for: with no `output`
- * argument the tool picks by whether the server has an export directory, and
- * a caller chaining on the result needs to know which it got.
- */
-export const ExportOutputSchema = z.object({
-  resource_id: z
-    .string()
-    .describe("Route or activity id the export was produced from"),
-  format: z.enum(["gpx", "tcx"]),
-  mode: z
-    .enum(["file", "content"])
-    .describe("How the export was delivered — file path, or inline content"),
-  filename: z.string(),
-  path: z
-    .string()
-    .nullable()
-    .describe("Absolute server-side path in file mode; null in content mode"),
-  bytes: z.number().int().describe("Size of the document delivered"),
-  truncated: z
-    .boolean()
-    .describe("True when content mode cut the document at the size cap"),
-  note: z
-    .string()
-    .optional()
-    .describe("Caveat about the export's completeness, when one applies"),
-});
-
 // ---------- get-split-analysis ----------
 const SplitShapeSchema = z.enum(["even", "positive", "negative"]);
 const SplitSchema = z.object({

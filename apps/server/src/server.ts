@@ -55,7 +55,6 @@ import {
   buildComparison,
   compareActivitiesTool,
 } from "./tools/compareActivities";
-import { exportActivityGpx } from "./tools/exportActivityGpx";
 import { getActivityTool } from "./tools/getActivity";
 import { getActivityLapsTool } from "./tools/getActivityLaps";
 import { getActivityStreamsTool } from "./tools/getActivityStreams";
@@ -340,7 +339,6 @@ interface ToolDef {
 const STRAVA_TOOLS = [
   getAthleteStatsTool,
   updateActivityTool,
-  exportActivityGpx,
   getActivityZonesTool,
   getActivityLapsTool,
   getRunningSummaryTool,
