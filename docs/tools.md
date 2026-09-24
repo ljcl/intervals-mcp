@@ -11,6 +11,23 @@ identity, so renames or schema reshapes re-prompt every user. See
 > **Status.** Tools are being ported from Strava to intervals.icu (Phases 1
 > and 2). Until a tool is ported, it fails with a "not yet ported" error.
 
+## intervals.icu tools
+
+Tools that already talk to intervals.icu directly, rather than through the
+Strava port.
+
+| Tool | Description |
+| ---- | ----------- |
+| `list-activities` | Compact, date-bounded activity list with units; the entry point for finding activity ids |
+
+`list-activities` defaults to the last 28 days (today back to 27 days
+earlier) in the server's configured time zone, sorted newest first. Filter
+with `type` (exact, case-insensitive) or `nameContains` (case-insensitive
+substring), and cap the page with `limit` (1-200, default 30). An activity
+synced into intervals.icu from Strava (`source: "STRAVA"`) is a stub: the
+intervals.icu API has no further detail for it, so the response flags it with
+`is_strava_stub` and the text response adds a trailing note.
+
 ## Activity tools
 
 | Tool | Description |
@@ -74,7 +91,7 @@ so it needs the `activity:write` scope.
 ## Tool permissions
 
 Every tool declares MCP annotations so a host can tell reads from writes. The
-27 read tools set `readOnlyHint: true` and `destructiveHint: false`, which is
+28 read tools set `readOnlyHint: true` and `destructiveHint: false`, which is
 the combination clients use to offer a durable "always allow". Two tools are
 writes and are expected to keep asking:
 

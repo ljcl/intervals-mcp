@@ -68,6 +68,7 @@ import { getRacePredictionTool } from "./tools/getRacePrediction";
 import { getRunningSummaryTool } from "./tools/getRunningSummary";
 import { getSplitAnalysisTool } from "./tools/getSplitAnalysis";
 import { getTrainingLoadTool } from "./tools/getTrainingLoad";
+import { listActivitiesTool } from "./tools/listActivities";
 import { updateActivityTool } from "./tools/updateActivity";
 import { buildTrainingLoadData } from "./trainingLoad";
 import { SERVER_VERSION } from "./version";
@@ -348,6 +349,7 @@ const STRAVA_TOOLS = [
   compareActivitiesTool,
   getBestEffortsTool,
   getRacePredictionTool,
+  listActivitiesTool,
 ] as const;
 
 /** Convert existing tool definitions to low-level TOOLS array */

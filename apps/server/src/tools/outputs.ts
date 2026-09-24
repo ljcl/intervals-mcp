@@ -606,6 +606,53 @@ export const IntervalAnalysisOutputSchema = z.object({
   warnings: z.array(z.string()),
 });
 
+// ---------- intervals.icu reads ----------
+const ActivitySummarySchema = z.object({
+  id: z.string(),
+  date: z
+    .string()
+    .describe("ISO date YYYY-MM-DD, the date part of start_date_local"),
+  start_local: z.string().describe("Full local start timestamp"),
+  type: z.string(),
+  name: z.string(),
+  distance_km: z
+    .number()
+    .nullable()
+    .describe("2 dp; null when the activity recorded no distance"),
+  moving_time_s: z.number().int(),
+  moving_time: z.string().describe("h:mm:ss, or mm:ss under an hour"),
+  pace_min_per_km: z
+    .string()
+    .nullable()
+    .describe("Set for Run/TrailRun/VirtualRun only"),
+  average_hr: z.number().nullable(),
+  load: z.number().nullable().describe("icu_training_load"),
+  gear_id: z.string().nullable(),
+  source: z.string().nullable(),
+  is_strava_stub: z
+    .boolean()
+    .describe(
+      "True when source is STRAVA: details are unavailable through the API",
+    ),
+});
+export const ActivityListOutputSchema = z.object({
+  oldest: z.string().describe("ISO date YYYY-MM-DD, inclusive lower bound"),
+  newest: z.string().describe("ISO date YYYY-MM-DD, inclusive upper bound"),
+  count: z.number().int().describe("Activities included in this response"),
+  matched: z
+    .number()
+    .int()
+    .describe("Activities matching the filters before limit truncated them"),
+  truncated: z.boolean().describe("True when matched > limit"),
+  units: z.object({
+    distance: z.literal("km"),
+    pace: z.literal("min/km"),
+    time: z.literal("s"),
+    hr: z.literal("bpm"),
+  }),
+  activities: z.array(ActivitySummarySchema),
+});
+
 // ---------- dev-only schema drift guard ----------
 export function warnOnSchemaDrift<T>(
   toolName: string,
