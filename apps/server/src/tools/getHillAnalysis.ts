@@ -180,6 +180,19 @@ export const getHillAnalysisTool = {
           climb_distance_m: analysis.totals.climbDistanceM,
           climb_gain_m: analysis.totals.climbGainM,
         },
+        units: {
+          distance: "km" as const,
+          length: "m" as const,
+          elevation: "m" as const,
+          pace: "min/km" as const,
+          time: "s" as const,
+          grade: "%" as const,
+          hr: "bpm" as const,
+          cadence: isStepCadenceActivity(type)
+            ? ("spm" as const)
+            : ("rpm" as const),
+          power: "W" as const,
+        },
         warnings: analysis.warnings,
       };
       warnOnSchemaDrift(name, HillAnalysisOutputSchema, structured);

@@ -73,8 +73,10 @@ export const getActivityZonesTool = {
       const zoneSets = mapIntervalsZones(activity);
       const warning = hrZoneMismatchWarning(activity);
 
+      const units = { heartrate: "bpm" as const, power: "W" as const };
+
       if (zoneSets.length === 0) {
-        const empty = { activity_id: id, zone_sets: [] };
+        const empty = { activity_id: id, zone_sets: [], units };
         warnOnSchemaDrift(
           "get-activity-zones",
           ActivityZonesOutputSchema,
@@ -106,6 +108,7 @@ export const getActivityZonesTool = {
           total_seconds: set.totalSeconds,
           buckets: set.buckets,
         })),
+        units,
       };
       warnOnSchemaDrift(
         "get-activity-zones",

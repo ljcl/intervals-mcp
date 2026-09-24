@@ -329,6 +329,17 @@ export const HillAnalysisOutputSchema = z.object({
     climb_distance_m: z.number(),
     climb_gain_m: z.number(),
   }),
+  units: z.object({
+    distance: z.literal("km"),
+    length: z.literal("m"),
+    elevation: z.literal("m"),
+    pace: z.literal("min/km"),
+    time: z.literal("s"),
+    grade: z.literal("%"),
+    hr: z.literal("bpm"),
+    cadence: z.union([z.literal("spm"), z.literal("rpm")]),
+    power: z.literal("W"),
+  }),
   warnings: z.array(z.string()),
 });
 
@@ -356,6 +367,10 @@ export const ActivityZonesOutputSchema = z.object({
       ),
     }),
   ),
+  units: z.object({
+    heartrate: z.literal("bpm"),
+    power: z.literal("W"),
+  }),
 });
 
 /** Minimal slice of a written activity the mapper reads. */
@@ -489,6 +504,16 @@ export const SplitAnalysisOutputSchema = z.object({
     avg_pace_formatted: z.string().nullable(),
     avg_gap_pace_sec_per_km: z.number().nullable(),
   }),
+  units: z.object({
+    distance: z.literal("km"),
+    elevation: z.literal("m"),
+    pace: z.literal("min/km"),
+    time: z.literal("s"),
+    grade: z.literal("%"),
+    hr: z.literal("bpm"),
+    cadence: z.union([z.literal("spm"), z.literal("rpm")]),
+    power: z.literal("W"),
+  }),
   warnings: z.array(z.string()),
 });
 
@@ -553,6 +578,14 @@ export const IntervalAnalysisOutputSchema = z.object({
       assessment: z.string(),
     })
     .nullable(),
+  units: z.object({
+    distance: z.literal("km"),
+    pace: z.literal("min/km"),
+    time: z.literal("s"),
+    hr: z.literal("bpm"),
+    cadence: z.union([z.literal("spm"), z.literal("rpm")]),
+    power: z.literal("W"),
+  }),
   warnings: z.array(z.string()),
 });
 

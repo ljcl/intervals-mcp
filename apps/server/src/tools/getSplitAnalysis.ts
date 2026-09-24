@@ -11,7 +11,11 @@ import {
   SplitAnalysisError,
   type SplitStreams,
 } from "../splitAnalysis";
-import { cadenceSpm, formatPaceSeconds } from "../utils/running";
+import {
+  cadenceSpm,
+  formatPaceSeconds,
+  isStepCadenceActivity,
+} from "../utils/running";
 import { READ_ONLY } from "./_annotations";
 import { toolErrorText } from "./_errors";
 import { intervalsActivityIdInput } from "./_ids";
@@ -209,6 +213,18 @@ export const getSplitAnalysisTool = {
           avg_pace_sec_per_km: analysis.totals.avgPaceSecPerKm,
           avg_pace_formatted: formatPace(analysis.totals.avgPaceSecPerKm),
           avg_gap_pace_sec_per_km: analysis.totals.avgGapPaceSecPerKm,
+        },
+        units: {
+          distance: "km" as const,
+          elevation: "m" as const,
+          pace: "min/km" as const,
+          time: "s" as const,
+          grade: "%" as const,
+          hr: "bpm" as const,
+          cadence: isStepCadenceActivity(type)
+            ? ("spm" as const)
+            : ("rpm" as const),
+          power: "W" as const,
         },
         warnings: analysis.warnings,
       };

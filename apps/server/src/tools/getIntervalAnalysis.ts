@@ -191,6 +191,14 @@ export const getIntervalAnalysisTool = {
               assessment: analysis.hrSignal.assessment,
             }
           : null,
+        units: {
+          distance: "km" as const,
+          pace: "min/km" as const,
+          time: "s" as const,
+          hr: "bpm" as const,
+          cadence: cadenceUnitLabel,
+          power: "W" as const,
+        },
         warnings: analysis.warnings,
       };
       warnOnSchemaDrift(name, IntervalAnalysisOutputSchema, structured);
