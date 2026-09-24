@@ -7,11 +7,10 @@ import { SERVER_VERSION } from "./version";
 /**
  * Typed intervals.icu API client for Phase 1 reads.
  *
- * Mirrors `stravaClient.ts`'s structure (schemas at the top, a shared
- * `handleApiError`, one function per endpoint) without importing from it:
- * `stravaClient.ts` is the retired transitional client and sends no
- * `Authorization` header on purpose (see its module comment), which this
- * client must never copy.
+ * Mirrors the retired Strava client's structure (schemas at the top, a
+ * shared `handleApiError`, one function per endpoint) without importing from
+ * it: that transitional client sends no `Authorization` header on purpose
+ * (see its module comment), which this client must never copy.
  *
  * Every function takes `apiKey` first and sends it as HTTP Basic
  * (`basicAuthHeader`, username `API_KEY`) plus a descriptive `User-Agent`:
@@ -354,9 +353,9 @@ const IntervalsAthleteSelfSchema = z
  * An intervals.icu API failure that {@link handleApiError} has already
  * interpreted: the user-facing message, with the HTTP status still attached.
  *
- * Extends {@link HttpError} so the status survives translation, same as
- * `stravaClient.ts`'s `StravaApiError`: a caller degrading on a specific
- * status needs `instanceof`/`.response.status` to still work.
+ * Extends {@link HttpError} so the status survives translation, same as the
+ * Strava client's `StravaApiError`: a caller degrading on a specific status
+ * needs `instanceof`/`.response.status` to still work.
  */
 export class IntervalsApiError extends HttpError {
   constructor(

@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   assessCadence,
   cadenceSpm,
-  computeWattsPerKg,
   formatPaceSeconds,
   gapPace,
   isPaceActivity,
@@ -241,44 +240,5 @@ describe("assessCadence", () => {
 
   it("returns null for undefined input", () => {
     expect(assessCadence(undefined)).toBeNull();
-  });
-});
-
-describe("computeWattsPerKg", () => {
-  it("computes ratio correctly", () => {
-    const result = computeWattsPerKg(250, 70);
-    expect(result?.wattsPerKg).toBeCloseTo(3.57, 2);
-  });
-
-  it("returns null if watts missing", () => {
-    expect(computeWattsPerKg(null, 70)).toBeNull();
-  });
-
-  it("returns null if weight missing", () => {
-    expect(computeWattsPerKg(250, null)).toBeNull();
-  });
-
-  it("returns null if weight is zero", () => {
-    expect(computeWattsPerKg(250, 0)).toBeNull();
-  });
-
-  it("classifies easy intensity correctly", () => {
-    const result = computeWattsPerKg(150, 70); // ~2.14 W/kg
-    expect(result?.intensity).toBe("easy");
-  });
-
-  it("classifies moderate intensity correctly", () => {
-    const result = computeWattsPerKg(240, 70); // ~3.43 W/kg
-    expect(result?.intensity).toBe("moderate");
-  });
-
-  it("classifies tempo intensity correctly", () => {
-    const result = computeWattsPerKg(315, 70); // ~4.5 W/kg
-    expect(result?.intensity).toBe("tempo");
-  });
-
-  it("classifies high intensity correctly", () => {
-    const result = computeWattsPerKg(400, 70); // ~5.7 W/kg
-    expect(result?.intensity).toBe("high");
   });
 });

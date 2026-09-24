@@ -34,9 +34,10 @@ import {
  * match production exactly), but with an instant `sleep` and no
  * `minIntervalMs` spacing, so a 429's retry backoff and the production
  * 200ms request spacing never actually wait: tests stay fast without
- * bypassing the request-building code they assert on. This mirrors how
- * `stravaClient.errors.test.ts` avoids backoff (mocking `./fetchClient` to
- * swap out the client instance the module under test imports), adapted
+ * bypassing the request-building code they assert on. This mirrors how the
+ * Strava client's own error-translation tests avoid backoff (mocking
+ * `./fetchClient` to swap out the client instance the module under test
+ * imports), adapted
  * because these tests assert against real request/URL construction via a
  * mocked `globalThis.fetch` rather than mocking `.get()` directly.
  */

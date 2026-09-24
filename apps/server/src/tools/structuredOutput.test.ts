@@ -6,20 +6,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getActivity } from "../intervalsClient";
-import { updateActivity } from "../stravaClient";
-import {
-  ActivityLapsOutputSchema,
-  ActivityWriteOutputSchema,
-  ActivityZonesOutputSchema,
-} from "./outputs";
-
-vi.mock("../stravaClient", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../stravaClient")>();
-  return {
-    ...actual,
-    updateActivity: vi.fn(),
-  };
-});
+import { ActivityLapsOutputSchema, ActivityZonesOutputSchema } from "./outputs";
 
 vi.mock("../intervalsClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../intervalsClient")>();
@@ -102,39 +89,5 @@ describe("activity read tools", () => {
       },
       laps: [],
     });
-  });
-});
-
-describe("activity write tools", () => {
-  const written = {
-    id: "9001",
-    name: "Morning Yoga",
-    sport_type: "Yoga",
-    start_date_local: "2026-07-13T07:30:00Z",
-    distance: 0,
-    elapsed_time: 1800,
-    description: null,
-    gear_id: null,
-    commute: false,
-    trainer: false,
-  };
-
-  it("update-activity returns the activity as Strava echoed it back", async () => {
-    vi.mocked(updateActivity).mockResolvedValueOnce({
-      ...written,
-      name: "Renamed",
-      description: "Felt strong",
-    } as never);
-
-    const result = await dispatchToolCall("update-activity", {
-      activityId: "9001",
-      name: "Renamed",
-    });
-
-    const structured = ActivityWriteOutputSchema.parse(
-      result.structuredContent,
-    );
-    expect(structured.name).toBe("Renamed");
-    expect(structured.description).toBe("Felt strong");
   });
 });

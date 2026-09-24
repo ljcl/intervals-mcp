@@ -4,12 +4,18 @@ import {
   updateActivity as putActivity,
   type StravaDetailedActivity,
 } from "../stravaClient";
+import { ActivityWriteOutputSchema } from "./outputs";
 import { updateActivityTool } from "./updateActivity";
 
-vi.mock("../stravaClient", () => ({
-  getActivityById: vi.fn(),
-  updateActivity: vi.fn(),
-}));
+vi.mock("../stravaClient", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../stravaClient")>();
+  return { ...actual, getActivityById: vi.fn(), updateActivity: vi.fn() };
+});
+
+vi.mock("../config", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../config")>();
+  return { ...actual, getIntervalsApiKey: vi.fn(() => "test-token") };
+});
 
 const mockedFetch = vi.mocked(fetchActivityById);
 const mockedPut = vi.mocked(putActivity);
@@ -204,5 +210,39 @@ describe("updateActivityTool.execute", () => {
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain("server exploded");
     expect(result.content[0]?.text).not.toContain("activity:write scope");
+  });
+});
+
+// Driven through dispatchToolCall (the path a host actually takes) rather
+// than a direct tool.execute() call, so the structured payload is validated
+// exactly as advertised (#243). A separate describe block: dynamically
+// importing "../server" pulls in its whole module graph, which the tests
+// above don't need.
+describe("update-activity via dispatchToolCall", () => {
+  it("returns the activity as Strava echoed it back", async () => {
+    mockedPut.mockResolvedValueOnce({
+      id: "9001",
+      name: "Renamed",
+      sport_type: "Yoga",
+      start_date_local: "2026-07-13T07:30:00Z",
+      distance: 0,
+      elapsed_time: 1800,
+      description: "Felt strong",
+      gear_id: null,
+      commute: false,
+      trainer: false,
+    } as never);
+
+    const { dispatchToolCall } = await import("../server");
+    const result = await dispatchToolCall("update-activity", {
+      activityId: "9001",
+      name: "Renamed",
+    });
+
+    const structured = ActivityWriteOutputSchema.parse(
+      result.structuredContent,
+    );
+    expect(structured.name).toBe("Renamed");
+    expect(structured.description).toBe("Felt strong");
   });
 });

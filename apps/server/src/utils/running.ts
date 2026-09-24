@@ -196,50 +196,6 @@ export function gapPace(
 }
 
 /**
- * Power-to-weight result.
- */
-export interface WattsPerKgResult {
-  watts: number;
-  weightKg: number;
-  wattsPerKg: number;
-  intensity: "easy" | "moderate" | "tempo" | "high";
-}
-
-/**
- * Compute power-to-weight ratio.
- * Returns null if either value is missing or invalid.
- */
-export function computeWattsPerKg(
-  watts: number | null | undefined,
-  weightKg: number | null | undefined,
-): WattsPerKgResult | null {
-  if (!watts || !weightKg || weightKg <= 0) {
-    return null;
-  }
-
-  const wattsPerKg = watts / weightKg;
-
-  // Basic intensity interpretation for running
-  let intensity: WattsPerKgResult["intensity"];
-  if (wattsPerKg < 3.0) {
-    intensity = "easy";
-  } else if (wattsPerKg < 4.0) {
-    intensity = "moderate";
-  } else if (wattsPerKg < 5.0) {
-    intensity = "tempo";
-  } else {
-    intensity = "high";
-  }
-
-  return {
-    watts: Math.round(watts * 10) / 10,
-    weightKg: Math.round(weightKg * 10) / 10,
-    wattsPerKg: Math.round(wattsPerKg * 100) / 100,
-    intensity,
-  };
-}
-
-/**
  * Cadence assessment for running.
  */
 export function assessCadence(spm: number | null | undefined): string | null {
