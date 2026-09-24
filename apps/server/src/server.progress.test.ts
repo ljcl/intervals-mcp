@@ -6,10 +6,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { handledRateLimit } from "./__fixtures__";
 import {
-  getActivityById,
-  getAllActivities,
-  type StravaSummaryActivity,
-} from "./stravaClient";
+  getAthletePaceCurves,
+  type IntervalsAthletePaceCurves,
+} from "./intervalsClient";
+import { getAllActivities } from "./stravaClient";
 
 vi.mock("./stravaClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./stravaClient")>();
@@ -18,6 +18,11 @@ vi.mock("./stravaClient", async (importOriginal) => {
     getAllActivities: vi.fn(),
     getActivityById: vi.fn(),
   };
+});
+
+vi.mock("./intervalsClient", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./intervalsClient")>();
+  return { ...actual, getAthletePaceCurves: vi.fn() };
 });
 
 vi.mock("./config", async (importOriginal) => {
@@ -29,23 +34,20 @@ const { dispatchToolCall } = await import("./server");
 const { connectTestClient } = await import("./mcpTestClient");
 
 const mockedList = vi.mocked(getAllActivities);
-const mockedById = vi.mocked(getActivityById);
+const mockedAthleteCurves = vi.mocked(getAthletePaceCurves);
 
-/** A summary activity just complete enough for the best-efforts scan. */
-function run(id: string): StravaSummaryActivity {
-  return {
-    id,
-    name: `Run ${id}`,
-    type: "Run",
-    sport_type: "Run",
-    distance: 10000,
-    moving_time: 3000,
-    elapsed_time: 3000,
-    total_elevation_gain: 0,
-    start_date: "2026-07-01T06:00:00Z",
-    start_date_local: "2026-07-01T16:00:00Z",
-  } as StravaSummaryActivity;
-}
+/** A pace curve just complete enough for `get-best-efforts`'s topN=1 path. */
+const onePointPaceCurves: IntervalsAthletePaceCurves = {
+  list: [
+    {
+      id: "1y",
+      distance: [1000],
+      values: [248],
+      activity_id: ["i1"],
+    },
+  ],
+  activities: { i1: { id: "i1", name: "Run", race: false } },
+};
 
 describe("dispatchToolCall progress", () => {
   beforeEach(() => {
@@ -53,40 +55,35 @@ describe("dispatchToolCall progress", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
   });
 
-  it("reports the phases of a best-efforts scan", async () => {
-    mockedList.mockResolvedValueOnce([run("1"), run("2")]);
-    mockedById.mockResolvedValue({
-      id: "1",
-      name: "Run",
-      best_efforts: [],
-    } as never);
+  it("reports the pace-curve fetch phase for get-best-efforts", async () => {
+    mockedAthleteCurves.mockResolvedValueOnce(onePointPaceCurves);
 
     const messages: string[] = [];
     await dispatchToolCall(
       "get-best-efforts",
-      { maxActivities: 2 },
+      { window: "1y", topN: 1 },
       { progress: (message) => messages.push(message) },
     );
 
-    // The two phase markers are `important`, so neither can be lost to the
-    // throttle no matter how fast the mocked fetches resolve.
-    expect(messages[0]).toBe("Listing activities…");
-    expect(messages).toContain("Reading 2 activities for best efforts…");
+    // The phase marker is `important`, so it cannot be lost to the throttle
+    // no matter how fast the mocked fetch resolves.
+    expect(messages[0]).toBe("Fetching pace curve (1y)…");
   });
 
-  it("reports the rate-limit abort rather than simply stopping", async () => {
-    mockedList.mockResolvedValueOnce([run("1"), run("2")]);
-    // The shape the client really hands back once the quota is spent.
-    mockedById.mockRejectedValue(handledRateLimit("getActivityById for ID 1"));
+  it("still emits the phase message when the pace-curve fetch then fails", async () => {
+    mockedAthleteCurves.mockRejectedValueOnce(
+      handledRateLimit("getAthletePaceCurves for 1y"),
+    );
 
     const messages: string[] = [];
-    await dispatchToolCall(
+    const result = await dispatchToolCall(
       "get-best-efforts",
-      { maxActivities: 2 },
+      { window: "1y", topN: 1 },
       { progress: (message) => messages.push(message) },
     );
 
-    expect(messages).toContain("Strava rate limit reached — stopping the scan");
+    expect(messages).toContain("Fetching pace curve (1y)…");
+    expect(result.isError).toBe(true);
   });
 
   it("wires the paginator's page callback to the reporter", async () => {
@@ -108,17 +105,13 @@ describe("dispatchToolCall progress", () => {
   });
 
   it("runs unchanged when the caller supplies no reporter", async () => {
-    mockedList.mockResolvedValueOnce([run("1")]);
-    mockedById.mockResolvedValue({
-      id: "1",
-      name: "Run",
-      best_efforts: [],
-    } as never);
+    mockedAthleteCurves.mockResolvedValueOnce(onePointPaceCurves);
 
     // No `progress` option at all: the handler still calls its reporter, so
     // the default must be a working no-op rather than undefined.
     const result = await dispatchToolCall("get-best-efforts", {
-      maxActivities: 1,
+      window: "1y",
+      topN: 1,
     });
 
     expect(result.isError).toBeUndefined();
@@ -132,17 +125,12 @@ describe("CallTool progress notifications", () => {
   });
 
   it("puts progress on the same stream as the result when a token is sent", async () => {
-    mockedList.mockResolvedValueOnce([run("1")]);
-    mockedById.mockResolvedValue({
-      id: "1",
-      name: "Run",
-      best_efforts: [],
-    } as never);
+    mockedAthleteCurves.mockResolvedValueOnce(onePointPaceCurves);
 
     const client = await connectTestClient("progress-test");
     const body = await client.sendRaw("tools/call", {
       name: "get-best-efforts",
-      arguments: { maxActivities: 1 },
+      arguments: { window: "1y", topN: 1 },
       _meta: { progressToken: "scan-1" },
     });
 
@@ -150,21 +138,16 @@ describe("CallTool progress notifications", () => {
     // transport never emits is not progress.
     expect(body).toContain("notifications/progress");
     expect(body).toContain("scan-1");
-    expect(body).toContain("Listing activities");
+    expect(body).toContain("Fetching pace curve");
   });
 
   it("emits none when the caller omits the token", async () => {
-    mockedList.mockResolvedValueOnce([run("1")]);
-    mockedById.mockResolvedValue({
-      id: "1",
-      name: "Run",
-      best_efforts: [],
-    } as never);
+    mockedAthleteCurves.mockResolvedValueOnce(onePointPaceCurves);
 
     const client = await connectTestClient("progress-test");
     const body = await client.sendRaw("tools/call", {
       name: "get-best-efforts",
-      arguments: { maxActivities: 1 },
+      arguments: { window: "1y", topN: 1 },
     });
 
     expect(body).not.toContain("notifications/progress");

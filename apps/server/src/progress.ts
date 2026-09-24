@@ -1,9 +1,10 @@
 /**
  * Tool-call progress notifications.
  *
- * Two tools fan out over Strava: `get-best-efforts` reads up to 200 activity
- * details, and the training-load / fitness-trend feeds page through an
- * athlete's history. Until now every one of them was silent from the first
+ * Several tools fan out over more than one request: the training-load /
+ * fitness-trend feeds page through an athlete's history, and `get-best-efforts`
+ * (now backed by intervals.icu pace curves) makes one or two calls per
+ * `topN`. Until now every one of them was silent from the first
  * request to the last, so an
  * MCP App showed a bare skeleton for a minute and a host's request timeout had
  * nothing to reset itself against (ext-apps v1.6.0 resets on progress).

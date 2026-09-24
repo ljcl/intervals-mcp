@@ -9,7 +9,7 @@ identity, so renames or schema reshapes re-prompt every user. See
 [architecture.md](architecture.md#tool-metadata) before changing either.
 
 > **Status.** Tools are being ported from Strava to intervals.icu (Phases 1
-> and 2). The thirteen tools below are ported and verified against a real
+> and 2). The fourteen tools below are ported and verified against a real
 > account; until a remaining tool is ported, it fails with a "not yet
 > ported" error.
 
@@ -33,6 +33,7 @@ Strava port.
 | `get-split-analysis` | Even km splits with a two-halves pacing verdict stated on the clock and grade-adjusted |
 | `get-aerobic-analysis` | Aerobic decoupling and efficiency factor, preferring intervals.icu's own values and computing from streams otherwise |
 | `get-interval-analysis` | Interval detection with urban-stop-aware rest classification and rep fade |
+| `get-best-efforts` | Best times at standard running distances, from intervals.icu's pace curves |
 
 `list-activities` defaults to the last 28 days (today back to 27 days
 earlier) in the server's configured time zone, sorted newest first. Filter
@@ -211,6 +212,27 @@ per-rep pace (`m:ss /km`), HR, cadence, and power; fade compares the last rep
 against the first. An HR-distribution tiebreaker ("was this a workout at
 all") reports the share of moving time at ≥ 88% of the activity's own max HR.
 
+`get-best-efforts` reports best times at standard distances (400m, 1km, 5km,
+10km, half marathon, marathon by default, or a subset via `distances`) from
+intervals.icu's pace curves rather than scanning activities. `window` picks
+`all`, `1y` (default), `90d`, or a custom `YYYY-MM-DD..YYYY-MM-DD` range,
+mapped to the matching pace-curve id. `topN` (1-5, default 1) picks how many
+distinct activities to report per distance: the default makes one call to the
+athlete's own pace curve, whose `activities` map already carries the name,
+date, and race flag; above 1 makes two calls instead, per-activity pace
+curves for the window, plus `list-activities`' underlying fetch, to rank the
+top N distinct activities per distance locally (intervals.icu returns no
+rank). Pace renders as a single `m:ss min/km` string, never miles. Because
+the pace curve is built from the recorded time stream (a moving-time style
+curve), `time_seconds`/`time_formatted` are not elapsed time; the response's
+`note` says so. Each requested distance is matched to the nearest point on
+intervals.icu's curve, but only within tolerance (2% of the target or 50m,
+whichever is larger): a distance with no point that close, whether the
+window's curve is empty or its nearest point is simply too far away (a short
+window's only 5K is never reported as its marathon time), comes back as an
+empty list, named in `missing`, with a matching warning, rather than failing
+the whole call or mislabelling an unrelated distance.
+
 ## Activity tools
 
 | Tool | Description |
@@ -218,7 +240,6 @@ all") reports the share of moving time at ≥ 88% of the activity's own max HR.
 | `update-activity` | Update an activity's description, title, sport type, gear, or flags |
 | `get-training-load` | Training load summary with trend analysis |
 | `get-fitness-trend` | Fitness/fatigue/form (CTL/ATL/TSB) from relative effort, with rest projection and a solved taper to a target form on a target date |
-| `get-best-efforts` | Personal best efforts across all running activities, optionally scoped to a date window |
 | `get-race-prediction` | Predicted race times from recorded best efforts (Riegel), with confidence, source effort, and km/mile goal-pace splits |
 
 ## Athlete tools

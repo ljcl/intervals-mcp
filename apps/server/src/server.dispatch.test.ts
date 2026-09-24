@@ -5,7 +5,11 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { handledNotFound, handledRateLimit } from "./__fixtures__";
-import { getActivity as getIntervalsActivity } from "./intervalsClient";
+import {
+  getAthletePaceCurves,
+  getActivity as getIntervalsActivity,
+  type IntervalsAthletePaceCurves,
+} from "./intervalsClient";
 import {
   getActivityById,
   getAllActivities,
@@ -24,7 +28,7 @@ vi.mock("./stravaClient", async (importOriginal) => {
 
 vi.mock("./intervalsClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./intervalsClient")>();
-  return { ...actual, getActivity: vi.fn() };
+  return { ...actual, getActivity: vi.fn(), getAthletePaceCurves: vi.fn() };
 });
 
 // dispatchToolCall resolves the API key once per call (#240).
@@ -42,6 +46,12 @@ const mockedList = vi.mocked(getAllActivities);
 const mockedById = vi.mocked(getActivityById);
 const mockedStats = vi.mocked(getAthleteStats);
 const mockedIntervalsActivity = vi.mocked(getIntervalsActivity);
+const mockedAthleteCurves = vi.mocked(getAthletePaceCurves);
+
+const emptyPaceCurves: IntervalsAthletePaceCurves = {
+  list: [{ id: "1y", distance: [], values: [], activity_id: [] }],
+  activities: {},
+};
 
 describe("dispatchToolCall input validation", () => {
   beforeEach(() => {
@@ -51,21 +61,20 @@ describe("dispatchToolCall input validation", () => {
     mockedById.mockReset();
     mockedStats.mockReset();
     mockedIntervalsActivity.mockReset();
+    mockedAthleteCurves.mockReset();
   });
 
   it("applies zod defaults when optional args are omitted (get-best-efforts)", async () => {
-    mockedList.mockResolvedValueOnce([]);
+    mockedAthleteCurves.mockResolvedValueOnce(emptyPaceCurves);
 
     const result = await dispatchToolCall("get-best-efforts", undefined);
 
     expect(result.isError).toBeUndefined();
-    // Defaults applied: maxActivities 100, so perPage is min(100, 200) = 100
-    // — previously Math.min(undefined, 200) produced per_page=NaN.
-    expect(mockedList).toHaveBeenCalledWith("test-token", {
-      perPage: 100,
-      maxItems: 100,
-      countActivity: expect.any(Function),
-      onProgress: expect.any(Function),
+    // Defaults applied: window "1y", topN 1. Previously an unset
+    // maxActivities produced per_page=NaN against the old Strava client.
+    expect(mockedAthleteCurves).toHaveBeenCalledWith("test-token", {
+      type: "Run",
+      curves: ["1y"],
     });
   });
 
@@ -79,16 +88,16 @@ describe("dispatchToolCall input validation", () => {
     expect(Number.isFinite(params?.after)).toBe(true);
   });
 
-  it("rejects args above the documented bounds without calling Strava", async () => {
+  it("rejects args above the documented bounds without calling intervals.icu", async () => {
     const result = await dispatchToolCall("get-best-efforts", {
-      maxActivities: 500,
+      topN: 6,
     });
 
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain(
       "Invalid arguments for get-best-efforts",
     );
-    expect(mockedList).not.toHaveBeenCalled();
+    expect(mockedAthleteCurves).not.toHaveBeenCalled();
   });
 
   it("rejects wrongly-typed args without calling Strava", async () => {

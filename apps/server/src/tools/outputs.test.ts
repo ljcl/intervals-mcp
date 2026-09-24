@@ -223,26 +223,26 @@ describe("schemas align with the real tool rawObjects", () => {
 
   it("BestEffortsOutputSchema matches the best-efforts response object", () => {
     const response = {
+      window: { id: "1y", oldest: "2025-09-25", newest: "2026-09-25" },
+      top_n: 1,
+      units: { time: "seconds", pace: "min/km" },
+      note: "Best times come from the recorded time stream (a moving-time style curve), not elapsed time.",
       best_efforts: {
-        "5K": [
+        "5km": [
           {
-            activity_id: "123",
-            activity_name: "5K Race",
+            rank: 1,
+            time_seconds: 1080,
+            time_formatted: "18m 0s",
+            pace: "3:36 min/km",
             date: "2026-05-01",
-            elapsed_time_seconds: 1080,
-            elapsed_time_formatted: "18m 0s",
-            moving_time_seconds: 1075,
-            moving_time_formatted: "17m 55s",
-            pace: { min_per_km: "3:36", min_per_mile: "5:48" },
-            pr_rank: 1,
+            activity_id: "i123",
+            activity_name: "5K Race",
+            race: true,
           },
         ],
       },
-      activities_analyzed: 42,
-      activities_with_efforts: 30,
-      activities_skipped: 0,
+      missing: [],
       warnings: [],
-      note: "Times use elapsed time (includes stops), matching Strava's Best Efforts behavior",
     };
     expect(BestEffortsOutputSchema.safeParse(response).success).toBe(true);
   });

@@ -884,6 +884,11 @@ export function intervalsCacheTtl(path: string): number | null {
   // sub-path (`/wellness/2026-09-24`) or an extension (`wellness.json`)
   // both count; these update through the day.
   if (/^\/athlete\/[^/]+\/wellness/.test(path)) return 5 * MINUTE_MS;
+  // Pace curves (athlete-level and per-activity): recomputed from an
+  // athlete's history, which changes at most a few times a day.
+  if (/^\/athlete\/[^/]+\/pace-curves\.json$/.test(path)) return 10 * MINUTE_MS;
+  if (/^\/athlete\/[^/]+\/activity-pace-curves\.json$/.test(path))
+    return 10 * MINUTE_MS;
   return null;
 }
 

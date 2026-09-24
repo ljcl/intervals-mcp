@@ -295,10 +295,84 @@ function scrubAthleteId(r: Rec): Rec {
   return out;
 }
 
+/**
+ * `pace-curves.json` carries real body weight in two places: each
+ * `.activities` map entry (keyed by activity id) has `icu_weight`, and each
+ * `.list` entry (the `all`/`1y`/`90d`/... curve itself, one per requested
+ * window) has its own top-level `weight`, the athlete's current weight,
+ * repeated per curve rather than per activity. Both are scrubbed to 70. Each
+ * `.activities` entry's `name` is also renamed to `Run N` (the capture
+ * always requests `type=Run`, and the map itself carries no `type` field to
+ * build the label from). Every other field on both `.activities` entries and
+ * `.list` entries (ids, dates, distance/training-load/pace-model numbers) is
+ * activity/performance data, not personally identifying, and is left as-is,
+ * matching every other captured activity fixture.
+ */
+function scrubPaceCurves(data: Rec): Rec {
+  const activities = (data.activities ?? {}) as Record<string, Rec>;
+  const scrubbedActivities: Record<string, Rec> = {};
+  let i = 0;
+  for (const [id, a] of Object.entries(activities)) {
+    i += 1;
+    scrubbedActivities[id] = {
+      ...a,
+      name: `Run ${i}`,
+      ...("icu_weight" in a ? { icu_weight: 70 } : {}),
+    };
+  }
+
+  const list = (data.list ?? []) as Rec[];
+  const scrubbedList = list.map((entry) => ({
+    ...entry,
+    ...("weight" in entry ? { weight: 70 } : {}),
+  }));
+
+  return { ...data, activities: scrubbedActivities, list: scrubbedList };
+}
+
+/**
+ * `activity-pace-curves.json`'s `curves[]` entries carry only an id, a
+ * date, a body weight, and the per-distance `secs`: no free text to rename,
+ * just the weight scrubbed like every other capture.
+ */
+function scrubActivityPaceCurves(data: Rec): Rec {
+  const curves = (data.curves ?? []) as Rec[];
+  return {
+    ...data,
+    curves: curves.map((c) => ({
+      ...c,
+      ...("weight" in c ? { weight: 70 } : {}),
+    })),
+  };
+}
+
 write(
   "sport-settings-run.json",
   scrubAthleteId((await get("/athlete/0/sport-settings/Run")) as Rec),
 );
 const gear = (await get("/athlete/0/gear")) as Rec[];
 write("gear.json", gear.map(scrubAthleteId));
+
+write(
+  "pace-curves.json",
+  scrubPaceCurves(
+    (await get(
+      "/athlete/0/pace-curves.json?type=Run&curves=all,1y,90d",
+    )) as Rec,
+  ),
+);
+// `activity-pace-curves.json` 403s on athlete id 0 (and on an `i`-prefixed
+// id); it needs the bare numeric id, resolved from `/athlete/0` and never
+// written to a fixture itself (it also carries `icu_api_key`).
+const self = (await get("/athlete/0")) as Rec;
+const numericAthleteId = String(self.id);
+write(
+  "activity-pace-curves.json",
+  scrubActivityPaceCurves(
+    (await get(
+      `/athlete/${numericAthleteId}/activity-pace-curves.json?oldest=2026-09-01&newest=2026-09-24&type=Run&distances=400,1000,5000,10000`,
+    )) as Rec,
+  ),
+);
+
 console.error(`wrote fixtures to ${OUT}`);

@@ -1,306 +1,386 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import activitiesFixture from "../__fixtures__/intervals/activities.json";
+import activityPaceCurvesFixture from "../__fixtures__/intervals/activity-pace-curves.json";
+import paceCurvesFixture from "../__fixtures__/intervals/pace-curves.json";
 import {
-  activityWithBestEfforts,
-  basicRunActivity,
-  handledRateLimit,
-  rideActivity,
-} from "../__fixtures__";
+  getActivityPaceCurves,
+  getAthletePaceCurves,
+  type IntervalsActivity,
+  type IntervalsActivityPaceCurves,
+  type IntervalsAthletePaceCurves,
+  listActivities,
+} from "../intervalsClient";
 import {
-  getActivityById,
-  getAllActivities,
-  type StravaDetailedActivity,
-  type StravaSummaryActivity,
-} from "../stravaClient";
-import { getBestEffortsTool } from "./getBestEfforts";
+  formatBestEffortsText,
+  getBestEffortsTool,
+  matchDistance,
+  nearestIndex,
+  paceMinPerKm,
+  resolveWindow,
+} from "./getBestEfforts";
 
-vi.mock("../stravaClient", () => ({
-  getAllActivities: vi.fn(),
-  getActivityById: vi.fn(),
-}));
+vi.mock("../intervalsClient", async () => {
+  const actual =
+    await vi.importActual<typeof import("../intervalsClient")>(
+      "../intervalsClient",
+    );
+  return {
+    ...actual,
+    getAthletePaceCurves: vi.fn(),
+    getActivityPaceCurves: vi.fn(),
+    listActivities: vi.fn(),
+  };
+});
+vi.mock("../config", async () => {
+  const actual = await vi.importActual<typeof import("../config")>("../config");
+  return { ...actual, getTimeZone: vi.fn(() => "UTC") };
+});
 
-const mockedList = vi.mocked(getAllActivities);
-const mockedById = vi.mocked(getActivityById);
+const mockedAthleteCurves = vi.mocked(getAthletePaceCurves);
+const mockedActivityCurves = vi.mocked(getActivityPaceCurves);
+const mockedListActivities = vi.mocked(listActivities);
 
-const asSummary = (a: unknown) => a as unknown as StravaSummaryActivity;
-const asDetail = (a: unknown) => a as unknown as StravaDetailedActivity;
+const paceCurves = paceCurvesFixture as unknown as IntervalsAthletePaceCurves;
+const activityCurves =
+  activityPaceCurvesFixture as unknown as IntervalsActivityPaceCurves;
+const activities = activitiesFixture as unknown as IntervalsActivity[];
+
+beforeEach(() => {
+  mockedAthleteCurves.mockReset();
+  mockedActivityCurves.mockReset();
+  mockedListActivities.mockReset();
+});
+
+describe("resolveWindow", () => {
+  it('maps "all" to intervals.icu\'s own lower bound, through today', () => {
+    const result = resolveWindow("all", "UTC");
+    if ("error" in result) throw new Error("expected a resolved window");
+    expect(result.curveId).toBe("all");
+    expect(result.oldest).toBe("1986-01-01");
+  });
+
+  it('maps "1y" to 365 days before today, curveId "1y"', () => {
+    const result = resolveWindow("1y", "UTC");
+    if ("error" in result) throw new Error("expected a resolved window");
+    expect(result.curveId).toBe("1y");
+    // 366 calendar days inclusive (oldest through newest), matching the
+    // intervals.icu "1y" curve's own `days: 366`.
+    const days =
+      (Date.parse(`${result.newest}T00:00:00Z`) -
+        Date.parse(`${result.oldest}T00:00:00Z`)) /
+        86_400_000 +
+      1;
+    expect(days).toBe(366);
+  });
+
+  it('maps "90d" to 90 days before today, curveId "90d"', () => {
+    const result = resolveWindow("90d", "UTC");
+    if ("error" in result) throw new Error("expected a resolved window");
+    expect(result.curveId).toBe("90d");
+    const days =
+      (Date.parse(`${result.newest}T00:00:00Z`) -
+        Date.parse(`${result.oldest}T00:00:00Z`)) /
+        86_400_000 +
+      1;
+    expect(days).toBe(91);
+  });
+
+  it("maps a custom YYYY-MM-DD..YYYY-MM-DD range to an r.<oldest>.<newest> curve id", () => {
+    const result = resolveWindow("2026-01-01..2026-03-01", "UTC");
+    if ("error" in result) throw new Error("expected a resolved window");
+    expect(result).toEqual({
+      curveId: "r.2026-01-01.2026-03-01",
+      oldest: "2026-01-01",
+      newest: "2026-03-01",
+    });
+  });
+
+  it("rejects a custom range with an invalid calendar date", () => {
+    const result = resolveWindow("2026-02-30..2026-03-01", "UTC");
+    expect("error" in result).toBe(true);
+  });
+
+  it("rejects a custom range where oldest is after newest", () => {
+    const result = resolveWindow("2026-03-01..2026-01-01", "UTC");
+    expect("error" in result).toBe(true);
+  });
+
+  it("rejects an unrecognised window string", () => {
+    const result = resolveWindow("last month", "UTC");
+    expect("error" in result).toBe(true);
+  });
+});
+
+describe("nearestIndex", () => {
+  it("finds the exact match when present", () => {
+    expect(nearestIndex([400, 1000, 5000], 1000)).toBe(1);
+  });
+
+  it("finds the closest point when there is no exact match", () => {
+    expect(nearestIndex([400, 1000, 21000, 21097.5, 22000], 21097.5)).toBe(3);
+  });
+
+  it("returns null for an empty array", () => {
+    expect(nearestIndex([], 1000)).toBeNull();
+  });
+});
+
+describe("matchDistance", () => {
+  it("matches an exact point", () => {
+    expect(matchDistance([400, 1000, 5000], 1000)).toBe(1);
+  });
+
+  it("matches a point within the larger of 2% or 50m", () => {
+    // 42195 target, tolerance = max(42195*0.02, 50) = 843.9; 42000 is 195m off.
+    expect(matchDistance([42000], 42195)).toBe(0);
+    // 400 target, tolerance = max(8, 50) = 50; 440 is 40m off.
+    expect(matchDistance([440], 400)).toBe(0);
+  });
+
+  it("rejects the closest point when it is further than tolerance away", () => {
+    // A 5K point is the "closest" available to a marathon target on a
+    // sparse curve, but 37195 m away, nowhere near the 843.9 m tolerance.
+    expect(matchDistance([5000], 42195)).toBeNull();
+    // 400 target, tolerance 50m; 500 is 100m off.
+    expect(matchDistance([500], 400)).toBeNull();
+  });
+
+  it("returns null for an empty array", () => {
+    expect(matchDistance([], 1000)).toBeNull();
+  });
+});
+
+describe("paceMinPerKm", () => {
+  it("formats seconds/distance as m:ss min/km, no miles", () => {
+    // 248 s over 1000 m = 248 s/km = 4:08/km
+    expect(paceMinPerKm(248, 1000)).toBe("4:08 min/km");
+    // 1461 s over 5000 m = 292.2 s/km, rounds to 292 s = 4:52/km
+    expect(paceMinPerKm(1461, 5000)).toBe("4:52 min/km");
+  });
+});
 
 describe("getBestEffortsTool.execute", () => {
-  beforeEach(() => {
-    mockedList.mockReset();
-    mockedById.mockReset();
-  });
-
-  it("caps perPage at 200 and bounds pagination to running activities", async () => {
-    mockedList.mockResolvedValueOnce([]);
-
-    await getBestEffortsTool.execute(
-      { limit: 3, maxActivities: 1000 },
-      "test-token",
-    );
-
-    expect(mockedList).toHaveBeenCalledWith("test-token", {
-      perPage: 200,
-      maxItems: 1000,
-      countActivity: expect.any(Function),
-      onProgress: expect.any(Function),
-    });
-
-    // The cap must count runs only, so mixed histories keep paginating
-    // until enough running activities have arrived.
-    const countActivity = mockedList.mock.calls[0]?.[1]?.countActivity;
-    expect(countActivity?.(asSummary(basicRunActivity))).toBe(true);
-    expect(countActivity?.(asSummary(rideActivity))).toBe(false);
-  });
-
-  it("only fetches details for running activities", async () => {
-    mockedList.mockResolvedValueOnce([
-      asSummary(basicRunActivity),
-      asSummary(rideActivity),
-    ]);
-    mockedById.mockResolvedValueOnce(asDetail(activityWithBestEfforts));
-
-    await getBestEffortsTool.execute(
-      { limit: 3, maxActivities: 100 },
-      "test-token",
-    );
-
-    // Ride is filtered out; only the run triggers a detail fetch.
-    expect(mockedById).toHaveBeenCalledTimes(1);
-    expect(mockedById).toHaveBeenCalledWith("test-token", basicRunActivity.id);
-  });
-
-  it("aggregates best efforts and surfaces a PR medal", async () => {
-    mockedList.mockResolvedValueOnce([asSummary(activityWithBestEfforts)]);
-    mockedById.mockResolvedValueOnce(asDetail(activityWithBestEfforts));
+  it("topN=1 (default): fetches the athlete pace curve for the default window and distances", async () => {
+    mockedAthleteCurves.mockResolvedValueOnce(paceCurves);
 
     const result = await getBestEffortsTool.execute(
-      {
-        limit: 3,
-        maxActivities: 100,
-      },
-      "test-token",
+      { window: "1y", topN: 1 },
+      "k",
     );
 
-    const text = result.content[0]?.text ?? "";
-    expect(text).toContain("Best Efforts Summary");
-    expect(text).toContain("400m");
-    expect(text).toContain("1:30"); // 90s formatted
-    expect(text).toContain("🥇 PR"); // pr_rank 1 on the 400m
-    expect(result.structuredContent?.activities_analyzed).toBe(1);
-    expect(result.structuredContent?.activities_with_efforts).toBe(1);
+    expect(mockedAthleteCurves).toHaveBeenCalledWith("k", {
+      type: "Run",
+      curves: ["1y"],
+    });
+    expect(mockedActivityCurves).not.toHaveBeenCalled();
+    expect(mockedListActivities).not.toHaveBeenCalled();
+
+    const content = result.structuredContent as {
+      window: { id: string };
+      top_n: number;
+      units: { time: string; pace: string };
+      best_efforts: Record<
+        string,
+        Array<{
+          rank: number;
+          time_seconds: number;
+          pace: string;
+          activity_id: string;
+          activity_name: string;
+          date: string;
+          race: boolean;
+        }>
+      >;
+    };
+    expect(content.window.id).toBe("1y");
+    expect(content.top_n).toBe(1);
+    expect(content.units).toEqual({ time: "seconds", pace: "min/km" });
+
+    const oneKm = content.best_efforts["1km"];
+    expect(oneKm).toHaveLength(1);
+    expect(oneKm?.[0]).toMatchObject({
+      rank: 1,
+      time_seconds: 248,
+      pace: "4:08 min/km",
+      activity_id: "i189757802",
+      activity_name: "Run 22",
+      date: "2026-06-25",
+      race: false,
+    });
+
+    const marathon = content.best_efforts.marathon;
+    expect(marathon?.[0]).toMatchObject({
+      time_seconds: 13711,
+      activity_id: "i189757207",
+    });
+
+    expect(result.content[0]?.text).toContain("1km:");
+    expect(result.content[0]?.text).toContain("recorded time stream");
   });
 
-  it("sorts multiple efforts per distance by elapsed time and applies limit", async () => {
-    const fast = {
-      ...activityWithBestEfforts,
-      id: 1,
-      name: "Fast 400",
-      best_efforts: [
-        { ...activityWithBestEfforts.best_efforts[0], elapsed_time: 80 },
-      ],
+  it("topN>1: fetches activity pace curves and listActivities over the same window, ranking locally", async () => {
+    mockedActivityCurves.mockResolvedValueOnce(activityCurves);
+    mockedListActivities.mockResolvedValueOnce(activities);
+
+    const result = await getBestEffortsTool.execute(
+      { distances: ["1km"], window: "2026-09-01..2026-09-24", topN: 2 },
+      "k",
+    );
+
+    expect(mockedAthleteCurves).not.toHaveBeenCalled();
+    expect(mockedActivityCurves).toHaveBeenCalledWith("k", {
+      oldest: "2026-09-01",
+      newest: "2026-09-24",
+      type: "Run",
+      distances: [1000],
+    });
+    expect(mockedListActivities).toHaveBeenCalledWith("k", {
+      oldest: "2026-09-01",
+      newest: "2026-09-24",
+    });
+
+    const content = result.structuredContent as {
+      best_efforts: Record<
+        string,
+        Array<{
+          rank: number;
+          time_seconds: number;
+          activity_id: string;
+          activity_name: string;
+        }>
+      >;
     };
-    const slow = {
-      ...activityWithBestEfforts,
-      id: 2,
-      name: "Slow 400",
-      best_efforts: [
+    const oneKm = content.best_efforts["1km"];
+    expect(oneKm).toHaveLength(2);
+    expect(oneKm?.[0]).toMatchObject({
+      rank: 1,
+      time_seconds: 269,
+      activity_id: "i189757188",
+      activity_name: "Run 10",
+    });
+    expect(oneKm?.[1]).toMatchObject({
+      rank: 2,
+      time_seconds: 280,
+      activity_id: "i189757183",
+      activity_name: "Run 5",
+    });
+  });
+
+  it("warns and returns an empty list when the requested curve id is missing from the response", async () => {
+    mockedAthleteCurves.mockResolvedValueOnce({
+      list: [],
+      activities: {},
+    } as unknown as IntervalsAthletePaceCurves);
+
+    const result = await getBestEffortsTool.execute(
+      { distances: ["marathon"], window: "1y", topN: 1 },
+      "k",
+    );
+
+    const content = result.structuredContent as {
+      warnings: string[];
+      missing: string[];
+      best_efforts: Record<string, unknown[]>;
+    };
+    expect(content.best_efforts.marathon).toEqual([]);
+    expect(content.missing).toEqual(["marathon"]);
+    expect(content.warnings.length).toBeGreaterThan(0);
+  });
+
+  it("bounds the curve lookup to a tolerance: a sparse window with only a 5K point does not mislabel it as the marathon best effort", async () => {
+    // Only a single, short curve point: a 5K, nowhere near a marathon.
+    mockedAthleteCurves.mockResolvedValueOnce({
+      list: [
         {
-          ...activityWithBestEfforts.best_efforts[0],
-          elapsed_time: 100,
-          pr_rank: null,
+          id: "1y",
+          distance: [5000],
+          values: [1200],
+          activity_id: ["i1"],
         },
       ],
+      activities: { i1: { id: "i1", name: "Short run", race: false } },
+    } as unknown as IntervalsAthletePaceCurves);
+
+    const result = await getBestEffortsTool.execute(
+      { distances: ["5km", "marathon"], window: "1y", topN: 1 },
+      "k",
+    );
+
+    const content = result.structuredContent as {
+      missing: string[];
+      warnings: string[];
+      best_efforts: Record<string, Array<{ activity_id: string }>>;
     };
-    mockedList.mockResolvedValueOnce([asSummary(fast), asSummary(slow)]);
-    mockedById
-      .mockResolvedValueOnce(asDetail(fast))
-      .mockResolvedValueOnce(asDetail(slow));
+    // The 5K itself still matches (within tolerance).
+    expect(content.best_efforts["5km"]).toHaveLength(1);
+    expect(content.best_efforts["5km"]?.[0]?.activity_id).toBe("i1");
+    // But the marathon must NOT be mislabelled with that same 5K point.
+    expect(content.best_efforts.marathon).toEqual([]);
+    expect(content.missing).toEqual(["marathon"]);
+    expect(content.warnings.some((w) => w.includes("marathon"))).toBe(true);
+  });
+
+  it("bounds the topN>1 curve lookup to the same tolerance", async () => {
+    mockedActivityCurves.mockResolvedValueOnce({
+      distances: [5000],
+      gap: false,
+      curves: [
+        { id: "i1", start_date_local: "2026-09-01", weight: 70, secs: [1200] },
+      ],
+    } as unknown as IntervalsActivityPaceCurves);
+    mockedListActivities.mockResolvedValueOnce([]);
 
     const result = await getBestEffortsTool.execute(
-      {
-        limit: 1,
-        maxActivities: 100,
-      },
-      "test-token",
+      { distances: ["marathon"], window: "2026-08-01..2026-09-01", topN: 2 },
+      "k",
     );
 
-    const efforts = result.structuredContent?.best_efforts?.["400m"];
-    expect(efforts).toHaveLength(1); // limit applied
-    expect(efforts?.[0]?.elapsed_time_seconds).toBe(80); // fastest first
+    const content = result.structuredContent as {
+      missing: string[];
+      best_efforts: Record<string, unknown[]>;
+    };
+    expect(content.best_efforts.marathon).toEqual([]);
+    expect(content.missing).toEqual(["marathon"]);
   });
 
-  it("filters to a single distance when requested", async () => {
-    mockedList.mockResolvedValueOnce([asSummary(activityWithBestEfforts)]);
-    mockedById.mockResolvedValueOnce(asDetail(activityWithBestEfforts));
-
+  it("rejects an invalid window without calling the client", async () => {
     const result = await getBestEffortsTool.execute(
-      {
-        distance: "400m",
-        limit: 3,
-        maxActivities: 100,
-      },
-      "test-token",
-    );
-
-    const efforts = result.structuredContent?.best_efforts;
-    expect(Object.keys(efforts ?? {})).toEqual(["400m"]);
-  });
-
-  it("reports when no efforts are found", async () => {
-    mockedList.mockResolvedValueOnce([asSummary(basicRunActivity)]);
-    mockedById.mockResolvedValueOnce(asDetail({ ...basicRunActivity }));
-
-    const result = await getBestEffortsTool.execute(
-      {
-        limit: 3,
-        maxActivities: 100,
-      },
-      "test-token",
-    );
-
-    expect(result.content[0]?.text).toContain("No best efforts found");
-  });
-
-  it("skips activities that fail to fetch", async () => {
-    mockedList.mockResolvedValueOnce([
-      asSummary({ ...basicRunActivity, id: 1 }),
-      asSummary(activityWithBestEfforts),
-    ]);
-    mockedById
-      .mockRejectedValueOnce(new Error("boom"))
-      .mockResolvedValueOnce(asDetail(activityWithBestEfforts));
-
-    const result = await getBestEffortsTool.execute(
-      {
-        limit: 3,
-        maxActivities: 100,
-      },
-      "test-token",
-    );
-
-    // One failed fetch is skipped; the other still contributes efforts.
-    expect(result.structuredContent?.activities_with_efforts).toBe(1);
-    expect(result.content[0]?.text).toContain("400m");
-    // #239: a skipped activity is now counted and named, not silently dropped.
-    expect(result.structuredContent?.activities_skipped).toBe(1);
-    expect(result.structuredContent?.warnings).toEqual([
-      "1 activity could not be fetched, so their efforts are missing below.",
-    ]);
-    expect(result.content[0]?.text).toContain("1 activity skipped");
-  });
-
-  it("bounds how many activity fetches are in flight at once", async () => {
-    // #239: the scan used to be a serial loop, so the default 100 activities
-    // cost 100 sequential round-trips.
-    const activities = Array.from({ length: 20 }, (_, i) =>
-      asSummary({ ...basicRunActivity, id: i + 1 }),
-    );
-    mockedList.mockResolvedValueOnce(activities);
-
-    let inFlight = 0;
-    let peakInFlight = 0;
-    mockedById.mockImplementation(async () => {
-      inFlight += 1;
-      peakInFlight = Math.max(peakInFlight, inFlight);
-      await new Promise((resolve) => setTimeout(resolve, 1));
-      inFlight -= 1;
-      return asDetail(activityWithBestEfforts);
-    });
-
-    await getBestEffortsTool.execute(
-      { limit: 3, maxActivities: 100 },
-      "test-token",
-    );
-
-    expect(mockedById).toHaveBeenCalledTimes(20);
-    expect(peakInFlight).toBeGreaterThan(1);
-    expect(peakInFlight).toBeLessThanOrEqual(5);
-  });
-
-  it("stops the scan on a rate limit and says how many were skipped", async () => {
-    const activities = Array.from({ length: 20 }, (_, i) =>
-      asSummary({ ...basicRunActivity, id: i + 1 }),
-    );
-    mockedList.mockResolvedValueOnce(activities);
-
-    let calls = 0;
-    mockedById.mockImplementation(async () => {
-      calls += 1;
-      // The shape `getActivityById` really throws: handleApiError rethrows a
-      // typed RateLimitError with the context prefixed onto the message. It
-      // used to flatten it into a plain Error, which left this scan's abort
-      // predicate permanently false.
-      if (calls > 5) throw handledRateLimit(`getActivityById for ID ${calls}`);
-      return asDetail(activityWithBestEfforts);
-    });
-
-    const result = await getBestEffortsTool.execute(
-      { limit: 3, maxActivities: 100 },
-      "test-token",
-    );
-
-    // The table is still returned — but it no longer claims to be complete.
-    expect(result.isError).toBeUndefined();
-    expect(mockedById.mock.calls.length).toBeLessThan(20);
-    expect(result.structuredContent?.activities_skipped).toBeGreaterThan(0);
-    const warning = result.structuredContent?.warnings?.[0] ?? "";
-    expect(warning).toContain("rate limit was reached part-way");
-    expect(warning).toContain("15-minute rate limit reached");
-    // The window description, not the client function that happened to hit it.
-    expect(warning).not.toContain("getActivityById");
-    expect(result.content[0]?.text).toContain("results below are incomplete");
-  });
-
-  it("scopes the scan to a date window when after/before are given", async () => {
-    mockedList.mockResolvedValueOnce([]);
-
-    await getBestEffortsTool.execute(
-      {
-        limit: 3,
-        maxActivities: 100,
-        after: "2026-01-01",
-        before: "2026-06-30T23:59:59Z",
-      },
-      "test-token",
-    );
-
-    expect(mockedList).toHaveBeenCalledWith("test-token", {
-      perPage: 100,
-      maxItems: 100,
-      countActivity: expect.any(Function),
-      onProgress: expect.any(Function),
-      after: Math.floor(Date.parse("2026-01-01") / 1000),
-      before: Math.floor(Date.parse("2026-06-30T23:59:59Z") / 1000),
-    });
-  });
-
-  it("reports a clean scan with no skips and no warnings", async () => {
-    mockedList.mockResolvedValueOnce([asSummary(activityWithBestEfforts)]);
-    mockedById.mockResolvedValueOnce(asDetail(activityWithBestEfforts));
-
-    const result = await getBestEffortsTool.execute(
-      { limit: 3, maxActivities: 100 },
-      "test-token",
-    );
-
-    expect(result.structuredContent?.activities_analyzed).toBe(1);
-    expect(result.structuredContent?.activities_skipped).toBe(0);
-    expect(result.structuredContent?.warnings).toEqual([]);
-    expect(result.content[0]?.text).not.toContain("skipped");
-  });
-
-  it("returns an error result when the listing call throws", async () => {
-    mockedList.mockRejectedValueOnce(new Error("network down"));
-
-    const result = await getBestEffortsTool.execute(
-      {
-        limit: 3,
-        maxActivities: 100,
-      },
-      "test-token",
+      { window: "not-a-window", topN: 1 },
+      "k",
     );
 
     expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toContain("network down");
+    expect(result.content[0]?.text).toContain("❌");
+    expect(mockedAthleteCurves).not.toHaveBeenCalled();
+  });
+
+  it("returns an isError result with the prefixed text on a client failure", async () => {
+    mockedAthleteCurves.mockRejectedValueOnce(new Error("boom"));
+
+    const result = await getBestEffortsTool.execute(
+      { window: "1y", topN: 1 },
+      "k",
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toMatch(/^❌/);
+  });
+});
+
+describe("formatBestEffortsText", () => {
+  it("reports no best efforts when every distance is empty", () => {
+    const text = formatBestEffortsText(
+      {
+        window: { id: "1y", oldest: "2025-09-25", newest: "2026-09-25" },
+        top_n: 1,
+        units: { time: "seconds", pace: "min/km" },
+        note: "note",
+        best_efforts: {},
+        missing: [],
+        warnings: [],
+      },
+      ["400m"],
+    );
+    expect(text).toContain("No best efforts found");
   });
 });

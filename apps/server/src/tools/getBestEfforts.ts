@@ -1,129 +1,397 @@
 import { z } from "zod";
-import { RateLimitError } from "../fetchClient";
+import { getTimeZone } from "../config";
 import { formatDuration } from "../formatters";
-import { listingProgress, NO_PROGRESS, type ReportProgress } from "../progress";
 import {
-  getActivityById,
-  getAllActivities,
-  type StravaSummaryActivity,
-} from "../stravaClient";
-import { mapWithConcurrency } from "../utils/concurrency";
-import { metersPerSecToPace } from "../utils/running";
+  getActivityPaceCurves,
+  getAthletePaceCurves,
+  type IntervalsActivity,
+  listActivities,
+} from "../intervalsClient";
+import { NO_PROGRESS, type ReportProgress } from "../progress";
+import { addDays, isValidCalendarDate, todayLocal } from "../utils/localDate";
+import { formatPaceSeconds } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
+import { toolErrorText } from "./_errors";
 import { BestEffortsOutputSchema, warnOnSchemaDrift } from "./outputs";
 
 const name = "get-best-efforts";
 
+const TIME_BASIS_NOTE =
+  "Best times come from the recorded time stream (a moving-time style curve from intervals.icu's pace curves), not elapsed time.";
+
 const description = `
-Aggregates personal best efforts across all running activities.
-
-This tool retrieves and ranks your best times at standard distances:
-- 400m, 1/2 mile, 1K, 1 mile, 2 mile
-- 5K, 10K, 15K, 10 mile
-- Half Marathon, Marathon, 50K
-
-Use Cases:
-- Track PRs across all distances
-- Find your best performances at specific distances
-- Analyze progress over time at key distances
+Best efforts at standard running distances, from intervals.icu's pace curves.
 
 Parameters:
-- distance (optional): Filter to a specific distance (e.g., "5K", "1 mile")
-- limit (optional): Maximum number of efforts to return per distance (default: 3, max: 50)
-- maxActivities (optional): Maximum number of activities to scan (default: 100, max: 200)
-- after / before (optional): Scope the scan to a date window (ISO date or date-time)
+- distances (optional): which distances to report (default: 400m, 1km, 5km, 10km, half marathon, marathon)
+- window (optional): "all", "1y", "90d", or a custom "YYYY-MM-DD..YYYY-MM-DD" range (default: 1y)
+- topN (optional): top N distinct activities per distance, 1-5 (default 1); above 1 also fetches per-activity pace curves for the window, one extra call
 
 Notes:
-- This tool fetches details for each activity, which can be slow for large histories
-- Prefer after/before to scope a season; it is cheaper and more precise than raising maxActivities
-- Times use elapsed time (includes stops), matching Strava's Best Efforts behavior
-- Only activities with best_efforts data from Strava are included
-- If the Strava rate limit is reached part-way, the scan stops and the response says how many activities were skipped rather than presenting a truncated table as complete
-
-Note: this scans recent running activities and fetches each activity's detail to read its best efforts, so it makes one API call per activity and can be slow over long histories; the maxActivities parameter (default 100) bounds the work.
+- ${TIME_BASIS_NOTE}
+- Ranks are computed locally from the pace curve data; intervals.icu does not return a rank
+- A distance with no curve point within 2% (or 50m, whichever is larger) of the target is omitted and listed in "missing", rather than reporting the nearest unrelated distance (e.g. a short window's only 5K would never be reported as its marathon time)
 `;
 
-/** ISO date (`2026-01-31`) or full date-time, converted to an epoch second. */
-const isoDateInput = (what: string) =>
-  z
-    .string()
-    .refine((value) => !Number.isNaN(Date.parse(value)), {
-      message: "Must be an ISO date (2026-01-31) or date-time",
-    })
-    .optional()
-    .describe(what);
+/** Standard distances, in metres. `half marathon`/`marathon` are matched
+ * against the nearest point on intervals.icu's fixed distance grid
+ * (21097.5 m and 42195 m are both present on it, verified 2026-09-25). */
+const DISTANCE_METERS = {
+  "400m": 400,
+  "1km": 1000,
+  "5km": 5000,
+  "10km": 10000,
+  "half marathon": 21097.5,
+  marathon: 42195,
+} as const;
+
+type DistanceLabel = keyof typeof DISTANCE_METERS;
+const DISTANCE_LABELS = Object.keys(DISTANCE_METERS) as [
+  DistanceLabel,
+  ...DistanceLabel[],
+];
+const DEFAULT_DISTANCES: DistanceLabel[] = [...DISTANCE_LABELS];
+
+/** intervals.icu's own lower bound for its "all" pace curve (verified
+ * 2026-09-25: the "all" list item's `start_date_local`). */
+const ALL_TIME_START = "1986-01-01";
+
+const WINDOW_RE = /^(all|1y|90d|\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2})$/;
+const WINDOW_RANGE_RE = /^(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})$/;
 
 const inputSchema = z.object({
-  distance: z
-    .string()
+  distances: z
+    .array(z.enum(DISTANCE_LABELS))
+    .min(1)
     .optional()
     .describe(
-      "Filter to a specific distance (e.g., '5K', '1 mile', 'Half Marathon')",
+      "Which distances to report. Default: 400m, 1km, 5km, 10km, half marathon, marathon.",
     ),
-  limit: z
-    .number()
-    .int()
-    .positive()
-    .max(50)
-    .default(3)
+  window: z
+    .string()
+    .regex(WINDOW_RE, 'Must be "all", "1y", "90d", or "YYYY-MM-DD..YYYY-MM-DD"')
+    .optional()
+    .default("1y")
     .describe(
-      "Maximum number of efforts to return per distance (default: 3, max: 50)",
+      '"all", "1y", "90d", or a custom "YYYY-MM-DD..YYYY-MM-DD" range. Default: 1y.',
     ),
-  maxActivities: z
+  topN: z
     .number()
     .int()
-    .positive()
-    .max(200)
-    .default(100)
-    .describe("Maximum number of activities to scan (default: 100, max: 200)"),
-  after: isoDateInput(
-    "Only scan activities on or after this date — scope a season instead of scanning by count.",
-  ),
-  before: isoDateInput("Only scan activities on or before this date."),
+    .min(1)
+    .max(5)
+    .default(1)
+    .describe(
+      "Top N distinct activities per distance (1-5, default 1). Above 1 fetches per-activity pace curves.",
+    ),
 });
 
 type GetBestEffortsInput = z.infer<typeof inputSchema>;
 
-// Standard distances in order
-const STANDARD_DISTANCES = [
-  "400m",
-  "1/2 mile",
-  "1K",
-  "1 mile",
-  "2 mile",
-  "5K",
-  "10K",
-  "15K",
-  "10 mile",
-  "Half Marathon",
-  "20K",
-  "Marathon",
-  "50K",
-];
-
-const RUNNING_TYPES = ["Run", "TrailRun", "VirtualRun"];
-
-const isRunningActivity = (a: StravaSummaryActivity) =>
-  RUNNING_TYPES.includes(a.type ?? a.sport_type ?? "");
-
-/**
- * Activity detail fetches in flight at once. The scan is one request per
- * activity, so a serial loop of the default 100 spent 100 sequential
- * round-trips; a small pool cuts the wall clock without spiking Strava's
- * 15-minute quota faster than the rate-limit backoff can react.
- */
-const FETCH_CONCURRENCY = 5;
-
-interface BestEffort {
+export interface BestEffortEntry {
+  rank: number;
+  time_seconds: number;
+  time_formatted: string;
+  pace: string;
+  date: string;
   activity_id: string;
   activity_name: string;
-  date: string;
-  elapsed_time_seconds: number;
-  elapsed_time_formatted: string;
-  moving_time_seconds: number;
-  moving_time_formatted: string;
-  pace: { min_per_km: string; min_per_mile: string } | null;
-  pr_rank: number | null;
+  race: boolean;
+}
+
+interface BestEffortsResponse {
+  window: { id: string; oldest: string; newest: string };
+  top_n: number;
+  units: { time: "seconds"; pace: "min/km" };
+  note: string;
+  best_efforts: Record<string, BestEffortEntry[]>;
+  /** Requested distances with no curve point within tolerance
+   * ({@link matchDistance}): 2% of the target or 50 m, whichever is larger.
+   * Each also has a matching entry in `warnings`. */
+  missing: string[];
+  warnings: string[];
+}
+
+interface ResolvedWindow {
+  /** `"all"`, `"1y"`, `"90d"`, or `r.<oldest>.<newest>`: the athlete
+   * pace-curves `curves` id this window maps to. */
+  curveId: string;
+  oldest: string;
+  newest: string;
+}
+
+/** Maps `window` to a concrete date range plus the matching athlete
+ * pace-curves curve id, or an athlete-facing error for an invalid range. */
+export function resolveWindow(
+  window: string,
+  tz: string,
+): ResolvedWindow | { error: string } {
+  const today = todayLocal(tz);
+  if (window === "all") {
+    return { curveId: "all", oldest: ALL_TIME_START, newest: today };
+  }
+  if (window === "1y") {
+    return { curveId: "1y", oldest: addDays(today, -365), newest: today };
+  }
+  if (window === "90d") {
+    return { curveId: "90d", oldest: addDays(today, -90), newest: today };
+  }
+
+  const match = WINDOW_RANGE_RE.exec(window);
+  if (!match) {
+    return {
+      error: 'window must be "all", "1y", "90d", or "YYYY-MM-DD..YYYY-MM-DD"',
+    };
+  }
+  const oldest = match[1]!;
+  const newest = match[2]!;
+  if (!isValidCalendarDate(oldest) || !isValidCalendarDate(newest)) {
+    return { error: "window dates must be real calendar dates" };
+  }
+  if (oldest > newest) {
+    return {
+      error: `window oldest (${oldest}) is after newest (${newest}). Swap them.`,
+    };
+  }
+  return { curveId: `r.${oldest}.${newest}`, oldest, newest };
+}
+
+/** Index of the point in `distances` closest to `target`, or `null` for an
+ * empty array. intervals.icu's distance grid is dense near every standard
+ * race distance, so a nearest match (rather than an exact one) is always
+ * within a few metres, but this alone has no notion of "too far": see
+ * {@link matchDistance}, which every caller uses instead. */
+export function nearestIndex(
+  distances: number[],
+  target: number,
+): number | null {
+  let bestIdx: number | null = null;
+  let bestDiff = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < distances.length; i += 1) {
+    const diff = Math.abs(distances[i]! - target);
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      bestIdx = i;
+    }
+  }
+  return bestIdx;
+}
+
+/** How far a curve's nearest point may sit from the requested distance and
+ * still count as a match: 2% of the target, or 50 m, whichever is larger. */
+const TOLERANCE_PCT = 0.02;
+const TOLERANCE_MIN_METERS = 50;
+
+function toleranceMeters(target: number): number {
+  return Math.max(target * TOLERANCE_PCT, TOLERANCE_MIN_METERS);
+}
+
+/** {@link nearestIndex}, bounded: `null` when the closest point is further
+ * than {@link toleranceMeters} from `target`. `nearestIndex` alone always
+ * returns *some* point for a non-empty array, even a wildly distant one, so
+ * without this bound a short custom window containing only, say, a 3 km
+ * effort would get labelled as that window's "marathon" best effort: the
+ * closest point on a nearly-empty curve is still "closest", just not close.
+ */
+export function matchDistance(
+  distances: number[],
+  target: number,
+): number | null {
+  const idx = nearestIndex(distances, target);
+  if (idx === null) return null;
+  const diff = Math.abs(distances[idx]! - target);
+  return diff <= toleranceMeters(target) ? idx : null;
+}
+
+/** `m:ss min/km` from a time and distance. No miles: `formatPaceSeconds` is
+ * the one home for the `m:ss` rendering, shared with every other pace field
+ * in the server. */
+export function paceMinPerKm(
+  timeSeconds: number,
+  distanceMeters: number,
+): string {
+  const secPerKm = (timeSeconds / distanceMeters) * 1000;
+  return `${formatPaceSeconds(secPerKm)} min/km`;
+}
+
+/** `topN === 1`: one call to `getAthletePaceCurves`, whose `activities` map
+ * already carries the winning activity's name/race flag/date. */
+async function buildTopOneEfforts(
+  apiKey: string,
+  distances: DistanceLabel[],
+  resolved: ResolvedWindow,
+  progress: ReportProgress,
+): Promise<{
+  best_efforts: Record<string, BestEffortEntry[]>;
+  missing: string[];
+  warnings: string[];
+}> {
+  progress(`Fetching pace curve (${resolved.curveId})…`, { important: true });
+  const curves = await getAthletePaceCurves(apiKey, {
+    type: "Run",
+    curves: [resolved.curveId],
+  });
+  const list = curves.list.find((c) => c.id === resolved.curveId);
+
+  const missing: string[] = [];
+  const warnings: string[] = [];
+  const best_efforts: Record<string, BestEffortEntry[]> = {};
+
+  for (const label of distances) {
+    const target = DISTANCE_METERS[label];
+    const idx = list ? matchDistance(list.distance, target) : null;
+    const timeSeconds = idx !== null ? (list?.values[idx] ?? null) : null;
+    const activityId = idx !== null ? (list?.activity_id[idx] ?? null) : null;
+
+    if (idx === null || timeSeconds == null || !activityId) {
+      best_efforts[label] = [];
+      missing.push(label);
+      warnings.push(
+        `No recorded effort within tolerance near ${label} in this window.`,
+      );
+      continue;
+    }
+
+    const activityRef = curves.activities[activityId];
+    best_efforts[label] = [
+      {
+        rank: 1,
+        time_seconds: timeSeconds,
+        time_formatted: formatDuration(timeSeconds),
+        pace: paceMinPerKm(timeSeconds, list?.distance[idx] ?? target),
+        date: (activityRef?.start_date_local ?? "").split("T")[0] ?? "",
+        activity_id: activityId,
+        activity_name: activityRef?.name ?? "Unknown activity",
+        race: activityRef?.race ?? false,
+      },
+    ];
+  }
+
+  return { best_efforts, missing, warnings };
+}
+
+/** `topN > 1`: `getActivityPaceCurves` for the per-activity times plus
+ * `listActivities` (already in `intervalsClient.ts`) for names/race flags
+ * over the same window: two calls total, never one per candidate
+ * activity. */
+async function buildTopNEfforts(
+  apiKey: string,
+  distances: DistanceLabel[],
+  topN: number,
+  resolved: ResolvedWindow,
+  progress: ReportProgress,
+): Promise<{
+  best_efforts: Record<string, BestEffortEntry[]>;
+  missing: string[];
+  warnings: string[];
+}> {
+  const targetMeters = distances
+    .map((label) => DISTANCE_METERS[label])
+    .sort((a, b) => a - b);
+
+  progress(
+    `Fetching activity pace curves ${resolved.oldest} to ${resolved.newest}…`,
+    { important: true },
+  );
+  const [curves, activityList] = await Promise.all([
+    getActivityPaceCurves(apiKey, {
+      oldest: resolved.oldest,
+      newest: resolved.newest,
+      type: "Run",
+      distances: targetMeters,
+    }),
+    listActivities(apiKey, {
+      oldest: resolved.oldest,
+      newest: resolved.newest,
+    }),
+  ]);
+
+  const activityById = new Map<string, IntervalsActivity>(
+    activityList.map((a) => [a.id, a]),
+  );
+
+  const missing: string[] = [];
+  const warnings: string[] = [];
+  const best_efforts: Record<string, BestEffortEntry[]> = {};
+
+  for (const label of distances) {
+    const target = DISTANCE_METERS[label];
+    const idx = matchDistance(curves.distances, target);
+    if (idx === null) {
+      best_efforts[label] = [];
+      missing.push(label);
+      warnings.push(
+        `No recorded effort within tolerance near ${label} in this window.`,
+      );
+      continue;
+    }
+    const distanceMeters = curves.distances[idx]!;
+
+    const candidates = curves.curves
+      .filter((c) => c.secs.length > idx && c.secs[idx] != null)
+      .map((c) => ({
+        activityId: c.id,
+        timeSeconds: c.secs[idx] as number,
+        date: (c.start_date_local ?? "").split("T")[0] ?? "",
+      }))
+      .sort((a, b) => a.timeSeconds - b.timeSeconds)
+      .slice(0, topN);
+
+    if (candidates.length === 0) {
+      best_efforts[label] = [];
+      missing.push(label);
+      warnings.push(
+        `No recorded effort within tolerance near ${label} in this window.`,
+      );
+      continue;
+    }
+
+    best_efforts[label] = candidates.map((c, i) => {
+      const info = activityById.get(c.activityId);
+      return {
+        rank: i + 1,
+        time_seconds: c.timeSeconds,
+        time_formatted: formatDuration(c.timeSeconds),
+        pace: paceMinPerKm(c.timeSeconds, distanceMeters),
+        date: c.date,
+        activity_id: c.activityId,
+        activity_name: info?.name ?? "Unknown activity",
+        race: info?.race ?? false,
+      };
+    });
+  }
+
+  return { best_efforts, missing, warnings };
+}
+
+export function formatBestEffortsText(
+  response: BestEffortsResponse,
+  distances: DistanceLabel[],
+): string {
+  const lines = [
+    `Best efforts, ${response.window.oldest} to ${response.window.newest}`,
+  ];
+
+  let any = false;
+  for (const label of distances) {
+    const efforts = response.best_efforts[label];
+    if (!efforts || efforts.length === 0) continue;
+    any = true;
+    lines.push(`${label}:`);
+    for (const effort of efforts) {
+      const raceLabel = effort.race ? " (race)" : "";
+      lines.push(
+        `  ${effort.rank}. ${effort.time_formatted} (${effort.pace}) - ${effort.date}${raceLabel}`,
+      );
+      lines.push(`     ${effort.activity_name}`);
+    }
+  }
+  if (!any) lines.push("No best efforts found for the requested distances.");
+
+  for (const warning of response.warnings) lines.push(warning);
+  lines.push(response.note);
+
+  return lines.join("\n");
 }
 
 export const getBestEffortsTool = {
@@ -133,249 +401,60 @@ export const getBestEffortsTool = {
   annotations: READ_ONLY,
   outputSchema: BestEffortsOutputSchema,
   execute: async (
-    { distance, limit, maxActivities, after, before }: GetBestEffortsInput,
-    token: string,
+    { distances: rawDistances, window, topN }: GetBestEffortsInput,
+    apiKey: string,
     progress: ReportProgress = NO_PROGRESS,
   ) => {
-    try {
-      console.error(
-        `Fetching best efforts (scanning up to ${maxActivities} activities)...`,
-      );
-
-      progress("Listing activities…", { important: true });
-
-      // Fetch running activities. maxItems/countActivity stop the pagination
-      // once enough runs have arrived instead of walking the whole history.
-      const allActivities = await getAllActivities(token, {
-        perPage: Math.min(maxActivities, 200),
-        maxItems: maxActivities,
-        countActivity: isRunningActivity,
-        onProgress: listingProgress(progress),
-        ...(after ? { after: Math.floor(Date.parse(after) / 1000) } : {}),
-        ...(before ? { before: Math.floor(Date.parse(before) / 1000) } : {}),
-      });
-
-      // Filter to running activities
-      const runningActivities = allActivities
-        .filter(isRunningActivity)
-        .slice(0, maxActivities);
-
-      console.error(
-        `Found ${runningActivities.length} running activities to analyze`,
-      );
-
-      progress(
-        `Reading ${runningActivities.length} activities for best efforts…`,
-        { important: true },
-      );
-
-      // Collect best efforts from each activity
-      const allEfforts = new Map<string, BestEffort[]>();
-      let activitiesWithEfforts = 0;
-      let activitiesRead = 0;
-      let failedFetches = 0;
-      // A 429 means the quota is genuinely exhausted (the fetch layer has
-      // already honoured Retry-After where it could). Continuing would spend
-      // the rest of the scan on requests that cannot succeed and would starve
-      // every other tool, so the scan stops and reports what it missed.
-      // Held in an object so TypeScript does not narrow it to `null` for the
-      // reporting below — it is only ever assigned inside the worker closure.
-      const abort: { rateLimit: RateLimitError | null } = { rateLimit: null };
-
-      let completed = 0;
-      /**
-       * One activity finished, however it finished. Completion-ordered rather
-       * than index-ordered: the pool keeps FETCH_CONCURRENCY requests in
-       * flight, so this counts activities done, not a position in the list.
-       */
-      const advance = () => {
-        completed += 1;
-        progress(`Read ${completed} of ${runningActivities.length} activities`);
-      };
-
-      await mapWithConcurrency(
-        runningActivities,
-        FETCH_CONCURRENCY,
-        async (activitySummary) => {
-          let activity: Awaited<ReturnType<typeof getActivityById>>;
-          try {
-            activity = await getActivityById(token, activitySummary.id);
-          } catch (err) {
-            if (err instanceof RateLimitError) {
-              abort.rateLimit ??= err;
-              // The scan is about to stop with the list half-read; saying so
-              // beats a progress line that simply stops advancing.
-              progress("Strava rate limit reached — stopping the scan", {
-                important: true,
-              });
-            } else {
-              failedFetches += 1;
-              console.error(
-                `Failed to fetch activity ${activitySummary.id}: ${err}`,
-              );
-              advance();
-            }
-            return;
-          }
-
-          advance();
-          activitiesRead += 1;
-
-          if (!activity.best_efforts || activity.best_efforts.length === 0) {
-            return;
-          }
-
-          activitiesWithEfforts += 1;
-
-          for (const effort of activity.best_efforts) {
-            const distanceName = effort.name;
-
-            // Filter if distance specified
-            if (distance && distanceName !== distance) {
-              continue;
-            }
-
-            // Calculate pace from distance and time
-            const distanceMeters = effort.distance || 0;
-            const elapsedSeconds = effort.elapsed_time || 0;
-            const mps =
-              elapsedSeconds > 0 ? distanceMeters / elapsedSeconds : 0;
-            const pace = metersPerSecToPace(mps);
-
-            const bestEffort: BestEffort = {
-              activity_id: activity.id,
-              activity_name: activity.name,
-              date: (effort.start_date_local || effort.start_date || "").split(
-                "T",
-              )[0]!,
-              elapsed_time_seconds: effort.elapsed_time || 0,
-              elapsed_time_formatted: formatDuration(effort.elapsed_time),
-              moving_time_seconds: effort.moving_time || 0,
-              moving_time_formatted: formatDuration(effort.moving_time),
-              pace: pace
-                ? { min_per_km: pace.minPerKm, min_per_mile: pace.minPerMile }
-                : null,
-              pr_rank: effort.pr_rank ?? null,
-            };
-
-            if (!allEfforts.has(distanceName)) {
-              allEfforts.set(distanceName, []);
-            }
-            allEfforts.get(distanceName)!.push(bestEffort);
-          }
-        },
-        () => abort.rateLimit !== null,
-      );
-
-      // Sort and limit each distance
-      const results: Record<string, BestEffort[]> = {};
-
-      for (const [distanceName, efforts] of allEfforts) {
-        const sorted = efforts.sort(
-          (a, b) => a.elapsed_time_seconds - b.elapsed_time_seconds,
-        );
-        results[distanceName] = sorted.slice(0, limit);
-      }
-
-      // Order by standard distance order
-      const orderedResults: Record<string, BestEffort[]> = {};
-      for (const stdDistance of STANDARD_DISTANCES) {
-        if (results[stdDistance]) {
-          orderedResults[stdDistance] = results[stdDistance];
-        }
-      }
-      // Add any non-standard distances at the end
-      for (const distanceName of Object.keys(results)) {
-        if (!orderedResults[distanceName] && results[distanceName]) {
-          orderedResults[distanceName] = results[distanceName];
-        }
-      }
-
-      // Activities whose efforts are missing from the table: those the scan
-      // never reached because it aborted, plus individual failed fetches.
-      const analyzed = activitiesRead;
-      const skipped = runningActivities.length - analyzed;
-
-      const warnings: string[] = [];
-      if (abort.rateLimit) {
-        warnings.push(
-          `Strava's rate limit was reached part-way through the scan, so ${skipped} of ${runningActivities.length} activities were not read and their efforts are missing below. ${abort.rateLimit.detail} Retry after the window resets, or narrow the scan with after/before.`,
-        );
-      } else if (failedFetches > 0) {
-        warnings.push(
-          `${failedFetches} activit${failedFetches === 1 ? "y" : "ies"} could not be fetched, so their efforts are missing below.`,
-        );
-      }
-
-      const response = {
-        best_efforts: orderedResults,
-        activities_analyzed: analyzed,
-        activities_with_efforts: activitiesWithEfforts,
-        activities_skipped: skipped,
-        warnings,
-        note: "Times use elapsed time (includes stops), matching Strava's Best Efforts behavior",
-      };
-
-      // Format as readable text
-      let output = `🏆 **Best Efforts Summary**\n`;
-      output += `📊 Analyzed ${analyzed} activities (${activitiesWithEfforts} with best efforts)\n`;
-      if (skipped > 0) {
-        output += `⚠️ ${skipped} activit${skipped === 1 ? "y" : "ies"} skipped — the results below are incomplete\n`;
-      }
-      output += `\n`;
-
-      if (Object.keys(orderedResults).length === 0) {
-        output += `No best efforts found.`;
-        if (distance) {
-          output += ` Try removing the distance filter or scanning more activities.`;
-        }
-        output += `\n`;
-      } else {
-        for (const [distanceName, efforts] of Object.entries(orderedResults)) {
-          output += `**${distanceName}**\n`;
-          for (let i = 0; i < efforts.length; i += 1) {
-            const effort = efforts[i];
-            if (!effort) continue;
-            const rank = i + 1;
-            const prLabel =
-              effort.pr_rank === 1
-                ? " 🥇 PR"
-                : effort.pr_rank === 2
-                  ? " 🥈"
-                  : effort.pr_rank === 3
-                    ? " 🥉"
-                    : "";
-            output += `  ${rank}. ${effort.elapsed_time_formatted}`;
-            if (effort.pace) output += ` (${effort.pace.min_per_km} /km)`;
-            output += ` - ${effort.date}${prLabel}\n`;
-            output += `     ${effort.activity_name}\n`;
-          }
-          output += `\n`;
-        }
-      }
-
-      output += `ℹ️ ${response.note}\n`;
-
-      console.error(
-        `Successfully retrieved best efforts from ${activitiesWithEfforts} activities`,
-      );
-
-      warnOnSchemaDrift("get-best-efforts", BestEffortsOutputSchema, response);
-
+    const distances = rawDistances ?? DEFAULT_DISTANCES;
+    const tz = getTimeZone();
+    const resolved = resolveWindow(window, tz);
+    if ("error" in resolved) {
       return {
-        content: [{ type: "text" as const, text: output }],
-        structuredContent: response,
+        content: [{ type: "text" as const, text: `❌ ${resolved.error}` }],
+        isError: true,
       };
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      console.error(`Error fetching best efforts: ${errorMessage}`);
+    }
+
+    try {
+      const { best_efforts, missing, warnings } =
+        topN > 1
+          ? await buildTopNEfforts(apiKey, distances, topN, resolved, progress)
+          : await buildTopOneEfforts(apiKey, distances, resolved, progress);
+
+      const response: BestEffortsResponse = {
+        window: {
+          id: resolved.curveId,
+          oldest: resolved.oldest,
+          newest: resolved.newest,
+        },
+        top_n: topN,
+        units: { time: "seconds", pace: "min/km" },
+        note: TIME_BASIS_NOTE,
+        best_efforts,
+        missing,
+        warnings,
+      };
+
+      warnOnSchemaDrift(name, BestEffortsOutputSchema, response);
 
       return {
         content: [
           {
             type: "text" as const,
-            text: `❌ An unexpected error occurred while fetching best efforts. Details: ${errorMessage}`,
+            text: formatBestEffortsText(response, distances),
+          },
+        ],
+        structuredContent: response,
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: toolErrorText(error, {
+              context: `fetch best efforts for ${resolved.oldest} to ${resolved.newest}`,
+              notFound: "No pace curve data was found for this athlete.",
+            }),
           },
         ],
         isError: true,

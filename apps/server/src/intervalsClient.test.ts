@@ -5,7 +5,9 @@ import activityHilly from "./__fixtures__/intervals/activity-hilly.json";
 import intervals from "./__fixtures__/intervals/activity-intervals.json";
 import activityMultilap from "./__fixtures__/intervals/activity-multilap.json";
 import multilapIntervals from "./__fixtures__/intervals/activity-multilap-intervals.json";
+import activityPaceCurvesFixture from "./__fixtures__/intervals/activity-pace-curves.json";
 import gearFixture from "./__fixtures__/intervals/gear.json";
+import paceCurvesFixture from "./__fixtures__/intervals/pace-curves.json";
 import sportSettings from "./__fixtures__/intervals/sport-settings-run.json";
 import streams from "./__fixtures__/intervals/streams.json";
 import streamsHilly from "./__fixtures__/intervals/streams-hilly.json";
@@ -15,13 +17,16 @@ import { intervalsApi, RateLimitError } from "./fetchClient";
 import {
   getActivity,
   getActivityIntervals,
+  getActivityPaceCurves,
   getActivityStreams,
+  getAthletePaceCurves,
   getSportSettings,
   getWellness,
   IntervalsApiError,
   type IntervalsInterval,
   listActivities,
   listGear,
+  resolveNumericAthleteId,
 } from "./intervalsClient";
 
 /**
@@ -338,6 +343,80 @@ describe("intervalsClient", () => {
       newest: "2026-09-24",
     });
     expect(result.map((a) => a.id)).toEqual(["b", "a"]);
+  });
+
+  it("fetches athlete pace curves with the requested curve ids, parsing the real fixture", async () => {
+    const calls = mockJson(paceCurvesFixture);
+    const result = await getAthletePaceCurves("k", {
+      type: "Run",
+      curves: ["all", "1y", "90d"],
+    });
+    const url = new URL(calls[0]?.url ?? "");
+    expect(url.pathname).toBe("/api/v1/athlete/0/pace-curves.json");
+    expect(url.searchParams.get("type")).toBe("Run");
+    expect(url.searchParams.get("curves")).toBe("all,1y,90d");
+    expect(result.list.length).toBe(paceCurvesFixture.list.length);
+    expect(result.activities[Object.keys(result.activities)[0]!]?.name).toBe(
+      paceCurvesFixture.activities[
+        Object.keys(
+          paceCurvesFixture.activities,
+        )[0] as keyof typeof paceCurvesFixture.activities
+      ]?.name,
+    );
+  });
+
+  it("fetches activity pace curves against the resolved numeric athlete id, parsing the real fixture", async () => {
+    process.env.INTERVALS_ATHLETE_ID = "555555";
+    const calls = mockJson(activityPaceCurvesFixture);
+    const result = await getActivityPaceCurves("k", {
+      oldest: "2026-09-01",
+      newest: "2026-09-24",
+      type: "Run",
+      distances: [400, 1000, 5000, 10000],
+    });
+    const url = new URL(calls[0]?.url ?? "");
+    expect(url.pathname).toBe(
+      "/api/v1/athlete/555555/activity-pace-curves.json",
+    );
+    expect(url.searchParams.get("oldest")).toBe("2026-09-01");
+    expect(url.searchParams.get("distances")).toBe("400,1000,5000,10000");
+    expect(result.curves.length).toBe(activityPaceCurvesFixture.curves.length);
+    expect(result.curves[0]?.secs).toEqual(
+      activityPaceCurvesFixture.curves[0]?.secs,
+    );
+  });
+
+  describe("resolveNumericAthleteId", () => {
+    it("uses a bare numeric INTERVALS_ATHLETE_ID directly, without a network call", async () => {
+      process.env.INTERVALS_ATHLETE_ID = "555555";
+      const calls = mockJson({});
+      expect(await resolveNumericAthleteId("k")).toBe("555555");
+      expect(calls).toHaveLength(0);
+    });
+
+    it("strips an i-prefixed INTERVALS_ATHLETE_ID, without a network call", async () => {
+      process.env.INTERVALS_ATHLETE_ID = "i555555";
+      const calls = mockJson({});
+      expect(await resolveNumericAthleteId("k")).toBe("555555");
+      expect(calls).toHaveLength(0);
+    });
+
+    it('resolves via GET /athlete/0 when unset ("0"), keeping only id', async () => {
+      process.env.INTERVALS_ATHLETE_ID = "0";
+      const calls = mockJson({ id: "999999", icu_api_key: "should-not-leak" });
+      const id = await resolveNumericAthleteId("k-resolve");
+      expect(id).toBe("999999");
+      expect(calls).toHaveLength(1);
+      expect(new URL(calls[0]!.url).pathname).toBe("/api/v1/athlete/0");
+    });
+
+    it("caches the resolved id per apiKey across calls", async () => {
+      process.env.INTERVALS_ATHLETE_ID = "0";
+      const calls = mockJson({ id: "999999" });
+      await resolveNumericAthleteId("k-cache");
+      await resolveNumericAthleteId("k-cache");
+      expect(calls).toHaveLength(1);
+    });
   });
 
   it("maps 404 and 401 to IntervalsApiError with the status", async () => {

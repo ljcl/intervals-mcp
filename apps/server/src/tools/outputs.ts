@@ -862,32 +862,38 @@ export function warnOnSchemaDrift<T>(
 
 // ---------- get-best-efforts ----------
 const BestEffortEntrySchema = z.object({
+  rank: z.number().int(),
+  time_seconds: z.number(),
+  time_formatted: z.string(),
+  pace: z.string().describe("m:ss min/km"),
+  date: z.string().describe("ISO date YYYY-MM-DD"),
   activity_id: z.string(),
   activity_name: z.string(),
-  date: z.string(),
-  elapsed_time_seconds: z.number().int(),
-  elapsed_time_formatted: z.string(),
-  moving_time_seconds: z.number().int(),
-  moving_time_formatted: z.string(),
-  pace: PaceSchema.nullable(),
-  pr_rank: z.number().int().nullable(),
+  race: z.boolean(),
 });
 export const BestEffortsOutputSchema = z.object({
-  best_efforts: z.record(z.string(), z.array(BestEffortEntrySchema)),
-  activities_analyzed: z.number().int(),
-  activities_with_efforts: z.number().int(),
-  activities_skipped: z
-    .number()
-    .int()
+  window: z.object({
+    id: z.string().describe('"all", "1y", "90d", or "r.<oldest>.<newest>"'),
+    oldest: z.string().describe("ISO date YYYY-MM-DD"),
+    newest: z.string().describe("ISO date YYYY-MM-DD"),
+  }),
+  top_n: z.number().int(),
+  units: z.object({
+    time: z.literal("seconds"),
+    pace: z.literal("min/km"),
+  }),
+  note: z
+    .string()
     .describe(
-      "Activities whose detail could not be fetched, so their efforts are absent from the table",
+      "Time-basis note: best times come from the recorded time stream (a moving-time style curve), not elapsed time",
     ),
-  warnings: z
+  best_efforts: z.record(z.string(), z.array(BestEffortEntrySchema)),
+  missing: z
     .array(z.string())
     .describe(
-      "Reasons the scan is incomplete (e.g. rate limit reached part-way)",
+      "Requested distances with no curve point within tolerance (2% of the target or 50m, whichever is larger)",
     ),
-  note: z.string(),
+  warnings: z.array(z.string()),
 });
 
 // ---------- get-race-prediction ----------
