@@ -5,9 +5,8 @@
  * prose like `(ID: 123)` and a caller had to regex them back out to chain.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { getActivity } from "../intervalsClient";
 import {
-  getActivityById,
-  getActivityLaps,
   getActivityZones,
   getAuthenticatedAthlete,
   updateActivity,
@@ -24,10 +23,13 @@ vi.mock("../stravaClient", async (importOriginal) => {
     ...actual,
     getAuthenticatedAthlete: vi.fn(),
     getActivityZones: vi.fn(),
-    getActivityById: vi.fn(),
-    getActivityLaps: vi.fn(),
     updateActivity: vi.fn(),
   };
+});
+
+vi.mock("../intervalsClient", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../intervalsClient")>();
+  return { ...actual, getActivity: vi.fn() };
 });
 
 vi.mock("../config", async (importOriginal) => {
@@ -77,21 +79,37 @@ describe("activity read tools", () => {
     // A successful call from a tool that advertises an outputSchema must carry
     // structuredContent — the SDK client raises InvalidRequest otherwise, so a
     // text-only "no laps recorded" reached the host as a protocol error.
-    vi.mocked(getActivityById).mockResolvedValueOnce({
-      id: "777",
+    vi.mocked(getActivity).mockResolvedValueOnce({
+      id: "i777",
       name: "Rest Day Walk",
-      sport_type: "Walk",
+      type: "Walk",
+      start_date_local: "2026-09-21T09:00:00",
+      icu_intervals: [],
     } as never);
-    vi.mocked(getActivityLaps).mockResolvedValueOnce([] as never);
 
-    const result = await dispatchToolCall("get-activity-laps", { id: "777" });
+    const result = await dispatchToolCall("get-activity-laps", {
+      id: "i777",
+    });
 
     expect(result.isError).toBeUndefined();
     expect(ActivityLapsOutputSchema.parse(result.structuredContent)).toEqual({
-      activity_id: "777",
+      activity_id: "i777",
       activity_name: "Rest Day Walk",
       sport_type: "Walk",
       lap_count: 0,
+      lap_source: "intervals.icu intervals",
+      device_lap_count: null,
+      intervals_edited: null,
+      units: {
+        distance: "km",
+        pace: "min/km",
+        speed: "km/h",
+        time: "s",
+        hr: "bpm",
+        elevation: "m",
+        cadence: "spm",
+        gradient: "%",
+      },
       laps: [],
     });
   });

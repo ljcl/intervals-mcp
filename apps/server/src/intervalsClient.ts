@@ -128,6 +128,9 @@ const IntervalsActivitySchema = z
     race: z.boolean().nullable().optional(),
     sub_type: z.string().nullable().optional(),
     icu_lap_count: z.number().nullable().optional(),
+    /** True when the device's laps were edited/merged in the intervals.icu UI
+     * (e.g. the multi-lap fixture: 12 device laps became 18 icu_intervals). */
+    icu_intervals_edited: z.boolean().nullable().optional(),
     recording_stops: z.array(z.number()).nullable().optional(),
     icu_warmup_time: z.number().nullable().optional(),
     icu_average_watts: z.number().nullable().optional(),

@@ -968,30 +968,63 @@ export const RacePredictionOutputSchema = z.object({
 });
 
 // ---------- get-activity-laps ----------
-const LapEntrySchema = z.object({
-  lap_index: z.number().int(),
-  name: z.string(),
-  distance_km: z.number(),
-  elapsed_time_seconds: z.number().int(),
-  elapsed_time_formatted: z.string(),
-  moving_time_seconds: z.number().int(),
-  moving_time_formatted: z.string(),
-  pace: PaceSchema.nullable().describe("Set for runs; null for other sports"),
-  speed_kmh: z.number().nullable().describe("Set for non-run sports"),
-  average_watts: z.number().nullable(),
-  device_watts: z.boolean().nullable(),
+const IntervalsLapEntrySchema = z.object({
+  lap_index: z
+    .number()
+    .int()
+    .describe("1-based; icu_intervals carry no lap number of their own"),
+  type: z.string().nullable().describe("e.g. WORK, RECOVERY"),
+  label: z.string().nullable(),
+  distance_km: z.number().nullable(),
+  moving_time_s: z.number().int().nullable(),
+  moving_time: z.string().describe("h:mm:ss, or mm:ss under an hour"),
+  elapsed_time_s: z.number().int().nullable(),
+  pace_min_per_km: z
+    .string()
+    .nullable()
+    .describe("Set for Run/TrailRun/VirtualRun only"),
+  gap_min_per_km: z
+    .string()
+    .nullable()
+    .describe(
+      "Grade-adjusted pace from the interval's gap field (m/s, same unit as average_speed); runs only",
+    ),
+  speed_kmh: z.number().nullable().describe("Set for non-pace distance sports"),
+  average_hr: z.number().nullable(),
+  max_hr: z.number().nullable(),
   average_cadence: z
     .number()
     .nullable()
-    .describe("spm (doubled) for runs, rpm for rides"),
-  average_heartrate: z.number().nullable(),
-  max_heartrate: z.number().nullable(),
-  total_elevation_gain_m: z.number().nullable(),
+    .describe(
+      "Strides doubled to steps/min for a step-cadence type, raw rpm otherwise; see units.cadence",
+    ),
+  average_watts: z.number().nullable(),
+  elevation_gain_m: z.number().nullable(),
+  average_gradient_pct: z.number().nullable(),
 });
 export const ActivityLapsOutputSchema = z.object({
   activity_id: z.string(),
   activity_name: z.string(),
   sport_type: z.string(),
   lap_count: z.number().int(),
-  laps: z.array(LapEntrySchema),
+  lap_source: z
+    .literal("intervals.icu intervals")
+    .describe("icu_intervals, usually mirroring the device's laps"),
+  device_lap_count: z
+    .number()
+    .int()
+    .nullable()
+    .describe("icu_lap_count; may differ from lap_count"),
+  intervals_edited: z.boolean().nullable().describe("icu_intervals_edited"),
+  units: z.object({
+    distance: z.literal("km"),
+    pace: z.literal("min/km"),
+    speed: z.literal("km/h"),
+    time: z.literal("s"),
+    hr: z.literal("bpm"),
+    elevation: z.literal("m"),
+    cadence: z.union([z.literal("spm"), z.literal("rpm")]),
+    gradient: z.literal("%"),
+  }),
+  laps: z.array(IntervalsLapEntrySchema),
 });

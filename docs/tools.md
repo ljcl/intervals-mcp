@@ -9,7 +9,7 @@ identity, so renames or schema reshapes re-prompt every user. See
 [architecture.md](architecture.md#tool-metadata) before changing either.
 
 > **Status.** Tools are being ported from Strava to intervals.icu (Phases 1
-> and 2). The five tools below are ported and verified against a real
+> and 2). The six tools below are ported and verified against a real
 > account; until a remaining tool is ported, it fails with a "not yet
 > ported" error.
 
@@ -25,6 +25,7 @@ Strava port.
 | `get-activity-streams` | Time-series streams for one activity, downsampled to a bounded number of points, including running dynamics |
 | `list-gear` | The athlete's gear (shoes) with mileage and retirement status |
 | `get-wellness` | Daily wellness (HRV, resting HR, sleep, weight, CTL/ATL/TSB) for a date or range |
+| `get-activity-laps` | Laps of an activity, derived from its intervals, with sport-aware pace/speed, GAP, HR, power, cadence |
 
 `list-activities` defaults to the last 28 days (today back to 27 days
 earlier) in the server's configured time zone, sorted newest first. Filter
@@ -90,13 +91,26 @@ the response's `hrv_note` says so explicitly (and every text line labels it
 "HRV SDNN", never bare "HRV"), since `hrv_rmssd_ms` reads null for those
 athletes and should not be compared against rMSSD norms.
 
+`get-activity-laps` takes the `id` from `list-activities` and returns laps
+derived from the activity's intervals (`icu_intervals`, fetched via
+`getActivity(..., { intervals: true })`): intervals.icu has no separate lap
+list, and `icu_intervals` usually mirrors the device's own laps (typically
+one WORK interval per lap, sometimes with a short RECOVERY inserted between
+them), for any sport. Runs report `pace_min_per_km` and grade-adjusted
+`gap_min_per_km`; other distance sports report `speed_kmh`. Cadence is spm
+(doubled from strides) for Run/TrailRun/VirtualRun/Walk/Hike, rpm otherwise,
+with the unit named in `units.cadence`. The response also carries
+`device_lap_count` (`icu_lap_count`) and `intervals_edited`
+(`icu_intervals_edited`); the text flags it when intervals were edited or
+the interval count differs from the device's lap count. An activity with no
+intervals returns a valid payload with `lap_count: 0`.
+
 ## Activity tools
 
 | Tool | Description |
 | ---- | ----------- |
 | `update-activity` | Update an activity's description, title, sport type, gear, or flags |
 | `get-activity-zones` | Time spent in each HR and power zone for an activity |
-| `get-activity-laps` | Laps of an activity with sport-aware pace/speed, HR, power, cadence |
 | `get-running-summary` | Running-focused summary with HR zones and lap analysis |
 | `get-aerobic-analysis` | Aerobic decoupling, efficiency factor, and intensity factor from HR + power/speed streams |
 | `get-hill-analysis` | Climb/descent detection with GAP and early-vs-late climb effort drift |
