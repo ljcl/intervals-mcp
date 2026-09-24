@@ -9,7 +9,7 @@ identity, so renames or schema reshapes re-prompt every user. See
 [architecture.md](architecture.md#tool-metadata) before changing either.
 
 > **Status.** Tools are being ported from Strava to intervals.icu (Phases 1
-> and 2). The eleven tools below are ported and verified against a real
+> and 2). The twelve tools below are ported and verified against a real
 > account; until a remaining tool is ported, it fails with a "not yet
 > ported" error.
 
@@ -31,6 +31,7 @@ Strava port.
 | `compare-activities` | Compare two activities side-by-side: pace, HR, cadence, load, and running dynamics, plus activity2-activity1 differences and an efficiency verdict |
 | `get-hill-analysis` | Climb/descent detection with GAP and early-vs-late climb effort drift |
 | `get-split-analysis` | Even km splits with a two-halves pacing verdict stated on the clock and grade-adjusted |
+| `get-aerobic-analysis` | Aerobic decoupling and efficiency factor, preferring intervals.icu's own values and computing from streams otherwise |
 
 `list-activities` defaults to the last 28 days (today back to 27 days
 earlier) in the server's configured time zone, sorted newest first. Filter
@@ -179,12 +180,26 @@ by grouping splits. `terrain_pct` names how many percentage points of the
 raw change the terrain accounts for, so a hilly back half is not misread as
 fade and a course that flattens out does not hide real fade.
 
+`get-aerobic-analysis` prefers the activity's own `decoupling` and
+`icu_efficiency_factor` fields when intervals.icu has already computed them
+(`decoupling_source`/`efficiency_factor_source: "intervals.icu"`), and in
+that case skips the stream fetch entirely unless `includeBreakdown: true` is
+passed. Otherwise both are computed from streams
+(`source: "computed"`) using the shared intervals.icu stream adapter. The
+`basis` input picks the output stream: `pace` (default) reads
+`velocity_smooth`, `power` reads `watts`; pace figures render as `m:ss /km`
+strings, never miles. On the power basis a recording device name starting
+with `Watch` (an Apple Watch) adds a warning that the power stream is
+Apple's own estimate, not a power meter reading. Warm-up exclusion defaults
+to the activity's `icu_warmup_time`, then the athlete's Run sport-settings
+`warmup_time`, then 5 minutes; intensity factor's threshold power defaults to
+the athlete's Run sport-settings `ftp`, then the activity's `icu_ftp`.
+
 ## Activity tools
 
 | Tool | Description |
 | ---- | ----------- |
 | `update-activity` | Update an activity's description, title, sport type, gear, or flags |
-| `get-aerobic-analysis` | Aerobic decoupling, efficiency factor, and intensity factor from HR + power/speed streams |
 | `get-interval-analysis` | Interval detection with urban-stop-aware rest classification and rep fade |
 | `get-training-load` | Training load summary with trend analysis |
 | `get-fitness-trend` | Fitness/fatigue/form (CTL/ATL/TSB) from relative effort, with rest projection and a solved taper to a target form on a target date |

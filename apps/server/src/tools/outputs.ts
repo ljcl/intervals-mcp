@@ -170,32 +170,59 @@ export const CompareActivitiesOutputSchema = z.object({
 });
 
 const AerobicHalfSchema = z.object({
-  avg_output: z.number(),
+  avg_output: z
+    .number()
+    .describe("m/s on the pace basis, W on the power basis"),
+  avg_pace_formatted: z
+    .string()
+    .nullable()
+    .describe("m:ss /km on the pace basis; null on the power basis"),
   avg_hr: z.number(),
-  output_per_beat: z.number(),
+  output_per_beat: z
+    .number()
+    .describe("m/min per beat on the pace basis, W/beat on the power basis"),
   minutes: z.number(),
 });
+
+const AerobicSourceEnum = z.enum(["intervals.icu", "computed"]);
 
 export const AerobicAnalysisOutputSchema = z.object({
   activity_id: z.union([z.string(), z.number()]),
   name: z.string(),
   date: z.string(),
   type: z.string(),
-  /** power = Pw:Hr from the watts stream; speed = Pa:Hr fallback. */
-  basis: z.enum(["power", "speed"]),
+  basis: z.enum(["pace", "power"]),
   decoupling_pct: z.number(),
+  decoupling_source: AerobicSourceEnum,
   interpretation: z.string(),
-  first_half: AerobicHalfSchema,
-  second_half: AerobicHalfSchema,
-  /** Normalized power (W) on the power basis, avg speed (m/s) otherwise. */
-  normalized_output: z.number(),
-  /** W/beat on the power basis, metres-per-minute/beat on the speed basis. */
+  /** m/min per beat on the pace basis, W/beat on the power basis. */
   efficiency_factor: z.number(),
+  efficiency_factor_source: AerobicSourceEnum,
   intensity_factor: z.number().nullable(),
   threshold_power_w: z.number().nullable(),
-  moving_minutes: z.number(),
-  excluded_stopped_minutes: z.number(),
-  excluded_warmup_minutes: z.number(),
+  breakdown: z
+    .object({
+      first_half: AerobicHalfSchema,
+      second_half: AerobicHalfSchema,
+      normalized_output: z
+        .number()
+        .describe(
+          "m/s on the pace basis, W (normalized power) on the power basis",
+        ),
+      normalized_output_formatted: z.string().nullable(),
+      moving_minutes: z.number(),
+      excluded_stopped_minutes: z.number(),
+      excluded_warmup_minutes: z.number(),
+    })
+    .nullable()
+    .describe(
+      "Null when both decoupling and efficiency factor came from intervals.icu and includeBreakdown was not set",
+    ),
+  units: z.object({
+    pace: z.literal("m:ss /km"),
+    power: z.literal("W"),
+    efficiency_factor: z.string(),
+  }),
   warnings: z.array(z.string()),
 });
 
