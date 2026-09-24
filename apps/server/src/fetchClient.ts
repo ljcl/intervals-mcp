@@ -297,7 +297,7 @@ export interface RetryOptions {
   sleep?: (ms: number) => Promise<void>;
   /**
    * Minimum spacing, in ms, enforced between the *start* of consecutive
-   * request attempts — the initial attempt and every retry each count as one
+   * request attempts: the initial attempt and every retry each count as one
    * start. Applies across concurrent callers, not just sequential ones. Omit
    * or 0 to disable (the default for ad-hoc clients and most tests).
    */
@@ -471,7 +471,7 @@ export class FetchClient {
 
   /**
    * Runs `fire` (one request attempt) no earlier than `minIntervalMs` after
-   * the previous attempt started, across every caller of this client —
+   * the previous attempt started, across every caller of this client,
    * concurrent callers included. Disabled entirely (fires immediately) when
    * `minIntervalMs` is 0.
    *
@@ -480,7 +480,11 @@ export class FetchClient {
    * callers racing in from `Promise.all` still land on distinct, ordered
    * slots instead of both reading the same `now()`. The gate is released the
    * instant `fire` is *invoked*, not once it settles, so one slow request
-   * never delays the next one's start.
+   * never delays the next one's start. The release lives in `finally` so a
+   * throwing `now()`, a rejecting `sleep`, or `fire` throwing synchronously
+   * (rather than returning a rejected promise) still releases the gate.
+   * Otherwise that failure would wedge `slotGate` forever and hang every
+   * later request with no timeout.
    */
   private async withSlot<T>(fire: () => Promise<T>): Promise<T> {
     if (this.minIntervalMs <= 0) return fire();
@@ -492,16 +496,17 @@ export class FetchClient {
     });
     await myTurn;
 
-    const now = this.now();
-    const slot = Math.max(now, this.nextSlot);
-    this.nextSlot = slot + this.minIntervalMs;
-    if (slot > now) {
-      await this.sleep(slot - now);
+    try {
+      const now = this.now();
+      const slot = Math.max(now, this.nextSlot);
+      this.nextSlot = slot + this.minIntervalMs;
+      if (slot > now) {
+        await this.sleep(slot - now);
+      }
+      return fire();
+    } finally {
+      release();
     }
-
-    const result = fire();
-    release();
-    return result;
   }
 
   private async request<T>(
@@ -830,8 +835,10 @@ export const stravaApi = new FetchClient("https://www.strava.com/api/v3", {
  * is left uncached.
  */
 export function intervalsCacheTtl(path: string): number | null {
-  // Activity data streams — matched by prefix since the id is followed by
-  // arbitrary stream-selector content (e.g. `.json`, a query-like suffix).
+  // Activity data streams: matched by prefix, since the id is followed by
+  // arbitrary stream-selector content (a comma-separated list, a `.json`
+  // extension). The path here is already query-stripped (toPath), so this
+  // is about the selector living in the path segment itself, not a query.
   if (/^\/activity\/[^/]+\/streams/.test(path)) return 10 * MINUTE_MS;
   // An activity's interval breakdown.
   if (/^\/activity\/[^/]+\/intervals$/.test(path)) return 10 * MINUTE_MS;
@@ -841,10 +848,12 @@ export function intervalsCacheTtl(path: string): number | null {
   if (/^\/athlete\/[^/]+\/gear$/.test(path)) return 10 * MINUTE_MS;
   // Per-sport zones/settings change rarely.
   if (/^\/athlete\/[^/]+\/sport-settings\/[^/]+$/.test(path)) return HOUR_MS;
-  // Activity listing — short, so a newly recorded activity shows up quickly.
-  if (/^\/athlete\/[^/]+\/activities$/.test(path)) return 60_000;
-  // Wellness records (and any date-scoped sub-path) update through the day.
-  if (/^\/athlete\/[^/]+\/wellness(\/.*)?$/.test(path)) return 5 * MINUTE_MS;
+  // Activity listing: short, so a newly recorded activity shows up quickly.
+  if (/^\/athlete\/[^/]+\/activities$/.test(path)) return MINUTE_MS;
+  // Wellness records: matched by prefix like streams above, so a date
+  // sub-path (`/wellness/2026-09-24`) or an extension (`wellness.json`)
+  // both count; these update through the day.
+  if (/^\/athlete\/[^/]+\/wellness/.test(path)) return 5 * MINUTE_MS;
   return null;
 }
 

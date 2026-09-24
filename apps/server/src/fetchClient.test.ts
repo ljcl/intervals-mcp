@@ -979,6 +979,69 @@ describe("minIntervalMs throttle", () => {
 
     await Promise.all([client.get("/a"), client.get("/b"), client.get("/c")]);
     expect(starts).toEqual([0, 200, 400]);
+    expect(sleeps).toEqual([200, 200]);
+  });
+
+  it("releases the gate on invocation, not on settle, so a slow request doesn't delay the next one", async () => {
+    let clock = 0;
+    const starts: number[] = [];
+    const first = new Promise<Response>(() => {}); // never resolves
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        starts.push(clock);
+        return first;
+      })
+      .mockImplementationOnce(async () => {
+        starts.push(clock);
+        return makeResponse("{}");
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new FetchClient("https://example.test", {
+      minIntervalMs: 200,
+      now: () => clock,
+      sleep: async (ms) => {
+        clock += ms;
+      },
+    });
+
+    // Fire-and-forget: the first request's fetch never resolves.
+    void client.get("/a");
+    await client.get("/b");
+    expect(starts).toEqual([0, 200]);
+  });
+
+  it("releases the gate even when fire throws synchronously, so the next request still goes out", async () => {
+    let clock = 0;
+    const starts: number[] = [];
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(() => {
+        // A synchronous throw, not a rejected promise (e.g. an invalid
+        // AbortSignal.timeout argument, or a fetch stub throwing directly).
+        throw new Error("synchronous boom");
+      })
+      .mockImplementationOnce(async () => {
+        starts.push(clock);
+        return makeResponse("{}");
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new FetchClient("https://example.test", {
+      maxRetries: 0,
+      minIntervalMs: 200,
+      now: () => clock,
+      sleep: async (ms) => {
+        clock += ms;
+      },
+    });
+
+    await expect(client.get("/a")).rejects.toThrow("synchronous boom");
+    // The gate must have been released: this request is not stuck forever.
+    await client.get("/b");
+    expect(starts).toEqual([200]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("does not delay when unset", async () => {
@@ -1037,6 +1100,8 @@ describe("intervalsCacheTtl", () => {
     ["/athlete/0/activities", 60_000],
     ["/athlete/0/wellness", 300_000],
     ["/athlete/0/wellness/2026-09-24", 300_000],
+    ["/athlete/0/wellness.json", 300_000],
+    ["/athlete/0/wellness.csv", 300_000],
     ["/athlete/0", null],
   ])("%s", (p, ttl) => {
     expect(intervalsCacheTtl(p)).toBe(ttl);
