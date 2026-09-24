@@ -8,11 +8,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { handledRateLimit } from "./__fixtures__";
 import { HttpError, RateLimitError, stravaApi } from "./fetchClient";
 import {
+  getActivity as getIntervalsActivityFn,
+  type IntervalsActivity,
+} from "./intervalsClient";
+import {
   getActivityById,
   getActivityLaps,
-  getActivityZones,
   getAllActivities,
-  type StravaActivityZone,
   type StravaDetailedActivity,
   type StravaLap,
   type StravaSummaryActivity,
@@ -24,9 +26,13 @@ vi.mock("./stravaClient", async (importOriginal) => {
     ...actual,
     getActivityById: vi.fn(),
     getActivityLaps: vi.fn(),
-    getActivityZones: vi.fn(),
     getAllActivities: vi.fn(),
   };
+});
+
+vi.mock("./intervalsClient", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./intervalsClient")>();
+  return { ...actual, getActivity: vi.fn() };
 });
 
 vi.mock("./fetchClient", async (importOriginal) => {
@@ -51,7 +57,7 @@ const mockedToken = vi.mocked(getIntervalsApiKey);
 
 const mockedById = vi.mocked(getActivityById);
 const mockedLaps = vi.mocked(getActivityLaps);
-const mockedZones = vi.mocked(getActivityZones);
+const mockedIntervalsActivity = vi.mocked(getIntervalsActivityFn);
 const mockedList = vi.mocked(getAllActivities);
 const mockedApiGet = vi.mocked(stravaApi.get);
 
@@ -683,21 +689,22 @@ describe("compare activities handlers", () => {
 });
 
 describe("activity zones handlers", () => {
-  const hrZones = [
-    {
-      type: "heartrate",
-      sensor_based: true,
-      distribution_buckets: [
-        { min: 0, max: 130, time: 600 },
-        { min: 130, max: 155, time: 1800 },
-        { min: 155, max: -1, time: 600 },
-      ],
-    },
-  ] as unknown as StravaActivityZone[];
+  function intervalsActivity(
+    overrides: Partial<IntervalsActivity> = {},
+  ): IntervalsActivity {
+    return {
+      id: "123",
+      name: "Morning Run",
+      type: "Run",
+      start_date_local: "2026-06-01T07:00:00",
+      icu_hr_zones: [130, 155, 190],
+      icu_hr_zone_times: [600, 1800, 600],
+      ...overrides,
+    } as unknown as IntervalsActivity;
+  }
 
   it("get-activity-zones-data returns the mapped zone payload", async () => {
-    mockedById.mockResolvedValueOnce(detailedActivity());
-    mockedZones.mockResolvedValueOnce(hrZones);
+    mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
 
     const result = await dispatchToolCall("get-activity-zones-data", {
       activity_id: "123",
@@ -717,13 +724,12 @@ describe("activity zones handlers", () => {
       seconds: 1800,
       pct: 60,
     });
-    // Strava's -1 open-ended top bucket becomes null.
-    expect(parsed.zoneSets[0].buckets[2].max).toBeNull();
+    // The top bucket keeps its real recorded bound, not an open-ended sentinel.
+    expect(parsed.zoneSets[0].buckets[2].max).toBe(190);
   });
 
   it("view-activity-zones summarises the dominant zone for the model", async () => {
-    mockedById.mockResolvedValueOnce(detailedActivity());
-    mockedZones.mockResolvedValueOnce(hrZones);
+    mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
 
     const result = await dispatchToolCall("view-activity-zones", {
       activity_id: "123",
@@ -739,8 +745,9 @@ describe("activity zones handlers", () => {
   });
 
   it("view-activity-zones handles an activity with no zone data", async () => {
-    mockedById.mockResolvedValueOnce(detailedActivity());
-    mockedZones.mockResolvedValueOnce([]);
+    mockedIntervalsActivity.mockResolvedValueOnce(
+      intervalsActivity({ icu_hr_zones: null, icu_hr_zone_times: null }),
+    );
 
     const result = await dispatchToolCall("view-activity-zones", {
       activity_id: "123",
@@ -750,9 +757,26 @@ describe("activity zones handlers", () => {
     expect(result.content[0]?.text).toContain("No zone data recorded");
   });
 
+  it("view-activity-zones warns when HR bounds and zone times counts don't match", async () => {
+    mockedIntervalsActivity.mockResolvedValueOnce(
+      intervalsActivity({
+        icu_hr_zones: [130, 155, 190],
+        icu_hr_zone_times: [600, 1800],
+      }),
+    );
+
+    const result = await dispatchToolCall("view-activity-zones", {
+      activity_id: "123",
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0]?.text).toContain("Heart rate zones omitted");
+  });
+
   it("propagates a zones fetch failure as isError", async () => {
-    mockedById.mockResolvedValueOnce(detailedActivity());
-    mockedZones.mockRejectedValueOnce(new Error("Record Not Found"));
+    mockedIntervalsActivity.mockRejectedValueOnce(
+      new Error("Record Not Found"),
+    );
 
     const result = await dispatchToolCall("get-activity-zones-data", {
       activity_id: "123",

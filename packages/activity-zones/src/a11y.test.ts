@@ -8,7 +8,7 @@ describe("buildZonesA11y", () => {
     expect(a11y.title).toBe("Time in heart rate zones for Threshold Intervals");
     expect(a11y.desc).toContain("Most time in Z2 at 45%");
     expect(a11y.desc).toContain("Z1 (0–120 bpm) 15% (10 min)");
-    expect(a11y.desc).toContain("Z5 (175+ bpm)");
+    expect(a11y.desc).toContain("Z5 (175–197 bpm)");
   });
 
   it("labels power sets as power", () => {

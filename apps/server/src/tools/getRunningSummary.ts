@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { hrZoneMismatchWarning, mapIntervalsZones } from "../activityZones";
 import { formatDuration, round, STRAVA_STUB_NOTE } from "../formatters";
 import { type LapEntry, mapIntervalsToLaps } from "../intervalLaps";
 import {
@@ -87,12 +88,14 @@ export interface RunningSummary extends ActivityDetail {
 
 /**
  * HR zone bounds for the zone summary, distinct from get-activity's
- * `hr_zones` (which sources bounds from sport settings only): prefers the
- * activity's own recorded `icu_hr_zones`, falling back to the Run sport
- * settings group's `hr_zones` only when its `types` names this activity's
- * type. Omits the summary (with an explanatory note) whenever no bounds are
- * available, or the bounds count doesn't match the recorded zone time count,
- * rather than mislabelling zone times under the wrong boundaries.
+ * `hr_zones` only in output shape (adds `source` and per-zone `percent`):
+ * both read the activity's own recorded `icu_hr_zones` through
+ * `mapIntervalsZones` first, falling back to the Run sport settings group's
+ * `hr_zones` only when the activity has no bounds of its own and its
+ * `types` names this activity's type. Omits the summary (with an
+ * explanatory note) whenever no bounds are available, or a bounds count
+ * doesn't match the recorded zone time count, rather than mislabelling zone
+ * times under the wrong boundaries.
  */
 function buildHrZoneSummary(
   activity: IntervalsActivity,
@@ -102,21 +105,46 @@ function buildHrZoneSummary(
   const times = activity.icu_hr_zone_times;
   if (!times || times.length === 0) return { summary: null, note: null };
 
-  let bounds: number[] | null = null;
-  let source: "activity" | "sport_settings" | null = null;
+  const hrSet = mapIntervalsZones(activity).find(
+    (set) => set.type === "heartrate",
+  );
+  if (hrSet) {
+    const zones = hrSet.buckets.map((bucket) => ({
+      zone: bucket.zone,
+      min_bpm: bucket.min,
+      max_bpm: bucket.max ?? 0,
+      seconds: bucket.seconds,
+      percent: bucket.pct,
+    }));
+    return {
+      summary: {
+        source: "activity",
+        total_seconds: hrSet.totalSeconds,
+        zones,
+      },
+      note: null,
+    };
+  }
+
+  // The activity carries its own bounds but `mapIntervalsZones` dropped
+  // them (a bounds/times count mismatch, or nothing recorded): surface why
+  // rather than silently falling through to sport settings, which would
+  // mislabel these zone times under a different settings group's bounds.
   if (activity.icu_hr_zones && activity.icu_hr_zones.length > 0) {
-    bounds = activity.icu_hr_zones;
-    source = "activity";
-  } else if (
+    return {
+      summary: null,
+      note: hrZoneMismatchWarning(activity) ?? "No time recorded in HR zones.",
+    };
+  }
+
+  const bounds =
     sportSettings?.types?.includes(type) &&
     sportSettings.hr_zones &&
     sportSettings.hr_zones.length > 0
-  ) {
-    bounds = sportSettings.hr_zones;
-    source = "sport_settings";
-  }
+      ? sportSettings.hr_zones
+      : null;
 
-  if (!bounds || !source) {
+  if (!bounds) {
     return {
       summary: null,
       note: "HR zone bounds are unavailable; recorded zone times could not be labelled.",
@@ -137,14 +165,14 @@ function buildHrZoneSummary(
 
   const zones = bounds.map((maxBpm, i) => ({
     zone: i + 1,
-    min_bpm: i === 0 ? 0 : (bounds![i - 1] ?? null),
+    min_bpm: i === 0 ? 0 : (bounds[i - 1] ?? null),
     max_bpm: maxBpm,
     seconds: times[i] ?? 0,
     percent: round(((times[i] ?? 0) / totalSeconds) * 100, 1),
   }));
 
   return {
-    summary: { source, total_seconds: totalSeconds, zones },
+    summary: { source: "sport_settings", total_seconds: totalSeconds, zones },
     note: null,
   };
 }

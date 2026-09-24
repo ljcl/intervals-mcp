@@ -1,16 +1,19 @@
 import { type ActivityZonesData, type ZoneSet } from "../types";
 
+// intervals.icu's own recorded zone bounds (icu_hr_zones) give a real upper
+// bound even for the top zone, and carry no sensor flag at all: unlike
+// Strava's response, sensorBased is always null here, never a boolean.
 export const hrZoneSet: ZoneSet = {
   type: "heartrate",
   unit: "bpm",
-  sensorBased: true,
+  sensorBased: null,
   totalSeconds: 4000,
   buckets: [
     { zone: 1, min: 0, max: 120, seconds: 600, pct: 15 },
     { zone: 2, min: 120, max: 145, seconds: 1800, pct: 45 },
     { zone: 3, min: 145, max: 160, seconds: 900, pct: 22.5 },
     { zone: 4, min: 160, max: 175, seconds: 500, pct: 12.5 },
-    { zone: 5, min: 175, max: null, seconds: 200, pct: 5 },
+    { zone: 5, min: 175, max: 197, seconds: 200, pct: 5 },
   ],
 };
 

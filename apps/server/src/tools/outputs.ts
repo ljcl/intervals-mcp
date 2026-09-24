@@ -334,7 +334,9 @@ export const ActivityZonesOutputSchema = z.object({
           max: z
             .number()
             .nullable()
-            .describe("null on the open-ended top bucket"),
+            .describe(
+              "the zone's recorded upper bound; null only for an open-ended top bucket",
+            ),
           seconds: z.number().int(),
           pct: z.number(),
         }),

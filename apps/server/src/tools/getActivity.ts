@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { mapIntervalsZones } from "../activityZones";
 import { formatDuration, round, STRAVA_STUB_NOTE } from "../formatters";
 import {
   getActivity as getActivityClient,
@@ -38,10 +39,11 @@ Parameters:
 Notes:
 - An activity synced from Strava (source STRAVA) is a stub: intervals.icu has
   no detail for it through this API
-- HR zones come from the athlete's Run sport settings group (types Run,
-  VirtualRun, TrailRun); hr_zones is an empty array for any other activity
-  type, including Walk/Hike, or if that settings group isn't configured,
-  rather than failing the call
+- HR zones come from the activity's own recorded zone bounds when present
+  (any activity type); otherwise falls back to the athlete's Run sport
+  settings group (types Run, VirtualRun, TrailRun) when that group covers
+  the activity's type. hr_zones is an empty array when neither source is
+  usable, rather than failing the call
 - The text response truncates description to 200 characters with a "..."
   marker; structuredContent.description is always the full text
 `;
@@ -167,29 +169,48 @@ function activityCadenceSpm(
 }
 
 /**
- * `sportSettings` only applies to this activity's `hr_zones` when its
- * `types` list actually names the activity's type: `get-activity` always
- * fetches the *Run* sport settings group (`types` on this athlete is
- * `["Run","VirtualRun","TrailRun"]`), but a Walk or Hike is a different
- * settings group with its own zone bounds and zone count (this tool does not
- * fetch that group), and a non-step-cadence type's zone count need not even
- * match (7 zones for WeightTraining on this athlete, not the Run group's 5).
- * Applying the Run group's bounds to any activity type it doesn't cover
- * would mislabel the athlete's own recorded zone times under the wrong
- * boundaries. `hr_zones` degrades to `[]` whenever the settings group's
- * `types` doesn't name this activity's type, the same degrade as settings
- * being entirely unavailable.
+ * Prefers the activity's own recorded `icu_hr_zones` (via `mapIntervalsZones`,
+ * the same source the activity-zones app and `get-activity-zones` read) over
+ * the athlete's current sport settings: the activity's own zones are the
+ * correct settings group for any activity type, including Walk/Hike, and
+ * survive an athlete later editing their zone bounds. `sportSettings` (the
+ * *Run* group; `types` on this athlete is `["Run","VirtualRun","TrailRun"]`)
+ * is used only as a fallback, and only when the activity carries no HR zone
+ * bounds of its own, since a Walk or Hike is a different settings group with
+ * its own zone bounds and zone count (this tool does not fetch that group),
+ * and a non-step-cadence type's zone count need not even match (7 zones for
+ * WeightTraining on this athlete, not the Run group's 5). `hr_zones`
+ * degrades to `[]` when neither source is usable, rather than mislabelling
+ * the athlete's own recorded zone times under the wrong boundaries.
  */
 function buildHrZones(
+  activity: IntervalsActivity,
   sportSettings: IntervalsSportSettings | null,
   type: string,
-  hrZoneTimes: number[] | null | undefined,
 ): HrZoneEntry[] {
+  const hrSet = mapIntervalsZones(activity).find(
+    (set) => set.type === "heartrate",
+  );
+  if (hrSet) {
+    return hrSet.buckets.map((bucket) => ({
+      zone: bucket.zone,
+      min_bpm: bucket.min,
+      max_bpm: bucket.max,
+      seconds: bucket.seconds,
+    }));
+  }
+
+  // Only fall back to sport settings when the activity has no HR zone
+  // bounds of its own; a bounds/times count mismatch is a data problem
+  // sport settings can't safely paper over either.
+  if (activity.icu_hr_zones && activity.icu_hr_zones.length > 0) return [];
   if (!sportSettings?.types?.includes(type)) return [];
 
   const hrZoneBounds = sportSettings.hr_zones;
   if (!hrZoneBounds || hrZoneBounds.length === 0) return [];
+  const hrZoneTimes = activity.icu_hr_zone_times;
   if (!hrZoneTimes || hrZoneTimes.length === 0) return [];
+  if (hrZoneBounds.length !== hrZoneTimes.length) return [];
 
   return hrZoneBounds.map((maxBpm, i) => ({
     zone: i + 1,
@@ -321,7 +342,7 @@ export function mapActivityDetail(
         : round(activity.icu_efficiency_factor, 2),
     rpe: activity.icu_rpe ?? null,
     feel: activity.feel ?? null,
-    hr_zones: buildHrZones(sportSettings, type, activity.icu_hr_zone_times),
+    hr_zones: buildHrZones(activity, sportSettings, type),
     pace_zone_seconds: activity.pace_zone_times ?? null,
     running_dynamics: buildRunningDynamics(activity, type),
     intervals,

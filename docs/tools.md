@@ -9,7 +9,7 @@ identity, so renames or schema reshapes re-prompt every user. See
 [architecture.md](architecture.md#tool-metadata) before changing either.
 
 > **Status.** Tools are being ported from Strava to intervals.icu (Phases 1
-> and 2). The seven tools below are ported and verified against a real
+> and 2). The eight tools below are ported and verified against a real
 > account; until a remaining tool is ported, it fails with a "not yet
 > ported" error.
 
@@ -27,6 +27,7 @@ Strava port.
 | `get-wellness` | Daily wellness (HRV, resting HR, sleep, weight, CTL/ATL/TSB) for a date or range |
 | `get-activity-laps` | Laps of an activity, derived from its intervals, with sport-aware pace/speed, GAP, HR, power, cadence |
 | `get-running-summary` | get-activity's detail fields for a run plus cadence, HR zone, and running-dynamics assessments, and a lap breakdown |
+| `get-activity-zones` | Time spent in each HR and power zone for an activity, from the activity's own recorded zone bounds |
 
 `list-activities` defaults to the last 28 days (today back to 27 days
 earlier) in the server's configured time zone, sorted newest first. Filter
@@ -45,10 +46,12 @@ interval breakdown (`includeIntervals`, default true), gear id, and
 description, all with units. Gear name is included too when the activity
 payload happens to carry one; intervals.icu does not populate it there
 today, so this is currently always id-only. HR zone boundaries come from
-the athlete's Run sport settings group (`types` Run, VirtualRun, TrailRun);
-`hr_zones` is an empty array for any other activity type, including Walk or
-Hike, or when that settings group isn't configured, rather than failing the
-call. `pace_min_per_km` and `gap_min_per_km` (grade-adjusted pace, derived
+the activity's own recorded `icu_hr_zones` when present (any activity
+type), the same source `get-activity-zones` reads; otherwise they fall back
+to the athlete's Run sport settings group (`types` Run, VirtualRun,
+TrailRun) when that group covers the activity's type. `hr_zones` is an
+empty array when neither source is usable, rather than failing the call.
+`pace_min_per_km` and `gap_min_per_km` (grade-adjusted pace, derived
 from the activity's `gap` field, which intervals.icu reports in m/s, the
 same unit as `average_speed`) are set for Run/TrailRun/VirtualRun only: a
 Walk or Hike gets a cadence but no pace. The text response truncates
@@ -121,12 +124,21 @@ any other type is rejected with a message naming the type and pointing to
 `get-activity`. The text response caps the lap list at 20 lines;
 `structuredContent.laps` always has the full list.
 
+`get-activity-zones` and the `view-activity-zones`/`get-activity-zones-data`
+MCP App share one mapper (`mapIntervalsZones`): heart rate from the
+activity's own `icu_hr_zones` (upper bounds, zone 1's lower bound is always
+0) and `icu_hr_zone_times`, power from `icu_power_zones` and `icu_zone_times`
+only when both are present. Unlike get-activity's `hr_zones`, there is no
+sport-settings fallback here; pace zones are out of scope (Phase 4). Heart
+rate is omitted, with a warning in the text, when the activity recorded
+bounds and zone times with different zone counts. An activity with no zone
+data returns a valid empty payload, not an error.
+
 ## Activity tools
 
 | Tool | Description |
 | ---- | ----------- |
 | `update-activity` | Update an activity's description, title, sport type, gear, or flags |
-| `get-activity-zones` | Time spent in each HR and power zone for an activity |
 | `get-aerobic-analysis` | Aerobic decoupling, efficiency factor, and intensity factor from HR + power/speed streams |
 | `get-hill-analysis` | Climb/descent detection with GAP and early-vs-late climb effort drift |
 | `get-split-analysis` | Even km/mile splits with a two-halves pacing verdict stated on the clock and grade-adjusted |

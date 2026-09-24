@@ -12,7 +12,11 @@ import {
   type ToolAnnotations,
 } from "@modelcontextprotocol/server";
 import { z } from "zod";
-import { type ActivityZonesData, mapActivityZones } from "./activityZones";
+import {
+  type ActivityZonesData,
+  hrZoneMismatchWarning,
+  mapIntervalsZones,
+} from "./activityZones";
 import { getIntervalsApiKey } from "./config";
 import { RateLimitError } from "./fetchClient";
 import { buildFitnessTrend } from "./fitnessTrend";
@@ -20,6 +24,7 @@ import {
   type FitnessTrendAppData,
   mapFitnessTrendApp,
 } from "./fitnessTrendApp";
+import { getActivity as getIntervalsActivity } from "./intervalsClient";
 import {
   cumulativeDistances,
   indexAtDistance,
@@ -39,7 +44,6 @@ import {
   getActivityById,
   getActivityLaps,
   getActivityStreams,
-  getActivityZones,
   getAllActivities as getAllActivitiesFn,
   StreamsUnavailableError,
 } from "./stravaClient";
@@ -50,7 +54,11 @@ import {
 } from "./telemetry";
 import { READ_ONLY } from "./tools/_annotations";
 import { toolErrorText } from "./tools/_errors";
-import { stravaIdInput, stravaIdJsonSchemaOverride } from "./tools/_ids";
+import {
+  intervalsActivityIdInput,
+  stravaIdInput,
+  stravaIdJsonSchemaOverride,
+} from "./tools/_ids";
 import {
   buildComparison,
   compareActivitiesTool,
@@ -220,10 +228,10 @@ const APP_TOOL_INPUT_SCHEMAS: Record<string, z.ZodType> = {
   "view-fitness-trend": fitnessTrendInput,
   "get-fitness-trend-data": fitnessTrendInput,
   "view-activity-zones": z.object({
-    activity_id: stravaIdInput("The Strava activity ID."),
+    activity_id: intervalsActivityIdInput("The intervals.icu activity id."),
   }),
   "get-activity-zones-data": z.object({
-    activity_id: stravaIdInput("The Strava activity ID."),
+    activity_id: intervalsActivityIdInput("The intervals.icu activity id."),
   }),
   "view-compare-activities": z.object({
     activity_id_1: stravaIdInput(
@@ -938,19 +946,17 @@ async function handleViewFitnessTrend(
 
 /** Shared fetch + mapping for the activity-zones view and data tools. */
 async function loadActivityZonesData(
-  token: string,
+  apiKey: string,
   activityId: string,
 ): Promise<ActivityZonesData> {
-  const [activity, zones] = await Promise.all([
-    getActivityById(token, activityId),
-    getActivityZones(token, activityId),
-  ]);
+  const activity = await getIntervalsActivity(apiKey, activityId);
   return {
-    activityId: String(activity.id),
-    name: activity.name,
+    activityId: activity.id,
+    name: activity.name ?? activity.type ?? "Workout",
     date: activity.start_date_local,
-    type: activity.sport_type ?? activity.type ?? "Workout",
-    zoneSets: mapActivityZones(zones),
+    type: activity.type ?? "Workout",
+    zoneSets: mapIntervalsZones(activity),
+    hrZoneWarning: hrZoneMismatchWarning(activity),
   };
 }
 
@@ -970,8 +976,9 @@ async function handleViewActivityZones(
   const lines = [`Activity Zones: ${data.name} (${data.date})`];
   if (data.zoneSets.length === 0) {
     lines.push(
-      "No zone data recorded — the activity had neither a heart rate nor a power sensor.",
+      "No zone data recorded: the activity has no recorded heart rate or power zone bounds.",
     );
+    if (data.hrZoneWarning) lines.push(data.hrZoneWarning);
   } else {
     for (const set of data.zoneSets) {
       const top = dominantBucket(set);

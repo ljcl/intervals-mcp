@@ -11,7 +11,9 @@ import {
 describe("formatZoneRange", () => {
   it("formats bounded and open-ended ranges", () => {
     expect(formatZoneRange(hrZoneSet.buckets[0]!, "bpm")).toBe("0–120 bpm");
-    expect(formatZoneRange(hrZoneSet.buckets[4]!, "bpm")).toBe("175+ bpm");
+    expect(formatZoneRange(hrZoneSet.buckets[4]!, "bpm")).toBe("175–197 bpm");
+    // Power's top bucket still models an open-ended sentinel.
+    expect(formatZoneRange(powerZoneSet.buckets[5]!, "W")).toBe("400+ W");
   });
 });
 
