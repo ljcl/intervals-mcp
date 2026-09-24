@@ -62,6 +62,9 @@ breaking them has shipped bugs — do not work around them locally.
   with 401, mapped to a not-yet-ported message. Only genuine 404/empty throws
   `StreamsUnavailableError` (the one error a caller may degrade on); catching
   more misreports failures as absences.
+- Intervals stream reads go through `loadIntervalsStreams` in
+  `intervalsStreams.ts`; only a genuine 404 or empty result throws
+  `IntervalsStreamsUnavailableError`, the one error a caller may degrade on.
 - **Derived numbers have exactly one home.** GAP: `hillAnalysis.ts`
   (`gapFactor`, `computeGrades`) — `splitAnalysis.ts` imports, never
   re-derives. CTL/ATL/TSB and any projection/taper math: `fitnessTrend.ts`.
