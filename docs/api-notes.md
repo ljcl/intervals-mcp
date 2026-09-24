@@ -65,3 +65,10 @@ at `apps/server/src/__fixtures__/intervals/`.
   down with the interval's grade direction, the signature of a grade-adjusted speed rather than a
   pace-per-metre value. See `gapPace` in `apps/server/src/tools/getActivity.ts` for the conversion
   to a pace string with `metersPerSecToPace`.
+- Strava stub spike: the account has no Strava-sourced activities to test against; every activity
+  in `GET /athlete/0/activities` is `source: "OAUTH_CLIENT"` (HealthFit) with `strava_id: null`, not
+  a single `source: "STRAVA"` row. `list-activities`' and `get-activity`'s `is_strava_stub` flag
+  (`a.source === "STRAVA"`) is therefore an assumption about what a Strava-synced stub's `source`
+  value looks like, not something observed against a live one. Re-verify against a real
+  Strava-sourced activity (or ask in the intervals.icu support channel) before relying on
+  `is_strava_stub` for anything beyond the advisory note it drives today.

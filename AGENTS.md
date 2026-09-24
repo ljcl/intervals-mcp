@@ -36,14 +36,26 @@ breaking them has shipped bugs — do not work around them locally.
   writes.
 - **Error types survive translation.** `handleApiError` rethrows
   `RateLimitError` intact (context prefixed onto `message`, bare window detail
-  kept) and wraps everything else in `StravaApiError extends HttpError`.
-  Flattening to plain `Error` silently kills callers' `instanceof`/status
-  checks — degrade only on a type or status that is still there.
-- **Caching policy lives in `stravaCacheTtl`** (path-keyed TTLs; key is full
-  URL, TTL matches query-stripped path). Writes invalidate descendants AND
+  kept) and wraps everything else in `StravaApiError extends HttpError`
+  (`stravaClient.ts`) or `IntervalsApiError extends HttpError`
+  (`intervalsClient.ts`). `stravaClient.ts` sends no `Authorization` header on
+  purpose (it is retired, pending the Phase 1/2 port), so every call there
+  gets a 401 wrapped as `NotPortedError extends HttpError`
+  (`fetchClient.ts`) instead of `StravaApiError`, a different type from
+  intervals.icu itself rejecting an API key (also a 401), so
+  `tools/_errors.ts` can tell them apart without string-matching. Flattening
+  to plain `Error` silently kills callers' `instanceof`/status checks;
+  degrade only on a type or status that is still there.
+- **Caching policy lives in `stravaCacheTtl`** (Strava) and `intervalsCacheTtl`
+  (intervals.icu), both in `fetchClient.ts` (path-keyed TTLs; key is full URL,
+  TTL matches query-stripped path). Writes invalidate descendants AND
   ancestors; `skipCache: true` guards append reads; handlers floor
   `after`/`before` bounds to the minute (`quantizedEpochAfter`/`Before`) so a
-  pair's two calls share one cache key.
+  pair's two calls share one cache key. intervals.icu sends no rate-limit
+  headers, so its client (`intervalsApi`) paces itself instead: `minIntervalMs`
+  enforces a minimum gap between the start of consecutive request attempts,
+  across concurrent callers, rather than reacting to a response after the
+  fact.
 - **Stream reads go through the `stravaClient.ts` wrappers** (shared
   `fetchStreamSet`: shape validation, structured 429). `stravaClient.ts` is
   transitional and sends no `Authorization` header, so every call there fails
@@ -70,8 +82,10 @@ breaking them has shipped bugs — do not work around them locally.
   transitional.** Tools are being ported from the retired Strava client to
   `intervalsClient.ts` (Phases 1 and 2). Do not add new `stravaClient.ts`
   callers.
-- **Ids go through `stravaIdInput`** (`tools/_ids.ts`). Advertised schema is
-  string-only (`stravaIdJsonSchemaOverride`) because ids above 2^53 are
+- **Ids go through `stravaIdInput`** (Strava) or `intervalsActivityIdInput`
+  (intervals.icu; accepts an optional `i` prefix, e.g. `i189807578`), both in
+  `tools/_ids.ts`. Advertised schema is string-only
+  (`stravaIdJsonSchemaOverride`, shared by both) because ids above 2^53 are
   rounded by hosts' `JSON.parse` unrecoverably; safe-int numbers accepted at
   runtime, normalised to digit strings; handlers pass strings through without
   parsing back.
@@ -105,12 +119,18 @@ breaking them has shipped bugs — do not work around them locally.
   ids, `structuredContent`, `isError` not JSON-RPC errors, app resources,
   prompts. Extend the shared client, never a new bootstrap copy.
 - **Tool error text has one home: `toolErrorText` (`tools/_errors.ts`).** It
-  branches on `RateLimitError` / `HttpError.status` (404, 402), never on
-  message text; every `isError` text starts with `❌`. Catch blocks and the
-  dispatcher's final catch call it for the text and write the
-  `{ content, isError: true }` literal themselves. Tests reject with the
-  `__fixtures__/errors.ts` shapes (`handledRateLimit`, `handledNotFound`,
-  `handledSubscriptionRequired`), never a plain `Error("404 Not Found")`.
+  branches on `RateLimitError` / `NotPortedError` / `HttpError.status` (404,
+  402, 401/403), never on message text; every `isError` text starts with `❌`.
+  `NotPortedError` is checked before the generic 401/403 branch: it is itself
+  an `HttpError` with status 401, and without that ordering every unported
+  tool's "not yet ported" message would be swallowed by the 401/403 branch's
+  "intervals.icu rejected the API key" text. Imports come from `fetchClient.ts`
+  only, never `stravaClient.ts` (tool tests mock that module with bare
+  factories). Catch blocks and the dispatcher's final catch call it for the
+  text and write the `{ content, isError: true }` literal themselves. Tests
+  reject with the `__fixtures__/errors.ts` shapes (`handledRateLimit`,
+  `handledNotFound`, `handledSubscriptionRequired`), never a plain
+  `Error("404 Not Found")`.
 - **The response cache never shares references and coalesces in-flight
   GETs.** Every value `FetchClient` hands out (hit, populating miss, coalesced
   awaiter) is a `structuredClone`; concurrent identical cacheable GETs share
