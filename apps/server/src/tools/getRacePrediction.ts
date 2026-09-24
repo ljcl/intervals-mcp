@@ -61,8 +61,8 @@ Notes:
   confidence grade, the pace-curve point that drives it, and the spread across sources
 - Pace-curve points under 1500 m are excluded from Riegel's inputs, outside the
   range the formula fits
-- The critical-speed model comes from the athlete's "all" pace curve, falling
-  back to the "90d" curve when "all" carries no fit
+- The critical-speed model comes from the athlete's "90d" pace curve (current
+  fitness), falling back to the "all" curve when "90d" carries no fit
 - It assumes appropriate training for the distance; it cannot know whether you
   have done the long runs a marathon needs
 `;
@@ -199,14 +199,23 @@ export const getRacePredictionTool = {
         curves: ["all", "90d"],
       });
 
-      const efforts = paceCurveSourceEfforts(curves);
+      const allCurve = curves.list.find((c) => c.id === "all");
+      const recentCurve = curves.list.find((c) => c.id === "90d");
+
+      const efforts = paceCurveSourceEfforts(
+        curves.activities,
+        allCurve,
+        recentCurve,
+      );
       const referenceDate = new Date().toISOString().split("T")[0]!;
       const sources = selectSourceEfforts(efforts, referenceDate);
 
-      const allCurve = curves.list.find((c) => c.id === "all");
-      const recentCurve = curves.list.find((c) => c.id === "90d");
-      const csModel =
-        criticalSpeedModel(allCurve) ?? criticalSpeedModel(recentCurve);
+      // Prefer the 90-day curve: it reflects current fitness, where "all"
+      // can be dominated by a fit fading years ago. "all" only steps in
+      // when the 90-day curve carries no usable CS fit (too few points).
+      const csModelFromRecent = criticalSpeedModel(recentCurve);
+      const csModel = csModelFromRecent ?? criticalSpeedModel(allCurve);
+      const csModelSource: "90d" | "all" = csModelFromRecent ? "90d" : "all";
 
       const warnings: string[] = [];
       if (!allCurve && !recentCurve) {
@@ -238,6 +247,7 @@ export const getRacePredictionTool = {
             ),
             d_prime_m: Math.round(csModel.dPrimeMeters * 10) / 10,
             r2: Math.round(csModel.r2 * 10000) / 10000,
+            source: csModelSource,
           }
         : null;
 
@@ -391,7 +401,7 @@ export const getRacePredictionTool = {
       }
 
       if (csModel) {
-        output += "\nCritical speed model (intervals.icu)\n";
+        output += `\nCritical speed model (intervals.icu, ${csModelSource} curve)\n`;
         output += `  ${criticalSpeedModelField?.critical_speed_min_per_km} /km critical pace, dPrime ${Math.round(csModel.dPrimeMeters)} m, r2 ${csModel.r2.toFixed(3)}\n`;
         output += `  Valid for roughly ${CS_MODEL_MIN_SECONDS / 60}-${CS_MODEL_MAX_SECONDS / 60} minute efforts; predictions outside that range are shown above but flagged.\n`;
       }

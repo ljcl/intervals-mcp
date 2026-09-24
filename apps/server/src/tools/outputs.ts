@@ -964,6 +964,11 @@ export const RacePredictionOutputSchema = z.object({
       critical_speed_min_per_km: z.string(),
       d_prime_m: z.number(),
       r2: z.number(),
+      source: z
+        .enum(["90d", "all"])
+        .describe(
+          "Which pace curve the fit came from: 90d (current fitness) preferred, all as fallback",
+        ),
     })
     .nullable()
     .describe(

@@ -500,8 +500,17 @@ describe("paceCurveSourceEfforts", () => {
       ...over,
     }) as unknown as IntervalsAthletePaceCurves;
 
+  // Mirrors how a caller finds each curve once and threads it to both
+  // paceCurveSourceEfforts and criticalSpeedModel.
+  const effortsFor = (c: IntervalsAthletePaceCurves) =>
+    paceCurveSourceEfforts(
+      c.activities,
+      c.list.find((item) => item.id === "all"),
+      c.list.find((item) => item.id === "90d"),
+    );
+
   it("maps both curves' points to source efforts, dropping points under the Riegel floor", () => {
-    const efforts = paceCurveSourceEfforts(curves());
+    const efforts = effortsFor(curves());
 
     // 1000 m is under MIN_SOURCE_DISTANCE_M (1500) on both curves.
     expect(
@@ -513,7 +522,7 @@ describe("paceCurveSourceEfforts", () => {
   });
 
   it("skips a curve point with no value or no owning activity", () => {
-    const efforts = paceCurveSourceEfforts(curves());
+    const efforts = effortsFor(curves());
     // The 90d curve's 10K point is null (no run reached 10K in 90 days),
     // so only the all-time 10K (i3) shows up, not a second phantom one.
     const tenK = efforts.filter((e) => e.distanceMeters === 10000);
@@ -522,16 +531,13 @@ describe("paceCurveSourceEfforts", () => {
   });
 
   it("labels each point by its distance, not a Strava-style name", () => {
-    const efforts = paceCurveSourceEfforts(curves());
+    const efforts = effortsFor(curves());
     const fiveK = efforts.find((e) => e.activityId === "i2");
     expect(fiveK?.name).toBe("5000 m");
   });
 
   it("returns nothing for a missing all/90d curve", () => {
-    const efforts = paceCurveSourceEfforts({
-      list: [],
-      activities: {},
-    } as unknown as IntervalsAthletePaceCurves);
+    const efforts = paceCurveSourceEfforts({}, undefined, undefined);
     expect(efforts).toEqual([]);
   });
 });

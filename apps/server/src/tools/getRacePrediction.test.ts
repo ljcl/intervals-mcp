@@ -305,7 +305,7 @@ describe("getRacePredictionTool.execute", () => {
     );
   });
 
-  it("reports the critical-speed model and a per-distance CS prediction alongside Riegel", async () => {
+  it("reports the critical-speed model and a per-distance CS prediction alongside Riegel, falling back to all when 90d has no fit", async () => {
     mockedAthleteCurves.mockResolvedValueOnce({
       list: [
         {
@@ -335,6 +335,7 @@ describe("getRacePredictionTool.execute", () => {
     expect(model).not.toBeNull();
     expect(model?.d_prime_m).toBe(120);
     expect(model?.r2).toBe(0.995);
+    expect(model?.source).toBe("all");
 
     const tenK = prediction(result, "10K");
     // (10000 - 120) / 3.6 = 2744.4...
@@ -347,6 +348,43 @@ describe("getRacePredictionTool.execute", () => {
     expect(result.content[0]?.text).toContain("critical speed");
     expect(result.content[0]?.text).toContain(
       "outside the model's 3-60 minute validity window",
+    );
+  });
+
+  it("prefers the 90d curve's critical-speed fit over all's when both are present", async () => {
+    mockedAthleteCurves.mockResolvedValueOnce({
+      list: [
+        {
+          id: "all",
+          distance: [10000],
+          values: [2400],
+          activity_id: ["i1"],
+          paceModels: [
+            { type: "CS", criticalSpeed: 3.6, dPrime: 120, r2: 0.995 },
+          ],
+        },
+        {
+          id: "90d",
+          distance: [10000],
+          values: [2400],
+          activity_id: ["i1"],
+          paceModels: [
+            { type: "CS", criticalSpeed: 3.9, dPrime: 100, r2: 0.99 },
+          ],
+        },
+      ],
+      activities: {
+        i1: { id: "i1", name: "Run 1", start_date_local: daysAgo(20) },
+      },
+    } as unknown as IntervalsAthletePaceCurves);
+
+    const result = await run();
+
+    const model = payload(result).critical_speed_model;
+    expect(model?.source).toBe("90d");
+    expect(model?.d_prime_m).toBe(100);
+    expect(result.content[0]?.text).toContain(
+      "Critical speed model (intervals.icu, 90d curve)",
     );
   });
 

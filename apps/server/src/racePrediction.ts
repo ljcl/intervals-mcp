@@ -677,16 +677,21 @@ function sourceEffortsFromCurve(
  * `selectSourceEfforts` then keeps, per distance, the fastest of the two
  * (and both when the outright fastest is itself stale) exactly as it does
  * for any other pile of recorded efforts.
+ *
+ * Takes the already-found `all`/`90d` list items rather than the whole
+ * `curves` payload plus a `curves.list.find` of its own, so a caller that
+ * also needs {@link criticalSpeedModel} finds each curve once and threads
+ * it to both.
  */
 export function paceCurveSourceEfforts(
-  curves: IntervalsAthletePaceCurves,
+  activities: IntervalsAthletePaceCurves["activities"],
+  allCurve: IntervalsAthletePaceCurves["list"][number] | undefined,
+  recentCurve: IntervalsAthletePaceCurves["list"][number] | undefined,
   options: { minDistanceMeters?: number } = {},
 ): SourceEffort[] {
   const minDistance = options.minDistanceMeters ?? MIN_SOURCE_DISTANCE_M;
-  const all = curves.list.find((c) => c.id === "all");
-  const recent = curves.list.find((c) => c.id === "90d");
   return [
-    ...sourceEffortsFromCurve(all, curves.activities, minDistance),
-    ...sourceEffortsFromCurve(recent, curves.activities, minDistance),
+    ...sourceEffortsFromCurve(allCurve, activities, minDistance),
+    ...sourceEffortsFromCurve(recentCurve, activities, minDistance),
   ];
 }
