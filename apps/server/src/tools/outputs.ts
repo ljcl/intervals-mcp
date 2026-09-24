@@ -756,6 +756,27 @@ export const ActivityDetailOutputSchema = z.object({
   }),
 });
 
+// ---------- get-activity-streams ----------
+/** A downsampled sample: a plain value, `null` where every sample in its
+ * bucket was null, or a `[lat, lng]` pair for the `latlng` stream. */
+const StreamValueSchema = z.union([
+  z.number(),
+  z.null(),
+  z.tuple([z.number(), z.number()]),
+]);
+export const ActivityStreamsOutputSchema = z.object({
+  activity_id: z.string(),
+  type: z.string(),
+  original_points: z.number().int(),
+  returned_points: z.number().int(),
+  requested: z.array(z.string()),
+  missing: z
+    .array(z.string())
+    .describe("Requested types the activity's streams don't include"),
+  units: z.record(z.string(), z.string()),
+  streams: z.record(z.string(), z.array(StreamValueSchema)),
+});
+
 // ---------- dev-only schema drift guard ----------
 export function warnOnSchemaDrift<T>(
   toolName: string,

@@ -20,6 +20,7 @@ Strava port.
 | ---- | ----------- |
 | `list-activities` | Compact, date-bounded activity list with units; the entry point for finding activity ids |
 | `get-activity` | One activity in detail: metrics, load, HR zones, running dynamics, intervals; use after list-activities |
+| `get-activity-streams` | Time-series streams for one activity, downsampled to a bounded number of points, including running dynamics |
 
 `list-activities` defaults to the last 28 days (today back to 27 days
 earlier) in the server's configured time zone, sorted newest first. Filter
@@ -38,6 +39,18 @@ activity isn't a run, `hr_zones` is an empty array rather than failing the
 call. `gap_min_per_km` (grade-adjusted pace) is derived from the activity's
 `gap` field, which intervals.icu reports in m/s, the same unit as
 `average_speed`.
+
+`get-activity-streams` returns selected streams (`types`, default time,
+distance, heartrate, cadence, velocity_smooth, altitude; also available:
+latlng, watts, stance_time, vertical_oscillation, vertical_ratio,
+step_length) as index-aligned arrays with units. Large activities are
+downsampled to `maxPoints` (10-2000, default 200): each bucket reports the
+mean of its non-null samples, except time, distance, and latlng, which take
+the bucket's last sample. `time` is always fetched to size the buckets, but
+only returned when requested. cadence is doubled to steps/min for run
+activity types. A requested type the activity's streams don't include comes
+back in `missing` rather than failing the call; an activity with no streams
+at all fails with a clear message naming the id.
 
 ## Activity tools
 
@@ -102,7 +115,7 @@ so it needs the `activity:write` scope.
 ## Tool permissions
 
 Every tool declares MCP annotations so a host can tell reads from writes. The
-28 read tools set `readOnlyHint: true` and `destructiveHint: false`, which is
+30 read tools set `readOnlyHint: true` and `destructiveHint: false`, which is
 the combination clients use to offer a durable "always allow". Two tools are
 writes and are expected to keep asking:
 

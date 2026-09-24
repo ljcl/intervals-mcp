@@ -1,0 +1,310 @@
+import { z } from "zod";
+import {
+  getActivity as getActivityClient,
+  getActivityStreams as getActivityStreamsClient,
+  type IntervalsActivity,
+  type IntervalsStream,
+} from "../intervalsClient";
+import { NO_PROGRESS, type ReportProgress } from "../progress";
+import { downsampleColumns, lastValuePerBucket } from "../streamDownsample";
+import { READ_ONLY } from "./_annotations";
+import { toolErrorText } from "./_errors";
+import { intervalsActivityIdInput } from "./_ids";
+import { RUNNING_TYPES } from "./listActivities";
+import { ActivityStreamsOutputSchema, warnOnSchemaDrift } from "./outputs";
+
+const name = "get-activity-streams";
+
+const STREAM_TYPES = [
+  "time",
+  "distance",
+  "heartrate",
+  "cadence",
+  "velocity_smooth",
+  "altitude",
+  "latlng",
+  "watts",
+  "stance_time",
+  "vertical_oscillation",
+  "vertical_ratio",
+  "step_length",
+] as const;
+
+export type StreamType = (typeof STREAM_TYPES)[number];
+
+const DEFAULT_TYPES: StreamType[] = [
+  "time",
+  "distance",
+  "heartrate",
+  "cadence",
+  "velocity_smooth",
+  "altitude",
+];
+
+const description = `
+Returns time-series streams for one activity, downsampled to at most maxPoints, including running dynamics (GCT, vertical oscillation, vertical ratio, step length).
+
+Each requested type comes back as one array, index-aligned across types,
+plus a unit per type. Large activities are downsampled to bound the response:
+each bucket reports the mean of its non-null samples, except time, distance,
+and latlng, which take the bucket's last sample.
+
+Parameters:
+- id (required): the intervals.icu activity id, exactly as returned by list-activities (e.g. "i189807578")
+- types (optional): stream types to return. Default: ${DEFAULT_TYPES.join(", ")}
+- maxPoints (optional): cap on points per stream after downsampling, 10 to 2000. Default 200
+
+Notes:
+- time is always fetched (it sizes the downsample buckets) even when not
+  requested, but only appears in the response when requested
+- a requested type the activity's streams don't include comes back in
+  \`missing\`, not as an error
+- cadence is doubled to steps/min for run activity types, matching
+  get-activity's convention; other sport types keep the raw rate
+`;
+
+const inputSchema = z.object({
+  id: intervalsActivityIdInput("The intervals.icu activity id."),
+  types: z
+    .array(z.enum(STREAM_TYPES))
+    .min(1)
+    .default(DEFAULT_TYPES)
+    .describe(`Stream types to return. Default: ${DEFAULT_TYPES.join(", ")}.`),
+  maxPoints: z
+    .number()
+    .int()
+    .min(10)
+    .max(2000)
+    .default(200)
+    .describe(
+      "Cap on points per stream after downsampling, 10 to 2000. Default 200.",
+    ),
+});
+
+type GetActivityStreamsInput = z.infer<typeof inputSchema>;
+
+/** Decimal places each non-latlng stream is rounded to in the response. */
+const DECIMALS: Record<Exclude<StreamType, "latlng">, number> = {
+  time: 0,
+  distance: 1,
+  heartrate: 0,
+  cadence: 0,
+  velocity_smooth: 2,
+  altitude: 1,
+  watts: 0,
+  stance_time: 1,
+  vertical_oscillation: 1,
+  vertical_ratio: 2,
+  step_length: 0,
+};
+
+const UNITS: Record<StreamType, string> = {
+  time: "s",
+  distance: "m",
+  heartrate: "bpm",
+  cadence: "spm",
+  velocity_smooth: "m/s",
+  altitude: "m",
+  latlng: "deg",
+  watts: "W",
+  stance_time: "ms",
+  vertical_oscillation: "mm",
+  vertical_ratio: "%",
+  step_length: "mm",
+};
+
+const LATLNG_DECIMALS = 5;
+
+function round(value: number, decimals: number): number {
+  const factor = 10 ** decimals;
+  return Math.round(value * factor) / factor;
+}
+
+export type StreamValue = number | null | [number, number];
+
+export interface ActivityStreamsResult {
+  activity_id: string;
+  type: string;
+  original_points: number;
+  returned_points: number;
+  requested: StreamType[];
+  missing: StreamType[];
+  units: Record<string, string>;
+  streams: Record<string, StreamValue[]>;
+}
+
+/**
+ * Downsamples `rawStreams` to at most `maxPoints` points per requested
+ * stream, and shapes the result into the tool's compact column format. Pure:
+ * no I/O. Exported for direct testing.
+ */
+export function buildActivityStreamsResult(
+  activity: IntervalsActivity,
+  rawStreams: IntervalsStream[],
+  requestedTypes: StreamType[],
+  maxPoints: number,
+): ActivityStreamsResult {
+  const type = activity.type ?? "Workout";
+  const isRun = RUNNING_TYPES.has(type);
+
+  const streamByType = new Map(rawStreams.map((s) => [s.type, s]));
+  const timeStream = streamByType.get("time");
+  const originalPoints = timeStream?.data.length ?? 0;
+
+  const missing = requestedTypes.filter((t) => !streamByType.has(t));
+
+  // Scalar columns (everything but latlng, which isn't a single numeric
+  // array) for downsampleColumns. `time` is always included internally, even
+  // when not requested, so returned_points can be read off any column and
+  // the bucket boundaries used for latlng below line up with it.
+  const columns: Record<string, (number | null)[]> = {};
+  for (const t of requestedTypes) {
+    if (t === "latlng") continue;
+    const stream = streamByType.get(t);
+    if (stream) columns[t] = stream.data;
+  }
+  if (!("time" in columns) && timeStream) columns.time = timeStream.data;
+
+  const downsampled = downsampleColumns(columns, maxPoints);
+  const returnedPoints =
+    Object.values(downsampled)[0]?.length ??
+    Math.min(originalPoints, maxPoints);
+
+  const streams: Record<string, StreamValue[]> = {};
+
+  for (const t of requestedTypes) {
+    if (t === "latlng") {
+      const stream = streamByType.get("latlng");
+      if (!stream?.data2) continue;
+      const lat = lastValuePerBucket(stream.data, maxPoints);
+      const lng = lastValuePerBucket(stream.data2, maxPoints);
+      streams.latlng = lat.map((la, i): StreamValue => {
+        const lo = lng[i] ?? null;
+        if (la == null || lo == null) return null;
+        return [round(la, LATLNG_DECIMALS), round(lo, LATLNG_DECIMALS)];
+      });
+      continue;
+    }
+
+    const values = downsampled[t];
+    if (!values) continue;
+    const decimals = DECIMALS[t];
+    streams[t] = values.map((v): StreamValue => {
+      if (v == null) return null;
+      const scaled = t === "cadence" && isRun ? v * 2 : v;
+      return round(scaled, decimals);
+    });
+  }
+
+  return {
+    activity_id: activity.id,
+    type,
+    original_points: originalPoints,
+    returned_points: returnedPoints,
+    requested: requestedTypes,
+    missing,
+    units: Object.fromEntries(requestedTypes.map((t) => [t, UNITS[t]])),
+    streams,
+  };
+}
+
+function statsLine(type: StreamType, values: StreamValue[]): string | null {
+  if (type === "latlng") {
+    const count = values.filter((v) => v != null).length;
+    return count > 0 ? `latlng: ${count} points` : null;
+  }
+
+  const nums = values.filter((v): v is number => typeof v === "number");
+  if (nums.length === 0) return null;
+  const min = Math.min(...nums);
+  const max = Math.max(...nums);
+  const avg = nums.reduce((sum, v) => sum + v, 0) / nums.length;
+  return `${type}: ${round(min, 2)}-${round(max, 2)} ${UNITS[type]} (avg ${round(avg, 2)})`;
+}
+
+/** Builds the tool's text response: summary lines only, no arrays. Exported for direct testing. */
+export function formatActivityStreamsText(
+  result: ActivityStreamsResult,
+): string {
+  const lines = [
+    `${result.activity_id} ${result.type}: ${result.returned_points} of ${result.original_points} points, ${result.requested.length} types`,
+  ];
+
+  for (const t of result.requested) {
+    const values = result.streams[t];
+    if (!values) continue;
+    const line = statsLine(t, values);
+    if (line) lines.push(line);
+  }
+
+  if (result.missing.length > 0)
+    lines.push(`missing: ${result.missing.join(", ")}`);
+
+  return lines.join("\n");
+}
+
+export const getActivityStreamsTool = {
+  name,
+  description,
+  inputSchema,
+  annotations: READ_ONLY,
+  outputSchema: ActivityStreamsOutputSchema,
+  execute: async (
+    { id, types, maxPoints }: GetActivityStreamsInput,
+    apiKey: string,
+    progress: ReportProgress = NO_PROGRESS,
+  ) => {
+    try {
+      progress(`Fetching activity ${id}`);
+      const activity = await getActivityClient(apiKey, id);
+
+      const typesToFetch = Array.from(new Set<string>([...types, "time"]));
+      progress(`Fetching streams for activity ${id}`);
+      const rawStreams = await getActivityStreamsClient(
+        apiKey,
+        id,
+        typesToFetch,
+      );
+
+      if (rawStreams.length === 0) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `❌ Activity ${id} has no data streams.`,
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      const result = buildActivityStreamsResult(
+        activity,
+        rawStreams,
+        types,
+        maxPoints,
+      );
+      warnOnSchemaDrift(name, ActivityStreamsOutputSchema, result);
+
+      return {
+        content: [
+          { type: "text" as const, text: formatActivityStreamsText(result) },
+        ],
+        structuredContent: result,
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: toolErrorText(error, {
+              context: `fetch activity streams for ${id}`,
+              notFound: `Activity ${id} was not found, or has no data streams.`,
+            }),
+          },
+        ],
+        isError: true,
+      };
+    }
+  },
+};

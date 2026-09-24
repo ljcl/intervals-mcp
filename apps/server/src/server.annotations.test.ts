@@ -78,6 +78,7 @@ const EXPECTED_CLASS: Record<string, "read" | "destroy" | "write"> = {
   // Reads: the intervals.icu API surface (Phase 1 ports).
   "list-activities": "read",
   "get-activity": "read",
+  "get-activity-streams": "read",
 
   // Reads — MCP App view tools and their app-only data feeds.
   "view-activity-chart": "read",
@@ -141,7 +142,7 @@ describe("tool annotations exhaustiveness", () => {
   it("every read tool spells out both hints a permission bucket reads", () => {
     const reads = TOOLS.filter((t) => EXPECTED_CLASS[t.name] === "read");
     // Guards the table itself: an empty filter would make this vacuous.
-    expect(reads.length).toBe(29);
+    expect(reads.length).toBe(30);
     for (const tool of reads) {
       expect(tool.annotations?.readOnlyHint, tool.name).toBe(true);
       expect(tool.annotations?.destructiveHint, tool.name).toBe(false);
@@ -197,7 +198,7 @@ describe("annotations on the wire", () => {
     const reads = tools.filter(
       (t) => EXPECTED_CLASS[t.name as string] === "read",
     );
-    expect(reads.length).toBe(29);
+    expect(reads.length).toBe(30);
     for (const tool of reads) {
       const annotations = tool.annotations as Record<string, unknown>;
       // `in` rather than a truthiness check: the failure mode being guarded
