@@ -19,6 +19,7 @@ Strava port.
 | Tool | Description |
 | ---- | ----------- |
 | `list-activities` | Compact, date-bounded activity list with units; the entry point for finding activity ids |
+| `get-activity` | One activity in detail: metrics, load, HR zones, running dynamics, intervals; use after list-activities |
 
 `list-activities` defaults to the last 28 days (today back to 27 days
 earlier) in the server's configured time zone, sorted newest first. Filter
@@ -27,6 +28,16 @@ substring), and cap the page with `limit` (1-200, default 30). An activity
 synced into intervals.icu from Strava (`source: "STRAVA"`) is a stub: the
 intervals.icu API has no further detail for it, so the response flags it with
 `is_strava_stub` and the text response adds a trailing note.
+
+`get-activity` takes the `id` from `list-activities` and returns core
+metrics, training load, HR zone time-in-zone, running dynamics (runs with
+device support), and the WORK/RECOVERY interval breakdown
+(`includeIntervals`, default true), all with units. HR zone boundaries come
+from the athlete's Run sport settings; when those aren't configured, or the
+activity isn't a run, `hr_zones` is an empty array rather than failing the
+call. `gap_min_per_km` (grade-adjusted pace) is derived from the activity's
+`gap` field, which intervals.icu reports in m/s, the same unit as
+`average_speed`.
 
 ## Activity tools
 

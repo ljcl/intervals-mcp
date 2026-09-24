@@ -653,6 +653,109 @@ export const ActivityListOutputSchema = z.object({
   activities: z.array(ActivitySummarySchema),
 });
 
+// ---------- get-activity ----------
+const ActivityLoadSchema = z.object({
+  training_load: z.number().nullable().describe("icu_training_load"),
+  hr_load: z.number().nullable(),
+  pace_load: z.number().nullable(),
+  trimp: z.number().nullable(),
+  intensity: z.number().nullable().describe("icu_intensity, %"),
+});
+const HrZoneEntrySchema = z.object({
+  zone: z.number().int().describe("1-based zone number"),
+  min_bpm: z.number().nullable().describe("0 for zone 1"),
+  max_bpm: z.number().nullable(),
+  seconds: z.number().int(),
+});
+const RunningDynamicsSchema = z.object({
+  stance_time_ms: z.number().nullable(),
+  vertical_oscillation_mm: z.number().nullable(),
+  vertical_ratio_pct: z.number().nullable(),
+  step_length_mm: z.number().nullable(),
+  stride_m: z.number().nullable(),
+});
+const ActivityIntervalEntrySchema = z.object({
+  type: z.string().nullable().describe("e.g. WORK, RECOVERY"),
+  label: z.string().nullable(),
+  distance_km: z.number().nullable(),
+  moving_time_s: z.number().int().nullable(),
+  pace_min_per_km: z.string().nullable().describe("Set for runs only"),
+  average_hr: z.number().nullable(),
+  average_cadence_spm: z
+    .number()
+    .nullable()
+    .describe("Strides doubled to steps/min, runs only"),
+  stance_time_ms: z.number().nullable(),
+  vertical_oscillation_mm: z.number().nullable(),
+  step_length_mm: z.number().nullable(),
+});
+export const ActivityDetailOutputSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  type: z.string(),
+  date: z
+    .string()
+    .describe("ISO date YYYY-MM-DD, the date part of start_date_local"),
+  start_local: z.string().describe("Full local start timestamp"),
+  source: z.string().nullable(),
+  is_strava_stub: z
+    .boolean()
+    .describe(
+      "True when source is STRAVA: details are unavailable through the API",
+    ),
+  device: z.string().nullable(),
+  distance_km: z
+    .number()
+    .nullable()
+    .describe("2 dp; null when the activity recorded no distance"),
+  moving_time_s: z.number().int(),
+  moving_time: z.string().describe("h:mm:ss, or mm:ss under an hour"),
+  elapsed_time_s: z.number().int().nullable(),
+  pace_min_per_km: z
+    .string()
+    .nullable()
+    .describe("Set for Run/TrailRun/VirtualRun only"),
+  gap_min_per_km: z
+    .string()
+    .nullable()
+    .describe(
+      "Grade-adjusted pace, from the activity's gap field (m/s, same unit as average_speed); runs only",
+    ),
+  average_hr: z.number().nullable(),
+  max_hr: z.number().nullable(),
+  average_cadence_spm: z
+    .number()
+    .nullable()
+    .describe("Strides doubled to steps/min, runs only"),
+  elevation_gain_m: z.number().nullable(),
+  load: ActivityLoadSchema,
+  decoupling_pct: z.number().nullable(),
+  efficiency_factor: z.number().nullable(),
+  rpe: z.number().nullable(),
+  feel: z.number().nullable(),
+  hr_zones: z
+    .array(HrZoneEntrySchema)
+    .describe("Empty when sport settings or icu_hr_zone_times are unavailable"),
+  pace_zone_seconds: z.array(z.number()).nullable(),
+  running_dynamics: RunningDynamicsSchema.nullable(),
+  intervals: z
+    .array(ActivityIntervalEntrySchema)
+    .nullable()
+    .describe("Null when not requested or the activity has none"),
+  gear_id: z.string().nullable(),
+  weather_temp_c: z.number().nullable(),
+  description: z.string().nullable(),
+  units: z.object({
+    distance: z.literal("km"),
+    pace: z.literal("min/km"),
+    time: z.literal("s"),
+    hr: z.literal("bpm"),
+    elevation: z.literal("m"),
+    cadence: z.literal("spm"),
+    temp: z.literal("C"),
+  }),
+});
+
 // ---------- dev-only schema drift guard ----------
 export function warnOnSchemaDrift<T>(
   toolName: string,

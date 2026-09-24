@@ -56,6 +56,7 @@ import {
   compareActivitiesTool,
 } from "./tools/compareActivities";
 import { exportActivityGpx } from "./tools/exportActivityGpx";
+import { getActivityTool } from "./tools/getActivity";
 import { getActivityLapsTool } from "./tools/getActivityLaps";
 import { getActivityZonesTool } from "./tools/getActivityZones";
 import { getAerobicAnalysisTool } from "./tools/getAerobicAnalysis";
@@ -350,6 +351,7 @@ const STRAVA_TOOLS = [
   getBestEffortsTool,
   getRacePredictionTool,
   listActivitiesTool,
+  getActivityTool,
 ] as const;
 
 /** Convert existing tool definitions to low-level TOOLS array */

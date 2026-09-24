@@ -72,8 +72,8 @@ const inputSchema = z.object({
 
 type ListActivitiesInput = z.infer<typeof inputSchema>;
 
-/** Activity types intervals.icu reports pace for. */
-const RUNNING_TYPES = new Set(["Run", "TrailRun", "VirtualRun"]);
+/** Activity types intervals.icu reports pace for. Shared with getActivity.ts. */
+export const RUNNING_TYPES = new Set(["Run", "TrailRun", "VirtualRun"]);
 
 const MAX_RANGE_DAYS = 366;
 

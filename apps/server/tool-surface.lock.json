@@ -3,6 +3,7 @@
   "tools": {
     "compare-activities": "7c5ca08d39de285a",
     "export-activity-gpx": "dc3905234c92b0c4",
+    "get-activity": "310f6d049442cf41",
     "get-activity-laps": "83e66a79492899a1",
     "get-activity-streams-raw": "ebc3b93817ac0868",
     "get-activity-zones": "30c42924a86c6e0e",
