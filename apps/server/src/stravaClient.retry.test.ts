@@ -2,12 +2,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { basicRunActivity } from "./__fixtures__";
 import { HttpError, RateLimitError, stravaApi } from "./fetchClient";
 import {
-  exploreSegments,
   exportRouteGpx,
   getActivityById,
+  getActivityLaps,
   getActivityStreams,
   getAllActivities,
-  getSegmentEffort,
+  listSegmentEfforts,
   StravaApiError,
 } from "./stravaClient";
 import { refreshAccessToken } from "./tokenManager";
@@ -38,8 +38,6 @@ const unauthorized = () =>
     data: '{"message":"Authorization Error"}',
   });
 
-const bounds = "51.25,-0.32,51.27,-0.30";
-
 describe("401 refresh-retry", () => {
   beforeEach(() => {
     mockedGet.mockReset();
@@ -53,24 +51,28 @@ describe("401 refresh-retry", () => {
     });
   });
 
-  it("retries exploreSegments once with all original filters preserved", async () => {
+  it("retries listSegmentEfforts once with all original filters preserved", async () => {
     mockedGet
       .mockRejectedValueOnce(unauthorized())
-      .mockResolvedValueOnce({ data: { segments: [] } });
+      .mockResolvedValueOnce({ data: [] });
 
-    const result = await exploreSegments("stale-token", bounds, "riding", 1, 5);
+    const result = await listSegmentEfforts("stale-token", "55", {
+      startDateLocal: "2026-01-01T00:00:00Z",
+      endDateLocal: "2026-02-01T00:00:00Z",
+      perPage: 50,
+    });
 
-    expect(result).toEqual({ segments: [] });
+    expect(result).toEqual([]);
     expect(mockedRefresh).toHaveBeenCalledTimes(1);
     expect(mockedGet).toHaveBeenCalledTimes(2);
-    // Regression (#112): the retry used to drop minCat/maxCat.
-    expect(mockedGet).toHaveBeenLastCalledWith("/segments/explore", {
+    // Regression (#112): the retry used to drop filter params.
+    expect(mockedGet).toHaveBeenLastCalledWith("/segment_efforts", {
       headers: { Authorization: "Bearer refreshed-token" },
       params: {
-        bounds,
-        activity_type: "riding",
-        min_cat: 1,
-        max_cat: 5,
+        segment_id: "55",
+        start_date_local: "2026-01-01T00:00:00Z",
+        end_date_local: "2026-02-01T00:00:00Z",
+        per_page: 50,
       },
     });
   });
@@ -80,9 +82,9 @@ describe("401 refresh-retry", () => {
     // this must terminate instead of looping refresh+request forever.
     mockedGet.mockRejectedValue(unauthorized());
 
-    await expect(
-      exploreSegments("stale-token", bounds, "riding", 1, 5),
-    ).rejects.toThrow(/401/);
+    await expect(listSegmentEfforts("stale-token", "55")).rejects.toThrow(
+      /401/,
+    );
 
     expect(mockedRefresh).toHaveBeenCalledTimes(1);
     expect(mockedGet).toHaveBeenCalledTimes(2);
@@ -104,16 +106,16 @@ describe("401 refresh-retry", () => {
     });
   });
 
-  it("passes a string effort id above 2^53 through to the request untouched", async () => {
-    const bigEffortId = "3503400000123456789";
+  it("passes a string activity id above 2^53 through to the request untouched", async () => {
+    const bigActivityId = "3503400000123456789";
     mockedGet.mockRejectedValue(unauthorized());
 
     await expect(
-      getSegmentEffort("stale-token", bigEffortId),
+      getActivityLaps("stale-token", bigActivityId),
     ).rejects.toThrow();
 
     expect(mockedGet).toHaveBeenCalledWith(
-      `/segment_efforts/${bigEffortId}`,
+      `/activities/${bigActivityId}/laps`,
       expect.anything(),
     );
   });

@@ -137,40 +137,6 @@ export function composeDescription(
   return `${existing}\n\n${incoming}`;
 }
 
-export interface CreateActivityParams {
-  name: string;
-  sportType: SportType;
-  startDateLocal: string;
-  elapsedTimeSeconds: number;
-  distanceMeters?: number;
-  description?: string;
-  trainer?: boolean;
-  commute?: boolean;
-}
-
-/**
- * Builds the POST /activities body for a manual activity, including only
- * provided fields and mapping camelCase params to Strava's snake_case keys.
- * `trainer`/`commute` are sent as 1/0 — the endpoint documents them as
- * integers, unlike the PUT which takes booleans.
- */
-export function buildCreateActivityBody(
-  params: CreateActivityParams,
-): Record<string, unknown> {
-  const body: Record<string, unknown> = {
-    name: params.name,
-    sport_type: params.sportType,
-    start_date_local: params.startDateLocal,
-    elapsed_time: params.elapsedTimeSeconds,
-  };
-  if (params.distanceMeters !== undefined)
-    body.distance = params.distanceMeters;
-  if (params.description !== undefined) body.description = params.description;
-  if (params.trainer !== undefined) body.trainer = params.trainer ? 1 : 0;
-  if (params.commute !== undefined) body.commute = params.commute ? 1 : 0;
-  return body;
-}
-
 /**
  * Builds the UpdatableActivity PUT body, including only provided fields
  * and mapping camelCase params to Strava's snake_case keys.

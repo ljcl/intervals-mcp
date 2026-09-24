@@ -12,7 +12,6 @@ import {
   getActivityZones,
   getSegmentById,
   listSegmentEfforts,
-  starSegment,
 } from "./stravaClient";
 
 const realFetch = globalThis.fetch;
@@ -93,17 +92,5 @@ describe("view/data tool pairs share one upstream fetch", () => {
     await getActivityLaps("token", "123");
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
-  });
-
-  it("re-fetches a segment after star-segment writes to it", async () => {
-    const fetchMock = stubFetch(bodyByPath);
-
-    await getSegmentById("token", "55");
-    await starSegment("token", "55", true);
-    await getSegmentById("token", "55");
-
-    // The PUT invalidates the parent, so the cached `starred: false` cannot
-    // outlive the write that changed it.
-    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 });

@@ -10,7 +10,6 @@ import { HttpError, RateLimitError, stravaApi } from "./fetchClient";
 import {
   getActivityStreams,
   getRouteStreams,
-  getSegmentStreams,
   StreamsUnavailableError,
 } from "./stravaClient";
 
@@ -201,50 +200,6 @@ describe("getRouteStreams", () => {
   it("requires a route id", async () => {
     await expect(getRouteStreams("token", "")).rejects.toThrow(
       /Route ID is required/,
-    );
-  });
-});
-
-describe("getSegmentStreams", () => {
-  it("requests distance, altitude, and latlng by default", async () => {
-    mockedGet.mockResolvedValueOnce({
-      data: [{ type: "distance", data: [0, 50] }],
-    });
-
-    await getSegmentStreams("token", "789");
-
-    expect(mockedGet).toHaveBeenCalledWith(
-      "/segments/789/streams/distance,altitude,latlng",
-      { headers: { Authorization: "Bearer token" } },
-    );
-  });
-
-  it("surfaces the subscription sentinel on a 402", async () => {
-    mockedGet.mockRejectedValueOnce(
-      new HttpError("HTTP 402", {
-        status: 402,
-        statusText: "Payment Required",
-        data: "",
-      }),
-    );
-
-    await expect(getSegmentStreams("token", "789")).rejects.toThrow(
-      /SUBSCRIPTION_REQUIRED/,
-    );
-  });
-
-  it("reports a segment with no stored streams as unavailable", async () => {
-    mockedGet.mockResolvedValueOnce({ data: [] });
-
-    const error = await getSegmentStreams("token", "789").catch((e) => e);
-
-    expect(error).toBeInstanceOf(StreamsUnavailableError);
-    expect(error.kind).toBe("segment");
-  });
-
-  it("requires a segment id", async () => {
-    await expect(getSegmentStreams("token", "")).rejects.toThrow(
-      /Segment ID is required/,
     );
   });
 });

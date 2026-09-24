@@ -68,15 +68,8 @@ import {
   buildComparison,
   compareActivitiesTool,
 } from "./tools/compareActivities";
-import { compareSegmentEffortsTool } from "./tools/compareSegmentEfforts";
-import { createActivityTool } from "./tools/createActivity";
-import { exploreSegments } from "./tools/exploreSegments";
 import { exportActivityGpx } from "./tools/exportActivityGpx";
-import { exportRouteGpx } from "./tools/exportRouteGpx";
-import { exportRouteTcx } from "./tools/exportRouteTcx";
-import { findSegmentsOnRouteTool } from "./tools/findSegmentsOnRoute";
 import { getActivityLapsTool } from "./tools/getActivityLaps";
-import { getActivityPhotosTool } from "./tools/getActivityPhotos";
 import { getActivityZonesTool } from "./tools/getActivityZones";
 import { getAerobicAnalysisTool } from "./tools/getAerobicAnalysis";
 import { getAthleteStatsTool } from "./tools/getAthleteStats";
@@ -85,18 +78,9 @@ import { getFitnessTrendTool } from "./tools/getFitnessTrend";
 import { getHillAnalysisTool } from "./tools/getHillAnalysis";
 import { getIntervalAnalysisTool } from "./tools/getIntervalAnalysis";
 import { getRacePredictionTool } from "./tools/getRacePrediction";
-import { getRouteTool } from "./tools/getRoute";
-import { getRoutePreviewTool } from "./tools/getRoutePreview";
 import { getRunningSummaryTool } from "./tools/getRunningSummary";
-import { getSegmentTool } from "./tools/getSegment";
-import { getSegmentEffortTool } from "./tools/getSegmentEffort";
-import { getSegmentProfileTool } from "./tools/getSegmentProfile";
 import { getSplitAnalysisTool } from "./tools/getSplitAnalysis";
 import { getTrainingLoadTool } from "./tools/getTrainingLoad";
-import { listAthleteRoutesTool } from "./tools/listAthleteRoutes";
-import { listSegmentEffortsTool } from "./tools/listSegmentEfforts";
-import { listStarredSegments } from "./tools/listStarredSegments";
-import { starSegment } from "./tools/starSegment";
 import { updateActivityTool } from "./tools/updateActivity";
 import { buildTrainingLoadData } from "./trainingLoad";
 import { SERVER_VERSION } from "./version";
@@ -406,26 +390,10 @@ interface ToolDef {
 /** All existing Strava tools */
 const STRAVA_TOOLS = [
   getAthleteStatsTool,
-  createActivityTool,
   updateActivityTool,
-  listStarredSegments,
-  getSegmentTool,
-  getSegmentProfileTool,
-  exploreSegments,
-  findSegmentsOnRouteTool,
-  starSegment,
-  getSegmentEffortTool,
-  listSegmentEffortsTool,
-  compareSegmentEffortsTool,
-  listAthleteRoutesTool,
-  getRouteTool,
-  getRoutePreviewTool,
-  exportRouteGpx,
-  exportRouteTcx,
   exportActivityGpx,
   getActivityZonesTool,
   getActivityLapsTool,
-  getActivityPhotosTool,
   getRunningSummaryTool,
   getAerobicAnalysisTool,
   getHillAnalysisTool,
@@ -669,8 +637,8 @@ function buildToolDefs(): ToolDef[] {
     name: "view-segment-progress",
     description:
       "Open an interactive history of the athlete's own efforts on one segment: effort time over date with the personal best and top three highlighted, an optional average heart rate series, and a per-effort list. " +
-      "Prefer this over the text-only list-segment-efforts when the user wants to see whether they are getting faster on a climb or course segment, or whether the same time is now costing less heart rate. " +
-      "Takes the segment id (from list-starred-segments, explore-segments, or get-segment) and an optional date range.",
+      "Prefer this over reading raw effort data when the user wants to see whether they are getting faster on a climb or course segment, or whether the same time is now costing less heart rate. " +
+      "Takes the segment id (e.g. from the Strava segment URL) and an optional date range.",
     inputSchema: toInputSchema(
       APP_TOOL_INPUT_SCHEMAS["view-segment-progress"]!,
     ),

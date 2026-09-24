@@ -15,7 +15,6 @@ import { connectTestClient } from "./mcpTestClient";
 import { createServer, TOOLS } from "./server";
 import {
   READ_ONLY,
-  WRITE_CREATE,
   WRITE_DESTRUCTIVE,
   WRITE_IDEMPOTENT,
 } from "./tools/_annotations";
@@ -35,11 +34,6 @@ describe("annotation constants", () => {
     expect(WRITE_DESTRUCTIVE.idempotentHint).toBe(false);
     expect(WRITE_DESTRUCTIVE.readOnlyHint).toBe(false);
   });
-  it("creates are non-destructive but not idempotent", () => {
-    expect(WRITE_CREATE.readOnlyHint).toBe(false);
-    expect(WRITE_CREATE.destructiveHint).toBe(false);
-    expect(WRITE_CREATE.idempotentHint).toBe(false);
-  });
   it("idempotent writes are not destructive", () => {
     expect(WRITE_IDEMPOTENT.idempotentHint).toBe(true);
     expect(WRITE_IDEMPOTENT.destructiveHint).toBe(false);
@@ -48,7 +42,6 @@ describe("annotation constants", () => {
   it("every write constant is explicitly not read-only", () => {
     for (const [label, annotations] of [
       ["WRITE_DESTRUCTIVE", WRITE_DESTRUCTIVE],
-      ["WRITE_CREATE", WRITE_CREATE],
       ["WRITE_IDEMPOTENT", WRITE_IDEMPOTENT],
     ] as const) {
       expect(annotations.readOnlyHint, label).toBe(false);
@@ -66,67 +59,49 @@ describe("annotation constants", () => {
  * ROUTE_EXPORT_PATH on the server's own disk. They will keep prompting, and
  * should.
  */
-const EXPECTED_CLASS: Record<string, "read" | "create" | "destroy" | "write"> =
-  {
-    // Reads — the Strava API surface.
-    "get-athlete-stats": "read",
-    "list-starred-segments": "read",
-    "get-segment": "read",
-    "get-segment-profile": "read",
-    "explore-segments": "read",
-    "find-segments-on-route": "read",
-    "get-segment-effort": "read",
-    "list-segment-efforts": "read",
-    "compare-segment-efforts": "read",
-    "list-athlete-routes": "read",
-    "get-route": "read",
-    "get-route-preview": "read",
-    "get-activity-zones": "read",
-    "get-activity-laps": "read",
-    "get-activity-photos": "read",
-    "get-running-summary": "read",
-    "get-aerobic-analysis": "read",
-    "get-hill-analysis": "read",
-    "get-split-analysis": "read",
-    "get-interval-analysis": "read",
-    "get-training-load": "read",
-    "get-fitness-trend": "read",
-    "compare-activities": "read",
-    "get-best-efforts": "read",
-    "get-race-prediction": "read",
+const EXPECTED_CLASS: Record<string, "read" | "destroy" | "write"> = {
+  // Reads — the Strava API surface.
+  "get-athlete-stats": "read",
+  "get-activity-zones": "read",
+  "get-activity-laps": "read",
+  "get-running-summary": "read",
+  "get-aerobic-analysis": "read",
+  "get-hill-analysis": "read",
+  "get-split-analysis": "read",
+  "get-interval-analysis": "read",
+  "get-training-load": "read",
+  "get-fitness-trend": "read",
+  "compare-activities": "read",
+  "get-best-efforts": "read",
+  "get-race-prediction": "read",
 
-    // Reads — MCP App view tools and their app-only data feeds.
-    "view-activity-chart": "read",
-    "get-activity-streams-raw": "read",
-    "view-cadence-trends": "read",
-    "get-cadence-trend-data": "read",
-    "view-route-map": "read",
-    "get-route-map-data": "read",
-    "view-activity-segments": "read",
-    "get-activity-segments-data": "read",
-    "view-training-load": "read",
-    "get-training-load-data": "read",
-    "view-fitness-trend": "read",
-    "get-fitness-trend-data": "read",
-    "view-activity-zones": "read",
-    "get-activity-zones-data": "read",
-    "view-segment-progress": "read",
-    "get-segment-progress-data": "read",
-    "view-compare-activities": "read",
-    "get-compare-activities-data": "read",
+  // Reads — MCP App view tools and their app-only data feeds.
+  "view-activity-chart": "read",
+  "get-activity-streams-raw": "read",
+  "view-cadence-trends": "read",
+  "get-cadence-trend-data": "read",
+  "view-route-map": "read",
+  "get-route-map-data": "read",
+  "view-activity-segments": "read",
+  "get-activity-segments-data": "read",
+  "view-training-load": "read",
+  "get-training-load-data": "read",
+  "view-fitness-trend": "read",
+  "get-fitness-trend-data": "read",
+  "view-activity-zones": "read",
+  "get-activity-zones-data": "read",
+  "view-segment-progress": "read",
+  "get-segment-progress-data": "read",
+  "view-compare-activities": "read",
+  "get-compare-activities-data": "read",
 
-    // Writes.
-    "create-activity": "create",
-    "update-activity": "destroy",
-    "star-segment": "write",
-    "export-route-gpx": "write",
-    "export-route-tcx": "write",
-    "export-activity-gpx": "write",
-  };
+  // Writes.
+  "update-activity": "destroy",
+  "export-activity-gpx": "write",
+};
 
 const ANNOTATIONS_FOR_CLASS = {
   read: READ_ONLY,
-  create: WRITE_CREATE,
   destroy: WRITE_DESTRUCTIVE,
   write: WRITE_IDEMPOTENT,
 } as const;
@@ -166,7 +141,7 @@ describe("tool annotations exhaustiveness", () => {
   it("every read tool spells out both hints a permission bucket reads", () => {
     const reads = TOOLS.filter((t) => EXPECTED_CLASS[t.name] === "read");
     // Guards the table itself: an empty filter would make this vacuous.
-    expect(reads.length).toBe(43);
+    expect(reads.length).toBe(31);
     for (const tool of reads) {
       expect(tool.annotations?.readOnlyHint, tool.name).toBe(true);
       expect(tool.annotations?.destructiveHint, tool.name).toBe(false);
@@ -222,7 +197,7 @@ describe("annotations on the wire", () => {
     const reads = tools.filter(
       (t) => EXPECTED_CLASS[t.name as string] === "read",
     );
-    expect(reads.length).toBe(43);
+    expect(reads.length).toBe(31);
     for (const tool of reads) {
       const annotations = tool.annotations as Record<string, unknown>;
       // `in` rather than a truthiness check: the failure mode being guarded

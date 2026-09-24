@@ -553,10 +553,9 @@ export class FetchClient {
    * Descendants: updating an activity drops its cached detail, streams, zones
    * and laps so the next read re-fetches fresh.
    *
-   * Ancestors: a write to a sub-resource changes how its parent reads.
-   * `PUT /segments/{id}/starred` is exactly that — it flips `segment.starred`,
-   * so a descendants-only rule would leave the cached `/segments/{id}`
-   * claiming the old value.
+   * Ancestors: a write to a sub-resource changes how its parent reads, so a
+   * descendants-only rule would leave the cached parent claiming a stale
+   * value.
    */
   private invalidateWritten(url: string): void {
     const writePath = this.toPath(url);
@@ -735,15 +734,12 @@ export function stravaCacheTtl(path: string): number | null {
   if (path === "/athlete") return 5 * MINUTE_MS;
   // Athlete stats — short; totals accumulate with each new activity.
   if (/^\/athletes\/\d+\/stats$/.test(path)) return 5 * MINUTE_MS;
-  // A segment's course never changes — editing one produces a new segment —
-  // so its streams are as immutable as a recorded activity's.
-  if (/^\/segments\/\d+\/streams\//.test(path)) return 6 * HOUR_MS;
-  // A segment's geometry is fixed but its effort/star counts drift, and
-  // star-segment writes invalidate it outright — so a short TTL is enough.
+  // A segment's geometry is fixed but its effort/star counts drift, so a
+  // short TTL is enough.
   if (/^\/segments\/\d+$/.test(path)) return 5 * MINUTE_MS;
   // A route's stored profile changes only when the athlete edits the route,
-  // and it is the expensive read of the pair — get-route-preview and the map
-  // both want it. Longer than the route detail beside it for that reason.
+  // and it is the expensive read the route map wants. Longer than the route
+  // detail beside it for that reason.
   if (/^\/routes\/\d+\/streams$/.test(path)) return HOUR_MS;
   // A saved route changes only when the athlete edits it.
   if (/^\/routes\/\d+$/.test(path)) return 5 * MINUTE_MS;

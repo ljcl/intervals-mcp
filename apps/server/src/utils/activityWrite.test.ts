@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  buildCreateActivityBody,
-  buildUpdateActivityBody,
-  composeDescription,
-} from "./activityWrite";
+import { buildUpdateActivityBody, composeDescription } from "./activityWrite";
 
 describe("composeDescription", () => {
   it("replaces when mode is replace", () => {
@@ -54,45 +50,6 @@ describe("buildUpdateActivityBody", () => {
   it("keeps explicit false values", () => {
     expect(buildUpdateActivityBody({ commute: false })).toEqual({
       commute: false,
-    });
-  });
-});
-
-describe("buildCreateActivityBody", () => {
-  const required = {
-    name: "Morning Yoga",
-    sportType: "Yoga" as const,
-    startDateLocal: "2026-07-13T07:30:00",
-    elapsedTimeSeconds: 1800,
-  };
-
-  it("maps required fields to snake_case and omits absent optionals", () => {
-    expect(buildCreateActivityBody(required)).toEqual({
-      name: "Morning Yoga",
-      sport_type: "Yoga",
-      start_date_local: "2026-07-13T07:30:00",
-      elapsed_time: 1800,
-    });
-  });
-
-  it("maps optional fields, converting flags to Strava's 1/0 integers", () => {
-    expect(
-      buildCreateActivityBody({
-        ...required,
-        distanceMeters: 5000,
-        description: "Easy effort",
-        trainer: true,
-        commute: false,
-      }),
-    ).toEqual({
-      name: "Morning Yoga",
-      sport_type: "Yoga",
-      start_date_local: "2026-07-13T07:30:00",
-      elapsed_time: 1800,
-      distance: 5000,
-      description: "Easy effort",
-      trainer: 1,
-      commute: 0,
     });
   });
 });

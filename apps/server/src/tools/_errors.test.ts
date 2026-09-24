@@ -56,17 +56,6 @@ describe("toolErrorText", () => {
       "❌ This feature requires a Strava subscription.",
     );
 
-    const custom = toolErrorText(
-      handledSubscriptionRequired("listSegmentEfforts"),
-      {
-        context: "list efforts for segment 789",
-        subscription: "Accessing segment efforts requires a subscription.",
-      },
-    );
-    expect(custom).toBe(
-      "❌ Accessing segment efforts requires a subscription.",
-    );
-
     // A plain Error carrying the prefix is not a 402; only the status counts.
     const spoofed = toolErrorText(
       new Error("SUBSCRIPTION_REQUIRED: payment needed"),

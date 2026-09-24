@@ -498,17 +498,9 @@ describe("stravaCacheTtl policy", () => {
     expect(stravaCacheTtl("/segment_efforts")).toBe(2 * 60_000);
   });
 
-  it("caches segment streams as long as activity streams", () => {
-    // A segment's course cannot be edited — a change produces a new segment —
-    // so its profile is as immutable as a recorded activity's (#266).
-    expect(stravaCacheTtl("/segments/55/streams/distance,altitude")).toBe(
-      6 * 60 * 60_000,
-    );
-  });
-
   it("caches a route's stored profile for an hour", () => {
-    // The expensive half of the route pair, wanted by both get-route-preview
-    // and the map, and only invalidated by an athlete editing the route (#264).
+    // The expensive read the route map wants, and only invalidated by an
+    // athlete editing the route (#264).
     expect(stravaCacheTtl("/routes/77/streams")).toBe(60 * 60_000);
   });
 
@@ -654,9 +646,9 @@ describe("FetchClient response cache", () => {
   });
 
   it("invalidates a parent resource when a sub-resource is written", async () => {
-    // #238: `star-segment` PUTs /segments/{id}/starred, which flips
-    // `segment.starred` on the parent. A descendants-only rule left the cached
-    // /segments/{id} claiming the pre-star value for its whole TTL.
+    // #238: a PUT to a sub-resource (e.g. /segments/{id}/starred) flips a
+    // field on the parent. A descendants-only rule left the cached
+    // /segments/{id} claiming the pre-write value for its whole TTL.
     const fetchMock = vi
       .fn()
       .mockImplementation(async () => makeResponse('{"starred":false}'));

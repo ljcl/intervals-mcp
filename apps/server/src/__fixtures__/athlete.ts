@@ -136,10 +136,3 @@ export const activityStatsWithNulls = {
   biggest_ride_distance: null,
   biggest_climb_elevation_gain: null,
 };
-
-export const athleteNoGear = {
-  ...detailedAthlete,
-  id: 123458,
-  shoes: [],
-  bikes: [],
-};
