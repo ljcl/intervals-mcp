@@ -131,6 +131,24 @@ describe("computeGrades", () => {
     const result = computeGrades(normalizeHillStreams(streams));
     expect(result.source).toBe("computed");
   });
+
+  it("keeps grade_smooth as the source and interpolates across a partial null run", () => {
+    const streams = buildStreams([flat(200), climb(400), flat(200)]);
+    const grade = streams.grade_smooth as (number | null)[];
+    // Blank out a short mid-climb stretch; the values on either side are
+    // both real recorded samples, not the whole stream going dark.
+    const start = Math.floor(grade.length / 2) - 2;
+    for (let i = start; i < start + 4; i++) grade[i] = null;
+
+    const result = computeGrades(normalizeHillStreams(streams));
+
+    expect(result.source).toBe("grade_smooth");
+    // The interpolated gap sits close to the surrounding climb grade, not 0.
+    expect(result.grades[start + 1]).toBeCloseTo(6, 0);
+    expect(result.grades.every((g) => g != null && Number.isFinite(g))).toBe(
+      true,
+    );
+  });
 });
 
 describe("interpolateNulls", () => {

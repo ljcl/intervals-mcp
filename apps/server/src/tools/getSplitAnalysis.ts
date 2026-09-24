@@ -67,6 +67,7 @@ const STREAM_TYPES = [
   "heartrate",
   "velocity_smooth",
   "cadence",
+  "watts",
 ] as const;
 
 const formatPace = (secPerKm: number | null) =>
@@ -158,6 +159,7 @@ export const getSplitAnalysisTool = {
         heartrate: streams.heartrate,
         velocity_smooth: streams.velocity_smooth,
         cadence: streams.cadence,
+        watts: streams.watts,
         moving: streams.moving,
       };
       const analysis = computeSplitAnalysis(splitStreams);

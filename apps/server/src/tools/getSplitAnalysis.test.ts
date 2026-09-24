@@ -88,10 +88,26 @@ describe("get-split-analysis", () => {
       "grade_smooth",
       "heartrate",
       "cadence",
+      "watts",
       "time",
     ]) {
       expect(requestedTypes).toContain(type);
     }
+  });
+
+  it("reports average watts on a split when the activity recorded power", async () => {
+    mockedGetActivity.mockResolvedValue(hillyActivity);
+    mockedGetActivityStreams.mockResolvedValue(hillyStreams);
+
+    const result = await getSplitAnalysisTool.execute(
+      { id: "i189757207" },
+      "test-key",
+    );
+
+    const structured = result.structuredContent as {
+      splits: Array<{ avg_watts: number | null }>;
+    };
+    expect(structured.splits.some((s) => s.avg_watts != null)).toBe(true);
   });
 
   it("reports a computed grade source for a flat activity without grade_smooth", async () => {

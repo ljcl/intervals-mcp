@@ -86,10 +86,30 @@ describe("get-hill-analysis", () => {
       "grade_smooth",
       "heartrate",
       "cadence",
+      "watts",
       "time",
     ]) {
       expect(requestedTypes).toContain(type);
     }
+  });
+
+  it("reports average watts on a segment when the activity recorded power", async () => {
+    mockedGetActivity.mockResolvedValue(hillyActivity);
+    mockedGetActivityStreams.mockResolvedValue(hillyStreams);
+
+    const result = await getHillAnalysisTool.execute(
+      { id: "i189757207" },
+      "test-key",
+    );
+
+    const structured = result.structuredContent as {
+      climbs: Array<{ avg_watts: number | null }>;
+      descents: Array<{ avg_watts: number | null }>;
+    };
+    const anyWatts = [...structured.climbs, ...structured.descents].some(
+      (segment) => segment.avg_watts != null,
+    );
+    expect(anyWatts).toBe(true);
   });
 
   it("reports a computed grade source and no climbs for a flat activity without grade_smooth", async () => {
