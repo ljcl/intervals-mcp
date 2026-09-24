@@ -4,10 +4,19 @@ import { z } from "zod";
 const DIGITS = /^\d+$/;
 
 /**
- * Schemas produced by `stravaIdInput`, so `stravaIdJsonSchemaOverride` can
- * recognise them when the server projects a tool's advertised input schema.
+ * intervals.icu activity ids are opaque digit strings, optionally prefixed
+ * with `i` (e.g. `i189807578`, as returned by `list-activities`). Bare
+ * digits are also accepted, matching the Strava convention.
  */
-const stravaIds = z.registry<{ isStravaId: true }>();
+const INTERVALS_DIGITS = /^i?\d+$/;
+
+/**
+ * Metadata recorded per id schema, so the shared JSON-schema override can
+ * recognise a schema produced by `stravaIdInput` or `intervalsActivityIdInput`
+ * when the server projects a tool's advertised input schema, and narrow it
+ * to the right string pattern.
+ */
+const idSchemas = z.registry<{ pattern: string }>();
 
 /**
  * Rewrite an id's advertised JSON Schema to the *string* form only.
@@ -27,24 +36,28 @@ const stravaIds = z.registry<{ isStravaId: true }>();
  * which is lossless for every id. The union stays at runtime, so a host that
  * already sends `activity_id: 12345` keeps working.
  *
+ * Covers both `stravaIdInput` and `intervalsActivityIdInput` schemas, each
+ * narrowed to its own pattern via `idSchemas`.
+ *
  * Pass to `z.toJSONSchema(..., { override })`.
  */
 export function stravaIdJsonSchemaOverride(ctx: {
   zodSchema: z.core.$ZodType;
   jsonSchema: z.core.JSONSchema.BaseSchema;
 }): void {
-  if (!stravaIds.has(ctx.zodSchema)) return;
+  const meta = idSchemas.get(ctx.zodSchema);
+  if (!meta) return;
   const target = ctx.jsonSchema as Record<string, unknown>;
   const { description } = ctx.jsonSchema;
   for (const key of Object.keys(target)) delete target[key];
   target.type = "string";
-  target.pattern = DIGITS.source;
+  target.pattern = meta.pattern;
   if (description !== undefined) target.description = description;
 }
 
 /**
- * Appended to every id's description, steering generation toward the quoted
- * digit string the schema advertises.
+ * Appended to every Strava id's description, steering generation toward the
+ * quoted digit string the schema advertises.
  *
  * Exported so the guard over the whole advertised surface
  * (`server.integration.test.ts`) matches on this text rather than on a copy
@@ -53,6 +66,57 @@ export function stravaIdJsonSchemaOverride(ctx: {
  */
 export const STRAVA_ID_HINT =
   'Pass the id as a quoted string of digits, exactly as it appears in the Strava URL (e.g. "3516039180561708486") — Strava ids can exceed 2^53, so an unquoted number loses precision.';
+
+/**
+ * Appended to every intervals.icu activity id's description, steering
+ * generation toward the quoted string form the schema advertises. See
+ * `STRAVA_ID_HINT` for why this is exported rather than matched by copy.
+ */
+export const INTERVALS_ID_HINT =
+  'Pass the intervals.icu activity id as a quoted string exactly as shown in list-activities (e.g. "i189807578").';
+
+/**
+ * Shared core of `stravaIdInput` and `intervalsActivityIdInput`: a string or
+ * safe-integer input, normalised to a string. See `stravaIdInput` for the
+ * full rationale; the only per-id-kind pieces are the accepted pattern, the
+ * regex-mismatch message, and the description hint.
+ */
+function idInput(options: {
+  description: string;
+  pattern: RegExp;
+  digitsMessage: string;
+  hint: string;
+  oversizedNumberHint: string;
+}) {
+  const { description, pattern, digitsMessage, hint, oversizedNumberHint } =
+    options;
+  const schema = z
+    .union([
+      z.string().regex(pattern, digitsMessage),
+      z.number().superRefine((value, ctx) => {
+        if (!Number.isInteger(value) || value < 0) {
+          ctx.addIssue({
+            code: "custom",
+            message: "id must be a non-negative whole number",
+          });
+          return;
+        }
+        if (!Number.isSafeInteger(value)) {
+          ctx.addIssue({
+            code: "custom",
+            message:
+              `id ${value} is too large to be sent as a JSON number, so it was rounded before ` +
+              `it reached the server, so the original id is unrecoverable. Re-send the id ` +
+              `exactly as ${oversizedNumberHint}, quoted as a string of digits.`,
+          });
+        }
+      }),
+    ])
+    .transform((value) => String(value))
+    .describe(`${description} ${hint}`);
+  idSchemas.add(schema, { pattern: pattern.source });
+  return schema;
+}
 
 /**
  * Tool-input schema for a Strava resource id (activity, athlete).
@@ -84,31 +148,31 @@ export const STRAVA_ID_HINT =
  * integer to its string loses nothing. The fetch layer reports ids as exact
  * strings (see `parseJsonWithLargeInts`), so string ids round-trip cleanly.
  */
-export const stravaIdInput = (description: string) => {
-  const schema = z
-    .union([
-      z.string().regex(DIGITS, "id must be a string of digits"),
-      z.number().superRefine((value, ctx) => {
-        if (!Number.isInteger(value) || value < 0) {
-          ctx.addIssue({
-            code: "custom",
-            message: "id must be a non-negative whole number",
-          });
-          return;
-        }
-        if (!Number.isSafeInteger(value)) {
-          ctx.addIssue({
-            code: "custom",
-            message:
-              `id ${value} is too large to be sent as a JSON number — it was rounded before ` +
-              `it reached the server, so the original id is unrecoverable. Re-send the id ` +
-              `exactly as it appears in the Strava URL, quoted as a string of digits.`,
-          });
-        }
-      }),
-    ])
-    .transform((value) => String(value))
-    .describe(`${description} ${STRAVA_ID_HINT}`);
-  stravaIds.add(schema, { isStravaId: true });
-  return schema;
-};
+export const stravaIdInput = (description: string) =>
+  idInput({
+    description,
+    pattern: DIGITS,
+    digitsMessage: "id must be a string of digits",
+    hint: STRAVA_ID_HINT,
+    oversizedNumberHint: "it appears in the Strava URL",
+  });
+
+/**
+ * Tool-input schema for an intervals.icu activity id.
+ *
+ * intervals.icu activity ids are digit strings, optionally prefixed with `i`
+ * (e.g. `i189807578`, the form `list-activities` returns); bare digits are
+ * also accepted. Shares `stravaIdInput`'s string-or-safe-integer-number
+ * runtime shape and string-only advertised schema (`stravaIdJsonSchemaOverride`),
+ * for the same reason: a host cannot generate the lossy number branch for an
+ * id that has already grown past 2^53.
+ */
+export const intervalsActivityIdInput = (description: string) =>
+  idInput({
+    description,
+    pattern: INTERVALS_DIGITS,
+    digitsMessage:
+      'id must be a string of digits, optionally prefixed with "i"',
+    hint: INTERVALS_ID_HINT,
+    oversizedNumberHint: "returned by list-activities",
+  });

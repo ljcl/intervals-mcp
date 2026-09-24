@@ -80,6 +80,28 @@ export class RateLimitError extends HttpError {
 }
 
 /**
+ * Thrown by the retired `stravaClient.ts` for every call it makes: that
+ * client sends no `Authorization` header on purpose (see its module comment),
+ * so every request answers 401. That 401 means "this tool has not been
+ * ported to intervals.icu yet", a completely different situation from
+ * intervals.icu itself rejecting an API key, and needs its own type so
+ * `toolErrorText` (`tools/_errors.ts`) can tell the two apart by type rather
+ * than by re-parsing the message. Lives here, not in `stravaClient.ts`, so
+ * `tools/_errors.ts` never has to import from `stravaClient.ts`: tool tests
+ * mock that module with bare factories, which would leave a class imported
+ * from there `undefined`.
+ */
+export class NotPortedError extends HttpError {
+  constructor(
+    message: string,
+    response: { status: number; statusText: string; data: string },
+  ) {
+    super(message, response);
+    this.name = "NotPortedError";
+  }
+}
+
+/**
  * Thrown when a request exceeds its timeout and could not be recovered by a
  * retry. Distinct from a generic network fault so callers can say "Strava did
  * not answer in time" rather than surfacing an opaque `TimeoutError`.
@@ -213,17 +235,25 @@ export function describeRateLimit(
     parts.push(
       `15-minute rate limit reached (${snapshot.shortTerm.usage}/${snapshot.shortTerm.limit} requests). Resets at ${reset.toISOString()} (~${mins} min).`,
     );
-  } else {
-    // 429 without a clearly-exhausted window (e.g. read-quota only, or headers
-    // missing) — fall back to the 15-minute reset, the most likely culprit.
+  } else if (snapshot.shortTerm !== undefined || snapshot.daily !== undefined) {
+    // 429 with rate-limit headers present but neither window cleanly
+    // exhausted (e.g. the read-only quota, which this snapshot doesn't carry
+    // separately), Strava's 15-minute window is the most likely culprit, and
+    // headers being present at all means this is a Strava response.
     const reset = next15MinReset(now);
     const mins = Math.max(
       1,
       Math.round((reset.getTime() - now.getTime()) / 60000),
     );
     parts.push(
-      `Strava rate limit reached. The 15-minute window resets at ${reset.toISOString()} (~${mins} min).`,
+      `Rate limit reached. The 15-minute window resets at ${reset.toISOString()} (~${mins} min).`,
     );
+  } else {
+    // No rate-limit headers at all: intervals.icu sends none (see the
+    // `intervalsApi` client below) and paces requests itself instead, so
+    // there is no window boundary to report. Guessing at Strava's
+    // quarter-hour reset here would be actively wrong for that provider.
+    parts.push("Rate limit reached; wait a few minutes and retry.");
   }
 
   if (snapshot.shortTerm) {
@@ -295,6 +325,18 @@ export interface RetryOptions {
   maxRetryAfterMs?: number;
   /** Sleep implementation; injectable so tests can run instantly. */
   sleep?: (ms: number) => Promise<void>;
+  /**
+   * Minimum spacing, in ms, enforced between the *start* of consecutive
+   * request attempts: the initial attempt and every retry each count as one
+   * start. Applies across concurrent callers, not just sequential ones. Omit
+   * or 0 to disable (the default for ad-hoc clients and most tests).
+   */
+  minIntervalMs?: number;
+  /**
+   * Injectable clock (ms), shared by the `minIntervalMs` throttle and, when
+   * `cache.now` is not given, the response cache. Defaults to `Date.now`.
+   */
+  now?: () => number;
   /**
    * Opt-in response cache for immutable-ish GETs. Omit to disable caching
    * entirely (the default for ad-hoc clients and most tests).
@@ -372,6 +414,18 @@ export class FetchClient {
   private readonly maxRetryAfterMs: number;
   private readonly timeoutMs: number;
   private readonly sleep: (ms: number) => Promise<void>;
+  private readonly now: () => number;
+
+  private readonly minIntervalMs: number;
+  /** The earliest time (per {@link now}) the next request attempt may start. */
+  private nextSlot = 0;
+  /**
+   * Serializes {@link withSlot} reservations across concurrent callers: each
+   * caller's turn chains onto the previous one via this promise, so `now()`
+   * and `nextSlot` are always read and updated by one caller at a time even
+   * when several requests are issued together (e.g. `Promise.all`).
+   */
+  private slotGate: Promise<void> = Promise.resolve();
 
   /** Response cache + its policy, or `null` when caching is disabled. */
   private readonly responseCache: TtlLruCache<unknown> | null;
@@ -396,11 +450,13 @@ export class FetchClient {
     this.sleep =
       options.sleep ??
       ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
+    this.now = options.now ?? Date.now;
+    this.minIntervalMs = options.minIntervalMs ?? 0;
 
     if (options.cache) {
       this.responseCache = new TtlLruCache<unknown>({
         maxEntries: options.cache.maxEntries,
-        now: options.cache.now,
+        now: options.cache.now ?? options.now,
       });
       this.ttlForPath = options.cache.ttlForPath;
     } else {
@@ -441,6 +497,46 @@ export class FetchClient {
   private backoffDelay(attempt: number): number {
     const exp = Math.min(this.maxDelayMs, this.baseDelayMs * 2 ** attempt);
     return Math.round(Math.random() * exp);
+  }
+
+  /**
+   * Runs `fire` (one request attempt) no earlier than `minIntervalMs` after
+   * the previous attempt started, across every caller of this client,
+   * concurrent callers included. Disabled entirely (fires immediately) when
+   * `minIntervalMs` is 0.
+   *
+   * Reservation (reading `now()`, computing the slot, advancing `nextSlot`,
+   * and sleeping out any gap) is serialized through {@link slotGate} so two
+   * callers racing in from `Promise.all` still land on distinct, ordered
+   * slots instead of both reading the same `now()`. The gate is released the
+   * instant `fire` is *invoked*, not once it settles, so one slow request
+   * never delays the next one's start. The release lives in `finally` so a
+   * throwing `now()`, a rejecting `sleep`, or `fire` throwing synchronously
+   * (rather than returning a rejected promise) still releases the gate.
+   * Otherwise that failure would wedge `slotGate` forever and hang every
+   * later request with no timeout.
+   */
+  private async withSlot<T>(fire: () => Promise<T>): Promise<T> {
+    if (this.minIntervalMs <= 0) return fire();
+
+    const myTurn = this.slotGate;
+    let release!: () => void;
+    this.slotGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await myTurn;
+
+    try {
+      const now = this.now();
+      const slot = Math.max(now, this.nextSlot);
+      this.nextSlot = slot + this.minIntervalMs;
+      if (slot > now) {
+        await this.sleep(slot - now);
+      }
+      return fire();
+    } finally {
+      release();
+    }
   }
 
   private async request<T>(
@@ -590,11 +686,15 @@ export class FetchClient {
       try {
         // A fresh signal per attempt: AbortSignal.timeout starts counting the
         // moment it is created, so a shared one would leave later retries with
-        // whatever was left of the first attempt's budget.
-        response = await fetch(url, {
-          ...fetchOptions,
-          signal: AbortSignal.timeout(this.timeoutMs),
-        });
+        // whatever was left of the first attempt's budget. Each attempt (the
+        // initial one and every retry) is a "request start" for the
+        // minIntervalMs throttle, so it goes through withSlot too.
+        response = await this.withSlot(() =>
+          fetch(url, {
+            ...fetchOptions,
+            signal: AbortSignal.timeout(this.timeoutMs),
+          }),
+        );
       } catch (networkError) {
         // fetch rejects on network faults (ECONNRESET, DNS, etc.) and on our
         // own timeout. Both are transient, so safe reads back off and retry.
@@ -751,4 +851,50 @@ export function stravaCacheTtl(path: string): number | null {
 // Create an instance for Strava API
 export const stravaApi = new FetchClient("https://www.strava.com/api/v3", {
   cache: { ttlForPath: stravaCacheTtl },
+});
+
+/**
+ * Cache TTL policy for intervals.icu GET endpoints, keyed by request path.
+ * Returns a TTL in ms for cacheable resources, or `null` to never cache.
+ *
+ * Activity detail, its interval breakdown, and its data streams are
+ * immutable-ish once intervals.icu has processed the activity; gear and
+ * sport-settings change rarely. The activity listing gets a short TTL so a
+ * newly recorded activity still shows up quickly, and wellness records (which
+ * intervals.icu updates through the day) get a moderate one. Everything else
+ * is left uncached.
+ */
+export function intervalsCacheTtl(path: string): number | null {
+  // Activity data streams: matched by prefix, since the id is followed by
+  // arbitrary stream-selector content (a comma-separated list, a `.json`
+  // extension). The path here is already query-stripped (toPath), so this
+  // is about the selector living in the path segment itself, not a query.
+  if (/^\/activity\/[^/]+\/streams/.test(path)) return 10 * MINUTE_MS;
+  // An activity's interval breakdown.
+  if (/^\/activity\/[^/]+\/intervals$/.test(path)) return 10 * MINUTE_MS;
+  // Detailed activity.
+  if (/^\/activity\/[^/]+$/.test(path)) return 10 * MINUTE_MS;
+  // Gear rarely changes.
+  if (/^\/athlete\/[^/]+\/gear$/.test(path)) return 10 * MINUTE_MS;
+  // Per-sport zones/settings change rarely.
+  if (/^\/athlete\/[^/]+\/sport-settings\/[^/]+$/.test(path)) return HOUR_MS;
+  // Activity listing: short, so a newly recorded activity shows up quickly.
+  if (/^\/athlete\/[^/]+\/activities$/.test(path)) return MINUTE_MS;
+  // Wellness records: matched by prefix like streams above, so a date
+  // sub-path (`/wellness/2026-09-24`) or an extension (`wellness.json`)
+  // both count; these update through the day.
+  if (/^\/athlete\/[^/]+\/wellness/.test(path)) return 5 * MINUTE_MS;
+  return null;
+}
+
+/**
+ * Create an instance for the intervals.icu API. intervals.icu sends no
+ * rate-limit headers (verified 2026-09-24); its draft limits are 5,000
+ * requests/day and 2,500 per 15 minutes per API key, and about 10/s per IP.
+ * With no headers to react to, the client spaces requests 200ms apart instead
+ * of reacting after the fact.
+ */
+export const intervalsApi = new FetchClient("https://intervals.icu/api/v1", {
+  minIntervalMs: 200,
+  cache: { ttlForPath: intervalsCacheTtl },
 });

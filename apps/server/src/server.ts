@@ -56,7 +56,9 @@ import {
   compareActivitiesTool,
 } from "./tools/compareActivities";
 import { exportActivityGpx } from "./tools/exportActivityGpx";
+import { getActivityTool } from "./tools/getActivity";
 import { getActivityLapsTool } from "./tools/getActivityLaps";
+import { getActivityStreamsTool } from "./tools/getActivityStreams";
 import { getActivityZonesTool } from "./tools/getActivityZones";
 import { getAerobicAnalysisTool } from "./tools/getAerobicAnalysis";
 import { getAthleteStatsTool } from "./tools/getAthleteStats";
@@ -68,6 +70,9 @@ import { getRacePredictionTool } from "./tools/getRacePrediction";
 import { getRunningSummaryTool } from "./tools/getRunningSummary";
 import { getSplitAnalysisTool } from "./tools/getSplitAnalysis";
 import { getTrainingLoadTool } from "./tools/getTrainingLoad";
+import { getWellnessTool } from "./tools/getWellness";
+import { listActivitiesTool } from "./tools/listActivities";
+import { listGearTool } from "./tools/listGear";
 import { updateActivityTool } from "./tools/updateActivity";
 import { buildTrainingLoadData } from "./trainingLoad";
 import { SERVER_VERSION } from "./version";
@@ -77,12 +82,14 @@ const EMPTY_SCHEMA = { type: "object", properties: {}, required: [] } as const;
 /**
  * Build the advertised JSON Schema for a tool's *input*. Uses zod's `io:
  * "input"` projection so schemas that coerce their input (e.g. `stravaIdInput`,
- * which accepts a digit string or a safe-integer number and normalises to a
- * string) advertise the accepted input shape rather than throwing on the
- * output-side transform. Output schemas keep the default (output) projection.
+ * `intervalsActivityIdInput`, which each accept a digit string or a
+ * safe-integer number and normalise to a string) advertise the accepted
+ * input shape rather than throwing on the output-side transform. Output
+ * schemas keep the default (output) projection.
  *
- * `stravaIdJsonSchemaOverride` then narrows every Strava id to the string form
- * so a host cannot generate the lossy number branch for an id above 2^53.
+ * `stravaIdJsonSchemaOverride` then narrows every such id to its string form
+ * (`^\d+$` for Strava, `^i?\d+$` for intervals.icu activities) so a host
+ * cannot generate the lossy number branch for an id above 2^53.
  */
 function toInputSchema(schema: z.ZodType): Record<string, unknown> {
   return z.toJSONSchema(schema, {
@@ -346,6 +353,11 @@ const STRAVA_TOOLS = [
   compareActivitiesTool,
   getBestEffortsTool,
   getRacePredictionTool,
+  listActivitiesTool,
+  getActivityTool,
+  getActivityStreamsTool,
+  listGearTool,
+  getWellnessTool,
 ] as const;
 
 /** Convert existing tool definitions to low-level TOOLS array */

@@ -4,7 +4,8 @@ import {
   handledRateLimit,
   handledSubscriptionRequired,
 } from "../__fixtures__";
-import { HttpError } from "../fetchClient";
+import { HttpError, NotPortedError } from "../fetchClient";
+import { IntervalsApiError } from "../intervalsClient";
 import { toolErrorText } from "./_errors";
 
 describe("toolErrorText", () => {
@@ -22,12 +23,13 @@ describe("toolErrorText", () => {
     });
 
     expect(text.startsWith("❌ ")).toBe(true);
-    expect(text).toContain("rate limit");
-    expect(text).toContain("fetch activity 789");
-    expect(text).toContain("15-minute rate limit reached (100/100 requests).");
-    expect(text).toContain("Retry after the window resets.");
+    expect(text).toBe(
+      "❌ Rate limit reached while trying to fetch activity 789. 15-minute rate limit reached (100/100 requests). Retry after the window resets.",
+    );
     // The client function's name is internal detail, not athlete guidance.
     expect(text).not.toContain("getActivityById");
+    // Provider-neutral: no Strava-specific wording.
+    expect(text).not.toContain("Strava");
   });
 
   it("maps a 404 to the caller's not-found sentence", () => {
@@ -53,7 +55,7 @@ describe("toolErrorText", () => {
       { context: "list recent activities" },
     );
     expect(withDefault).toContain(
-      "❌ This feature requires a Strava subscription.",
+      "❌ This feature requires a paid subscription.",
     );
 
     // A plain Error carrying the prefix is not a 402; only the status counts.
@@ -73,6 +75,32 @@ describe("toolErrorText", () => {
     });
 
     expect(text).toBe("❌ Failed to fetch activity 404: Activity 404 renamed");
+  });
+
+  it("maps a 401 or 403 to a message naming INTERVALS_API_KEY", () => {
+    const unauthorized = toolErrorText(
+      new HttpError("HTTP 401: Unauthorized", {
+        status: 401,
+        statusText: "Unauthorized",
+        data: "",
+      }),
+      { context: "list recent activities" },
+    );
+    expect(unauthorized).toBe(
+      "❌ intervals.icu rejected the API key (HTTP 401). Check INTERVALS_API_KEY.",
+    );
+
+    const forbidden = toolErrorText(
+      new HttpError("HTTP 403: Forbidden", {
+        status: 403,
+        statusText: "Forbidden",
+        data: "",
+      }),
+      { context: "list recent activities" },
+    );
+    expect(forbidden).toBe(
+      "❌ intervals.icu rejected the API key (HTTP 403). Check INTERVALS_API_KEY.",
+    );
   });
 
   it("reports other HTTP statuses with the message", () => {
@@ -100,6 +128,37 @@ describe("toolErrorText", () => {
     expect(
       toolErrorText("string failure", { context: "fetch activity 789" }),
     ).toBe("❌ Failed to fetch activity 789: string failure");
+  });
+
+  it("keeps a not-yet-ported error's own message on a 401, rather than the intervals.icu key message", () => {
+    const text = toolErrorText(
+      new NotPortedError(
+        "getActivityLaps(55): this tool still uses the retired Strava client and has not been ported to intervals.icu yet.",
+        { status: 401, statusText: "Unauthorized", data: "" },
+      ),
+      { context: "fetch activity laps 55" },
+    );
+
+    expect(text).toBe(
+      "❌ getActivityLaps(55): this tool still uses the retired Strava client and has not been ported to intervals.icu yet.",
+    );
+    expect(text).not.toContain("INTERVALS_API_KEY");
+  });
+
+  it("names INTERVALS_API_KEY for a real IntervalsApiError 401, not the not-ported text", () => {
+    const text = toolErrorText(
+      new IntervalsApiError("getActivity for ID i1: 401 Unauthorized", {
+        status: 401,
+        statusText: "Unauthorized",
+        data: "",
+      }),
+      { context: "fetch activity i1" },
+    );
+
+    expect(text).toBe(
+      "❌ intervals.icu rejected the API key (HTTP 401). Check INTERVALS_API_KEY.",
+    );
+    expect(text).not.toContain("not been ported");
   });
 
   it("keeps the detail in operator logs", () => {

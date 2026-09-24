@@ -7,10 +7,13 @@
 A single-user remote MCP server for intervals.icu run data and analysis, with interactive MCP Apps. Continues from [strava-mcp](https://github.com/ljcl/strava-mcp).
 
 > **Migration in progress.** The server is being ported from Strava to
-> intervals.icu. Most tools still call the retired Strava client and will
-> fail with a "not yet ported" error until each is moved over in Phases 1 and
-> 2. The presence of `INTERVALS_API_KEY` is checked at startup and reported on
-> `/health`, but no tool calls the intervals.icu API yet.
+> intervals.icu. Five tools (`list-activities`, `get-activity`,
+> `get-activity-streams`, `list-gear`, `get-wellness`) already talk to
+> intervals.icu directly and are verified against a real account. The
+> remaining analysis tools still call the retired Strava client and fail
+> with a "not yet ported" error until each is moved over in Phases 1 and 2.
+> The presence of `INTERVALS_API_KEY` is checked at startup and reported on
+> `/health`.
 
 ## Setup
 

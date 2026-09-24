@@ -116,6 +116,91 @@ export function metersPerSecToPace(
 }
 
 /**
+ * Activity types intervals.icu reports a pace string for: runs only, not
+ * walks or hikes (those get a cadence but no pace_min_per_km in the
+ * intervals.icu tools). Distinct from {@link STEP_CADENCE_ACTIVITY_TYPES}
+ * below on purpose; see that set's comment.
+ */
+export const PACE_ACTIVITY_TYPES = new Set(["Run", "TrailRun", "VirtualRun"]);
+
+/**
+ * Activity types whose cadence (and step-based running dynamics: ground
+ * contact time, vertical oscillation, step length, stride) intervals.icu
+ * tools report in steps/min, doubled from strides/min: runs, plus walks and
+ * hikes, matching {@link RUNNING_ACTIVITY_TYPES} above (the Strava-era set
+ * `transformCadence` already uses) rather than {@link PACE_ACTIVITY_TYPES}.
+ * A Walk or Hike has a step cadence worth doubling even though intervals.icu
+ * doesn't compute a pace for it.
+ */
+export const STEP_CADENCE_ACTIVITY_TYPES = new Set([
+  "Run",
+  "TrailRun",
+  "VirtualRun",
+  "Walk",
+  "Hike",
+]);
+
+/** True when `type` gets a pace string (Run/TrailRun/VirtualRun only). */
+export function isPaceActivity(type: string): boolean {
+  return PACE_ACTIVITY_TYPES.has(type);
+}
+
+/**
+ * True when `type` reports cadence (and step-based dynamics) in steps/min,
+ * doubled from strides/min: Run/TrailRun/VirtualRun/Walk/Hike.
+ */
+export function isStepCadenceActivity(type: string): boolean {
+  return STEP_CADENCE_ACTIVITY_TYPES.has(type);
+}
+
+/**
+ * Cadence in the unit `type` reports it in: strides/min doubled to
+ * steps/min for a step-cadence type (see {@link isStepCadenceActivity}), or
+ * the raw rate unchanged for anything else (cycling rpm, a swim's stroke
+ * rate, ...). `null` when `strides` is missing.
+ *
+ * The one home for the strides-to-steps doubling used by the intervals.icu
+ * tools' own cadence fields: `get-activity`'s activity- and interval-level
+ * `average_cadence_spm`, and `get-activity-streams`' `cadence` stream. Both
+ * previously hand-rolled this (a bespoke `cadenceSpm` in getActivity.ts, an
+ * inline `v * 2` in getActivityStreams.ts) against two different activity-type
+ * sets, so a Walk's cadence was doubled in one tool and left as raw
+ * strides/min in the other. Doubling here does not gate on the field being
+ * present *at all* for a non-step-cadence type; a caller like `get-activity`
+ * that wants `null` rather than a mislabelled raw rate for those types (e.g.
+ * a swim's stroke rate is not steps/min) checks {@link isStepCadenceActivity}
+ * itself before deciding whether to call this.
+ */
+export function cadenceSpm(
+  strides: number | null | undefined,
+  type: string,
+): number | null {
+  if (strides == null) return null;
+  return isStepCadenceActivity(type) ? strides * 2 : strides;
+}
+
+/**
+ * Pace as an `m:ss` string from distance (metres) and moving time (seconds),
+ * or `null` when either is missing or non-positive. Does not gate on
+ * activity type: a caller decides whether `type` should show a pace at all
+ * via {@link isPaceActivity} before calling this, the same way
+ * {@link cadenceSpm}'s callers decide with {@link isStepCadenceActivity}.
+ *
+ * The one home for distance/time -> pace-string, shared by `list-activities`
+ * (which previously computed the m/s intermediate inline) and `get-activity`
+ * (activity- and interval-level, which previously had its own `pace()`).
+ */
+export function paceFromDistanceTime(
+  distanceM: number | null | undefined,
+  movingTimeS: number | null | undefined,
+): string | null {
+  if (!distanceM || distanceM <= 0 || !movingTimeS || movingTimeS <= 0) {
+    return null;
+  }
+  return metersPerSecToPace(distanceM / movingTimeS)?.minPerKm ?? null;
+}
+
+/**
  * Power-to-weight result.
  */
 export interface WattsPerKgResult {
