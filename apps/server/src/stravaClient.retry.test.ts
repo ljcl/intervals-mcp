@@ -2,12 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { basicRunActivity } from "./__fixtures__";
 import { HttpError, RateLimitError, stravaApi } from "./fetchClient";
 import {
-  exportRouteGpx,
   getActivityById,
   getActivityLaps,
   getActivityStreams,
   getAllActivities,
-  listSegmentEfforts,
   StravaApiError,
 } from "./stravaClient";
 import { refreshAccessToken } from "./tokenManager";
@@ -51,40 +49,12 @@ describe("401 refresh-retry", () => {
     });
   });
 
-  it("retries listSegmentEfforts once with all original filters preserved", async () => {
-    mockedGet
-      .mockRejectedValueOnce(unauthorized())
-      .mockResolvedValueOnce({ data: [] });
-
-    const result = await listSegmentEfforts("stale-token", "55", {
-      startDateLocal: "2026-01-01T00:00:00Z",
-      endDateLocal: "2026-02-01T00:00:00Z",
-      perPage: 50,
-    });
-
-    expect(result).toEqual([]);
-    expect(mockedRefresh).toHaveBeenCalledTimes(1);
-    expect(mockedGet).toHaveBeenCalledTimes(2);
-    // Regression (#112): the retry used to drop filter params.
-    expect(mockedGet).toHaveBeenLastCalledWith("/segment_efforts", {
-      headers: { Authorization: "Bearer refreshed-token" },
-      params: {
-        segment_id: "55",
-        start_date_local: "2026-01-01T00:00:00Z",
-        end_date_local: "2026-02-01T00:00:00Z",
-        per_page: 50,
-      },
-    });
-  });
-
   it("fails after one refresh attempt when the 401 persists", async () => {
     // A scope-stripped token refreshes successfully but keeps returning 401;
     // this must terminate instead of looping refresh+request forever.
     mockedGet.mockRejectedValue(unauthorized());
 
-    await expect(listSegmentEfforts("stale-token", "55")).rejects.toThrow(
-      /401/,
-    );
+    await expect(getActivityLaps("stale-token", "55")).rejects.toThrow(/401/);
 
     expect(mockedRefresh).toHaveBeenCalledTimes(1);
     expect(mockedGet).toHaveBeenCalledTimes(2);
@@ -123,9 +93,8 @@ describe("401 refresh-retry", () => {
 
 /**
  * What a client call throws once `handleApiError` has interpreted it. Both
- * shapes were being flattened to a plain `Error`, which quietly killed the two
- * places that branch on them: the scan tools' rate-limit abort and
- * `loadRouteProfile`'s 404 fallback.
+ * shapes were being flattened to a plain `Error`, which quietly killed the
+ * callers that branch on them, e.g. the scan tools' rate-limit abort.
  */
 describe("handled error shapes", () => {
   beforeEach(() => {
@@ -173,12 +142,12 @@ describe("handled error shapes", () => {
       }),
     );
 
-    const error = await exportRouteGpx("token", "456").catch((e) => e);
+    const error = await getActivityLaps("token", "456").catch((e) => e);
 
     expect(error).toBeInstanceOf(StravaApiError);
     expect(error.response.status).toBe(404);
     expect(error.message).toBe(
-      "Strava API Error in exporting route 456 as GPX (404): Record Not Found",
+      "Strava API Error in getActivityLaps(456) (404): Record Not Found",
     );
   });
 

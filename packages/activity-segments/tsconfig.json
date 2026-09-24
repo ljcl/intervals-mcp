@@ -1,4 +1,0 @@
-{
-  "extends": "@intervals-mcp/tsconfig/react.json",
-  "include": ["src"]
-}

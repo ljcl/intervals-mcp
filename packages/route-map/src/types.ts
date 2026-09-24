@@ -1,5 +1,5 @@
-/** Whether the rendered path came from an activity or a saved route. */
-export type RouteMapSource = "activity" | "route";
+/** The rendered path always comes from an activity. */
+export type RouteMapSource = "activity";
 
 /**
  * Metric streams aligned index-for-index with `coordinates`. Present only when
@@ -33,7 +33,7 @@ export interface RouteMapData {
   source: RouteMapSource;
   id: string;
   name: string;
-  /** Activity type ("Run", "Ride", …) or route discipline ("Run"/"Ride"). */
+  /** Activity type ("Run", "Ride", …). */
   activityType: string | null;
   /** Total distance in metres. */
   distance: number;
@@ -45,13 +45,11 @@ export interface RouteMapData {
   start: [number, number] | null;
   /** Last point of the path, or null when there is no geometry. */
   end: [number, number] | null;
-  /** Metric streams aligned with `coordinates`. Activities carry the full set;
-   * saved routes carry `distance` + `altitude` from their stored profile,
-   * so the elevation strip and elevation colouring work for them too. Absent
-   * for activities without GPS streams and for routes with no stored profile. */
+  /** Metric streams aligned with `coordinates`. Absent for activities without
+   * GPS streams. */
   streams?: RouteStreams;
-  /** Annotation anchors resolved server-side. Laps, segments, and photos need
-   * stream data; waypoints resolve for any geometry (routes included). */
+  /** Annotation anchors resolved server-side. Laps need stream data;
+   * waypoints resolve for any geometry. */
   annotations?: RouteAnnotations;
   /** Server notes about caller-supplied waypoints that could not be placed
    * (e.g. beyond the track length). Informational; the view tool's text
@@ -73,21 +71,8 @@ export interface RouteMapData {
 export interface RouteAnnotations {
   /** Lap boundaries (each lap's end), present when the activity has 2+ laps. */
   laps?: Array<{ lapIndex: number; name: string; endIndex: number }>;
-  /** Segment efforts with their track spans and notable-result flags. */
-  segments?: Array<{
-    name: string;
-    startIndex: number;
-    endIndex: number;
-    /** Effort distance in metres; drives outline selection and the tooltip. */
-    distanceMeters: number;
-    isPr: boolean;
-    isTop10: boolean;
-  }>;
-  /** Geotagged photos snapped to the nearest track point. */
-  photos?: Array<{ index: number; caption: string | null }>;
   /** Caller-supplied waypoints anchored by cumulative distance, sorted by
-   * km. Unlike the other layers these resolve for saved routes too (the
-   * server synthesises a cumulative-distance stream from the geometry). */
+   * km. */
   waypoints?: Array<{
     index: number;
     /** Distance from the start, in kilometres, as supplied by the caller. */
@@ -107,10 +92,9 @@ export interface WaypointArg {
   kind?: WaypointKind;
 }
 
-/** Tool input for `view-route-map`: exactly one id is provided. Waypoints
- * ride along unchanged so `get-route-map-data` can anchor them. */
+/** Tool input for `view-route-map`. Waypoints ride along unchanged so
+ * `get-route-map-data` can anchor them. */
 export interface ToolArgs {
-  activity_id?: string;
-  route_id?: string;
+  activity_id: string;
   waypoints?: WaypointArg[];
 }

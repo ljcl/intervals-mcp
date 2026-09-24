@@ -39,14 +39,6 @@ export default defineMain({
       directory: "../../../packages/route-map/src/",
     },
     {
-      titlePrefix: "Activity Segments",
-      directory: "../../../packages/activity-segments/src/",
-    },
-    {
-      titlePrefix: "Segment Progress",
-      directory: "../../../packages/segment-progress/src/",
-    },
-    {
       titlePrefix: "Training Load",
       directory: "../../../packages/training-load/src/",
     },

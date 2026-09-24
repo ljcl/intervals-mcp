@@ -1,10 +1,9 @@
 /**
  * Annotation-layer preparation: turns the server's annotation anchors (plus
  * the distance stream) into renderable marker lists. The server resolves lap
- * boundaries, segment-effort spans, and photo locations into coordinate
- * indices; this module picks the split source (laps when the activity has
- * them, kilometre marks otherwise), thins dense km marks, and groups photos
- * sharing a track point. Pure data, unit-tested.
+ * boundaries into coordinate indices; this module picks the split source
+ * (laps when the activity has them, kilometre marks otherwise) and thins
+ * dense km marks. Pure data, unit-tested.
  */
 
 import { type RouteMapData, type WaypointKind } from "./types";
@@ -36,14 +35,6 @@ export const WAYPOINT_COLORS: Record<WaypointKind, string> = {
   water: "#0ea5e9",
   custom: "#14b8a6",
 };
-
-export interface PhotoMarker {
-  index: number;
-  /** Photos taken at this track point. */
-  count: number;
-  /** Joined captions for the marker title, or null when none have one. */
-  caption: string | null;
-}
 
 /** Keep split dots readable: thin km marks beyond this count. */
 const MAX_SPLIT_MARKERS = 24;
@@ -114,24 +105,4 @@ export function buildWaypointMarkers(data: RouteMapData): WaypointMarker[] {
     kind: waypoint.kind,
     title: `${waypoint.label} · ${Number(waypoint.km.toFixed(1))} km`,
   }));
-}
-
-/** Group photos sharing a track point into one marker with a count. */
-export function buildPhotoMarkers(data: RouteMapData): PhotoMarker[] {
-  const photos = data.annotations?.photos;
-  if (!photos || photos.length === 0) return [];
-  const byIndex = new Map<number, { count: number; captions: string[] }>();
-  for (const photo of photos) {
-    const entry = byIndex.get(photo.index) ?? { count: 0, captions: [] };
-    entry.count += 1;
-    if (photo.caption) entry.captions.push(photo.caption);
-    byIndex.set(photo.index, entry);
-  }
-  return [...byIndex.entries()]
-    .sort(([a], [b]) => a - b)
-    .map(([index, { count, captions }]) => ({
-      index,
-      count,
-      caption: captions.length > 0 ? captions.join(" · ") : null,
-    }));
 }

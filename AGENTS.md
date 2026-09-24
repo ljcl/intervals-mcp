@@ -135,11 +135,9 @@ breaking them has shipped bugs — do not work around them locally.
 - `packages/activity-chart/` — React + Recharts MCP App for interactive activity charts
 - `packages/cadence-trends/` — React + Recharts MCP App for cadence trend analysis
 - `packages/training-load/` — React + Recharts MCP App for weekly training volume with trend line and injury-risk warnings
-- `packages/route-map/` — React MCP App for activity/route GPS maps (MapLibre basemap by default, pure-SVG offline grid fallback; no Recharts)
-- `packages/activity-segments/` — React MCP App listing one activity's segment efforts (no Recharts, no MapLibre)
+- `packages/route-map/` — React MCP App for activity GPS maps (MapLibre basemap by default, pure-SVG offline grid fallback; no Recharts)
 - `packages/compare-activities/` — React + Recharts MCP App overlaying two activities' streams with a delta summary
 - `packages/activity-zones/` — React + Recharts MCP App for per-activity HR/power time-in-zone distribution
-- `packages/segment-progress/` — React + Recharts MCP App charting the athlete's own effort history on one segment
 - `packages/fitness-trend/` — React + Recharts MCP App charting CTL/ATL/TSB with warning bands and a dashed taper plan
 - `packages/data/` — Shared pure data utilities (formatting, activity types, smoothing). Formatters live here, once (`formatting.ts`): MCP App packages cannot import each other, so a formatter two apps need has exactly one home; duplicated copies are invisible to knip and Biome. Server-side equivalent: `apps/server/src/formatters.ts`; sport-specific transforms in `utils/running.ts`
 - `packages/ui/` — Shared presentational React components (Pill, Tooltip, Legend, SummaryBar, AppShell, CardHeader, EmptyState, ErrorState, LoadingState, Skeleton) plus the app-shell runtime (`AppRoot`, `useServerToolData`, `useServerToolFetcher`, `useModelContextSync`, `useMobileMode`)

@@ -69,9 +69,9 @@ export const STRAVA_ID_HINT =
  * - A digit string is always accepted and passes through unchanged — this is
  *   the lossless form and the one hosts are told to send.
  * - A bare number is accepted only when it is a non-negative *safe* integer,
- *   in which case it is coerced to its digit string. Route and activity ids sit
+ *   in which case it is coerced to its digit string. Most activity ids sit
  *   well below 2^53, so this is exactly the everyday case where a host or model
- *   emits `route_id: 12345`; rejecting it outright (the original string-only
+ *   emits `activity_id: 12345`; rejecting it outright (the original string-only
  *   behaviour) left callers stuck between "expected string, received number"
  *   and quoting the digits into a non-digit string.
  * - A number that is not a safe integer is rejected. By the time such a value

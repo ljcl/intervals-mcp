@@ -55,11 +55,9 @@ COPY --from=builder  --chown=65534:65534 /app/packages/data/src ./packages/data/
 COPY --from=builder  --chown=65534:65534 /app/packages/activity-chart/dist ./packages/activity-chart/dist
 COPY --from=builder  --chown=65534:65534 /app/packages/cadence-trends/dist ./packages/cadence-trends/dist
 COPY --from=builder  --chown=65534:65534 /app/packages/route-map/dist ./packages/route-map/dist
-COPY --from=builder  --chown=65534:65534 /app/packages/activity-segments/dist ./packages/activity-segments/dist
 COPY --from=builder  --chown=65534:65534 /app/packages/training-load/dist ./packages/training-load/dist
 COPY --from=builder  --chown=65534:65534 /app/packages/compare-activities/dist ./packages/compare-activities/dist
 COPY --from=builder  --chown=65534:65534 /app/packages/activity-zones/dist ./packages/activity-zones/dist
-COPY --from=builder  --chown=65534:65534 /app/packages/segment-progress/dist ./packages/segment-progress/dist
 COPY --from=builder  --chown=65534:65534 /app/packages/fitness-trend/dist ./packages/fitness-trend/dist
 
 USER 65534:65534

@@ -34,12 +34,12 @@ const colorTokens: Record<string, ColorToken[]> = {
     {
       var: "--color-tier-pr",
       label: "PR (gold)",
-      note: "Personal-record badge in activity-segments; PR effort halo in route-map. Theme-invariant.",
+      note: "Personal-record tier colour. Theme-invariant.",
     },
     {
       var: "--color-tier-top10",
       label: "Top 10 (light purple)",
-      note: "Top-10 badge in activity-segments; top-10 effort halo in route-map. Theme-invariant.",
+      note: "Top-10 tier colour. Theme-invariant.",
     },
   ],
 };

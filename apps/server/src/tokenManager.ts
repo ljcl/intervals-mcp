@@ -597,9 +597,9 @@ export async function exchangeCodeForTokens(
 
   // The athlete who just authorized may not be the one whose responses are
   // cached. The response cache keys on the bare URL, and `/athlete` and
-  // `/segment_efforts` are athlete-scoped behind athlete-independent URLs, so
-  // without this the next few minutes serve the previous athlete's profile —
-  // and the stats get-athlete-stats resolves from that id — to the new one.
+  // `/athlete/activities` are athlete-scoped behind athlete-independent URLs,
+  // so without this the next few minutes serve the previous athlete's profile
+  // — and the stats get-athlete-stats resolves from that id — to the new one.
   stravaApi.clearResponseCache();
 
   console.error("[TokenManager] OAuth token exchange successful");

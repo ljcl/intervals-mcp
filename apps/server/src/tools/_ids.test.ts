@@ -15,8 +15,8 @@ describe("stravaIdInput", () => {
   });
 
   it("accepts a bare safe-integer number and coerces it to a digit string", () => {
-    // Route and activity ids sit well below 2^53, so a host or model sending
-    // `route_id: 12345` must not be trapped in the string-only failure path.
+    // Most activity ids sit well below 2^53, so a host or model sending
+    // `activity_id: 12345` must not be trapped in the string-only failure path.
     expect(schema.parse(12345)).toBe("12345");
   });
 
@@ -40,16 +40,16 @@ describe("stravaIdInput", () => {
   describe("error messages", () => {
     /** The prettified message a host sees, for one bad id value. */
     function messageFor(value: unknown): string {
-      const result = z.object({ route_id: schema }).safeParse({
-        route_id: value,
+      const result = z.object({ activity_id: schema }).safeParse({
+        activity_id: value,
       });
       expect(result.success).toBe(false);
       return result.success ? "" : z.prettifyError(result.error);
     }
 
     it("reports a rounded oversized id once, naming the value and the fix", () => {
-      // Regression: a route id copied out of a Strava URL and sent unquoted
-      // (3516039180561708486) arrives already rounded. The old schema layered
+      // Regression: an activity id copied out of a Strava URL and sent
+      // unquoted (3516039180561708486) arrives already rounded. The old schema layered
       // `.int()` over a safe-integer refine and emitted two issues, the first
       // of which ("id must be a whole number") was plainly false of the
       // rounded value the host could see.
@@ -96,13 +96,15 @@ describe("stravaIdInput", () => {
     it("narrows ids nested inside an object schema", () => {
       const json = advertise(
         z.object({
-          route_id: stravaIdInput("The Strava route ID to map.").optional(),
+          activity_id: stravaIdInput(
+            "The Strava activity ID to map.",
+          ).optional(),
           waypoints: z.array(z.string()).optional(),
         }),
       ) as { properties: Record<string, Record<string, unknown>> };
 
-      expect(json.properties.route_id?.type).toBe("string");
-      expect(json.properties.route_id?.anyOf).toBeUndefined();
+      expect(json.properties.activity_id?.type).toBe("string");
+      expect(json.properties.activity_id?.anyOf).toBeUndefined();
       // Non-id members are untouched by the override.
       expect(json.properties.waypoints?.type).toBe("array");
     });

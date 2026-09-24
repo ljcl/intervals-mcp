@@ -192,8 +192,8 @@ describe("Dockerfile runner stage", () => {
     const specifiers = serverSpecifiers();
 
     // A broken walk or regex finding nothing must not pass vacuously: the
-    // server resolves the nine MCP App bundles plus @intervals-mcp/data.
-    expect(specifiers.size).toBeGreaterThanOrEqual(10);
+    // server resolves the seven MCP App bundles plus @intervals-mcp/data.
+    expect(specifiers.size).toBeGreaterThanOrEqual(8);
     expect(copied.length).toBeGreaterThanOrEqual(3);
 
     const missing = [...specifiers.entries()]

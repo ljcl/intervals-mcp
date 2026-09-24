@@ -122,53 +122,6 @@
   transform: translate(-100%, -50%) translateX(calc(-1 * var(--space-3)));
 }
 
-/* Segment rows folded into the single scrub tooltip (theme-aware, replacing
- * the white per-segment MapLibre popup). Sits above the metric entry. */
-.tipSegments {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-0-5);
-  max-width: 240px;
-  padding-bottom: var(--space-1-5);
-  margin-bottom: var(--space-1-5);
-  border-bottom: 1px solid var(--color-border-tertiary);
-}
-
-.tipSegment {
-  display: flex;
-  gap: var(--space-2);
-  align-items: center;
-  min-width: 0;
-  line-height: var(--line-height-relaxed);
-}
-
-.tipSegmentSwatch {
-  flex-shrink: 0;
-  width: 16px;
-  height: 3px;
-  border-radius: var(--border-radius-xs);
-}
-
-.tipSegmentName {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--color-text-primary);
-  white-space: nowrap;
-}
-
-.tipSegmentMeta {
-  flex-shrink: 0;
-  margin-left: auto;
-  color: var(--color-text-tertiary);
-  white-space: nowrap;
-}
-
-.tipSegmentMore {
-  padding-left: calc(16px + var(--space-2));
-  font-size: var(--font-text-xs-size);
-  color: var(--color-text-tertiary);
-}
-
 /* ── Basemap (MapLibre) ───────────────────────── */
 
 /* Positioning context for the scrub tooltip over the map canvas. */

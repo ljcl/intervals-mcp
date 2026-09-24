@@ -15,13 +15,11 @@ export default {
       // which knip cannot trace as a static import.
       ignoreDependencies: [
         "@intervals-mcp/activity-chart",
-        "@intervals-mcp/activity-segments",
         "@intervals-mcp/activity-zones",
         "@intervals-mcp/cadence-trends",
         "@intervals-mcp/compare-activities",
         "@intervals-mcp/fitness-trend",
         "@intervals-mcp/route-map",
-        "@intervals-mcp/segment-progress",
         "@intervals-mcp/training-load",
       ],
     },
@@ -30,10 +28,6 @@ export default {
       project: ["src/**/*.{ts,tsx}"],
     },
     "packages/activity-zones": {
-      entry: ["src/main.tsx"],
-      project: ["src/**/*.{ts,tsx}"],
-    },
-    "packages/activity-segments": {
       entry: ["src/main.tsx"],
       project: ["src/**/*.{ts,tsx}"],
     },
@@ -53,10 +47,6 @@ export default {
       entry: ["src/main.tsx"],
       project: ["src/**/*.{ts,tsx}"],
     },
-    "packages/segment-progress": {
-      entry: ["src/main.tsx"],
-      project: ["src/**/*.{ts,tsx}"],
-    },
     "packages/training-load": {
       entry: ["src/main.tsx"],
       project: ["src/**/*.{ts,tsx}"],
@@ -73,13 +63,11 @@ export default {
         entry: [
           ".storybook/{manager,preview,index,vitest.setup}.{js,jsx,ts,tsx}",
           "../../packages/activity-chart/src/**/*.stories.@(ts|tsx)",
-          "../../packages/activity-segments/src/**/*.stories.@(ts|tsx)",
           "../../packages/activity-zones/src/**/*.stories.@(ts|tsx)",
           "../../packages/cadence-trends/src/**/*.stories.@(ts|tsx)",
           "../../packages/compare-activities/src/**/*.stories.@(ts|tsx)",
           "../../packages/fitness-trend/src/**/*.stories.@(ts|tsx)",
           "../../packages/route-map/src/**/*.stories.@(ts|tsx)",
-          "../../packages/segment-progress/src/**/*.stories.@(ts|tsx)",
           "../../packages/training-load/src/**/*.stories.@(ts|tsx)",
           "../../packages/design-system/stories/**/*.stories.@(ts|tsx)",
           "../../packages/ui/src/**/*.stories.@(ts|tsx)",
@@ -91,13 +79,11 @@ export default {
       // there is no static `@intervals-mcp/*` import for knip to follow.
       ignoreDependencies: [
         "@intervals-mcp/activity-chart",
-        "@intervals-mcp/activity-segments",
         "@intervals-mcp/activity-zones",
         "@intervals-mcp/cadence-trends",
         "@intervals-mcp/compare-activities",
         "@intervals-mcp/fitness-trend",
         "@intervals-mcp/route-map",
-        "@intervals-mcp/segment-progress",
         "@intervals-mcp/training-load",
         "@intervals-mcp/ui",
       ],

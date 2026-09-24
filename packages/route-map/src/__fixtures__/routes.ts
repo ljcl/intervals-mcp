@@ -56,80 +56,6 @@ function densify(track: Array<[number, number]>): Array<[number, number]> {
   });
 }
 
-/** A point-to-point saved route that climbs to the north-east. */
-const pointToPointCoordinates: Array<[number, number]> = [
-  [37.8088, -122.4098],
-  [37.8101, -122.4075],
-  [37.8119, -122.4061],
-  [37.8142, -122.4058],
-  [37.8167, -122.4051],
-  [37.819, -122.4032],
-  [37.8208, -122.4005],
-  [37.8221, -122.397],
-  [37.8236, -122.3938],
-  [37.8258, -122.3919],
-  [37.8284, -122.3908],
-  [37.8312, -122.3901],
-];
-
-export const pointToPointRoute: RouteMapData = {
-  source: "route",
-  id: "9988776655",
-  name: "Embarcadero to North Point",
-  activityType: "Ride",
-  distance: 12540,
-  elevationGain: 231,
-  coordinates: pointToPointCoordinates,
-  start: pointToPointCoordinates[0]!,
-  end: pointToPointCoordinates[pointToPointCoordinates.length - 1]!,
-};
-
-/**
- * The `get-route-map-data` payload for a saved route with a stored elevation
- * profile: the densified course carrying exactly two streams —
- * cumulative `distance` in metres and `altitude` in metres above sea level.
- * Deliberately no time, heart rate, power, speed, or grade, because that is
- * what a route degrades to, and it is what makes elevation the app's only
- * metric series (so no picker renders, just the metre-unit colour scale).
- */
-const profileCoordinates = densify(pointToPointCoordinates);
-const profilePointCount = profileCoordinates.length;
-
-/** Course length in metres; the distance stream's last sample is exactly this. */
-const PROFILE_ROUTE_DISTANCE = 12540;
-
-const profileDistance = Array.from(
-  { length: profilePointCount },
-  (_, i) => (i * PROFILE_ROUTE_DISTANCE) / (profilePointCount - 1),
-);
-
-/** A long drag to the summit over two false ones. */
-const profileAltitude = Array.from({ length: profilePointCount }, (_, i) => {
-  const t = i / (profilePointCount - 1);
-  return 20 + 150 * t + 40 * Math.sin(t * Math.PI * 3);
-});
-
-// Summed positive deltas rather than a copied number, so the footer stat, the
-// narrated climb figure, and the drawn profile cannot disagree.
-const profileElevationGain = profileAltitude.reduce(
-  (gain, metres, i) =>
-    gain + Math.max(0, metres - (profileAltitude[i - 1] ?? metres)),
-  0,
-);
-
-export const profiledRoute: RouteMapData = {
-  source: "route",
-  id: "9988776656",
-  name: "Embarcadero Climb",
-  activityType: "Ride",
-  distance: PROFILE_ROUTE_DISTANCE,
-  elevationGain: profileElevationGain,
-  coordinates: profileCoordinates,
-  start: profileCoordinates[0]!,
-  end: profileCoordinates[profilePointCount - 1]!,
-  streams: { distance: profileDistance, altitude: profileAltitude },
-};
-
 /**
  * The loop densified to GPS-stream resolution, with deterministic synthetic
  * metric streams aligned to each point, to exercise metric coloring, the
@@ -189,8 +115,8 @@ export const streamLoopActivity: RouteMapData = {
 };
 
 /**
- * The stream activity plus annotation anchors (laps, segment efforts, photos)
- * to exercise the overlay layers and their toggles.
+ * The stream activity plus lap annotation anchors, to exercise the split
+ * overlay layer and its toggle.
  */
 export const annotatedActivity: RouteMapData = {
   ...streamLoopActivity,
@@ -200,37 +126,6 @@ export const annotatedActivity: RouteMapData = {
     laps: [
       { lapIndex: 1, name: "Lap 1", endIndex: Math.floor(n / 3) },
       { lapIndex: 2, name: "Lap 2", endIndex: Math.floor((2 * n) / 3) },
-    ],
-    segments: [
-      {
-        name: "Conservatory Climb",
-        startIndex: Math.floor(n * 0.1),
-        endIndex: Math.floor(n * 0.28),
-        distanceMeters: 1240,
-        isPr: true,
-        isTop10: false,
-      },
-      {
-        name: "Panhandle Sprint",
-        startIndex: Math.floor(n * 0.45),
-        endIndex: Math.floor(n * 0.58),
-        distanceMeters: 820,
-        isPr: false,
-        isTop10: true,
-      },
-      {
-        name: "Chain of Lakes",
-        startIndex: Math.floor(n * 0.72),
-        endIndex: Math.floor(n * 0.85),
-        distanceMeters: 1080,
-        isPr: false,
-        isTop10: false,
-      },
-    ],
-    photos: [
-      { index: Math.floor(n * 0.2), caption: "Conservatory of Flowers" },
-      { index: Math.floor(n * 0.2), caption: null },
-      { index: Math.floor(n * 0.62), caption: "Bison paddock" },
     ],
   },
 };
@@ -267,21 +162,6 @@ export const waypointedActivity: RouteMapData = {
         label: "Regroup point",
         kind: "custom",
       },
-    ],
-  },
-};
-
-/**
- * A saved route with waypoints: no streams, so waypoints are the only
- * annotation layer and there is no elevation strip (the server anchors them
- * on a haversine cumulative-distance stream).
- */
-export const waypointedRoute: RouteMapData = {
-  ...pointToPointRoute,
-  annotations: {
-    waypoints: [
-      { index: 4, km: 4, label: "Aid station", kind: "water" },
-      { index: 9, km: 10, label: "Final ramp +40m", kind: "climb" },
     ],
   },
 };

@@ -12,19 +12,16 @@ import {
   type ToolAnnotations,
 } from "@modelcontextprotocol/server";
 import { z } from "zod";
-import { mapActivitySegments } from "./activitySegments";
 import { type ActivityZonesData, mapActivityZones } from "./activityZones";
-import { HttpError, RateLimitError } from "./fetchClient";
+import { RateLimitError } from "./fetchClient";
 import { buildFitnessTrend } from "./fitnessTrend";
 import {
   type FitnessTrendAppData,
   mapFitnessTrendApp,
 } from "./fitnessTrendApp";
-import { formatDuration } from "./formatters";
 import {
   cumulativeDistances,
   indexAtDistance,
-  nearestCoordIndex,
   type ResolvedWaypoint,
   resolveWaypoints,
   type WaypointInput,
@@ -37,22 +34,12 @@ import {
   type ReportProgress,
 } from "./progress";
 import { getPrompt, listPrompts } from "./prompts";
-import { loadRouteProfile } from "./routeProfile";
-import {
-  buildSegmentProgress,
-  type SegmentProgressData,
-} from "./segmentProgress";
 import {
   getActivityById,
   getActivityLaps,
-  getActivityPhotos,
   getActivityStreams,
   getActivityZones,
   getAllActivities as getAllActivitiesFn,
-  getRouteById,
-  getSegmentById,
-  listSegmentEfforts,
-  type StravaDetailedActivity,
   StreamsUnavailableError,
 } from "./stravaClient";
 import {
@@ -161,27 +148,6 @@ const waypointsInput = z
   );
 
 /**
- * Segment-progress args, shared by the view and data tools. The optional
- * date range narrows a long history (e.g. "this season only"); omitting it
- * returns every effort Strava will page back.
- */
-const segmentProgressInput = z.object({
-  segment_id: stravaIdInput(
-    "The Strava segment ID whose effort history to chart.",
-  ),
-  start_date_local: z
-    .string()
-    .datetime({ error: "Invalid start date format. Use ISO 8601." })
-    .optional()
-    .describe("Only include efforts starting after this ISO 8601 date-time."),
-  end_date_local: z
-    .string()
-    .datetime({ error: "Invalid end date format. Use ISO 8601." })
-    .optional()
-    .describe("Only include efforts ending before this ISO 8601 date-time."),
-});
-
-/**
  * Fitness-trend args, shared by the view and data tools. Mirrors the
  * `get-fitness-trend` text tool's inputs, since both surfaces run one solve:
  * a lookback window, how far to project, and an optional taper target. The
@@ -236,20 +202,12 @@ const APP_TOOL_INPUT_SCHEMAS: Record<string, z.ZodType> = {
   "view-cadence-trends": z.object({ weeks: weeksInput }),
   "get-cadence-trend-data": z.object({ weeks: weeksInput }),
   "view-route-map": z.object({
-    activity_id: stravaIdInput("The Strava activity ID to map.").optional(),
-    route_id: stravaIdInput("The Strava route ID to map.").optional(),
+    activity_id: stravaIdInput("The Strava activity ID to map."),
     waypoints: waypointsInput,
   }),
   "get-route-map-data": z.object({
-    activity_id: stravaIdInput("The Strava activity ID.").optional(),
-    route_id: stravaIdInput("The Strava route ID.").optional(),
+    activity_id: stravaIdInput("The Strava activity ID."),
     waypoints: waypointsInput,
-  }),
-  "view-activity-segments": z.object({
-    activity_id: stravaIdInput("The Strava activity ID."),
-  }),
-  "get-activity-segments-data": z.object({
-    activity_id: stravaIdInput("The Strava activity ID."),
   }),
   "view-training-load": z.object({ days: daysInput }),
   "get-training-load-data": z.object({ days: daysInput }),
@@ -261,8 +219,6 @@ const APP_TOOL_INPUT_SCHEMAS: Record<string, z.ZodType> = {
   "get-activity-zones-data": z.object({
     activity_id: stravaIdInput("The Strava activity ID."),
   }),
-  "view-segment-progress": segmentProgressInput,
-  "get-segment-progress-data": segmentProgressInput,
   "view-compare-activities": z.object({
     activity_id_1: stravaIdInput(
       "First activity ID (baseline/older activity).",
@@ -331,13 +287,6 @@ const APP_RESOURCES: AppResource[] = [
     ui: { csp: ROUTE_MAP_CSP },
   },
   {
-    uri: "ui://activity-segments/app.html",
-    name: "Activity Segments",
-    htmlPath: appHtmlRequire.resolve(
-      "@intervals-mcp/activity-segments/app.html",
-    ),
-  },
-  {
     uri: "ui://training-load/app.html",
     name: "Training Load",
     htmlPath: appHtmlRequire.resolve("@intervals-mcp/training-load/app.html"),
@@ -353,13 +302,6 @@ const APP_RESOURCES: AppResource[] = [
     uri: "ui://activity-zones/app.html",
     name: "Activity Zones",
     htmlPath: appHtmlRequire.resolve("@intervals-mcp/activity-zones/app.html"),
-  },
-  {
-    uri: "ui://segment-progress/app.html",
-    name: "Segment Progress",
-    htmlPath: appHtmlRequire.resolve(
-      "@intervals-mcp/segment-progress/app.html",
-    ),
   },
   {
     uri: "ui://fitness-trend/app.html",
@@ -488,8 +430,8 @@ function buildToolDefs(): ToolDef[] {
   defs.push({
     name: "view-route-map",
     description:
-      "Open an interactive map of one activity's or saved route's GPS track, fit to bounds with start and finish markers and a distance/elevation summary. " +
-      "Prefer this over a text summary when the user wants to see where an activity or route went. Takes either an activity_id or a route_id (provide exactly one). " +
+      "Open an interactive map of one activity's GPS track, fit to bounds with start and finish markers and a distance/elevation summary. " +
+      "Prefer this over a text summary when the user wants to see where an activity went. Takes the activity id. " +
       "Optionally pin distance-anchored waypoints (fueling points, climb warnings, …) along the track via the waypoints array — useful when discussing a race plan or course guide.",
     inputSchema: toInputSchema(APP_TOOL_INPUT_SCHEMAS["view-route-map"]!),
     annotations: READ_ONLY,
@@ -502,44 +444,13 @@ function buildToolDefs(): ToolDef[] {
     name: "get-route-map-data",
     description:
       "Internal data feed for the route-map UI: returns decoded [lat, lng] coordinates plus start/end points, distance, elevation gain, and (for activities with GPS streams) index-aligned metric streams (time, distance, altitude, heartrate, watts, velocity_smooth, grade_smooth) " +
-      "and annotation anchors (lap boundaries, segment-effort spans with PR/top-10 flags, geotagged photos, caller-supplied distance-anchored waypoints) for one activity or route as JSON. " +
+      "and annotation anchors (lap boundaries, caller-supplied distance-anchored waypoints) for one activity as JSON. " +
       "The view-route-map app calls this; not intended for direct model use.",
     inputSchema: toInputSchema(APP_TOOL_INPUT_SCHEMAS["get-route-map-data"]!),
     annotations: READ_ONLY,
     _meta: {
       ui: {
         resourceUri: "ui://route-map/app.html",
-        visibility: ["app"],
-      },
-    },
-  });
-
-  defs.push({
-    name: "view-activity-segments",
-    description:
-      "Open a prioritised, scrollable list of the segments run in one activity: your PRs and top-10s pinned on top, then every segment in run order, each with pace, grade, and expandable heart-rate, cadence, and power detail. " +
-      "Prefer this over text when the user wants to review the segments in a workout. Takes the activity id.",
-    inputSchema: toInputSchema(
-      APP_TOOL_INPUT_SCHEMAS["view-activity-segments"]!,
-    ),
-    annotations: READ_ONLY,
-    _meta: {
-      ui: { resourceUri: "ui://activity-segments/app.html" },
-    },
-  });
-
-  defs.push({
-    name: "get-activity-segments-data",
-    description:
-      "Internal data feed for the activity-segments UI: returns the activity's segment efforts (name, time, distance, grade, climb category, PR/top-10 ranks, HR, power, cadence) as JSON. " +
-      "The view-activity-segments app calls this; not intended for direct model use.",
-    inputSchema: toInputSchema(
-      APP_TOOL_INPUT_SCHEMAS["get-activity-segments-data"]!,
-    ),
-    annotations: READ_ONLY,
-    _meta: {
-      ui: {
-        resourceUri: "ui://activity-segments/app.html",
         visibility: ["app"],
       },
     },
@@ -628,38 +539,6 @@ function buildToolDefs(): ToolDef[] {
     _meta: {
       ui: {
         resourceUri: "ui://activity-zones/app.html",
-        visibility: ["app"],
-      },
-    },
-  });
-
-  defs.push({
-    name: "view-segment-progress",
-    description:
-      "Open an interactive history of the athlete's own efforts on one segment: effort time over date with the personal best and top three highlighted, an optional average heart rate series, and a per-effort list. " +
-      "Prefer this over reading raw effort data when the user wants to see whether they are getting faster on a climb or course segment, or whether the same time is now costing less heart rate. " +
-      "Takes the segment id (e.g. from the Strava segment URL) and an optional date range.",
-    inputSchema: toInputSchema(
-      APP_TOOL_INPUT_SCHEMAS["view-segment-progress"]!,
-    ),
-    annotations: READ_ONLY,
-    _meta: {
-      ui: { resourceUri: "ui://segment-progress/app.html" },
-    },
-  });
-
-  defs.push({
-    name: "get-segment-progress-data",
-    description:
-      "Internal data feed for the segment-progress UI: returns the segment's details plus the athlete's efforts on it (date, elapsed and moving time, pace, heart rate, power, cadence, PR/KOM ranks, rank within the history) and a derived summary as JSON. " +
-      "The view-segment-progress app calls this; not intended for direct model use.",
-    inputSchema: toInputSchema(
-      APP_TOOL_INPUT_SCHEMAS["get-segment-progress-data"]!,
-    ),
-    annotations: READ_ONLY,
-    _meta: {
-      ui: {
-        resourceUri: "ui://segment-progress/app.html",
         visibility: ["app"],
       },
     },
@@ -1096,93 +975,6 @@ async function handleViewActivityZones(
   return { content: [{ type: "text", text: lines.join("\n") }] };
 }
 
-/**
- * Strava caps `/segment_efforts` at 200 per page; one page covers even a
- * daily-commute segment for well over half a year, and the chart stays
- * readable well before that.
- */
-const SEGMENT_PROGRESS_MAX_EFFORTS = 200;
-
-/** Shared fetch + mapping for the segment-progress view and data tools. */
-async function loadSegmentProgressData(
-  token: string,
-  args: Record<string, unknown>,
-): Promise<SegmentProgressData> {
-  const segmentId = String(args.segment_id);
-  const [segment, efforts] = await Promise.all([
-    getSegmentById(token, segmentId),
-    listSegmentEfforts(token, segmentId, {
-      startDateLocal: args.start_date_local as string | undefined,
-      endDateLocal: args.end_date_local as string | undefined,
-      perPage: SEGMENT_PROGRESS_MAX_EFFORTS,
-    }).catch((error: unknown) => {
-      // The effort-history endpoint is subscriber-only; say so plainly
-      // instead of surfacing Strava's raw sentinel. Branch on the 402 that
-      // handleApiError kept on the error, never on its message.
-      if (error instanceof HttpError && error.response.status === 402) {
-        throw new Error(
-          "Segment effort history requires a Strava subscription — Strava restricts the segment-efforts endpoint to subscribers.",
-        );
-      }
-      throw error;
-    }),
-  ]);
-  return buildSegmentProgress(segment, efforts);
-}
-
-/** ISO date part, so the text stays deterministic across locales. */
-function isoDay(date: string): string {
-  return date.slice(0, 10);
-}
-
-/** "-8s" / "+12s" / "same" — signed deltas read the same way everywhere. */
-function signedSeconds(delta: number): string {
-  if (delta === 0) return "same";
-  return `${delta > 0 ? "+" : ""}${delta}s`;
-}
-
-async function handleGetSegmentProgressData(
-  args: Record<string, unknown>,
-  token: string,
-): Promise<ToolCallResult> {
-  const data = await loadSegmentProgressData(token, args);
-  return { content: [{ type: "text", text: JSON.stringify(data) }] };
-}
-
-async function handleViewSegmentProgress(
-  args: Record<string, unknown>,
-  token: string,
-): Promise<ToolCallResult> {
-  const { segment, summary } = await loadSegmentProgressData(token, args);
-  const grade =
-    segment.averageGrade == null ? "" : `, ${segment.averageGrade.toFixed(1)}%`;
-  const lines = [
-    `Segment: ${segment.name} (${Math.round(segment.distanceMeters)} m${grade})`,
-  ];
-
-  if (summary.effortCount === 0) {
-    lines.push("No efforts recorded on this segment in the selected range.");
-  } else {
-    lines.push(
-      `Efforts: ${summary.effortCount} from ${isoDay(summary.firstDate!)} to ${isoDay(summary.lastDate!)}`,
-      `Best: ${formatDuration(summary.bestSeconds)} on ${isoDay(summary.bestDate!)}`,
-      `Latest: ${formatDuration(summary.latestSeconds)} on ${isoDay(summary.latestDate!)} (${signedSeconds(summary.latestVsBestSeconds!)} vs best)`,
-    );
-    if (summary.avgSecondsDelta != null) {
-      const hr =
-        summary.avgHeartrateDelta == null
-          ? ""
-          : `, ${summary.avgHeartrateDelta > 0 ? "+" : ""}${summary.avgHeartrateDelta} bpm average heart rate`;
-      lines.push(
-        `Recent half vs early half: ${signedSeconds(summary.avgSecondsDelta)} average time${hr}`,
-      );
-    }
-  }
-
-  lines.push("", "[Interactive segment progress chart rendered above]");
-  return { content: [{ type: "text", text: lines.join("\n") }] };
-}
-
 /** Metric streams aligned index-for-index with `coordinates`. */
 interface RouteMapStreams {
   time?: number[];
@@ -1198,24 +990,12 @@ interface RouteMapStreams {
 interface RouteMapAnnotations {
   /** Lap boundaries (each lap's end), present when the activity has 2+ laps. */
   laps?: Array<{ lapIndex: number; name: string; endIndex: number }>;
-  /** Segment efforts with their track spans and notable-result flags. */
-  segments?: Array<{
-    name: string;
-    startIndex: number;
-    endIndex: number;
-    /** Effort distance in metres; drives outline selection and the tooltip. */
-    distanceMeters: number;
-    isPr: boolean;
-    isTop10: boolean;
-  }>;
-  /** Geotagged photos snapped to the nearest track point. */
-  photos?: Array<{ index: number; caption: string | null }>;
   /** Caller-supplied waypoints anchored by cumulative distance. */
   waypoints?: ResolvedWaypoint[];
 }
 
 interface RouteMapData {
-  source: "activity" | "route";
+  source: "activity";
   id: string;
   name: string;
   activityType: string | null;
@@ -1288,18 +1068,12 @@ async function loadActivityMapStreams(
   return { coordinates: latlng, streams };
 }
 
-/** 1 = ride, 2 = run in Strava's route `type` enum. */
-function routeTypeLabel(type: number): string {
-  return type === 2 ? "Run" : "Ride";
-}
-
 /**
  * Anchor caller-supplied waypoints onto the loaded geometry, in place. Uses
- * the recorded distance stream when present; polyline-fallback activities and
- * saved routes get a synthetic haversine cumulative stream, so waypoints work
- * for both `activity_id` and `route_id` inputs. Out-of-range waypoints become
- * a `waypointWarnings` note (surfaced by the view tool's text) instead of an
- * error or an off-track marker.
+ * the recorded distance stream when present; polyline-fallback activities get
+ * a synthetic haversine cumulative stream instead. Out-of-range waypoints
+ * become a `waypointWarnings` note (surfaced by the view tool's text) instead
+ * of an error or an off-track marker.
  */
 function attachWaypoints(
   data: RouteMapData,
@@ -1332,9 +1106,9 @@ function attachWaypoints(
 }
 
 /**
- * Resolve an activity_id or route_id into a decoded, render-ready payload.
- * Geometry arrives only as a Google encoded polyline, so we decode here (next
- * to the zod schemas and unit tests) and hand the app plain [lat, lng] pairs.
+ * Resolve an activity_id into a decoded, render-ready payload. Geometry
+ * arrives only as a Google encoded polyline, so we decode here (next to the
+ * zod schemas and unit tests) and hand the app plain [lat, lng] pairs.
  */
 async function loadRouteMapData(
   args: Record<string, unknown>,
@@ -1354,47 +1128,26 @@ async function loadRouteMapGeometry(
   options: { includeStreams?: boolean } = {},
 ): Promise<RouteMapData> {
   const activityId = args.activity_id ? String(args.activity_id) : undefined;
-  const routeId = args.route_id ? String(args.route_id) : undefined;
 
-  if (!activityId && !routeId) {
-    throw new Error("Provide either activity_id or route_id.");
+  if (!activityId) {
+    throw new Error("activity_id is required.");
   }
 
-  if (activityId) {
-    const [activity, streamData] = await Promise.all([
-      getActivityById(token, activityId),
-      options.includeStreams
-        ? loadActivityMapStreams(token, activityId)
-        : Promise.resolve(null),
-    ]);
-    // Prefer the latlng stream over the polyline: it is index-aligned with
-    // the metric streams, so the app can color the track by them.
-    if (streamData) {
-      const { annotations, layerWarnings } = await loadRouteMapAnnotations(
-        token,
-        activityId,
-        activity,
-        streamData.coordinates,
-        streamData.streams.distance,
-      );
-      return {
-        source: "activity",
-        id: String(activity.id),
-        name: activity.name,
-        activityType: activity.type ?? null,
-        distance: activity.distance ?? 0,
-        elevationGain: activity.total_elevation_gain ?? 0,
-        coordinates: streamData.coordinates,
-        start: streamData.coordinates[0] ?? null,
-        end: streamData.coordinates[streamData.coordinates.length - 1] ?? null,
-        streams: streamData.streams,
-        annotations,
-        ...(layerWarnings ? { layerWarnings } : {}),
-      };
-    }
-    const encoded =
-      activity.map?.polyline || activity.map?.summary_polyline || "";
-    const coordinates = decodePolyline(encoded);
+  const [activity, streamData] = await Promise.all([
+    getActivityById(token, activityId),
+    options.includeStreams
+      ? loadActivityMapStreams(token, activityId)
+      : Promise.resolve(null),
+  ]);
+  // Prefer the latlng stream over the polyline: it is index-aligned with
+  // the metric streams, so the app can color the track by them.
+  if (streamData) {
+    const { annotations, layerWarnings } = await loadRouteMapAnnotations(
+      token,
+      activityId,
+      streamData.coordinates,
+      streamData.streams.distance,
+    );
     return {
       source: "activity",
       id: String(activity.id),
@@ -1402,51 +1155,29 @@ async function loadRouteMapGeometry(
       activityType: activity.type ?? null,
       distance: activity.distance ?? 0,
       elevationGain: activity.total_elevation_gain ?? 0,
-      coordinates,
-      start: coordinates[0] ?? null,
-      end: coordinates[coordinates.length - 1] ?? null,
+      coordinates: streamData.coordinates,
+      start: streamData.coordinates[0] ?? null,
+      end: streamData.coordinates[streamData.coordinates.length - 1] ?? null,
+      streams: streamData.streams,
+      annotations,
+      ...(layerWarnings ? { layerWarnings } : {}),
     };
   }
-
-  const [route, profile] = await Promise.all([
-    getRouteById(token, routeId as string),
-    options.includeStreams
-      ? loadRouteProfile(token, routeId as string)
-      : Promise.resolve(null),
-  ]);
-  const encoded = route.map?.polyline || route.map?.summary_polyline || "";
-  // Prefer the profile's own geometry: it is index-aligned with the elevation,
-  // so the app can colour the track and draw the elevation strip. Fall back to
-  // the polyline for a route whose profile arrived without coordinates.
-  const coordinates =
-    profile && profile.coordinates.length >= 2
-      ? profile.coordinates
-      : decodePolyline(encoded);
-  const streams: RouteMapStreams | undefined =
-    profile && profile.altitude.length === coordinates.length
-      ? { distance: profile.distance, altitude: profile.altitude }
-      : undefined;
+  const encoded =
+    activity.map?.polyline || activity.map?.summary_polyline || "";
+  const coordinates = decodePolyline(encoded);
   return {
-    source: "route",
-    id: String(route.id),
-    name: route.name,
-    activityType: routeTypeLabel(route.type),
-    distance: route.distance,
-    elevationGain: route.elevation_gain ?? 0,
+    source: "activity",
+    id: String(activity.id),
+    name: activity.name,
+    activityType: activity.type ?? null,
+    distance: activity.distance ?? 0,
+    elevationGain: activity.total_elevation_gain ?? 0,
     coordinates,
     start: coordinates[0] ?? null,
     end: coordinates[coordinates.length - 1] ?? null,
-    ...(streams ? { streams } : {}),
   };
 }
-
-/**
- * Bound the segment payload; notable efforts win when an activity has more.
- * Generous because the app draws outlines for only a lean subset (PRs + the
- * longest few) but lists every covering segment in the scrub tooltip, so the
- * mini-segments between the big ones must survive into the payload.
- */
-const MAX_SEGMENT_ANNOTATIONS = 60;
 
 /**
  * An optional annotation layer could not be fetched: drop the layer, keep the
@@ -1497,7 +1228,6 @@ function dropOptionalLayer(
 async function loadRouteMapAnnotations(
   token: string,
   activityId: string,
-  activity: StravaDetailedActivity,
   coordinates: Array<[number, number]>,
   distanceStream: number[] | undefined,
 ): Promise<{
@@ -1536,66 +1266,6 @@ async function loadRouteMapAnnotations(
     }
   }
 
-  // Segment efforts: anchor by the segment's start/end lat/lng (already on
-  // the detailed activity — no extra fetch).
-  const efforts = activity.segment_efforts ?? [];
-  const segmentMarkers = [];
-  for (const effort of efforts) {
-    const startLatLng = effort.segment?.start_latlng;
-    const endLatLng = effort.segment?.end_latlng;
-    if (
-      !startLatLng ||
-      startLatLng.length < 2 ||
-      !endLatLng ||
-      endLatLng.length < 2
-    ) {
-      continue;
-    }
-    const startIndex = nearestCoordIndex(
-      coordinates,
-      startLatLng[0]!,
-      startLatLng[1]!,
-    );
-    const endIndex = nearestCoordIndex(
-      coordinates,
-      endLatLng[0]!,
-      endLatLng[1]!,
-    );
-    if (startIndex < 0 || endIndex <= startIndex) continue;
-    segmentMarkers.push({
-      name: effort.name,
-      startIndex,
-      endIndex,
-      distanceMeters: effort.distance,
-      isPr: effort.pr_rank != null,
-      isTop10: effort.kom_rank != null,
-    });
-  }
-  if (segmentMarkers.length > 0) {
-    segmentMarkers.sort((a, b) => {
-      const notable = (s: { isPr: boolean; isTop10: boolean }) =>
-        (s.isPr ? 2 : 0) + (s.isTop10 ? 1 : 0);
-      return notable(b) - notable(a) || a.startIndex - b.startIndex;
-    });
-    annotations.segments = segmentMarkers.slice(0, MAX_SEGMENT_ANNOTATIONS);
-  }
-
-  // Photos: only those with GPS coordinates.
-  try {
-    const photos = await getActivityPhotos(token, activityId);
-    const photoMarkers = [];
-    for (const photo of photos) {
-      const location = photo.location;
-      if (!location || location.length < 2) continue;
-      const index = nearestCoordIndex(coordinates, location[0]!, location[1]!);
-      if (index < 0) continue;
-      photoMarkers.push({ index, caption: photo.caption ?? null });
-    }
-    if (photoMarkers.length > 0) annotations.photos = photoMarkers;
-  } catch (error) {
-    dropOptionalLayer("photo pins", activityId, error, layerWarnings);
-  }
-
   return {
     ...(Object.keys(annotations).length > 0 ? { annotations } : {}),
     ...(layerWarnings.length > 0 ? { layerWarnings } : {}),
@@ -1616,7 +1286,7 @@ async function handleViewRouteMap(
 ): Promise<ToolCallResult> {
   const data = await loadRouteMapData(args, token);
   const lines = [
-    `${data.source === "route" ? "Route" : "Activity"}: ${data.name}`,
+    `Activity: ${data.name}`,
     `Distance: ${(data.distance / 1000).toFixed(2)} km`,
     `Elevation gain: ${Math.round(data.elevationGain)} m`,
   ];
@@ -1636,48 +1306,6 @@ async function handleViewRouteMap(
     lines.push(`Warning: ${warning}`);
   }
   lines.push("", "[Interactive route map rendered above]");
-  return { content: [{ type: "text", text: lines.join("\n") }] };
-}
-
-/**
- * Resolve an activity_id into the flattened segment-effort payload. Reuses the
- * detailed-activity fetch (efforts ride along on it) and the pure mapper, so
- * there is no extra network call beyond `getActivityById`.
- */
-async function loadActivitySegmentsData(
-  args: Record<string, unknown>,
-  token: string,
-): Promise<ReturnType<typeof mapActivitySegments>> {
-  const activityId = args.activity_id ? String(args.activity_id) : undefined;
-  if (!activityId) {
-    throw new Error("Provide an activity_id.");
-  }
-  const activity = await getActivityById(token, activityId);
-  return mapActivitySegments(activity);
-}
-
-async function handleGetActivitySegmentsData(
-  args: Record<string, unknown>,
-  token: string,
-): Promise<ToolCallResult> {
-  const data = await loadActivitySegmentsData(args, token);
-  return { content: [{ type: "text", text: JSON.stringify(data) }] };
-}
-
-async function handleViewActivitySegments(
-  args: Record<string, unknown>,
-  token: string,
-): Promise<ToolCallResult> {
-  const data = await loadActivitySegmentsData(args, token);
-  const prCount = data.segments.filter((s) => s.prRank != null).length;
-  const top10Count = data.segments.filter((s) => s.komRank != null).length;
-  const lines = [
-    `Activity: ${data.name}`,
-    `Segments: ${data.segments.length}`,
-    `PRs: ${prCount}, top-10s: ${top10Count}`,
-    "",
-    "[Interactive segment list rendered above]",
-  ];
   return { content: [{ type: "text", text: lines.join("\n") }] };
 }
 
@@ -1756,16 +1384,12 @@ const APP_TOOL_HANDLERS: Record<
   "get-cadence-trend-data": handleGetCadenceTrendData,
   "view-route-map": handleViewRouteMap,
   "get-route-map-data": handleGetRouteMapData,
-  "view-activity-segments": handleViewActivitySegments,
-  "get-activity-segments-data": handleGetActivitySegmentsData,
   "view-training-load": handleViewTrainingLoad,
   "get-training-load-data": handleGetTrainingLoadData,
   "view-fitness-trend": handleViewFitnessTrend,
   "get-fitness-trend-data": handleGetFitnessTrendData,
   "view-activity-zones": handleViewActivityZones,
   "get-activity-zones-data": handleGetActivityZonesData,
-  "view-segment-progress": handleViewSegmentProgress,
-  "get-segment-progress-data": handleGetSegmentProgressData,
   "view-compare-activities": handleViewCompareActivities,
   "get-compare-activities-data": handleGetCompareActivitiesData,
 };

@@ -139,7 +139,7 @@ describe("modern result envelope", () => {
 const ID_FIELD = /(^|_)id(_\d+)?$|Id\d*$/;
 
 /** Id arguments across the advertised surface when this floor was set. */
-const ID_FIELD_COUNT = 29;
+const ID_FIELD_COUNT = 23;
 
 /**
  * Gear ids are alphanumeric (`g123456`), not digit strings, so they are the

@@ -727,26 +727,13 @@ export function stravaCacheTtl(path: string): number | null {
   if (/^\/activities\/\d+\/streams\//.test(path)) return 6 * HOUR_MS;
   // Detailed activity — immutable-ish; invalidated on update-activity writes.
   if (/^\/activities\/\d+$/.test(path)) return HOUR_MS;
-  // Laps, zones, and photos of a recorded activity — same immutability as the
+  // Laps and zones of a recorded activity — same immutability as the
   // activity itself, and each is fetched twice per app open.
-  if (/^\/activities\/\d+\/(laps|zones|photos)$/.test(path)) return HOUR_MS;
+  if (/^\/activities\/\d+\/(laps|zones)$/.test(path)) return HOUR_MS;
   // Authenticated athlete profile — short; name/weight/gear can change.
   if (path === "/athlete") return 5 * MINUTE_MS;
   // Athlete stats — short; totals accumulate with each new activity.
   if (/^\/athletes\/\d+\/stats$/.test(path)) return 5 * MINUTE_MS;
-  // A segment's geometry is fixed but its effort/star counts drift, so a
-  // short TTL is enough.
-  if (/^\/segments\/\d+$/.test(path)) return 5 * MINUTE_MS;
-  // A route's stored profile changes only when the athlete edits the route,
-  // and it is the expensive read the route map wants. Longer than the route
-  // detail beside it for that reason.
-  if (/^\/routes\/\d+\/streams$/.test(path)) return HOUR_MS;
-  // A saved route changes only when the athlete edits it.
-  if (/^\/routes\/\d+$/.test(path)) return 5 * MINUTE_MS;
-  // Effort history grows as the athlete re-runs the segment; short enough that
-  // a new effort shows up promptly, long enough to cover one app open. The
-  // cache key carries the query string, so each date window stays distinct.
-  if (path === "/segment_efforts") return 2 * MINUTE_MS;
   // The activity listing behind the cadence-trends, training-load, and
   // fitness-trend pairs — the three most expensive scans, each a full
   // pagination at up to a year of history. A bare TTL would hit zero times on

@@ -4,25 +4,18 @@
  * the silent fallback). Owns its own camera — MapLibre's native zoom/pan with
  * cooperative gestures so the conversation keeps scrolling — and renders the
  * full feature set as map layers: the metric-colored track (GeoJSON line
- * features per color run), segment-effort halos, lap/km split dots, photo
- * pins (hover popups for their titles), and the scrub marker + value tooltip
- * shared with the elevation strip through the scrub index.
+ * features per color run), lap/km split dots, and the scrub marker + value
+ * tooltip shared with the elevation strip through the scrub index.
  */
 
 import * as maplibregl from "maplibre-gl";
 import workerCode from "maplibre-gl/dist/maplibre-gl-worker.mjs?bundled-raw";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import {
-  type PhotoMarker,
-  type SplitMarker,
-  type WaypointMarker,
-} from "./annotations";
+import { type SplitMarker, type WaypointMarker } from "./annotations";
 import {
   BASEMAP_COLORS,
   nearestLatLngIndex,
   type PointFeatureCollection,
-  photosToGeoJson,
-  segmentsToGeoJson,
   splitsToGeoJson,
   trackBounds,
   trackToGeoJson,
@@ -30,7 +23,6 @@ import {
 } from "./basemapData";
 import { type ColorRun } from "./metrics";
 import styles from "./RouteMap.module.css";
-import { type RouteAnnotations } from "./types";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 // MapLibre runs all source processing in a Web Worker, and by default (v6)
@@ -39,8 +31,8 @@ import "maplibre-gl/dist/maplibre-gl.css";
 // vite-plugin-singlefile produces there are no sibling files, and a worker
 // re-bundled naively by the app build historically lost its GeoJSON code path
 // (geojson-vt ended up referenced from a scope the worker cannot see), so
-// vector tiles still rendered but every GeoJSON overlay — the track, markers,
-// segment halos — threw in the worker and silently vanished. v5's answer was
+// vector tiles still rendered but every GeoJSON overlay — the track, markers
+// — threw in the worker and silently vanished. v5's answer was
 // its pre-built self-contained CSP worker; v6 dropped that build, so the
 // `?bundled-raw` import (the `bundledRawWorker` plugin in
 // @intervals-mcp/vite-config) flattens the worker's import graph into one
@@ -60,18 +52,13 @@ const LOAD_TIMEOUT_MS = 12000;
 /** Plain-track color when no metric is selected (matches the SVG view). */
 const FALLBACK_TRACK_COLOR = "#3b82f6";
 
-/** Annotation layer ids, in render order (halos under markers). */
-const SEGMENTS_LAYER = "segment-halos";
+/** Annotation layer ids, in render order. */
 const SPLITS_LAYER = "splits";
-const PHOTOS_LAYER = "photos";
-const PHOTOS_DOT_LAYER = "photos-dot";
 const WAYPOINTS_LAYER = "waypoints";
 const WAYPOINTS_DOT_LAYER = "waypoints-dot";
 
 export interface BasemapLayerVisibility {
   splits: boolean;
-  segments: boolean;
-  photos: boolean;
   waypoints: boolean;
 }
 
@@ -82,8 +69,6 @@ interface BasemapViewProps {
   colorRuns: ColorRun[];
   /** Resolved annotation markers (already index-anchored). */
   splitMarkers: SplitMarker[];
-  segments: NonNullable<RouteAnnotations["segments"]>;
-  photoMarkers: PhotoMarker[];
   waypointMarkers: WaypointMarker[];
   /** Footer legend toggles, applied as layer visibility. */
   visibility: BasemapLayerVisibility;
@@ -122,8 +107,6 @@ export function BasemapView({
   coordinates,
   colorRuns,
   splitMarkers,
-  segments,
-  photoMarkers,
   waypointMarkers,
   visibility,
   mode,
@@ -157,18 +140,8 @@ export function BasemapView({
   trackRef.current = track;
   const scrubIndexRef = useRef(scrubIndex);
   scrubIndexRef.current = scrubIndex;
-  const annotationsRef = useRef({
-    splitMarkers,
-    segments,
-    photoMarkers,
-    waypointMarkers,
-  });
-  annotationsRef.current = {
-    splitMarkers,
-    segments,
-    photoMarkers,
-    waypointMarkers,
-  };
+  const annotationsRef = useRef({ splitMarkers, waypointMarkers });
+  annotationsRef.current = { splitMarkers, waypointMarkers };
 
   useEffect(() => {
     const container = containerRef.current;
@@ -216,8 +189,7 @@ export function BasemapView({
       clearTimeout(failTimer);
 
       const coords = coordinatesRef.current;
-      const { splitMarkers, segments, photoMarkers, waypointMarkers } =
-        annotationsRef.current;
+      const { splitMarkers, waypointMarkers } = annotationsRef.current;
 
       // Guard every add individually: maplibre's addSource throws
       // synchronously (e.g. on a duplicate id), and an unguarded throw here
@@ -244,23 +216,6 @@ export function BasemapView({
           );
         }
       };
-
-      // Segment halos go under the track, like the grid view.
-      addSourceSafe("segments", {
-        type: "geojson",
-        data: segmentsToGeoJson(coords, segments),
-      });
-      addLayerSafe({
-        id: SEGMENTS_LAYER,
-        type: "line",
-        source: "segments",
-        layout: { "line-cap": "round", "line-join": "round" },
-        paint: {
-          "line-color": ["get", "color"],
-          "line-width": 10,
-          "line-opacity": 0.45,
-        },
-      });
 
       addSourceSafe("track", { type: "geojson", data: trackRef.current });
       addLayerSafe({
@@ -296,28 +251,6 @@ export function BasemapView({
           "circle-stroke-color": BASEMAP_COLORS.split,
           "circle-stroke-width": 2,
         },
-      });
-
-      addSourceSafe("photos", {
-        type: "geojson",
-        data: photosToGeoJson(coords, photoMarkers),
-      });
-      addLayerSafe({
-        id: PHOTOS_LAYER,
-        type: "circle",
-        source: "photos",
-        paint: {
-          "circle-radius": 5.5,
-          "circle-color": BASEMAP_COLORS.photo,
-          "circle-stroke-color": "#ffffff",
-          "circle-stroke-width": 2,
-        },
-      });
-      addLayerSafe({
-        id: PHOTOS_DOT_LAYER,
-        type: "circle",
-        source: "photos",
-        paint: { "circle-radius": 1.75, "circle-color": "#ffffff" },
       });
 
       // Waypoints: caller-pinned markers, colored per kind (fuel/climb/…).
@@ -398,12 +331,10 @@ export function BasemapView({
         },
       });
 
-      // Hover popups for the point markers ("Lap 2", "3 photos"). Segment
-      // efforts deliberately get no popup of their own: they surface in the
-      // shared scrub tooltip, where they cannot clash with the metric value.
-      // Bound only to layers that actually got added: delegated listeners on
-      // a missing layer make maplibre error on every pointer move.
-      for (const layerId of [SPLITS_LAYER, PHOTOS_LAYER, WAYPOINTS_LAYER]) {
+      // Hover popups for the point markers ("Lap 2"). Bound only to layers
+      // that actually got added: delegated listeners on a missing layer make
+      // maplibre error on every pointer move.
+      for (const layerId of [SPLITS_LAYER, WAYPOINTS_LAYER]) {
         if (!map.getLayer(layerId)) continue;
         map.on("mousemove", layerId, (e) => {
           const title = e.features?.[0]?.properties?.title;
@@ -423,9 +354,7 @@ export function BasemapView({
         "track-casing",
         "endpoints",
         "scrub",
-        SEGMENTS_LAYER,
         SPLITS_LAYER,
-        PHOTOS_LAYER,
         WAYPOINTS_LAYER,
       ].filter((id) => !map.getLayer(id));
       if (missing.length > 0) {
@@ -503,8 +432,6 @@ export function BasemapView({
       }
     };
     apply([SPLITS_LAYER], visibility.splits);
-    apply([SEGMENTS_LAYER], visibility.segments);
-    apply([PHOTOS_LAYER, PHOTOS_DOT_LAYER], visibility.photos);
     apply([WAYPOINTS_LAYER, WAYPOINTS_DOT_LAYER], visibility.waypoints);
   }, [visibility, loaded]);
 

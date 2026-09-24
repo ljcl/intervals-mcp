@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   buildKmSplits,
-  buildPhotoMarkers,
   buildSplitMarkers,
   buildWaypointMarkers,
 } from "./annotations";
@@ -94,28 +93,6 @@ describe("buildSplitMarkers", () => {
     expect(
       buildSplitMarkers(makeData({ streams: { distance: [0, 100] } })),
     ).toEqual([]);
-  });
-});
-
-describe("buildPhotoMarkers", () => {
-  it("returns nothing without photos", () => {
-    expect(buildPhotoMarkers(makeData())).toEqual([]);
-  });
-
-  it("groups photos sharing a track point and joins captions", () => {
-    const data = makeData({
-      annotations: {
-        photos: [
-          { index: 6, caption: null },
-          { index: 2, caption: "Summit" },
-          { index: 2, caption: "View" },
-        ],
-      },
-    });
-    expect(buildPhotoMarkers(data)).toEqual([
-      { index: 2, count: 2, caption: "Summit · View" },
-      { index: 6, count: 1, caption: null },
-    ]);
   });
 });
 

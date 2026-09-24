@@ -4,7 +4,6 @@ import {
   formatDistance,
   formatDurationShort,
   formatPace,
-  formatPaceOrSpeed,
   formatShortDate,
   formatSpeedAsKmh,
   formatSpeedAsPace,
@@ -130,17 +129,5 @@ describe("formatSpeedAsKmh", () => {
 
   it("has no paused floor — zero is a true speed reading", () => {
     expect(formatSpeedAsKmh(0)).toBe("0.0 km/h");
-  });
-});
-
-describe("formatPaceOrSpeed", () => {
-  it("picks pace for runs and speed for everything else", () => {
-    expect(formatPaceOrSpeed(4, true)).toBe(`4'10" /km`);
-    expect(formatPaceOrSpeed(7.9, false)).toBe("28.4 km/h");
-  });
-
-  it("reads a stopped sample as paused on both sides", () => {
-    expect(formatPaceOrSpeed(0.2, true)).toBe("—");
-    expect(formatPaceOrSpeed(0, false)).toBe("—");
   });
 });

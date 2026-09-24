@@ -7,11 +7,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HttpError, RateLimitError, stravaApi } from "./fetchClient";
-import {
-  getActivityStreams,
-  getRouteStreams,
-  StreamsUnavailableError,
-} from "./stravaClient";
+import { getActivityStreams, StreamsUnavailableError } from "./stravaClient";
 
 vi.mock("./fetchClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./fetchClient")>();
@@ -152,54 +148,6 @@ describe("getActivityStreams", () => {
 
     await expect(getActivityStreams("token", "123", ["time"])).rejects.toThrow(
       /Invalid data format/,
-    );
-  });
-});
-
-/**
- * The route and segment stream reads (#264, #266) share `getActivityStreams`'
- * fetch core, so they inherit the same degrade-on-404-only contract. These pin
- * that the sharing is real rather than three copies that will drift.
- */
-describe("getRouteStreams", () => {
-  it("requests the route's stored streams", async () => {
-    mockedGet.mockResolvedValueOnce({
-      data: [
-        { type: "distance", data: [0, 100] },
-        { type: "altitude", data: [10, 20] },
-      ],
-    });
-
-    const streams = await getRouteStreams("token", "456");
-
-    expect(streams.get("altitude")).toEqual([10, 20]);
-    expect(mockedGet).toHaveBeenCalledWith("/routes/456/streams", {
-      headers: { Authorization: "Bearer token" },
-    });
-  });
-
-  it("reports an older route with no stored profile as unavailable", async () => {
-    mockedGet.mockRejectedValueOnce(notFound());
-
-    const error = await getRouteStreams("token", "456").catch((e) => e);
-
-    expect(error).toBeInstanceOf(StreamsUnavailableError);
-    expect(error.kind).toBe("route");
-    expect(error.resourceId).toBe("456");
-  });
-
-  it("propagates a rate-limit failure rather than claiming no profile", async () => {
-    mockedGet.mockRejectedValueOnce(rateLimited());
-
-    const error = await getRouteStreams("token", "456").catch((e) => e);
-
-    expect(error).not.toBeInstanceOf(StreamsUnavailableError);
-    expect(error.message).toContain("rate limit");
-  });
-
-  it("requires a route id", async () => {
-    await expect(getRouteStreams("token", "")).rejects.toThrow(
-      /Route ID is required/,
     );
   });
 });

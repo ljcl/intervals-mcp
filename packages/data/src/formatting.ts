@@ -106,28 +106,3 @@ export function formatSpeedAsPace(metresPerSecond: number): string {
 export function formatSpeedAsKmh(metresPerSecond: number): string {
   return `${(metresPerSecond * 3.6).toFixed(1)} km/h`;
 }
-
-/**
- * Pace for runs, speed for everything else, "—" for a sample too slow to be
- * either. The three MCP Apps that show an effort's speed cannot import each
- * other, so this lives here and never in one of them. Copy it and the copies
- * drift: a fix lands in one, and the others go on printing a nonsense pace
- * for a stop-and-wait effort. Neither knip nor Biome can see a
- * genuinely-imported duplicate, so the only defence is not making it.
- *
- * The floor is deliberately applied to BOTH branches here, unlike bare
- * `formatSpeedAsKmh` — one list rendering "—" for a paused run and
- * "0.7 km/h" for a paused ride reads as two different bugs. Do not delete
- * this guard as redundant with the one inside `formatSpeedAsPace`: it is the
- * only thing flooring the speed branch, and dropping it silently changes what
- * activity-segments and segment-progress show for a stop-and-wait effort.
- */
-export function formatPaceOrSpeed(
-  metresPerSecond: number,
-  running: boolean,
-): string {
-  if (metresPerSecond < MIN_PACE_SPEED) return "—";
-  return running
-    ? formatSpeedAsPace(metresPerSecond)
-    : formatSpeedAsKmh(metresPerSecond);
-}

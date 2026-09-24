@@ -6,23 +6,16 @@
  * MapLibre paints onto canvas and cannot resolve CSS custom properties.
  */
 
-import { TIER_COLORS } from "@intervals-mcp/design-system";
 import {
-  type PhotoMarker,
   type SplitMarker,
   WAYPOINT_COLORS,
   type WaypointMarker,
 } from "./annotations";
 import { type ColorRun } from "./metrics";
-import { type RouteAnnotations } from "./types";
 
-/** Mirrors the grid view's halo colors (gold = PR, light purple = top-10). */
+/** Mirrors the grid view's split-marker color. */
 export const BASEMAP_COLORS = {
-  segmentPr: TIER_COLORS.pr,
-  segmentTop10: TIER_COLORS.top10,
-  segment: "#8b5cf6",
   split: "#3266ad",
-  photo: "#f97316",
 } as const;
 
 export interface TrackFeatureCollection {
@@ -119,54 +112,6 @@ export function trackBounds(
   ];
 }
 
-/** Line features for segment-effort halos, colored by achievement tier. */
-export interface SegmentHaloFeatureCollection {
-  type: "FeatureCollection";
-  features: Array<{
-    type: "Feature";
-    properties: { color: string; title: string };
-    geometry: { type: "LineString"; coordinates: Array<[number, number]> };
-  }>;
-}
-
-/**
- * Segment-effort spans as halo line features. The `title` property feeds the
- * hover popup ("name · PR" / "name · Top 10").
- */
-export function segmentsToGeoJson(
-  coordinates: Array<[number, number]>,
-  segments: NonNullable<RouteAnnotations["segments"]>,
-): SegmentHaloFeatureCollection {
-  return {
-    type: "FeatureCollection",
-    features: segments.flatMap((segment) => {
-      const span = coordinates.slice(segment.startIndex, segment.endIndex + 1);
-      if (span.length < 2) return [];
-      return [
-        {
-          type: "Feature" as const,
-          properties: {
-            color: segment.isPr
-              ? BASEMAP_COLORS.segmentPr
-              : segment.isTop10
-                ? BASEMAP_COLORS.segmentTop10
-                : BASEMAP_COLORS.segment,
-            title: `${segment.name}${
-              segment.isPr ? " · PR" : segment.isTop10 ? " · Top 10" : ""
-            }`,
-          },
-          geometry: {
-            type: "LineString" as const,
-            coordinates: span.map(
-              ([lat, lng]) => [lng, lat] as [number, number],
-            ),
-          },
-        },
-      ];
-    }),
-  };
-}
-
 /** Point features with a `title` property for the hover popup. Waypoint
  * features also carry a `color` for the per-kind circle paint. */
 export interface TitledPointFeatureCollection {
@@ -192,36 +137,6 @@ export function splitsToGeoJson(
         {
           type: "Feature" as const,
           properties: { title: split.label },
-          geometry: {
-            type: "Point" as const,
-            coordinates: [pair[1], pair[0]] as [number, number],
-          },
-        },
-      ];
-    }),
-  };
-}
-
-/** Grouped photo markers as point features. */
-export function photosToGeoJson(
-  coordinates: Array<[number, number]>,
-  photos: PhotoMarker[],
-): TitledPointFeatureCollection {
-  return {
-    type: "FeatureCollection",
-    features: photos.flatMap((photo) => {
-      const pair = coordinates[photo.index];
-      if (!pair) return [];
-      const title = [
-        photo.count === 1 ? "1 photo" : `${photo.count} photos`,
-        photo.caption,
-      ]
-        .filter(Boolean)
-        .join(" · ");
-      return [
-        {
-          type: "Feature" as const,
-          properties: { title },
           geometry: {
             type: "Point" as const,
             coordinates: [pair[1], pair[0]] as [number, number],

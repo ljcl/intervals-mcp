@@ -7,8 +7,6 @@ import {
   AthleteGearSchema,
   DetailedActivitySchema,
   DetailedAthleteSchema,
-  DetailedSegmentSchema,
-  RouteSchema,
   SummarySegmentSchema,
 } from "./stravaClient";
 
@@ -175,30 +173,6 @@ describe("SummarySegmentSchema", () => {
     const result = SummarySegmentSchema.safeParse(
       fixtures.segmentWithNullOptionals,
     );
-    expect(result.success).toBe(true);
-  });
-});
-
-describe("DetailedSegmentSchema", () => {
-  it("parses detailed segment", () => {
-    const result = DetailedSegmentSchema.safeParse(fixtures.detailedSegment);
-    expect(result.success).toBe(true);
-  });
-});
-
-describe("RouteSchema", () => {
-  it("parses basic route", () => {
-    const result = RouteSchema.safeParse(fixtures.basicRoute);
-    expect(result.success).toBe(true);
-  });
-
-  it("parses route with null optionals", () => {
-    const result = RouteSchema.safeParse(fixtures.routeWithNullOptionals);
-    expect(result.success).toBe(true);
-  });
-
-  it("parses running route", () => {
-    const result = RouteSchema.safeParse(fixtures.runningRoute);
     expect(result.success).toBe(true);
   });
 });

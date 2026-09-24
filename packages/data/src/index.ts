@@ -4,7 +4,6 @@ export {
   formatDistance,
   formatDurationShort,
   formatPace,
-  formatPaceOrSpeed,
   formatShortDate,
   formatSpeedAsKmh,
   formatSpeedAsPace,

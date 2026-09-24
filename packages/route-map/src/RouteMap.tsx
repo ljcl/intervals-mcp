@@ -1,5 +1,4 @@
 import { formatTime } from "@intervals-mcp/data";
-import { TIER_COLORS } from "@intervals-mcp/design-system";
 import {
   CardHeader,
   EmptyState,
@@ -29,7 +28,6 @@ import {
   buildRouteMapA11yDescription,
 } from "./a11yDescription";
 import {
-  buildPhotoMarkers,
   buildSplitMarkers,
   buildWaypointMarkers,
   type SplitMarker,
@@ -60,11 +58,6 @@ import {
   zoomViewBox,
 } from "./panZoom";
 import styles from "./RouteMap.module.css";
-import {
-  formatSegmentDistance,
-  segmentsAtIndex,
-  selectOutlineSegments,
-} from "./segments";
 import { type RouteMapData } from "./types";
 import { frameForIndexRange, indexRangeForDistance } from "./viewport";
 
@@ -107,20 +100,15 @@ const WHEEL_ZOOM_FACTOR = 1.2;
 
 const GRID_ID = "route-map-grid";
 
-/** Segment rows shown in the scrub tooltip before collapsing to "+N more". */
-const MAX_TOOLTIP_SEGMENTS = 3;
-
-type LayerKey = "splits" | "segments" | "photos" | "waypoints";
+type LayerKey = "splits" | "waypoints";
 
 const LAYER_COLORS: Record<LayerKey, string> = {
   splits: "var(--color-text-info)",
-  segments: "var(--chart-power)",
-  photos: "var(--chart-cadence)",
   waypoints: WAYPOINT_COLORS.custom,
 };
 
 /** Diamond path centred on (cx, cy) — waypoint pins read distinctly from the
- * circular split/photo markers. */
+ * circular split markers. */
 function diamondPath(cx: number, cy: number, r: number): string {
   return `M${cx} ${cy - r} L${cx + r} ${cy} L${cx} ${cy + r} L${cx - r} ${cy} Z`;
 }
@@ -150,24 +138,9 @@ function ZoomIcon({ kind }: { kind: "in" | "out" | "reset" }) {
   );
 }
 
-function segmentHaloColor(segment: { isPr: boolean; isTop10: boolean }) {
-  if (segment.isPr) return TIER_COLORS.pr;
-  if (segment.isTop10) return TIER_COLORS.top10;
-  return LAYER_COLORS.segments;
-}
-
 function formatKm(metres: number): string {
   const km = metres / 1000;
   return km >= 10 ? km.toFixed(1) : km.toFixed(2);
-}
-
-function pathThrough(points: Point[]): string {
-  return points
-    .map(
-      (p, i) =>
-        `${i === 0 ? "M" : "L"}${Math.round(p.x * 100) / 100} ${Math.round(p.y * 100) / 100}`,
-    )
-    .join(" ");
 }
 
 export function RouteMap({
@@ -235,31 +208,7 @@ export function RouteMap({
   /* ── Annotation layers ───────────────────────────────────────── */
 
   const splitMarkers = useMemo(() => buildSplitMarkers(data), [data]);
-  const photoMarkers = useMemo(() => buildPhotoMarkers(data), [data]);
   const waypointMarkers = useMemo(() => buildWaypointMarkers(data), [data]);
-
-  const allSegments = useMemo(
-    () => data.annotations?.segments ?? [],
-    [data.annotations?.segments],
-  );
-  // Only a lean subset earns a drawn outline (PRs + the longest few); the
-  // scrub tooltip still surfaces every covering segment, so segment-dense
-  // activities do not bury the track under overlapping halos.
-  const outlineSegments = useMemo(
-    () => selectOutlineSegments(allSegments),
-    [allSegments],
-  );
-  const segmentSpans = useMemo(() => {
-    if (!projected) return [];
-    return outlineSegments.flatMap((segment) => {
-      const points = projected.points.slice(
-        segment.startIndex,
-        segment.endIndex + 1,
-      );
-      if (points.length < 2) return [];
-      return [{ ...segment, path: pathThrough(points) }];
-    });
-  }, [projected, outlineSegments]);
 
   const layers = useMemo(() => {
     const out: Array<{ key: LayerKey; label: string }> = [];
@@ -269,19 +218,10 @@ export function RouteMap({
         label: data.annotations?.laps?.length ? "Laps" : "Splits",
       });
     }
-    if (segmentSpans.length > 0)
-      out.push({ key: "segments", label: "Segments" });
-    if (photoMarkers.length > 0) out.push({ key: "photos", label: "Photos" });
     if (waypointMarkers.length > 0)
       out.push({ key: "waypoints", label: "Waypoints" });
     return out;
-  }, [
-    splitMarkers,
-    segmentSpans,
-    photoMarkers,
-    waypointMarkers,
-    data.annotations?.laps,
-  ]);
+  }, [splitMarkers, waypointMarkers, data.annotations?.laps]);
 
   const [hiddenLayers, setHiddenLayers] = useState<Set<LayerKey>>(new Set());
   const layerVisible = (key: LayerKey) => !hiddenLayers.has(key);
@@ -571,26 +511,17 @@ export function RouteMap({
     () =>
       buildRouteMapA11yDescription({
         name: data.name,
-        source: data.source,
         activityType: data.activityType,
         distanceKm,
         elevationGain: data.elevationGain,
         coordinates: data.coordinates,
         altitude: data.streams?.altitude,
         colorMetric: activeSeries?.label ?? null,
-        // Counts reflect the layers actually drawn: a toggled-off
-        // layer narrates as absent, and segments count the outlined subset,
-        // not every effort fetched. Reads hiddenLayers directly (not the
+        // Counts reflect the layers actually drawn: a toggled-off layer
+        // narrates as absent. Reads hiddenLayers directly (not the
         // layerVisible closure) so the dependency list stays honest.
         splitCount: hiddenLayers.has("splits") ? 0 : splitMarkers.length,
         splitKind: data.annotations?.laps?.length ? "laps" : "splits",
-        segmentCount: hiddenLayers.has("segments") ? 0 : outlineSegments.length,
-        prCount: hiddenLayers.has("segments")
-          ? 0
-          : outlineSegments.filter((segment) => segment.isPr).length,
-        photoCount: hiddenLayers.has("photos")
-          ? 0
-          : photoMarkers.reduce((total, photo) => total + photo.count, 0),
         waypointCount: hiddenLayers.has("waypoints")
           ? 0
           : waypointMarkers.length,
@@ -600,8 +531,6 @@ export function RouteMap({
       distanceKm,
       activeSeries?.label,
       splitMarkers,
-      outlineSegments,
-      photoMarkers,
       waypointMarkers,
       hiddenLayers,
     ],
@@ -616,7 +545,6 @@ export function RouteMap({
     () =>
       buildRouteMapContextSummary({
         name: data.name,
-        source: data.source,
         activityType: data.activityType,
         distanceKm,
         elevationGain: data.elevationGain,
@@ -639,12 +567,7 @@ export function RouteMap({
     ],
   );
 
-  const subtitle = [
-    data.activityType,
-    data.source === "route" ? "Route" : "Activity",
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  const subtitle = [data.activityType, "Activity"].filter(Boolean).join(" · ");
 
   const scrubPoint =
     scrubIndex != null ? (projected?.points[scrubIndex] ?? null) : null;
@@ -680,46 +603,13 @@ export function RouteMap({
   const markerAt = (index: number): Point | null =>
     projected?.points[index] ?? null;
 
-  // Segments covering the scrubbed point, listed in the one tooltip regardless
-  // of the outline toggle (the white per-segment MapLibre popup is gone).
-  const scrubSegments =
-    scrubIndex != null ? segmentsAtIndex(allSegments, scrubIndex) : [];
   const hasMetric = scrubValue != null && activeSeries != null;
 
   // Shared scrub tooltip content: the grid view positions it by viewport
   // fraction, the basemap by projected pixel point.
   const scrubTipContent =
-    scrubIndex != null && (hasMetric || scrubSegments.length > 0) ? (
+    scrubIndex != null && hasMetric ? (
       <UiTooltip timestamp={scrubPosition}>
-        {scrubSegments.length > 0 && (
-          <div className={styles.tipSegments}>
-            {scrubSegments.slice(0, MAX_TOOLTIP_SEGMENTS).map((segment) => (
-              <div
-                className={styles.tipSegment}
-                key={`${segment.name}-${segment.startIndex}`}
-              >
-                <span
-                  className={styles.tipSegmentSwatch}
-                  style={{ background: segmentHaloColor(segment) }}
-                />
-                <span className={styles.tipSegmentName}>{segment.name}</span>
-                <span className={styles.tipSegmentMeta}>
-                  {[
-                    formatSegmentDistance(segment.distanceMeters),
-                    segment.isPr ? "PR" : segment.isTop10 ? "Top 10" : null,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </span>
-              </div>
-            ))}
-            {scrubSegments.length > MAX_TOOLTIP_SEGMENTS && (
-              <div className={styles.tipSegmentMore}>
-                +{scrubSegments.length - MAX_TOOLTIP_SEGMENTS} more
-              </div>
-            )}
-          </div>
-        )}
         {scrubValue != null && activeSeries && (
           <TooltipEntry
             color={colorForValue(activeSeries, scrubValue)}
@@ -747,13 +637,9 @@ export function RouteMap({
             coordinates={data.coordinates}
             colorRuns={colorRuns}
             splitMarkers={splitMarkers}
-            segments={outlineSegments}
-            photoMarkers={photoMarkers}
             waypointMarkers={waypointMarkers}
             visibility={{
               splits: layerVisible("splits"),
-              segments: layerVisible("segments"),
-              photos: layerVisible("photos"),
               waypoints: layerVisible("waypoints"),
             }}
             mode={mode}
@@ -825,30 +711,6 @@ export function RouteMap({
                 fill={`url(#${GRID_ID})`}
               />
 
-              {/* Segment-effort halos sit under the track as wide outlines. */}
-              {layerVisible("segments") &&
-                segmentSpans.map((segment) => (
-                  <path
-                    key={`${segment.name}-${segment.startIndex}`}
-                    d={segment.path}
-                    fill="none"
-                    stroke={segmentHaloColor(segment)}
-                    strokeOpacity={0.45}
-                    strokeWidth={dims.stroke * 2.8 * k}
-                    strokeLinejoin="round"
-                    strokeLinecap="round"
-                  >
-                    <title>
-                      {segment.name}
-                      {segment.isPr
-                        ? " · PR"
-                        : segment.isTop10
-                          ? " · Top 10"
-                          : ""}
-                    </title>
-                  </path>
-                ))}
-
               {segments.length > 0 ? (
                 segments.map((segment, i) => (
                   <path
@@ -890,40 +752,6 @@ export function RouteMap({
                     >
                       <title>{split.label}</title>
                     </circle>
-                  );
-                })}
-
-              {/* Photo pins. */}
-              {layerVisible("photos") &&
-                photoMarkers.map((photo) => {
-                  const p = markerAt(photo.index);
-                  if (!p) return null;
-                  const title = [
-                    photo.count === 1 ? "1 photo" : `${photo.count} photos`,
-                    photo.caption,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ");
-                  return (
-                    <g key={`photo-${photo.index}`}>
-                      <circle
-                        cx={p.x}
-                        cy={p.y}
-                        r={dims.marker * 0.85 * k}
-                        fill={LAYER_COLORS.photos}
-                        stroke="var(--color-background-primary)"
-                        strokeWidth={2 * k}
-                      >
-                        <title>{title}</title>
-                      </circle>
-                      <circle
-                        cx={p.x}
-                        cy={p.y}
-                        r={dims.marker * 0.3 * k}
-                        fill="var(--color-background-primary)"
-                        pointerEvents="none"
-                      />
-                    </g>
                   );
                 })}
 

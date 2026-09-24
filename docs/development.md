@@ -12,12 +12,10 @@ apps/server/                 MCP server (tools, auth, token management)
 apps/storybook/              Storybook for UI development
 packages/activity-chart/     Interactive activity chart (MCP App)
 packages/cadence-trends/     Cadence trend analysis (MCP App)
-packages/route-map/          Activity/route GPS map (MCP App)
-packages/activity-segments/  Activity segment-effort list (MCP App)
+packages/route-map/          Activity GPS map (MCP App)
 packages/training-load/      Weekly training volume and trend (MCP App)
 packages/compare-activities/ Two-activity stream overlay (MCP App)
 packages/activity-zones/     Per-activity time-in-zone chart (MCP App)
-packages/segment-progress/   Segment effort history (MCP App)
 packages/fitness-trend/      Fitness/fatigue/form chart with taper plan (MCP App)
 packages/data/               Shared pure data utilities
 packages/ui/                 Shared presentational React components + app shell runtime
@@ -29,7 +27,7 @@ packages/tsconfig/           Shared TypeScript configurations
 Bun workspaces with Turborepo. A `topo` transit node in `turbo.json` keeps
 `test` and `typecheck` cache-correct when upstream JIT packages change source.
 JIT packages (`data`, `ui`, `design-system`) export raw TypeScript; only the
-nine MCP App packages produce build artifacts (single-file HTML via Vite). The
+seven MCP App packages produce build artifacts (single-file HTML via Vite). The
 server has no build step. Biome (`//#lint`) and Knip (`//#knip`) run as root
 tasks — Knip is a whole-graph analyzer that cannot decompose per-package; Biome
 is fast enough to run at root per Turborepo docs.

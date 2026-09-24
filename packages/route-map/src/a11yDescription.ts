@@ -1,17 +1,14 @@
-import { type RouteMapSource } from "./types";
-
 /**
  * Screen-reader description of the rendered map. Unlike the one-line
  * `buildRouteMapContextSummary` (which briefs the host's model), this narrates
- * the view for a non-visual user: what the route is, how far and how hilly,
- * its shape (loop vs point-to-point) and geographic extent, and which
+ * the view for a non-visual user: what the activity is, how far and how
+ * hilly, its shape (loop vs point-to-point) and geographic extent, and which
  * annotation layers are marked along the track. Both views render it — the
  * basemap as visually-hidden text next to the canvas, the SVG grid as its
  * `<desc>` element.
  */
 export interface RouteMapA11yInput {
   name: string;
-  source: RouteMapSource;
   activityType: string | null;
   distanceKm: number;
   elevationGain: number;
@@ -23,10 +20,6 @@ export interface RouteMapA11yInput {
   colorMetric?: string | null;
   splitCount?: number;
   splitKind?: "laps" | "splits";
-  /** Segment halos actually drawn (the outlined subset), not every effort fetched. */
-  segmentCount?: number;
-  prCount?: number;
-  photoCount?: number;
   waypointCount?: number;
 }
 
@@ -162,19 +155,6 @@ function describeAnnotations(input: RouteMapA11yInput): string | null {
         : `${input.splitCount} kilometre splits`,
     );
   }
-  if (input.segmentCount) {
-    const prs = input.prCount
-      ? ` including ${input.prCount === 1 ? "a personal record" : `${input.prCount} personal records`}`
-      : "";
-    parts.push(
-      `${input.segmentCount} segment effort${input.segmentCount === 1 ? "" : "s"} highlighted${prs}`,
-    );
-  }
-  if (input.photoCount) {
-    parts.push(
-      input.photoCount === 1 ? "1 photo" : `${input.photoCount} photos`,
-    );
-  }
   if (input.waypointCount) {
     parts.push(
       input.waypointCount === 1
@@ -187,8 +167,9 @@ function describeAnnotations(input: RouteMapA11yInput): string | null {
 }
 
 export function buildRouteMapA11yDescription(input: RouteMapA11yInput): string {
-  const label = input.source === "route" ? "route" : "activity";
-  const kind = input.activityType ? `${input.activityType} ${label}` : label;
+  const kind = input.activityType
+    ? `${input.activityType} activity`
+    : "activity";
   const parts = [`Map of ${kind} "${input.name}".`];
 
   if (input.coordinates.length < 2) {

@@ -20,14 +20,12 @@
       "version": "0.0.0",
       "dependencies": {
         "@intervals-mcp/activity-chart": "workspace:*",
-        "@intervals-mcp/activity-segments": "workspace:*",
         "@intervals-mcp/activity-zones": "workspace:*",
         "@intervals-mcp/cadence-trends": "workspace:*",
         "@intervals-mcp/compare-activities": "workspace:*",
         "@intervals-mcp/data": "workspace:*",
         "@intervals-mcp/fitness-trend": "workspace:*",
         "@intervals-mcp/route-map": "workspace:*",
-        "@intervals-mcp/segment-progress": "workspace:*",
         "@intervals-mcp/training-load": "workspace:*",
         "@modelcontextprotocol/server": "2.0.0",
         "dotenv": "17.4.2",
@@ -45,14 +43,12 @@
       "name": "@intervals-mcp/storybook",
       "dependencies": {
         "@intervals-mcp/activity-chart": "workspace:*",
-        "@intervals-mcp/activity-segments": "workspace:*",
         "@intervals-mcp/activity-zones": "workspace:*",
         "@intervals-mcp/cadence-trends": "workspace:*",
         "@intervals-mcp/compare-activities": "workspace:*",
         "@intervals-mcp/design-system": "workspace:*",
         "@intervals-mcp/fitness-trend": "workspace:*",
         "@intervals-mcp/route-map": "workspace:*",
-        "@intervals-mcp/segment-progress": "workspace:*",
         "@intervals-mcp/training-load": "workspace:*",
         "@intervals-mcp/ui": "workspace:*",
         "@intervals-mcp/vite-config": "workspace:*",
@@ -88,30 +84,6 @@
         "react": "19.2.8",
         "react-dom": "19.2.8",
         "recharts": "3.10.1",
-      },
-      "devDependencies": {
-        "@intervals-mcp/tsconfig": "workspace:*",
-        "@intervals-mcp/vite-config": "workspace:*",
-        "@types/react": "19.2.18",
-        "@types/react-dom": "19.2.4",
-        "storybook": "10.5.8",
-        "typescript": "7.0.2",
-        "vite": "8.2.1",
-        "vitest": "4.1.10",
-      },
-    },
-    "packages/activity-segments": {
-      "name": "@intervals-mcp/activity-segments",
-      "version": "1.0.0",
-      "dependencies": {
-        "@base-ui/react": "1.7.0",
-        "@intervals-mcp/data": "workspace:*",
-        "@intervals-mcp/design-system": "workspace:*",
-        "@intervals-mcp/ui": "workspace:*",
-        "@modelcontextprotocol/ext-apps": "1.7.5",
-        "@modelcontextprotocol/sdk": "1.30.0",
-        "react": "19.2.8",
-        "react-dom": "19.2.8",
       },
       "devDependencies": {
         "@intervals-mcp/tsconfig": "workspace:*",
@@ -255,30 +227,6 @@
         "maplibre-gl": "6.4.0",
         "react": "19.2.8",
         "react-dom": "19.2.8",
-      },
-      "devDependencies": {
-        "@intervals-mcp/tsconfig": "workspace:*",
-        "@intervals-mcp/vite-config": "workspace:*",
-        "@types/react": "19.2.18",
-        "@types/react-dom": "19.2.4",
-        "storybook": "10.5.8",
-        "typescript": "7.0.2",
-        "vite": "8.2.1",
-        "vitest": "4.1.10",
-      },
-    },
-    "packages/segment-progress": {
-      "name": "@intervals-mcp/segment-progress",
-      "version": "1.0.0",
-      "dependencies": {
-        "@base-ui/react": "1.7.0",
-        "@intervals-mcp/data": "workspace:*",
-        "@intervals-mcp/design-system": "workspace:*",
-        "@intervals-mcp/ui": "workspace:*",
-        "@modelcontextprotocol/ext-apps": "1.7.5",
-        "react": "19.2.8",
-        "react-dom": "19.2.8",
-        "recharts": "3.10.1",
       },
       "devDependencies": {
         "@intervals-mcp/tsconfig": "workspace:*",
@@ -484,8 +432,6 @@
 
     "@intervals-mcp/activity-chart": ["@intervals-mcp/activity-chart@workspace:packages/activity-chart"],
 
-    "@intervals-mcp/activity-segments": ["@intervals-mcp/activity-segments@workspace:packages/activity-segments"],
-
     "@intervals-mcp/activity-zones": ["@intervals-mcp/activity-zones@workspace:packages/activity-zones"],
 
     "@intervals-mcp/cadence-trends": ["@intervals-mcp/cadence-trends@workspace:packages/cadence-trends"],
@@ -499,8 +445,6 @@
     "@intervals-mcp/fitness-trend": ["@intervals-mcp/fitness-trend@workspace:packages/fitness-trend"],
 
     "@intervals-mcp/route-map": ["@intervals-mcp/route-map@workspace:packages/route-map"],
-
-    "@intervals-mcp/segment-progress": ["@intervals-mcp/segment-progress@workspace:packages/segment-progress"],
 
     "@intervals-mcp/server": ["@intervals-mcp/server@workspace:apps/server"],
 

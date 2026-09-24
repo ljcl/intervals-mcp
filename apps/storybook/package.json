@@ -9,14 +9,12 @@
   },
   "dependencies": {
     "@intervals-mcp/activity-chart": "workspace:*",
-    "@intervals-mcp/activity-segments": "workspace:*",
     "@intervals-mcp/activity-zones": "workspace:*",
     "@intervals-mcp/cadence-trends": "workspace:*",
     "@intervals-mcp/compare-activities": "workspace:*",
     "@intervals-mcp/design-system": "workspace:*",
     "@intervals-mcp/fitness-trend": "workspace:*",
     "@intervals-mcp/route-map": "workspace:*",
-    "@intervals-mcp/segment-progress": "workspace:*",
     "@intervals-mcp/training-load": "workspace:*",
     "@intervals-mcp/ui": "workspace:*",
     "@intervals-mcp/vite-config": "workspace:*"

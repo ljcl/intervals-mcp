@@ -1,8 +1,5 @@
-import { type RouteMapSource } from "./types";
-
 export interface RouteMapContextInput {
   name: string | null;
-  source: RouteMapSource;
   activityType: string | null;
   distanceKm: number;
   elevationGain: number;
@@ -26,7 +23,6 @@ export function buildRouteMapContextSummary(
 ): string | null {
   const {
     name,
-    source,
     activityType,
     distanceKm,
     elevationGain,
@@ -36,8 +32,7 @@ export function buildRouteMapContextSummary(
   } = input;
   if (!name) return null;
 
-  const label = source === "route" ? "route" : "activity";
-  const kind = activityType ? `${activityType} ${label}` : label;
+  const kind = activityType ? `${activityType} activity` : "activity";
   const parts = [`Viewing the map for ${kind} "${name}".`];
 
   if (hasGeometry) {

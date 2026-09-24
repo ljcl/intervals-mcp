@@ -16,13 +16,11 @@
     "@modelcontextprotocol/server": "2.0.0",
     "@intervals-mcp/activity-chart": "workspace:*",
     "@intervals-mcp/activity-zones": "workspace:*",
-    "@intervals-mcp/activity-segments": "workspace:*",
     "@intervals-mcp/cadence-trends": "workspace:*",
     "@intervals-mcp/compare-activities": "workspace:*",
     "@intervals-mcp/data": "workspace:*",
     "@intervals-mcp/fitness-trend": "workspace:*",
     "@intervals-mcp/route-map": "workspace:*",
-    "@intervals-mcp/segment-progress": "workspace:*",
     "@intervals-mcp/training-load": "workspace:*",
     "dotenv": "17.4.2",
     "zod": "4.4.3"

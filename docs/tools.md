@@ -44,18 +44,14 @@ the UI renders.
 | `get-activity-streams-raw` | Raw stream data for the activity chart UI (app-only) |
 | `view-cadence-trends` | Interactive cadence trends with timeline, scatter, zones, and overlay views (MCP App) |
 | `get-cadence-trend-data` | Summary cadence/pace data for the cadence trends UI (app-only) |
-| `view-route-map` | Interactive map of an activity or route GPS track, fit to bounds with start/finish markers; optional distance-anchored waypoints (MCP App) |
+| `view-route-map` | Interactive map of an activity's GPS track, fit to bounds with start/finish markers; optional distance-anchored waypoints (MCP App) |
 | `get-route-map-data` | Decoded `[lat, lng]` coordinates plus index-aligned metric streams for the route map UI (app-only) |
-| `view-activity-segments` | Prioritised, scrollable list of one activity's segment efforts: PRs/top-10 pinned, then run order, pace-heat with expandable effort detail (MCP App) |
-| `get-activity-segments-data` | Segment-effort rows (time, pace, grade, ranks, HR/power/cadence) for the activity-segments UI (app-only) |
 | `view-training-load` | Weekly running-volume bars with a rolling trend line and injury-risk warning weeks (MCP App) |
 | `get-training-load-data` | Per-week volume, trend value, and warning flags for the training-load UI (app-only) |
 | `view-compare-activities` | Interactive overlay of two activities' streams on a shared distance/time axis with a delta summary (MCP App) |
 | `get-compare-activities-data` | Aggregate comparison (summaries, activity2−activity1 differences, efficiency) for the compare-activities UI (app-only) |
 | `view-activity-zones` | Time-in-zone bar chart for one activity's HR and power zones with an easy/moderate/hard split (MCP App) |
 | `get-activity-zones-data` | Per-zone time distributions (bucket bounds, seconds, percentages) for the activity-zones UI (app-only) |
-| `view-segment-progress` | Effort history on one segment: time over date with PR/top-3 highlights, an average-HR overlay, and an expandable effort list (MCP App) |
-| `get-segment-progress-data` | Segment details, per-effort rows, and the derived progress summary for the segment-progress UI (app-only) |
 | `view-fitness-trend` | CTL/ATL/TSB over time with shaded fatigue/freshness/ramp bands and a dashed taper plan or rest projection past today (MCP App) |
 | `get-fitness-trend-data` | Per-day CTL/ATL/TSB, the projection, the solved taper, and the dated warning bands for the fitness-trend UI (app-only) |
 
@@ -75,7 +71,7 @@ so it needs the `activity:write` scope.
 ## Tool permissions
 
 Every tool declares MCP annotations so a host can tell reads from writes. The
-31 read tools set `readOnlyHint: true` and `destructiveHint: false`, which is
+27 read tools set `readOnlyHint: true` and `destructiveHint: false`, which is
 the combination clients use to offer a durable "always allow". Two tools are
 writes and are expected to keep asking:
 
@@ -111,7 +107,6 @@ to these tools.
 - "Compare my two long runs from last week"
 - "Show me the cadence trends for my last 10 runs"
 - "View the route map for my last ride"
-- "Am I getting faster on segment 8109834? Show my effort history"
 
 **Stats**
 

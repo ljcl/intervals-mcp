@@ -1,7 +1,7 @@
 # MCP App packages
 
-Conventions shared by the nine React MCP App packages
-(`packages/{activity-chart,cadence-trends,route-map,activity-segments,training-load,compare-activities,activity-zones,segment-progress,fitness-trend}`),
+Conventions shared by the seven React MCP App packages
+(`packages/{activity-chart,cadence-trends,route-map,training-load,compare-activities,activity-zones,fitness-trend}`),
 then per-app details. Read this before adding or substantially changing an app.
 
 ## App shell conventions
@@ -33,7 +33,7 @@ Every app's `main.tsx` is the same four-branch state machine, so it lives in
 - **Every app opens with a `CardHeader`.** In a host transcript the card is
   otherwise detached from the tool call that produced it. Subtitles are built
   by a unit-tested helper next to the app's other pure normalizers
-  (`buildSegmentSubtitle` is the pattern).
+  (`buildCadenceSubtitle` is the pattern).
 - **No-data is `EmptyState`, never a bare chart frame.** Test what the chart
   actually needs, not just the row count: an activity whose only stream is time
   parses into points that plot nothing.
@@ -211,15 +211,12 @@ at the cap so the limit is legible.
 
 The most complex app; defaults to a MapLibre basemap with a pure-SVG offline
 grid fallback (no Recharts). Calls `get-route-map-data` (app-only) with
-`activity_id` or `route_id`.
+`activity_id`.
 
 - The server prefers the `latlng` stream over the polyline and returns
-  index-aligned metric streams alongside coordinates. Saved routes get
-  `distance` + `altitude` from their stored profile via `loadRouteProfile`, so
-  elevation colouring works for a route too. Stream-less activities and routes
-  with no recoverable profile fall back to the decoded polyline
-  (`apps/server/src/polyline.ts`, server-side decode keeping the bundle lean)
-  with no streams.
+  index-aligned metric streams alongside coordinates. Stream-less activities
+  fall back to the decoded polyline (`apps/server/src/polyline.ts`,
+  server-side decode keeping the bundle lean) with no streams.
 - Projection math (`src/normalize.ts`): fit to bounds with padding, scale
   longitude by `cos(latitude)`, flip latitude so north is up.
 - Metric colouring when streams exist (`src/metrics.ts`): binned same-colour
@@ -232,33 +229,26 @@ grid fallback (no Recharts). Calls `get-route-map-data` (app-only) with
   `aria-live`. Clamped to base frame; marker/stroke sizes counter-scale.
   `touch-action`: `pan-y` at base zoom, `none` once zoomed.
 - Annotation layers, each toggleable via the footer legend: lap/km split dots
-  (`src/annotations.ts`; km marks thinned 1/2/5… per length), segment-effort
-  halo spans (gold PR, light purple top-10), grouped photo pins, caller-pinned
+  (`src/annotations.ts`; km marks thinned 1/2/5… per length) and caller-pinned
   waypoints. The server resolves anchors to coordinate indices in
-  `apps/server/src/mapAnchors.ts` because Strava lap/effort indices reference
-  the full-resolution stream, not the downsampled one. A layer whose fetch
-  fails costs that layer and nothing else (429 included): `dropOptionalLayer`
-  logs the reason and records a `layerWarnings` note on the payload, sibling of
+  `apps/server/src/mapAnchors.ts` because Strava lap indices reference the
+  full-resolution stream, not the downsampled one. A layer whose fetch fails
+  costs that layer and nothing else (429 included): `dropOptionalLayer` logs
+  the reason and records a `layerWarnings` note on the payload, sibling of
   `waypointWarnings`, both surfaced by `view-route-map`'s text; a rate limit
   quotes `RateLimitError.detail`. Misreporting a failure as an absence is the
   forbidden shape — every cause is named, none swallowed.
 - Waypoints: `waypoints` array (`km`, `label`, `kind: fuel|climb|water|custom`)
   anchored by cumulative distance (`resolveWaypoints` in `mapAnchors.ts`;
-  recorded distance stream when present, else haversine cumulative distances —
-  so saved routes work). Out-of-range waypoints drop into `waypointWarnings`.
-  Per-kind coloured diamonds on grid and elevation strip; colored circles on
-  the basemap (`WAYPOINT_COLORS` — concrete hex, theme-invariant); counted in
-  the a11y narration.
+  recorded distance stream when present, else haversine cumulative distances).
+  Out-of-range waypoints drop into `waypointWarnings`. Per-kind coloured
+  diamonds on grid and elevation strip; colored circles on the basemap
+  (`WAYPOINT_COLORS` — concrete hex, theme-invariant); counted in the a11y
+  narration.
 - Screen-reader narration (`src/a11yDescription.ts`): kind, distance, climb,
   loop vs point-to-point, geographic extent, altitude range, colour metric,
   annotation counts — in both views (SVG `<title>`/`<desc>` wiring asserted by
   SSR-markup tests; basemap as visually-hidden text + canvas `aria-label`).
-- Segment efforts split presentation from data (`src/segments.ts`): up to 60
-  efforts arrive with `distanceMeters`; only PR/top-10 plus the longest few
-  earn drawn halos (`selectOutlineSegments`, behind the "Segments" toggle).
-  Every effort covering the scrubbed point lists in the one shared scrub
-  tooltip regardless (`segmentsAtIndex`, PR-first then most-specific, capped
-  3 + "N more").
 - Screen-reader narration aside, the basemap (`src/BasemapView.tsx`) is the
   **default view**; a failed style load falls back silently to the offline SVG
   grid (keeping SVG zoom/pan). Track renders as GeoJSON line features reusing
@@ -302,27 +292,6 @@ Storybook's `viteFinal`. Bundle: ~2.12 MB raw (~554 KB gz).
 Grid stories pin `basemapEnabled: false` (deterministic offline fallback, no
 live tiles) so browser-mode story tests stay hermetic; the Basemap stories
 exercise the real default view.
-
-### Activity Segments
-
-Prioritised, scrollable list of one activity's segment efforts (no Recharts,
-no MapLibre). Calls `get-activity-segments-data` on mount.
-
-- The server maps the activity's embedded `segment_efforts` (no extra fetch) to
-  per-effort rows in `apps/server/src/activitySegments.ts`
-  (`mapActivitySegments`), sorted by `start_index`. The Strava segment
-  **leaderboard** endpoints are dead at the API level, so the only ranking
-  signal is the athlete's own `pr_rank` / `kom_rank` per effort.
-- Presentation logic is pure and unit-tested in `src/segments.ts`:
-  `selectHighlights` (PR/top-10 first, then rank) pins notable efforts to a
-  Highlights group; `runOrder` lists the rest by `start_index`;
-  `buildHeatDomain`/`heatColor` colour each row's dot by effort speed
-  (percentile-clamped, faster = hotter) using the shared ramp;
-  `summaryCounts` feeds the header line.
-- Each row is a Base UI `Collapsible`: two-line summary (heat dot, name, time,
-  PR gold / top-10 purple badge; pace, distance, grade) expanding to HR,
-  cadence (spm/rpm by sport), power (only with `device_watts`), max grade,
-  moving time.
 
 ### Training Load
 
@@ -378,32 +347,6 @@ One activity's time-in-zone distribution (#34). Calls
   sets carry a footnote.
 - Pure logic in `src/normalize.ts` (`buildZoneRows`, `intensitySplit` — zones
   1–2 easy / 3 moderate / 4+ hard, `buildSummaryStats`).
-
-### Segment Progress
-
-Effort history on one segment — the progression signal Strava's dead
-leaderboard endpoints no longer provide. Calls `get-segment-progress-data` on
-mount with `segment_id` and optional `start_date_local`/`end_date_local`.
-
-- The server pairs `get-segment` with `list-segment-efforts` (one page, 200
-  max) and maps them in `apps/server/src/segmentProgress.ts`
-  (`buildSegmentProgress`): oldest-first, ranked by elapsed time, pace per km,
-  run cadence doubled to spm. `summarizeSegmentProgress` derives the summary
-  both surfaces render — best/latest/median, gap to best, and chronological
-  halves (early vs recent mean time and mean heart rate, from four efforts
-  up). Those halves make "same segment time, −8 bpm" legible; the `view-`
-  tool's text prints the same numbers so chart and prose cannot drift.
-- The segment-efforts endpoint is subscriber-only; the handler turns Strava's
-  `SUBSCRIPTION_REQUIRED:` sentinel into a plain-English tool error.
-- `ComposedChart`: effort time on a **reversed** left axis (faster sits higher,
-  labelled "time (faster ↑)"), average HR dashed on the right axis
-  (legend-toggleable, only when some effort recorded it).
-- Highlight dots keyed on tier (`--color-tier-pr` gold, `--color-tier-top10`
-  purple; no top-3 tier at ≤3 efforts).
-- `EffortList.tsx` lists newest-first as Base UI `Collapsible` rows (date,
-  badge, time; pace, gap to best, HR — expanding to rank, moving time, max HR,
-  cadence, power, parent activity id). The open row reports through
-  `useModelContextSync` so the model can name the effort being viewed.
 
 ### Fitness Trend
 

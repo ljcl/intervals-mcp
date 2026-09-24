@@ -72,11 +72,9 @@ per-tool.
 
 | Path | TTL | Rationale |
 | ---- | --- | --------- |
-| Activity streams, segment streams | 6h | A segment's course cannot be edited (a change makes a new segment), so its profile is as immutable as a recorded activity's |
-| Detailed activity + laps/zones/photos | 1h | |
-| A route's stored streams | 1h | The expensive half of the route pair, wanted by both `get-route-preview` and the map; only an athlete edit invalidates |
-| Athlete profile/stats, single segment, single route | 5m | |
-| `/segment_efforts` | 2m | Sized so each app's `view-`/`get-…-data` pair costs one upstream fetch, not two |
+| Activity streams | 6h | Immutable once the activity is recorded |
+| Detailed activity + laps/zones | 1h | Invalidated on `update-activity` writes |
+| Athlete profile/stats | 5m | Name/weight/gear and totals can drift |
 | `/athlete/activities` | 2m | Cadence-trends, training-load, and fitness-trend pairs each run a full history pagination |
 
 - Handlers floor `after`/`before` window bounds to the minute
@@ -113,18 +111,17 @@ per-tool.
 
 ## Streams
 
-Every stream read goes through the `stravaClient.ts` wrappers —
-`getActivityStreams()`, `getRouteStreams()`, `getSegmentStreams()` — never a
-bare `stravaApi.get`. All three share one private `fetchStreamSet` core, so the
-contract is stated once: it validates the `[{type, data}]` shape and routes
-failures through `handleApiError` (a 401 refreshes and retries; a 429 gets the
-structured message).
+Every stream read goes through the `stravaClient.ts` wrapper —
+`getActivityStreams()` — never a bare `stravaApi.get`. It runs through one
+private `fetchStreamSet` core, so the contract is stated once: it validates
+the `[{type, data}]` shape and routes failures through `handleApiError` (a 401
+refreshes and retries; a 429 gets the structured message).
 
 Only a genuine 404 or empty response throws `StreamsUnavailableError` — the
 one error a caller may degrade on ("this resource has no recorded samples").
-It carries `resourceId` + `kind` (`activity` | `route` | `segment`) so the
-message names what was missing. Catching anything broader misreports failures
-(expired tokens, rate limits) as absences.
+It carries `resourceId` + `kind` (`activity`) so the message names what was
+missing. Catching anything broader misreports failures (expired tokens, rate
+limits) as absences.
 
 ## Analysis math: one home per definition
 
