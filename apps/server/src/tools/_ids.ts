@@ -105,7 +105,7 @@ function idInput(options: {
           ctx.addIssue({
             code: "custom",
             message:
-              `id ${value} is too large to be sent as a JSON number — it was rounded before ` +
+              `id ${value} is too large to be sent as a JSON number, so it was rounded before ` +
               `it reached the server, so the original id is unrecoverable. Re-send the id ` +
               `exactly as ${oversizedNumberHint}, quoted as a string of digits.`,
           });

@@ -13,7 +13,7 @@ import { SERVER_VERSION } from "./version";
  * client must never copy.
  *
  * Every function takes `apiKey` first and sends it as HTTP Basic
- * (`basicAuthHeader`, username `API_KEY`) plus a descriptive `User-Agent` —
+ * (`basicAuthHeader`, username `API_KEY`) plus a descriptive `User-Agent`:
  * some clients meet a Cloudflare challenge without one (docs/api-notes.md).
  * Athlete-scoped paths use `getIntervalsAthleteId()`.
  */
@@ -224,7 +224,7 @@ export type IntervalsSportSettings = z.infer<
  * interpreted: the user-facing message, with the HTTP status still attached.
  *
  * Extends {@link HttpError} so the status survives translation, same as
- * `stravaClient.ts`'s `StravaApiError` — a caller degrading on a specific
+ * `stravaClient.ts`'s `StravaApiError`: a caller degrading on a specific
  * status needs `instanceof`/`.response.status` to still work.
  */
 export class IntervalsApiError extends HttpError {
@@ -433,7 +433,7 @@ export async function listActivities(
 /**
  * Fetches a single activity. `options.intervals: true` adds
  * `?intervals=true`, which populates the activity's `icu_intervals` field
- * (empty otherwise — docs/api-notes.md).
+ * (empty otherwise; see docs/api-notes.md).
  */
 export async function getActivity(
   apiKey: string,

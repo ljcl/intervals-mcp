@@ -10,7 +10,7 @@ export default {
       },
       // Re-runnable fixture capture script, invoked directly with `bun`
       // rather than through a package.json script.
-      entry: ["scripts/capture-intervals-fixtures.ts"],
+      entry: ["scripts/capture-intervals-fixtures.ts", "scripts/live-check.ts"],
     },
     "apps/server": {
       project: ["src/**/*.ts"],

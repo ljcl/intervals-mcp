@@ -59,3 +59,9 @@ at `apps/server/src/__fixtures__/intervals/`.
 - `{"gear": null}` and `{"gear": {"id": null}}` both return 200 but are ignored: gear cannot be cleared this way. `update-activity` should support switching gear, not clearing it.
 - Missing activity returns HTTP 404 with a small JSON body.
 - Responses carry no `X-RateLimit-*` or `Retry-After` headers (only Cloudflare headers).
+- An activity's (and each interval's) `gap` field is grade-adjusted speed in m/s, the same unit as
+  `average_speed`: not documented by the spec, but verified in Task 6 by checking `gap` sits in the
+  same range as `average_speed` and that each interval's `gap` tracks its `average_speed` up or
+  down with the interval's grade direction, the signature of a grade-adjusted speed rather than a
+  pace-per-metre value. See `gapPace` in `apps/server/src/tools/getActivity.ts` for the conversion
+  to a pace string with `metersPerSecToPace`.

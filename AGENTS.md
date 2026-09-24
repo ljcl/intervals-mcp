@@ -66,8 +66,10 @@ breaking them has shipped bugs — do not work around them locally.
   handlers as argument 2; never read `process.env.INTERVALS_API_KEY`
   elsewhere. A missing key maps to one not-configured message naming the env
   var.
-- **`stravaClient.ts` is transitional:** tools are being ported to an
-  intervals.icu client (Phases 1 and 2). Do not add new callers.
+- **intervals.icu reads go through `intervalsClient.ts`; `stravaClient.ts` is
+  transitional.** Tools are being ported from the retired Strava client to
+  `intervalsClient.ts` (Phases 1 and 2). Do not add new `stravaClient.ts`
+  callers.
 - **Ids go through `stravaIdInput`** (`tools/_ids.ts`). Advertised schema is
   string-only (`stravaIdJsonSchemaOverride`) because ids above 2^53 are
   rounded by hosts' `JSON.parse` unrecoverably; safe-int numbers accepted at

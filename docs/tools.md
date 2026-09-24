@@ -9,7 +9,9 @@ identity, so renames or schema reshapes re-prompt every user. See
 [architecture.md](architecture.md#tool-metadata) before changing either.
 
 > **Status.** Tools are being ported from Strava to intervals.icu (Phases 1
-> and 2). Until a tool is ported, it fails with a "not yet ported" error.
+> and 2). The five tools below are ported and verified against a real
+> account; until a remaining tool is ported, it fails with a "not yet
+> ported" error.
 
 ## intervals.icu tools
 
