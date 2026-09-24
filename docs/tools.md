@@ -9,7 +9,7 @@ identity, so renames or schema reshapes re-prompt every user. See
 [architecture.md](architecture.md#tool-metadata) before changing either.
 
 > **Status.** Tools are being ported from Strava to intervals.icu (Phases 1
-> and 2). The twelve tools below are ported and verified against a real
+> and 2). The thirteen tools below are ported and verified against a real
 > account; until a remaining tool is ported, it fails with a "not yet
 > ported" error.
 
@@ -32,6 +32,7 @@ Strava port.
 | `get-hill-analysis` | Climb/descent detection with GAP and early-vs-late climb effort drift |
 | `get-split-analysis` | Even km splits with a two-halves pacing verdict stated on the clock and grade-adjusted |
 | `get-aerobic-analysis` | Aerobic decoupling and efficiency factor, preferring intervals.icu's own values and computing from streams otherwise |
+| `get-interval-analysis` | Interval detection with urban-stop-aware rest classification and rep fade |
 
 `list-activities` defaults to the last 28 days (today back to 27 days
 earlier) in the server's configured time zone, sorted newest first. Filter
@@ -195,12 +196,26 @@ to the activity's `icu_warmup_time`, then the athlete's Run sport-settings
 `warmup_time`, then 5 minutes; intensity factor's threshold power defaults to
 the athlete's Run sport-settings `ftp`, then the activity's `icu_ftp`.
 
+`get-interval-analysis` classifies every stopped segment (from the derived
+`moving` stream) before trusting it as interval structure: under 60 s with no
+fast effort before it is a traffic light (excluded), up to 3 min after a fast
+effort is genuine recovery, over 5 min is a café/regroup stop (excluded),
+anything else is unclassified and lowers confidence. When the activity
+carries clean structured intervals.icu laps (`icu_intervals`, WORK/RECOVERY)
+those are preferred over stream reconstruction; they also catch
+jog-recovery sessions, which never stop moving, and fall back to streams
+when the laps' speeds are not tightly clustered (rain, sweat, a
+non-effort-based auto-lap split). Work reps are reconstructed between
+recoveries, merging straight through traffic lights, and reported with
+per-rep pace (`m:ss /km`), HR, cadence, and power; fade compares the last rep
+against the first. An HR-distribution tiebreaker ("was this a workout at
+all") reports the share of moving time at ≥ 88% of the activity's own max HR.
+
 ## Activity tools
 
 | Tool | Description |
 | ---- | ----------- |
 | `update-activity` | Update an activity's description, title, sport type, gear, or flags |
-| `get-interval-analysis` | Interval detection with urban-stop-aware rest classification and rep fade |
 | `get-training-load` | Training load summary with trend analysis |
 | `get-fitness-trend` | Fitness/fatigue/form (CTL/ATL/TSB) from relative effort, with rest projection and a solved taper to a target form on a target date |
 | `get-best-efforts` | Personal best efforts across all running activities, optionally scoped to a date window |

@@ -6,26 +6,27 @@ import {
   type IntervalLap,
   type IntervalStreams,
 } from "../intervalAnalysis";
+import { cadenceUnit } from "../intervalLaps";
+import { getActivity, type IntervalsInterval } from "../intervalsClient";
 import {
-  getActivityById,
-  getActivityLaps as getActivityLapsClient,
-  getActivityStreams,
-  type StravaLap,
-  StreamsUnavailableError,
-} from "../stravaClient";
-import { isRunningActivity } from "../utils/running";
+  IntervalsStreamsUnavailableError,
+  loadIntervalsStreams,
+} from "../intervalsStreams";
+import { NO_PROGRESS, type ReportProgress } from "../progress";
+import { cadenceSpm, formatPaceSeconds } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
-import { stravaIdInput } from "./_ids";
+import { toolErrorText } from "./_errors";
+import { intervalsActivityIdInput } from "./_ids";
 import { IntervalAnalysisOutputSchema, warnOnSchemaDrift } from "./outputs";
 
 const name = "get-interval-analysis";
 
 const description = `
-Detects and analyses interval structure in one activity, with urban-stop-aware rest classification.
+Detects and analyses interval structure in one intervals.icu activity, with urban-stop-aware rest classification.
 
 Naive rest-based interval detection false-positives on urban runs: traffic-light
 stops read as recovery intervals. This tool classifies every stopped segment
-(from the moving stream) before trusting it:
+(from the derived moving stream) before trusting it:
 - Stop under 60 s with no fast effort before it → traffic light, excluded
 - Stop up to 3 min after a fast effort → genuine interval recovery
 - Stop over 5 min → café/regroup/kit stop, noted but excluded
@@ -33,9 +34,10 @@ stops read as recovery intervals. This tool classifies every stopped segment
 
 Work reps are reconstructed between recoveries (easy running is merged straight
 through traffic lights) and reported with per-rep pace, HR, cadence, and power.
-When the activity carries clean structured device laps those are preferred —
-they also catch jog-recovery sessions, which never stop moving. Corrupted
-auto-laps (rain/sweat) fail a consistency check and fall back to streams.
+When the activity carries clean structured intervals.icu laps (icu_intervals)
+those are preferred; they also catch jog-recovery sessions, which never stop
+moving. Corrupted auto-laps (rain/sweat) fail a consistency check and fall
+back to streams.
 
 The response includes:
 - A verdict (interval session or not) with confidence and a reasoning audit
@@ -44,16 +46,16 @@ The response includes:
 - An HR-distribution tiebreaker for "was this a workout at all"
 
 Parameters:
-- activityId (required): The Strava activity to analyse
+- id (required): the intervals.icu activity id, exactly as returned by list-activities (e.g. "i189807578")
 
 Notes:
 - Stream-based detection only sees boundaries where you actually stopped;
-  jog-recovery workouts need laps (recorded automatically by most watches)
+  jog-recovery workouts need laps (intervals.icu's own WORK/RECOVERY split)
 - Classification thresholds are documented above and deliberately conservative
 `;
 
 const inputSchema = z.object({
-  activityId: stravaIdInput("The Strava activity to analyse."),
+  id: intervalsActivityIdInput("The intervals.icu activity id to analyse."),
 });
 
 type GetIntervalAnalysisInput = z.infer<typeof inputSchema>;
@@ -61,57 +63,40 @@ type GetIntervalAnalysisInput = z.infer<typeof inputSchema>;
 const STREAM_TYPES = [
   "time",
   "distance",
-  "moving",
   "heartrate",
   "velocity_smooth",
-  "watts",
   "cadence",
+  "watts",
 ] as const;
 
-async function fetchStreams(
-  token: string,
-  activityId: number | string,
-): Promise<Partial<IntervalStreams>> {
-  let streams: Awaited<ReturnType<typeof getActivityStreams>>;
-  try {
-    streams = await getActivityStreams(token, activityId, STREAM_TYPES);
-  } catch (error) {
-    // Only a genuinely sample-less activity degrades to the no-streams message
-    // below; auth and rate-limit failures propagate.
-    if (error instanceof StreamsUnavailableError) return {};
-    throw error;
-  }
+const formatPace = (secPerKm: number | null) =>
+  secPerKm == null ? null : `${formatPaceSeconds(secPerKm)} /km`;
 
-  const result: Partial<IntervalStreams> = {};
-  for (const [type, data] of streams) {
-    if (type === "moving") {
-      result.moving = data as boolean[];
-    } else if ((STREAM_TYPES as readonly string[]).includes(type)) {
-      result[type as Exclude<keyof IntervalStreams, "moving">] =
-        data as number[];
-    }
-  }
-  return result;
-}
-
-function toIntervalLap(lap: StravaLap): IntervalLap {
+/**
+ * Thin adapter from one `icu_intervals` entry to the module's lap input.
+ * Deliberately reads raw fields directly (distance, moving_time,
+ * average_speed, average_cadence) rather than going through
+ * `mapIntervalsToLaps`: that mapper's `LapEntry.average_cadence` is already
+ * doubled to steps/min for a step-cadence type (display-ready), while
+ * `intervalAnalysis.ts` averages/fades cadence in its raw per-leg form and
+ * expects the controller to convert once for display (`cadenceSpm` below,
+ * matching `getHillAnalysis.ts`'s convention). Reusing the doubled value
+ * here would double-convert it for the lap path only.
+ */
+function toIntervalLap(
+  interval: IntervalsInterval,
+  index: number,
+): IntervalLap {
   return {
-    lapIndex: lap.lap_index,
-    distanceM: lap.distance,
-    movingTimeS: lap.moving_time,
-    avgSpeedMs: lap.average_speed ?? null,
-    avgHr: lap.average_heartrate ?? null,
-    avgCadence: lap.average_cadence ?? null,
-    avgWatts: lap.average_watts ?? null,
+    lapIndex: index + 1,
+    distanceM: interval.distance ?? 0,
+    movingTimeS: interval.moving_time ?? 0,
+    avgSpeedMs: interval.average_speed ?? null,
+    avgHr: interval.average_heartrate ?? null,
+    avgCadence: interval.average_cadence ?? null,
+    avgWatts: interval.average_watts ?? null,
   };
 }
-
-const formatPace = (secPerKm: number | null) => {
-  if (secPerKm == null) return null;
-  const minutes = Math.floor(secPerKm / 60);
-  const seconds = Math.round(secPerKm % 60);
-  return `${minutes}:${seconds.toString().padStart(2, "0")} /km`;
-};
 
 export const getIntervalAnalysisTool = {
   name,
@@ -119,42 +104,54 @@ export const getIntervalAnalysisTool = {
   inputSchema,
   annotations: READ_ONLY,
   outputSchema: IntervalAnalysisOutputSchema,
-  execute: async ({ activityId }: GetIntervalAnalysisInput, token: string) => {
+  execute: async (
+    { id }: GetIntervalAnalysisInput,
+    apiKey: string,
+    progress: ReportProgress = NO_PROGRESS,
+  ) => {
     try {
-      // Laps corrupt or go missing (rain, manual activities); their absence
-      // must not fail the analysis, only remove the lap path.
-      const [activity, streams, laps] = await Promise.all([
-        getActivityById(token, activityId),
-        fetchStreams(token, activityId),
-        getActivityLapsClient(token, activityId).catch(() => []),
-      ]);
+      progress(`Fetching activity ${id}`);
+      const activity = await getActivity(apiKey, id, { intervals: true });
+      const type = activity.type ?? "Workout";
+      const displayName = activity.name ?? type;
 
-      if (!streams.time || !streams.distance) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `❌ No data streams are available for "${activity.name}" — manual activities have no recorded samples to analyse.`,
-            },
-          ],
-          isError: true,
-        };
+      progress(`Fetching streams for "${displayName}"`);
+      let streams: Awaited<ReturnType<typeof loadIntervalsStreams>>;
+      try {
+        streams = await loadIntervalsStreams(apiKey, id, [...STREAM_TYPES]);
+      } catch (error) {
+        if (error instanceof IntervalsStreamsUnavailableError) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `❌ No data streams are recorded for "${displayName}" (activity ${id}): manual activities have no recorded samples to analyse.`,
+              },
+            ],
+            isError: true,
+          };
+        }
+        throw error;
       }
 
-      const analysis = computeIntervalAnalysis(
-        streams as IntervalStreams,
-        laps.map(toIntervalLap),
-      );
-      const isRun = isRunningActivity(
-        activity.sport_type || activity.type || "",
-      );
-      const cadenceUnit = isRun ? "spm" : "rpm";
+      progress("Computing interval analysis", { important: true });
+      const intervalStreams: IntervalStreams = {
+        time: streams.time,
+        distance: streams.distance ?? [],
+        moving: streams.moving,
+        heartrate: streams.heartrate,
+        cadence: streams.cadence,
+        watts: streams.watts,
+      };
+      const laps = (activity.icu_intervals ?? []).map(toIntervalLap);
+      const analysis = computeIntervalAnalysis(intervalStreams, laps);
+      const cadenceUnitLabel = cadenceUnit(type);
 
       const structured = {
-        activity_id: activityId,
-        name: activity.name,
+        activity_id: id,
+        name: displayName,
         date: activity.start_date_local,
-        type: activity.sport_type || activity.type || "Unknown",
+        type,
         is_intervals: analysis.isIntervals,
         source: analysis.source,
         confidence: analysis.confidence,
@@ -168,11 +165,7 @@ export const getIntervalAnalysisTool = {
           pace_sec_per_km: rep.paceSecPerKm,
           pace_formatted: formatPace(rep.paceSecPerKm),
           avg_hr: rep.avgHr,
-          // Strava records run cadence per leg; display convention is spm.
-          avg_cadence:
-            rep.avgCadence != null
-              ? Math.round(rep.avgCadence * (isRun ? 2 : 1))
-              : null,
+          avg_cadence: cadenceSpm(rep.avgCadence, type),
           avg_watts: rep.avgWatts,
         })),
         rests: analysis.rests.map((rest) => ({
@@ -203,7 +196,7 @@ export const getIntervalAnalysisTool = {
       warnOnSchemaDrift(name, IntervalAnalysisOutputSchema, structured);
 
       const lines = [
-        `Interval Analysis: ${activity.name} (${activity.start_date_local})`,
+        `Interval Analysis: ${structured.name} (${structured.date})`,
         structured.is_intervals
           ? `Verdict: interval session — ${structured.reps.length} work reps (confidence: ${structured.confidence})`
           : `Verdict: not an interval session (confidence: ${structured.confidence})`,
@@ -219,7 +212,7 @@ export const getIntervalAnalysisTool = {
             rep.pace_formatted,
             rep.avg_hr != null ? `${rep.avg_hr} bpm` : null,
             rep.avg_cadence != null
-              ? `${rep.avg_cadence} ${cadenceUnit}`
+              ? `${rep.avg_cadence} ${cadenceUnitLabel}`
               : null,
             rep.avg_watts != null ? `${rep.avg_watts} W` : null,
           ].filter(Boolean);
@@ -261,13 +254,14 @@ export const getIntervalAnalysisTool = {
           isError: true,
         };
       }
-      const message = error instanceof Error ? error.message : String(error);
-      console.error(`Error in ${name}:`, message);
       return {
         content: [
           {
             type: "text" as const,
-            text: `❌ Failed to compute interval analysis: ${message}`,
+            text: toolErrorText(error, {
+              context: `compute interval analysis for activity ${id}`,
+              notFound: `Activity with ID ${id} not found.`,
+            }),
           },
         ],
         isError: true,

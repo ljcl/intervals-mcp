@@ -408,4 +408,28 @@ describe("error handling", () => {
     expect(analysis.confidence).toBe("low");
     expect(analysis.isIntervals).toBe(false);
   });
+
+  it("interpolates null distance samples instead of throwing or coercing to 0", () => {
+    const streams = buildStreams([
+      easy(600),
+      stop(30),
+      work(190),
+      stop(90),
+      work(190),
+      stop(90),
+      easy(300),
+    ]);
+    // A short mid-run dropout in the distance stream (not the leading/
+    // trailing samples, which normalizeHillStreams' underlying
+    // interpolateNulls holds flat rather than lerping).
+    streams.distance[500] = null;
+    streams.distance[501] = null;
+    const analysis = computeIntervalAnalysis(streams);
+    expect(analysis.reps).toHaveLength(2);
+    // The interpolated distance keeps monotonic progress through the gap;
+    // a rep spanning it does not read as 0 m or negative.
+    for (const rep of analysis.reps) {
+      expect(rep.distanceM).toBeGreaterThan(0);
+    }
+  });
 });
