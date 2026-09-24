@@ -29,8 +29,13 @@ const round1 = (value: number) => Math.round(value * 10) / 10;
  * null whenever the data can't be trusted: no bounds, no times, a bounds/
  * times count mismatch (would mislabel recorded time under the wrong zone),
  * or nothing recorded.
+ *
+ * Exported so the sport-settings fallback in `tools/getActivity.ts` and
+ * `tools/getRunningSummary.ts` can build a zone set from a fallback bounds
+ * array with the same min/max/pct derivation as the activity's own zones,
+ * rather than each re-deriving zone edges from a bounds array by hand.
  */
-function buildZoneSet(
+export function buildZoneSet(
   type: ZoneSet["type"],
   unit: ZoneSet["unit"],
   bounds: number[] | null | undefined,

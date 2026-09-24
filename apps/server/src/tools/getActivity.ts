@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { mapIntervalsZones } from "../activityZones";
+import { buildZoneSet, mapIntervalsZones } from "../activityZones";
 import { formatDuration, round, STRAVA_STUB_NOTE } from "../formatters";
 import {
   getActivity as getActivityClient,
@@ -206,17 +206,19 @@ function buildHrZones(
   if (activity.icu_hr_zones && activity.icu_hr_zones.length > 0) return [];
   if (!sportSettings?.types?.includes(type)) return [];
 
-  const hrZoneBounds = sportSettings.hr_zones;
-  if (!hrZoneBounds || hrZoneBounds.length === 0) return [];
-  const hrZoneTimes = activity.icu_hr_zone_times;
-  if (!hrZoneTimes || hrZoneTimes.length === 0) return [];
-  if (hrZoneBounds.length !== hrZoneTimes.length) return [];
+  const fallback = buildZoneSet(
+    "heartrate",
+    "bpm",
+    sportSettings.hr_zones,
+    activity.icu_hr_zone_times,
+  );
+  if (!fallback) return [];
 
-  return hrZoneBounds.map((maxBpm, i) => ({
-    zone: i + 1,
-    min_bpm: i === 0 ? 0 : (hrZoneBounds[i - 1] ?? null),
-    max_bpm: maxBpm,
-    seconds: hrZoneTimes[i] ?? 0,
+  return fallback.buckets.map((bucket) => ({
+    zone: bucket.zone,
+    min_bpm: bucket.min,
+    max_bpm: bucket.max,
+    seconds: bucket.seconds,
   }));
 }
 

@@ -1,6 +1,10 @@
 import { z } from "zod";
-import { hrZoneMismatchWarning, mapIntervalsZones } from "../activityZones";
-import { formatDuration, round, STRAVA_STUB_NOTE } from "../formatters";
+import {
+  buildZoneSet,
+  hrZoneMismatchWarning,
+  mapIntervalsZones,
+} from "../activityZones";
+import { formatDuration, STRAVA_STUB_NOTE } from "../formatters";
 import { type LapEntry, mapIntervalsToLaps } from "../intervalLaps";
 import {
   getActivity as getActivityClient,
@@ -158,21 +162,25 @@ function buildHrZoneSummary(
     };
   }
 
-  const totalSeconds = times.reduce((a, b) => a + (b ?? 0), 0);
-  if (totalSeconds <= 0) {
+  const fallback = buildZoneSet("heartrate", "bpm", bounds, times);
+  if (!fallback) {
     return { summary: null, note: "No time recorded in HR zones." };
   }
 
-  const zones = bounds.map((maxBpm, i) => ({
-    zone: i + 1,
-    min_bpm: i === 0 ? 0 : (bounds[i - 1] ?? null),
-    max_bpm: maxBpm,
-    seconds: times[i] ?? 0,
-    percent: round(((times[i] ?? 0) / totalSeconds) * 100, 1),
+  const zones = fallback.buckets.map((bucket) => ({
+    zone: bucket.zone,
+    min_bpm: bucket.min,
+    max_bpm: bucket.max ?? 0,
+    seconds: bucket.seconds,
+    percent: bucket.pct,
   }));
 
   return {
-    summary: { source: "sport_settings", total_seconds: totalSeconds, zones },
+    summary: {
+      source: "sport_settings",
+      total_seconds: fallback.totalSeconds,
+      zones,
+    },
     note: null,
   };
 }
