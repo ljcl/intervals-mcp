@@ -1,68 +1,66 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  basicRunActivity,
-  handledRateLimit,
-  rideActivity,
-} from "../__fixtures__";
-import {
-  getActivityById,
-  getAllActivities,
-  type StravaDetailedActivity,
-  type StravaSummaryActivity,
-} from "../stravaClient";
+  getAthletePaceCurves,
+  type IntervalsAthletePaceCurves,
+} from "../intervalsClient";
 import { getRacePredictionTool } from "./getRacePrediction";
 
-vi.mock("../stravaClient", () => ({
-  getAllActivities: vi.fn(),
-  getActivityById: vi.fn(),
-}));
+vi.mock("../intervalsClient", async () => {
+  const actual =
+    await vi.importActual<typeof import("../intervalsClient")>(
+      "../intervalsClient",
+    );
+  return { ...actual, getAthletePaceCurves: vi.fn() };
+});
 
-const mockedList = vi.mocked(getAllActivities);
-const mockedById = vi.mocked(getActivityById);
+const mockedAthleteCurves = vi.mocked(getAthletePaceCurves);
 
-const asSummary = (a: unknown) => a as unknown as StravaSummaryActivity;
-const asDetail = (a: unknown) => a as unknown as StravaDetailedActivity;
-
-/** Today, so fixture dates can be built relative to the run date. */
+/** Today, so fixture dates can be built relative to a run date. */
 const daysAgo = (days: number) =>
   new Date(Date.now() - days * 24 * 60 * 60 * 1000)
     .toISOString()
     .split("T")[0]!;
 
 /**
- * An activity carrying one best effort, dated `days` ago. The id is a string
- * because `StravaIdSchema` transforms every id to its digit string — these
- * fixtures stand in for parsed client output, not raw Strava JSON.
+ * A minimal athlete pace-curves response: one point per curve at the given
+ * distance/time, both owned by the same activity dated `days` ago. Stands in
+ * for what `getAthletePaceCurves(curves: ["all", "90d"])` returns.
  */
-const activityWithEffort = (
-  id: number,
-  effortName: string,
-  distance: number,
-  elapsed: number,
-  days = 20,
-) => ({
-  ...basicRunActivity,
-  id: String(id),
-  name: `Run ${id}`,
-  best_efforts: [
-    {
-      id: id * 10,
-      name: effortName,
-      distance,
-      elapsed_time: elapsed,
-      moving_time: elapsed,
-      start_date: `${daysAgo(days)}T08:00:00Z`,
-      start_date_local: `${daysAgo(days)}T08:00:00Z`,
-      pr_rank: 1,
+function curvesWithPoint(
+  distanceMeters: number,
+  elapsedSeconds: number,
+  options: { days?: number; activityId?: string; name?: string } = {},
+): IntervalsAthletePaceCurves {
+  const { days = 20, activityId = "i1", name = "Run 1" } = options;
+  return {
+    list: [
+      {
+        id: "all",
+        distance: [distanceMeters],
+        values: [elapsedSeconds],
+        activity_id: [activityId],
+      },
+      {
+        id: "90d",
+        distance: [distanceMeters],
+        values: [elapsedSeconds],
+        activity_id: [activityId],
+      },
+    ],
+    activities: {
+      [activityId]: {
+        id: activityId,
+        name,
+        start_date_local: `${daysAgo(days)}T08:00:00`,
+        race: false,
+      },
     },
-  ],
-});
+  } as unknown as IntervalsAthletePaceCurves;
+}
 
 const run = (args: Record<string, unknown> = {}) =>
   getRacePredictionTool.execute(
-    { maxActivities: 100, ...args } as Parameters<
-      typeof getRacePredictionTool.execute
-    >[0],
+    args as Parameters<typeof getRacePredictionTool.execute>[0],
     "test-token",
   );
 
@@ -92,62 +90,22 @@ function target(result: RunResult) {
 
 describe("getRacePredictionTool.execute", () => {
   beforeEach(() => {
-    mockedList.mockReset();
-    mockedById.mockReset();
+    mockedAthleteCurves.mockReset();
   });
 
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it("bounds the listing to running activities", async () => {
-    mockedList.mockResolvedValueOnce([]);
-
-    await run({ maxActivities: 1000 });
-
-    expect(mockedList).toHaveBeenCalledWith("test-token", {
-      perPage: 200,
-      maxItems: 1000,
-      countActivity: expect.any(Function),
-    });
-    const countActivity = mockedList.mock.calls[0]?.[1]?.countActivity;
-    expect(countActivity?.(asSummary(basicRunActivity))).toBe(true);
-    expect(countActivity?.(asSummary(rideActivity))).toBe(false);
-  });
-
-  it("only fetches details for running activities", async () => {
-    mockedList.mockResolvedValueOnce([
-      asSummary(basicRunActivity),
-      asSummary(rideActivity),
-    ]);
-    mockedById.mockResolvedValueOnce(
-      asDetail(activityWithEffort(1, "10K", 10000, 2400)),
-    );
+  it("fetches the all and 90d pace curves for Run", async () => {
+    mockedAthleteCurves.mockResolvedValueOnce(curvesWithPoint(10000, 2400));
 
     await run();
 
-    expect(mockedById).toHaveBeenCalledTimes(1);
-  });
-
-  it("scopes the scan to a date window when after/before are given", async () => {
-    mockedList.mockResolvedValueOnce([]);
-
-    await run({ after: "2026-01-01", before: "2026-06-30T23:59:59Z" });
-
-    expect(mockedList).toHaveBeenCalledWith("test-token", {
-      perPage: 100,
-      maxItems: 100,
-      countActivity: expect.any(Function),
-      after: Math.floor(Date.parse("2026-01-01") / 1000),
-      before: Math.floor(Date.parse("2026-06-30T23:59:59Z") / 1000),
+    expect(mockedAthleteCurves).toHaveBeenCalledWith("test-token", {
+      type: "Run",
+      curves: ["all", "90d"],
     });
   });
 
-  it("predicts the four standard distances from one 10K effort", async () => {
-    mockedList.mockResolvedValueOnce([asSummary(basicRunActivity)]);
-    mockedById.mockResolvedValueOnce(
-      asDetail(activityWithEffort(1, "10K", 10000, 2400)),
-    );
+  it("predicts the four standard distances from one 10K pace-curve point", async () => {
+    mockedAthleteCurves.mockResolvedValueOnce(curvesWithPoint(10000, 2400));
 
     const result = await run();
 
@@ -159,32 +117,48 @@ describe("getRacePredictionTool.execute", () => {
     expect(tenK.predicted_seconds).toBe(2400);
     expect(tenK.predicted_formatted).toBe("40:00");
     expect(tenK.pace.min_per_km).toBe("4:00");
-    expect(tenK.primary_source.name).toBe("10K");
+    expect(tenK.primary_source.name).toBe("10000 m");
 
-    expect(result.content[0]?.text).toContain("Race Prediction");
+    expect(result.content[0]?.text).toContain("Race prediction");
     expect(result.content[0]?.text).toContain("Equivalent performances");
   });
 
-  it("excludes efforts shorter than the Riegel floor from the inputs", async () => {
-    mockedList.mockResolvedValueOnce([
-      asSummary({ ...basicRunActivity, id: 1 }),
-      asSummary({ ...basicRunActivity, id: 2 }),
-    ]);
-    mockedById
-      .mockResolvedValueOnce(asDetail(activityWithEffort(1, "400m", 400, 70)))
-      .mockResolvedValueOnce(asDetail(activityWithEffort(2, "5K", 5000, 1200)));
+  it("excludes pace-curve points shorter than the Riegel floor from the inputs", async () => {
+    mockedAthleteCurves.mockResolvedValueOnce({
+      list: [
+        {
+          id: "all",
+          distance: [400, 5000],
+          values: [70, 1200],
+          activity_id: ["i1", "i2"],
+        },
+        {
+          id: "90d",
+          distance: [400, 5000],
+          values: [70, 1200],
+          activity_id: ["i1", "i2"],
+        },
+      ],
+      activities: {
+        i1: { id: "i1", name: "Run 1", start_date_local: "2026-06-01" },
+        i2: { id: "i2", name: "Run 2", start_date_local: "2026-06-01" },
+      },
+    } as unknown as IntervalsAthletePaceCurves);
 
     const result = await run();
 
     const sourceNames = payload(result).sources.map((source) => source.name);
-    expect(sourceNames).toEqual(["5K"]);
+    expect(sourceNames).toEqual(["5000 m"]);
   });
 
-  it("reports a helpful message when no usable efforts exist", async () => {
-    mockedList.mockResolvedValueOnce([asSummary(basicRunActivity)]);
-    mockedById.mockResolvedValueOnce(
-      asDetail({ ...basicRunActivity, best_efforts: [] }),
-    );
+  it("reports a helpful message when no usable pace-curve points exist", async () => {
+    mockedAthleteCurves.mockResolvedValueOnce({
+      list: [
+        { id: "all", distance: [], values: [], activity_id: [] },
+        { id: "90d", distance: [], values: [], activity_id: [] },
+      ],
+      activities: {},
+    } as unknown as IntervalsAthletePaceCurves);
 
     const result = await run();
 
@@ -194,11 +168,8 @@ describe("getRacePredictionTool.execute", () => {
     expect(result.content[0]?.text).toContain("Not enough to predict from");
   });
 
-  it("builds km, mile, and negative-split tables for the requested race", async () => {
-    mockedList.mockResolvedValueOnce([asSummary(basicRunActivity)]);
-    mockedById.mockResolvedValueOnce(
-      asDetail(activityWithEffort(1, "10K", 10000, 2400)),
-    );
+  it("builds km even and negative-split tables for the requested race, no mile splits", async () => {
+    mockedAthleteCurves.mockResolvedValueOnce(curvesWithPoint(10000, 2400));
 
     const result = await run({ raceDistance: "Half Marathon" });
 
@@ -208,19 +179,18 @@ describe("getRacePredictionTool.execute", () => {
     expect(race.goal_vs_predicted_seconds).toBeNull();
 
     const strategies = race.splits.map((s) => `${s.unit}:${s.strategy}`);
-    expect(strategies).toEqual(["km:even", "mile:even", "km:negative"]);
+    expect(strategies).toEqual(["km:even", "km:negative"]);
+    expect(race.splits.every((s) => s.unit === "km")).toBe(true);
 
     // A half is 21.0975 km: 21 full kilometres plus a partial.
     expect(race.splits[0]?.splits).toHaveLength(22);
-    expect(result.content[0]?.text).toContain("Even splits — kilometres");
+    expect(result.content[0]?.text).toContain("Even splits - kilometres");
     expect(result.content[0]?.text).toContain("Negative split");
+    expect(result.content[0]?.text).not.toContain("mile");
   });
 
   it("paces the splits to a goal time and grades it against the prediction", async () => {
-    mockedList.mockResolvedValueOnce([asSummary(basicRunActivity)]);
-    mockedById.mockResolvedValueOnce(
-      asDetail(activityWithEffort(1, "10K", 10000, 2400)),
-    );
+    mockedAthleteCurves.mockResolvedValueOnce(curvesWithPoint(10000, 2400));
 
     const result = await run({
       raceDistance: "Half Marathon",
@@ -238,13 +208,9 @@ describe("getRacePredictionTool.execute", () => {
   });
 
   it("calls a goal within 2% of the prediction realistic, not conservative", async () => {
-    mockedList.mockResolvedValueOnce([asSummary(basicRunActivity)]);
-    mockedById.mockResolvedValueOnce(
-      asDetail(activityWithEffort(1, "10K", 10000, 2400)),
-    );
+    mockedAthleteCurves.mockResolvedValueOnce(curvesWithPoint(10000, 2400));
 
-    // 40:00 for 10K predicts 40:00 for 10K, so 40:20 is 0.8% slower —
-    // matching the prediction, not a soft target.
+    // 40:00 for 10K predicts 40:00 for 10K, so 40:20 is 0.8% slower.
     const result = await run({ raceDistance: "10K", goalTime: "40:20" });
 
     const race = target(result);
@@ -254,10 +220,7 @@ describe("getRacePredictionTool.execute", () => {
   });
 
   it("warns when the goal is far faster than the prediction", async () => {
-    mockedList.mockResolvedValueOnce([asSummary(basicRunActivity)]);
-    mockedById.mockResolvedValueOnce(
-      asDetail(activityWithEffort(1, "10K", 10000, 2400)),
-    );
+    mockedAthleteCurves.mockResolvedValueOnce(curvesWithPoint(10000, 2400));
 
     const result = await run({
       raceDistance: "Half Marathon",
@@ -269,19 +232,16 @@ describe("getRacePredictionTool.execute", () => {
     expect(race.goal_assessment).toContain("risks blowing up");
   });
 
-  it("rejects an unparseable goal time before scanning anything", async () => {
+  it("rejects an unparseable goal time before fetching pace curves", async () => {
     const result = await run({ raceDistance: "10K", goalTime: "soon" });
 
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain("Could not read");
-    expect(mockedList).not.toHaveBeenCalled();
+    expect(mockedAthleteCurves).not.toHaveBeenCalled();
   });
 
   it("adds a non-standard requested race to the prediction table", async () => {
-    mockedList.mockResolvedValueOnce([asSummary(basicRunActivity)]);
-    mockedById.mockResolvedValueOnce(
-      asDetail(activityWithEffort(1, "10K", 10000, 2400)),
-    );
+    mockedAthleteCurves.mockResolvedValueOnce(curvesWithPoint(10000, 2400));
 
     const result = await run({ raceDistance: "15K" });
 
@@ -291,10 +251,7 @@ describe("getRacePredictionTool.execute", () => {
   });
 
   it("prompts for raceDistance when only predictions were asked for", async () => {
-    mockedList.mockResolvedValueOnce([asSummary(basicRunActivity)]);
-    mockedById.mockResolvedValueOnce(
-      asDetail(activityWithEffort(1, "10K", 10000, 2400)),
-    );
+    mockedAthleteCurves.mockResolvedValueOnce(curvesWithPoint(10000, 2400));
 
     const result = await run();
 
@@ -302,25 +259,34 @@ describe("getRacePredictionTool.execute", () => {
     expect(result.content[0]?.text).toContain("Pass raceDistance");
   });
 
-  it("weights a recent effort over a stale one and says which drove it", async () => {
-    mockedList.mockResolvedValueOnce([
-      asSummary({ ...basicRunActivity, id: 1 }),
-      asSummary({ ...basicRunActivity, id: 2 }),
-    ]);
-    mockedById
-      // A blistering 10K from two years ago...
-      .mockResolvedValueOnce(
-        asDetail(activityWithEffort(1, "10K", 10000, 2100, 730)),
-      )
-      // ...and a slower one from last week.
-      .mockResolvedValueOnce(
-        asDetail(activityWithEffort(2, "10K", 10001, 2500, 7)),
-      );
+  it("weights the fastest-of-90d point over a stale all-time PR and says which drove it", async () => {
+    mockedAthleteCurves.mockResolvedValueOnce({
+      list: [
+        {
+          // A blistering 10K from two years ago.
+          id: "all",
+          distance: [10000],
+          values: [2100],
+          activity_id: ["i1"],
+        },
+        {
+          // A slower one from last week.
+          id: "90d",
+          distance: [10000],
+          values: [2500],
+          activity_id: ["i2"],
+        },
+      ],
+      activities: {
+        i1: { id: "i1", name: "Old PR", start_date_local: daysAgo(730) },
+        i2: { id: "i2", name: "Recent run", start_date_local: daysAgo(7) },
+      },
+    } as unknown as IntervalsAthletePaceCurves);
 
     const result = await run();
 
     const tenK = prediction(result, "10K");
-    expect(tenK.primary_source.activity_id).toBe("2");
+    expect(tenK.primary_source.activity_id).toBe("i2");
     // The stale PR still contributes, so the consensus sits between them.
     expect(tenK.predicted_seconds).toBeLessThan(2500);
     expect(tenK.predicted_seconds).toBeGreaterThan(2100);
@@ -328,10 +294,7 @@ describe("getRacePredictionTool.execute", () => {
   });
 
   it("grades a marathon predicted only from a 5K as low confidence", async () => {
-    mockedList.mockResolvedValueOnce([asSummary(basicRunActivity)]);
-    mockedById.mockResolvedValueOnce(
-      asDetail(activityWithEffort(1, "5K", 5000, 1200)),
-    );
+    mockedAthleteCurves.mockResolvedValueOnce(curvesWithPoint(5000, 1200));
 
     const result = await run();
 
@@ -342,82 +305,68 @@ describe("getRacePredictionTool.execute", () => {
     );
   });
 
-  it("skips activities that fail to fetch and says so", async () => {
-    mockedList.mockResolvedValueOnce([
-      asSummary({ ...basicRunActivity, id: 1 }),
-      asSummary({ ...basicRunActivity, id: 2 }),
-    ]);
-    mockedById
-      .mockRejectedValueOnce(new Error("boom"))
-      .mockResolvedValueOnce(
-        asDetail(activityWithEffort(2, "10K", 10000, 2400)),
-      );
+  it("reports the critical-speed model and a per-distance CS prediction alongside Riegel", async () => {
+    mockedAthleteCurves.mockResolvedValueOnce({
+      list: [
+        {
+          id: "all",
+          distance: [10000],
+          values: [2400],
+          activity_id: ["i1"],
+          paceModels: [
+            { type: "CS", criticalSpeed: 3.6, dPrime: 120, r2: 0.995 },
+          ],
+        },
+        {
+          id: "90d",
+          distance: [10000],
+          values: [2400],
+          activity_id: ["i1"],
+        },
+      ],
+      activities: {
+        i1: { id: "i1", name: "Run 1", start_date_local: daysAgo(20) },
+      },
+    } as unknown as IntervalsAthletePaceCurves);
 
     const result = await run();
 
-    expect(result.structuredContent?.activities_skipped).toBe(1);
-    expect(result.structuredContent?.warnings?.[0]).toContain(
-      "could not be fetched",
+    const model = payload(result).critical_speed_model;
+    expect(model).not.toBeNull();
+    expect(model?.d_prime_m).toBe(120);
+    expect(model?.r2).toBe(0.995);
+
+    const tenK = prediction(result, "10K");
+    // (10000 - 120) / 3.6 = 2744.4...
+    expect(tenK.critical_speed?.predicted_seconds).toBe(2744);
+    expect(tenK.critical_speed?.within_model_range).toBe(true);
+
+    const marathon = prediction(result, "Marathon");
+    // (42195 - 120) / 3.6 is well over an hour: outside the model's window.
+    expect(marathon.critical_speed?.within_model_range).toBe(false);
+    expect(result.content[0]?.text).toContain("critical speed");
+    expect(result.content[0]?.text).toContain(
+      "outside the model's 3-60 minute validity window",
     );
-    // The surviving effort still produces a prediction.
-    expect(result.structuredContent?.predictions?.length).toBeGreaterThan(0);
   });
 
-  it("stops the scan on a rate limit and flags the partial set", async () => {
-    const activities = Array.from({ length: 20 }, (_, i) =>
-      asSummary({ ...basicRunActivity, id: i + 1 }),
-    );
-    mockedList.mockResolvedValueOnce(activities);
-
-    let calls = 0;
-    mockedById.mockImplementation(async () => {
-      calls += 1;
-      // The shape `getActivityById` really throws — see handledRateLimit.
-      if (calls > 5) throw handledRateLimit(`getActivityById for ID ${calls}`);
-      return asDetail(activityWithEffort(calls, "10K", 10000, 2400));
-    });
+  it("leaves critical_speed_model null and per-prediction critical_speed null when no CS fit is present", async () => {
+    mockedAthleteCurves.mockResolvedValueOnce(curvesWithPoint(10000, 2400));
 
     const result = await run();
 
-    expect(result.isError).toBeUndefined();
-    expect(mockedById.mock.calls.length).toBeLessThan(20);
-    expect(result.structuredContent?.activities_skipped).toBeGreaterThan(0);
-    const warning = result.structuredContent?.warnings?.[0] ?? "";
-    expect(warning).toContain("rate limit was reached part-way");
-    expect(warning).toContain("15-minute rate limit reached");
-    expect(warning).not.toContain("getActivityById");
-    expect(result.content[0]?.text).toContain("partial set");
+    expect(payload(result).critical_speed_model).toBeNull();
+    const tenK = prediction(result, "10K");
+    expect(tenK.critical_speed).toBeNull();
   });
 
-  it("bounds how many activity fetches are in flight at once", async () => {
-    const activities = Array.from({ length: 20 }, (_, i) =>
-      asSummary({ ...basicRunActivity, id: i + 1 }),
-    );
-    mockedList.mockResolvedValueOnce(activities);
-
-    let inFlight = 0;
-    let peak = 0;
-    mockedById.mockImplementation(async () => {
-      inFlight += 1;
-      peak = Math.max(peak, inFlight);
-      await new Promise((resolve) => setTimeout(resolve, 1));
-      inFlight -= 1;
-      return asDetail(activityWithEffort(1, "10K", 10000, 2400));
-    });
-
-    await run();
-
-    expect(mockedById).toHaveBeenCalledTimes(20);
-    expect(peak).toBeGreaterThan(1);
-    expect(peak).toBeLessThanOrEqual(5);
-  });
-
-  it("returns an error result when the listing call throws", async () => {
-    mockedList.mockRejectedValueOnce(new Error("network down"));
+  it("returns an isError result with the prefixed text on a client failure", async () => {
+    mockedAthleteCurves.mockRejectedValueOnce(new Error("network down"));
 
     const result = await run();
 
     expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toMatch(/^❌/);
     expect(result.content[0]?.text).toContain("network down");
   });
 });

@@ -1,11 +1,18 @@
 import { z } from "zod";
-import { RateLimitError } from "../fetchClient";
 import { formatDuration } from "../formatters";
+import { getAthletePaceCurves } from "../intervalsClient";
+import { NO_PROGRESS, type ReportProgress } from "../progress";
 import {
   buildSplits,
-  formatPaceSeconds,
+  type CriticalSpeedModel,
+  CS_MODEL_MAX_SECONDS,
+  CS_MODEL_MIN_SECONDS,
+  criticalSpeedModel,
+  criticalSpeedPredict,
   formatRaceTime,
+  isWithinCriticalSpeedValidity,
   NEGATIVE_SPLIT_PCT,
+  paceCurveSourceEfforts,
   parseGoalTime,
   predictRace,
   RACE_DISTANCES,
@@ -16,29 +23,31 @@ import {
   STANDARD_TARGETS,
   selectSourceEfforts,
 } from "../racePrediction";
-import {
-  getActivityById,
-  getAllActivities,
-  type StravaSummaryActivity,
-} from "../stravaClient";
-import { mapWithConcurrency } from "../utils/concurrency";
+import { formatPaceSeconds } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
+import { toolErrorText } from "./_errors";
 import { RacePredictionOutputSchema, warnOnSchemaDrift } from "./outputs";
 
 const name = "get-race-prediction";
 
 const description = `
-Predicts race times from your recorded best efforts and builds a goal-pace split table.
+Predicts race times from intervals.icu's pace curves and builds a goal-pace split table.
 
-Uses Riegel's equivalent-performance formula (T2 = T1 × (D2/D1)^1.06) over the
-best efforts Strava records inside each run, combining them into one estimate
-per distance weighted by how recent each effort is and how far it has to be
-extrapolated.
+Uses Riegel's equivalent-performance formula (T2 = T1 x (D2/D1)^1.06) over pace-curve
+points (the fastest ever, and the fastest of the last 90 days, at each recorded
+distance), combined into one estimate per distance weighted by how recent each
+point is and how far it has to be extrapolated.
+
+Alongside each Riegel estimate, reports intervals.icu's own critical-speed model
+fit to the same pace curve: time = (distance - dPrime) / criticalSpeed. That model
+is stated as valid for roughly 3 to 60 minutes of racing; a prediction outside
+that range (a marathon, for instance) is still shown, flagged as outside the
+model's validity rather than hidden.
 
 Use Cases:
-- "I am racing a half in six weeks — what should I target, and what is my km split?"
+- "I am racing a half in six weeks, what should I target, and what is my km split?"
 - Sanity-check a goal time against what your training actually supports
-- See which effort is driving a prediction, and how much your distances disagree
+- See which pace-curve point is driving a prediction, and how the two models compare
 
 Parameters:
 - raceDistance (optional): the race you are planning ("5K", "10K", "15K", "10 mile",
@@ -46,42 +55,28 @@ Parameters:
   for the equivalent-performance table alone
 - goalTime (optional): pace the splits to your own goal instead of the prediction
   ("1:45:00", "45:30", "1h45m"). Requires raceDistance
-- maxActivities (optional): activities to scan (default 100, max 200)
-- after / before (optional): scope the scan to a date window (ISO date or date-time)
 
 Notes:
 - Riegel is an extrapolation, not a measurement. Every prediction carries a
-  confidence grade, the effort that drives it, and the spread across sources
-- Efforts under 1500 m are excluded — outside the range the formula fits
+  confidence grade, the pace-curve point that drives it, and the spread across sources
+- Pace-curve points under 1500 m are excluded from Riegel's inputs, outside the
+  range the formula fits
+- The critical-speed model comes from the athlete's "all" pace curve, falling
+  back to the "90d" curve when "all" carries no fit
 - It assumes appropriate training for the distance; it cannot know whether you
   have done the long runs a marathon needs
-- Scanning fetches each activity's detail, so it makes one API call per activity.
-  Prefer after/before to scope a season over raising maxActivities
-- If the rate limit is reached part-way, the scan stops and the response says
-  how many activities were skipped rather than predicting from a partial set
 `;
 
-/** ISO date (`2026-01-31`) or full date-time, converted to an epoch second. */
-const isoDateInput = (what: string) =>
-  z
-    .string()
-    .refine((value) => !Number.isNaN(Date.parse(value)), {
-      message: "Must be an ISO date (2026-01-31) or date-time",
-    })
-    .optional()
-    .describe(what);
-
-const RACE_DISTANCE_NAMES = Object.keys(RACE_DISTANCES) as [
-  RaceDistanceName,
-  ...RaceDistanceName[],
-];
-
+/** ISO date-time-agnostic goal time input, still free text so runners can
+ * write it however they naturally would ("1:45:00", "45:30", "1h45m"). */
 const inputSchema = z.object({
   raceDistance: z
-    .enum(RACE_DISTANCE_NAMES)
+    .enum(
+      Object.keys(RACE_DISTANCES) as [RaceDistanceName, ...RaceDistanceName[]],
+    )
     .optional()
     .describe(
-      "The race being planned. Supply it to get a km/mile split table; omit for predictions only.",
+      "The race being planned. Supply it to get a km split table; omit for predictions only.",
     ),
   goalTime: z
     .string()
@@ -89,39 +84,16 @@ const inputSchema = z.object({
     .describe(
       "Pace the splits to this target instead of the prediction ('1:45:00', '45:30', '1h45m'). Needs raceDistance.",
     ),
-  maxActivities: z
-    .number()
-    .int()
-    .positive()
-    .max(200)
-    .default(100)
-    .describe("Maximum number of activities to scan (default: 100, max: 200)"),
-  after: isoDateInput(
-    "Only scan activities on or after this date — scope a season instead of scanning by count.",
-  ),
-  before: isoDateInput("Only scan activities on or before this date."),
 });
 
 type GetRacePredictionInput = z.infer<typeof inputSchema>;
 
-const RUNNING_TYPES = ["Run", "TrailRun", "VirtualRun"];
-
-const isRunningActivity = (a: StravaSummaryActivity) =>
-  RUNNING_TYPES.includes(a.type ?? a.sport_type ?? "");
-
-/** Matches `get-best-efforts` — one detail request per activity, capped. */
-const FETCH_CONCURRENCY = 5;
-
-const CONFIDENCE_ICON = { high: "🟢", medium: "🟡", low: "🔴" } as const;
-
-const NO_PACE = { min_per_km: "N/A", min_per_mile: "N/A" };
+const NO_PACE = { min_per_km: "N/A" };
 
 /** `racePace` speaks camelCase; the payload is snake_case. */
 function paceFields(seconds: number, distanceMeters: number) {
   const pace = racePace(seconds, distanceMeters);
-  return pace
-    ? { min_per_km: pace.minPerKm, min_per_mile: pace.minPerMile }
-    : NO_PACE;
+  return pace ? { min_per_km: pace.minPerKm } : NO_PACE;
 }
 
 const serializeSource = (source: SourceEffort) => ({
@@ -133,6 +105,24 @@ const serializeSource = (source: SourceEffort) => ({
   activity_id: source.activityId,
   activity_name: source.activityName,
 });
+
+/** The critical-speed prediction for one target distance, or `null` when no
+ * model is available or the target does not exceed the model's `dPrime`. */
+function criticalSpeedPrediction(
+  model: CriticalSpeedModel | null,
+  targetMeters: number,
+) {
+  if (!model) return null;
+  const seconds = criticalSpeedPredict(model, targetMeters);
+  if (seconds === null) return null;
+  const rounded = Math.round(seconds);
+  return {
+    predicted_seconds: rounded,
+    predicted_formatted: formatRaceTime(rounded),
+    pace: { min_per_km: formatPaceSeconds((seconds / targetMeters) * 1000) },
+    within_model_range: isWithinCriticalSpeedValidity(seconds),
+  };
+}
 
 const serializeSplitPlan = (plan: SplitPlan) => ({
   unit: plan.unit,
@@ -161,14 +151,13 @@ const SPLIT_TABLE_HEADER = `${" ".repeat(11)}split cumulative\n`;
 
 /** Rows for one split table, aligned so the columns read as a table. */
 function renderSplitTable(plan: SplitPlan): string {
-  const unitLabel = plan.unit === "km" ? "km" : "mi";
   let out = "";
   for (const split of plan.splits) {
     const partial =
-      split.segmentMeters < (plan.unit === "km" ? 999 : 1608)
+      split.segmentMeters < 999
         ? ` (${Math.round(split.segmentMeters)} m)`
         : "";
-    out += `  ${String(split.index).padStart(2, " ")} ${unitLabel}  ${formatRaceTime(
+    out += `  ${String(split.index).padStart(2, " ")} km  ${formatRaceTime(
       split.splitSeconds,
     ).padStart(
       7,
@@ -185,107 +174,44 @@ export const getRacePredictionTool = {
   annotations: READ_ONLY,
   outputSchema: RacePredictionOutputSchema,
   execute: async (
-    {
-      raceDistance,
-      goalTime,
-      maxActivities,
-      after,
-      before,
-    }: GetRacePredictionInput,
-    token: string,
+    { raceDistance, goalTime }: GetRacePredictionInput,
+    apiKey: string,
+    progress: ReportProgress = NO_PROGRESS,
   ) => {
+    // Reject a bad goal time before spending a request on it.
+    const goalSeconds = goalTime !== undefined ? parseGoalTime(goalTime) : null;
+    if (goalTime !== undefined && goalSeconds === null) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `❌ Could not read "${goalTime}" as a race time. Use H:MM:SS ("1:45:00"), MM:SS ("45:30"), or shorthand ("1h45m").`,
+          },
+        ],
+        isError: true,
+      };
+    }
+
     try {
-      // Reject a bad goal time before spending a 100-activity scan on it.
-      const goalSeconds =
-        goalTime !== undefined ? parseGoalTime(goalTime) : null;
-      if (goalTime !== undefined && goalSeconds === null) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `❌ Could not read "${goalTime}" as a race time. Use H:MM:SS ("1:45:00"), MM:SS ("45:30"), or shorthand ("1h45m").`,
-            },
-          ],
-          isError: true,
-        };
-      }
-
-      console.error(
-        `Predicting races (scanning up to ${maxActivities} activities)...`,
-      );
-
-      const allActivities = await getAllActivities(token, {
-        perPage: Math.min(maxActivities, 200),
-        maxItems: maxActivities,
-        countActivity: isRunningActivity,
-        ...(after ? { after: Math.floor(Date.parse(after) / 1000) } : {}),
-        ...(before ? { before: Math.floor(Date.parse(before) / 1000) } : {}),
+      progress("Fetching pace curves (all, 90d)...", { important: true });
+      const curves = await getAthletePaceCurves(apiKey, {
+        type: "Run",
+        curves: ["all", "90d"],
       });
 
-      const runningActivities = allActivities
-        .filter(isRunningActivity)
-        .slice(0, maxActivities);
-
-      const efforts: SourceEffort[] = [];
-      let activitiesWithEfforts = 0;
-      let activitiesRead = 0;
-      let failedFetches = 0;
-      // A 429 means the quota is genuinely spent. Continuing would burn the
-      // rest of the scan on requests that cannot succeed, so it stops and the
-      // response says the prediction rests on a partial set.
-      const abort: { rateLimit: RateLimitError | null } = { rateLimit: null };
-
-      await mapWithConcurrency(
-        runningActivities,
-        FETCH_CONCURRENCY,
-        async (summary) => {
-          let activity: Awaited<ReturnType<typeof getActivityById>>;
-          try {
-            activity = await getActivityById(token, summary.id);
-          } catch (err) {
-            if (err instanceof RateLimitError) {
-              abort.rateLimit ??= err;
-            } else {
-              failedFetches += 1;
-              console.error(`Failed to fetch activity ${summary.id}: ${err}`);
-            }
-            return;
-          }
-
-          activitiesRead += 1;
-          if (!activity.best_efforts || activity.best_efforts.length === 0) {
-            return;
-          }
-          activitiesWithEfforts += 1;
-
-          for (const effort of activity.best_efforts) {
-            efforts.push({
-              name: effort.name,
-              distanceMeters: effort.distance || 0,
-              elapsedSeconds: effort.elapsed_time || 0,
-              date: (effort.start_date_local || effort.start_date || "").split(
-                "T",
-              )[0]!,
-              activityId: activity.id,
-              activityName: activity.name,
-            });
-          }
-        },
-        () => abort.rateLimit !== null,
-      );
-
+      const efforts = paceCurveSourceEfforts(curves);
       const referenceDate = new Date().toISOString().split("T")[0]!;
       const sources = selectSourceEfforts(efforts, referenceDate);
 
-      const skipped = runningActivities.length - activitiesRead;
+      const allCurve = curves.list.find((c) => c.id === "all");
+      const recentCurve = curves.list.find((c) => c.id === "90d");
+      const csModel =
+        criticalSpeedModel(allCurve) ?? criticalSpeedModel(recentCurve);
+
       const warnings: string[] = [];
-      if (abort.rateLimit) {
+      if (!allCurve && !recentCurve) {
         warnings.push(
-          `Strava's rate limit was reached part-way through the scan, so ${skipped} of ${runningActivities.length} activities were not read. The predictions below rest on a partial set of efforts. ${abort.rateLimit.detail} Retry after the window resets, or narrow the scan with after/before.`,
-        );
-      } else if (failedFetches > 0) {
-        warnings.push(
-          `${failedFetches} activit${failedFetches === 1 ? "y" : "ies"} could not be fetched, so any efforts they hold are missing from the inputs.`,
+          'Neither the "all" nor "90d" pace curve was returned by intervals.icu.',
         );
       }
 
@@ -303,30 +229,36 @@ export const getRacePredictionTool = {
         .filter((p) => p !== null);
 
       const method =
-        "Riegel T2 = T1 × (D2/D1)^1.06 over recorded best efforts, weighted by recency (90-day half-life) and extrapolation distance. Assumes training appropriate to the distance.";
+        "Riegel T2 = T1 x (D2/D1)^1.06 over intervals.icu pace-curve points (fastest ever and fastest of the last 90 days per distance), weighted by recency (90-day half-life) and extrapolation distance. Assumes training appropriate to the distance. The critical-speed prediction is intervals.icu's own model: time = (distance - dPrime) / criticalSpeed, stated as valid for roughly 3 to 60 minute efforts.";
+
+      const criticalSpeedModelField = csModel
+        ? {
+            critical_speed_min_per_km: formatPaceSeconds(
+              1000 / csModel.criticalSpeedMetersPerSec,
+            ),
+            d_prime_m: Math.round(csModel.dPrimeMeters * 10) / 10,
+            r2: Math.round(csModel.r2 * 10000) / 10000,
+          }
+        : null;
 
       if (sources.length === 0) {
-        const reason =
-          activitiesRead === 0
-            ? "No running activities were read."
-            : "No recorded best efforts of 1500 m or longer were found — Strava records best efforts on GPS-recorded runs, and efforts shorter than 1500 m are outside Riegel's range.";
         const response = {
           predictions: [],
           target: null,
           sources: [],
-          activities_analyzed: activitiesRead,
-          activities_with_efforts: activitiesWithEfforts,
-          activities_skipped: skipped,
-          warnings: [...warnings, reason],
+          critical_speed_model: criticalSpeedModelField,
+          warnings: [
+            ...warnings,
+            "No recorded pace-curve points of 1500 m or longer were found.",
+          ],
           method,
         };
         warnOnSchemaDrift(name, RacePredictionOutputSchema, response);
 
-        let text = `🏁 **Race Prediction**\n`;
-        text += `📊 Analyzed ${activitiesRead} activities\n\n`;
-        text += `Not enough to predict from. ${reason}\n`;
-        text += `Try raising maxActivities, or widening after/before.\n`;
-        for (const warning of warnings) text += `\n⚠️ ${warning}\n`;
+        let text = "Race prediction\n\n";
+        text +=
+          "Not enough to predict from. No recorded pace-curve points of 1500 m or longer were found.\n";
+        for (const warning of response.warnings) text += `\n${warning}\n`;
 
         return {
           content: [{ type: "text" as const, text }],
@@ -341,7 +273,7 @@ export const getRacePredictionTool = {
         basis: "goal" | "predicted";
         total_seconds: number;
         total_formatted: string;
-        pace: { min_per_km: string; min_per_mile: string };
+        pace: { min_per_km: string };
         goal_vs_predicted_seconds: number | null;
         goal_assessment: string | null;
         splits: ReturnType<typeof serializeSplitPlan>[];
@@ -357,7 +289,6 @@ export const getRacePredictionTool = {
         if (totalSeconds > 0) {
           targetPlans = [
             buildSplits(totalSeconds, targetMeters, "km"),
-            buildSplits(totalSeconds, targetMeters, "mile"),
             buildSplits(totalSeconds, targetMeters, "km", NEGATIVE_SPLIT_PCT),
           ];
 
@@ -370,13 +301,13 @@ export const getRacePredictionTool = {
             const gap = Math.abs(delta);
             const pct = (gap / predicted.predictedSeconds) * 100;
             if (delta > 0 && pct >= 2) {
-              assessment = `Your goal is ${formatRaceTime(gap)} slower than the ${formatRaceTime(predicted.predictedSeconds)} your efforts predict — a conservative target you should be able to hold.`;
+              assessment = `Your goal is ${formatRaceTime(gap)} slower than the ${formatRaceTime(predicted.predictedSeconds)} your efforts predict, a conservative target you should be able to hold.`;
             } else if (pct < 2) {
-              assessment = `Your goal is within ${formatRaceTime(gap)} of the ${formatRaceTime(predicted.predictedSeconds)} predicted — right on what your efforts support.`;
+              assessment = `Your goal is within ${formatRaceTime(gap)} of the ${formatRaceTime(predicted.predictedSeconds)} predicted, right on what your efforts support.`;
             } else if (pct < 6) {
-              assessment = `Your goal is ${formatRaceTime(gap)} faster than the ${formatRaceTime(predicted.predictedSeconds)} predicted (${pct.toFixed(1)}%) — a stretch that needs the race to go right.`;
+              assessment = `Your goal is ${formatRaceTime(gap)} faster than the ${formatRaceTime(predicted.predictedSeconds)} predicted (${pct.toFixed(1)}%), a stretch that needs the race to go right.`;
             } else {
-              assessment = `Your goal is ${formatRaceTime(gap)} faster than the ${formatRaceTime(predicted.predictedSeconds)} predicted (${pct.toFixed(1)}%) — well beyond what your recorded efforts support. Going out at this pace risks blowing up.`;
+              assessment = `Your goal is ${formatRaceTime(gap)} faster than the ${formatRaceTime(predicted.predictedSeconds)} predicted (${pct.toFixed(1)}%), well beyond what your recorded efforts support. Going out at this pace risks blowing up.`;
             }
           }
 
@@ -419,84 +350,85 @@ export const getRacePredictionTool = {
             age_days: c.ageDays,
             weight: c.weight,
           })),
+          critical_speed: criticalSpeedPrediction(csModel, p.distanceMeters),
         })),
         target,
         sources: sources.map(serializeSource),
-        activities_analyzed: activitiesRead,
-        activities_with_efforts: activitiesWithEfforts,
-        activities_skipped: skipped,
+        critical_speed_model: criticalSpeedModelField,
         warnings,
         method,
       };
 
       // ---- text ----
-      let output = `🏁 **Race Prediction**\n`;
-      output += `📊 Analyzed ${activitiesRead} activities (${activitiesWithEfforts} with best efforts, ${sources.length} used as inputs)\n`;
-      if (skipped > 0) {
-        output += `⚠️ ${skipped} activit${skipped === 1 ? "y" : "ies"} skipped — predictions rest on a partial set\n`;
-      }
-      output += `\n**Equivalent performances**\n`;
+      let output = "Race prediction\n";
+      output += `${sources.length} pace-curve point${sources.length === 1 ? "" : "s"} used as inputs\n`;
+      output += "\nEquivalent performances\n";
       for (const p of predictions) {
         const pace = racePace(p.predictedSeconds, p.distanceMeters);
-        output += `  ${CONFIDENCE_ICON[p.confidence]} ${p.label.padEnd(14, " ")} ${formatRaceTime(p.predictedSeconds)}`;
-        if (pace) output += `  (${pace.minPerKm} /km, ${pace.minPerMile} /mi)`;
-        output += `\n`;
+        output += `  ${p.label.padEnd(14, " ")} ${formatRaceTime(p.predictedSeconds)}`;
+        if (pace) output += `  (${pace.minPerKm} /km)`;
+        output += ` [${p.confidence}]\n`;
         output += `     from ${p.primary.source.name} in ${formatDuration(p.primary.source.elapsedSeconds)} on ${p.primary.source.date}`;
         if (p.spread && p.spread.rangeSeconds > 0) {
-          output += `; sources range ${formatRaceTime(p.spread.fastestSeconds)}–${formatRaceTime(p.spread.slowestSeconds)}`;
+          output += `; sources range ${formatRaceTime(p.spread.fastestSeconds)}-${formatRaceTime(p.spread.slowestSeconds)}`;
         }
-        output += `\n`;
+        output += "\n";
+        const cs = criticalSpeedPrediction(csModel, p.distanceMeters);
+        if (cs) {
+          output += `     critical speed: ${cs.predicted_formatted} (${cs.pace.min_per_km} /km)`;
+          output += cs.within_model_range
+            ? "\n"
+            : " - outside the model's 3-60 minute validity window\n";
+        }
       }
 
-      output += `\n**Confidence**\n`;
+      output += "\nConfidence\n";
       for (const p of predictions) {
-        output += `  ${CONFIDENCE_ICON[p.confidence]} ${p.label}: ${p.confidence}\n`;
+        output += `  ${p.label}: ${p.confidence}\n`;
         for (const note of p.confidenceNotes) {
           output += `     - ${note}\n`;
         }
       }
 
+      if (csModel) {
+        output += "\nCritical speed model (intervals.icu)\n";
+        output += `  ${criticalSpeedModelField?.critical_speed_min_per_km} /km critical pace, dPrime ${Math.round(csModel.dPrimeMeters)} m, r2 ${csModel.r2.toFixed(3)}\n`;
+        output += `  Valid for roughly ${CS_MODEL_MIN_SECONDS / 60}-${CS_MODEL_MAX_SECONDS / 60} minute efforts; predictions outside that range are shown above but flagged.\n`;
+      }
+
       if (target) {
-        const [kmPlan, milePlan, negativePlan] = targetPlans;
-        output += `\n**${target.distance} target: ${target.total_formatted}** `;
-        output += target.basis === "goal" ? `(your goal)\n` : `(predicted)\n`;
-        output += `   ${target.pace.min_per_km} /km · ${target.pace.min_per_mile} /mi\n`;
+        const [kmPlan, negativePlan] = targetPlans;
+        output += `\n${target.distance} target: ${target.total_formatted} `;
+        output += target.basis === "goal" ? "(your goal)\n" : "(predicted)\n";
+        output += `   ${target.pace.min_per_km} /km\n`;
         if (target.goal_assessment) {
           output += `   ${target.goal_assessment}\n`;
         }
 
         if (kmPlan) {
-          output += `\n_Even splits — kilometres_\n`;
+          output += "\nEven splits - kilometres\n";
           output += SPLIT_TABLE_HEADER;
           output += renderSplitTable(kmPlan);
         }
-        if (milePlan) {
-          output += `\n_Even splits — miles_\n`;
-          output += SPLIT_TABLE_HEADER;
-          output += renderSplitTable(milePlan);
-        }
         if (negativePlan) {
-          output += `\n_Negative split (${(NEGATIVE_SPLIT_PCT * 100).toFixed(0)}% either side of halfway) — kilometres_\n`;
+          output += `\nNegative split (${(NEGATIVE_SPLIT_PCT * 100).toFixed(0)}% either side of halfway) - kilometres\n`;
           output += SPLIT_TABLE_HEADER;
           output += renderSplitTable(negativePlan);
         }
       } else {
-        output += `\nPass raceDistance to get a km and mile split table (and goalTime to pace it to your own target).\n`;
+        output +=
+          "\nPass raceDistance to get a km split table (and goalTime to pace it to your own target).\n";
       }
 
-      output += `\n**Inputs** (best efforts used)\n`;
+      output += "\nInputs (pace-curve points used)\n";
       for (const source of sources) {
-        output += `  ${source.name}: ${formatDuration(source.elapsedSeconds)} on ${source.date} — ${source.activityName}\n`;
+        output += `  ${source.name}: ${formatDuration(source.elapsedSeconds)} on ${source.date} - ${source.activityName}\n`;
       }
 
       for (const warning of warnings) {
-        output += `\n⚠️ ${warning}\n`;
+        output += `\n${warning}\n`;
       }
-      output += `\nℹ️ ${method}\n`;
-
-      console.error(
-        `Successfully predicted ${predictions.length} race distances from ${sources.length} efforts`,
-      );
+      output += `\n${method}\n`;
 
       warnOnSchemaDrift(name, RacePredictionOutputSchema, response);
 
@@ -505,15 +437,14 @@ export const getRacePredictionTool = {
         structuredContent: response,
       };
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      console.error(`Error predicting race times: ${errorMessage}`);
-
       return {
         content: [
           {
             type: "text" as const,
-            text: `❌ An unexpected error occurred while predicting race times. Details: ${errorMessage}`,
+            text: toolErrorText(error, {
+              context: "predict race times from pace curves",
+              notFound: "No pace curve data was found for this athlete.",
+            }),
           },
         ],
         isError: true,

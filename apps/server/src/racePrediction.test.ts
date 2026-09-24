@@ -1,13 +1,19 @@
 import { describe, expect, it } from "vitest";
+import { type IntervalsAthletePaceCurves } from "./intervalsClient";
 import {
   buildSplits,
+  CS_MODEL_MAX_SECONDS,
+  CS_MODEL_MIN_SECONDS,
+  criticalSpeedModel,
+  criticalSpeedPredict,
   daysBetween,
   extrapolationWeight,
-  formatPaceSeconds,
   formatRaceTime,
   gradeConfidence,
+  isWithinCriticalSpeedValidity,
   MIN_SOURCE_DISTANCE_M,
   NEGATIVE_SPLIT_PCT,
+  paceCurveSourceEfforts,
   parseGoalTime,
   predictRace,
   RACE_DISTANCES,
@@ -263,7 +269,7 @@ describe("predictRace", () => {
     );
   });
 
-  it("derives both pace units from the consensus time", () => {
+  it("derives km pace from the consensus time", () => {
     const prediction = predictRace(
       [effort({ elapsedSeconds: 2400 })],
       10000,
@@ -273,7 +279,6 @@ describe("predictRace", () => {
 
     expect(prediction.predictedSeconds).toBe(2400);
     expect(prediction.paceSecPerKm).toBe(240);
-    expect(prediction.paceSecPerMile).toBeGreaterThan(prediction.paceSecPerKm);
   });
 });
 
@@ -383,14 +388,6 @@ describe("buildSplits", () => {
     expect(last.cumulativeSeconds).toBeCloseTo(10800, 0);
   });
 
-  it("uses mile markers when asked", () => {
-    const plan = buildSplits(RACE_DISTANCES["10K"] / 4, 10000, "mile");
-
-    expect(plan.unit).toBe("mile");
-    expect(plan.splits).toHaveLength(7); // 6 full miles + a partial
-    expect(plan.splits[0]?.segmentMeters).toBeCloseTo(1609.3, 0);
-  });
-
   it("preserves the total under a negative split", () => {
     const even = buildSplits(5400, 21097.5, "km");
     const negative = buildSplits(5400, 21097.5, "km", NEGATIVE_SPLIT_PCT);
@@ -463,19 +460,138 @@ describe("formatters", () => {
     expect(formatRaceTime(-5)).toBe("0:00");
   });
 
-  it("formats paces as M:SS", () => {
-    expect(formatPaceSeconds(275)).toBe("4:35");
-    expect(formatPaceSeconds(300)).toBe("5:00");
-  });
-
-  it("derives both pace units for a race", () => {
+  it("derives km pace for a race", () => {
     const pace = racePace(2400, 10000)!;
     expect(pace.minPerKm).toBe("4:00");
-    expect(pace.minPerMile).toBe("6:26");
   });
 
   it("returns null pace for a degenerate race", () => {
     expect(racePace(0, 10000)).toBeNull();
     expect(racePace(2400, 0)).toBeNull();
+  });
+});
+
+describe("paceCurveSourceEfforts", () => {
+  const curves = (
+    over: Partial<IntervalsAthletePaceCurves> = {},
+  ): IntervalsAthletePaceCurves =>
+    ({
+      list: [
+        {
+          id: "all",
+          distance: [1000, 5000, 10000],
+          values: [200, 1100, 2400],
+          activity_id: ["i1", "i2", "i3"],
+        },
+        {
+          id: "90d",
+          distance: [1000, 5000, 10000],
+          values: [205, 1150, null],
+          activity_id: ["i4", "i5", null],
+        },
+      ],
+      activities: {
+        i1: { id: "i1", name: "1K race", start_date_local: "2024-01-01" },
+        i2: { id: "i2", name: "5K race", start_date_local: "2024-02-01" },
+        i3: { id: "i3", name: "10K race", start_date_local: "2024-03-01" },
+        i4: { id: "i4", name: "Recent 1K", start_date_local: "2026-06-01" },
+        i5: { id: "i5", name: "Recent 5K", start_date_local: "2026-06-15" },
+      },
+      ...over,
+    }) as unknown as IntervalsAthletePaceCurves;
+
+  it("maps both curves' points to source efforts, dropping points under the Riegel floor", () => {
+    const efforts = paceCurveSourceEfforts(curves());
+
+    // 1000 m is under MIN_SOURCE_DISTANCE_M (1500) on both curves.
+    expect(
+      efforts.every((e) => e.distanceMeters >= MIN_SOURCE_DISTANCE_M),
+    ).toBe(true);
+    expect(efforts.map((e) => e.activityId).sort()).toEqual(
+      ["i2", "i3", "i5"].sort(),
+    );
+  });
+
+  it("skips a curve point with no value or no owning activity", () => {
+    const efforts = paceCurveSourceEfforts(curves());
+    // The 90d curve's 10K point is null (no run reached 10K in 90 days),
+    // so only the all-time 10K (i3) shows up, not a second phantom one.
+    const tenK = efforts.filter((e) => e.distanceMeters === 10000);
+    expect(tenK).toHaveLength(1);
+    expect(tenK[0]?.activityId).toBe("i3");
+  });
+
+  it("labels each point by its distance, not a Strava-style name", () => {
+    const efforts = paceCurveSourceEfforts(curves());
+    const fiveK = efforts.find((e) => e.activityId === "i2");
+    expect(fiveK?.name).toBe("5000 m");
+  });
+
+  it("returns nothing for a missing all/90d curve", () => {
+    const efforts = paceCurveSourceEfforts({
+      list: [],
+      activities: {},
+    } as unknown as IntervalsAthletePaceCurves);
+    expect(efforts).toEqual([]);
+  });
+});
+
+describe("criticalSpeedModel", () => {
+  const listItem = (paceModels: unknown) =>
+    ({ paceModels }) as unknown as IntervalsAthletePaceCurves["list"][number];
+
+  it("reads the type: CS model's fields", () => {
+    const model = criticalSpeedModel(
+      listItem([{ type: "CS", criticalSpeed: 3.6, dPrime: 120, r2: 0.999 }]),
+    );
+    expect(model).toEqual({
+      criticalSpeedMetersPerSec: 3.6,
+      dPrimeMeters: 120,
+      r2: 0.999,
+    });
+  });
+
+  it("ignores a non-CS model in the same list", () => {
+    const model = criticalSpeedModel(
+      listItem([{ type: "OTHER", criticalSpeed: 3.6, dPrime: 120, r2: 0.9 }]),
+    );
+    expect(model).toBeNull();
+  });
+
+  it("returns null for a missing or degenerate model", () => {
+    expect(criticalSpeedModel(undefined)).toBeNull();
+    expect(criticalSpeedModel(listItem(null))).toBeNull();
+    expect(
+      criticalSpeedModel(
+        listItem([{ type: "CS", criticalSpeed: 0, dPrime: 120, r2: 0.9 }]),
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("criticalSpeedPredict", () => {
+  const model = { criticalSpeedMetersPerSec: 4, dPrimeMeters: 100, r2: 0.99 };
+
+  it("computes time = (distance - dPrime) / criticalSpeed", () => {
+    expect(criticalSpeedPredict(model, 5100)).toBeCloseTo(1250, 6);
+  });
+
+  it("returns null when the target does not exceed dPrime", () => {
+    expect(criticalSpeedPredict(model, 100)).toBeNull();
+    expect(criticalSpeedPredict(model, 50)).toBeNull();
+  });
+});
+
+describe("isWithinCriticalSpeedValidity", () => {
+  it("is true inside the stated 3-60 minute window", () => {
+    expect(isWithinCriticalSpeedValidity(CS_MODEL_MIN_SECONDS)).toBe(true);
+    expect(isWithinCriticalSpeedValidity(CS_MODEL_MAX_SECONDS)).toBe(true);
+    expect(isWithinCriticalSpeedValidity(600)).toBe(true);
+  });
+
+  it("is false outside the window, e.g. a marathon-length prediction", () => {
+    expect(isWithinCriticalSpeedValidity(CS_MODEL_MIN_SECONDS - 1)).toBe(false);
+    expect(isWithinCriticalSpeedValidity(CS_MODEL_MAX_SECONDS + 1)).toBe(false);
+    expect(isWithinCriticalSpeedValidity(3 * 3600)).toBe(false);
   });
 });

@@ -102,10 +102,6 @@ export const TrainingLoadOutputSchema = z.object({
 // get-running-summary's output schema is defined near the end of this file
 // (RunningSummaryOutputSchema), after ActivityDetailOutputSchema and
 // IntervalsLapEntrySchema, which it extends/reuses.
-const PaceSchema = z.object({
-  min_per_km: z.string(),
-  min_per_mile: z.string(),
-});
 
 // ---------- compare-activities ----------
 const CompareRunningDynamicsSchema = z.object({
@@ -897,8 +893,13 @@ export const BestEffortsOutputSchema = z.object({
 });
 
 // ---------- get-race-prediction ----------
+/** km-only pace: get-race-prediction dropped mile paces and splits in
+ * favour of km-only output. */
+const KmPaceSchema = z.object({
+  min_per_km: z.string(),
+});
 const PredictionSourceSchema = z.object({
-  name: z.string().describe("Strava's label for the effort, e.g. '10K'"),
+  name: z.string().describe("A label for the effort, e.g. '5000 m'"),
   distance_m: z.number(),
   elapsed_time_seconds: z.number().int(),
   elapsed_time_formatted: z.string(),
@@ -913,18 +914,33 @@ const PredictionContributionSchema = z.object({
   age_days: z.number().int(),
   weight: z
     .number()
-    .describe("Recency × extrapolation weight in the consensus"),
+    .describe("Recency x extrapolation weight in the consensus"),
 });
+const CriticalSpeedPredictionSchema = z
+  .object({
+    predicted_seconds: z.number().int(),
+    predicted_formatted: z.string(),
+    pace: KmPaceSchema,
+    within_model_range: z
+      .boolean()
+      .describe(
+        "True when the predicted time falls inside the model's roughly 3-60 minute validity window",
+      ),
+  })
+  .nullable()
+  .describe(
+    "intervals.icu's critical-speed prediction at this distance; null when no CS model is available or the target does not exceed dPrime",
+  );
 const RacePredictionEntrySchema = z.object({
   distance: z.string(),
   distance_m: z.number(),
   predicted_seconds: z.number().int(),
   predicted_formatted: z.string(),
-  pace: PaceSchema,
+  pace: KmPaceSchema,
   confidence: z.enum(["high", "medium", "low"]),
   confidence_notes: z.array(z.string()),
   primary_source: PredictionSourceSchema.describe(
-    "The effort driving the estimate",
+    "The pace-curve point driving the estimate",
   ),
   spread: z
     .object({
@@ -936,6 +952,7 @@ const RacePredictionEntrySchema = z.object({
     .nullable()
     .describe("Disagreement across sources; null with a single source"),
   contributions: z.array(PredictionContributionSchema),
+  critical_speed: CriticalSpeedPredictionSchema,
 });
 const SplitRowSchema = z.object({
   index: z.number().int(),
@@ -947,12 +964,10 @@ const SplitRowSchema = z.object({
   split_formatted: z.string(),
   cumulative_seconds: z.number(),
   cumulative_formatted: z.string(),
-  pace_per_unit: z
-    .string()
-    .describe("Pace over this split, per full km or mile"),
+  pace_per_unit: z.string().describe("Pace over this split, per full km"),
 });
 const SplitPlanSchema = z.object({
-  unit: z.enum(["km", "mile"]),
+  unit: z.enum(["km"]),
   strategy: z.enum(["even", "negative"]),
   negative_split_pct: z.number(),
   total_seconds: z.number().int(),
@@ -969,7 +984,7 @@ export const RacePredictionOutputSchema = z.object({
       basis: z.enum(["goal", "predicted"]),
       total_seconds: z.number().int(),
       total_formatted: z.string(),
-      pace: PaceSchema,
+      pace: KmPaceSchema,
       /** Seconds the goal is faster (negative) or slower than the prediction. */
       goal_vs_predicted_seconds: z.number().int().nullable(),
       goal_assessment: z.string().nullable(),
@@ -979,14 +994,16 @@ export const RacePredictionOutputSchema = z.object({
     .describe("Set only when raceDistance was supplied"),
   sources: z
     .array(PredictionSourceSchema)
-    .describe("Efforts used as prediction inputs, shortest first"),
-  activities_analyzed: z.number().int(),
-  activities_with_efforts: z.number().int(),
-  activities_skipped: z
-    .number()
-    .int()
+    .describe("Pace-curve points used as prediction inputs, shortest first"),
+  critical_speed_model: z
+    .object({
+      critical_speed_min_per_km: z.string(),
+      d_prime_m: z.number(),
+      r2: z.number(),
+    })
+    .nullable()
     .describe(
-      "Activities whose detail could not be fetched, so their efforts are absent",
+      "intervals.icu's type: CS model from the athlete's pace curve; null when no fit is available",
     ),
   warnings: z.array(z.string()),
   method: z.string(),

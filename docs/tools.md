@@ -9,7 +9,7 @@ identity, so renames or schema reshapes re-prompt every user. See
 [architecture.md](architecture.md#tool-metadata) before changing either.
 
 > **Status.** Tools are being ported from Strava to intervals.icu (Phases 1
-> and 2). The fourteen tools below are ported and verified against a real
+> and 2). The fifteen tools below are ported and verified against a real
 > account; until a remaining tool is ported, it fails with a "not yet
 > ported" error.
 
@@ -34,6 +34,7 @@ Strava port.
 | `get-aerobic-analysis` | Aerobic decoupling and efficiency factor, preferring intervals.icu's own values and computing from streams otherwise |
 | `get-interval-analysis` | Interval detection with urban-stop-aware rest classification and rep fade |
 | `get-best-efforts` | Best times at standard running distances, from intervals.icu's pace curves |
+| `get-race-prediction` | Predicted race times from intervals.icu pace-curve points (Riegel) alongside intervals.icu's own critical-speed model, with confidence, source point, and km goal-pace splits |
 
 `list-activities` defaults to the last 28 days (today back to 27 days
 earlier) in the server's configured time zone, sorted newest first. Filter
@@ -233,6 +234,20 @@ window's only 5K is never reported as its marathon time), comes back as an
 empty list, named in `missing`, with a matching warning, rather than failing
 the whole call or mislabelling an unrelated distance.
 
+`get-race-prediction` predicts race times from intervals.icu's `all` and `90d`
+pace curves rather than scanning activities: each curve's distance-grid points
+become prediction inputs (the `all` curve giving the fastest ever at a
+distance, `90d` the fastest of the last 90 days), combined with Riegel's
+equivalent-performance formula and weighted by recency and extrapolation
+distance, the same consensus/confidence math as before. Alongside each Riegel
+estimate it reports intervals.icu's own critical-speed model fit to the same
+pace curve (`time = (distance - dPrime) / criticalSpeed`), stated as valid for
+roughly 3 to 60 minute efforts; a prediction outside that window, a marathon
+for instance, is still returned and flagged rather than hidden. `raceDistance`
+(optional) adds a km split table (even and negative-split) for that race, and
+`goalTime` paces it to a goal instead of the prediction. Output is km only, no
+mile paces or splits.
+
 ## Activity tools
 
 | Tool | Description |
@@ -240,7 +255,6 @@ the whole call or mislabelling an unrelated distance.
 | `update-activity` | Update an activity's description, title, sport type, gear, or flags |
 | `get-training-load` | Training load summary with trend analysis |
 | `get-fitness-trend` | Fitness/fatigue/form (CTL/ATL/TSB) from relative effort, with rest projection and a solved taper to a target form on a target date |
-| `get-race-prediction` | Predicted race times from recorded best efforts (Riegel), with confidence, source effort, and km/mile goal-pace splits |
 
 ## Athlete tools
 

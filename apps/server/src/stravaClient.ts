@@ -270,7 +270,6 @@ const DetailedActivitySchema = z.object({
   // photos: // Add PhotosSummary schema if needed
   gear: SummaryGearSchema,
   device_name: z.string().optional().nullable(),
-  // Note: best_efforts is added below after DetailedSegmentEffortSchema is defined
   // segment_efforts: // Add DetailedSegmentEffort schema if needed
   // splits_metric: // Add Split schema if needed
   // splits_standard: // Add Split schema if needed
@@ -310,35 +309,8 @@ const DetailedSegmentEffortSchema = z.object({
   hidden: z.boolean().optional().nullable(),
 });
 
-// --- Best Effort Schema ---
-// Best efforts are different from segment efforts - they represent time-based achievements
-// (e.g., best 400m, 1/2 mile, 1k, etc.) and don't have a segment field (or it's null)
-const BestEffortSchema = z.object({
-  id: StravaIdSchema,
-  activity: MetaActivitySchema.optional(),
-  athlete: BaseAthleteSchema.optional(),
-  segment: SummarySegmentSchema.nullish(), // Best efforts don't have segments, but API may return null
-  name: z.string(), // e.g., "400m", "1/2 mile", "1k"
-  elapsed_time: z.number().int(), // seconds
-  moving_time: z.number().int(), // seconds
-  start_date: z.string().datetime(),
-  start_date_local: z.string().datetime(),
-  distance: z.number(), // meters
-  start_index: z.number().int().optional().nullable(),
-  end_index: z.number().int().optional().nullable(),
-  average_cadence: z.number().optional().nullable(),
-  device_watts: z.boolean().optional().nullable(),
-  average_watts: z.number().optional().nullable(),
-  average_heartrate: z.number().optional().nullable(),
-  max_heartrate: z.number().optional().nullable(),
-  kom_rank: z.number().int().optional().nullable(), // 1-10, null if not in top 10
-  pr_rank: z.number().int().optional().nullable(), // 1, 2, 3, or null
-  hidden: z.boolean().optional().nullable(),
-});
-
-// Extend DetailedActivitySchema to include best_efforts and segment_efforts now that the schemas are defined
+// Extend DetailedActivitySchema to include segment_efforts now that the schema is defined
 const ExtendedDetailedActivitySchema = DetailedActivitySchema.extend({
-  best_efforts: z.array(BestEffortSchema).optional(),
   segment_efforts: z.array(DetailedSegmentEffortSchema).optional(),
 });
 export type StravaDetailedActivity = z.infer<
