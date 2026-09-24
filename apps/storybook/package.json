@@ -22,7 +22,7 @@
   "devDependencies": {
     "@storybook/addon-a11y": "10.5.8",
     "@storybook/addon-docs": "10.5.8",
-    "@storybook/addon-mcp": "0.7.0",
+    "@storybook/addon-mcp": "10.6.0",
     "@storybook/addon-vitest": "10.5.8",
     "@storybook/react-vite": "10.5.8",
     "@intervals-mcp/tsconfig": "workspace:*",
