@@ -61,11 +61,10 @@ breaking them has shipped bugs — do not work around them locally.
   always present). Tick counter without `total` (spec demands monotonic
   increase; multi-phase calls can't carry two denominators); time-based
   throttle with `important: true` bypass; fire-and-forget.
-- **Tokens come from `getStravaToken()`**, passed to handlers as argument 2 —
-  never read `process.env.STRAVA_ACCESS_TOKEN` in a tool. `NoTokenError` /
-  `TokenRevokedError` map to one not-connected message naming `/auth/start`.
-  OAuth POSTs go through `postOAuthToken`, which retries 5xx only — a timeout
-  may have rotated the refresh token server-side.
+- **The API key comes from `getIntervalsApiKey()`** (`config.ts`), passed to
+  handlers as argument 2; never read `process.env.INTERVALS_API_KEY`
+  elsewhere. A missing key maps to one not-configured message naming the env
+  var.
 - **Ids go through `stravaIdInput`** (`tools/_ids.ts`). Advertised schema is
   string-only (`stravaIdJsonSchemaOverride`) because ids above 2^53 are
   rounded by hosts' `JSON.parse` unrecoverably; safe-int numbers accepted at
@@ -113,15 +112,6 @@ breaking them has shipped bugs — do not work around them locally.
   one upstream promise (failures never cached, write invalidation drops
   in-flight entries, `skipCache` bypasses both). Never return a cached object
   by reference or add a per-tool in-flight map.
-- **Token status is served from memory.** `getTokenStatus` reads
-  `cachedTokens` before disk and never caches "no tokens": authed `/health`
-  and `/auth/status` polls cost no filesystem read and no repeated "Loaded
-  tokens" lines; a `tokens.json` replaced by hand needs a restart, exactly as
-  it does for tool calls.
-- **Auth pages escape at the sink.** `authRoutes.ts` entity-encodes every
-  reflected string inside `errorPage`/`successPage`, never at call sites:
-  `/auth/callback` is public and its `error` branch runs before the state
-  gate, so a new page helper must escape too.
 - **The Bun version has one home: root `packageManager`.** CI reads it via
   `bun-version-file`; `dockerRuntime.test.ts` pins the Dockerfile's
   `FROM oven/bun:<tag>` lines to the same x.y.z, because Dependabot bumps the
@@ -245,7 +235,6 @@ bun run start        # Start server
 bun run dev          # Watch mode
 bun run test         # Run server tests (Vitest)
 bun run test:watch   # Watch mode
-bun run setup-auth   # Interactive localhost OAuth setup (dev only)
 
 # UI development
 cd apps/storybook

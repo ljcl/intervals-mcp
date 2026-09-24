@@ -87,8 +87,8 @@ Supplementary when the change touches UI:
 - Storybook sweep: look at each affected story in desktop and the
   `claudeIosCard` mobile viewport (`bun run shots <story-id>…` renders PNGs).
 - MCP endpoint smoke test: `cd apps/server && bun run start`, then
-  `curl http://localhost:3000/health`. Needs valid `STRAVA_REFRESH_TOKEN`;
-  skip if tokens are stale and say so explicitly.
+  `curl http://localhost:3000/health`. Needs a valid `INTERVALS_API_KEY`;
+  skip if it is not configured and say so explicitly.
 
 ## Coverage thresholds
 

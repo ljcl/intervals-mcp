@@ -1,7 +1,7 @@
 /**
  * Success and error paths for the MCP App tool handlers in server.ts (#115).
  * Table-driven through dispatchToolCall — the same path the host uses — with
- * the Strava client mocked. The missing-token table pins the regression where
+ * the Strava client mocked. The missing-key table pins the regression where
  * those early returns lacked `isError: true` and surfaced as ordinary content.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -37,17 +37,17 @@ vi.mock("./fetchClient", async (importOriginal) => {
   };
 });
 
-// dispatchToolCall resolves the access token once per call (#240), so the
-// token source is mocked here rather than the env var each handler used to read.
-vi.mock("./tokenManager", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./tokenManager")>();
-  return { ...actual, getStravaToken: vi.fn() };
+// dispatchToolCall resolves the API key once per call (#240), so the
+// key source is mocked here rather than the env var each handler used to read.
+vi.mock("./config", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./config")>();
+  return { ...actual, getIntervalsApiKey: vi.fn() };
 });
 
 // Import after the mocks so server.ts's modules see the mocked client.
 const { dispatchToolCall } = await import("./server");
-const { getStravaToken, NoTokenError } = await import("./tokenManager");
-const mockedToken = vi.mocked(getStravaToken);
+const { getIntervalsApiKey, MissingApiKeyError } = await import("./config");
+const mockedToken = vi.mocked(getIntervalsApiKey);
 
 const mockedById = vi.mocked(getActivityById);
 const mockedLaps = vi.mocked(getActivityLaps);
@@ -99,7 +99,7 @@ function summaryRun(
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockedToken.mockResolvedValue("test-token");
+  mockedToken.mockReturnValue("test-token");
 });
 
 /** Every app tool with args that pass its input schema. */
@@ -118,22 +118,23 @@ const APP_TOOL_CALLS: Array<[string, Record<string, unknown>]> = [
   ["get-compare-activities-data", { activity_id_1: "1", activity_id_2: "2" }],
 ];
 
-describe("app handlers with no Strava token", () => {
+describe("app handlers with no key configured", () => {
   it.each(APP_TOOL_CALLS)(
     "%s returns isError: true instead of plain content",
     async (name, args) => {
-      mockedToken.mockRejectedValueOnce(new NoTokenError());
+      mockedToken.mockImplementationOnce(() => {
+        throw new MissingApiKeyError();
+      });
 
       const result = await dispatchToolCall(name, args);
 
       expect(result.isError).toBe(true);
       // One message for every tool, naming the one recovery (#240).
-      expect(result.content[0]?.text).toContain("Not connected to Strava");
-      expect(result.content[0]?.text).toContain("/auth/start");
+      expect(result.content[0]?.text).toContain("INTERVALS_API_KEY");
     },
   );
 
-  it("resolves the token once per call and hands it to the handler", async () => {
+  it("resolves the key once per call and hands it to the handler", async () => {
     mockedById.mockResolvedValueOnce(detailedActivity());
 
     await dispatchToolCall("view-activity-chart", { activity_id: "123" });
@@ -142,8 +143,10 @@ describe("app handlers with no Strava token", () => {
     expect(mockedById).toHaveBeenCalledWith("test-token", "123");
   });
 
-  it("does not run the handler when the token cannot be resolved", async () => {
-    mockedToken.mockRejectedValueOnce(new NoTokenError());
+  it("does not run the handler when the key cannot be resolved", async () => {
+    mockedToken.mockImplementationOnce(() => {
+      throw new MissingApiKeyError();
+    });
 
     await dispatchToolCall("view-activity-chart", { activity_id: "123" });
 

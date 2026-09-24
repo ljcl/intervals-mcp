@@ -23,11 +23,11 @@ vi.mock("./stravaClient", async (importOriginal) => {
   return { ...actual, getActivityLaps: vi.fn(), getActivityById: vi.fn() };
 });
 
-// Dispatch resolves the token before any handler runs (#240), so without this
-// an end-to-end tools/call reads the real token store.
-vi.mock("./tokenManager", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./tokenManager")>();
-  return { ...actual, getStravaToken: vi.fn(async () => "test-token") };
+// Dispatch resolves the key before any handler runs (#240), so without this
+// an end-to-end tools/call reads process.env directly.
+vi.mock("./config", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./config")>();
+  return { ...actual, getIntervalsApiKey: vi.fn(() => "test-token") };
 });
 
 const { connectTestClient } = await import("./mcpTestClient");

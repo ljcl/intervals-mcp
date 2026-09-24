@@ -27,13 +27,11 @@ The full tool catalog, prompts, permission behaviour, and example requests live 
 
 ## Quick Start (Docker)
 
-### 1. Create a Strava API Application
+### 1. Get an intervals.icu API Key
 
-1. Go to [strava.com/settings/api](https://www.strava.com/settings/api)
-2. Create a new application:
-   - Enter your application details (name, website, description)
-   - Set "Authorization Callback Domain" to your public URL hostname (e.g., `strava-mcp.example.com`)
-   - Note your **Client ID** and **Client Secret**
+1. Log in to [intervals.icu](https://intervals.icu)
+2. Go to Settings, Developer Settings
+3. Copy your personal API key
 
 ### 2. Configure Environment
 
@@ -44,21 +42,10 @@ cp .env.example .env
 Edit `.env` with your values:
 
 ```env
-STRAVA_CLIENT_ID=your_client_id
-STRAVA_CLIENT_SECRET=your_client_secret
-PUBLIC_URL=https://your-public-url.example.com
+INTERVALS_API_KEY=your_api_key
 ```
 
-All variables are listed in [docs/operations.md](docs/operations.md#environment-variables). Prefer the prebuilt image? Pull `ghcr.io/ljcl/strava-mcp:latest` (also on the [MCP registry](https://registry.modelcontextprotocol.io) as `io.github.ljcl/strava-mcp`) and point your compose `image:` at it instead of building; you still supply the Strava credentials yourself. Published images carry SBOM/provenance attestations you can verify — see [operations.md](docs/operations.md#verifying-a-pulled-image).
-
-**Note on the `./data` bind mount:** tokens persist there, and the distroless image runs as non-root UID 65534, so the directory must be writable by that UID or token persistence fails on first run:
-
-```bash
-mkdir -p data
-sudo chown -R 65534:65534 data
-```
-
-Alternatively use a named volume in `docker-compose.yml` (e.g. `strava-data:/app/data`), which Docker initializes with correct ownership. More detail in [operations.md](docs/operations.md#docker-notes).
+All variables are listed in [docs/operations.md](docs/operations.md#environment-variables). Prefer the prebuilt image? Pull `ghcr.io/ljcl/strava-mcp:latest` (also on the [MCP registry](https://registry.modelcontextprotocol.io) as `io.github.ljcl/strava-mcp`) and point your compose `image:` at it instead of building; you still supply your own API key. Published images carry SBOM/provenance attestations you can verify — see [operations.md](docs/operations.md#verifying-a-pulled-image).
 
 ### 3. Start the Server
 
@@ -66,15 +53,9 @@ Alternatively use a named volume in `docker-compose.yml` (e.g. `strava-data:/app
 docker compose up -d
 ```
 
-`GET /health` reports liveness without spending a Strava API request; with `MCP_AUTH_TOKEN` it also reports auth and rate-limit state. Response shapes and monitoring guidance: [operations.md](docs/operations.md#health-check).
+`GET /health` reports liveness without spending an intervals.icu API request; with `MCP_AUTH_TOKEN` it also reports config and rate-limit state. Response shapes and monitoring guidance: [operations.md](docs/operations.md#health-check).
 
-### 4. Authorize with Strava
-
-Visit `https://your-public-url/auth/start` in your browser. After authorizing, tokens are saved automatically and refreshed from then on. Check status anytime at `/auth/status`.
-
-If you set `MCP_AUTH_TOKEN`, append it to both URLs as `?token=<MCP_AUTH_TOKEN>`.
-
-### 5. Connect to Claude Desktop
+### 4. Connect to Claude Desktop
 
 Add to your Claude configuration (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
 
@@ -117,9 +98,9 @@ cloudflared tunnel --url http://localhost:3000
 
 ### Securing the endpoint
 
-A tunnel makes `/mcp` reachable by anyone who discovers the URL — including the `update-activity` write tool. Set `MCP_AUTH_TOKEN` to a long random secret (`openssl rand -hex 32`) and every `/mcp` request requires `Authorization: Bearer <token>`; each client snippet below shows where the header goes. The secret also gates `/auth/start` and `/auth/status`. Full details (including how OAuth callbacks stay safe): [operations.md](docs/operations.md#securing-the-endpoint).
+A tunnel makes `/mcp` reachable by anyone who discovers the URL — including the `update-activity` write tool and the intervals.icu API key configured on the server. Set `MCP_AUTH_TOKEN` to a long random secret (`openssl rand -hex 32`) and every `/mcp` request requires `Authorization: Bearer <token>`; each client snippet below shows where the header goes. The secret also gates the detailed half of `/health`. Full details: [operations.md](docs/operations.md#securing-the-endpoint).
 
-Set it in `.env` alongside your Strava credentials — `docker-compose.yml` forwards it automatically.
+Set it in `.env` alongside your API key — `docker-compose.yml` forwards it automatically.
 
 ```text
 AI Tool (Claude Desktop, Claude Code, etc.)
@@ -226,13 +207,11 @@ More in [docs/tools.md](docs/tools.md#example-requests).
 
 ## Local Development
 
-Prerequisites: [Bun](https://bun.sh/) and a Strava account.
+Prerequisites: [Bun](https://bun.sh/) and an intervals.icu account.
 
 ```bash
 bun install
-
-# Guided OAuth flow using localhost as redirect URI
-cd apps/server && bun run setup-auth && cd ../..
+cp .env.example .env   # add your INTERVALS_API_KEY
 
 # Start dev server (server + MCP App watchers)
 bun run dev
@@ -258,13 +237,9 @@ PRs are squash-merged and the **PR title becomes the commit on `main`**, so writ
 
 **AI tool can't reach the server** — MCP requires an HTTPS URL. Use a tunnel (Tailscale Funnel or Cloudflare Tunnel) to expose your local server. See [Connecting to AI Tools](#connecting-to-ai-tools).
 
-**OAuth callback fails** — Ensure `PUBLIC_URL` in your `.env` matches the tunnel URL exactly, and that the same hostname is set as the "Authorization Callback Domain" in your [Strava API settings](https://www.strava.com/settings/api).
+**API key errors** — Check `/health` first: `api_key_configured` tells you whether the server has a key set at all. If it is `true` but calls still fail, the key may be wrong or revoked — generate a new one at intervals.icu, Settings, Developer Settings, and update `INTERVALS_API_KEY`. See [operations.md](docs/operations.md#intervalsicu-api-key).
 
-**Token errors or expired tokens** — Check `/health` first: `authenticated` and `token_expires_at` tell you whether the server holds a usable token, which separates an auth problem from a reachability one. Then visit `/auth/start` to re-authorize. Tokens refresh automatically, but a full re-auth is needed if the refresh token was revoked or a new release added a scope. See [operations.md](docs/operations.md#authorization).
-
-**Is the server up and reachable?** — `curl https://your-public-url/health`. It answers without touching the Strava API, so it works even when your rate limit is exhausted.
-
-**Tokens don't survive a container restart (Docker)** — The container runs as non-root UID 65534, so the `./data` bind mount must be writable by that UID (`sudo chown -R 65534:65534 data`), or use a named volume instead. See [Quick Start step 2](#2-configure-environment) and [operations.md](docs/operations.md#docker-notes).
+**Is the server up and reachable?** — `curl https://your-public-url/health`. It answers without touching the intervals.icu API, so it works even when your rate limit is exhausted.
 
 **Client re-prompts for read tools after I granted them** — A release likely renamed a tool or changed its input schema; grants are stored per tool identity, so that drops the grant. Releases say so in the changelog. Otherwise persistence lives in the client — check both connector-level and per-tool settings. See [docs/tools.md](docs/tools.md#tool-permissions).
 

@@ -1,7 +1,5 @@
-import { AsyncLocalStorage } from "node:async_hooks";
 import { z } from "zod";
 import { HttpError, RateLimitError, stravaApi } from "./fetchClient";
-import { refreshAccessToken, TokenRevokedError } from "./tokenManager";
 import {
   buildUpdateActivityBody,
   type UpdateActivityParams,
@@ -339,18 +337,6 @@ export {
   SummarySegmentSchema,
 };
 
-// --- Token Refresh Functionality ---
-// Token refresh lives entirely in tokenManager, which owns the single,
-// concurrency-safe refresh path (one in-flight exchange shared across callers)
-// and atomic persistence of tokens.json. handleApiError delegates to it on 401.
-
-// Every retryFn recursively re-enters the public client function, whose own
-// catch would otherwise refresh-and-retry again on another 401 — a
-// scope-stripped token that still refreshes successfully would loop forever.
-// The retried invocation runs inside this context, so nested handleApiError
-// calls see it and skip the refresh path: at most one recovery per call.
-const authRetryContext = new AsyncLocalStorage<true>();
-
 /**
  * A Strava API failure that {@link handleApiError} has already interpreted:
  * the user-facing message, with the HTTP status still attached.
@@ -374,52 +360,24 @@ export class StravaApiError extends HttpError {
 }
 
 /**
- * Helper function to handle API errors with token refresh capability
+ * Helper function to handle API errors
  * @param error - The caught error
  * @param context - The context in which the error occurred
- * @param retryFn - Optional retry, called with the freshly-refreshed token
- * @returns Never returns normally, always throws an error or returns via retryFn
+ * @returns Never returns normally, always throws an error
  */
-async function handleApiError<T>(
-  error: unknown,
-  context: string,
-  retryFn?: (accessToken: string) => Promise<T>,
-): Promise<T> {
+async function handleApiError<T>(error: unknown, context: string): Promise<T> {
   // Check if it's a fetch error with response data
   const isHttpError = error instanceof HttpError;
   const status = isHttpError ? error.response.status : undefined;
 
-  // Check if it's an authentication error (401) that might be fixed by refreshing the token
-  if (status === 401 && retryFn && !authRetryContext.getStore()) {
-    let refreshedToken: string | null = null;
-    try {
-      console.error(
-        `🔑 Authentication error in ${context}. Attempting to refresh token...`,
-      );
-      refreshedToken = (await refreshAccessToken()).access_token;
-    } catch (refreshError) {
-      // A revoked refresh token can never recover by retrying — surface the
-      // actionable re-auth instruction instead of the original 401.
-      if (refreshError instanceof TokenRevokedError) {
-        console.error(`❌ ${refreshError.message}`);
-        throw new Error(
-          `Strava authentication failed in ${context}: ${refreshError.message}`,
-        );
-      }
-      console.error(
-        `❌ Token refresh failed: ${
-          refreshError instanceof Error
-            ? refreshError.message
-            : String(refreshError)
-        }`,
-      );
-      // Fall through to normal error handling if refresh fails
-    }
-    if (refreshedToken) {
-      console.error(`🔄 Retrying ${context} after token refresh...`);
-      const token = refreshedToken;
-      return await authRetryContext.run(true, () => retryFn(token));
-    }
+  // A 401 means the configured key is missing, wrong, or revoked — there is
+  // no refresh flow to fall back to, so this is always the actionable end
+  // state.
+  if (isHttpError && status === 401) {
+    throw new StravaApiError(
+      `${context}: intervals.icu rejected the API key (401). Check INTERVALS_API_KEY.`,
+      error.response,
+    );
   }
 
   // Rate limit exhausted (429). The fetch layer has already honoured any
@@ -584,18 +542,9 @@ export async function getAllActivities(
 
     return allActivities;
   } catch (error) {
-    // Every page, not only the first. Guarding on the first page instead
-    // means a token expiring part-way through a long history scan skips the
-    // refresh and surfaces a raw `HTTP 401` with no mention of /auth/start.
-    // The retry restarts pagination from page one — the same result for a few
-    // extra requests — and `authRetryContext` caps recovery at one attempt per
-    // call, so the guard buys nothing.
     return await handleApiError<StravaSummaryActivity[]>(
       error,
       "getAllActivities",
-      async (newToken) => {
-        return getAllActivities(newToken, params);
-      },
     );
   }
 }
@@ -642,9 +591,6 @@ export async function getAuthenticatedAthlete(
     return await handleApiError<StravaAthlete>(
       error,
       "getAuthenticatedAthlete",
-      async (newToken) => {
-        return getAuthenticatedAthlete(newToken);
-      },
     );
   }
 }
@@ -692,9 +638,6 @@ export async function getAthleteStats(
     return await handleApiError<StravaStats>(
       error,
       `getAthleteStats for ID ${athleteId}`,
-      async (newToken) => {
-        return getAthleteStats(newToken, athleteId);
-      },
     );
   }
 }
@@ -745,9 +688,6 @@ export async function getActivityById(
     return await handleApiError<StravaDetailedActivity>(
       error,
       `getActivityById for ID ${activityId}`,
-      async (newToken) => {
-        return getActivityById(newToken, activityId, options);
-      },
     );
   }
 }
@@ -788,8 +728,8 @@ export type StravaStreamSet = Map<string, unknown[]>;
  * Fetches an activity's data streams.
  *
  * This is the single stream-fetch path: never reach for `stravaApi.get()`
- * directly behind a bare `catch {}`. That gives a 401 no refresh-and-retry and
- * a 429 no structured message, and surfaces both to the athlete as "this
+ * directly behind a bare `catch {}`. That gives a 401 no structured message
+ * and a 429 no structured message, and surfaces both to the athlete as "this
  * activity has no samples" — wrong, and it hides the one-line fix. Only a
  * genuine 404 or empty response yields {@link StreamsUnavailableError}; auth,
  * rate-limit, and subscription failures go through {@link handleApiError} like
@@ -828,8 +768,6 @@ export async function getActivityStreams(
     kind: "activity",
     resourceId: activityId,
     context: `getActivityStreams for ID ${activityId}`,
-    retry: (newToken) =>
-      getActivityStreams(newToken, activityId, types, options),
   });
 }
 
@@ -839,8 +777,7 @@ export async function getActivityStreams(
  * contract: a genuine 404 or an empty response is
  * {@link StreamsUnavailableError} — the single failure a caller may degrade
  * on — while auth, rate-limit, and subscription failures go through
- * {@link handleApiError} so a 401 refreshes and retries and a 429 gets the
- * structured message.
+ * {@link handleApiError} so a 429 gets the structured message.
  */
 async function fetchStreamSet(args: {
   accessToken: string;
@@ -848,9 +785,8 @@ async function fetchStreamSet(args: {
   kind: StreamResourceKind;
   resourceId: number | string;
   context: string;
-  retry: (newToken: string) => Promise<StravaStreamSet>;
 }): Promise<StravaStreamSet> {
-  const { accessToken, endpoint, kind, resourceId, context, retry } = args;
+  const { accessToken, endpoint, kind, resourceId, context } = args;
   try {
     const response = await stravaApi.get<unknown>(endpoint, {
       headers: { Authorization: `Bearer ${accessToken}` },
@@ -882,7 +818,7 @@ async function fetchStreamSet(args: {
     if (error instanceof HttpError && error.response.status === 404) {
       throw new StreamsUnavailableError(resourceId, kind);
     }
-    return await handleApiError<StravaStreamSet>(error, context, retry);
+    return await handleApiError<StravaStreamSet>(error, context);
   }
 }
 
@@ -973,9 +909,6 @@ export async function getActivityLaps(
     return await handleApiError<StravaLap[]>(
       error,
       `getActivityLaps(${activityId})`,
-      async (newToken) => {
-        return getActivityLaps(newToken, activityId);
-      },
     );
   }
 }
@@ -1052,13 +985,7 @@ export async function getAthleteZones(
   } catch (error) {
     // Note: This endpoint requires profile:read_all scope
     // Handle potential 403 Forbidden if scope is missing, or 402 if it becomes sub-only?
-    return await handleApiError<StravaAthleteZones>(
-      error,
-      "getAthleteZones",
-      async (newToken) => {
-        return getAthleteZones(newToken);
-      },
-    );
+    return await handleApiError<StravaAthleteZones>(error, "getAthleteZones");
   }
 }
 
@@ -1127,9 +1054,6 @@ export async function getActivityZones(
     return await handleApiError<StravaActivityZone[]>(
       error,
       `getActivityZones(${activityId})`,
-      async (newToken) => {
-        return getActivityZones(newToken, activityId);
-      },
     );
   }
 }
@@ -1188,9 +1112,6 @@ export async function updateActivity(
     return await handleApiError<StravaDetailedActivity>(
       error,
       `updateActivity for ID ${activityId}`,
-      async (newToken) => {
-        return updateActivity(newToken, activityId, updates);
-      },
     );
   }
 }

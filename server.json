@@ -19,41 +19,27 @@
       },
       "environmentVariables": [
         {
-          "name": "STRAVA_CLIENT_ID",
-          "description": "Strava API client ID",
-          "isRequired": true,
-          "format": "string"
-        },
-        {
-          "name": "STRAVA_CLIENT_SECRET",
-          "description": "Strava API client secret",
+          "name": "INTERVALS_API_KEY",
+          "description": "intervals.icu personal API key (Settings, Developer Settings)",
           "isRequired": true,
           "isSecret": true,
           "format": "string"
         },
         {
-          "name": "PUBLIC_URL",
-          "description": "Public HTTPS URL used for the Strava OAuth callback",
-          "isRequired": true,
-          "format": "string"
-        },
-        {
-          "name": "STRAVA_ACCESS_TOKEN",
-          "description": "Optional initial access token from setup-auth",
+          "name": "INTERVALS_ATHLETE_ID",
+          "description": "Athlete id; default 0 means the API key's own athlete",
           "isRequired": false,
-          "isSecret": true,
           "format": "string"
         },
         {
-          "name": "STRAVA_REFRESH_TOKEN",
-          "description": "Optional initial refresh token from setup-auth",
+          "name": "TZ",
+          "description": "IANA time zone for local dates, e.g. Australia/Sydney",
           "isRequired": false,
-          "isSecret": true,
           "format": "string"
         },
         {
           "name": "MCP_AUTH_TOKEN",
-          "description": "Shared secret gating /mcp and the OAuth web routes (recommended when internet-facing)",
+          "description": "Shared secret gating /mcp and detailed /health (recommended when internet-facing)",
           "isRequired": false,
           "isSecret": true,
           "format": "string"
@@ -65,14 +51,14 @@
           "format": "number"
         },
         {
-          "name": "TOKEN_DATA_DIR",
-          "description": "Override token storage directory (default ./data)",
+          "name": "PUBLIC_URL",
+          "description": "Public URL, used only to warn when /mcp is exposed without MCP_AUTH_TOKEN",
           "isRequired": false,
           "format": "string"
         },
         {
           "name": "ROUTE_EXPORT_PATH",
-          "description": "Absolute directory for exported route files",
+          "description": "Absolute directory for exported GPX files",
           "isRequired": false,
           "format": "filepath"
         }

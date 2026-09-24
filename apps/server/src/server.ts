@@ -13,6 +13,7 @@ import {
 } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { type ActivityZonesData, mapActivityZones } from "./activityZones";
+import { getIntervalsApiKey } from "./config";
 import { RateLimitError } from "./fetchClient";
 import { buildFitnessTrend } from "./fitnessTrend";
 import {
@@ -47,7 +48,6 @@ import {
   type ToolCallRecord,
   type ToolOutcome,
 } from "./telemetry";
-import { getStravaToken } from "./tokenManager";
 import { READ_ONLY } from "./tools/_annotations";
 import { toolErrorText } from "./tools/_errors";
 import { stravaIdInput, stravaIdJsonSchemaOverride } from "./tools/_ids";
@@ -1416,11 +1416,10 @@ export interface DispatchOptions {
  * apply and invalid types surface as a structured error instead of flowing
  * into Strava URLs and math as `"undefined"` or NaN.
  *
- * It also resolves the Strava access token once per call and hands it to the
- * handler. A tool must not read `process.env.STRAVA_ACCESS_TOKEN` behind its
- * own guard: that gives every tool its own not-connected wording and leaves
- * expiry to be discovered by a wasted 401. Resolving here gives one message,
- * one expiry policy, and a proactive refresh at the buffer.
+ * It also resolves the intervals.icu API key once per call and hands it to
+ * the handler as argument 2. A tool must not read
+ * `process.env.INTERVALS_API_KEY` behind its own guard: that gives every
+ * tool its own not-configured wording. Resolving here gives one message.
  */
 export async function dispatchToolCall(
   name: string,
@@ -1474,12 +1473,10 @@ export async function dispatchToolCall(
 
   let token: string;
   try {
-    token = await getStravaToken();
+    token = getIntervalsApiKey();
   } catch (error) {
-    // NoTokenError and TokenRevokedError both already carry the one actionable
-    // instruction (authorize at /auth/start); anything else here is a config
-    // fault (missing client credentials) or a failed refresh, and its message
-    // is the useful part.
+    // MissingApiKeyError already carries the one actionable instruction
+    // (set INTERVALS_API_KEY); its message is the useful part.
     const message = error instanceof Error ? error.message : String(error);
     return finish(
       "not_connected",

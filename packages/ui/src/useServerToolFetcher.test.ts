@@ -112,7 +112,10 @@ describe("useServerToolFetcher", () => {
     const { app } = fakeApp(() => ({
       isError: true,
       content: [
-        { type: "text", text: "Not connected to Strava. Visit /auth/start." },
+        {
+          type: "text",
+          text: "INTERVALS_API_KEY is not set. Add your intervals.icu API key.",
+        },
       ],
     }));
 
@@ -128,7 +131,7 @@ describe("useServerToolFetcher", () => {
     await flush();
 
     expect(harness.current().entries.get("10003")?.error).toBe(
-      "Error: Not connected to Strava. Visit /auth/start.",
+      "Error: INTERVALS_API_KEY is not set. Add your intervals.icu API key.",
     );
 
     await harness.unmount();

@@ -4,11 +4,6 @@ node_modules/
 # Build output
 dist/
 
-# Runtime token/data dir (keep only placeholders)
-data/*
-!data/.gitkeep
-!data/.gitignore
-
 # Turbo
 .turbo
 *.tsbuildinfo

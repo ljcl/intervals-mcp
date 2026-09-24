@@ -21,16 +21,16 @@ vi.mock("./stravaClient", async (importOriginal) => {
   };
 });
 
-// dispatchToolCall resolves the access token once per call (#240).
-vi.mock("./tokenManager", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./tokenManager")>();
-  return { ...actual, getStravaToken: vi.fn() };
+// dispatchToolCall resolves the API key once per call (#240).
+vi.mock("./config", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./config")>();
+  return { ...actual, getIntervalsApiKey: vi.fn() };
 });
 
 // Import after the mock so server.ts's tool modules see the mocked client.
 const { dispatchToolCall } = await import("./server");
-const { getStravaToken } = await import("./tokenManager");
-const mockedToken = vi.mocked(getStravaToken);
+const { getIntervalsApiKey } = await import("./config");
+const mockedToken = vi.mocked(getIntervalsApiKey);
 
 const mockedList = vi.mocked(getAllActivities);
 const mockedById = vi.mocked(getActivityById);
@@ -39,7 +39,7 @@ const mockedStats = vi.mocked(getAthleteStats);
 describe("dispatchToolCall input validation", () => {
   beforeEach(() => {
     mockedToken.mockReset();
-    mockedToken.mockResolvedValue("test-token");
+    mockedToken.mockReturnValue("test-token");
     mockedList.mockReset();
     mockedById.mockReset();
     mockedStats.mockReset();

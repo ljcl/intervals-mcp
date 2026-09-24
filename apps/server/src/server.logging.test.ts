@@ -5,9 +5,9 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("./tokenManager", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./tokenManager")>();
-  return { ...actual, getStravaToken: vi.fn(async () => "test-token") };
+vi.mock("./config", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./config")>();
+  return { ...actual, getIntervalsApiKey: vi.fn(() => "test-token") };
 });
 
 const { dispatchToolCall } = await import("./server");

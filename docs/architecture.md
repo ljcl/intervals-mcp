@@ -203,21 +203,15 @@ for.
   sweep is not killed by the host's default timeout) and exposes the latest
   message for `LoadingState` to render.
 
-## Token access
+## API key access
 
-`dispatchToolCall` resolves the access token once per call via
-`getStravaToken()` (`apps/server/src/tokenManager.ts`) and passes it to the
+`dispatchToolCall` resolves the intervals.icu API key once per call via
+`getIntervalsApiKey()` (`apps/server/src/config.ts`) and passes it to the
 handler as its second argument. Tools never read
-`process.env.STRAVA_ACCESS_TOKEN`; adding a tool means accepting
-`(args, token)`, not adding a guard. The helper keeps `TokenData` in memory and
-refreshes *inside* `EXPIRATION_BUFFER_SECONDS`, so the first call after a
-6-hour rollover costs no wasted 401. It throws a typed `NoTokenError`;
-dispatch maps that and `TokenRevokedError` to one not-connected message naming
-`/auth/start`.
-
-The two raw OAuth POSTs go through `postOAuthToken`, which retries 5xx only —
-a timeout may have rotated the refresh token server-side, so resending it
-would lock the server out.
+`process.env.INTERVALS_API_KEY`; adding a tool means accepting
+`(args, token)`, not adding a guard. A missing or blank key throws a typed
+`MissingApiKeyError`; dispatch maps that to one not-configured message naming
+`INTERVALS_API_KEY`.
 
 ## Resource ids
 

@@ -52,7 +52,6 @@ const ROOT_PACKAGE_JSON_URL = new URL("package.json", REPO_ROOT);
  */
 const NOT_IMPORT_DERIVED: Record<string, string> = {
   "apps/server/src": "the entrypoint itself (CMD runs src/index.ts)",
-  "apps/server/scripts": "setup-auth, run by hand against a deployed image",
 };
 
 function stripComments(source: string): string {

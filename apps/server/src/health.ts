@@ -1,19 +1,20 @@
+import { apiKeyConfigured, getIntervalsAthleteId, getTimeZone } from "./config";
 import { stravaApi } from "./fetchClient";
 import { authTokenConfigured, requestHasValidSecret } from "./mcpAuth";
 import { toolCallStats } from "./telemetry";
-import { getTokenStatus } from "./tokenManager";
 import { SERVER_VERSION } from "./version";
 
 /**
- * Structured /health. Everything here is served from local state —
- * stored tokens and the rate-limit snapshot captured off the most recent
- * Strava response — so the endpoint never spends a Strava request.
+ * Structured /health. Everything here is served from local state — the
+ * configured key/athlete/timezone and the rate-limit snapshot captured off
+ * the most recent intervals.icu response — so the endpoint never spends an
+ * intervals.icu request.
  *
  * When MCP_AUTH_TOKEN is configured, unauthenticated callers (for example
- * the Docker HEALTHCHECK) get liveness fields only; auth and rate-limit
- * detail require the secret, matching the /auth/status gating.
+ * the Docker HEALTHCHECK) get liveness fields only; config and rate-limit
+ * detail require the secret.
  */
-export async function handleHealth(req: Request, url: URL): Promise<Response> {
+export function handleHealth(req: Request, url: URL): Response {
   const liveness = {
     status: "ok",
     version: SERVER_VERSION,
@@ -24,11 +25,11 @@ export async function handleHealth(req: Request, url: URL): Promise<Response> {
     return Response.json(liveness);
   }
 
-  const tokenStatus = await getTokenStatus();
   return Response.json({
     ...liveness,
-    authenticated: tokenStatus.authenticated,
-    token_expires_at: tokenStatus.expires_at ?? null,
+    api_key_configured: apiKeyConfigured(),
+    athlete_id: getIntervalsAthleteId(),
+    time_zone: getTimeZone(),
     rate_limit: stravaApi.getRateLimitSnapshot(),
     // Rolling per-tool counters since process start: which tools are
     // used, how slow they are, and how often they fail. Behind the same secret

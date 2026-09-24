@@ -14,11 +14,6 @@ vi.mock("./fetchClient", async (importOriginal) => {
   return { ...actual, stravaApi: { get: vi.fn() } };
 });
 
-vi.mock("./tokenManager", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./tokenManager")>();
-  return { ...actual, refreshAccessToken: vi.fn() };
-});
-
 const mockedGet = vi.mocked(stravaApi.get);
 
 const notFound = () =>

@@ -1,20 +1,28 @@
 import path from "node:path";
 import * as dotenv from "dotenv";
 import {
-  handleAuthCallback,
-  handleAuthStart,
-  handleAuthStatus,
-} from "./authRoutes";
+  apiKeyConfigured,
+  getIntervalsAthleteId,
+  getTimeZone,
+  MissingApiKeyError,
+} from "./config";
 import { handleHealth } from "./health";
 import { unauthorizedMcpResponse, warnIfMcpUnprotected } from "./mcpAuth";
 import { createMcpEndpoint } from "./mcpEndpoint";
 import { createServer } from "./server";
-import { ensureValidToken } from "./tokenManager";
 
 // Load .env file from monorepo root
 dotenv.config({
   path: path.resolve(import.meta.dirname, "..", "..", "..", ".env"),
 });
+
+if (!apiKeyConfigured()) {
+  console.error(new MissingApiKeyError().message);
+  process.exit(1);
+}
+console.error(
+  `intervals.icu athlete ${getIntervalsAthleteId()}, time zone ${getTimeZone()}`,
+);
 
 const PORT = Number(process.env.PORT ?? 3000);
 const HOST = "0.0.0.0";
@@ -25,9 +33,6 @@ const mcp = createMcpEndpoint(createServer);
 
 console.error("Starting Intervals Extra MCP server...");
 warnIfMcpUnprotected();
-console.error("Checking Strava token validity...");
-await ensureValidToken();
-console.error("Token validation complete.");
 
 const httpServer = Bun.serve({
   port: PORT,
@@ -43,18 +48,6 @@ const httpServer = Bun.serve({
 
     if (url.pathname === "/health") {
       return handleHealth(req, url);
-    }
-
-    if (url.pathname === "/auth/start") {
-      return handleAuthStart(req, url);
-    }
-
-    if (url.pathname === "/auth/callback") {
-      return handleAuthCallback(url);
-    }
-
-    if (url.pathname === "/auth/status") {
-      return handleAuthStatus(req, url);
     }
 
     return new Response("Not found", { status: 404 });
