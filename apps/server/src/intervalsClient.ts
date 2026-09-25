@@ -610,12 +610,12 @@ export interface IntervalsActivityUpdate {
  * silently repeating it): a `RateLimitError` is rethrown intact, anything else
  * wrapped in {@link IntervalsApiError}.
  *
- * On success, the write's own request URL already invalidates that
- * activity's cached reads (`fetchClient.ts`'s automatic write invalidation);
- * this additionally invalidates the athlete's activities list and gear
- * list, which live on a different branch of the cache and would otherwise
- * keep serving pre-write data (the gear list, e.g., no longer reflects this
- * activity's distance).
+ * Invalidates the activity's own cached reads, the athlete's activities
+ * list, and the gear list in a `finally`, whatever the outcome: a failed PUT
+ * (a 5xx, a network fault, a timeout) may still have mutated state
+ * server-side, and `fetchClient.ts`'s automatic write invalidation only
+ * fires on a successful response, so without this a caller reading right
+ * after a failed write could keep being served the pre-write cache entry.
  */
 export async function updateActivity(
   apiKey: string,
@@ -633,9 +633,11 @@ export async function updateActivity(
     data = response.data;
   } catch (error) {
     handleApiError(error, context);
+  } finally {
+    intervalsApi.invalidatePath(`/activity/${id}`);
+    intervalsApi.invalidatePath(athletePath("/activities"));
+    intervalsApi.invalidatePath(athletePath("/gear"));
   }
-  intervalsApi.invalidatePath(athletePath("/activities"));
-  intervalsApi.invalidatePath(athletePath("/gear"));
   return parseOrThrow(IntervalsActivitySchema, data, context);
 }
 

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { handledNotFound } from "../__fixtures__";
-import { RequestTimeoutError } from "../fetchClient";
+import { HttpError, RateLimitError, RequestTimeoutError } from "../fetchClient";
 import {
   getActivity,
   type IntervalsActivity,
@@ -470,6 +470,89 @@ describe("updateActivityTool.execute", () => {
     expect(text).toContain("may already have been applied");
     expect(text).toContain("get-activity");
     expect(text.toLowerCase()).not.toContain("retry now");
+  });
+
+  it("reports a possibly-applied write on a 503 from the PUT itself", async () => {
+    mockedGetActivity.mockResolvedValueOnce(activity());
+    mockedPut.mockRejectedValueOnce(
+      new HttpError("updateActivity for ID 555: 503 Service Unavailable", {
+        status: 503,
+        statusText: "Service Unavailable",
+        data: "",
+      }),
+    );
+
+    const result = await updateActivityTool.execute(
+      { id: "555", name: "Tempo" } as never,
+      "test-token",
+    );
+
+    expect(result.isError).toBe(true);
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain("may already have been applied");
+    expect(text).toContain("get-activity");
+  });
+
+  it("reports a possibly-applied write when the PUT succeeds but the response body does not parse", async () => {
+    mockedGetActivity.mockResolvedValueOnce(activity());
+    // What the client's updateActivity throws when the PUT returned 200 but
+    // the body failed schema validation: a plain Error, not an HttpError.
+    mockedPut.mockRejectedValueOnce(
+      new Error(
+        "updateActivity for ID 555: invalid intervals.icu response at id: Required",
+      ),
+    );
+
+    const result = await updateActivityTool.execute(
+      { id: "555", name: "Tempo" } as never,
+      "test-token",
+    );
+
+    expect(result.isError).toBe(true);
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain("may already have been applied");
+    expect(text).toContain("get-activity");
+  });
+
+  it("reports a normal (not possibly-applied) error on a 4xx rejection from the PUT", async () => {
+    mockedGetActivity.mockResolvedValueOnce(activity());
+    mockedPut.mockRejectedValueOnce(
+      new HttpError("updateActivity for ID 555: 422 Unprocessable Entity", {
+        status: 422,
+        statusText: "Unprocessable Entity",
+        data: "bad patch",
+      }),
+    );
+
+    const result = await updateActivityTool.execute(
+      { id: "555", name: "Tempo" } as never,
+      "test-token",
+    );
+
+    expect(result.isError).toBe(true);
+    const text = result.content[0]?.text ?? "";
+    expect(text).not.toContain("may already have been applied");
+  });
+
+  it("reports a normal (not possibly-applied) error on RateLimitError from the PUT", async () => {
+    mockedGetActivity.mockResolvedValueOnce(activity());
+    mockedPut.mockRejectedValueOnce(
+      new RateLimitError(
+        "rate limited",
+        { status: 429, statusText: "Too Many Requests", data: "" },
+        { observedAt: Date.now() },
+        30,
+      ),
+    );
+
+    const result = await updateActivityTool.execute(
+      { id: "555", name: "Tempo" } as never,
+      "test-token",
+    );
+
+    expect(result.isError).toBe(true);
+    const text = result.content[0]?.text ?? "";
+    expect(text).not.toContain("may already have been applied");
   });
 
   it("reports a possibly-applied write when the confirming re-read fails after the PUT resolved", async () => {

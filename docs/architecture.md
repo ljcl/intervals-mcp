@@ -88,7 +88,13 @@ per-tool.
   detail/streams/zones/laps) **and** ancestors, since a write to a
   sub-resource can change how its parent reads. No current tool writes a
   sub-resource, but `invalidateWritten` (`fetchClient.ts`) still walks both
-  directions so a future one is covered without a second rule.
+  directions so a future one is covered without a second rule. This
+  automatic invalidation only fires when the PUT itself resolves
+  successfully; `updateActivity` (`intervalsClient.ts`) additionally
+  invalidates the activity, the athlete's activities list, and the gear
+  list in a `finally`, so a *failed* PUT that may still have mutated state
+  server-side (a 5xx, a network fault, a timeout) does not leave a stale
+  pre-write entry being served afterward.
 - `skipCache: true` bypasses entirely; the `update-activity` append read uses
   it so it never composes onto a stale description.
 - **The cache never shares references.** Every value it hands out (a hit, the
@@ -257,14 +263,19 @@ from the current value), `diffActivityWrite` (before/after echoes plus a
 warning when a fresh re-read does not match what was sent), and
 `composeDescription` (replace/append).
 
-**A write that may have landed is never silently treated as failed.** If
-the PUT to intervals.icu itself times out (`RequestTimeoutError`), or
-anything fails after it resolved (the confirming re-read, or parsing its
-response), `update-activity` cannot tell whether the write actually
-applied. Both cases report an `isError` that says so explicitly and points
-at `get-activity` to check before sending the same update again, rather
-than either claiming success or inviting a blind retry that could double
-the effect of a write that already landed.
+**A write that may have landed is never silently treated as failed.**
+`update-activity` (`tools/updateActivity.ts`) can tell a definite rejection
+of the PUT from an ambiguous one: a 4xx `HttpError` (the request itself was
+rejected, e.g. a bad gear id) or a `RateLimitError` (throttled before it
+ran) never reached the write, so those report a normal error. Anything
+else (the PUT times out (`RequestTimeoutError`), returns a 5xx, a network
+fault, or the client fails to parse an otherwise-200 response) leaves the
+write's outcome unknown, same as a failure after the PUT resolved (the
+confirming re-read, or diffing its response). All of these report an
+`isError` that says so explicitly and points at `get-activity` to check
+before sending the same update again, rather than either claiming success,
+reporting a flat failure, or inviting a blind retry that could double the
+effect of a write that already landed.
 
 ## Tool metadata
 

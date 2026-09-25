@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { RequestTimeoutError } from "../fetchClient";
+import { HttpError, RateLimitError } from "../fetchClient";
 import {
   getActivity as fetchActivity,
   type IntervalsActivity,
@@ -77,7 +77,7 @@ const inputSchema = z
     gearId: z
       .string()
       .optional()
-      .describe("Gear id to assign, e.g. 'g123456', from list-gear."),
+      .describe("Gear id to assign, e.g. '12345', from list-gear."),
     rpe: z
       .number()
       .int()
@@ -282,18 +282,32 @@ export const updateActivityTool = {
       try {
         await putActivity(apiKey, id, patch);
       } catch (putError) {
-        if (putError instanceof RequestTimeoutError) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: `❌ The update to activity ${id} timed out and may already have been applied. Check with get-activity before retrying; do not resend the same update blindly.`,
-              },
-            ],
-            isError: true,
-          };
+        // A 4xx (the request itself was rejected, e.g. a bad gear id) or a
+        // RateLimitError (throttled before it ran) never reached the write,
+        // so rethrow for the normal error path. Anything else (a timeout, a 5xx,
+        // a network fault, or the client failing to parse an otherwise-200
+        // response) leaves the write's outcome unknown, so it gets the same
+        // honest "may already have been applied" text rather than either a
+        // flat failure or a silent success.
+        const isDefiniteRejection =
+          putError instanceof RateLimitError ||
+          (putError instanceof HttpError &&
+            putError.response.status >= 400 &&
+            putError.response.status < 500);
+        if (isDefiniteRejection) {
+          throw putError;
         }
-        throw putError;
+        const detail =
+          putError instanceof Error ? putError.message : String(putError);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `❌ The update to activity ${id} may already have been applied (${detail}). Check with get-activity before retrying; do not resend the same update blindly.`,
+            },
+          ],
+          isError: true,
+        };
       }
       written = true;
 

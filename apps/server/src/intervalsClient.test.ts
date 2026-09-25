@@ -288,6 +288,23 @@ describe("intervalsClient", () => {
       expect(calls).toHaveLength(2);
     });
 
+    it("invalidates the activity cache after a failed PUT, so a subsequent getActivity misses the cache", async () => {
+      let calls = mockJson(activity);
+      await getActivity("k", "i189807578");
+      expect(calls).toHaveLength(1);
+
+      globalThis.fetch = vi.fn(async () => {
+        return new Response("boom", { status: 503 });
+      }) as unknown as typeof fetch;
+      await expect(
+        updateActivity("k", "i189807578", { name: "x" }),
+      ).rejects.toBeInstanceOf(IntervalsApiError);
+
+      calls = mockJson(activity);
+      await getActivity("k", "i189807578");
+      expect(calls).toHaveLength(1);
+    });
+
     it("invalidates the athlete's activities list and gear list on success", async () => {
       let calls = mockJson([]);
       await listActivities("k", {
