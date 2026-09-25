@@ -328,6 +328,44 @@ describe("get-fitness-trend execute (whole-body, default)", () => {
     );
   });
 
+  it("projects through an unsynced trailing gap, always ending at today + resolvedProjectDays", async () => {
+    // Wellness has synced through yesterday only; today itself is a gap.
+    mockedWellness.mockResolvedValueOnce([
+      wellnessRow(addDays(TODAY, -1), { ctl: 50, atl: 60 }),
+    ]);
+    mockedListActivities.mockResolvedValueOnce([]);
+
+    const plannedLoads = [
+      { date: TODAY, load: 999 }, // stale: not after today, must not apply
+      { date: inDays(7), load: 55 },
+      { date: inDays(10), load: 42 },
+    ];
+    const result = await getFitnessTrendTool.execute(
+      { ...DEFAULT_INPUT, days: 2, plannedLoads },
+      "test-key",
+    );
+
+    expect(result.isError).toBeUndefined();
+    const structured = result.structuredContent as {
+      as_of: string | null;
+      projection: { date: string; load: number }[];
+      warnings: string[];
+    };
+    expect(structured.as_of).toBe(addDays(TODAY, -1));
+    // 1 unsynced day (today) + the 10-day span to the last planned date.
+    expect(structured.projection).toHaveLength(11);
+    expect(structured.projection[0]).toMatchObject({ date: TODAY, load: 0 });
+    expect(structured.projection[7]).toMatchObject({
+      date: inDays(7),
+      load: 55,
+    });
+    expect(
+      structured.projection[structured.projection.length - 1],
+    ).toMatchObject({ date: inDays(10), load: 42 });
+    expect(structured.warnings.join(" ")).toContain("has not synced for 1 day");
+    expect(structured.warnings.join(" ")).toContain("on or before today");
+  });
+
   it("solves a taper plan to a target date and prints the weekly plan", async () => {
     mockedWellness.mockResolvedValueOnce(
       wellnessWindow(TODAY, 30, (daysAgo) => ({

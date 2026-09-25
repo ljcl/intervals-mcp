@@ -490,23 +490,40 @@ export interface TrendBand {
  * can shade the actual days — which is why the flag strings are built here
  * rather than beside them, and `computeFlags` is a filter over these bands
  * (the chart and the prose cannot disagree about what counts as deep fatigue).
+ *
+ * `series` need not be calendar-consecutive (a whole-body series read from
+ * wellness can have gaps, days with no recorded CTL/ATL, left out rather
+ * than zero-filled): a run breaks at a gap rather than bridging it, and the
+ * 7-day CTL ramp looks its prior day up by date, not by array index, so a
+ * gap elsewhere in the series never misattributes which day is "7 days ago".
  */
 export function trendBands(series: FitnessTrendDay[]): TrendBand[] {
   const bands: TrendBand[] = [];
   if (series.length === 0) return bands;
+
+  const indexByDate = new Map(series.map((day, index) => [day.date, index]));
 
   const runs = (
     predicate: (day: FitnessTrendDay, index: number) => boolean,
   ): { start: number; end: number }[] => {
     const found: { start: number; end: number }[] = [];
     let start: number | null = null;
+    let prevDate: string | null = null;
     for (let i = 0; i < series.length; i++) {
-      if (predicate(series[i]!, i)) {
+      const day = series[i]!;
+      const gapFromPrev =
+        prevDate !== null && addDays(prevDate, 1) !== day.date;
+      if (gapFromPrev && start !== null) {
+        found.push({ start, end: i - 1 });
+        start = null;
+      }
+      if (predicate(day, i)) {
         if (start === null) start = i;
       } else if (start !== null) {
         found.push({ start, end: i - 1 });
         start = null;
       }
+      prevDate = day.date;
     }
     if (start !== null) found.push({ start, end: series.length - 1 });
     return found;
@@ -550,8 +567,13 @@ export function trendBands(series: FitnessTrendDay[]): TrendBand[] {
     );
   }
 
-  const rampAt = (index: number) =>
-    index >= 7 ? round1(series[index]!.ctl - series[index - 7]!.ctl) : 0;
+  const rampAt = (index: number) => {
+    const day = series[index]!;
+    const priorIndex = indexByDate.get(addDays(day.date, -7));
+    return priorIndex === undefined
+      ? 0
+      : round1(day.ctl - series[priorIndex]!.ctl);
+  };
   for (const { start, end } of runs(
     (_, index) => rampAt(index) >= RAMP_RISK_PER_WEEK,
   )) {

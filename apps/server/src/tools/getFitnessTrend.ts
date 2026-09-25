@@ -380,15 +380,34 @@ export const getFitnessTrendTool = {
             projection = [];
             tsbPositiveDate = null;
           } else {
+            // The projection always ends at endDate + resolvedProjectDays,
+            // regardless of how far as_of trails endDate: the unsynced days
+            // in between (as_of+1..endDate) are projected as rest and
+            // called out below, then the actual projectDays continue past
+            // endDate; an explicit projectDays always means "N days past
+            // today", not "N days past as_of".
+            const unsyncedDays = daysBetween(asOfDate, endDate);
+            const totalProjectDays = unsyncedDays + resolvedProjectDays;
+            const futurePlannedLoads = typedPlannedLoads?.filter(
+              (p) => p.date > endDate,
+            );
             const loads = resolvePlannedLoads(
               firstProjectedDate,
-              resolvedProjectDays,
-              typedPlannedLoads,
+              totalProjectDays,
+              futurePlannedLoads,
             );
             const projected = projectLoads(seed, firstProjectedDate, loads);
             projection = projected.days;
             tsbPositiveDate = projected.tsbPositiveDate;
             taper = null;
+
+            if (unsyncedDays > 0) {
+              warnings.push(
+                `Wellness has not synced for ${unsyncedDays} day${unsyncedDays === 1 ? "" : "s"} ` +
+                  `(${firstProjectedDate} to ${endDate}); the projection assumes rest for ` +
+                  `${unsyncedDays === 1 ? "it" : "them"} before continuing forward.`,
+              );
+            }
           }
         } else {
           projection = [];
@@ -403,8 +422,11 @@ export const getFitnessTrendTool = {
 
         source = "intervals.icu";
         if (gapDates.length > 0) {
+          const plural = gapDates.length !== 1;
           warnings.push(
-            `${gapDates.length} of ${days} day${gapDates.length === 1 ? "" : "s"} in the window have no wellness CTL/ATL recorded; that is a gap, not zero load, and is left out of the series.`,
+            `${gapDates.length} of ${days} day${plural ? "s" : ""} in the window ` +
+              `have no wellness CTL/ATL recorded; ${plural ? "those are gaps" : "that is a gap"}, ` +
+              `not zero load, and ${plural ? "are" : "is"} left out of the series.`,
           );
         }
 
@@ -474,8 +496,8 @@ export const getFitnessTrendTool = {
       const result = {
         period: {
           days,
-          start_date: displaySeries[0]?.date ?? "",
-          end_date: current?.date ?? "",
+          start_date: windowStart,
+          end_date: endDate,
         },
         source,
         as_of: current?.date ?? null,

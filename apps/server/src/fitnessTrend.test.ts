@@ -535,6 +535,42 @@ describe("trendBands", () => {
     expect(trendBands(series)).toEqual([]);
   });
 
+  it("breaks a run at a date gap instead of bridging it", () => {
+    const series = [
+      day("2026-07-01", DEEP_FATIGUE_TSB - 2),
+      day("2026-07-02", DEEP_FATIGUE_TSB - 2),
+      day("2026-07-03", DEEP_FATIGUE_TSB - 2),
+      // 2026-07-04 is missing: a gap, not a rest day.
+      day("2026-07-05", DEEP_FATIGUE_TSB - 2),
+      day("2026-07-06", DEEP_FATIGUE_TSB - 2),
+      day("2026-07-07", DEEP_FATIGUE_TSB - 2),
+    ];
+    // Six days at or below the threshold would meet DEEP_FATIGUE_DAYS (5) as
+    // one run bridged across the gap; split by the gap, each side is only
+    // 3 days and neither qualifies on its own.
+    expect(trendBands(series)).toEqual([]);
+  });
+
+  it("looks up the CTL ramp's prior day by date, not by array index, across a gap", () => {
+    const series = [
+      day("2026-06-20", -5, 10),
+      // 2026-06-21 through 2026-07-14 missing: a gap of several weeks.
+      day("2026-07-15", -5, 20),
+      day("2026-07-16", -5, 30),
+      day("2026-07-17", -5, 40),
+      day("2026-07-18", -5, 50),
+      day("2026-07-19", -5, 60),
+      day("2026-07-20", -5, 70),
+      day("2026-07-21", -5, 80),
+    ];
+    // Array index 7 ("2026-07-21") minus 7 lands on index 0 ("2026-06-20"),
+    // a month earlier, not 7 calendar days back (2026-07-14, itself missing);
+    // an index-based lookback would misread this as a 70-point ramp.
+    expect(trendBands(series).filter((b) => b.kind === "steep-ramp")).toEqual(
+      [],
+    );
+  });
+
   it("bands each fresh stretch separately", () => {
     const series = [
       day("2026-07-01", FRESH_TSB + 1),

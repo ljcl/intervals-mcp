@@ -384,10 +384,12 @@ describe("fitness trend handlers", () => {
   const ATL_DECAY = Math.exp(-1 / ATL_TIME_CONSTANT_DAYS);
 
   /**
-   * A self-consistent synthetic wellness series (own ctl/atl reproduces the
-   * same recurrence the app handler recomputes from ctlLoad/atlLoad): `days`
-   * rows ending at `endDate`, load `recentLoad` for the most recent
-   * `activeDays` of them, else zero.
+   * A synthetic wellness series with a realistic CTL/ATL shape (built via
+   * the same recurrence the app handler used to recompute, purely so the
+   * numbers look plausible; the app handler now reads `ctl`/`atl` straight
+   * off each row rather than recomputing them): `days` rows ending at
+   * `endDate`, load `recentLoad` for the most recent `activeDays` of them,
+   * else zero.
    */
   function wellnessSeries(
     endDate: string,

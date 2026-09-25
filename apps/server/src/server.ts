@@ -21,6 +21,7 @@ import { getIntervalsApiKey, getTimeZone } from "./config";
 import { RateLimitError } from "./fetchClient";
 import {
   computeFlags,
+  daysBetween,
   type FitnessTrendResult,
   projectLoads,
   RECENT_LOAD_DAYS,
@@ -914,10 +915,15 @@ async function loadFitnessTrendAppData(
         recentDailyLoad(series, RECENT_LOAD_DAYS),
       );
     } else {
+      // The projection always ends at endDate + projectDays, regardless of
+      // how far as_of trails endDate (see getFitnessTrend.ts): the unsynced
+      // days in between are projected as rest, same as `projectDays` days
+      // meaning "N days past today", not "N days past as_of".
+      const totalProjectDays = daysBetween(asOfDate, endDate) + projectDays;
       const projected = projectLoads(
         seed,
         firstProjectedDate,
-        Array.from({ length: projectDays }, () => 0),
+        Array.from({ length: totalProjectDays }, () => 0),
       );
       projection = projected.days;
       tsbPositiveDate = projected.tsbPositiveDate;

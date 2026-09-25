@@ -191,7 +191,7 @@ export const AerobicAnalysisOutputSchema = z.object({
 // ---------- get-fitness-trend ----------
 const FitnessTrendDaySchema = z.object({
   date: z.string().describe("ISO date YYYY-MM-DD the values were computed for"),
-  load: z.number().describe("Total relative effort recorded that day"),
+  load: z.number().describe("Total training load recorded that day"),
   ctl: z.number().describe("Chronic training load ('fitness'), 42-day EWA"),
   atl: z.number().describe("Acute training load ('fatigue'), 7-day EWA"),
   tsb: z.number().describe("Training stress balance ('form'): CTL − ATL"),
@@ -204,8 +204,8 @@ const TaperWeekSchema = z.object({
     .number()
     .int()
     .describe("Days in this week (the last week can be short)"),
-  daily_load: z.number().describe("Relative effort to average per day"),
-  week_load: z.number().describe("Total relative effort for the week"),
+  daily_load: z.number().describe("Training load to average per day"),
+  week_load: z.number().describe("Total training load for the week"),
   pct_of_recent: z
     .number()
     .nullable()
