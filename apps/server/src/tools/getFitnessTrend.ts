@@ -17,7 +17,7 @@ import { loadWellnessFitnessSeries } from "../fitnessTrendWellness";
 import { listActivities } from "../intervalsClient";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
 import { typesWithLoad } from "../trainingLoad";
-import { addDays, todayLocal } from "../utils/localDate";
+import { addDays, dateInputSchema, todayLocal } from "../utils/localDate";
 import { READ_ONLY } from "./_annotations";
 import { toolErrorText } from "./_errors";
 import { FitnessTrendOutputSchema, warnOnSchemaDrift } from "./outputs";
@@ -87,9 +87,7 @@ Notes:
 `;
 
 const plannedLoadEntrySchema = z.object({
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, {
-    error: "Invalid planned load date. Use YYYY-MM-DD.",
-  }),
+  date: dateInputSchema,
   load: z.number().nonnegative(),
 });
 
@@ -462,12 +460,12 @@ export const getFitnessTrendTool = {
         activities_included: activitiesIncluded,
         activities_missing_load: activitiesMissingLoad,
         units: {
-          load: "training load (intervals.icu units, unitless)",
+          load: "intervals.icu training load",
         },
       };
 
-      let output = `📈 **Fitness Trend (CTL/ATL/TSB)**\n`;
-      output += `📅 ${result.period.start_date} to ${result.period.end_date} (${days} days, source: ${source})\n\n`;
+      let output = `**Fitness Trend (CTL/ATL/TSB)**\n`;
+      output += `${result.period.start_date} to ${result.period.end_date} (${days} days, source: ${source})\n\n`;
 
       if (current) {
         output += `**Current (as of ${current.date})**\n`;
@@ -481,7 +479,7 @@ export const getFitnessTrendTool = {
       }
 
       if (flags.length > 0) {
-        output += `**⚠️ Flags**\n`;
+        output += `**Flags**\n`;
         for (const flag of flags) {
           output += `  - ${flag}\n`;
         }
@@ -515,7 +513,7 @@ export const getFitnessTrendTool = {
               : `\n`;
         }
         if (!taper.feasible) {
-          output += `  ⚠️ ${taper.note}\n`;
+          output += `  Note: ${taper.note}\n`;
         }
         output += `\n`;
       }

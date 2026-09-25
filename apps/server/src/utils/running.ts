@@ -171,6 +171,23 @@ export function paceFromDistanceTime(
 }
 
 /**
+ * Pace in seconds/km from distance (metres) and moving time (seconds), the
+ * numeric companion to {@link paceFromDistanceTime}'s `m:ss` display string
+ * (the `pace_sec_per_km` alongside `pace_min_per_km` convention used across
+ * the split/interval/hill analysis tools, e.g. `get-interval-analysis`'s
+ * `IntervalRepSchema`).
+ */
+export function paceSecPerKmFromDistanceTime(
+  distanceM: number | null | undefined,
+  movingTimeS: number | null | undefined,
+): number | null {
+  if (!distanceM || distanceM <= 0 || !movingTimeS || movingTimeS <= 0) {
+    return null;
+  }
+  return round(movingTimeS / (distanceM / 1000));
+}
+
+/**
  * Grade-adjusted pace from an activity's or interval's `gap` field (m/s,
  * the same unit as `average_speed`, both typed on `IntervalsActivity`/
  * `IntervalsInterval` in `intervalsClient.ts`). This is undocumented by the
@@ -255,7 +272,18 @@ export interface RunningDynamicsAssessment {
   ground_contact_time: DynamicsMetricAssessment | null;
 }
 
-/** Vertical oscillation target from the spec: under 100 mm. */
+/**
+ * Vertical oscillation target from the spec: under 100 mm. Exported so
+ * `get-running-dynamics` builds its own target strings from the same
+ * literal instead of a second hardcoded copy.
+ */
+export const VO_TARGET = "under 100 mm";
+/**
+ * Ground contact time target range from the spec: 200-260 ms. Exported for
+ * the same reason as {@link VO_TARGET}.
+ */
+export const GCT_TARGET = "200-260 ms";
+
 function assessVerticalOscillation(
   voMm: number | null,
 ): DynamicsMetricAssessment | null {
@@ -263,17 +291,16 @@ function assessVerticalOscillation(
   return voMm < 100
     ? {
         status: "within",
-        target: "under 100 mm",
+        target: VO_TARGET,
         message: "good - under the 100 mm target",
       }
     : {
         status: "high",
-        target: "under 100 mm",
+        target: VO_TARGET,
         message: "high - above the 100 mm target",
       };
 }
 
-/** Ground contact time target range from the spec: 200-260 ms. */
 function assessGroundContactTime(
   gctMs: number | null,
 ): DynamicsMetricAssessment | null {
@@ -281,18 +308,18 @@ function assessGroundContactTime(
   if (gctMs < 200)
     return {
       status: "low",
-      target: "200-260 ms",
+      target: GCT_TARGET,
       message: "fast - below the 200-260 ms target range",
     };
   if (gctMs <= 260)
     return {
       status: "within",
-      target: "200-260 ms",
+      target: GCT_TARGET,
       message: "good - within the 200-260 ms target range",
     };
   return {
     status: "high",
-    target: "200-260 ms",
+    target: GCT_TARGET,
     message: "long - above the 200-260 ms target range",
   };
 }

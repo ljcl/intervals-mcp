@@ -96,7 +96,7 @@ export const TrainingLoadOutputSchema = z.object({
   units: z.object({
     load: z.literal("intervals.icu training load"),
     distance: z.literal("km"),
-    time_s: z.literal("s"),
+    time: z.literal("s"),
     time_hours: z.literal("h"),
     elevation: z.literal("m"),
   }),
@@ -337,7 +337,7 @@ export const FitnessTrendOutputSchema = z.object({
       "Of activities_included, how many have no icu_training_load recorded. Whole-body: informational only. Run-only: these contributed zero to the computed series",
     ),
   units: z.object({
-    load: z.literal("training load (intervals.icu units, unitless)"),
+    load: z.literal("intervals.icu training load"),
   }),
 });
 
@@ -1268,6 +1268,7 @@ const RunningDynamicsIntervalRowSchema = z.object({
     .describe("1-based position in icu_intervals, WORK rows only"),
   label: z.string().nullable(),
   distance_km: z.number().nullable(),
+  pace_sec_per_km: z.number().nullable(),
   pace_min_per_km: z.string().nullable(),
   stance_time_ms: z.number().nullable(),
   stance_time_status: DynamicsStatusSchema.nullable(),

@@ -57,7 +57,7 @@ describe("schemas align with the real tool rawObjects", () => {
       units: {
         load: "intervals.icu training load",
         distance: "km",
-        time_s: "s",
+        time: "s",
         time_hours: "h",
         elevation: "m",
       },

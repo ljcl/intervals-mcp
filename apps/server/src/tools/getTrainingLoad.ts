@@ -268,7 +268,7 @@ export const getTrainingLoadTool = {
         units: {
           load: "intervals.icu training load" as const,
           distance: "km" as const,
-          time_s: "s" as const,
+          time: "s" as const,
           time_hours: "h" as const,
           elevation: "m" as const,
         },

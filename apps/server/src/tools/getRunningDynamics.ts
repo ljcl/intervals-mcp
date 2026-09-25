@@ -13,9 +13,12 @@ import {
   cadenceSpm,
   type DynamicsMetricAssessment,
   type DynamicsStatus,
+  GCT_TARGET,
   isPaceActivity,
   isStepCadenceActivity,
   paceFromDistanceTime,
+  paceSecPerKmFromDistanceTime,
+  VO_TARGET,
 } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
 import { toolErrorText } from "./_errors";
@@ -23,11 +26,6 @@ import { intervalsActivityIdInput } from "./_ids";
 import { RunningDynamicsOutputSchema, warnOnSchemaDrift } from "./outputs";
 
 const name = "get-running-dynamics";
-
-/** Vertical oscillation target from the spec: under 100 mm. */
-const VO_TARGET = "under 100 mm";
-/** Ground contact time target range from the spec: 200-260 ms. */
-const GCT_TARGET = "200-260 ms";
 
 const MAX_INTERVAL_LINES = 20;
 
@@ -39,7 +37,8 @@ icu_intervals) that surfaces the same running-dynamics fields as
 get-activity/get-running-summary but adds a per-interval view and explicit
 status codes ("within"/"high"/"low") for the two metrics with a common
 target: VO under 100 mm, GCT 200-260 ms. Vertical ratio is reported as a
-value only (no status computed; see the code comment for common guidance).
+value only (no status computed; under ~8% is commonly cited as efficient,
+e.g. Garmin's vertical-ratio colour gauge).
 
 Parameters:
 - id (required): the intervals.icu activity id, exactly as returned by list-activities (e.g. "i189807578")
@@ -86,6 +85,7 @@ interface RunningDynamicsIntervalRow {
   lap_index: number;
   label: string | null;
   distance_km: number | null;
+  pace_sec_per_km: number | null;
   pace_min_per_km: string | null;
   stance_time_ms: number | null;
   stance_time_status: DynamicsStatus | null;
@@ -166,6 +166,9 @@ function mapIntervalRow(
     label: interval.label ?? null,
     distance_km:
       interval.distance != null ? round(interval.distance / 1000, 2) : null,
+    pace_sec_per_km: isPaceActivity(type)
+      ? paceSecPerKmFromDistanceTime(interval.distance, interval.moving_time)
+      : null,
     pace_min_per_km: isPaceActivity(type)
       ? paceFromDistanceTime(interval.distance, interval.moving_time)
       : null,

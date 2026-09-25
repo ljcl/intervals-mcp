@@ -78,6 +78,8 @@ describe("mapRunningDynamics", () => {
     expect(d.intervals).toHaveLength(1);
     expect(d.intervals[0]).toMatchObject({
       lap_index: 1,
+      // distance 7010.97 m over 2075 s.
+      pace_sec_per_km: 296,
       stance_time_ms: 234,
       stance_time_status: "within",
       vertical_oscillation_mm: 108,
@@ -164,6 +166,7 @@ describe("formatRunningDynamicsText", () => {
       lap_index: 1,
       label: null,
       distance_km: 1,
+      pace_sec_per_km: 300,
       pace_min_per_km: "5:00",
       stance_time_ms: 233,
       stance_time_status: "within" as const,

@@ -598,6 +598,17 @@ describe("fitness trend handlers", () => {
     expect(mockedIntervalsList).not.toHaveBeenCalled();
   });
 
+  it("rejects a plannedLoads entry that is not a real calendar date via the shared dateInputSchema", async () => {
+    const result = await dispatchToolCall("get-fitness-trend", {
+      plannedLoads: [{ date: "2026-02-30", load: 40 }],
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("real calendar date");
+    expect(mockedWellness).not.toHaveBeenCalled();
+    expect(mockedIntervalsList).not.toHaveBeenCalled();
+  });
+
   it("get-fitness-trend and get-fitness-trend-data agree on current, projection, and taper (#projectFromWellness)", async () => {
     const targetDate = inDays(21);
 
