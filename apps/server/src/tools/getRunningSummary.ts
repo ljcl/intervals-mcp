@@ -17,7 +17,7 @@ import {
   type IntervalsSportSettings,
 } from "../intervalsClient";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
-import { assessCadence } from "../utils/running";
+import { assessCadence, assessRunningDynamics } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
 import { toolErrorText } from "./_errors";
 import { intervalsActivityIdInput } from "./_ids";
@@ -194,22 +194,6 @@ function buildHrZoneSummary(
   };
 }
 
-/** Vertical oscillation target from the spec: under 100 mm. */
-function assessVerticalOscillation(voMm: number | null): string | null {
-  if (voMm == null) return null;
-  return voMm < 100
-    ? "good - under the 100 mm target"
-    : "high - above the 100 mm target";
-}
-
-/** Ground contact time target range from the spec: 200-260 ms. */
-function assessGroundContactTime(gctMs: number | null): string | null {
-  if (gctMs == null) return null;
-  if (gctMs < 200) return "fast - below the 200-260 ms target range";
-  if (gctMs <= 260) return "good - within the 200-260 ms target range";
-  return "long - above the 200-260 ms target range";
-}
-
 /**
  * Maps one raw intervals.icu activity (with `icu_intervals` populated) plus
  * the athlete's Run sport settings into the running summary: get-activity's
@@ -236,12 +220,16 @@ export function mapRunningSummary(
 
   const dyn = detail.running_dynamics;
   const dynamicsAssessment: DynamicsAssessment | null = dyn
-    ? {
-        vertical_oscillation: assessVerticalOscillation(
+    ? (() => {
+        const rd = assessRunningDynamics(
           dyn.vertical_oscillation_mm,
-        ),
-        ground_contact_time: assessGroundContactTime(dyn.stance_time_ms),
-      }
+          dyn.stance_time_ms,
+        );
+        return {
+          vertical_oscillation: rd.vertical_oscillation?.message ?? null,
+          ground_contact_time: rd.ground_contact_time?.message ?? null,
+        };
+      })()
     : null;
 
   const laps =

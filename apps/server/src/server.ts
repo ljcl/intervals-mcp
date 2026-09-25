@@ -91,6 +91,7 @@ import { getFitnessTrendTool } from "./tools/getFitnessTrend";
 import { getHillAnalysisTool } from "./tools/getHillAnalysis";
 import { getIntervalAnalysisTool } from "./tools/getIntervalAnalysis";
 import { getRacePredictionTool } from "./tools/getRacePrediction";
+import { getRunningDynamicsTool } from "./tools/getRunningDynamics";
 import { getRunningSummaryTool } from "./tools/getRunningSummary";
 import { getSplitAnalysisTool } from "./tools/getSplitAnalysis";
 import { getTrainingLoadTool } from "./tools/getTrainingLoad";
@@ -392,6 +393,7 @@ const TOOLS = [
   getActivityZonesTool,
   getActivityLapsTool,
   getRunningSummaryTool,
+  getRunningDynamicsTool,
   getAerobicAnalysisTool,
   getHillAnalysisTool,
   getSplitAnalysisTool,

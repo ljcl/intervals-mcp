@@ -166,7 +166,7 @@ describe("dispatchToolCall input validation", () => {
     // A number branch in the advertised schema is what invited the lossy
     // call above; ids must stay string-only across every tool. intervals.icu
     // activity ids (get-activity, get-activity-streams, get-activity-laps,
-    // get-running-summary, get-activity-zones, view-activity-zones,
+    // get-running-summary, get-running-dynamics, get-activity-zones, view-activity-zones,
     // get-activity-zones-data, get-hill-analysis, get-split-analysis,
     // get-aerobic-analysis, get-interval-analysis, update-activity) are the
     // exception to the digits-only pattern: they accept an optional "i"
@@ -191,6 +191,7 @@ describe("dispatchToolCall input validation", () => {
         field === "get-activity-streams.id" ||
         field === "get-activity-laps.id" ||
         field === "get-running-summary.id" ||
+        field === "get-running-dynamics.id" ||
         field === "get-activity-zones.id" ||
         field === "view-activity-zones.activity_id" ||
         field === "get-activity-zones-data.activity_id" ||

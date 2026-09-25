@@ -3,6 +3,7 @@ import { type IntervalsActivity } from "../intervalsClient";
 import {
   activityCadenceSpm,
   assessCadence,
+  assessRunningDynamics,
   buildRunningDynamics,
   cadenceSpm,
   formatPaceSeconds,
@@ -292,5 +293,56 @@ describe("buildRunningDynamics", () => {
     expect(
       buildRunningDynamics(activity({ average_stance_time: null }), "Run"),
     ).toBeNull();
+  });
+});
+
+describe("assessRunningDynamics", () => {
+  it("flags a vertical oscillation of 108 mm as high, above the 100 mm target", () => {
+    const rd = assessRunningDynamics(108, 233);
+    expect(rd.vertical_oscillation).toEqual({
+      status: "high",
+      target: "under 100 mm",
+      message: "high - above the 100 mm target",
+    });
+  });
+
+  it("flags a ground contact time of 233 ms as within the 200-260 ms target range", () => {
+    const rd = assessRunningDynamics(108, 233);
+    expect(rd.ground_contact_time).toEqual({
+      status: "within",
+      target: "200-260 ms",
+      message: "good - within the 200-260 ms target range",
+    });
+  });
+
+  it("treats a vertical oscillation under 100 mm as within target", () => {
+    expect(assessRunningDynamics(95, null).vertical_oscillation).toEqual({
+      status: "within",
+      target: "under 100 mm",
+      message: "good - under the 100 mm target",
+    });
+  });
+
+  it("flags a ground contact time under 200 ms as low", () => {
+    expect(assessRunningDynamics(null, 190).ground_contact_time).toEqual({
+      status: "low",
+      target: "200-260 ms",
+      message: "fast - below the 200-260 ms target range",
+    });
+  });
+
+  it("flags a ground contact time over 260 ms as high", () => {
+    expect(assessRunningDynamics(null, 270).ground_contact_time).toEqual({
+      status: "high",
+      target: "200-260 ms",
+      message: "long - above the 200-260 ms target range",
+    });
+  });
+
+  it("returns null per metric when its input is null", () => {
+    expect(assessRunningDynamics(null, null)).toEqual({
+      vertical_oscillation: null,
+      ground_contact_time: null,
+    });
   });
 });

@@ -240,6 +240,81 @@ export function activityCadenceSpm(
   return spm == null ? null : Math.round(spm);
 }
 
+/** `within` the target (VO's only band, or GCT's middle band); `high`/`low`
+ * on the wrong side of a target or range. */
+export type DynamicsStatus = "within" | "high" | "low";
+
+export interface DynamicsMetricAssessment {
+  status: DynamicsStatus;
+  target: string;
+  message: string;
+}
+
+export interface RunningDynamicsAssessment {
+  vertical_oscillation: DynamicsMetricAssessment | null;
+  ground_contact_time: DynamicsMetricAssessment | null;
+}
+
+/** Vertical oscillation target from the spec: under 100 mm. */
+function assessVerticalOscillation(
+  voMm: number | null,
+): DynamicsMetricAssessment | null {
+  if (voMm == null) return null;
+  return voMm < 100
+    ? {
+        status: "within",
+        target: "under 100 mm",
+        message: "good - under the 100 mm target",
+      }
+    : {
+        status: "high",
+        target: "under 100 mm",
+        message: "high - above the 100 mm target",
+      };
+}
+
+/** Ground contact time target range from the spec: 200-260 ms. */
+function assessGroundContactTime(
+  gctMs: number | null,
+): DynamicsMetricAssessment | null {
+  if (gctMs == null) return null;
+  if (gctMs < 200)
+    return {
+      status: "low",
+      target: "200-260 ms",
+      message: "fast - below the 200-260 ms target range",
+    };
+  if (gctMs <= 260)
+    return {
+      status: "within",
+      target: "200-260 ms",
+      message: "good - within the 200-260 ms target range",
+    };
+  return {
+    status: "high",
+    target: "200-260 ms",
+    message: "long - above the 200-260 ms target range",
+  };
+}
+
+/**
+ * Vertical oscillation and ground contact time target assessments, the one
+ * home for these thresholds (VO under 100 mm; GCT 200-260 ms). Shared by
+ * `get-running-summary` (which renders only `.message`) and
+ * `get-running-dynamics` (which also uses `.status`/`.target`); each metric
+ * is `null` when its input is `null` rather than the pair being all-or-
+ * nothing, since a device can report one dynamic without the other.
+ */
+export function assessRunningDynamics(
+  voMm: number | null,
+  gctMs: number | null,
+): RunningDynamicsAssessment {
+  return {
+    vertical_oscillation: assessVerticalOscillation(voMm),
+    ground_contact_time: assessGroundContactTime(gctMs),
+  };
+}
+
 export interface RunningDynamicsAvg {
   stance_time_ms: number | null;
   vertical_oscillation_mm: number | null;

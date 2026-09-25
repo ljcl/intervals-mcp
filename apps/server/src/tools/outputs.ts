@@ -1237,3 +1237,72 @@ export const RunningSummaryOutputSchema = ActivityDetailOutputSchema.omit({
     .describe("Only set when running_dynamics is present"),
   laps: z.array(IntervalsLapEntrySchema).describe("From mapIntervalsToLaps"),
 });
+
+// ---------- get-running-dynamics ----------
+const DynamicsStatusSchema = z.union([
+  z.literal("within"),
+  z.literal("high"),
+  z.literal("low"),
+]);
+const DynamicsMetricAssessmentSchema = z.object({
+  value: z.number().nullable(),
+  target: z.string(),
+  status: DynamicsStatusSchema.nullable().describe("Null when value is null"),
+  message: z.string().nullable(),
+});
+const RunningDynamicsAveragesSchema = z.object({
+  stance_time_ms: z.number().nullable(),
+  vertical_oscillation_mm: z.number().nullable(),
+  vertical_ratio_pct: z
+    .number()
+    .nullable()
+    .describe("No assessed status; reported for context only"),
+  step_length_mm: z.number().nullable(),
+  stride_m: z.number().nullable(),
+  cadence_spm: z.number().nullable(),
+});
+const RunningDynamicsIntervalRowSchema = z.object({
+  lap_index: z
+    .number()
+    .int()
+    .describe("1-based position in icu_intervals, WORK rows only"),
+  label: z.string().nullable(),
+  distance_km: z.number().nullable(),
+  pace_min_per_km: z.string().nullable(),
+  stance_time_ms: z.number().nullable(),
+  stance_time_status: DynamicsStatusSchema.nullable(),
+  vertical_oscillation_mm: z.number().nullable(),
+  vertical_oscillation_status: DynamicsStatusSchema.nullable(),
+  vertical_ratio_pct: z.number().nullable(),
+  step_length_mm: z.number().nullable(),
+  cadence_spm: z.number().nullable(),
+});
+export const RunningDynamicsOutputSchema = z.object({
+  activity_id: z.string(),
+  activity_name: z.string(),
+  type: z.string(),
+  has_dynamics: z.boolean(),
+  message: z
+    .string()
+    .nullable()
+    .describe("Set when the device/activity type recorded no running dynamics"),
+  averages: RunningDynamicsAveragesSchema.nullable(),
+  assessments: z
+    .object({
+      vertical_oscillation: DynamicsMetricAssessmentSchema,
+      ground_contact_time: DynamicsMetricAssessmentSchema,
+    })
+    .nullable(),
+  intervals: z
+    .array(RunningDynamicsIntervalRowSchema)
+    .describe("WORK intervals only; empty when includeIntervals is false"),
+  units: z.object({
+    stance_time: z.literal("ms"),
+    vertical_oscillation: z.literal("mm"),
+    vertical_ratio: z.literal("%"),
+    step_length: z.literal("mm"),
+    stride: z.literal("m"),
+    cadence: z.literal("spm"),
+    pace: z.literal("min/km"),
+  }),
+});

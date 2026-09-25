@@ -9,7 +9,7 @@ identity, so renames or schema reshapes re-prompt every user. See
 [architecture.md](architecture.md#tool-metadata) before changing either.
 
 > **Status.** Tools are being ported from Strava to intervals.icu (Phases 1
-> through 3). Sixteen of the nineteen tools below are ported and verified
+> through 3). Seventeen of the twenty tools below are ported and verified
 > against a real account; `get-fitness-trend`, `get-training-load`, and
 > `update-activity` are ported but not yet live-verified (planned for a
 > later task). Still Strava-backed, and failing with a "not yet ported"
@@ -30,6 +30,7 @@ Strava port.
 | `get-wellness` | Daily wellness (HRV, resting HR, sleep, weight, CTL/ATL/TSB) for a date or range |
 | `get-activity-laps` | Laps of an activity, derived from its intervals, with sport-aware pace/speed, GAP, HR, power, cadence |
 | `get-running-summary` | get-activity's detail fields for a run plus cadence, HR zone, and running-dynamics assessments, and a lap breakdown |
+| `get-running-dynamics` | Ground contact time, vertical oscillation/ratio, step length, stride, and cadence for a run, with VO/GCT target assessments and a per-WORK-interval breakdown |
 | `get-activity-zones` | Time spent in each HR and power zone for an activity, from the activity's own recorded zone bounds |
 | `compare-activities` | Compare two activities side-by-side: pace, HR, cadence, load, and running dynamics, plus activity2-activity1 differences and an efficiency verdict |
 | `get-hill-analysis` | Climb/descent detection with GAP and early-vs-late climb effort drift |
@@ -139,6 +140,22 @@ recorded zone time count. Only Run, TrailRun, and VirtualRun are accepted;
 any other type is rejected with a message naming the type and pointing to
 `get-activity`. The text response caps the lap list at 20 lines;
 `structuredContent.laps` always has the full list.
+
+`get-running-dynamics` takes the `id` from `list-activities` plus an
+optional `includeIntervals` (default `true`) and returns one activity's
+running dynamics: activity averages (`stance_time_ms`,
+`vertical_oscillation_mm`, `vertical_ratio_pct`, `step_length_mm`,
+`stride_m`, `cadence_spm`), `assessments` for vertical oscillation and
+ground contact time against the shared 100 mm / 200-260 ms targets
+(`status`: `within`/`high`/`low`, plus a human `message` and `target`
+string), and `intervals`, one row per WORK interval (`lap_index`, `label`,
+`distance_km`, `pace_min_per_km`, and the same dynamics with statuses).
+Vertical ratio is reported as a value only, no status. Unlike
+`get-running-summary`, a non-step-cadence activity type or one whose device
+recorded no dynamics is not an error: `has_dynamics: false` with an
+explanatory `message` and empty `intervals`. The text response caps the
+interval list at 20 lines; `structuredContent.intervals` always has the
+full list. One `get-activity(..., { intervals: true })` call; no streams.
 
 `get-activity-zones` and the `view-activity-zones`/`get-activity-zones-data`
 MCP App share one mapper (`mapIntervalsZones`): heart rate from the
