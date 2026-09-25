@@ -6,6 +6,7 @@ import {
   getWeekStart,
   rollingTrend,
   type TrainingLoadActivity,
+  typesWithLoad,
 } from "./trainingLoad";
 
 describe("getWeekStart", () => {
@@ -335,5 +336,23 @@ describe("aggregateWeeks", () => {
     const b = aggregateWeeks(runs, loadActivities);
     expect(a).toEqual(b);
     expect(a.reduce((sum, w) => sum + w.load, 0)).toBe(130);
+  });
+});
+
+describe("typesWithLoad", () => {
+  it("returns distinct types with nonzero load, sorted", () => {
+    const types = typesWithLoad([
+      { type: "Run", icu_training_load: 40 },
+      { type: "Ride", icu_training_load: 30 },
+      { type: "Run", icu_training_load: 20 },
+      { type: "WeightTraining", icu_training_load: 0 },
+      { type: null, icu_training_load: 10 },
+      { type: "Swim" },
+    ]);
+    expect(types).toEqual(["Ride", "Run", "Unknown"]);
+  });
+
+  it("returns an empty array for no activities", () => {
+    expect(typesWithLoad([])).toEqual([]);
   });
 });

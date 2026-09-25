@@ -16,6 +16,7 @@ import {
 import { loadWellnessFitnessSeries } from "../fitnessTrendWellness";
 import { listActivities } from "../intervalsClient";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
+import { typesWithLoad } from "../trainingLoad";
 import { addDays, todayLocal } from "../utils/localDate";
 import { READ_ONLY } from "./_annotations";
 import { toolErrorText } from "./_errors";
@@ -382,14 +383,7 @@ export const getFitnessTrendTool = {
           oldest: windowStart,
           newest: endDate,
         });
-        const typesWithLoad = new Set(
-          activities
-            .filter(
-              (a) => a.icu_training_load != null && a.icu_training_load !== 0,
-            )
-            .map((a) => a.type ?? "Unknown"),
-        );
-        activityTypesIncluded = Array.from(typesWithLoad).sort();
+        activityTypesIncluded = typesWithLoad(activities);
         activitiesIncluded = activities.length;
         activitiesMissingLoad = activities.filter(
           (a) => a.icu_training_load == null,

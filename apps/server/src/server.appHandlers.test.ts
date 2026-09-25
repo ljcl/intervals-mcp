@@ -387,7 +387,7 @@ describe("training load handlers", () => {
     expect(result.isError).toBeUndefined();
     const text = result.content[0]?.text ?? "";
     expect(text).toContain(
-      "Training Load (last 84 days, load source: intervals.icu)",
+      "Training Load (last 84 days, CTL/ATL source: intervals.icu)",
     );
     expect(text).toContain("Runs: 1");
     expect(text).toContain("Distance: 8 km");
@@ -430,6 +430,49 @@ describe("training load handlers", () => {
       "TrailRun",
       "VirtualRun",
     ]);
+  });
+
+  it("get-training-load and get-training-load-data agree on current and activityTypesIncluded (#loadTrainingLoadInputs)", async () => {
+    const activities = [
+      intervalsRun(),
+      intervalsRun({
+        id: "2",
+        type: "WeightTraining",
+        icu_training_load: 20,
+        distance: 0,
+      }),
+    ];
+    const wellness = [
+      {
+        id: TL_TODAY,
+        ctl: 45,
+        atl: 39,
+        ctlLoad: 0,
+        atlLoad: 0,
+      } as IntervalsWellness,
+    ];
+
+    mockedIntervalsList.mockResolvedValueOnce(activities);
+    mockedWellness.mockResolvedValueOnce(wellness);
+    const appResult = await dispatchToolCall("get-training-load-data", {
+      days: 84,
+    });
+    const appData = JSON.parse(appResult.content[0]?.text ?? "");
+
+    mockedIntervalsList.mockResolvedValueOnce(activities);
+    mockedWellness.mockResolvedValueOnce(wellness);
+    const textResult = await dispatchToolCall("get-training-load", {
+      days: 84,
+    });
+    const textData = textResult.structuredContent as {
+      current: { ctl: number; atl: number; tsb: number } | null;
+      activity_types_included: string[];
+    };
+
+    expect(textData.current).toEqual(appData.current);
+    expect(textData.activity_types_included).toEqual(
+      appData.activityTypesIncluded,
+    );
   });
 });
 

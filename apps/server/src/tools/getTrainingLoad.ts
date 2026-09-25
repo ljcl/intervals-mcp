@@ -1,19 +1,14 @@
 import { z } from "zod";
 import { getTimeZone } from "../config";
-import {
-  buildRunOnlyFitnessTrend,
-  RUN_ONLY_RUNWAY_DAYS,
-  RUN_TYPES,
-} from "../fitnessTrend";
-import { loadWellnessFitnessSeries } from "../fitnessTrendWellness";
+import { RUN_ONLY_RUNWAY_DAYS } from "../fitnessTrend";
 import { formatDuration } from "../formatters";
-import { type IntervalsActivity, listActivities } from "../intervalsClient";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
 import {
   aggregateWeeks,
   computeWeekWarnings,
   getWeekStart,
 } from "../trainingLoad";
+import { loadTrainingLoadInputs } from "../trainingLoadInputs";
 import { addDays, todayLocal } from "../utils/localDate";
 import { READ_ONLY } from "./_annotations";
 import { toolErrorText } from "./_errors";
@@ -121,86 +116,13 @@ export const getTrainingLoadTool = {
       const endDate = todayLocal(tz);
       const windowStart = addDays(endDate, -(days - 1));
 
-      let allActivities: IntervalsActivity[];
-      let windowActivities: IntervalsActivity[];
-      let current: {
-        date: string;
-        ctl: number;
-        atl: number;
-        tsb: number;
-      } | null;
-      let source: "intervals.icu" | "computed";
-      let activityTypesIncluded: string[];
-
-      if (runOnly) {
-        const runwayDays = days + RUN_ONLY_RUNWAY_DAYS;
-        const runwayStart = addDays(endDate, -(runwayDays - 1));
-
-        progress(`Listing activities ${runwayStart} to ${endDate}…`, {
-          important: true,
-        });
-        allActivities = await listActivities(apiKey, {
-          oldest: runwayStart,
-          newest: endDate,
-        });
-        const runActivities = allActivities.filter((a) =>
-          RUN_TYPES.includes(a.type ?? ""),
-        );
-        windowActivities = runActivities.filter((a) => {
-          const date = localDay(a.start_date_local);
-          return date >= windowStart && date <= endDate;
-        });
-
-        const { trend } = buildRunOnlyFitnessTrend(runActivities, {
-          endDate,
-          days,
-          runwayDays,
-        });
-        current = trend.current
-          ? {
-              date: trend.current.date,
-              ctl: trend.current.ctl,
-              atl: trend.current.atl,
-              tsb: trend.current.tsb,
-            }
-          : null;
-        source = "computed";
-        activityTypesIncluded = [...RUN_TYPES];
-      } else {
-        progress("Listing activities…", { important: true });
-        allActivities = await listActivities(apiKey, {
-          oldest: windowStart,
-          newest: endDate,
-        });
-        windowActivities = allActivities;
-
-        progress(`Fetching wellness ${windowStart} to ${endDate}…`);
-        const { series } = await loadWellnessFitnessSeries(apiKey, {
-          oldest: windowStart,
-          newest: endDate,
-        });
-        const last = series[series.length - 1];
-        current = last
-          ? { date: last.date, ctl: last.ctl, atl: last.atl, tsb: last.tsb }
-          : null;
-        source = "intervals.icu";
-        activityTypesIncluded = Array.from(
-          new Set(
-            windowActivities
-              .filter(
-                (a) => a.icu_training_load != null && a.icu_training_load !== 0,
-              )
-              .map((a) => a.type ?? "Unknown"),
-          ),
-        ).sort();
-      }
-
-      // Volume/warnings are always run-based; load sums whichever types are
-      // included (run-only above, or every type here for whole-body).
-      const runActivities = windowActivities.filter((a) =>
-        RUN_TYPES.includes(a.type ?? ""),
-      );
-      const loadActivities = runOnly ? runActivities : windowActivities;
+      const {
+        runs: runActivities,
+        loadActivities,
+        current,
+        source,
+        activityTypesIncluded,
+      } = await loadTrainingLoadInputs(apiKey, { days, runOnly }, progress);
 
       // The one shared weekly timeline (trainingLoad.ts's aggregateWeeks):
       // the union of run weeks and load weeks, so this tool and the
@@ -260,18 +182,25 @@ export const getTrainingLoadTool = {
         0,
       );
       const totalLoad = sortedWeeks.reduce((sum, w) => sum + w.load, 0);
-      const numWeeks = sortedWeeks.length || 1;
 
-      // Calculate trend (compare last 2 weeks to previous 2 weeks), off
-      // run-only distance always.
+      // Weekly averages and the trend verdict are run-based (volume is
+      // run-based), computed over weeks that actually had a run rather than
+      // the full calendar span `sortedWeeks` covers: whole-body's shared
+      // timeline also includes load-only weeks (e.g. a bike-only week before
+      // or after the run window), which would otherwise dilute the run
+      // averages and shift the trend comparison only for runOnly: false.
+      const runWeeks = sortedWeeks.filter((w) => w.runs > 0);
+      const numWeeks = runWeeks.length || 1;
+
+      // Calculate trend (compare last 2 run weeks to previous 2 run weeks).
       let trend = "insufficient data";
-      if (sortedWeeks.length >= 4) {
+      if (runWeeks.length >= 4) {
         const recentDistance =
-          sortedWeeks[sortedWeeks.length - 1]!.distance_km +
-          sortedWeeks[sortedWeeks.length - 2]!.distance_km;
+          runWeeks[runWeeks.length - 1]!.distance_km +
+          runWeeks[runWeeks.length - 2]!.distance_km;
         const previousDistance =
-          sortedWeeks[sortedWeeks.length - 3]!.distance_km +
-          sortedWeeks[sortedWeeks.length - 4]!.distance_km;
+          runWeeks[runWeeks.length - 3]!.distance_km +
+          runWeeks[runWeeks.length - 4]!.distance_km;
 
         if (previousDistance > 0) {
           const change =
@@ -282,13 +211,12 @@ export const getTrainingLoadTool = {
           else if (change < -5) trend = "decreasing";
           else trend = "stable";
         }
-      } else if (sortedWeeks.length >= 2) {
+      } else if (runWeeks.length >= 2) {
         trend = "limited data - need 4+ weeks for trend";
       }
 
       // Generate warnings, always run-based, over run-only weeks (not the
       // whole-body cross-training weeks that only carry load).
-      const runWeeks = sortedWeeks.filter((w) => w.runs > 0);
       const warnings = generateWarnings(runWeeks);
       warnings.push(
         "Weekly volume and injury-risk warnings are computed from " +
@@ -348,7 +276,7 @@ export const getTrainingLoadTool = {
 
       // Format as readable text
       let output = `Training Load Summary\n`;
-      output += `${result.period.start_date} to ${result.period.end_date} (${days} days, load source: ${source})\n\n`;
+      output += `${result.period.start_date} to ${result.period.end_date} (${days} days, CTL/ATL source: ${source})\n\n`;
 
       output += `Totals\n`;
       output += `  Runs: ${result.totals.runs}\n`;

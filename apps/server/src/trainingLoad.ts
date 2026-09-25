@@ -97,6 +97,25 @@ export interface TrainingLoadActivity {
   icu_training_load?: number | null;
 }
 
+/**
+ * Distinct activity types carrying nonzero `icu_training_load`, sorted. The
+ * one home `get-training-load`, the training-load app feed, and
+ * `get-fitness-trend`'s whole-body path all classify "what load was summed
+ * over" through, so the three surfaces can never list different types for
+ * the same activities.
+ */
+export function typesWithLoad(
+  activities: Pick<TrainingLoadActivity, "type" | "icu_training_load">[],
+): string[] {
+  return Array.from(
+    new Set(
+      activities
+        .filter((a) => a.icu_training_load != null && a.icu_training_load !== 0)
+        .map((a) => a.type ?? "Unknown"),
+    ),
+  ).sort();
+}
+
 export interface TrainingLoadWeek {
   weekStarting: string;
   runs: number;
@@ -267,15 +286,7 @@ export function buildTrainingLoadData(
 
   const activityTypesIncluded = runOnly
     ? [...RUN_TYPES]
-    : Array.from(
-        new Set(
-          loadActivities
-            .filter(
-              (a) => a.icu_training_load != null && a.icu_training_load !== 0,
-            )
-            .map((a) => a.type ?? "Unknown"),
-        ),
-      ).sort();
+    : typesWithLoad(loadActivities);
 
   const weeks: TrainingLoadWeek[] = buckets.map((bucket, i) => {
     const warningReasons = reasonsByWeek.get(bucket.weekStarting) ?? [];

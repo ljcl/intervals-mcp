@@ -20,12 +20,9 @@ import {
 import { getIntervalsApiKey, getTimeZone } from "./config";
 import { RateLimitError } from "./fetchClient";
 import {
-  buildRunOnlyFitnessTrend,
   computeFlags,
   type FitnessTrendResult,
   projectFromWellness,
-  RUN_ONLY_RUNWAY_DAYS,
-  RUN_TYPES,
   trendBands,
 } from "./fitnessTrend";
 import {
@@ -96,9 +93,9 @@ import { listGearTool } from "./tools/listGear";
 import { updateActivityTool } from "./tools/updateActivity";
 import {
   buildTrainingLoadData,
-  type TrainingLoadActivity,
   type TrainingLoadAppData,
 } from "./trainingLoad";
+import { loadTrainingLoadInputs } from "./trainingLoadInputs";
 import { addDays, todayLocal } from "./utils/localDate";
 import { SERVER_VERSION } from "./version";
 
@@ -847,13 +844,12 @@ async function handleViewCadenceTrends(
 }
 
 /**
- * Shared fetch + aggregate for the training-load view and data tools, from
- * intervals.icu. Volume/warnings are always run-based (Run/TrailRun/
- * VirtualRun); load and current CTL/ATL/TSB are whole-body by default, or
- * run-only when `args.runOnly` is set: the run-only series is built through
- * `buildRunOnlyFitnessTrend`, the same helper `get-training-load` and
- * `get-fitness-trend`'s run-only path use, so the three surfaces can never
- * disagree.
+ * Shared fetch + aggregate for the training-load view and data tools:
+ * `loadTrainingLoadInputs` (`trainingLoadInputs.ts`) fetches and classifies
+ * the run/load activities and current CTL/ATL/TSB, the same inputs
+ * `get-training-load` builds through, so the two surfaces can never
+ * disagree; `buildTrainingLoadData` then aggregates them into the weekly
+ * timeline.
  */
 async function loadTrainingLoadAppData(
   apiKey: string,
@@ -863,67 +859,8 @@ async function loadTrainingLoadAppData(
   const days = Number(args.days) || 84;
   const runOnly = Boolean(args.runOnly);
 
-  const tz = getTimeZone();
-  const endDate = todayLocal(tz);
-  const windowStart = addDays(endDate, -(days - 1));
-
-  let runs: TrainingLoadActivity[];
-  let loadActivities: TrainingLoadActivity[];
-  let current: { date: string; ctl: number; atl: number; tsb: number } | null;
-  let source: "intervals.icu" | "computed";
-
-  if (runOnly) {
-    const runwayDays = days + RUN_ONLY_RUNWAY_DAYS;
-    const runwayStart = addDays(endDate, -(runwayDays - 1));
-
-    progress("Listing activities for the window…", { important: true });
-    const activities = await listActivitiesFn(apiKey, {
-      oldest: runwayStart,
-      newest: endDate,
-    });
-    const runActivities = activities.filter((a) =>
-      RUN_TYPES.includes(a.type ?? ""),
-    );
-    runs = runActivities.filter((a) => {
-      const date = a.start_date_local.split("T")[0]!;
-      return date >= windowStart && date <= endDate;
-    });
-    loadActivities = runs;
-
-    const { trend } = buildRunOnlyFitnessTrend(runActivities, {
-      endDate,
-      days,
-      runwayDays,
-    });
-    current = trend.current
-      ? {
-          date: trend.current.date,
-          ctl: trend.current.ctl,
-          atl: trend.current.atl,
-          tsb: trend.current.tsb,
-        }
-      : null;
-    source = "computed";
-  } else {
-    progress("Listing activities for the window…", { important: true });
-    const activities = await listActivitiesFn(apiKey, {
-      oldest: windowStart,
-      newest: endDate,
-    });
-    runs = activities.filter((a) => RUN_TYPES.includes(a.type ?? ""));
-    loadActivities = activities;
-
-    progress("Fetching wellness for the window…");
-    const { series } = await loadWellnessFitnessSeries(apiKey, {
-      oldest: windowStart,
-      newest: endDate,
-    });
-    const last = series[series.length - 1];
-    current = last
-      ? { date: last.date, ctl: last.ctl, atl: last.atl, tsb: last.tsb }
-      : null;
-    source = "intervals.icu";
-  }
+  const { runs, loadActivities, current, source } =
+    await loadTrainingLoadInputs(apiKey, { days, runOnly }, progress);
 
   return buildTrainingLoadData(runs, days, {
     loadActivities,
@@ -951,7 +888,7 @@ async function handleViewTrainingLoad(
   const warningWeeks = data.weeks.filter((w) => w.warning).length;
 
   const lines = [
-    `Training Load (last ${data.days} days, load source: ${data.source})`,
+    `Training Load (last ${data.days} days, CTL/ATL source: ${data.source})`,
     `Runs: ${data.totals.runs}`,
     `Distance: ${data.totals.distanceKm} km`,
     `Load: ${data.totals.load}`,

@@ -129,6 +129,52 @@ describe("get-training-load execute", () => {
     expect(structured.activity_types_included.sort()).toEqual(["Ride", "Run"]);
   });
 
+  it("averages/numWeeks/trend are run-based: a load-only week outside the run span does not dilute them", async () => {
+    const runs = [run(2), run(9)];
+
+    mockedListActivities.mockResolvedValueOnce(runs);
+    mockedWellness.mockResolvedValueOnce([]);
+    const baseline = await getTrainingLoadTool.execute(
+      DEFAULT_INPUT,
+      "test-token",
+    );
+    const baselineStructured = baseline.structuredContent as {
+      averages: { runs_per_week: number; distance_km_per_week: number };
+      trend: string;
+      weekly_breakdown: unknown[];
+    };
+
+    // Same two runs, plus a load-only activity three weeks before the
+    // earliest run week: aggregateWeeks fills the gap weeks in between
+    // (see AGENTS.md's "derived numbers have exactly one home"), so the
+    // weekly timeline grows, but the run-based averages/trend must not.
+    mockedListActivities.mockResolvedValueOnce([
+      ...runs,
+      run(23, {
+        id: "ride",
+        type: "Ride",
+        icu_training_load: 40,
+        distance: 20000,
+      }),
+    ]);
+    mockedWellness.mockResolvedValueOnce([]);
+    const withRide = await getTrainingLoadTool.execute(
+      DEFAULT_INPUT,
+      "test-token",
+    );
+    const withRideStructured = withRide.structuredContent as {
+      averages: { runs_per_week: number; distance_km_per_week: number };
+      trend: string;
+      weekly_breakdown: unknown[];
+    };
+
+    expect(withRideStructured.weekly_breakdown.length).toBeGreaterThan(
+      baselineStructured.weekly_breakdown.length,
+    );
+    expect(withRideStructured.averages).toEqual(baselineStructured.averages);
+    expect(withRideStructured.trend).toBe(baselineStructured.trend);
+  });
+
   it("reads whole-body current CTL/ATL/TSB from wellness (last available day)", async () => {
     mockedListActivities.mockResolvedValueOnce([run(2)]);
     mockedWellness.mockResolvedValueOnce([
