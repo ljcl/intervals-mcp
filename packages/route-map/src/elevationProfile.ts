@@ -27,8 +27,11 @@ export interface ElevationProfile {
   areaPath: string;
   /** X position per sample index (scrub sync with the track). */
   xs: number[];
-  /** Y position per sample index. */
-  ys: number[];
+  /** Y position per sample index; `null` at a gap sample. No fallback
+   * midline: a drawn marker at a null `y` would place it at a made-up
+   * altitude, so callers (scrub dot, waypoint diamonds) skip that index
+   * instead. */
+  ys: Array<number | null>;
   /** Altitude domain in metres. */
   min: number;
   max: number;
@@ -76,8 +79,8 @@ export function buildElevationProfile(
 
   const span = max - min;
   const drawable = height - padTop;
-  // `null` for a gap sample; a fallback midline value only for `ys`'s
-  // scrub-marker placement, never fed into the drawn path below.
+  // `null` for a gap sample: no fabricated altitude to place a marker at,
+  // so `ys` carries the gap through to callers instead of a midline guess.
   const ys = altitude.map((a) =>
     a == null
       ? null
@@ -122,7 +125,7 @@ export function buildElevationProfile(
     linePath,
     areaPath,
     xs,
-    ys: ys.map((y) => y ?? height / 2),
+    ys,
     min,
     max,
   };

@@ -930,14 +930,19 @@ export function RouteMap({
                 stroke="var(--color-border-secondary)"
                 strokeWidth={1}
               />
-              <circle
-                cx={profile.xs[scrubIndex]}
-                cy={profile.ys[scrubIndex]}
-                r={3.5}
-                fill="var(--chart-altitude)"
-                stroke="var(--color-background-primary)"
-                strokeWidth={1.5}
-              />
+              {/* No altitude sample at this index (a gap): skip the dot
+                  rather than place it at a made-up altitude. The line above
+                  still marks the scrub position on the time axis. */}
+              {profile.ys[scrubIndex] != null && (
+                <circle
+                  cx={profile.xs[scrubIndex]}
+                  cy={profile.ys[scrubIndex]}
+                  r={3.5}
+                  fill="var(--chart-altitude)"
+                  stroke="var(--color-background-primary)"
+                  strokeWidth={1.5}
+                />
+              )}
             </>
           )}
         </svg>

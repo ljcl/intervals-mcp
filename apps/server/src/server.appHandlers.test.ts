@@ -111,7 +111,9 @@ describe("app handlers with no key configured", () => {
     await dispatchToolCall("view-activity-chart", { activity_id: "i123" });
 
     expect(mockedToken).toHaveBeenCalledTimes(1);
-    expect(mockedIntervalsActivity).toHaveBeenCalledWith("test-token", "i123");
+    expect(mockedIntervalsActivity).toHaveBeenCalledWith("test-token", "i123", {
+      intervals: true,
+    });
   });
 
   it("does not run the handler when the key cannot be resolved", async () => {
@@ -137,7 +139,11 @@ describe("view-activity-chart", () => {
     const text = result.content[0]?.text ?? "";
     expect(text).toContain("Activity: Morning Run");
     expect(text).toContain("Distance: 10.00 km");
-    expect(mockedIntervalsActivity).toHaveBeenCalledWith("test-token", "i123");
+    // Same fetch options as get-activity-streams-raw (intervals: true), so
+    // the two share one cache entry.
+    expect(mockedIntervalsActivity).toHaveBeenCalledWith("test-token", "i123", {
+      intervals: true,
+    });
   });
 
   it("surfaces an intervals.icu failure as a structured tool error", async () => {

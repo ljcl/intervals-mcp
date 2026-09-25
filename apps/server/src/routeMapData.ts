@@ -22,7 +22,7 @@
  * onto the downsampled distance stream via `mapAnchors.ts`.
  */
 
-import { fillGaps } from "./activityChartData";
+import { activityDisplayName } from "./formatters";
 import {
   type IntervalsActivity,
   type IntervalsInterval,
@@ -37,6 +37,7 @@ import {
 import {
   type Columns,
   downsampleColumns,
+  fillGaps,
   indexAtOrAfterTime,
   lastValuePerBucket,
 } from "./streamDownsample";
@@ -136,7 +137,7 @@ function buildGeometry(
   const base = {
     source: "activity" as const,
     id: activity.id,
-    name: activity.name ?? activity.type ?? "Workout",
+    name: activityDisplayName(activity),
     activityType: activity.type ?? null,
     distance: activity.distance ?? 0,
     elevationGain: activity.total_elevation_gain ?? 0,
@@ -159,7 +160,8 @@ function buildGeometry(
 
   const columns: Columns = {};
   if (streams.distance) {
-    columns.distance = fillGaps(keep.map((i) => streams.distance![i] ?? null));
+    const filled = fillGaps(keep.map((i) => streams.distance![i] ?? null));
+    if (filled) columns.distance = filled;
   }
   for (const key of METRIC_KEYS) {
     const values = streams[key];

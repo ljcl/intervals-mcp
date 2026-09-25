@@ -58,6 +58,13 @@ describe("buildElevationProfile", () => {
     expect(profile.max).toBe(30);
   });
 
+  it("keeps ys null at a gap sample instead of a fabricated midline value", () => {
+    const profile = buildElevationProfile([10, null, 30], undefined, OPTS)!;
+    expect(profile.ys[0]).not.toBeNull();
+    expect(profile.ys[1]).toBeNull();
+    expect(profile.ys[2]).not.toBeNull();
+  });
+
   it("returns null when every sample is a gap", () => {
     expect(buildElevationProfile([null, null], undefined, OPTS)).toBeNull();
   });

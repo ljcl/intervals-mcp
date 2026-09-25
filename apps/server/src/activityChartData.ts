@@ -7,10 +7,12 @@
  *
  * Null policy (research note 2026-09-25 section 2, option (a) for axes,
  * (b) for metrics): `time` and `distance` are gap-free and monotonic (the
- * app's x-axes; a null there would break every downstream lookup), filled
- * by `fillGaps` before downsampling. Every other stream keeps `null`
- * samples as `null` — the app draws them as gaps rather than a fabricated
- * zero or spike; null-safe rendering is a later task.
+ * app's x-axes; a null there would break every downstream lookup). `time`
+ * is never null (see `intervalsStreams.ts`); `distance` is filled by
+ * `fillGaps` (`streamDownsample.ts`) before downsampling, and omitted
+ * entirely if it has no non-null sample to fill from. Every other stream
+ * keeps `null` samples as `null`: the app draws them as gaps rather than a
+ * fabricated zero or spike.
  *
  * Bands: one per `icu_intervals` entry (WORK/RECOVERY, not device laps —
  * see docs/api-notes.md). `start_index`/`end_index` are recomputed against
@@ -24,6 +26,7 @@
  * for callers that want the raw values instead of the display name.
  */
 
+import { activityDisplayName } from "./formatters";
 import {
   type IntervalsActivity,
   type IntervalsInterval,
@@ -32,6 +35,7 @@ import { type IntervalsStreams } from "./intervalsStreams";
 import {
   type Columns,
   downsampleColumns,
+  fillGaps,
   indexAtOrAfterTime,
 } from "./streamDownsample";
 
@@ -101,62 +105,6 @@ const METRIC_KEYS = [
   "step_length",
 ] as const satisfies ReadonlyArray<keyof IntervalsStreams>;
 
-/**
- * Fills every `null` in `data` so the result is gap-free: leading nulls take
- * the first known value, trailing nulls take the last known value, and an
- * interior run of nulls is linearly interpolated between its neighbours.
- * Monotonic input (time, cumulative distance) stays monotonic (non-decreasing
- * — a flat leading/trailing fill repeats a value rather than decreasing).
- * A column with no non-null sample at all degrades to all zeros: there is
- * nothing to fill from, and every consumer of this axis needs numbers.
- */
-export function fillGaps(data: ReadonlyArray<number | null>): number[] {
-  const result: Array<number | null> = data.slice();
-  const n = result.length;
-
-  let first = -1;
-  for (let i = 0; i < n; i += 1) {
-    if (result[i] != null) {
-      first = i;
-      break;
-    }
-  }
-  if (first === -1) return result.map(() => 0);
-
-  let last = n - 1;
-  for (let i = n - 1; i >= 0; i -= 1) {
-    if (result[i] != null) {
-      last = i;
-      break;
-    }
-  }
-
-  const firstValue = result[first] as number | null;
-  const lastValue = result[last] as number | null;
-  for (let i = 0; i < first; i += 1) result[i] = firstValue;
-  for (let i = last + 1; i < n; i += 1) result[i] = lastValue;
-
-  let i = first;
-  while (i < last) {
-    if (result[i] != null) {
-      i += 1;
-      continue;
-    }
-    let j = i;
-    while (result[j] == null) j += 1;
-    const prev = result[i - 1] as number;
-    const next = result[j] as number;
-    const span = j - (i - 1);
-    for (let k = i; k < j; k += 1) {
-      const t = (k - (i - 1)) / span;
-      result[k] = prev + (next - prev) * t;
-    }
-    i = j;
-  }
-
-  return result as number[];
-}
-
 function bandName(interval: IntervalsInterval, lapIndex: number): string {
   if (interval.label) return interval.label;
   if (interval.type === "RECOVERY") return "Recovery";
@@ -205,8 +153,14 @@ export function buildActivityChartData(
   streams: IntervalsStreams,
   intervals: readonly IntervalsInterval[],
 ): ActivityChartData {
-  const columns: Columns = { time: fillGaps(streams.time) };
-  if (streams.distance) columns.distance = fillGaps(streams.distance);
+  // `streams.time` is never null (see `intervalsStreams.ts`), so it needs no
+  // `fillGaps` pass; `distance` can be entirely absent of real samples, so
+  // it's filled (and omitted if that fill has nothing to work from).
+  const columns: Columns = { time: streams.time };
+  if (streams.distance) {
+    const filled = fillGaps(streams.distance);
+    if (filled) columns.distance = filled;
+  }
   for (const key of METRIC_KEYS) {
     const values = streams[key];
     if (values) columns[key] = values as Array<number | null>;
@@ -225,7 +179,7 @@ export function buildActivityChartData(
   return {
     activityId: activity.id,
     activityType: activity.type ?? "Workout",
-    name: activity.name ?? activity.type ?? "Workout",
+    name: activityDisplayName(activity),
     streams: outStreams,
     laps: mapBands(intervals, time),
   };

@@ -30,6 +30,7 @@ import {
   type FitnessTrendAppData,
   mapFitnessTrendApp,
 } from "./fitnessTrendApp";
+import { activityDisplayName } from "./formatters";
 import {
   getActivity as getIntervalsActivity,
   listActivities as listActivitiesFn,
@@ -699,9 +700,15 @@ async function handleViewActivityChart(
   token: string,
 ): Promise<ToolCallResult> {
   const activityId = String(args.activity_id);
-  const activity = await getIntervalsActivity(token, activityId);
+  // Same fetch options as `get-activity-streams-raw` (`intervals: true`): the
+  // cache key is the full request URL, so matching options here means a
+  // second read of the same activity is a cache hit rather than a fresh
+  // upstream call.
+  const activity = await getIntervalsActivity(token, activityId, {
+    intervals: true,
+  });
   const lines = [
-    `Activity: ${activity.name ?? activity.type ?? "Workout"}`,
+    `Activity: ${activityDisplayName(activity)}`,
     `Type: ${activity.type ?? "Workout"}`,
     `Distance: ${((activity.distance ?? 0) / 1000).toFixed(2)} km`,
     `Moving Time: ${Math.floor((activity.moving_time ?? 0) / 60)}min`,
@@ -719,7 +726,7 @@ async function handleGetActivityStreamsRaw(
   const activity = await getIntervalsActivity(token, activityId, {
     intervals: true,
   });
-  const displayName = activity.name ?? activity.type ?? "Workout";
+  const displayName = activityDisplayName(activity);
 
   let streams: Awaited<ReturnType<typeof loadIntervalsStreams>>;
   try {
@@ -978,7 +985,7 @@ async function loadActivityZonesData(
   const activity = await getIntervalsActivity(apiKey, activityId);
   return {
     activityId: activity.id,
-    name: activity.name ?? activity.type ?? "Workout",
+    name: activityDisplayName(activity),
     date: activity.start_date_local,
     type: activity.type ?? "Workout",
     zoneSets: mapIntervalsZones(activity),

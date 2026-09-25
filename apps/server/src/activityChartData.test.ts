@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 import streamsFixture from "./__fixtures__/intervals/streams.json";
-import {
-  buildActivityChartData,
-  fillGaps,
-  MAX_CHART_POINTS,
-} from "./activityChartData";
+import { buildActivityChartData, MAX_CHART_POINTS } from "./activityChartData";
 import {
   type IntervalsActivity,
   type IntervalsInterval,
@@ -29,24 +25,6 @@ const interval = (overrides: Partial<IntervalsInterval>): IntervalsInterval =>
     end_time: 10,
     ...overrides,
   }) as IntervalsInterval;
-
-describe("fillGaps", () => {
-  it("fills leading and trailing nulls with the nearest known value", () => {
-    expect(fillGaps([null, null, 5, 6, null])).toEqual([5, 5, 5, 6, 6]);
-  });
-
-  it("linearly interpolates an interior run of nulls", () => {
-    expect(fillGaps([0, null, null, 30])).toEqual([0, 10, 20, 30]);
-  });
-
-  it("degrades to all zeros when every sample is null", () => {
-    expect(fillGaps([null, null])).toEqual([0, 0]);
-  });
-
-  it("leaves an already gap-free column unchanged", () => {
-    expect(fillGaps([1, 2, 3])).toEqual([1, 2, 3]);
-  });
-});
 
 describe("buildActivityChartData", () => {
   it("downsamples jointly to at most MAX_CHART_POINTS and keeps arrays aligned", () => {
@@ -90,6 +68,20 @@ describe("buildActivityChartData", () => {
 
     expect(data.streams.distance).toEqual([10, 10, 10, 20, 20]);
     expect(data.streams.heartrate).toEqual([null, 100, null, 110, 120]);
+  });
+
+  it("omits the distance stream entirely rather than filling it with zeros when every sample is null", () => {
+    const time = [0, 1, 2, 3, 4];
+    const distance = [null, null, null, null, null];
+
+    const data = buildActivityChartData(
+      activity(),
+      { time, distance, moving: [], length: 5 },
+      [],
+    );
+
+    expect(data.streams.distance).toBeUndefined();
+    expect(data.streams.time).toEqual(time);
   });
 
   it("maps one band per icu_intervals entry with indices on the downsampled time array", () => {
