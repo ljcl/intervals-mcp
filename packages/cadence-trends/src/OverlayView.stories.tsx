@@ -13,11 +13,11 @@ const noop = () => {};
 
 const meta = preview.meta({ component: OverlayView });
 
-const bothRuns = new Set([10003, 10013]);
+const bothRuns = new Set(["i10003", "i10013"]);
 
 export const EmptyState = meta.story({
   args: {
-    selectedRunIds: new Set<number>(),
+    selectedRunIds: new Set<string>(),
     streams: new Map(),
     requestStream: noop,
     retryStream: noop,
@@ -133,7 +133,7 @@ export const OneRunFailed = meta.story({
     ).toBeVisible();
 
     await userEvent.click(canvas.getByRole("button", { name: "Try again" }));
-    await expect(args.retryStream).toHaveBeenCalledWith(10013);
+    await expect(args.retryStream).toHaveBeenCalledWith("i10013");
   },
 });
 

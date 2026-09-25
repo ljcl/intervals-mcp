@@ -19,9 +19,7 @@ import {
 import {
   getActivityById,
   getActivityLaps,
-  getAllActivities,
   type StravaDetailedActivity,
-  type StravaSummaryActivity,
 } from "./stravaClient";
 import { addDays } from "./utils/localDate";
 
@@ -31,7 +29,6 @@ vi.mock("./stravaClient", async (importOriginal) => {
     ...actual,
     getActivityById: vi.fn(),
     getActivityLaps: vi.fn(),
-    getAllActivities: vi.fn(),
   };
 });
 
@@ -76,7 +73,6 @@ const mockedIntervalsActivity = vi.mocked(getIntervalsActivityFn);
 const mockedIntervalsStreams = vi.mocked(getIntervalsStreamsFn);
 const mockedWellness = vi.mocked(getWellnessFn);
 const mockedIntervalsList = vi.mocked(listActivitiesFn);
-const mockedList = vi.mocked(getAllActivities);
 const mockedApiGet = vi.mocked(stravaApi.get);
 
 // Google's polyline example: three points near (38.5, -120.2).
@@ -114,25 +110,6 @@ function intervalsActivity(
     moving_time: 3000,
     ...overrides,
   } as IntervalsActivity;
-}
-
-function summaryRun(
-  overrides: Record<string, unknown> = {},
-): StravaSummaryActivity {
-  return {
-    id: "1",
-    name: "Easy Run",
-    type: "Run",
-    sport_type: "Run",
-    start_date: "2026-06-01T07:00:00Z",
-    start_date_local: "2026-06-01T07:00:00Z",
-    distance: 8000,
-    moving_time: 2400,
-    average_cadence: 42.5,
-    average_speed: 3.33,
-    total_elevation_gain: 60,
-    ...overrides,
-  } as unknown as StravaSummaryActivity;
 }
 
 beforeEach(() => {
@@ -288,9 +265,9 @@ describe("get-activity-streams-raw", () => {
 
 describe("cadence trends handlers", () => {
   it("view-cadence-trends reports run count and doubled cadence", async () => {
-    mockedList.mockResolvedValueOnce([
-      summaryRun(),
-      summaryRun({ id: "2", type: "Ride" }), // filtered out
+    mockedIntervalsList.mockResolvedValueOnce([
+      intervalsActivity({ average_cadence: 42.5, average_speed: 3.33 }),
+      intervalsActivity({ id: "i2", type: "Ride" }), // filtered out
     ]);
 
     const result = await dispatchToolCall("view-cadence-trends", { weeks: 4 });
@@ -302,8 +279,15 @@ describe("cadence trends handlers", () => {
     expect(text).toContain("Average cadence: 85 spm");
   });
 
-  it("get-cadence-trend-data maps runs to per-activity summaries", async () => {
-    mockedList.mockResolvedValueOnce([summaryRun()]);
+  it("get-cadence-trend-data maps runs to per-activity summaries with string ids", async () => {
+    mockedIntervalsList.mockResolvedValueOnce([
+      intervalsActivity({
+        id: "i189807578",
+        name: "Easy Run",
+        distance: 8000,
+        average_cadence: 42.5,
+      }),
+    ]);
 
     const result = await dispatchToolCall("get-cadence-trend-data", {});
 
@@ -312,31 +296,40 @@ describe("cadence trends handlers", () => {
     expect(parsed.weeks).toBe(6);
     expect(parsed.activities).toHaveLength(1);
     expect(parsed.activities[0]).toMatchObject({
-      id: "1",
+      id: "i189807578",
       name: "Easy Run",
       distance: 8,
       averageCadence: 85,
     });
   });
 
-  it("a view-/get-…-data pair builds one quantized window, so the cached scan is shared (#329)", async () => {
-    // The two calls of one app open land seconds apart; a raw Date.now()
-    // per call gave them different `after` values, two URLs, and two full
-    // history scans. The bounds are floored to the minute so the pair keys
-    // onto one cached listing.
+  it("narrates the local calendar date for a late-evening run, not a UTC-shifted one", async () => {
+    mockedIntervalsList.mockResolvedValueOnce([
+      intervalsActivity({ start_date_local: "2026-06-01T23:30:00" }),
+    ]);
+
+    const result = await dispatchToolCall("get-cadence-trend-data", {});
+
+    const parsed = JSON.parse(result.content[0]?.text ?? "");
+    expect(parsed.activities[0]?.date).toBe("2026-06-01");
+  });
+
+  it("a view-/get-…-data pair shares one local-date window (#329)", async () => {
+    // The two calls of one app open land seconds apart. Cadence-trends now
+    // windows on calendar dates (`todayLocal`), which are already the same
+    // for calls seconds apart on the same day, so the pair builds the same
+    // `oldest`/`newest` bounds and the cached listing is shared.
     vi.useFakeTimers();
     try {
       vi.setSystemTime(new Date("2026-08-19T10:00:05Z"));
-      mockedList.mockResolvedValue([summaryRun()]);
+      mockedIntervalsList.mockResolvedValue([]);
 
       await dispatchToolCall("view-cadence-trends", { weeks: 4 });
       vi.setSystemTime(new Date("2026-08-19T10:00:35Z")); // 30 s later
       await dispatchToolCall("get-cadence-trend-data", { weeks: 4 });
 
-      const [viewCall, dataCall] = mockedList.mock.calls.slice(-2);
-      expect(viewCall?.[1]?.after).toBeDefined();
-      expect(viewCall?.[1]?.after).toBe(dataCall?.[1]?.after);
-      expect((viewCall?.[1]?.after ?? 0) % 60).toBe(0);
+      const [viewCall, dataCall] = mockedIntervalsList.mock.calls.slice(-2);
+      expect(viewCall?.[1]).toEqual(dataCall?.[1]);
     } finally {
       vi.useRealTimers();
     }

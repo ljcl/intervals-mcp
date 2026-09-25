@@ -1,7 +1,10 @@
 /** Summary data for a single run, returned by get-cadence-trend-data */
 export interface RunSummary {
-  id: number;
+  /** intervals.icu activity id, e.g. "i189807578". */
+  id: string;
   name: string;
+  /** Local calendar date (`YYYY-MM-DD`); read as-is, never through a `Date`
+   * whose own time zone could shift the day. */
   date: string;
   distance: number;
   duration: number;
@@ -18,7 +21,7 @@ export interface CadenceTrendData {
 
 /** Stream data for a single run used in overlay view (reuses activity-chart shape) */
 export interface OverlayStreamData {
-  activityId: number;
+  activityId: string;
   activityType: string;
   name: string;
   streams: {

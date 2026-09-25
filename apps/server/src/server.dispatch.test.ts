@@ -212,7 +212,7 @@ describe("dispatchToolCall input validation", () => {
   });
 
   it("applies the weeks default for app tools", async () => {
-    mockedList.mockResolvedValueOnce([]);
+    mockedIntervalsList.mockResolvedValueOnce([]);
 
     const result = await dispatchToolCall("get-cadence-trend-data", {});
 

@@ -21,8 +21,8 @@ import { type RunSummary } from "./types";
 
 interface TrendViewProps {
   activities: RunSummary[];
-  onRunClick: (runId: number) => void;
-  selectedRunIds: Set<number>;
+  onRunClick: (runId: string) => void;
+  selectedRunIds: Set<string>;
   mode?: "mobile" | "desktop";
 }
 

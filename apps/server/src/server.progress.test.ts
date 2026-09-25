@@ -9,13 +9,11 @@ import {
   getAthletePaceCurves,
   type IntervalsAthletePaceCurves,
 } from "./intervalsClient";
-import { getAllActivities } from "./stravaClient";
 
 vi.mock("./stravaClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./stravaClient")>();
   return {
     ...actual,
-    getAllActivities: vi.fn(),
     getActivityById: vi.fn(),
   };
 });
@@ -33,7 +31,6 @@ vi.mock("./config", async (importOriginal) => {
 const { dispatchToolCall } = await import("./server");
 const { connectTestClient } = await import("./mcpTestClient");
 
-const mockedList = vi.mocked(getAllActivities);
 const mockedAthleteCurves = vi.mocked(getAthletePaceCurves);
 
 /** A pace curve just complete enough for `get-best-efforts`'s topN=1 path. */
@@ -84,24 +81,6 @@ describe("dispatchToolCall progress", () => {
 
     expect(messages).toContain("Fetching pace curve (1y)…");
     expect(result.isError).toBe(true);
-  });
-
-  it("wires the paginator's page callback to the reporter", async () => {
-    mockedList.mockResolvedValueOnce([]);
-    const messages: string[] = [];
-
-    await dispatchToolCall(
-      "get-cadence-trend-data",
-      { weeks: 6 },
-      { progress: (message) => messages.push(message) },
-    );
-
-    // The Strava-backed app-data tools page through a history that can run
-    // to thousands of activities; the sweep is the whole call, so it is the
-    // only thing there is to report.
-    const [, params] = mockedList.mock.calls[0]!;
-    params?.onProgress?.(200, 1);
-    expect(messages).toEqual(["Listed 200 activities"]);
   });
 
   it("runs unchanged when the caller supplies no reporter", async () => {

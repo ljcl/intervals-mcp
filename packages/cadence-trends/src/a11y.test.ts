@@ -9,7 +9,7 @@ import { type RunSummary } from "./types";
 
 function run(overrides: Partial<RunSummary>): RunSummary {
   return {
-    id: 1,
+    id: "1",
     name: "Morning Run",
     date: "2026-03-02T07:00:00Z",
     distance: 8,
@@ -23,13 +23,13 @@ function run(overrides: Partial<RunSummary>): RunSummary {
 
 const runs: RunSummary[] = [
   run({
-    id: 1,
+    id: "1",
     date: "2026-03-02T07:00:00Z",
     averageCadence: 164,
     averagePace: 6.1,
   }),
   run({
-    id: 2,
+    id: "2",
     date: "2026-04-18T07:00:00Z",
     averageCadence: 178,
     averagePace: 4.5,

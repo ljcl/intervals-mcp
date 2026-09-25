@@ -21,6 +21,10 @@ import {
   hrZoneMismatchWarning,
   mapIntervalsZones,
 } from "./activityZones";
+import {
+  buildCadenceTrendData,
+  type CadenceTrendData,
+} from "./cadenceTrendData";
 import { getIntervalsApiKey, getTimeZone } from "./config";
 import { RateLimitError } from "./fetchClient";
 import {
@@ -53,7 +57,6 @@ import {
 import { decodePolyline } from "./polyline";
 import {
   createProgressReporter,
-  listingProgress,
   NO_PROGRESS,
   type ReportProgress,
 } from "./progress";
@@ -62,7 +65,6 @@ import {
   getActivityById,
   getActivityLaps,
   getActivityStreams,
-  getAllActivities as getAllActivitiesFn,
   StreamsUnavailableError,
 } from "./stravaClient";
 import {
@@ -759,92 +761,53 @@ async function handleGetActivityStreamsRaw(
   return { content: [{ type: "text", text: JSON.stringify(result) }] };
 }
 
-const RUNNING_TYPES = new Set(["Run", "VirtualRun", "TrailRun"]);
-
 /**
- * Quantum for history-window bounds. The remaining Strava-backed listing
- * apps (cadence-trends, training-load) are each a `view-` tool plus a
- * `get-…-data` tool running the same `getAllActivities` scan seconds apart,
- * and the response cache keys on the full URL, so an `after` recomputed
- * from a raw `Date.now()` per call gave the pair two distinct URLs and two
- * full pagination sweeps. Flooring the bounds to the minute makes the pair
- * build one URL, which the `/athlete/activities` TTL in `stravaCacheTtl`
- * then serves as one scan. The cost is that "last N days" can start up to a
- * minute early. The fitness-trend app pair shares a window the same way but
- * without this quantum: `todayLocal` already returns the same calendar date
- * for calls seconds apart.
+ * Shared fetch + build for the cadence-trends view and data tools: both list
+ * the same local-date window through `listActivities` and hand it to the
+ * pure {@link buildCadenceTrendData}, so the two surfaces can never disagree
+ * on the run filter or the cadence math. The window is calendar dates
+ * (`todayLocal`), which are already the same for calls seconds apart on the
+ * same day, matching the fitness-trend/training-load pairs' local-date
+ * windows rather than an epoch bound needing a quantum.
  */
-const WINDOW_QUANTUM_SECONDS = 60;
+async function loadCadenceTrendData(
+  apiKey: string,
+  args: Record<string, unknown>,
+): Promise<CadenceTrendData> {
+  const weeks = Number(args.weeks) || 6;
+  const tz = getTimeZone();
+  const newest = todayLocal(tz);
+  const oldest = addDays(newest, -(weeks * 7 - 1));
 
-/** Epoch seconds for `now - msAgo`, floored to the minute. */
-function quantizedEpochAfter(msAgo: number): number {
-  const seconds = Math.floor((Date.now() - msAgo) / 1000);
-  return seconds - (seconds % WINDOW_QUANTUM_SECONDS);
+  const activities = await listActivitiesFn(apiKey, { oldest, newest });
+
+  return buildCadenceTrendData(activities, { weeks });
 }
 
 async function handleGetCadenceTrendData(
   args: Record<string, unknown>,
   token: string,
-  progress: ReportProgress,
 ): Promise<ToolCallResult> {
-  const weeks = Number(args.weeks) || 6;
-  const after = quantizedEpochAfter(weeks * 7 * 24 * 60 * 60 * 1000);
-
-  // getAllActivities paginates internally until the `after` window is
-  // exhausted; wrapping it in a second page loop would refetch everything.
-  const allActivities = await getAllActivitiesFn(token, {
-    perPage: 200,
-    after,
-    onProgress: listingProgress(progress),
-  });
-
-  const runs = allActivities.filter((a) => a.type && RUNNING_TYPES.has(a.type));
-
-  const activities = runs.map((a) => {
-    const avgCadence = a.average_cadence ? a.average_cadence * 2 : 0;
-    const avgSpeed = a.average_speed ?? 0;
-    const avgPace = avgSpeed > 0 ? 1000 / avgSpeed / 60 : 0;
-    return {
-      id: a.id,
-      name: a.name,
-      date: a.start_date,
-      distance: Math.round((a.distance / 1000) * 100) / 100,
-      duration: a.moving_time ?? 0,
-      averageCadence: Math.round(avgCadence),
-      averagePace: Math.round(avgPace * 100) / 100,
-      type: a.type ?? "Run",
-    };
-  });
-
-  const result = { weeks, activities };
+  const result = await loadCadenceTrendData(token, args);
   return { content: [{ type: "text", text: JSON.stringify(result) }] };
 }
 
 async function handleViewCadenceTrends(
   args: Record<string, unknown>,
   token: string,
-  progress: ReportProgress,
 ): Promise<ToolCallResult> {
-  const weeks = Number(args.weeks) || 6;
-  const after = quantizedEpochAfter(weeks * 7 * 24 * 60 * 60 * 1000);
-  const activities = await getAllActivitiesFn(token, {
-    page: 1,
-    perPage: 200,
-    after,
-    onProgress: listingProgress(progress),
-  });
-  const runs = activities.filter((a) => a.type && RUNNING_TYPES.has(a.type));
+  const data = await loadCadenceTrendData(token, args);
+  const runs = data.activities;
 
   const avgCadence =
     runs.length > 0
       ? Math.round(
-          runs.reduce((sum, a) => sum + (a.average_cadence ?? 0) * 2, 0) /
-            runs.length,
+          runs.reduce((sum, a) => sum + a.averageCadence, 0) / runs.length,
         )
       : 0;
 
   const lines = [
-    `Cadence Trends (last ${weeks} weeks)`,
+    `Cadence Trends (last ${data.weeks} weeks)`,
     `Runs: ${runs.length}`,
     `Average cadence: ${avgCadence} spm`,
     "",

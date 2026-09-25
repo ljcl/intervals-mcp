@@ -180,7 +180,7 @@ export type OverlayXMode = "distance" | "time";
  * there instead of flat-lining out to the longest run.
  */
 export function resampleOverlayRuns(
-  runs: Array<{ id: number; points: OverlayPoint[] }>,
+  runs: Array<{ id: string; points: OverlayPoint[] }>,
   xMode: OverlayXMode,
   gridSize = 500,
 ): Array<Record<string, number | undefined>> {

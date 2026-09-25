@@ -3,7 +3,7 @@ import { buildCadenceContextSummary } from "./contextSummary";
 import { type RunSummary } from "./types";
 
 const run = (over: Partial<RunSummary>): RunSummary => ({
-  id: 1,
+  id: "1",
   name: "Run",
   date: "2026-05-01",
   distance: 10000,
@@ -32,8 +32,8 @@ describe("buildCadenceContextSummary", () => {
       weeks: 6,
       activeView: "scatter",
       selectedRuns: [
-        run({ id: 1, name: "Tempo Run", averageCadence: 181.6 }),
-        run({ id: 2, name: "Long Run", averageCadence: 175.9 }),
+        run({ id: "1", name: "Tempo Run", averageCadence: 181.6 }),
+        run({ id: "2", name: "Long Run", averageCadence: 175.9 }),
       ],
     });
     expect(text).toBe(

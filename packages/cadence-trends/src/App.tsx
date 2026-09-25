@@ -48,7 +48,7 @@ interface AppProps {
 export function App({ app, data, mode = "desktop" }: AppProps) {
   const isMobile = mode === "mobile";
   const [activeView, setActiveView] = useState<ViewId>("trend");
-  const [selectedRunIds, setSelectedRunIds] = useState<Set<number>>(new Set());
+  const [selectedRunIds, setSelectedRunIds] = useState<Set<string>>(new Set());
 
   // Per-run stream fetches go through the shared keyed fetcher so each run
   // carries its own loading, error, and retry — the hand-rolled
@@ -64,7 +64,7 @@ export function App({ app, data, mode = "desktop" }: AppProps) {
     [data],
   );
 
-  const toggleRunSelection = useCallback((runId: number) => {
+  const toggleRunSelection = useCallback((runId: string) => {
     setSelectedRunIds((prev) => {
       const next = new Set(prev);
       if (next.has(runId)) {
@@ -76,7 +76,7 @@ export function App({ app, data, mode = "desktop" }: AppProps) {
     });
   }, []);
 
-  const removeRun = useCallback((runId: number) => {
+  const removeRun = useCallback((runId: string) => {
     setSelectedRunIds((prev) => {
       const next = new Set(prev);
       next.delete(runId);
@@ -87,20 +87,17 @@ export function App({ app, data, mode = "desktop" }: AppProps) {
   const { entries, request, retry } = streamFetcher;
 
   const requestStream = useCallback(
-    (runId: number) => request(String(runId)),
+    (runId: string) => request(runId),
     [request],
   );
-  const retryStream = useCallback(
-    (runId: number) => retry(String(runId)),
-    [retry],
-  );
+  const retryStream = useCallback((runId: string) => retry(runId), [retry]);
 
   // One state per requested run, keyed back to the run it belongs to. Only
   // the selected runs are ever requested, so this stays at most a handful.
   const streams = useMemo(() => {
-    const map = new Map<number, RunStreamState>();
+    const map = new Map<string, RunStreamState>();
     for (const run of data.activities) {
-      const entry = entries.get(String(run.id));
+      const entry = entries.get(run.id);
       if (!entry) continue;
       map.set(run.id, {
         run,

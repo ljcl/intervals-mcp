@@ -106,14 +106,3 @@ export function createProgressReporter(
     }).catch(() => {});
   };
 }
-
-/**
- * Adapter for `getAllActivities`'s per-page callback. Five tools paginate the
- * athlete's history; routing them through one adapter keeps the wording
- * identical across all of them rather than five near-miss variants.
- */
-export function listingProgress(
-  progress: ReportProgress,
-): (fetched: number) => void {
-  return (fetched) => progress(`Listed ${fetched} activities`);
-}

@@ -3,10 +3,9 @@
  * time throttle and its `important` bypass, and the promise that a failing
  * transport cannot fail the scan.
  */
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   createProgressReporter,
-  listingProgress,
   MIN_PROGRESS_INTERVAL_MS,
   NO_PROGRESS,
   type ProgressNotification,
@@ -148,19 +147,5 @@ describe("createProgressReporter", () => {
     expect(Date.now() - before).toBeLessThan(50);
     expect(resolveSend).toBeDefined();
     resolveSend?.();
-  });
-});
-
-describe("listingProgress", () => {
-  it("gives every paginating tool the same wording", () => {
-    const report = vi.fn();
-
-    listingProgress(report)(200);
-    listingProgress(report)(400);
-
-    expect(report.mock.calls.map(([m]) => m)).toEqual([
-      "Listed 200 activities",
-      "Listed 400 activities",
-    ]);
   });
 });

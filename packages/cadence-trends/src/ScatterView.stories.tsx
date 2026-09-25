@@ -27,7 +27,7 @@ export const Default = meta.story({
   args: {
     activities: mockRuns,
     onRunClick: fn(),
-    selectedRunIds: new Set<number>(),
+    selectedRunIds: new Set<string>(),
   },
   play: async ({ args, canvasElement, userEvent }) => {
     // ResponsiveContainer needs a resize tick before the marks mount.
@@ -44,7 +44,7 @@ export const Empty = meta.story({
   args: {
     activities: [],
     onRunClick: noop,
-    selectedRunIds: new Set<number>(),
+    selectedRunIds: new Set<string>(),
   },
 });
 
@@ -53,7 +53,7 @@ export const WithSelectedRuns = meta.story({
   args: {
     activities: mockRuns,
     onRunClick: noop,
-    selectedRunIds: new Set([10003, 10013]),
+    selectedRunIds: new Set(["i10003", "i10013"]),
   },
   play: async ({ canvasElement }) => {
     await waitFor(() =>
@@ -72,7 +72,7 @@ export const Dark = meta.story({
   args: {
     activities: mockRuns,
     onRunClick: noop,
-    selectedRunIds: new Set<number>(),
+    selectedRunIds: new Set<string>(),
   },
 });
 
@@ -80,7 +80,7 @@ export const Mobile = meta.story({
   args: {
     activities: mockRuns,
     onRunClick: noop,
-    selectedRunIds: new Set<number>(),
+    selectedRunIds: new Set<string>(),
     mode: "mobile",
   },
   globals: {

@@ -11,7 +11,7 @@ import {
 import { type OverlayPoint, type RunSummary } from "./types";
 
 const run = (overrides: Partial<RunSummary>): RunSummary => ({
-  id: 1,
+  id: "1",
   name: "Run",
   date: "2026-07-01T06:00:00Z",
   distance: 10,
@@ -39,7 +39,7 @@ function makePoints(
 describe("resampleOverlayRuns", () => {
   it("returns an empty dataset when no run has cadence", () => {
     const rows = resampleOverlayRuns(
-      [{ id: 1, points: makePoints(5, 10, 60, () => undefined) }],
+      [{ id: "1", points: makePoints(5, 10, 60, () => undefined) }],
       "distance",
     );
     expect(rows).toEqual([]);
@@ -51,8 +51,8 @@ describe("resampleOverlayRuns", () => {
   it("keeps each run aligned to its own x values on the shared grid", () => {
     // Fast run: 10 km in 11 points; slow run: 5 km over the same 11 indices.
     // Constant cadences make any misalignment show up as a wrong value.
-    const fast = { id: 1, points: makePoints(11, 10, 40, () => 180) };
-    const slow = { id: 2, points: makePoints(11, 5, 40, () => 160) };
+    const fast = { id: "1", points: makePoints(11, 10, 40, () => 180) };
+    const slow = { id: "2", points: makePoints(11, 5, 40, () => 160) };
 
     const rows = resampleOverlayRuns([fast, slow], "distance", 10);
 
@@ -65,7 +65,7 @@ describe("resampleOverlayRuns", () => {
   it("interpolates linearly between samples", () => {
     // Cadence ramps 100 -> 200 over 0..10 km.
     const run = {
-      id: 7,
+      id: "7",
       points: makePoints(11, 10, 60, (i) => 100 + i * 10),
     };
 
@@ -78,8 +78,8 @@ describe("resampleOverlayRuns", () => {
   // Regression for #110: past a shorter run's end the old merge clamped to
   // its final point, fabricating a flat tail out to the longest run.
   it("leaves shorter runs undefined past their own extent", () => {
-    const long = { id: 1, points: makePoints(11, 10, 60, () => 180) };
-    const short = { id: 2, points: makePoints(11, 5, 30, () => 170) };
+    const long = { id: "1", points: makePoints(11, 10, 60, () => 180) };
+    const short = { id: "2", points: makePoints(11, 5, 30, () => 170) };
 
     const rows = resampleOverlayRuns([long, short], "distance", 10);
 
@@ -92,7 +92,7 @@ describe("resampleOverlayRuns", () => {
   });
 
   it("uses time for the x axis in time mode", () => {
-    const run = { id: 3, points: makePoints(11, 10, 50, () => 175) };
+    const run = { id: "3", points: makePoints(11, 10, 50, () => 175) };
 
     const rows = resampleOverlayRuns([run], "time", 10);
 
@@ -104,7 +104,7 @@ describe("resampleOverlayRuns", () => {
   it("skips samples without cadence instead of plotting gaps as zero", () => {
     // Middle sample missing: interpolation bridges its neighbours.
     const run = {
-      id: 4,
+      id: "4",
       points: makePoints(5, 4, 20, (i) => (i === 2 ? undefined : 150)),
     };
 
@@ -119,9 +119,9 @@ describe("rollingAverage", () => {
   it("averages over the centred window sorted by date, skipping zero cadence", () => {
     const result = rollingAverage(
       [
-        run({ id: 3, date: "2026-07-03", averageCadence: 180 }),
-        run({ id: 1, date: "2026-07-01", averageCadence: 160 }),
-        run({ id: 2, date: "2026-07-02", averageCadence: 0 }), // dropout
+        run({ id: "3", date: "2026-07-03", averageCadence: 180 }),
+        run({ id: "1", date: "2026-07-01", averageCadence: 160 }),
+        run({ id: "2", date: "2026-07-02", averageCadence: 0 }), // dropout
       ],
       3,
     );
@@ -217,7 +217,7 @@ describe("linearRegression", () => {
 
 describe("toOverlayPoints", () => {
   const overlayData = (activityType: string) => ({
-    activityId: 1,
+    activityId: "1",
     activityType,
     name: "Run",
     streams: {
