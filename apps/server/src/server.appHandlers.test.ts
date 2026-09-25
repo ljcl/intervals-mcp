@@ -4,12 +4,20 @@
  * the Strava client mocked. The missing-key table pins the regression where
  * those early returns lacked `isError: true` and surfaced as ordinary content.
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { handledRateLimit } from "./__fixtures__";
 import { HttpError, RateLimitError, stravaApi } from "./fetchClient";
 import {
+  ATL_TIME_CONSTANT_DAYS,
+  addDays,
+  CTL_TIME_CONSTANT_DAYS,
+} from "./fitnessTrend";
+import {
   getActivity as getIntervalsActivityFn,
+  getWellness as getWellnessFn,
   type IntervalsActivity,
+  type IntervalsWellness,
+  listActivities as listActivitiesFn,
 } from "./intervalsClient";
 import {
   getActivityById,
@@ -32,7 +40,12 @@ vi.mock("./stravaClient", async (importOriginal) => {
 
 vi.mock("./intervalsClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./intervalsClient")>();
-  return { ...actual, getActivity: vi.fn() };
+  return {
+    ...actual,
+    getActivity: vi.fn(),
+    getWellness: vi.fn(),
+    listActivities: vi.fn(),
+  };
 });
 
 vi.mock("./fetchClient", async (importOriginal) => {
@@ -47,7 +60,11 @@ vi.mock("./fetchClient", async (importOriginal) => {
 // key source is mocked here rather than the env var each handler used to read.
 vi.mock("./config", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./config")>();
-  return { ...actual, getIntervalsApiKey: vi.fn() };
+  return {
+    ...actual,
+    getIntervalsApiKey: vi.fn(),
+    getTimeZone: vi.fn(() => "UTC"),
+  };
 });
 
 // Import after the mocks so server.ts's modules see the mocked client.
@@ -58,6 +75,8 @@ const mockedToken = vi.mocked(getIntervalsApiKey);
 const mockedById = vi.mocked(getActivityById);
 const mockedLaps = vi.mocked(getActivityLaps);
 const mockedIntervalsActivity = vi.mocked(getIntervalsActivityFn);
+const mockedWellness = vi.mocked(getWellnessFn);
+const mockedIntervalsList = vi.mocked(listActivitiesFn);
 const mockedList = vi.mocked(getAllActivities);
 const mockedApiGet = vi.mocked(stravaApi.get);
 
@@ -305,22 +324,26 @@ describe("cadence trends handlers", () => {
   });
 
   it("the fitness-trend pair shares both window bounds (#329)", async () => {
+    // The two calls of one app open land seconds apart. Unlike the epoch
+    // `after`/`before` the other apps quantize, fitness-trend windows on
+    // calendar dates (`todayLocal`), which are already the same for calls
+    // seconds apart on the same day, so no quantum is needed.
     vi.useFakeTimers();
     try {
       vi.setSystemTime(new Date("2026-08-19T10:00:05Z"));
-      mockedList.mockResolvedValue([]);
+      mockedWellness.mockResolvedValue([]);
+      mockedIntervalsList.mockResolvedValue([]);
 
       await dispatchToolCall("view-fitness-trend", {});
       vi.setSystemTime(new Date("2026-08-19T10:00:35Z"));
       await dispatchToolCall("get-fitness-trend-data", {});
 
-      const [viewCall, dataCall] = mockedList.mock.calls.slice(-2);
-      expect(viewCall?.[1]?.after).toBe(dataCall?.[1]?.after);
-      expect(viewCall?.[1]?.before).toBe(dataCall?.[1]?.before);
-      // `before` still covers "now": the next minute boundary, not the last.
-      expect(viewCall?.[1]?.before).toBeGreaterThan(
-        new Date("2026-08-19T10:00:05Z").getTime() / 1000,
-      );
+      const [viewWellnessCall, dataWellnessCall] =
+        mockedWellness.mock.calls.slice(-2);
+      expect(viewWellnessCall?.[1]).toEqual(dataWellnessCall?.[1]);
+      const [viewListCall, dataListCall] =
+        mockedIntervalsList.mock.calls.slice(-2);
+      expect(viewListCall?.[1]).toEqual(dataListCall?.[1]);
     } finally {
       vi.useRealTimers();
     }
@@ -356,30 +379,51 @@ describe("training load handlers", () => {
 });
 
 describe("fitness trend handlers", () => {
-  /** `count` consecutive daily runs ending yesterday, each with load 80. */
-  function recentBlock(count: number): StravaSummaryActivity[] {
-    return Array.from({ length: count }, (_, i) => {
-      const date = new Date(Date.now() - (i + 1) * 24 * 60 * 60 * 1000)
-        .toISOString()
-        .split("T")[0]!;
-      return summaryRun({
-        id: `load-${i}`,
-        start_date: `${date}T07:00:00Z`,
-        start_date_local: `${date}T07:00:00`,
-        suffer_score: 80,
-      });
+  const TODAY = "2026-08-19";
+  const CTL_DECAY = Math.exp(-1 / CTL_TIME_CONSTANT_DAYS);
+  const ATL_DECAY = Math.exp(-1 / ATL_TIME_CONSTANT_DAYS);
+
+  /**
+   * A self-consistent synthetic wellness series (own ctl/atl reproduces the
+   * same recurrence the app handler recomputes from ctlLoad/atlLoad): `days`
+   * rows ending at `endDate`, load `recentLoad` for the most recent
+   * `activeDays` of them, else zero.
+   */
+  function wellnessSeries(
+    endDate: string,
+    days: number,
+    activeDays: number,
+    recentLoad: number,
+  ): IntervalsWellness[] {
+    const start = addDays(endDate, -(days - 1));
+    let ctl = 0;
+    let atl = 0;
+    return Array.from({ length: days }, (_, i) => {
+      const date = addDays(start, i);
+      const load = days - 1 - i < activeDays ? recentLoad : 0;
+      ctl = load * (1 - CTL_DECAY) + ctl * CTL_DECAY;
+      atl = load * (1 - ATL_DECAY) + atl * ATL_DECAY;
+      return { id: date, ctl, atl, ctlLoad: load, atlLoad: load };
     });
   }
 
-  /** YYYY-MM-DD `days` from today, for taper target dates. */
+  /** YYYY-MM-DD `days` from TODAY, for taper target dates. */
   function inDays(days: number): string {
-    return new Date(Date.now() + days * 24 * 60 * 60 * 1000)
-      .toISOString()
-      .split("T")[0]!;
+    return addDays(TODAY, days);
   }
 
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(`${TODAY}T12:00:00Z`));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("get-fitness-trend-data returns the series, projection, and bands", async () => {
-    mockedList.mockResolvedValueOnce(recentBlock(21));
+    mockedWellness.mockResolvedValueOnce(wellnessSeries(TODAY, 91, 21, 80));
+    mockedIntervalsList.mockResolvedValueOnce([]);
 
     const result = await dispatchToolCall("get-fitness-trend-data", {});
 
@@ -391,12 +435,12 @@ describe("fitness trend handlers", () => {
     expect(parsed.projection).toHaveLength(14);
     expect(parsed.taper).toBeNull();
     expect(parsed.current.ctl).toBeGreaterThan(0);
-    expect(parsed.activitiesIncluded).toBe(21);
     expect(Array.isArray(parsed.bands)).toBe(true);
   });
 
   it("get-fitness-trend-data solves a taper in camelCase for the app", async () => {
-    mockedList.mockResolvedValueOnce(recentBlock(21));
+    mockedWellness.mockResolvedValueOnce(wellnessSeries(TODAY, 91, 21, 80));
+    mockedIntervalsList.mockResolvedValueOnce([]);
     const targetDate = inDays(21);
 
     const result = await dispatchToolCall("get-fitness-trend-data", {
@@ -415,7 +459,8 @@ describe("fitness trend handlers", () => {
   });
 
   it("view-fitness-trend prints the same headline numbers as the chart", async () => {
-    mockedList.mockResolvedValueOnce(recentBlock(21));
+    mockedWellness.mockResolvedValueOnce(wellnessSeries(TODAY, 91, 21, 80));
+    mockedIntervalsList.mockResolvedValueOnce([]);
     const targetDate = inDays(14);
 
     const result = await dispatchToolCall("view-fitness-trend", {
@@ -432,7 +477,8 @@ describe("fitness trend handlers", () => {
   });
 
   it("view-fitness-trend reports the fresh date when only resting", async () => {
-    mockedList.mockResolvedValueOnce(recentBlock(10));
+    mockedWellness.mockResolvedValueOnce(wellnessSeries(TODAY, 91, 10, 80));
+    mockedIntervalsList.mockResolvedValueOnce([]);
 
     const result = await dispatchToolCall("view-fitness-trend", {});
 
@@ -448,7 +494,8 @@ describe("fitness trend handlers", () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain("Invalid target date");
-    expect(mockedList).not.toHaveBeenCalled();
+    expect(mockedWellness).not.toHaveBeenCalled();
+    expect(mockedIntervalsList).not.toHaveBeenCalled();
   });
 });
 

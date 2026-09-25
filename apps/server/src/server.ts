@@ -17,18 +17,18 @@ import {
   hrZoneMismatchWarning,
   mapIntervalsZones,
 } from "./activityZones";
-import { getIntervalsApiKey } from "./config";
+import { getIntervalsApiKey, getTimeZone } from "./config";
 import { RateLimitError } from "./fetchClient";
-import {
-  addDays,
-  buildFitnessTrend,
-  type FitnessTrendLoadDay,
-} from "./fitnessTrend";
+import { buildFitnessTrend, type FitnessTrendLoadDay } from "./fitnessTrend";
 import {
   type FitnessTrendAppData,
   mapFitnessTrendApp,
 } from "./fitnessTrendApp";
-import { getActivity as getIntervalsActivity } from "./intervalsClient";
+import {
+  getActivity as getIntervalsActivity,
+  getWellness as getWellnessFn,
+  listActivities as listActivitiesFn,
+} from "./intervalsClient";
 import {
   cumulativeDistances,
   indexAtDistance,
@@ -86,6 +86,7 @@ import { listActivitiesTool } from "./tools/listActivities";
 import { listGearTool } from "./tools/listGear";
 import { updateActivityTool } from "./tools/updateActivity";
 import { buildTrainingLoadData } from "./trainingLoad";
+import { addDays, todayLocal } from "./utils/localDate";
 import { SERVER_VERSION } from "./version";
 
 const EMPTY_SCHEMA = { type: "object", properties: {}, required: [] } as const;
@@ -723,14 +724,17 @@ async function handleGetActivityStreamsRaw(
 const RUNNING_TYPES = new Set(["Run", "VirtualRun", "TrailRun"]);
 
 /**
- * Quantum for history-window bounds. The three listing-driven apps
- * are each a `view-` tool plus a `get-…-data` tool running the same
- * `getAllActivities` scan seconds apart, and the response cache keys on the
- * full URL — so an `after` recomputed from a raw `Date.now()` per call gave
- * the pair two distinct URLs and two full pagination sweeps. Flooring the
- * bounds to the minute makes the pair build one URL, which the
- * `/athlete/activities` TTL in `stravaCacheTtl` then serves as one scan.
- * The cost is that "last N days" can start up to a minute early.
+ * Quantum for history-window bounds. The remaining Strava-backed listing
+ * apps (cadence-trends, training-load) are each a `view-` tool plus a
+ * `get-…-data` tool running the same `getAllActivities` scan seconds apart,
+ * and the response cache keys on the full URL, so an `after` recomputed
+ * from a raw `Date.now()` per call gave the pair two distinct URLs and two
+ * full pagination sweeps. Flooring the bounds to the minute makes the pair
+ * build one URL, which the `/athlete/activities` TTL in `stravaCacheTtl`
+ * then serves as one scan. The cost is that "last N days" can start up to a
+ * minute early. The fitness-trend app pair shares a window the same way but
+ * without this quantum: `todayLocal` already returns the same calendar date
+ * for calls seconds apart.
  */
 const WINDOW_QUANTUM_SECONDS = 60;
 
@@ -738,15 +742,6 @@ const WINDOW_QUANTUM_SECONDS = 60;
 function quantizedEpochAfter(msAgo: number): number {
   const seconds = Math.floor((Date.now() - msAgo) / 1000);
   return seconds - (seconds % WINDOW_QUANTUM_SECONDS);
-}
-
-/**
- * Epoch seconds for an upper bound covering "now": the next minute boundary,
- * so the key is stable across a pair while still including an activity
- * finished moments ago.
- */
-function quantizedEpochBefore(): number {
-  return quantizedEpochAfter(0) + WINDOW_QUANTUM_SECONDS;
 }
 
 async function handleGetCadenceTrendData(
@@ -867,47 +862,23 @@ async function handleViewTrainingLoad(
   return { content: [{ type: "text", text: lines.join("\n") }] };
 }
 
-/** Minimal slice of a Strava activity the load mapping needs. */
-interface StravaLoadActivity {
-  start_date: string;
-  start_date_local?: string;
-  suffer_score?: number | null;
-}
+/** Wellness fields needed to reproduce intervals.icu's own CTL/ATL exactly. */
+const FITNESS_TREND_APP_WELLNESS_FIELDS = [
+  "id",
+  "ctl",
+  "atl",
+  "ctlLoad",
+  "atlLoad",
+];
 
 /**
- * Temporary Strava-to-input mapping: sums relative effort per local day and
- * feeds it to both the CTL and ATL load series, since Strava's suffer_score
- * has no source split the way intervals.icu's ctlLoad/atlLoad do. Ported to
- * the real split in Task 3.
- */
-function stravaLoadDays(
-  activities: StravaLoadActivity[],
-  endDate: string,
-  days: number,
-): FitnessTrendLoadDay[] {
-  const loads = new Map<string, number>();
-  for (const activity of activities) {
-    const day = (activity.start_date_local || activity.start_date).split(
-      "T",
-    )[0]!;
-    loads.set(day, (loads.get(day) ?? 0) + (activity.suffer_score ?? 0));
-  }
-  const start = addDays(endDate, -(days - 1));
-  return Array.from({ length: days }, (_, i) => {
-    const date = addDays(start, i);
-    const load = loads.get(date) ?? 0;
-    return { date, ctlLoad: load, atlLoad: load };
-  });
-}
-
-/**
- * Shared fetch + solve for the fitness-trend view and data tools.
- * Cross-sport by design: relative effort is heart-rate based, so whole-body
- * load is what TSB should reflect — unlike the running-only training-load
- * feed above.
+ * Shared fetch + solve for the fitness-trend view and data tools. Whole-body
+ * only (matching the text tool's default): CTL/ATL come straight from
+ * intervals.icu's own wellness record, seeded from the day before the window
+ * so the recurrence reproduces intervals.icu's own values exactly.
  */
 async function loadFitnessTrendAppData(
-  token: string,
+  apiKey: string,
   args: Record<string, unknown>,
   progress: ReportProgress,
 ): Promise<FitnessTrendAppData> {
@@ -917,27 +888,47 @@ async function loadFitnessTrendAppData(
     typeof args.targetDate === "string" ? args.targetDate : undefined;
   const targetTsb = Number(args.targetTsb ?? 10);
 
-  const end = new Date();
-  const activities = await getAllActivitiesFn(token, {
-    after: quantizedEpochAfter(days * 24 * 60 * 60 * 1000),
-    before: quantizedEpochBefore(),
-    onProgress: listingProgress(progress),
-  });
+  const tz = getTimeZone();
+  const endDate = todayLocal(tz);
+  const windowStart = addDays(endDate, -(days - 1));
+  const seedDate = addDays(windowStart, -1);
+
+  const wellness = await getWellnessFn(
+    apiKey,
+    { oldest: seedDate, newest: endDate },
+    { fields: FITNESS_TREND_APP_WELLNESS_FIELDS },
+  );
+  const byDate = new Map(wellness.map((w) => [w.id, w]));
+  const seedRow = byDate.get(seedDate);
+  const seed = { ctl: seedRow?.ctl ?? 0, atl: seedRow?.atl ?? 0 };
+
+  const loadDays: FitnessTrendLoadDay[] = Array.from(
+    { length: days },
+    (_, i) => {
+      const date = addDays(windowStart, i);
+      const w = byDate.get(date);
+      return { date, ctlLoad: w?.ctlLoad ?? 0, atlLoad: w?.atlLoad ?? 0 };
+    },
+  );
 
   const trend = buildFitnessTrend(
-    {
-      days: stravaLoadDays(activities, end.toISOString().split("T")[0]!, days),
-    },
+    { days: loadDays, seed },
     {
       projectDays,
       taper: targetDate ? { targetDate, targetTsb } : undefined,
     },
   );
 
+  progress("Listing activities for the window…", { important: true });
+  const activities = await listActivitiesFn(apiKey, {
+    oldest: windowStart,
+    newest: endDate,
+  });
+
   return mapFitnessTrendApp(trend, {
     days,
     activitiesIncluded: activities.length,
-    activitiesMissingLoad: activities.filter((a) => a.suffer_score == null)
+    activitiesMissingLoad: activities.filter((a) => a.icu_training_load == null)
       .length,
   });
 }

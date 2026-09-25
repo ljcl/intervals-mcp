@@ -234,6 +234,11 @@ export const FitnessTrendOutputSchema = z.object({
     start_date: z.string(),
     end_date: z.string(),
   }),
+  source: z
+    .enum(["intervals.icu", "computed"])
+    .describe(
+      "'intervals.icu' for whole-body CTL/ATL read from wellness, 'computed' for the locally-computed run-only series",
+    ),
   current: FitnessTrendDaySchema.omit({ load: true }).nullable(),
   trend: z
     .object({
@@ -269,8 +274,16 @@ export const FitnessTrendOutputSchema = z.object({
   taper: TaperPlanSchema.nullable().describe(
     "Solved load taper to the requested target date, or null if none was requested",
   ),
+  activity_types_included: z
+    .array(z.string())
+    .describe(
+      "Whole-body: distinct activity types with load in the window. Run-only: the run types (Run, TrailRun, VirtualRun); some types may count toward fatigue only, per intervals.icu settings",
+    ),
   activities_included: z.number().int(),
   activities_missing_load: z.number().int(),
+  units: z.object({
+    load: z.literal("training load (intervals.icu units, unitless)"),
+  }),
 });
 
 // ---------- get-hill-analysis ----------

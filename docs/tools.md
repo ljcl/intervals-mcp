@@ -9,11 +9,11 @@ identity, so renames or schema reshapes re-prompt every user. See
 [architecture.md](architecture.md#tool-metadata) before changing either.
 
 > **Status.** Tools are being ported from Strava to intervals.icu (Phases 1
-> and 2). The sixteen tools below are ported and verified against a real
+> through 3). The seventeen tools below are ported and verified against a real
 > account. Still Strava-backed, and failing with a "not yet ported" error
-> until a later phase: `get-training-load`, `get-fitness-trend`,
-> `update-activity`, and the Phase 4 `view-*`/`get-*-data` app tools (see
-> [Activity tools](#activity-tools) and [Visualization tools](#visualization-tools)).
+> until a later phase: `get-training-load`, `update-activity`, and the
+> Phase 4 `view-*`/`get-*-data` app tools (see [Activity tools](#activity-tools)
+> and [Visualization tools](#visualization-tools)).
 
 ## intervals.icu tools
 
@@ -38,6 +38,7 @@ Strava port.
 | `get-best-efforts` | Best times at standard running distances, from intervals.icu's pace curves |
 | `get-race-prediction` | Predicted race times from intervals.icu pace-curve points (Riegel) alongside intervals.icu's own critical-speed model, with confidence, source point, and km goal-pace splits |
 | `get-athlete-stats` | Run totals (this week, last 4 weeks, this month, YTD) aggregated from list-activities data |
+| `get-fitness-trend` | Fitness/fatigue/form (CTL/ATL/TSB), whole-body from intervals.icu wellness or run-only computed locally, with rest/planned-load projection and a solved taper to a target form on a target date |
 
 `list-activities` defaults to the last 28 days (today back to 27 days
 earlier) in the server's configured time zone, sorted newest first. Filter
@@ -267,6 +268,27 @@ mile paces or splits. Pace is a flat `pace_sec_per_km`/`pace_min_per_km` pair
 target, or a split row reports one; `units.distance` is `"m"`, matching the
 `distance_m` fields the response actually carries.
 
+`get-fitness-trend` computes the classic CTL/ATL/TSB performance-management
+chart two ways. Whole-body (default) reads CTL/ATL straight from
+intervals.icu's own daily wellness record (`source: "intervals.icu"`),
+seeded from the wellness day before the window so the 42-day CTL / 7-day ATL
+recurrence reproduces intervals.icu's own numbers exactly; the window ends at
+today in the server's configured time zone. `runOnly: true` computes CTL/ATL
+locally from the daily sum of `icu_training_load` across Run/TrailRun/VirtualRun
+activities only (`source: "computed"`), since intervals.icu has no per-sport
+CTL/ATL: it fetches a `days + 150` day runway and zero-seeds the recurrence so
+the 42-day average has settled by the requested window, then trims the
+displayed series back to it. Both paths report `activity_types_included`
+(whole-body: the distinct types with load in the window; run-only: the three
+run types), and whole-body notes that some types (e.g. strength) may count
+toward fatigue (ATL) only, per this athlete's intervals.icu settings.
+`projectDays` (default 0, or the length of `plannedLoads` when given) projects
+TSB forward assuming rest, or `plannedLoads` (`[{ date: YYYY-MM-DD, load }]`,
+dates after today; unlisted dates in the projection count as rest) projects
+with a specific plan instead. `targetDate`/`targetTsb` solve a load taper
+landing on a target form, unchanged from before. The `view-fitness-trend`/
+`get-fitness-trend-data` MCP App pair (below) shares this whole-body path.
+
 ## Activity tools
 
 Still Strava-backed; not yet ported to intervals.icu (Phase 3+).
@@ -275,14 +297,14 @@ Still Strava-backed; not yet ported to intervals.icu (Phase 3+).
 | ---- | ----------- |
 | `update-activity` | Update an activity's description, title, sport type, gear, or flags |
 | `get-training-load` | Training load summary with trend analysis |
-| `get-fitness-trend` | Fitness/fatigue/form (CTL/ATL/TSB) from relative effort, with rest projection and a solved taper to a target form on a target date |
 
 ## Visualization tools
 
 Each `view-*` MCP App has an app-only `get-*-data` companion that fetches what
-the UI renders. `view-compare-activities`/`get-compare-activities-data` and
-`view-activity-zones`/`get-activity-zones-data` are ported to intervals.icu;
-the rest are still Strava-backed, pending Phase 4.
+the UI renders. `view-compare-activities`/`get-compare-activities-data`,
+`view-activity-zones`/`get-activity-zones-data`, and
+`view-fitness-trend`/`get-fitness-trend-data` are ported to intervals.icu; the
+rest are still Strava-backed, pending Phase 4.
 
 | Tool | Description |
 | ---- | ----------- |

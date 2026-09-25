@@ -1,24 +1,57 @@
 import { z } from "zod";
+import { getTimeZone } from "../config";
 import {
-  addDays,
   buildFitnessTrend,
+  computeFlags,
   type FitnessTrendDay,
   type FitnessTrendLoadDay,
+  type PlannedLoad,
   type TaperWeek,
+  trendBands,
 } from "../fitnessTrend";
-import { listingProgress, NO_PROGRESS, type ReportProgress } from "../progress";
-import { getAllActivities } from "../stravaClient";
+import {
+  getWellness,
+  type IntervalsActivity,
+  listActivities,
+} from "../intervalsClient";
+import { NO_PROGRESS, type ReportProgress } from "../progress";
+import { addDays, todayLocal } from "../utils/localDate";
 import { READ_ONLY } from "./_annotations";
+import { toolErrorText } from "./_errors";
 import { FitnessTrendOutputSchema, warnOnSchemaDrift } from "./outputs";
 
 const name = "get-fitness-trend";
 
-const description = `
-Computes the fitness/fatigue/form trend (CTL, ATL, TSB) from Strava relative effort.
+/** Run types intervals.icu has no dedicated per-sport CTL/ATL for. */
+const RUN_TYPES: readonly string[] = ["Run", "TrailRun", "VirtualRun"];
 
-This tool builds the classic performance-management chart from the relative
-effort (suffer score) already present on the activity list — no per-activity
-fetches:
+/**
+ * How far before the requested window a run-only computation starts summing
+ * load. intervals.icu has no per-sport CTL/ATL, so the run-only series is
+ * built locally, zero-seeded, and needs enough runway for the 42-day CTL
+ * average to settle before the displayed window starts.
+ */
+const RUN_ONLY_RUNWAY_DAYS = 150;
+
+/** Fields pulled from wellness, enough to reproduce intervals.icu's own CTL/ATL exactly. */
+const WELLNESS_FIELDS = ["id", "ctl", "atl", "ctlLoad", "atlLoad"];
+
+const description = `
+Computes the fitness/fatigue/form trend (CTL, ATL, TSB) from intervals.icu.
+
+Two ways to compute it:
+- Whole-body (default): reads CTL/ATL straight from intervals.icu's own daily
+  wellness record, the same numbers the intervals.icu fitness page shows.
+  Training load per day is whatever intervals.icu itself counted across all
+  logged activity types (pace/HR/power load blended per its sport settings).
+  Some activity types may count toward fatigue (ATL) only, not fitness (CTL),
+  depending on this athlete's intervals.icu settings; see the response note.
+- Run-only (runOnly: true): intervals.icu has no per-sport CTL/ATL, so this is
+  computed locally from the daily sum of icu_training_load across
+  Run/TrailRun/VirtualRun activities, zero-seeded well before the requested
+  window so the 42-day CTL average has settled. Labeled "computed" and will
+  not exactly match the whole-body numbers or intervals.icu's own fitness page.
+
 - CTL ("fitness"): 42-day exponentially weighted average of daily load
 - ATL ("fatigue"): 7-day exponentially weighted average of daily load
 - TSB ("form"): CTL − ATL. Negative = carrying fatigue, positive = fresh
@@ -26,21 +59,26 @@ fetches:
 Use Cases:
 - "When does my form (TSB) return positive, and does it align with my next quality day?"
 - Judge whether a training block is digging too deep (sustained very negative TSB)
+- Compare whole-body fitness/fatigue against a running-only view of the same window
 - Plan a taper: "my race is on 2026-09-13 — what should the next three weeks
   look like so I arrive at TSB +10 instead of overcooked or detrained?"
   (pass targetDate, and targetTsb if you want something other than +10)
+- Project forward with a specific plan instead of assuming rest (plannedLoads)
 
 Parameters:
-- days (optional): lookback window (default 90, max 365). CTL starts from zero
-  at the window start, so keep this ≥ 90 for settled values
-- activityTypes (optional): activity types to include. Omit to include ALL
-  activities — relative effort is HR-based and cross-sport, so whole-body load
-  is usually what you want. Pass e.g. ["Run"] to isolate one sport
-- projectDays (optional, default 0, max 60): also project TSB forward assuming
-  zero load, answering "when do I return to fresh if I rest?"
-- targetDate (optional, YYYY-MM-DD): solve a load taper landing on targetTsb on
-  this date. Returns a week-by-week relative-effort plan (each week stepped down
-  toward the date, and compared to what the athlete has recently been averaging)
+- days (optional): lookback window to display (default 90, max 365)
+- runOnly (optional, default false): compute CTL/ATL/TSB from running load
+  only instead of intervals.icu's whole-body wellness CTL/ATL
+- projectDays (optional, max 60): also project TSB forward, answering "when
+  do I return to fresh if I rest?" (default 0, or the length of plannedLoads
+  when that is given)
+- plannedLoads (optional): future training load to project with instead of
+  assuming rest. Array of { date: YYYY-MM-DD, load }, dates after today;
+  any date inside the projection window that is not listed counts as rest
+  (zero load)
+- targetDate (optional, YYYY-MM-DD): solve a load taper landing on targetTsb
+  on this date. Returns a week-by-week load plan (each week stepped down
+  toward the date, compared to what the athlete has recently been averaging)
   plus the daily CTL/ATL/TSB it produces. Reduced load, not rest
 - targetTsb (optional, default 10): form to arrive at on targetDate. +5 to +15
   is the usual race window; higher means fresher but more fitness shed
@@ -49,13 +87,16 @@ Notes:
 - A taper that even complete rest cannot reach in time is reported as such,
   with the form rest would actually land on — the tool does not invent a plan
 - The taper plan is prescriptive load, not recorded load: it says how much
-  relative effort to spend, not which sessions to spend it in
-- Values are directionally consistent with TRIMP-based CTL/ATL from other
-  platforms but not absolutely comparable (relative effort ≠ TRIMP)
-- Activities without a relative effort (no HR recorded) contribute zero load
-  and are counted in the response so the gap is visible
+  training load to spend, not which sessions to spend it in
 - Each value is stamped with the local calendar date it was computed for
 `;
+
+const plannedLoadEntrySchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, {
+    error: "Invalid planned load date. Use YYYY-MM-DD.",
+  }),
+  load: z.number().nonnegative(),
+});
 
 const inputSchema = z.object({
   days: z
@@ -64,23 +105,32 @@ const inputSchema = z.object({
     .positive()
     .max(365)
     .default(90)
+    .describe("Days to look back and display (default 90, max 365)"),
+  runOnly: z
+    .boolean()
+    .default(false)
     .describe(
-      "Days to look back (default 90; CTL needs ~90 days of runway, max 365)",
-    ),
-  activityTypes: z
-    .array(z.string())
-    .optional()
-    .describe(
-      "Activity types to include (e.g. ['Run', 'TrailRun']). Omit for all types — cross-sport load is usually what TSB should reflect.",
+      "Compute CTL/ATL/TSB from Run/TrailRun/VirtualRun training load only, " +
+        "computed locally (intervals.icu has no per-sport CTL/ATL). Default " +
+        "false reads whole-body CTL/ATL directly from intervals.icu wellness.",
     ),
   projectDays: z
     .number()
     .int()
     .min(0)
     .max(60)
-    .default(0)
+    .optional()
     .describe(
-      "Project TSB this many days forward assuming zero load (default 0 = no projection)",
+      "Project TSB this many days past today (default 0, or the length of plannedLoads if given)",
+    ),
+  plannedLoads: z
+    .array(plannedLoadEntrySchema)
+    .max(60)
+    .optional()
+    .describe(
+      "Planned future training load to project with instead of rest: " +
+        "[{ date: YYYY-MM-DD, load }], dates after today. Dates inside the " +
+        "projection window that are not listed count as rest (zero).",
     ),
   targetDate: z
     .string()
@@ -106,39 +156,6 @@ type GetFitnessTrendInput = z.infer<typeof inputSchema>;
 /** Beyond this the solved plan is a training block, not a taper. */
 const LONG_PLAN_DAYS = 28;
 
-/** Minimal slice of a Strava activity the load mapping needs. */
-interface StravaLoadActivity {
-  start_date: string;
-  start_date_local?: string;
-  suffer_score?: number | null;
-}
-
-/**
- * Temporary Strava-to-input mapping: sums relative effort per local day and
- * feeds it to both the CTL and ATL load series, since Strava's suffer_score
- * has no source split the way intervals.icu's ctlLoad/atlLoad do. Ported to
- * the real split in Task 3.
- */
-function stravaLoadDays(
-  activities: StravaLoadActivity[],
-  endDate: string,
-  days: number,
-): FitnessTrendLoadDay[] {
-  const loads = new Map<string, number>();
-  for (const activity of activities) {
-    const day = (activity.start_date_local || activity.start_date).split(
-      "T",
-    )[0]!;
-    loads.set(day, (loads.get(day) ?? 0) + (activity.suffer_score ?? 0));
-  }
-  const start = addDays(endDate, -(days - 1));
-  return Array.from({ length: days }, (_, i) => {
-    const date = addDays(start, i);
-    const load = loads.get(date) ?? 0;
-    return { date, ctlLoad: load, atlLoad: load };
-  });
-}
-
 const signed = (value: number) => `${value >= 0 ? "+" : ""}${value}`;
 
 function formatDay(day: FitnessTrendDay): string {
@@ -156,6 +173,21 @@ function formatTaperWeek(week: TaperWeek): string {
   return `  Week ${week.week} (${span}): ${week.daily_load}/day, ${week.week_load} total${recent}`;
 }
 
+const localDay = (isoDateTime: string) => isoDateTime.split("T")[0]!;
+
+/**
+ * Sums `icu_training_load` per local date for the given activities, keyed by
+ * `start_date_local`.
+ */
+function dailyLoadByDate(activities: IntervalsActivity[]): Map<string, number> {
+  const loads = new Map<string, number>();
+  for (const activity of activities) {
+    const date = localDay(activity.start_date_local);
+    loads.set(date, (loads.get(date) ?? 0) + (activity.icu_training_load ?? 0));
+  }
+  return loads;
+}
+
 export const getFitnessTrendTool = {
   name,
   description,
@@ -165,78 +197,159 @@ export const getFitnessTrendTool = {
   execute: async (
     {
       days,
-      activityTypes,
+      runOnly,
       projectDays,
+      plannedLoads,
       targetDate,
       targetTsb,
     }: GetFitnessTrendInput,
-    token: string,
+    apiKey: string,
     progress: ReportProgress = NO_PROGRESS,
   ) => {
+    const resolvedProjectDays =
+      projectDays ?? (plannedLoads ? plannedLoads.length : 0);
+
     try {
-      console.error(`Fetching fitness trend for last ${days} days...`);
+      const tz = getTimeZone();
+      const endDate = todayLocal(tz);
+      const windowStart = addDays(endDate, -(days - 1));
 
-      const endDate = new Date();
-      const startDate = new Date(
-        endDate.getTime() - days * 24 * 60 * 60 * 1000,
-      );
-
-      progress("Listing activities…", { important: true });
-      const allActivities = await getAllActivities(token, {
-        after: Math.floor(startDate.getTime() / 1000),
-        before: Math.floor(endDate.getTime() / 1000),
-        onProgress: listingProgress(progress),
-      });
-
-      const activities =
-        activityTypes && activityTypes.length > 0
-          ? allActivities.filter((a) =>
-              activityTypes.includes(a.type ?? a.sport_type ?? ""),
-            )
-          : allActivities;
-
-      const missingLoad = activities.filter(
-        (a) => a.suffer_score == null,
-      ).length;
-
-      const endDay = endDate.toISOString().split("T")[0]!;
-      const trend = buildFitnessTrend(
-        { days: stravaLoadDays(activities, endDay, days) },
-        {
-          projectDays,
-          taper: targetDate ? { targetDate, targetTsb } : undefined,
-        },
-      );
-
+      let series: FitnessTrendLoadDay[];
+      let seed: { ctl: number; atl: number } | undefined;
+      let source: "intervals.icu" | "computed";
+      let activityTypesIncluded: string[];
+      let activitiesIncluded: number;
+      let activitiesMissingLoad: number;
       const warnings: string[] = [];
-      if (activities.length === 0) {
-        warnings.push(
-          "No matching activities in the window — the trend is all zeros.",
+
+      if (runOnly) {
+        const runwayDays = days + RUN_ONLY_RUNWAY_DAYS;
+        const runwayStart = addDays(endDate, -(runwayDays - 1));
+
+        progress(`Listing activities ${runwayStart} to ${endDate}…`, {
+          important: true,
+        });
+        const activities = await listActivities(apiKey, {
+          oldest: runwayStart,
+          newest: endDate,
+        });
+        const runActivities = activities.filter((a) =>
+          RUN_TYPES.includes(a.type ?? ""),
         );
-      } else if (missingLoad > 0) {
+        const loadByDate = dailyLoadByDate(runActivities);
+
+        series = Array.from({ length: runwayDays }, (_, i) => {
+          const date = addDays(runwayStart, i);
+          const load = loadByDate.get(date) ?? 0;
+          return { date, ctlLoad: load, atlLoad: load };
+        });
+
+        source = "computed";
+        activityTypesIncluded = [...RUN_TYPES];
+        const inWindow = runActivities.filter((a) => {
+          const date = localDay(a.start_date_local);
+          return date >= windowStart && date <= endDate;
+        });
+        activitiesIncluded = inWindow.length;
+        activitiesMissingLoad = inWindow.filter(
+          (a) => a.icu_training_load == null,
+        ).length;
+
         warnings.push(
-          `${missingLoad} of ${activities.length} activities have no relative effort (no heart rate?) and contributed zero load.`,
+          `Run-only CTL/ATL is computed locally from Run/TrailRun/VirtualRun ` +
+            `training load, zero-seeded ${RUN_ONLY_RUNWAY_DAYS} days before ` +
+            `the window (from ${runwayStart}) so the 42-day CTL average has ` +
+            `settled by ${windowStart}; it will not exactly match intervals.icu's ` +
+            `own (whole-body) fitness page.`,
         );
-      }
-      if (days < 90) {
+      } else {
+        const seedDate = addDays(windowStart, -1);
+
+        progress(`Fetching wellness ${seedDate} to ${endDate}…`, {
+          important: true,
+        });
+        const wellness = await getWellness(
+          apiKey,
+          { oldest: seedDate, newest: endDate },
+          { fields: WELLNESS_FIELDS },
+        );
+        const byDate = new Map(wellness.map((w) => [w.id, w]));
+
+        const seedRow = byDate.get(seedDate);
+        seed = { ctl: seedRow?.ctl ?? 0, atl: seedRow?.atl ?? 0 };
+
+        series = Array.from({ length: days }, (_, i) => {
+          const date = addDays(windowStart, i);
+          const w = byDate.get(date);
+          return { date, ctlLoad: w?.ctlLoad ?? 0, atlLoad: w?.atlLoad ?? 0 };
+        });
+
+        progress(`Listing activities ${windowStart} to ${endDate}…`);
+        const activities = await listActivities(apiKey, {
+          oldest: windowStart,
+          newest: endDate,
+        });
+        const typesWithLoad = new Set(
+          activities
+            .filter((a) => a.icu_training_load != null)
+            .map((a) => a.type ?? "Unknown"),
+        );
+        activityTypesIncluded = Array.from(typesWithLoad).sort();
+        source = "intervals.icu";
+        activitiesIncluded = activities.length;
+        activitiesMissingLoad = activities.filter(
+          (a) => a.icu_training_load == null,
+        ).length;
+
         warnings.push(
-          `A ${days}-day window gives CTL little runway (it starts from zero); values early in the window under-read true fitness.`,
+          "Some activity types (e.g. strength/weight training) may count " +
+            "toward fatigue (ATL) only, not fitness (CTL), depending on this " +
+            "athlete's intervals.icu settings.",
         );
-      }
-      // The taper's own note prints with the plan below rather than in the
-      // warning list, so it reads next to the numbers it qualifies.
-      if (trend.taper) {
-        if (trend.taper.days.length > LONG_PLAN_DAYS) {
+        if (activitiesMissingLoad > 0) {
           warnings.push(
-            `${trend.taper.days.length} days is a training block rather than a taper — the plan still steps down each week, so treat its early weeks as maintenance load.`,
+            `${activitiesMissingLoad} of ${activitiesIncluded} activities in ` +
+              "the window have no training load recorded (informational only, " +
+              "since whole-body CTL/ATL comes from intervals.icu's own " +
+              "wellness data, not summed here).",
           );
         }
       }
 
+      const trend = buildFitnessTrend(
+        { days: series, seed },
+        {
+          projectDays: resolvedProjectDays,
+          plannedLoads: plannedLoads as PlannedLoad[] | undefined,
+          taper: targetDate ? { targetDate, targetTsb } : undefined,
+        },
+      );
+
+      // Run-only builds a long runway series to settle CTL; trim the display
+      // (and the bands/flags read off it) back to the requested window.
+      const displaySeries = runOnly ? trend.days.slice(-days) : trend.days;
+      const bands = runOnly ? trendBands(displaySeries) : trend.bands;
+      const flags = runOnly ? computeFlags(displaySeries) : trend.flags;
+
+      if (activitiesIncluded === 0) {
+        warnings.push(
+          runOnly
+            ? "No matching run activities in the window."
+            : "No activities in the window.",
+        );
+      }
+      if (trend.taper && trend.taper.days.length > LONG_PLAN_DAYS) {
+        warnings.push(
+          `${trend.taper.days.length} days is a training block rather than a taper; the plan still steps down each week, so treat its early weeks as maintenance load.`,
+        );
+      }
+
       // 7-day deltas for a quick direction read.
-      const series = trend.days;
-      const weekAgo = series.length >= 8 ? series[series.length - 8]! : null;
       const current = trend.current;
+      const weekAgo =
+        displaySeries.length >= 8
+          ? displaySeries[displaySeries.length - 8]!
+          : null;
       const trendSummary =
         current && weekAgo
           ? {
@@ -248,9 +361,10 @@ export const getFitnessTrendTool = {
       const result = {
         period: {
           days,
-          start_date: series[0]?.date ?? "",
+          start_date: displaySeries[0]?.date ?? "",
           end_date: current?.date ?? "",
         },
+        source,
         current: current
           ? {
               date: current.date,
@@ -260,19 +374,23 @@ export const getFitnessTrendTool = {
             }
           : null,
         trend: trendSummary,
-        flags: trend.flags,
-        bands: trend.bands,
+        flags,
+        bands,
         warnings,
-        daily: series,
+        daily: displaySeries,
         projection: trend.projection,
         tsb_positive_date: trend.tsbPositiveDate,
         taper: trend.taper,
-        activities_included: activities.length,
-        activities_missing_load: missingLoad,
+        activity_types_included: activityTypesIncluded,
+        activities_included: activitiesIncluded,
+        activities_missing_load: activitiesMissingLoad,
+        units: {
+          load: "training load (intervals.icu units, unitless)",
+        },
       };
 
       let output = `📈 **Fitness Trend (CTL/ATL/TSB)**\n`;
-      output += `📅 ${result.period.start_date} to ${result.period.end_date} (${days} days, ${activities.length} activities)\n\n`;
+      output += `📅 ${result.period.start_date} to ${result.period.end_date} (${days} days, source: ${source})\n\n`;
 
       if (current) {
         output += `**Current (${current.date})**\n`;
@@ -285,16 +403,16 @@ export const getFitnessTrendTool = {
         output += `**Last 7 days**: CTL ${signed(trendSummary.ctl_7d_delta)}, TSB ${signed(trendSummary.tsb_7d_delta)}\n\n`;
       }
 
-      if (trend.flags.length > 0) {
+      if (flags.length > 0) {
         output += `**⚠️ Flags**\n`;
-        for (const flag of trend.flags) {
+        for (const flag of flags) {
           output += `  - ${flag}\n`;
         }
         output += `\n`;
       }
 
-      if (projectDays > 0) {
-        output += `**Rest projection (${projectDays} days, zero load)**\n`;
+      if (resolvedProjectDays > 0) {
+        output += `**Projection (${resolvedProjectDays} days${plannedLoads ? ", planned load" : ", zero load"})**\n`;
         output += trend.tsbPositiveDate
           ? `  TSB returns positive on ${trend.tsbPositiveDate}\n`
           : `  TSB stays negative for the whole projection\n`;
@@ -326,7 +444,7 @@ export const getFitnessTrendTool = {
         output += `\n`;
       }
 
-      const recent = series.slice(-14);
+      const recent = displaySeries.slice(-14);
       if (recent.length > 0) {
         output += `**Last ${recent.length} days** (full series in structured output)\n`;
         for (const day of recent) {
@@ -338,9 +456,6 @@ export const getFitnessTrendTool = {
       for (const warning of warnings) {
         output += `Note: ${warning}\n`;
       }
-      output += `Note: relative-effort CTL/ATL is directionally consistent with TRIMP-based values, not absolutely comparable.\n`;
-
-      console.error(`Successfully generated fitness trend for ${days} days`);
 
       warnOnSchemaDrift(name, FitnessTrendOutputSchema, result);
 
@@ -349,15 +464,13 @@ export const getFitnessTrendTool = {
         structuredContent: result,
       };
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      console.error(`Error fetching fitness trend: ${errorMessage}`);
-
       return {
         content: [
           {
             type: "text" as const,
-            text: `❌ An unexpected error occurred while computing the fitness trend. Details: ${errorMessage}`,
+            text: toolErrorText(error, {
+              context: `compute fitness trend for ${days} days`,
+            }),
           },
         ],
         isError: true,
