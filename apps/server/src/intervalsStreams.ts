@@ -5,10 +5,7 @@
  * derives `moving`, which intervals.icu never returns: the stream is
  * silently omitted rather than erroring (research note 2026-09-24). Every
  * other stream keeps `null` samples as `null`; callers decide how to treat
- * gaps.
- *
- * Counterpart to the Strava client's `getActivityStreams`/
- * `StreamsUnavailableError` pair (see AGENTS.md's stream-read invariant).
+ * gaps. See AGENTS.md's stream-read invariant.
  */
 import {
   getActivityStreams,

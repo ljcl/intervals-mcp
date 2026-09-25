@@ -56,7 +56,7 @@ describe("annotation constants", () => {
  * permission bucket is derived from.
  */
 const EXPECTED_CLASS: Record<string, "read" | "destroy"> = {
-  // Reads — the Strava API surface.
+  // Reads.
   "get-athlete-stats": "read",
   "get-activity-zones": "read",
   "get-activity-laps": "read",

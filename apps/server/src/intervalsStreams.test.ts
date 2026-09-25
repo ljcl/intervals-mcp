@@ -1,8 +1,7 @@
 /**
- * loadIntervalsStreams: the intervals.icu counterpart to the Strava
- * client's `getActivityStreams`/`StreamsUnavailableError` pair.
- * Turns the raw stream array into named, index-aligned arrays and derives
- * `moving`, which intervals.icu never returns (docs research 2026-09-24).
+ * loadIntervalsStreams: turns the raw `getActivityStreams` stream array into
+ * named, index-aligned arrays and derives `moving`, which intervals.icu
+ * never returns (docs research 2026-09-24).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import streamsFixture from "./__fixtures__/intervals/streams.json";

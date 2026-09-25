@@ -1,7 +1,8 @@
 /**
- * Running-specific utility functions for transforming Strava data.
+ * Running-specific utility functions for transforming intervals.icu data.
  *
- * These functions address common issues with Strava's API:
+ * These functions address common issues with intervals.icu's API (the same
+ * conventions Strava uses, which intervals.icu inherited):
  * - Cadence is returned as strides/min but runners think in steps/min
  * - Speed is returned as m/s but runners think in pace (min/km or min/mile)
  */
