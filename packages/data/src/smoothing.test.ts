@@ -59,10 +59,16 @@ describe("smooth", () => {
     expect(result[3]?.value).toBeCloseTo((30 + 40 + 50) / 3);
   });
 
-  it("fills a null point with the mean of its non-null neighbours", () => {
+  it("keeps a null point null even when both its neighbours are real", () => {
+    // No fake values: a gap must survive smoothing untouched, not get
+    // filled in from the surrounding real readings.
     const result = smooth(points([10, null, 30]), ["value"], 3);
 
-    expect(result[1]?.value).toBeCloseTo((10 + 30) / 2);
+    expect(result[1]?.value).toBeNull();
+    // The real neighbours are themselves smoothed as usual, excluding the
+    // null from their own window average.
+    expect(result[0]?.value).toBeCloseTo(10 / 1);
+    expect(result[2]?.value).toBeCloseTo(30 / 1);
   });
 
   it("keeps a null point null when its whole window is null", () => {

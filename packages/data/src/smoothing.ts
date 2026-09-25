@@ -5,10 +5,11 @@
  *
  * A key that is `undefined` on a point (the property is not part of that
  * point's shape at all) is left untouched. A key that is `null` (a real
- * sensor gap) is treated as missing for the purposes of the average: it is
- * excluded from the window sum, and the smoothed output at that position is
- * the mean of the window's non-null values, or `null` when the window has
- * none. Smoothing never fabricates a value where every sample is a gap.
+ * sensor gap) stays `null`: a gap is never filled in, even when the window
+ * around it has real neighbours, because that would fabricate a value where
+ * there was none. Only a point whose own value is non-null gets smoothed,
+ * and its average is taken over the window's non-null values (nulls inside
+ * the window are excluded from the sum, not treated as zero).
  */
 export function smooth<T extends object>(
   points: T[],
@@ -26,7 +27,9 @@ export function smooth<T extends object>(
 
     for (const key of numericKeys) {
       const own = pt[key] as number | null | undefined;
-      if (own === undefined) {
+      // A gap stays a gap: never fabricate a value at a null sample, no
+      // matter how many real neighbours surround it.
+      if (own === undefined || own === null) {
         continue;
       }
       let sum = 0;
@@ -38,8 +41,10 @@ export function smooth<T extends object>(
           count += 1;
         }
       }
+      // own is a non-null number and is itself within [lo, hi], so count is
+      // always at least 1 here.
       // biome-ignore lint/suspicious/noExplicitAny: generic smoothing over dynamic keys
-      (smoothed as any)[key] = count > 0 ? sum / count : null;
+      (smoothed as any)[key] = sum / count;
     }
     return smoothed;
   });

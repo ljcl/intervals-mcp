@@ -15,9 +15,15 @@ export interface ElevationProfileOptions {
 }
 
 export interface ElevationProfile {
-  /** Open polyline along the elevation samples. */
+  /** Open polyline along the elevation samples; breaks (a new "M") at each
+   * null gap. */
   linePath: string;
-  /** Same polyline closed down to the strip floor, for the area fill. */
+  /**
+   * The same polyline as one or more independently closed subpaths (one per
+   * contiguous non-null run), each dropped to the strip floor for its own
+   * area fill. A gap must not be bridged by a single fill spanning the whole
+   * strip, which would shade the missing stretch as if it were real data.
+   */
   areaPath: string;
   /** X position per sample index (scrub sync with the track). */
   xs: number[];
@@ -81,22 +87,36 @@ export function buildElevationProfile(
         : height / 2,
   );
 
-  // Break the line at gaps instead of connecting across a fabricated value.
+  // Break at gaps: group samples into contiguous non-null segments, each
+  // drawn (and, for the area fill, closed) independently, so a gap neither
+  // connects across as a fabricated line nor gets shaded as if it were real.
   let linePath = "";
-  let penDown = false;
+  let areaPath = "";
+  let segment: Array<{ x: number; y: number }> = [];
+
+  const flushSegment = () => {
+    if (segment.length === 0) return;
+    const linePart = segment
+      .map((p, j) => `${j === 0 ? "M" : "L"}${round(p.x)} ${round(p.y)}`)
+      .join(" ");
+    linePath += (linePath ? " " : "") + linePart;
+    const first = segment[0]!;
+    const last = segment[segment.length - 1]!;
+    areaPath +=
+      (areaPath ? " " : "") +
+      `${linePart} L${round(last.x)} ${height} L${round(first.x)} ${height} Z`;
+    segment = [];
+  };
+
   for (let i = 0; i < n; i += 1) {
     const y = ys[i];
     if (y == null) {
-      penDown = false;
+      flushSegment();
       continue;
     }
-    linePath += `${penDown ? "L" : "M"}${round(xs[i]!)} ${round(y)} `;
-    penDown = true;
+    segment.push({ x: xs[i]!, y });
   }
-  linePath = linePath.trim();
-  const areaPath = `${linePath} L${round(xs[n - 1]!)} ${height} L${round(
-    xs[0]!,
-  )} ${height} Z`;
+  flushSegment();
 
   return {
     linePath,
