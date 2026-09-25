@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { addDays } from "../fitnessTrend";
 import {
   getWellness,
   type IntervalsActivity,
   type IntervalsWellness,
   listActivities,
 } from "../intervalsClient";
+import { addDays } from "../utils/localDate";
 import { getFitnessTrendTool } from "./getFitnessTrend";
 import { FitnessTrendOutputSchema } from "./outputs";
 

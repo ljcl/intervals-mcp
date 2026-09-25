@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { addDays, RUN_TYPES } from "../fitnessTrend";
+import { RUN_TYPES } from "../fitnessTrend";
 import {
   getWellness,
   type IntervalsActivity,
@@ -7,6 +7,7 @@ import {
   listActivities,
 } from "../intervalsClient";
 import { buildTrainingLoadData } from "../trainingLoad";
+import { addDays } from "../utils/localDate";
 import { getTrainingLoadTool } from "./getTrainingLoad";
 import { TrainingLoadOutputSchema } from "./outputs";
 

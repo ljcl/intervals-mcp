@@ -191,7 +191,9 @@ const fitnessTrendInput = z.object({
     .max(365)
     .default(90)
     .describe(
-      "Days to look back (default 90; CTL needs ~90 days of runway, max 365)",
+      "Days to look back (default 90, a useful CTL/ATL/TSB trend window; max 365). " +
+        "Whole-body CTL/ATL is read straight from intervals.icu wellness, not " +
+        "recomputed locally, so this window does not need extra runway.",
     ),
   projectDays: z
     .number()

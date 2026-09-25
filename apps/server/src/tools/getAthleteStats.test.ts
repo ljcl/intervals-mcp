@@ -7,7 +7,6 @@ import {
   formatAthleteStatsText,
   getAthleteStatsTool,
   startOfMonth,
-  startOfWeekMonday,
   startOfYear,
 } from "./getAthleteStats";
 
@@ -39,24 +38,6 @@ function run(
     ...overrides,
   } as IntervalsActivity;
 }
-
-describe("startOfWeekMonday", () => {
-  it("returns the same date for a Monday", () => {
-    expect(startOfWeekMonday("2026-09-21")).toBe("2026-09-21");
-  });
-
-  it("returns the preceding Monday for a Thursday", () => {
-    expect(startOfWeekMonday("2026-09-24")).toBe("2026-09-21");
-  });
-
-  it("returns the preceding Monday for a Sunday", () => {
-    expect(startOfWeekMonday("2026-09-20")).toBe("2026-09-14");
-  });
-
-  it("crosses a month boundary correctly", () => {
-    expect(startOfWeekMonday("2026-10-01")).toBe("2026-09-28");
-  });
-});
 
 describe("startOfMonth / startOfYear", () => {
   it("returns the first of the local calendar month", () => {

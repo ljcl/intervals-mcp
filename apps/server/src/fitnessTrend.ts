@@ -12,6 +12,8 @@
  * exactly requires exactly this split. Callers own how load is measured
  * (relative effort, TRIMP, or anything else) and how it maps to each series.
  */
+import { addDays, daysBetween } from "./utils/localDate";
+import { PACE_ACTIVITY_TYPES } from "./utils/running";
 
 /** One day's inputs to the CTL/ATL recurrence. */
 export interface FitnessTrendLoadDay {
@@ -177,20 +179,6 @@ const ATL_DECAY = Math.exp(-1 / ATL_TIME_CONSTANT_DAYS);
 
 /** Round to one decimal place, the display precision every value here uses. */
 export const round1 = (value: number) => Math.round(value * 10) / 10;
-
-/** Add (or subtract, for negative `days`) whole days to an ISO date. */
-export function addDays(isoDate: string, days: number): string {
-  const d = new Date(`${isoDate}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().split("T")[0]!;
-}
-
-/** Whole days from `from` to `to`; negative when `to` is earlier. */
-export function daysBetween(from: string, to: string): number {
-  const a = Date.parse(`${from}T00:00:00Z`);
-  const b = Date.parse(`${to}T00:00:00Z`);
-  return Math.round((b - a) / 86_400_000);
-}
 
 /**
  * Build the daily CTL/ATL/TSB series from `input.days`, rolling the
@@ -729,8 +717,14 @@ export function computeFlags(series: FitnessTrendDay[]): string[] {
     .map((band) => band.reason);
 }
 
-/** Run types intervals.icu has no dedicated per-sport CTL/ATL for. */
-export const RUN_TYPES: readonly string[] = ["Run", "TrailRun", "VirtualRun"];
+/**
+ * Run types intervals.icu has no dedicated per-sport CTL/ATL for. Callers
+ * here use array methods (`.includes()`, spread into a JSON-serialisable
+ * list), so this re-exports `utils/running.ts`'s `PACE_ACTIVITY_TYPES`
+ * (a `Set`, for `.has()` callers) as an array rather than duplicating the
+ * same three literal strings a second time.
+ */
+export const RUN_TYPES: readonly string[] = [...PACE_ACTIVITY_TYPES];
 
 /**
  * How far before the requested window a run-only computation starts summing

@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
-import {
-  addDays,
-  buildFitnessTrend,
-  type FitnessTrendLoadDay,
-} from "./fitnessTrend";
+import { buildFitnessTrend, type FitnessTrendLoadDay } from "./fitnessTrend";
 import { mapFitnessTrendApp } from "./fitnessTrendApp";
+import { addDays } from "./utils/localDate";
 
 /** 90 days ending 2026-06-28, load 120 for the last three weeks, else zero. */
 function block(): FitnessTrendLoadDay[] {
@@ -34,6 +31,22 @@ describe("mapFitnessTrendApp", () => {
     expect(data.activitiesIncluded).toBe(21);
     expect(data.activitiesMissingLoad).toBe(2);
     expect(data.taper).toBeNull();
+    expect(data.asOf).toBe(trend.current!.date);
+    expect(data.source).toBe("intervals.icu");
+  });
+
+  it("carries a null asOf when there is no current day", () => {
+    const trend = buildFitnessTrend({ days: [] }, { projectDays: 14 });
+
+    const data = mapFitnessTrendApp(trend, {
+      days: 90,
+      activitiesIncluded: 0,
+      activitiesMissingLoad: 0,
+    });
+
+    expect(data.current).toBeNull();
+    expect(data.asOf).toBeNull();
+    expect(data.source).toBe("intervals.icu");
   });
 
   it("renames the band fields to camelCase without losing any", () => {

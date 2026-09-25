@@ -48,9 +48,6 @@ export interface RunTotals {
   average_pace_min_per_km: string | null;
 }
 
-/** Re-exported for backward compatibility; canonical home is `utils/localDate`. */
-export { startOfWeekMonday };
-
 /** First day of the local calendar month containing `ymd`. */
 export function startOfMonth(ymd: string): string {
   return `${ymd.slice(0, 7)}-01`;

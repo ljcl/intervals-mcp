@@ -7,11 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { handledRateLimit } from "./__fixtures__";
 import { HttpError, RateLimitError, stravaApi } from "./fetchClient";
-import {
-  ATL_TIME_CONSTANT_DAYS,
-  addDays,
-  CTL_TIME_CONSTANT_DAYS,
-} from "./fitnessTrend";
+import { ATL_TIME_CONSTANT_DAYS, CTL_TIME_CONSTANT_DAYS } from "./fitnessTrend";
 import {
   getActivity as getIntervalsActivityFn,
   getWellness as getWellnessFn,
@@ -27,6 +23,7 @@ import {
   type StravaLap,
   type StravaSummaryActivity,
 } from "./stravaClient";
+import { addDays } from "./utils/localDate";
 
 vi.mock("./stravaClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./stravaClient")>();

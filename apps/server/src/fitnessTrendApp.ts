@@ -51,6 +51,18 @@ export interface FitnessTrendAppData {
   flags: string[];
   activitiesIncluded: number;
   activitiesMissingLoad: number;
+  /**
+   * Date `current`/the projection seed are known for (mirrors the text
+   * tool's `as_of`); optional since older consumers of this payload never
+   * carried it.
+   */
+  asOf?: string | null;
+  /**
+   * Where `current` CTL/ATL came from (mirrors the text tool's `source`).
+   * Always `"intervals.icu"` here: this app is whole-body only. Optional
+   * for the same reason as {@link FitnessTrendAppData.asOf}.
+   */
+  source?: "intervals.icu";
 }
 
 export interface FitnessTrendAppMeta {
@@ -102,5 +114,7 @@ export function mapFitnessTrendApp(
     flags: trend.flags,
     activitiesIncluded: meta.activitiesIncluded,
     activitiesMissingLoad: meta.activitiesMissingLoad,
+    asOf: trend.current?.date ?? null,
+    source: "intervals.icu",
   };
 }

@@ -1,13 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   ATL_TIME_CONSTANT_DAYS,
-  addDays,
   buildFitnessTrend,
   CTL_TIME_CONSTANT_DAYS,
   computeFlags,
   DEEP_FATIGUE_DAYS,
   DEEP_FATIGUE_TSB,
-  daysBetween,
   type FitnessTrendDay,
   type FitnessTrendLoadDay,
   FRESH_TSB,
@@ -21,6 +19,7 @@ import {
   taperWeekWeights,
   trendBands,
 } from "./fitnessTrend";
+import { addDays } from "./utils/localDate";
 
 type LoadOverride = number | [ctlLoad: number, atlLoad: number];
 
@@ -212,6 +211,27 @@ describe("exact reproduction of the 42/7 recurrence", () => {
     });
   });
 
+  it("matches literal, hand-computed values from a zero seed (not just the reference() helper)", () => {
+    // Independent of `reference()` above (same formula, different code): a
+    // formula bug both shared would not be caught by comparing against it.
+    // These numbers are computed by hand from the closed form
+    // `x_1 = load * (1 - e^(-1/N))`, `x_2 = x_1 * e^(-1/N)` (day 2 rests):
+    //   CTL_DECAY = e^(-1/42) = 0.97645...; ATL_DECAY = e^(-1/7) = 0.86688...
+    //   day 1: ctl = 100 * (1 - 0.97645) = 2.3546 -> 2.4
+    //          atl = 100 * (1 - 0.86688) = 13.3122 -> 13.3
+    //   day 2: ctl = 2.3546 * 0.97645 = 2.2993 -> 2.3
+    //          atl = 13.3122 * 0.86688 = 11.5406 -> 11.5
+    const trend = buildFitnessTrend({
+      days: [
+        { date: "2026-03-01", ctlLoad: 100, atlLoad: 100 },
+        { date: "2026-03-02", ctlLoad: 0, atlLoad: 0 },
+      ],
+    });
+
+    expect(trend.days[0]).toMatchObject({ ctl: 2.4, atl: 13.3 });
+    expect(trend.days[1]).toMatchObject({ ctl: 2.3, atl: 11.5, tsb: -9.2 });
+  });
+
   it("reproduces separate CTL/ATL series when atlLoad carries extra strength load", () => {
     const enduranceLoads = syntheticLoads(120, 7);
     const strengthLoads = syntheticLoads(120, 99).map(
@@ -222,7 +242,11 @@ describe("exact reproduction of the 42/7 recurrence", () => {
       ctlLoad: load, // fitness ignores strength
       atlLoad: load + strengthLoads[i]!, // fatigue counts it
     }));
-    const seed = { ctl: 40, atl: 55 };
+    // Seeded with ATL below CTL (the reverse of a naive "ATL runs hotter"
+    // assumption), so a strength day's ATL ending up above CTL cannot be the
+    // seed doing the work: only the extra atlLoad-only strength load can
+    // close and cross that 15-point gap.
+    const seed = { ctl: 55, atl: 40 };
     const expected = reference(seed, days);
 
     const trend = buildFitnessTrend({ days, seed });
@@ -486,19 +510,6 @@ describe("solveTaperPlan", () => {
     const first = trend.taper!.days[0]!;
     expect(Math.abs(first.ctl - current.ctl)).toBeLessThan(10);
     expect(trend.taper!.recent_daily_load).toBeGreaterThan(0);
-  });
-});
-
-describe("daysBetween", () => {
-  it("counts whole days in both directions", () => {
-    expect(daysBetween("2026-06-28", "2026-07-05")).toBe(7);
-    expect(daysBetween("2026-07-05", "2026-06-28")).toBe(-7);
-    expect(daysBetween("2026-06-28", "2026-06-28")).toBe(0);
-  });
-
-  it("is unaffected by a DST boundary", () => {
-    // Southern-hemisphere DST end, a UTC-safe arithmetic check.
-    expect(daysBetween("2026-04-01", "2026-04-30")).toBe(29);
   });
 });
 

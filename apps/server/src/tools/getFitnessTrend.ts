@@ -3,7 +3,6 @@ import { getTimeZone } from "../config";
 import {
   buildRunOnlyFitnessTrend,
   computeFlags,
-  daysBetween,
   type FitnessTrendDay,
   type PlannedLoad,
   projectFromWellness,
@@ -17,7 +16,12 @@ import { loadWellnessFitnessSeries } from "../fitnessTrendWellness";
 import { listActivities } from "../intervalsClient";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
 import { typesWithLoad } from "../trainingLoad";
-import { addDays, dateInputSchema, todayLocal } from "../utils/localDate";
+import {
+  addDays,
+  dateInputSchema,
+  daysBetween,
+  todayLocal,
+} from "../utils/localDate";
 import { READ_ONLY } from "./_annotations";
 import { toolErrorText } from "./_errors";
 import { FitnessTrendOutputSchema, warnOnSchemaDrift } from "./outputs";

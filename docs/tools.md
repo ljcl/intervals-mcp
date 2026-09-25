@@ -11,8 +11,8 @@ identity, so renames or schema reshapes re-prompt every user. See
 > **Status.** All twenty tools below are ported from Strava to intervals.icu
 > and verified against a real account (Phases 1 through 3 complete;
 > `get-fitness-trend`, `get-training-load`, and `get-running-dynamics` are
-> exercised by `scripts/live-check.ts`, `update-activity`'s write path was
-> verified once, separately, with explicit user approval (see
+> exercised by `scripts/live-check.ts`; `update-activity`'s write path was
+> verified once, separately, with explicit user approval, see
 > docs/api-notes.md). Still Strava-backed, and failing with a "not yet
 > ported" error until Phase 4: the `activity-chart`, `cadence-trends`, and
 > `route-map` app data handlers (see
@@ -340,11 +340,12 @@ also shared with the app feed below) spans the union of weeks with a run and
 weeks with load: a strength-only week, or a whole-body window with no runs at
 all, still gets a row, with run fields zeroed rather than the week being
 dropped, so weekly and total load can never differ between this tool and the
-app feed for the same activities. Weeks start Monday in the server's
-configured time zone (`startOfWeekMonday` in `utils/localDate.ts`, the same
-helper `get-athlete-stats` uses). Time is reported both ways: `time_s`
-(seconds, matching `units.time_s`) and `time_hours` (matching
-`units.time_hours`), per week and in `totals`.
+app feed for the same activities. Weeks start Monday on each activity's own
+local calendar date (`start_date_local`, as intervals.icu reports it, never
+re-interpreted through the server's time zone) via `startOfWeekMonday` in
+`utils/localDate.ts`, the same helper `get-athlete-stats` uses. Time is
+reported both ways: `time_s` (seconds, matching `units.time`) and
+`time_hours` (matching `units.time_hours`), per week and in `totals`.
 
 `update-activity` changes an activity's name, description, gear, RPE
 (`icu_rpe`), or feel. It always does a fresh read first (bypassing the

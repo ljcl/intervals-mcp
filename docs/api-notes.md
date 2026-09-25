@@ -121,7 +121,8 @@ sport-settings, fitness-model-events, athlete-summary, and one activity, all aga
   Workout) has `icu_training_load` equal `hr_load` (HRSS). Sport settings' `load_order` confirms
   this: Run is `POWER_PACE_HR`, everything else is `POWER_HR_PACE`. `power_load` and
   `strain_score` are present as keys but null on every activity on this account (no power meter).
-  `icu_rpe` is populated on most activities; `session_rpe` is `icu_rpe` scaled by duration.
+  `icu_rpe` is populated on most activities; `session_rpe` appears to be `icu_rpe` scaled by
+  duration (matches three fixture activities; not otherwise confirmed).
 - Reproducing the fitness model: seeding from wellness `ctl`/`atl` the day before a window and
   feeding wellness `ctlLoad`/`atlLoad` into `x += (load - x) * (1 - exp(-1/N))` with `N = 42` (CTL)
   and `N = 7` (ATL) reproduces intervals.icu's own `ctl`/`atl` exactly (max error 0.000 over

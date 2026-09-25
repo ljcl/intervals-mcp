@@ -4,6 +4,7 @@ import {
   dateInputSchema,
   daysBetween,
   isValidCalendarDate,
+  startOfWeekMonday,
   todayLocal,
   validateRange,
 } from "./localDate";
@@ -64,6 +65,24 @@ describe("daysBetween", () => {
 
   it("matches addDays: daysBetween(d, addDays(d, n)) === n", () => {
     expect(daysBetween("2026-06-26", addDays("2026-06-26", 90))).toBe(90);
+  });
+});
+
+describe("startOfWeekMonday", () => {
+  it("returns the same date for a Monday", () => {
+    expect(startOfWeekMonday("2026-09-21")).toBe("2026-09-21");
+  });
+
+  it("returns the preceding Monday for a Thursday", () => {
+    expect(startOfWeekMonday("2026-09-24")).toBe("2026-09-21");
+  });
+
+  it("returns the preceding Monday for a Sunday", () => {
+    expect(startOfWeekMonday("2026-09-20")).toBe("2026-09-14");
+  });
+
+  it("crosses a month boundary correctly", () => {
+    expect(startOfWeekMonday("2026-10-01")).toBe("2026-09-28");
   });
 });
 

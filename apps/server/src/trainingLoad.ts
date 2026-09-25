@@ -5,7 +5,7 @@
  * drift from the text tool's prose warnings.
  */
 import { RUN_TYPES } from "./fitnessTrend";
-import { startOfWeekMonday } from "./utils/localDate";
+import { addDays, startOfWeekMonday } from "./utils/localDate";
 
 /**
  * Monday-start week key (YYYY-MM-DD) for a local calendar date. `localDate`
@@ -150,12 +150,6 @@ export interface TrainingLoadAppData {
   current: { date: string; ctl: number; atl: number; tsb: number } | null;
   /** Where `current` came from: intervals.icu wellness, or computed locally (run-only). */
   source: "intervals.icu" | "computed" | null;
-}
-
-export function addDays(isoDate: string, days: number): string {
-  const d = new Date(`${isoDate}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().split("T")[0]!;
 }
 
 /** One week's raw (unrounded) totals, keyed by Monday-start date. */
