@@ -1,7 +1,9 @@
 import { z } from "zod";
 import {
+  addDays,
   buildFitnessTrend,
   type FitnessTrendDay,
+  type FitnessTrendLoadDay,
   type TaperWeek,
 } from "../fitnessTrend";
 import { listingProgress, NO_PROGRESS, type ReportProgress } from "../progress";
@@ -104,6 +106,39 @@ type GetFitnessTrendInput = z.infer<typeof inputSchema>;
 /** Beyond this the solved plan is a training block, not a taper. */
 const LONG_PLAN_DAYS = 28;
 
+/** Minimal slice of a Strava activity the load mapping needs. */
+interface StravaLoadActivity {
+  start_date: string;
+  start_date_local?: string;
+  suffer_score?: number | null;
+}
+
+/**
+ * Temporary Strava-to-input mapping: sums relative effort per local day and
+ * feeds it to both the CTL and ATL load series, since Strava's suffer_score
+ * has no source split the way intervals.icu's ctlLoad/atlLoad do. Ported to
+ * the real split in Task 3.
+ */
+function stravaLoadDays(
+  activities: StravaLoadActivity[],
+  endDate: string,
+  days: number,
+): FitnessTrendLoadDay[] {
+  const loads = new Map<string, number>();
+  for (const activity of activities) {
+    const day = (activity.start_date_local || activity.start_date).split(
+      "T",
+    )[0]!;
+    loads.set(day, (loads.get(day) ?? 0) + (activity.suffer_score ?? 0));
+  }
+  const start = addDays(endDate, -(days - 1));
+  return Array.from({ length: days }, (_, i) => {
+    const date = addDays(start, i);
+    const load = loads.get(date) ?? 0;
+    return { date, ctlLoad: load, atlLoad: load };
+  });
+}
+
 const signed = (value: number) => `${value >= 0 ? "+" : ""}${value}`;
 
 function formatDay(day: FitnessTrendDay): string {
@@ -165,12 +200,13 @@ export const getFitnessTrendTool = {
       ).length;
 
       const endDay = endDate.toISOString().split("T")[0]!;
-      const trend = buildFitnessTrend(activities, {
-        endDate: endDay,
-        days,
-        projectDays,
-        taper: targetDate ? { targetDate, targetTsb } : undefined,
-      });
+      const trend = buildFitnessTrend(
+        { days: stravaLoadDays(activities, endDay, days) },
+        {
+          projectDays,
+          taper: targetDate ? { targetDate, targetTsb } : undefined,
+        },
+      );
 
       const warnings: string[] = [];
       if (activities.length === 0) {

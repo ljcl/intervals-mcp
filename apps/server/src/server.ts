@@ -19,7 +19,11 @@ import {
 } from "./activityZones";
 import { getIntervalsApiKey } from "./config";
 import { RateLimitError } from "./fetchClient";
-import { buildFitnessTrend } from "./fitnessTrend";
+import {
+  addDays,
+  buildFitnessTrend,
+  type FitnessTrendLoadDay,
+} from "./fitnessTrend";
 import {
   type FitnessTrendAppData,
   mapFitnessTrendApp,
@@ -863,6 +867,39 @@ async function handleViewTrainingLoad(
   return { content: [{ type: "text", text: lines.join("\n") }] };
 }
 
+/** Minimal slice of a Strava activity the load mapping needs. */
+interface StravaLoadActivity {
+  start_date: string;
+  start_date_local?: string;
+  suffer_score?: number | null;
+}
+
+/**
+ * Temporary Strava-to-input mapping: sums relative effort per local day and
+ * feeds it to both the CTL and ATL load series, since Strava's suffer_score
+ * has no source split the way intervals.icu's ctlLoad/atlLoad do. Ported to
+ * the real split in Task 3.
+ */
+function stravaLoadDays(
+  activities: StravaLoadActivity[],
+  endDate: string,
+  days: number,
+): FitnessTrendLoadDay[] {
+  const loads = new Map<string, number>();
+  for (const activity of activities) {
+    const day = (activity.start_date_local || activity.start_date).split(
+      "T",
+    )[0]!;
+    loads.set(day, (loads.get(day) ?? 0) + (activity.suffer_score ?? 0));
+  }
+  const start = addDays(endDate, -(days - 1));
+  return Array.from({ length: days }, (_, i) => {
+    const date = addDays(start, i);
+    const load = loads.get(date) ?? 0;
+    return { date, ctlLoad: load, atlLoad: load };
+  });
+}
+
 /**
  * Shared fetch + solve for the fitness-trend view and data tools.
  * Cross-sport by design: relative effort is heart-rate based, so whole-body
@@ -887,12 +924,15 @@ async function loadFitnessTrendAppData(
     onProgress: listingProgress(progress),
   });
 
-  const trend = buildFitnessTrend(activities, {
-    endDate: end.toISOString().split("T")[0]!,
-    days,
-    projectDays,
-    taper: targetDate ? { targetDate, targetTsb } : undefined,
-  });
+  const trend = buildFitnessTrend(
+    {
+      days: stravaLoadDays(activities, end.toISOString().split("T")[0]!, days),
+    },
+    {
+      projectDays,
+      taper: targetDate ? { targetDate, targetTsb } : undefined,
+    },
+  );
 
   return mapFitnessTrendApp(trend, {
     days,

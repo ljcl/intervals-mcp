@@ -1,27 +1,51 @@
 /**
- * CTL/ATL/TSB fitness-trend math for `get-fitness-trend`. Pure
- * functions over daily relative-effort loads, unit-tested next to
+ * CTL/ATL/TSB fitness-trend math for `get-fitness-trend`. Pure, source-agnostic
+ * functions over daily loads the caller supplies, unit-tested next to
  * `trainingLoad.ts`.
  *
  * The model is the classic performance-management chart: CTL ("fitness") is
  * an exponentially weighted average of daily load with a 42-day time
  * constant, ATL ("fatigue") the same with a 7-day constant, and
- * TSB ("form") = CTL − ATL. Load is Strava's relative effort
- * (`suffer_score`), which is HR-based — directionally consistent with
- * TRIMP-based CTL/ATL from other tools, but not absolutely comparable.
+ * TSB ("form") = CTL − ATL. CTL and ATL read separate load series
+ * (`ctlLoad`/`atlLoad`) so a caller can, for example, count strength work
+ * toward fatigue only; reproducing intervals.icu's own wellness CTL/ATL
+ * exactly requires exactly this split. Callers own how load is measured
+ * (relative effort, TRIMP, or anything else) and how it maps to each series.
  */
 
-/** Minimal slice of a Strava activity the trend needs. */
-export interface FitnessTrendActivity {
-  start_date: string;
-  start_date_local?: string;
-  suffer_score?: number | null;
+/** One day's inputs to the CTL/ATL recurrence. */
+export interface FitnessTrendLoadDay {
+  /** ISO date (YYYY-MM-DD) the loads apply to. */
+  date: string;
+  /** Load feeding the 42-day CTL ("fitness") recurrence that day. */
+  ctlLoad: number;
+  /** Load feeding the 7-day ATL ("fatigue") recurrence that day. */
+  atlLoad: number;
+}
+
+/** Starting CTL/ATL the first day of `days` applies its recurrence to. */
+export interface FitnessTrendSeed {
+  ctl: number;
+  atl: number;
+}
+
+export interface FitnessTrendInput {
+  /** Consecutive daily loads, oldest first; the last entry is the current day. */
+  days: FitnessTrendLoadDay[];
+  /** Seed CTL/ATL to roll forward from. Defaults to `{ ctl: 0, atl: 0 }`. */
+  seed?: FitnessTrendSeed;
 }
 
 export interface FitnessTrendDay {
   /** ISO date (YYYY-MM-DD) the values were computed for. */
   date: string;
-  /** Total relative effort recorded that day (0 on rest days). */
+  /**
+   * The day's load, for display (0 on rest days). For the recorded series
+   * this is `atlLoad`, the fuller of the two input measures, since a
+   * caller's ATL load is typically a superset of its CTL load (e.g. strength
+   * counting toward fatigue only). For projected/planned/taper days the same
+   * load is fed to both series, so the distinction does not apply.
+   */
   load: number;
   ctl: number;
   atl: number;
@@ -91,11 +115,7 @@ export interface TaperPlan {
 }
 
 export interface FitnessTrendOptions {
-  /** Last day of the series (YYYY-MM-DD). Days count back from here. */
-  endDate: string;
-  /** Length of the computed series in days. */
-  days: number;
-  /** Project this many days past endDate (zero load unless plannedLoads says otherwise). */
+  /** Project this many days past the last input day (zero load unless plannedLoads says otherwise). */
   projectDays?: number;
   /**
    * Load to project with instead of rest. `projectDays` defaults to its
@@ -157,7 +177,8 @@ const ATL_DECAY = Math.exp(-1 / ATL_TIME_CONSTANT_DAYS);
 
 const round1 = (value: number) => Math.round(value * 10) / 10;
 
-function addDays(isoDate: string, days: number): string {
+/** Add (or subtract, for negative `days`) whole days to an ISO date. */
+export function addDays(isoDate: string, days: number): string {
   const d = new Date(`${isoDate}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().split("T")[0]!;
@@ -170,59 +191,51 @@ export function daysBetween(from: string, to: string): number {
   return Math.round((b - a) / 86_400_000);
 }
 
-/** Local calendar day (YYYY-MM-DD) an activity belongs to. */
-export function activityDay(activity: FitnessTrendActivity): string {
-  return (activity.start_date_local || activity.start_date).split("T")[0]!;
-}
-
 /**
- * Sum relative effort per local calendar day. Activities without a
- * `suffer_score` (no HR data) contribute zero load.
- */
-export function dailyLoads(
-  activities: FitnessTrendActivity[],
-): Map<string, number> {
-  const loads = new Map<string, number>();
-  for (const activity of activities) {
-    const day = activityDay(activity);
-    loads.set(day, (loads.get(day) ?? 0) + (activity.suffer_score ?? 0));
-  }
-  return loads;
-}
-
-/**
- * Build the daily CTL/ATL/TSB series. Both averages start from zero at the
- * window start, so the first few weeks under-read true fitness — callers
- * should use a lookback of ~90 days so the early ramp has settled by the
- * dates that matter. Rest days decay both curves; multiple activities on one
- * day are summed before the update.
+ * Build the daily CTL/ATL/TSB series from `input.days`, rolling the
+ * recurrence forward from `input.seed` (default `{ ctl: 0, atl: 0 }`). A
+ * caller starting from zero should supply enough runway (~90 days) that the
+ * early ramp has settled by the dates that matter; a caller with a known
+ * prior CTL/ATL (e.g. intervals.icu's own wellness data) should seed it
+ * instead. `input.days` must be consecutive calendar days; gaps are not
+ * inferred as rest days.
  */
 export function buildFitnessTrend(
-  activities: FitnessTrendActivity[],
-  options: FitnessTrendOptions,
+  input: FitnessTrendInput,
+  options: FitnessTrendOptions = {},
 ): FitnessTrendResult {
-  const { endDate, days, plannedLoads, taper } = options;
+  const { plannedLoads, taper } = options;
   const projectDays =
     options.projectDays ??
     (plannedLoads !== undefined ? plannedLoads.length : 0);
-  const loads = dailyLoads(activities);
-  const startDate = addDays(endDate, -(days - 1));
 
   const series: FitnessTrendDay[] = [];
-  let ctl = 0;
-  let atl = 0;
-  for (let i = 0; i < days; i++) {
-    const date = addDays(startDate, i);
-    const load = loads.get(date) ?? 0;
-    ctl = load * (1 - CTL_DECAY) + ctl * CTL_DECAY;
-    atl = load * (1 - ATL_DECAY) + atl * ATL_DECAY;
+  const seed = input.seed ?? { ctl: 0, atl: 0 };
+  let ctl = seed.ctl;
+  let atl = seed.atl;
+  for (const { date, ctlLoad, atlLoad } of input.days) {
+    ctl = ctlLoad * (1 - CTL_DECAY) + ctl * CTL_DECAY;
+    atl = atlLoad * (1 - ATL_DECAY) + atl * ATL_DECAY;
     series.push({
       date,
-      load: round1(load),
+      load: round1(atlLoad),
       ctl: round1(ctl),
       atl: round1(atl),
       tsb: round1(ctl - atl),
     });
+  }
+
+  const endDate = series[series.length - 1]?.date;
+  if (endDate === undefined) {
+    return {
+      days: series,
+      current: null,
+      projection: [],
+      tsbPositiveDate: null,
+      taper: null,
+      bands: [],
+      flags: [],
+    };
   }
 
   const firstProjectedDate = addDays(endDate, 1);
