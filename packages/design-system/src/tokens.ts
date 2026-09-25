@@ -30,8 +30,8 @@ export const CHART_COLORS = {
   heartrate: "#ef4444",
   pace: "#3b82f6",
   power: "#8b5cf6",
-  stanceTime: "#0d9488",
-  verticalOscillation: "#db2777",
-  verticalRatio: "#ca8a04",
-  stepLength: "#4f46e5",
+  stanceTime: "#3c9c0d",
+  verticalOscillation: "#0c9769",
+  verticalRatio: "#d052e0",
+  stepLength: "#e052a5",
 } as const;

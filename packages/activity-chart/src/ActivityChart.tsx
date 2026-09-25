@@ -435,7 +435,10 @@ export function ActivityChart({
   // Running-dynamics averages for the model-facing context summary: the
   // activity's recorded dynamics regardless of the legend's show/hide
   // state, since this is "what did the run look like", not "what's drawn
-  // right now". Empty when the activity recorded none of the four.
+  // right now". Empty when the activity recorded none of the four. Contrast
+  // with `a11yDescription`'s dynamics narration below (see the DYNAMICS_KEYS
+  // comment in a11y.ts), which only describes the currently visible metrics,
+  // same as the rest of the SVG <desc> text.
   const dynamicsSummary = useMemo(() => {
     const parts = DYNAMICS_METRICS.filter((key) => availableMetrics.has(key))
       .map((key) => {

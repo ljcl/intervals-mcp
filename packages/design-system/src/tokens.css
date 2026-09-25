@@ -84,11 +84,17 @@
   --chart-cadence: #f97316;
   --chart-grade: #6b7280;
 
-  /* Chart colors (running dynamics) */
-  --chart-stance-time: #0d9488;
-  --chart-vertical-oscillation: #db2777;
-  --chart-vertical-ratio: #ca8a04;
-  --chart-step-length: #4f46e5;
+  /* Chart colors (running dynamics). Hues (100/160/293/325 deg) are each at
+   * least 30 degrees from every other chart series color and from each
+   * other (see fix round 1 report DELTA for the hue-distance/contrast
+   * script output); lightness is tuned per hue for >=3:1 contrast against
+   * --color-background-primary (green/teal need a darker L than the rest of
+   * the palette to clear 3:1 on white: green is an inherently high-luminance
+   * hue). */
+  --chart-stance-time: #3c9c0d;
+  --chart-vertical-oscillation: #0c9769;
+  --chart-vertical-ratio: #d052e0;
+  --chart-step-length: #e052a5;
 }
 
 /* Dark theme overrides — applied explicitly via `.dark` class or
@@ -127,11 +133,13 @@
   --chart-cadence: #fb923c;
   --chart-grade: #9ca3af;
 
-  /* Chart colors (running dynamics), brighter for dark backgrounds */
-  --chart-stance-time: #2dd4bf;
-  --chart-vertical-oscillation: #f472b6;
-  --chart-vertical-ratio: #fbbf24;
-  --chart-step-length: #818cf8;
+  /* Chart colors (running dynamics), brighter for dark backgrounds; same
+   * hues as the light variants above, so both themes keep the same
+   * >=30-degree separation from every other series and from each other. */
+  --chart-stance-time: #8cf25a;
+  --chart-vertical-oscillation: #5af2bf;
+  --chart-vertical-ratio: #dc70eb;
+  --chart-step-length: #eb70b8;
 
   /* Shadows */
   --shadow-sm:

@@ -7,8 +7,19 @@ import {
   type MetricKey,
 } from "./types";
 
-/** Running-dynamics metrics: narrated as averages (see `describeDynamicsSeries`),
- * never as a min-max range: the typical value is what matters, not the spread. */
+/**
+ * Running-dynamics metrics: narrated as averages (see `describeDynamicsSeries`),
+ * never as a min-max range: the typical value is what matters, not the spread.
+ *
+ * This module only describes `visibleMetrics` (the series currently drawn),
+ * mirroring the rest of the SVG <desc> narration: it answers "what does the
+ * chart show right now". `ActivityChart.tsx`'s `dynamicsSummary` (fed into
+ * `buildChartContextSummary` in contextSummary.ts) deliberately differs: it
+ * covers every dynamics metric the activity recorded, regardless of the
+ * legend's show/hide state, because the model-facing summary answers "what
+ * did the run look like", which shouldn't change just because the user
+ * toggled a legend item off.
+ */
 const DYNAMICS_KEYS = new Set<MetricKey>([
   "stanceTime",
   "verticalOscillation",
