@@ -48,7 +48,7 @@ describe("mapRunningDynamics", () => {
     expect(d.has_dynamics).toBe(true);
     expect(d.message).toBeNull();
     expect(d.averages).toEqual({
-      // average_vertical_oscillation 108.36414 -> 108 mm.
+      // average_vertical_oscillation 108.36414 rounds to 108 mm.
       stance_time_ms: 233,
       vertical_oscillation_mm: 108,
       vertical_ratio_pct: 8.8,
@@ -82,7 +82,7 @@ describe("mapRunningDynamics", () => {
       stance_time_status: "within",
       vertical_oscillation_mm: 108,
       vertical_oscillation_status: "high",
-      // average_stride 1.219285 -> 1.22 m.
+      // average_stride 1.219285 rounds to 1.22 m.
       stride_m: 1.22,
     });
   });

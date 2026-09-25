@@ -1,7 +1,9 @@
 /**
- * Live check: calls every Phase 1 and Phase 2 intervals.icu read tool's
+ * Live check: calls every Phase 1 through Phase 3 intervals.icu read tool's
  * executor directly against a real account, using the key from the root
- * `.env`.
+ * `.env`. `update-activity` is a write tool and is deliberately not called
+ * here; it was checked once, separately, with explicit user approval (see
+ * docs/api-notes.md's "update-activity live write check").
  *
  * Prints only a short summary per tool (ok/error plus a handful of numbers)
  * so this is safe to run and paste output from in a public repo. It never
@@ -67,6 +69,15 @@ const { getRacePredictionTool } = await import(
 );
 const { getAthleteStatsTool } = await import(
   "../apps/server/src/tools/getAthleteStats"
+);
+const { getFitnessTrendTool } = await import(
+  "../apps/server/src/tools/getFitnessTrend"
+);
+const { getTrainingLoadTool } = await import(
+  "../apps/server/src/tools/getTrainingLoad"
+);
+const { getRunningDynamicsTool } = await import(
+  "../apps/server/src/tools/getRunningDynamics"
 );
 const { NO_PROGRESS } = await import("../apps/server/src/progress");
 
@@ -591,6 +602,238 @@ async function checkGetAthleteStats(): Promise<void> {
   }
 }
 
+type FitnessCurrent = {
+  date: string;
+  ctl: number;
+  atl: number;
+  tsb: number;
+} | null;
+
+/**
+ * Runs `get-fitness-trend` whole-body and returns its `current` (CTL/ATL/TSB
+ * plus the date they are `as_of`), so the caller can cross-check it against
+ * a direct `get-wellness` read for that same date. Returns null on any
+ * failure (already reported via `fail`), never throws.
+ */
+async function checkGetFitnessTrendWholeBody(): Promise<FitnessCurrent> {
+  const name = "get-fitness-trend (whole-body)";
+  try {
+    const result = (await getFitnessTrendTool.execute(
+      { days: 90, runOnly: false, targetTsb: 10 },
+      apiKey,
+      NO_PROGRESS,
+    )) as {
+      structuredContent?: Record<string, unknown>;
+      isError?: boolean;
+      content?: Array<{ text?: unknown }>;
+    };
+    if (result.isError || !result.structuredContent) {
+      fail(name, errorSummary(result));
+      return null;
+    }
+    const d = result.structuredContent as {
+      source: string;
+      as_of: string | null;
+      current: FitnessCurrent;
+    };
+    ok(
+      name,
+      `source=${d.source} as_of=${d.as_of} ctl=${d.current?.ctl} atl=${d.current?.atl} tsb=${d.current?.tsb}`,
+    );
+    return d.current;
+  } catch (error) {
+    fail(name, throwSummary(error));
+    return null;
+  }
+}
+
+async function checkGetFitnessTrendRunOnly(): Promise<void> {
+  const name = "get-fitness-trend (runOnly)";
+  try {
+    const result = (await getFitnessTrendTool.execute(
+      { days: 90, runOnly: true, targetTsb: 10 },
+      apiKey,
+      NO_PROGRESS,
+    )) as {
+      structuredContent?: Record<string, unknown>;
+      isError?: boolean;
+      content?: Array<{ text?: unknown }>;
+    };
+    if (result.isError || !result.structuredContent) {
+      fail(name, errorSummary(result));
+      return;
+    }
+    const d = result.structuredContent as {
+      source: string;
+      as_of: string | null;
+      current: { ctl: number; atl: number; tsb: number } | null;
+    };
+    ok(
+      name,
+      `source=${d.source} as_of=${d.as_of} ctl=${d.current?.ctl} atl=${d.current?.atl} tsb=${d.current?.tsb}`,
+    );
+  } catch (error) {
+    fail(name, throwSummary(error));
+  }
+}
+
+/** Matches `round1` in `fitnessTrend.ts`: `get-fitness-trend` rounds CTL/ATL/TSB to 1 decimal for display; `get-wellness` does not round CTL/ATL at all. */
+const round1 = (value: number) => Math.round(value * 10) / 10;
+
+/**
+ * Cross-checks `get-fitness-trend`'s whole-body CTL/ATL/TSB against a
+ * direct, read-only `get-wellness` read for the same `as_of` date: both
+ * read the same intervals.icu wellness record, so once rounded to the same
+ * 1 decimal place they must agree exactly.
+ */
+async function checkFitnessTrendMatchesWellness(
+  current: FitnessCurrent,
+): Promise<void> {
+  const name = "get-fitness-trend vs get-wellness";
+  if (!current) {
+    console.log(`${name}: skipped - no current CTL/ATL from get-fitness-trend`);
+    return;
+  }
+  try {
+    const result = (await getWellnessTool.execute(
+      { date: current.date },
+      apiKey,
+      NO_PROGRESS,
+    )) as {
+      structuredContent?: Record<string, unknown>;
+      isError?: boolean;
+      content?: Array<{ text?: unknown }>;
+    };
+    if (result.isError || !result.structuredContent) {
+      fail(name, errorSummary(result));
+      return;
+    }
+    const days = result.structuredContent.days as Array<{
+      ctl: number | null;
+      atl: number | null;
+      tsb: number | null;
+    }>;
+    const day = days[0];
+    const wellnessCtl = day?.ctl != null ? round1(day.ctl) : null;
+    const wellnessAtl = day?.atl != null ? round1(day.atl) : null;
+    const wellnessTsb = day?.tsb != null ? round1(day.tsb) : null;
+    const matches =
+      wellnessCtl === current.ctl &&
+      wellnessAtl === current.atl &&
+      wellnessTsb === current.tsb;
+    if (!matches) {
+      fail(
+        name,
+        `mismatch: fitness-trend ctl=${current.ctl} atl=${current.atl} tsb=${current.tsb} vs wellness ctl=${day?.ctl} atl=${day?.atl} tsb=${day?.tsb}`,
+      );
+      return;
+    }
+    ok(
+      name,
+      `date=${current.date} ctl=${current.ctl} atl=${current.atl} tsb=${current.tsb} (equal)`,
+    );
+  } catch (error) {
+    fail(name, throwSummary(error));
+  }
+}
+
+async function checkGetTrainingLoadWholeBody(): Promise<void> {
+  const name = "get-training-load (whole-body)";
+  try {
+    const result = (await getTrainingLoadTool.execute(
+      { days: 28, runOnly: false },
+      apiKey,
+      NO_PROGRESS,
+    )) as {
+      structuredContent?: Record<string, unknown>;
+      isError?: boolean;
+      content?: Array<{ text?: unknown }>;
+    };
+    if (result.isError || !result.structuredContent) {
+      fail(name, errorSummary(result));
+      return;
+    }
+    const d = result.structuredContent as {
+      source: string;
+      current: { ctl: number; atl: number; tsb: number } | null;
+      totals: { runs: number; distance_km: number; load: number };
+    };
+    ok(
+      name,
+      `source=${d.source} ctl=${d.current?.ctl} atl=${d.current?.atl} tsb=${d.current?.tsb} runs=${d.totals.runs} load=${d.totals.load}`,
+    );
+  } catch (error) {
+    fail(name, throwSummary(error));
+  }
+}
+
+async function checkGetTrainingLoadRunOnly(): Promise<void> {
+  const name = "get-training-load (runOnly)";
+  try {
+    const result = (await getTrainingLoadTool.execute(
+      { days: 28, runOnly: true },
+      apiKey,
+      NO_PROGRESS,
+    )) as {
+      structuredContent?: Record<string, unknown>;
+      isError?: boolean;
+      content?: Array<{ text?: unknown }>;
+    };
+    if (result.isError || !result.structuredContent) {
+      fail(name, errorSummary(result));
+      return;
+    }
+    const d = result.structuredContent as {
+      source: string;
+      current: { ctl: number; atl: number; tsb: number } | null;
+      totals: { runs: number; distance_km: number; load: number };
+    };
+    ok(
+      name,
+      `source=${d.source} ctl=${d.current?.ctl} atl=${d.current?.atl} tsb=${d.current?.tsb} runs=${d.totals.runs} load=${d.totals.load}`,
+    );
+  } catch (error) {
+    fail(name, throwSummary(error));
+  }
+}
+
+async function checkGetRunningDynamics(): Promise<void> {
+  const name = "get-running-dynamics";
+  try {
+    const result = (await getRunningDynamicsTool.execute(
+      { id: activityId, includeIntervals: true },
+      apiKey,
+      NO_PROGRESS,
+    )) as {
+      structuredContent?: Record<string, unknown>;
+      isError?: boolean;
+      content?: Array<{ text?: unknown }>;
+    };
+    if (result.isError || !result.structuredContent) {
+      fail(name, errorSummary(result));
+      return;
+    }
+    const d = result.structuredContent as {
+      has_dynamics: boolean;
+      averages: {
+        stance_time_ms: number | null;
+        vertical_oscillation_mm: number | null;
+        vertical_ratio_pct: number | null;
+        step_length_mm: number | null;
+        stride_m: number | null;
+        cadence_spm: number | null;
+      } | null;
+      intervals: unknown[];
+    };
+    ok(
+      name,
+      `has_dynamics=${d.has_dynamics} gct_ms=${d.averages?.stance_time_ms} vo_mm=${d.averages?.vertical_oscillation_mm} vr_pct=${d.averages?.vertical_ratio_pct} step_mm=${d.averages?.step_length_mm} stride_m=${d.averages?.stride_m} cadence_spm=${d.averages?.cadence_spm} intervals=${d.intervals.length}`,
+    );
+  } catch (error) {
+    fail(name, throwSummary(error));
+  }
+}
+
 await checkListActivities();
 await checkGetActivity();
 await checkGetActivityStreams();
@@ -607,6 +850,12 @@ await checkGetIntervalAnalysis();
 await checkGetBestEfforts();
 await checkGetRacePrediction();
 await checkGetAthleteStats();
+const fitnessTrendCurrent = await checkGetFitnessTrendWholeBody();
+await checkFitnessTrendMatchesWellness(fitnessTrendCurrent);
+await checkGetFitnessTrendRunOnly();
+await checkGetTrainingLoadWholeBody();
+await checkGetTrainingLoadRunOnly();
+await checkGetRunningDynamics();
 
 if (failures > 0) {
   console.log(`${failures} tool(s) failed.`);

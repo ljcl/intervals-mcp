@@ -133,3 +133,16 @@ sport-settings, fitness-model-events, athlete-summary, and one activity, all aga
   fact for this account, not a documented rule.
 - `GET /athlete/{id}/fitness-model-events` (custom `FITNESS_DAYS`/`SET_FITNESS`/`SET_EFTP` events
   that would change the constants above) returns `[]` on this account.
+
+## update-activity live write check (2026-09-25, user-approved, one run)
+
+Controller-run, one write to one activity, approved by the user before running: `update-activity`
+changed the activity's name, appended to its description, and set RPE (`icu_rpe`) in a single
+call. The re-read confirmed all three changed values. Gear was left untouched (not part of this
+write) and, as documented above, cannot be cleared via `PUT /activity/{id}` regardless. Everything
+was restored to its original value afterward. Also confirmed: setting `description: ""` with
+`descriptionMode: "replace"` clears the description.
+
+`feel` was not exercised by this check (only name, description, and RPE were written), so its
+1-strongest-to-5-weakest scale, as described in `update-activity`'s tool description, remains an
+assumption, not something observed on a write.

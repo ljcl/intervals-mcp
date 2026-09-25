@@ -7,14 +7,14 @@
 A single-user remote MCP server for intervals.icu run data and analysis, with interactive MCP Apps. Continues from [strava-mcp](https://github.com/ljcl/strava-mcp).
 
 > **Migration in progress.** The server is being ported from Strava to
-> intervals.icu (Phases 1 and 2). Sixteen tools now talk to intervals.icu
-> directly and are verified against a real account; see
-> [docs/tools.md](docs/tools.md) for the full catalog. `get-training-load`,
-> `get-fitness-trend`, `update-activity`, and the Phase 4 `view-*`/
-> `get-*-data` app tools still call the retired Strava client and fail with
-> a "not yet ported" error until each is moved over in a later phase. The
-> presence of `INTERVALS_API_KEY` is checked at startup and reported on
-> `/health`.
+> intervals.icu (Phases 1 through 3 complete). All twenty text tools now
+> talk to intervals.icu directly and are verified against a real account;
+> see [docs/tools.md](docs/tools.md) for the full catalog. Only three app
+> data handlers still call the retired Strava client and fail with a "not
+> yet ported" error: `view-activity-chart`/`get-activity-streams-raw`,
+> `view-cadence-trends`/`get-cadence-trend-data`, and
+> `view-route-map`/`get-route-map-data`, pending Phase 4. The presence of
+> `INTERVALS_API_KEY` is checked at startup and reported on `/health`.
 
 ## Setup
 
@@ -185,10 +185,10 @@ Any client that speaks [Streamable HTTP](https://modelcontextprotocol.io/docs/co
 ## Tools
 
 The full tool catalog, prompts, permission behaviour, and example requests
-live in [docs/tools.md](docs/tools.md). Sixteen tools talk to intervals.icu
-directly; `get-training-load`, `get-fitness-trend`, `update-activity`, and
-the Phase 4 app tools still call the transitional Strava client and return a
-"not yet ported" error until a later phase.
+live in [docs/tools.md](docs/tools.md). All twenty text tools talk to
+intervals.icu directly. Only the activity-chart, cadence-trends, and
+route-map app data handlers still call the transitional Strava client and
+return a "not yet ported" error, pending Phase 4.
 
 ## Documentation
 

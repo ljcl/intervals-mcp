@@ -80,10 +80,10 @@ export class RateLimitError extends HttpError {
 }
 
 /**
- * Thrown by the retired stravaClient.ts for every call it makes: that
- * client sends no `Authorization` header on purpose (see its module comment),
- * so every request answers 401. That 401 means "this tool has not been
- * ported to intervals.icu yet", a completely different situation from
+ * Thrown by the retired Strava client for every call it makes: that
+ * client sends no `Authorization` header on purpose (see its own module
+ * comment), so every request answers 401. That 401 means "this tool has not
+ * been ported to intervals.icu yet", a completely different situation from
  * intervals.icu itself rejecting an API key, and needs its own type so
  * `toolErrorText` (`tools/_errors.ts`) can tell the two apart by type rather
  * than by re-parsing the message. Lives here, not in the Strava client

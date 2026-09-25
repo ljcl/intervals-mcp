@@ -109,67 +109,6 @@ const BaseAthleteSchema = z.object({
   resource_state: z.number().int(),
 });
 
-// --- Athlete Gear (summary) Schema ---
-// Gear as it appears in the shoes/bikes arrays on the detailed athlete profile.
-const AthleteGearSchema = z.object({
-  id: z.string(),
-  resource_state: z.number().int().optional(),
-  primary: z.boolean(),
-  name: z.string(),
-  nickname: z.string().nullable().optional(),
-  retired: z.boolean().optional(),
-  distance: z.number(),
-});
-
-const DetailedAthleteSchema = BaseAthleteSchema.extend({
-  username: z.string().nullable(),
-  firstname: z.string(),
-  lastname: z.string(),
-  city: z.string().nullable(),
-  state: z.string().nullable(),
-  country: z.string().nullable(),
-  sex: z.enum(["M", "F"]).nullable(),
-  premium: z.boolean(),
-  summit: z.boolean(),
-  created_at: z.string().datetime(),
-  updated_at: z.string().datetime(),
-  profile_medium: z.string().url(),
-  profile: z.string().url(),
-  weight: z.number().nullable(),
-  measurement_preference: z.enum(["feet", "meters"]).optional().nullable(),
-  /** Functional threshold power in watts; the IF denominator when set. */
-  ftp: z.number().nullable().optional(),
-  // Add other fields as needed (e.g., follower_count, friend_count, clubs)
-  shoes: z.array(AthleteGearSchema).optional(),
-  bikes: z.array(AthleteGearSchema).optional(),
-});
-
-// --- Stats Schemas ---
-// Schema for individual activity totals (like runs, rides, swims)
-const ActivityTotalSchema = z.object({
-  count: z.number().int(),
-  distance: z.number(), // In meters
-  moving_time: z.number().int(), // In seconds
-  elapsed_time: z.number().int(), // In seconds
-  elevation_gain: z.number(), // In meters
-  achievement_count: z.number().int().optional().nullable(), // Optional based on Strava docs examples
-});
-
-// Schema for the overall athlete stats response
-const ActivityStatsSchema = z.object({
-  biggest_ride_distance: z.number().optional().nullable(),
-  biggest_climb_elevation_gain: z.number().optional().nullable(),
-  recent_ride_totals: ActivityTotalSchema,
-  recent_run_totals: ActivityTotalSchema,
-  recent_swim_totals: ActivityTotalSchema,
-  ytd_ride_totals: ActivityTotalSchema,
-  ytd_run_totals: ActivityTotalSchema,
-  ytd_swim_totals: ActivityTotalSchema,
-  all_ride_totals: ActivityTotalSchema,
-  all_run_totals: ActivityTotalSchema,
-  all_swim_totals: ActivityTotalSchema,
-});
-
 // --- Gear Schema ---
 const SummaryGearSchema = z
   .object({
@@ -311,9 +250,6 @@ export type StravaDetailedActivity = z.infer<
 
 // --- Schema Exports for Testing ---
 export {
-  ActivityStatsSchema,
-  AthleteGearSchema,
-  DetailedAthleteSchema,
   ExtendedDetailedActivitySchema as DetailedActivitySchema,
   SummarySegmentSchema,
 };

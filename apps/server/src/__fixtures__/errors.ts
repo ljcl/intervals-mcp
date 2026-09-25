@@ -30,7 +30,7 @@ export function handledRateLimit(
  * Builds the `StravaApiError` shape `handleApiError` throws for a non-429
  * HTTP failure: the interpreted message with the status still attached.
  *
- * The class itself lives in stravaClient.ts, which tool tests
+ * The class itself lives in the Strava client module, which tool tests
  * replace with bare factory mocks, so importing it here would leave the constructor
  * `undefined` under those mocks. `HttpError` from the fetch layer is what the
  * tools' error helper tests `instanceof` against, and it is the base

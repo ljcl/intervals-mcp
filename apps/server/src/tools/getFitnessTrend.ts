@@ -337,6 +337,13 @@ export const getFitnessTrendTool = {
               }
             : null;
 
+        // Days between the most recent day with recorded CTL/ATL and today:
+        // wellness that has not synced yet, not a zero-load day. Always the
+        // trailing slice of `gapDates` below, so it is folded into that one
+        // warning rather than reported a second time.
+        const unsyncedDays =
+          seed && asOfDate ? daysBetween(asOfDate, endDate) : 0;
+
         if (seed && asOfDate) {
           const firstProjectedDate = addDays(asOfDate, 1);
           if (targetDate) {
@@ -348,14 +355,13 @@ export const getFitnessTrendTool = {
             );
             projection = [];
             tsbPositiveDate = null;
-          } else {
+          } else if (resolvedProjectDays > 0) {
             // The projection always ends at endDate + resolvedProjectDays,
             // regardless of how far as_of trails endDate: the unsynced days
-            // in between (as_of+1..endDate) are projected as rest and
-            // called out below, then the actual projectDays continue past
-            // endDate; an explicit projectDays always means "N days past
-            // today", not "N days past as_of".
-            const unsyncedDays = daysBetween(asOfDate, endDate);
+            // in between (as_of+1..endDate) are projected as rest, then the
+            // actual projectDays continue past endDate; an explicit
+            // projectDays always means "N days past today", not "N days
+            // past as_of".
             const totalProjectDays = unsyncedDays + resolvedProjectDays;
             const futurePlannedLoads = typedPlannedLoads?.filter(
               (p) => p.date > endDate,
@@ -369,14 +375,14 @@ export const getFitnessTrendTool = {
             projection = projected.days;
             tsbPositiveDate = projected.tsbPositiveDate;
             taper = null;
-
-            if (unsyncedDays > 0) {
-              warnings.push(
-                `Wellness has not synced for ${unsyncedDays} day${unsyncedDays === 1 ? "" : "s"} ` +
-                  `(${firstProjectedDate} to ${endDate}); the projection assumes rest for ` +
-                  `${unsyncedDays === 1 ? "it" : "them"} before continuing forward.`,
-              );
-            }
+          } else {
+            // No projection or planned loads were asked for: leave the
+            // trailing unsynced days as the gap they are, rather than
+            // silently filling them with an assumed-rest projection nothing
+            // requested and the text output would then hide.
+            projection = [];
+            tsbPositiveDate = null;
+            taper = null;
           }
         } else {
           projection = [];
@@ -392,10 +398,18 @@ export const getFitnessTrendTool = {
         source = "intervals.icu";
         if (gapDates.length > 0) {
           const plural = gapDates.length !== 1;
+          const willProject = resolvedProjectDays > 0 && !targetDate;
+          const trailingClause =
+            unsyncedDays > 0
+              ? ` The most recent ${unsyncedDays} ${unsyncedDays === 1 ? "day" : "days"} ` +
+                `(${addDays(asOfDate!, 1)} to ${endDate}) ${unsyncedDays === 1 ? "has" : "have"} not ` +
+                `synced yet${willProject ? `; the projection assumes rest for ${unsyncedDays === 1 ? "it" : "them"} before continuing forward` : ""}.`
+              : "";
           warnings.push(
             `${gapDates.length} of ${days} day${plural ? "s" : ""} in the window ` +
               `have no wellness CTL/ATL recorded; ${plural ? "those are gaps" : "that is a gap"}, ` +
-              `not zero load, and ${plural ? "are" : "is"} left out of the series.`,
+              `not zero load, and ${plural ? "are" : "is"} left out of the series.` +
+              trailingClause,
           );
         }
 

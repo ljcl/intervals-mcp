@@ -8,13 +8,16 @@ Tool names and schemas are a published contract: grants are stored per tool
 identity, so renames or schema reshapes re-prompt every user. See
 [architecture.md](architecture.md#tool-metadata) before changing either.
 
-> **Status.** Tools are being ported from Strava to intervals.icu (Phases 1
-> through 3). Seventeen of the twenty tools below are ported and verified
-> against a real account; `get-fitness-trend`, `get-training-load`, and
-> `update-activity` are ported but not yet live-verified (planned for a
-> later task). Still Strava-backed, and failing with a "not yet ported"
-> error until Phase 4: the remaining `view-*`/`get-*-data` app tools (see
-> [Visualization tools](#visualization-tools)).
+> **Status.** All twenty tools below are ported from Strava to intervals.icu
+> and verified against a real account (Phases 1 through 3 complete;
+> `get-fitness-trend`, `get-training-load`, and `get-running-dynamics` are
+> exercised by `scripts/live-check.ts`, `update-activity`'s write path was
+> verified once, separately, with explicit user approval (see
+> docs/api-notes.md). Still Strava-backed, and failing with a "not yet
+> ported" error until Phase 4: the `activity-chart`, `cadence-trends`, and
+> `route-map` app data handlers (see
+> [Visualization tools](#visualization-tools)); every other app tool below
+> already talks to intervals.icu.
 
 ## intervals.icu tools
 
@@ -353,9 +356,11 @@ keeps the existing text and adds the new text below it, separated by a
 blank line. `gearId` is validated against `list-gear`: an unknown id fails
 and lists the available gear ids and names; a retired gear id is accepted
 with a warning. Gear can be switched but not cleared; intervals.icu ignores
-a null gear id (docs/api-notes.md). `feel` is 1 to 5 on intervals.icu's
-scale, 1 the strongest feeling and 5 the weakest (to be confirmed by a live
-check). A request with nothing left to change after diffing against the
+a null gear id (docs/api-notes.md). Name, description, and RPE writes were
+live-verified 2026-09-25 (docs/api-notes.md); `feel` is 1 to 5 on
+intervals.icu's scale, 1 the strongest feeling and 5 the weakest, but that
+scale was not exercised by the write check and remains an assumption. A
+request with nothing left to change after diffing against the
 current activity reports "no change" and sends no PUT. Any field whose
 re-read value does not match what was sent (e.g. gear not applied) adds a
 warning rather than failing the call.
@@ -402,7 +407,7 @@ so a client needs to grant it before the prompt can write the note.
 ## Tool permissions
 
 Every tool declares MCP annotations so a host can tell reads from writes. The
-32 read tools set `readOnlyHint: true` and `destructiveHint: false`, which is
+33 read tools set `readOnlyHint: true` and `destructiveHint: false`, which is
 the combination clients use to offer a durable "always allow". One tool is a
 write and is expected to keep asking:
 

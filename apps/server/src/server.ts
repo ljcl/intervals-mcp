@@ -383,9 +383,10 @@ interface ToolDef {
 }
 
 /**
- * Every tool implementation. Most are intervals.icu-backed (via
- * intervalsClient.ts); get-training-load, get-fitness-trend, and
- * update-activity still call the transitional stravaClient.ts.
+ * Every tool implementation, all intervals.icu-backed (via
+ * intervalsClient.ts). The transitional stravaClient.ts is called only by
+ * this file's Phase 4 app data handlers (activity-chart, cadence-trends,
+ * route-map), not by any tool.
  */
 const TOOLS = [
   getAthleteStatsTool,

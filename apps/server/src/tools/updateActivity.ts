@@ -41,7 +41,7 @@ Parameters:
 - descriptionMode (optional): "replace" (default) overwrites the existing description; "append" keeps it and adds the new text below it, separated by a blank line. Requires description to also be set
 - gearId (optional): gear id to assign, validated fresh against list-gear; an unknown id fails and lists the available gear ids and names; a retired gear id is accepted with a warning
 - rpe (optional): session RPE, integer 1 to 10, maps to icu_rpe
-- feel (optional): integer 1 to 5; on intervals.icu's scale 1 is the strongest feeling and 5 the weakest (to be confirmed by a live check)
+- feel (optional): integer 1 to 5; on intervals.icu's scale 1 is the strongest feeling and 5 the weakest (assumed; not exercised by the live write check)
 
 At least one of name, description, gearId, rpe, or feel is required.
 Gear can be switched but not cleared: intervals.icu ignores a null gear id.
@@ -92,7 +92,7 @@ const inputSchema = z
       .max(5)
       .optional()
       .describe(
-        "How the activity felt, 1 to 5 on intervals.icu's scale: 1 is the strongest feeling, 5 the weakest (to be confirmed by a live check).",
+        "How the activity felt, 1 to 5 on intervals.icu's scale: 1 is the strongest feeling, 5 the weakest (assumed; not exercised by the live write check).",
       ),
   })
   .superRefine((data, ctx) => {

@@ -74,7 +74,7 @@ const PROMPTS: PromptDefinition[] = [
         "2. Call get-activity-laps if the lap structure looks interesting (intervals, negative split).",
         "3. Draft a 2-3 sentence coaching note: what the session shows, one thing to keep, one thing to adjust.",
         "4. Show me the draft and ask before writing anything.",
-        "5. On my confirmation, append it to the activity description with update-activity (append, not overwrite).",
+        '5. On my confirmation, call update-activity with descriptionMode: "append" to add it below the existing description, not overwrite it.',
       ].join("\n");
     },
   },

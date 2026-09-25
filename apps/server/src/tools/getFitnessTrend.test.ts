@@ -362,8 +362,46 @@ describe("get-fitness-trend execute (whole-body, default)", () => {
     expect(
       structured.projection[structured.projection.length - 1],
     ).toMatchObject({ date: inDays(10), load: 42 });
-    expect(structured.warnings.join(" ")).toContain("has not synced for 1 day");
+    expect(structured.warnings.join(" ")).toContain("The most recent 1 day");
+    expect(structured.warnings.join(" ")).toContain("has not synced yet");
     expect(structured.warnings.join(" ")).toContain("on or before today");
+    // The trailing-gap and general no-wellness-recorded warnings are one
+    // merged message, not two.
+    expect(
+      structured.warnings.filter((w) => w.includes("has not synced")),
+    ).toHaveLength(1);
+    expect(
+      structured.warnings.filter((w) =>
+        w.includes("no wellness CTL/ATL recorded"),
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("leaves the projection empty for an unsynced trailing gap when no projection was requested", async () => {
+    // Wellness has synced through yesterday only; today itself is a gap.
+    // No projectDays and no plannedLoads: resolvedProjectDays is 0, so the
+    // trailing gap must not silently produce a rest-filled projection that
+    // the text output would then hide.
+    mockedWellness.mockResolvedValueOnce([
+      wellnessRow(addDays(TODAY, -1), { ctl: 50, atl: 60 }),
+    ]);
+    mockedListActivities.mockResolvedValueOnce([]);
+
+    const result = await getFitnessTrendTool.execute(
+      { ...DEFAULT_INPUT, days: 2 },
+      "test-key",
+    );
+
+    expect(result.isError).toBeUndefined();
+    const structured = result.structuredContent as {
+      projection: { date: string; load: number }[];
+      warnings: string[];
+    };
+    expect(structured.projection).toHaveLength(0);
+    expect(structured.warnings.join(" ")).toContain("has not synced yet");
+    expect(structured.warnings.join(" ")).not.toContain(
+      "the projection assumes rest",
+    );
   });
 
   it("solves a taper plan to a target date and prints the weekly plan", async () => {

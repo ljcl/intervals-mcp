@@ -39,9 +39,9 @@ breaking them has shipped bugs — do not work around them locally.
   kept) and wraps everything else in `StravaApiError extends HttpError`
   (`stravaClient.ts`) or `IntervalsApiError extends HttpError`
   (`intervalsClient.ts`). `stravaClient.ts` sends no `Authorization` header on
-  purpose (it is retired; Phases 1 through 3 ported seventeen tools off it,
-  leaving only `get-training-load`, `update-activity`, and the remaining
-  Phase 4 app handlers), so every call there gets a 401 wrapped as
+  purpose (it is retired; Phases 1 through 3 ported all twenty text tools
+  off it, leaving only the Phase 4 activity-chart, cadence-trends, and
+  route-map app data handlers), so every call there gets a 401 wrapped as
   `NotPortedError extends HttpError`
   (`fetchClient.ts`) instead of `StravaApiError`, a different type from
   intervals.icu itself rejecting an API key (also a 401), so
@@ -88,9 +88,9 @@ breaking them has shipped bugs — do not work around them locally.
   elsewhere. A missing key maps to one not-configured message naming the env
   var.
 - **intervals.icu reads go through `intervalsClient.ts`; `stravaClient.ts` is
-  transitional.** Phases 1 through 3 ported seventeen tools from the retired
-  Strava client to `intervalsClient.ts`; `get-training-load`,
-  `update-activity`, and the remaining Phase 4 app handlers still call
+  transitional.** Phases 1 through 3 ported all twenty text tools from the
+  retired Strava client to `intervalsClient.ts`; only the Phase 4
+  activity-chart, cadence-trends, and route-map app data handlers still call
   `stravaClient.ts`. Do not add new `stravaClient.ts` callers.
 - **Ids go through `stravaIdInput`** (Strava) or `intervalsActivityIdInput`
   (intervals.icu; accepts an optional `i` prefix, e.g. `i189807578`), both in
