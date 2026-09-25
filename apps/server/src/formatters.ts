@@ -19,6 +19,19 @@ export const STRAVA_STUB_NOTE =
   "stub: details unavailable through the API; use the HealthFit copy.";
 
 /**
+ * The activity's display name: its own `name`, else its `type`, else
+ * "Workout" for an activity with neither. The one home for a fallback every
+ * app/text surface reading an activity's name had its own copy of
+ * (`server.ts`, `activityChartData.ts`, `routeMapData.ts`).
+ */
+export function activityDisplayName(activity: {
+  name?: string | null;
+  type?: string | null;
+}): string {
+  return activity.name ?? activity.type ?? "Workout";
+}
+
+/**
  * Format duration in seconds to HH:MM:SS or MM:SS string.
  */
 export function formatDuration(seconds: number | null | undefined): string {

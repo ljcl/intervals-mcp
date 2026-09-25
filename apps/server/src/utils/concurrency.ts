@@ -1,19 +1,21 @@
 /**
- * Bounded-concurrency scheduling for the scan-style tools.
+ * Bounded-concurrency scheduling for tools that resolve several ids with one
+ * request each.
  *
- * A scan tool makes one Strava request per activity, so a serial loop over
- * the default 100 activities spends 100 sequential round-trips, while an
- * unbounded `Promise.all` spikes the 15-minute quota faster than the fetch
- * layer's backoff can react.
+ * `get-best-efforts` resolves each winning activity's name/race flag with
+ * its own `getActivity` call (up to 30, distances x topN); a serial loop
+ * over that many ids spends that many sequential round-trips, while an
+ * unbounded `Promise.all` fires them all at once with no pacing at all,
+ * ahead of what the fetch layer's own throttle and backoff can smooth out.
  *
- * `get-best-efforts` and `get-race-prediction` both want exactly this shape,
- * so it lives here rather than inside either one. Do not copy it into a
- * tool: a fix then lands in one copy and leaves the other wrong, and neither
- * knip nor Biome can see a genuinely-imported duplicate.
+ * Not tied to any one tool, so it lives here. Do not copy it into a tool: a
+ * fix then lands in one copy and leaves the other wrong, and neither knip
+ * nor Biome can see a genuinely-imported duplicate.
  *
- * The helper stays a pure scheduling primitive — it knows nothing about
- * Strava. Rate-limit policy (what counts as fatal, what to report) belongs to
- * the calling tool, which injects it via `shouldStop`.
+ * The helper stays a pure scheduling primitive: it knows nothing about the
+ * upstream API. Failure policy (what counts as fatal, what to report)
+ * belongs to the calling tool, via its own `catch` around `worker` and,
+ * where it wants an early exit, the optional `shouldStop`.
  */
 
 /**

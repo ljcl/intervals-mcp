@@ -3,11 +3,11 @@ import { smooth } from "./smoothing";
 
 interface Point {
   time: number;
-  value?: number;
+  value?: number | null;
   label?: string;
 }
 
-const points = (values: Array<number | undefined>): Point[] =>
+const points = (values: Array<number | null | undefined>): Point[] =>
   values.map((value, time) => ({ time, value, label: `p${time}` }));
 
 describe("smooth", () => {
@@ -47,5 +47,40 @@ describe("smooth", () => {
     const input = points([5, 15]);
 
     expect(smooth(input, ["value"], 5)).toBe(input);
+  });
+
+  it("excludes null samples from the window average", () => {
+    // A single dropout between two real readings: the window average for
+    // the real points on either side should ignore the null, not treat it
+    // as zero.
+    const result = smooth(points([10, null, 30, 40, 50]), ["value"], 3);
+
+    expect(result[0]?.value).toBeCloseTo(10 / 1);
+    expect(result[3]?.value).toBeCloseTo((30 + 40 + 50) / 3);
+  });
+
+  it("keeps a null point null even when both its neighbours are real", () => {
+    // No fake values: a gap must survive smoothing untouched, not get
+    // filled in from the surrounding real readings.
+    const result = smooth(points([10, null, 30]), ["value"], 3);
+
+    expect(result[1]?.value).toBeNull();
+    // The real neighbours are themselves smoothed as usual, excluding the
+    // null from their own window average.
+    expect(result[0]?.value).toBeCloseTo(10 / 1);
+    expect(result[2]?.value).toBeCloseTo(30 / 1);
+  });
+
+  it("keeps a null point null when its whole window is null", () => {
+    const result = smooth(points([null, null, null, 10, 20]), ["value"], 3);
+
+    expect(result[0]?.value).toBeNull();
+    expect(result[1]?.value).toBeNull();
+  });
+
+  it("leaves a genuinely absent (undefined) key untouched", () => {
+    const result = smooth(points([0, undefined, 20]), ["value"], 3);
+
+    expect(result[1]?.value).toBeUndefined();
   });
 });

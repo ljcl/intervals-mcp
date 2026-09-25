@@ -34,18 +34,20 @@ Related docs: [mcp-apps.md](mcp-apps.md) for the UI packages,
 All rate-limit awareness and backoff lives here — add retry/limit logic here,
 never per-tool.
 
-- Parses Strava's `X-RateLimit-*` / `Retry-After` headers into a snapshot
-  (`stravaApi.getRateLimitSnapshot()`).
+- Parses `X-RateLimit-*` / `Retry-After` headers into a snapshot
+  (`intervalsApi.getRateLimitSnapshot()`); intervals.icu sends none of these
+  today (verified 2026-09-24), so the client paces itself instead of reacting
+  to headers; see "Request pacing" below.
 - Retries 429s honouring `Retry-After` (bounded, so a call never blocks on a
   full 15-minute window).
 - Retries transient 5xx and network faults with bounded exponential backoff —
   GET/HEAD only, never writes.
 - An exhausted-limit 429 surfaces as a structured `RateLimitError`.
-  `handleApiError` (`stravaClient.ts`) turns it into an actionable message
+  `handleApiError` (`intervalsClient.ts`) turns it into an actionable message
   **without flattening it**: the rethrow is still a `RateLimitError` (caller
   context prefixed onto `message`; `detail` remains the bare window description
-  a tool can quote). Every other HTTP failure becomes a
-  `StravaApiError extends HttpError`, so the status survives the translation.
+  a tool can quote). Every other HTTP failure becomes an
+  `IntervalsApiError extends HttpError`, so the status survives the translation.
 - Flattening either into a plain `Error` silently breaks callers that degrade
   on type or status (e.g. scan tools' `instanceof RateLimitError` abort). A
   caller may only degrade on a type or a status that is still there.
@@ -62,19 +64,36 @@ never per-tool.
   errors survive `handleApiError` precisely so callers can branch on them,
   and a message that merely mentions "404" is not a missing record.
 
+## Request pacing
+
+intervals.icu sends no `X-RateLimit-*` or `Retry-After` headers (verified
+2026-09-24), so there is nothing in a response to react to. Instead
+`intervalsApi` (`fetchClient.ts`) enforces `minIntervalMs: 200`: a minimum
+gap between the *start* of consecutive request attempts, shared across
+concurrent callers via a single next-available-slot clock, not a per-caller
+delay. Draft limits (go-live unconfirmed): 5,000 requests/day and 2,500 per
+rolling 15 minutes per key, about 10/s per IP; 200ms spacing stays well under
+that ceiling without needing header feedback.
+
 ## Response cache
 
 `fetchClient.ts` also owns an opt-in TTL + LRU cache
 (`apps/server/src/cache.ts`, `TtlLruCache`) for immutable-ish GETs. Policy
-lives in `stravaCacheTtl`, keyed by request path — add caching there, not
-per-tool.
+lives in `intervalsCacheTtl`, keyed by request path: add caching there, not
+per-tool. Path patterns and current TTLs (`fetchClient.ts`):
 
 | Path | TTL | Rationale |
 | ---- | --- | --------- |
-| Activity streams | 6h | Immutable once the activity is recorded |
-| Detailed activity + laps/zones | 1h | Invalidated on `update-activity` writes |
-| Athlete profile/stats | 5m | Name/weight/gear and totals can drift |
-| `/athlete/activities` | 2m | Cadence-trends, training-load, and fitness-trend pairs each run a full history pagination |
+| `/activity/{id}/streams*` | 10m | Immutable once intervals.icu has processed the activity |
+| `/activity/{id}/intervals` | 10m | Same |
+| `/activity/{id}` | 10m | Invalidated on `update-activity` writes |
+| `/athlete/{id}/gear` | 10m | Rarely changes |
+| `/athlete/{id}/sport-settings/{sport}` | 1h | Rarely changes |
+| `/athlete/{id}/activities` | 1m | A newly recorded activity should show up quickly |
+| `/athlete/{id}/wellness*` | 5m | intervals.icu updates wellness through the day |
+| `/athlete/{id}/pace-curves.json`, `/activity-pace-curves.json` | 10m | Recomputed from history a few times a day at most |
+
+Everything else is left uncached.
 
 - Handlers floor `after`/`before` window bounds to the minute
   (`quantizedEpochAfter`/`quantizedEpochBefore` in `server.ts`) so a pair's two
@@ -118,26 +137,25 @@ per-tool.
 
 ## Streams
 
-Every stream read goes through the `stravaClient.ts` wrapper —
-`getActivityStreams()` — never a bare `stravaApi.get`. It runs through one
-private `fetchStreamSet` core, so the contract is stated once: it validates
-the `[{type, data}]` shape and routes failures through `handleApiError`.
-`stravaClient.ts` itself is transitional (see its module comment): every
-request sends no `Authorization` header, so it always fails with 401, which
-`handleApiError` turns into a message naming the tool as not yet ported to
-intervals.icu; a 429 still gets the structured rate-limit message.
+Every stream read goes through `loadIntervalsStreams` in
+`intervalsStreams.ts`, never a bare `intervalsApi.get`. It calls
+`GET /activity/{id}/streams.json?types=...`, and callers ask for whichever
+stream types their tool or app needs; intervals.icu returns each requested
+type as `{type, data, data2, valueTypeIsArray, ...}` (`latlng` puts latitude
+in `data` and longitude in `data2`; see docs/api-notes.md for the full
+response shape and per-type null patterns from a live probe).
 
-Only a genuine 404 or empty response throws `StreamsUnavailableError` — the
-one error a caller may degrade on ("this resource has no recorded samples").
-It carries `resourceId` + `kind` (`activity`) so the message names what was
-missing. Catching anything broader misreports failures (expired tokens, rate
-limits) as absences.
+Only a genuine 404 or an empty result throws
+`IntervalsStreamsUnavailableError`, the one error a caller may degrade on
+("this resource has no recorded samples"). It carries the activity id so the
+message names what was missing. Catching anything broader misreports other
+failures (auth, rate limits) as absences.
 
 ## Analysis math: one home per definition
 
 **Grade-adjusted pace has one definition.** `hillAnalysis.ts`'s `gapFactor`
-(Minetti) and `computeGrades` (Strava's `grade_smooth`, else an altitude
-window). `splitAnalysis.ts` imports both rather than re-deriving them, along
+(Minetti) and `computeGrades` (intervals.icu's `grade_smooth`, else an
+altitude window). `splitAnalysis.ts` imports both rather than re-deriving them, along
 with `MAX_SAMPLE_GAP_SECONDS` and `POWER_COVERAGE_MIN`, so a hilly split and a
 hilly climb are corrected identically. Its own contribution is the distance
 binner: `binByDistance` accumulates streams into buckets bounded by a
@@ -213,15 +231,16 @@ handler as its second argument. Tools never read
 
 ## Resource ids
 
-Every tool argument naming a Strava id goes through `stravaIdInput`
-(`apps/server/src/tools/_ids.ts`) — never an ad-hoc `z.number()` or
-`z.union([z.number(), z.string()])`.
+Every tool argument naming an activity id goes through
+`intervalsActivityIdInput` (`apps/server/src/tools/_ids.ts`), never an
+ad-hoc `z.number()` or `z.union([z.number(), z.string()])`. It accepts an
+optional `i` prefix (e.g. `i189807578`) and normalises to the digit string.
 
-Strava ids are 64-bit, and some ids (segment efforts, routes) already exceed
-2^53, so an id sent as a JSON number is rounded by the host's `JSON.parse` before
-validation sees it and the true digits are unrecoverable. The schema therefore
-advertises ids as **string only** (`stravaIdJsonSchemaOverride`, applied in
-`toInputSchema`) so a host cannot generate the lossy shape, while still
+Some ids already exceed 2^53, so an id sent as a JSON number is rounded by the
+host's `JSON.parse` before validation sees it and the true digits are
+unrecoverable. The schema therefore advertises ids as **string only**
+(`idJsonSchemaOverride`, applied in `toInputSchema`) so a host cannot generate
+the lossy shape, while still
 accepting a safe-integer number at runtime and normalising every id to its
 digit string. `mcpEndpoint.ts` parses the inbound `/mcp` body with
 `parseJsonWithLargeInts` for the same reason, and handlers pass ids through as
@@ -238,7 +257,7 @@ and lap output schemas, so pace formatting cannot drift between tools that
 report it. `warnOnSchemaDrift` validates every
 payload outside production, so a shape that stops matching its schema is noisy
 in dev rather than silently wrong in a host. `get-activity-zones` deliberately
-reuses `mapActivityZones` — the activity-zones app's mapper — so the text tool
+reuses `mapIntervalsZones` (the activity-zones app's mapper) so the text tool
 and the chart cannot describe different zones. Empty results still emit a valid
 payload (`count: 0`), because a caller branching on `structuredContent` should
 not have to handle "absent" as a third case.

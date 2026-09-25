@@ -1,12 +1,18 @@
 /** Summary data for a single run, returned by get-cadence-trend-data */
 export interface RunSummary {
-  id: number;
+  /** intervals.icu activity id, e.g. "i189807578". */
+  id: string;
   name: string;
+  /** Local calendar date (`YYYY-MM-DD`); read as-is, never through a `Date`
+   * whose own time zone could shift the day. */
   date: string;
   distance: number;
   duration: number;
   averageCadence: number;
-  averagePace: number;
+  /** `null` when the device recorded no speed: never a fabricated 0 min/km.
+   * The run still counts toward cadence-based views; pace-based views
+   * (pace zones, scatter, a11y pace ranges) exclude it. */
+  averagePace: number | null;
   type: string;
 }
 
@@ -14,18 +20,26 @@ export interface RunSummary {
 export interface CadenceTrendData {
   weeks: number;
   activities: RunSummary[];
+  /** Run-type activities in the window with no recorded cadence, left out
+   * of `activities` rather than plotted at a fabricated 0 spm. Optional so
+   * an older feed shape still parses. */
+  excludedNoCadence?: number;
+  /** Runs in `activities` with no recorded speed (`averagePace: null`),
+   * excluded from pace-based views only. Optional so an older feed shape
+   * still parses. */
+  noPaceCount?: number;
 }
 
 /** Stream data for a single run used in overlay view (reuses activity-chart shape) */
 export interface OverlayStreamData {
-  activityId: number;
+  activityId: string;
   activityType: string;
   name: string;
   streams: {
     time?: number[];
     distance?: number[];
-    cadence?: number[];
-    velocity_smooth?: number[];
+    cadence?: (number | null)[];
+    velocity_smooth?: (number | null)[];
   };
 }
 

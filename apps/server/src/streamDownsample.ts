@@ -123,3 +123,81 @@ export function lastValuePerBucket(
     bucketLast(data, start, end),
   );
 }
+
+/**
+ * Fills every `null` in `data` so the result is gap-free: leading nulls take
+ * the first known value, trailing nulls take the last known value, and an
+ * interior run of nulls is linearly interpolated between its neighbours.
+ * Monotonic input (time, cumulative distance) stays monotonic: non-decreasing,
+ * since a flat leading/trailing fill repeats a value rather than decreasing.
+ * A column with no non-null sample at all has nothing to fill from, so it
+ * returns `null` for the whole series rather than fabricating zeros; callers
+ * omit that column instead of publishing a made-up axis.
+ */
+export function fillGaps(data: ReadonlyArray<number | null>): number[] | null {
+  const result: Array<number | null> = data.slice();
+  const n = result.length;
+
+  let first = -1;
+  for (let i = 0; i < n; i += 1) {
+    if (result[i] != null) {
+      first = i;
+      break;
+    }
+  }
+  if (first === -1) return null;
+
+  let last = n - 1;
+  for (let i = n - 1; i >= 0; i -= 1) {
+    if (result[i] != null) {
+      last = i;
+      break;
+    }
+  }
+
+  const firstValue = result[first] as number | null;
+  const lastValue = result[last] as number | null;
+  for (let i = 0; i < first; i += 1) result[i] = firstValue;
+  for (let i = last + 1; i < n; i += 1) result[i] = lastValue;
+
+  let i = first;
+  while (i < last) {
+    if (result[i] != null) {
+      i += 1;
+      continue;
+    }
+    let j = i;
+    while (result[j] == null) j += 1;
+    const prev = result[i - 1] as number;
+    const next = result[j] as number;
+    const span = j - (i - 1);
+    for (let k = i; k < j; k += 1) {
+      const t = (k - (i - 1)) / span;
+      result[k] = prev + (next - prev) * t;
+    }
+    i = j;
+  }
+
+  return result as number[];
+}
+
+/**
+ * The first index in `time` whose value is `>= target`, or the last index
+ * when every sample is below `target` (e.g. an interval that runs to the
+ * recording's end). `time` is assumed sorted ascending: every caller passes
+ * a gap-filled, downsampled time array. Empty `time` returns 0. Shared by
+ * `activityChartData.ts` (interval bands) and `routeMapData.ts` (WORK-end
+ * markers): both remap an intervals.icu interval's `start_time`/`end_time`
+ * onto a downsampled time array whose indices no longer match the raw
+ * stream's.
+ */
+export function indexAtOrAfterTime(
+  time: readonly number[],
+  target: number,
+): number {
+  if (time.length === 0) return 0;
+  for (let i = 0; i < time.length; i += 1) {
+    if ((time[i] as number) >= target) return i;
+  }
+  return time.length - 1;
+}

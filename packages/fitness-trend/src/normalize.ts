@@ -186,6 +186,14 @@ export function buildTrendSubtitle(data: FitnessTrendData): string {
     : base;
 }
 
+/**
+ * "From intervals.icu" / "Computed locally": where `current`/`series` came
+ * from, next to the whole-body/runs-only toggle.
+ */
+export function sourceLabel(data: FitnessTrendData): string {
+  return data.source === "computed" ? "Computed locally" : "From intervals.icu";
+}
+
 /** "35/day, 28% of recent" — one week of the plan, for the plan list. */
 export function formatTaperWeek(week: TaperPlan["weeks"][number]): string {
   const recent =

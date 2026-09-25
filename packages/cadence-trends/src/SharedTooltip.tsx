@@ -14,7 +14,7 @@ interface RunTooltipPayloadItem {
     date?: string;
     distance?: number;
     averageCadence?: number;
-    averagePace?: number;
+    averagePace?: number | null;
     duration?: number;
   };
 }
@@ -42,7 +42,7 @@ export function SharedTooltip({ active, payload }: SharedTooltipProps) {
           unit="spm"
         />
       )}
-      {run.averagePace !== undefined && run.averagePace > 0 && (
+      {run.averagePace != null && run.averagePace > 0 && (
         <TooltipEntry
           color="var(--chart-pace)"
           label="Pace"

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { expect, waitFor } from "storybook/test";
 import {
   annotatedActivity,
+  gappyStreamActivity,
   loopActivity,
   noGeometryActivity,
   streamLoopActivity,
@@ -31,6 +32,15 @@ export const MetricColoredTrack = meta.story({
 export const DarkMetricColoredTrack = meta.story({
   globals: darkGlobals,
   args: { data: streamLoopActivity, basemapEnabled: false },
+});
+
+/**
+ * Task 2: null-safe rendering. Altitude, heartrate, and velocity each carry
+ * their own dropout. The colored track and elevation strip must break at
+ * those gaps instead of drawing a fabricated color or dip.
+ */
+export const GappyStreams = meta.story({
+  args: { data: gappyStreamActivity, basemapEnabled: false },
 });
 
 /**
@@ -70,7 +80,7 @@ export const SwitchColorMetric = meta.story({
 export const GridZoomControls = meta.story({
   args: { data: loopActivity, basemapEnabled: false },
   play: async ({ canvas, userEvent }) => {
-    const map = canvas.getByRole("img", { name: /Golden Gate Park Loop/ });
+    const map = canvas.getByRole("img", { name: /Harbour Loop/ });
     const viewWidth = () =>
       Number(map.getAttribute("viewBox")?.split(" ")[2] ?? Number.NaN);
     const zoomIn = canvas.getByRole("button", { name: "Zoom in" });

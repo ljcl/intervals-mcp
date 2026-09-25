@@ -3,6 +3,7 @@ import { MobileCardShell } from "@intervals-mcp/ui";
 import { expect, fn, waitFor } from "storybook/test";
 import {
   allFailedStreams,
+  gappyStreams,
   mockStreams,
   partiallyFailedStreams,
   partiallyLoadedStreams,
@@ -13,11 +14,11 @@ const noop = () => {};
 
 const meta = preview.meta({ component: OverlayView });
 
-const bothRuns = new Set([10003, 10013]);
+const bothRuns = new Set(["i10003", "i10013"]);
 
 export const EmptyState = meta.story({
   args: {
-    selectedRunIds: new Set<number>(),
+    selectedRunIds: new Set<string>(),
     streams: new Map(),
     requestStream: noop,
     retryStream: noop,
@@ -133,7 +134,7 @@ export const OneRunFailed = meta.story({
     ).toBeVisible();
 
     await userEvent.click(canvas.getByRole("button", { name: "Try again" }));
-    await expect(args.retryStream).toHaveBeenCalledWith(10013);
+    await expect(args.retryStream).toHaveBeenCalledWith("i10013");
   },
 });
 
@@ -155,6 +156,35 @@ export const AllRunsFailed = meta.story({
 
     await userEvent.click(canvas.getByRole("button", { name: "Try again" }));
     await expect(args.retryStream).toHaveBeenCalledTimes(2);
+  },
+});
+
+/**
+ * A run with a mid-run cadence/pace dropout: the line for that run breaks
+ * across the gap instead of bridging it or dipping to a fake zero, while
+ * the intact run keeps drawing normally.
+ */
+export const WithGaps = meta.story({
+  args: {
+    selectedRunIds: bothRuns,
+    streams: gappyStreams,
+    requestStream: noop,
+    retryStream: noop,
+  },
+  play: async ({ canvasElement }) => {
+    // Both runs still draw one <path> each (recharts keeps one path per
+    // <Line>, even with connectNulls off): the gap shows up as a second
+    // "M" (moveto) command inside that path's `d`, splitting it into two
+    // disjoint subpaths instead of bridging across the null samples or
+    // flattening them to zero.
+    await waitFor(() => {
+      const paths = canvasElement.querySelectorAll("path.recharts-line-curve");
+      expect(paths.length).toBe(2);
+      const moveCommandCounts = Array.from(paths).map(
+        (path) => (path.getAttribute("d")?.match(/M/g) ?? []).length,
+      );
+      expect(Math.max(...moveCommandCounts)).toBeGreaterThan(1);
+    });
   },
 });
 

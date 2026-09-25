@@ -58,18 +58,34 @@ export interface FitnessTrendAppData {
    */
   asOf?: string | null;
   /**
-   * Where `current` CTL/ATL came from (mirrors the text tool's `source`).
-   * Always `"intervals.icu"` here: this app is whole-body only. Optional
-   * for the same reason as {@link FitnessTrendAppData.asOf}.
+   * Where `current` CTL/ATL came from (mirrors the text tool's `source`):
+   * `"intervals.icu"` for the whole-body path, `"computed"` for run-only.
+   * Optional for the same reason as {@link FitnessTrendAppData.asOf}.
    */
-  source?: "intervals.icu";
+  source?: "intervals.icu" | "computed";
+  /** True when `series`/`current` are the run-only (computed) scope. */
+  runOnly?: boolean;
+  /** Activity types the series' load covers (whole-body: with nonzero load; run-only: the run types). */
+  activityTypesIncluded?: string[];
+  /** Notes worth surfacing alongside the chart (gaps, computed-locally disclaimer, etc). */
+  warnings?: string[];
 }
 
 export interface FitnessTrendAppMeta {
   /** Lookback window the caller asked for. */
   days: number;
+  /** Count of activities within the window whose load fed the series. */
   activitiesIncluded: number;
+  /** Count of activities within the window with no usable load, excluded from the series. */
   activitiesMissingLoad: number;
+  /** Defaults to `"intervals.icu"`, the app's original (whole-body only) behavior. */
+  source?: "intervals.icu" | "computed";
+  /** Defaults to false. */
+  runOnly?: boolean;
+  /** Activity types the series' load covers; see {@link FitnessTrendAppData.activityTypesIncluded}. */
+  activityTypesIncluded?: string[];
+  /** Notes worth surfacing alongside the chart, carried through onto {@link FitnessTrendAppData.warnings}. */
+  warnings?: string[];
 }
 
 /** Map a computed trend to the app's wire shape. */
@@ -115,6 +131,9 @@ export function mapFitnessTrendApp(
     activitiesIncluded: meta.activitiesIncluded,
     activitiesMissingLoad: meta.activitiesMissingLoad,
     asOf: trend.current?.date ?? null,
-    source: "intervals.icu",
+    source: meta.source ?? "intervals.icu",
+    runOnly: meta.runOnly ?? false,
+    activityTypesIncluded: meta.activityTypesIncluded ?? [],
+    warnings: meta.warnings ?? [],
   };
 }

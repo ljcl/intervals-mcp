@@ -161,6 +161,58 @@ export const compareData: CompareData = {
 };
 
 /** HR-only pair (e.g. treadmill without footpod): time axis, single metric. */
+/**
+ * Punches `null` runs into two of a stream's samples, standing in for a
+ * real sensor dropout (GPS loss, HR strap disconnect). Used by
+ * `gappyPair` to verify align.ts and the overlay draw gaps rather than
+ * fabricated values.
+ */
+function withGap<K extends keyof ActivityStreamData["streams"]>(
+  data: ActivityStreamData,
+  key: K,
+  fromIndex: number,
+  toIndex: number,
+): ActivityStreamData {
+  const source = data.streams[key];
+  if (!source) return data;
+  const values = [...source] as Array<number | null>;
+  for (let i = fromIndex; i <= toIndex; i += 1) values[i] = null;
+  return {
+    ...data,
+    streams: { ...data.streams, [key]: values },
+  };
+}
+
+/**
+ * Task 2: null-safe rendering. Two short runs with deliberate gaps in
+ * different streams and at different points on the axis, so the overlay's
+ * two lines break independently instead of interpolating across the drop.
+ * No real coordinates or personal data; every sample is generated.
+ */
+export const gappyPair: [ActivityStreamData, ActivityStreamData] = [
+  withGap(
+    withGap(
+      {
+        ...baselineRun,
+        activityId: "301",
+        name: "Bay Run • Steady (gappy HR)",
+      },
+      "heartrate",
+      20,
+      25,
+    ),
+    "cadence",
+    60,
+    62,
+  ),
+  withGap(
+    { ...raceRun, activityId: "302", name: "Bay Run • Race (gappy pace)" },
+    "velocity_smooth",
+    40,
+    44,
+  ),
+];
+
 export const hrOnlyPair: [ActivityStreamData, ActivityStreamData] = [
   {
     activityId: "201",

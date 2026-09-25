@@ -2,7 +2,7 @@
  * Per-tool-call telemetry.
  *
  * The server ran for months emitting only free-text `console.error`, so there
- * was no way to answer which tool burns the Strava quota, how slow
+ * was no way to answer which tool burns the intervals.icu quota, how slow
  * `get-best-efforts` actually is, or how often calls fail. One structured
  * record per call to stderr answers all three, and a rolling in-memory counter
  * backs the authed `/health` view.

@@ -8,21 +8,16 @@ Tool names and schemas are a published contract: grants are stored per tool
 identity, so renames or schema reshapes re-prompt every user. See
 [architecture.md](architecture.md#tool-metadata) before changing either.
 
-> **Status.** All twenty tools below are ported from Strava to intervals.icu
-> and verified against a real account (Phases 1 through 3 complete;
-> `get-fitness-trend`, `get-training-load`, and `get-running-dynamics` are
-> exercised by `scripts/live-check.ts`; `update-activity`'s write path was
-> verified once, separately, with explicit user approval, see
-> docs/api-notes.md). Still Strava-backed, and failing with a "not yet
-> ported" error until Phase 4: the `activity-chart`, `cadence-trends`, and
-> `route-map` app data handlers (see
-> [Visualization tools](#visualization-tools)); every other app tool below
-> already talks to intervals.icu.
+> **Status.** All twenty tools below talk to intervals.icu directly and are
+> verified against a real account. `get-fitness-trend`, `get-training-load`,
+> and `get-running-dynamics` are exercised by `scripts/live-check.ts`;
+> `update-activity`'s write path was verified once, separately, with
+> explicit user approval, see docs/api-notes.md. Every MCP App tool below
+> (see [Visualization tools](#visualization-tools)) reads intervals.icu
+> streams and activity data through the same adapter; the retired Strava
+> client has been deleted from the codebase (see AGENTS.md).
 
 ## intervals.icu tools
-
-Tools that already talk to intervals.icu directly, rather than through the
-Strava port.
 
 | Tool | Description |
 | ---- | ----------- |
@@ -182,7 +177,24 @@ fields; the pace delta renders as `pace_delta_min_per_km` (signed `m:ss`)
 plus `pace_delta_sec_per_km` (the underlying signed seconds) and
 `pace_delta_interpretation`. A non-running activity on either
 side degrades to a warning rather than failing the call. The app's stream
-overlay (`get-activity-streams-raw`) is still Strava-backed, pending Phase 4.
+overlay (`get-activity-streams-raw`) is intervals.icu-backed (see the
+activity-chart entry below).
+
+`view-activity-chart`/`get-activity-streams-raw` (activity-chart MCP App)
+fetch the activity via `getActivity(apiKey, id, { intervals: true })` and its
+streams via `loadIntervalsStreams`, then share one pure mapper
+(`buildActivityChartData` in `activityChartData.ts`) with the streams-raw
+handler. Streams are jointly downsampled to at most 1,000 points
+(`downsampleColumns`); `time`/`distance` are gap-filled so the chart's axes
+stay monotonic and gap-free, while every other metric (including running
+dynamics: `stance_time`, `vertical_oscillation`, `vertical_ratio`,
+`step_length`) keeps `null` samples for the app to draw as gaps. `laps`
+carries one band per `icu_intervals` entry (WORK/RECOVERY, not device laps),
+with `startIndex`/`endIndex` remapped onto the downsampled `time` array from
+the interval's `start_time`/`end_time`, plus `type` and `label` (both
+nullable) alongside the existing display `name` ("Recovery" for an unlabeled
+RECOVERY interval, else "Lap N"). Cadence stays raw strides/min on the wire;
+the app doubles it client-side for step-cadence activity types.
 
 `get-hill-analysis` and `get-split-analysis` both read their streams through
 the shared intervals.icu stream adapter (`distance`, `altitude`,
@@ -316,9 +328,13 @@ capped at 60) projects TSB forward assuming rest, or `plannedLoads`
 projection count as rest; an entry on or before today, or beyond the
 projection, is ignored and named in a warning) projects with a specific plan
 instead. `targetDate`/`targetTsb` solve a load taper landing on a target
-form, unchanged from before. The `view-fitness-trend`/`get-fitness-trend-data`
-MCP App pair (below) shares this whole-body path (`loadWellnessFitnessSeries`,
-the one home both surfaces build the read series through).
+form, unchanged from before. `get-fitness-trend` and the
+`view-fitness-trend`/`get-fitness-trend-data` MCP App pair (below) share one
+loader (`loadFitnessTrend` in `loadFitnessTrend.ts`) for both the whole-body
+and run-only paths, so the app's `runOnly: true` payload is built the same
+way as the text tool's and the two can never disagree. The app's payload adds
+`source`, `runOnly`, `activityTypesIncluded`, and `warnings` alongside the
+series/projection/taper it already carried.
 
 `get-training-load` reports weekly running volume (distance, time,
 elevation, run count) and the same injury-risk warnings as before
@@ -371,26 +387,39 @@ warning rather than failing the call.
 Each `view-*` MCP App has an app-only `get-*-data` companion that fetches what
 the UI renders. `view-compare-activities`/`get-compare-activities-data`,
 `view-activity-zones`/`get-activity-zones-data`,
-`view-fitness-trend`/`get-fitness-trend-data`, and
-`view-training-load`/`get-training-load-data` are ported to intervals.icu;
-the rest are still Strava-backed, pending Phase 4.
+`view-fitness-trend`/`get-fitness-trend-data`,
+`view-training-load`/`get-training-load-data`, `view-activity-chart`/
+`get-activity-streams-raw`, `view-cadence-trends`/`get-cadence-trend-data`,
+and `view-route-map`/`get-route-map-data` are all ported to intervals.icu.
 
 | Tool | Description |
 | ---- | ----------- |
-| `view-activity-chart` | Interactive chart with HR, power, pace, altitude overlays (MCP App) |
-| `get-activity-streams-raw` | Raw stream data for the activity chart UI (app-only) |
+| `view-activity-chart` | Interactive chart with HR, power, pace, altitude, cadence, grade, and running-dynamics overlays; interval bands (MCP App) |
+| `get-activity-streams-raw` | Downsampled per-sample streams plus interval bands for the activity chart UI (app-only) |
 | `view-cadence-trends` | Interactive cadence trends with timeline, scatter, zones, and overlay views (MCP App) |
 | `get-cadence-trend-data` | Summary cadence/pace data for the cadence trends UI (app-only) |
 | `view-route-map` | Interactive map of an activity's GPS track, fit to bounds with start/finish markers; optional distance-anchored waypoints (MCP App) |
-| `get-route-map-data` | Decoded `[lat, lng]` coordinates plus index-aligned metric streams for the route map UI (app-only) |
+| `get-route-map-data` | `[lat, lng]` coordinates from the activity's latlng stream plus index-aligned metric streams and WORK-interval end markers for the route map UI (app-only) |
 | `view-training-load` | Weekly running-volume bars with a rolling trend line and injury-risk warning weeks (MCP App) |
 | `get-training-load-data` | Per-week volume, trend value, warning flags, weekly load, and current CTL/ATL/TSB for the training-load UI (app-only) |
 | `view-compare-activities` | Interactive overlay of two activities' streams on a shared distance/time axis with a delta summary (MCP App) |
 | `get-compare-activities-data` | Aggregate comparison (summaries, activity2−activity1 differences, efficiency) for the compare-activities UI (app-only) |
 | `view-activity-zones` | Time-in-zone bar chart for one activity's HR zones with an easy/moderate/hard split (power zones dropped for now; see docs/api-notes.md) (MCP App) |
 | `get-activity-zones-data` | Per-zone time distributions (bucket bounds, seconds, percentages) for the activity-zones UI (app-only) |
-| `view-fitness-trend` | CTL/ATL/TSB over time with shaded fatigue/freshness/ramp bands and a dashed taper plan or rest projection past today (MCP App) |
-| `get-fitness-trend-data` | Per-day CTL/ATL/TSB, the projection, the solved taper, and the dated warning bands for the fitness-trend UI (app-only) |
+| `view-fitness-trend` | CTL/ATL/TSB over time with shaded fatigue/freshness/ramp bands and a dashed taper plan or rest projection past today; a Whole body/Runs only toggle switches scope, caching each side (MCP App) |
+| `get-fitness-trend-data` | Per-day CTL/ATL/TSB, the projection, the solved taper, and the dated warning bands for the fitness-trend UI; `runOnly` switches between whole-body (intervals.icu wellness) and run-only (computed) (app-only) |
+
+Every `*-data` app-only tool reads intervals.icu streams through
+`loadIntervalsStreams` (see docs/architecture.md#streams) and downsamples to
+about 1,000 points for the chart and route-map payloads. The gap-free axes
+(time, distance, and route-map lat/lng) are filled before downsampling so
+every downstream lookup stays valid; every other metric keeps `null` samples
+as `null`, and the chart draws a gap rather than a fabricated zero or spike.
+This matters most for the running-dynamics overlays (stance time, vertical
+oscillation/ratio, step length), which have interior gaps mid-run, not just
+leading/trailing ones (see docs/api-notes.md). `get-cadence-trend-data`
+leaves runs with no recorded cadence out of its run list rather than
+plotting them at zero.
 
 ## Prompts
 

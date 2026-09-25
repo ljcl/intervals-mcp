@@ -1,6 +1,8 @@
 import preview, { darkGlobals } from "@intervals-mcp/design-system/preview";
 import { MobileCardShell } from "@intervals-mcp/ui";
 import { expect, waitFor } from "storybook/test";
+import { dynamicsRun } from "./__fixtures__/dynamics-run";
+import { gappyRun } from "./__fixtures__/gappy-run";
 import { manualEntry, timeOnlyRecording } from "./__fixtures__/manual-entry";
 import { poolSwim } from "./__fixtures__/pool-swim";
 import { tempoRun } from "./__fixtures__/tempo-run";
@@ -116,6 +118,40 @@ export const DarkPoolSwim = meta.story({
     meta: extractMeta(poolSwim),
     laps: toLapData(poolSwim),
   },
+});
+
+/**
+ * Task 2: null-safe rendering. Synthetic run with deliberate gaps in
+ * heartrate, velocity (pace), cadence, and altitude. The lines must break
+ * at each gap instead of drawing a fabricated zero, spike, or interpolated
+ * value, and the Recovery band (null distance) must still shade correctly.
+ */
+export const GappyRun = meta.story({
+  args: {
+    data: toChartData(gappyRun),
+    meta: extractMeta(gappyRun),
+    laps: toLapData(gappyRun),
+  },
+});
+
+export const GappyRunMobile = meta.story({
+  args: {
+    data: toChartData(gappyRun),
+    meta: extractMeta(gappyRun),
+    laps: toLapData(gappyRun),
+    mode: "mobile",
+  },
+  globals: {
+    viewport: { value: "claudeIosCard" },
+  },
+  parameters: { layout: "fullscreen" },
+  decorators: [
+    (StoryFn) => (
+      <MobileCardShell>
+        <StoryFn />
+      </MobileCardShell>
+    ),
+  ],
 });
 
 export const MobileRun = meta.story({
@@ -305,6 +341,108 @@ export const BrushZoom = meta.story({
     await userEvent.click(formPill);
     await waitFor(() =>
       expect(canvasElement.querySelector(".recharts-brush")).not.toBeNull(),
+    );
+  },
+});
+
+/**
+ * Task 3: running-dynamics overlays. The "Form" preset draws ground contact
+ * time, vertical oscillation, vertical ratio, and step length alongside
+ * cadence/pace/heart rate, each on its own hidden Y axis (the scales differ
+ * too widely to share one). The <desc> narration switches from a min-max
+ * range to an average for these four, and the legend offers all four only
+ * because `dynamicsRun` recorded them: an activity without dynamics never
+ * offers them at all.
+ */
+export const RunningDynamicsForm = meta.story({
+  args: {
+    data: toChartData(dynamicsRun),
+    meta: extractMeta(dynamicsRun),
+    laps: toLapData(dynamicsRun),
+  },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    await waitFor(() =>
+      expect(canvas.getByRole("button", { name: "Form" })).toBeInTheDocument(),
+    );
+    await userEvent.click(canvas.getByRole("button", { name: "Form" }));
+
+    const descText = () =>
+      canvasElement.querySelector("desc")?.textContent ?? "";
+    await waitFor(() =>
+      expect(descText()).toContain("Ground contact time averages"),
+    );
+    expect(descText()).toContain("Vertical oscillation averages");
+    expect(descText()).toContain("Vertical ratio averages");
+    expect(descText()).toContain("Step length averages");
+
+    await expect(
+      canvas.getByRole("button", { name: "Toggle Ground Contact Time" }),
+    ).toBeVisible();
+    await expect(
+      canvas.getByRole("button", { name: "Toggle Vertical Oscillation" }),
+    ).toBeVisible();
+    await expect(
+      canvas.getByRole("button", { name: "Toggle Vertical Ratio" }),
+    ).toBeVisible();
+    await expect(
+      canvas.getByRole("button", { name: "Toggle Step Length" }),
+    ).toBeVisible();
+
+    // Every dynamics axis is `hide`, so none of them render: only the
+    // left/right visible axes exist, no matter how many series are drawn.
+    expect(
+      canvasElement.querySelectorAll(".recharts-yAxis").length,
+    ).toBeLessThanOrEqual(2);
+  },
+});
+
+export const RunningDynamicsFormMobile = meta.story({
+  args: {
+    data: toChartData(dynamicsRun),
+    meta: extractMeta(dynamicsRun),
+    laps: toLapData(dynamicsRun),
+    mode: "mobile",
+  },
+  globals: {
+    viewport: { value: "claudeIosCard" },
+  },
+  parameters: { layout: "fullscreen" },
+  decorators: [
+    (StoryFn) => (
+      <MobileCardShell>
+        <StoryFn />
+      </MobileCardShell>
+    ),
+  ],
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    await waitFor(() =>
+      expect(canvas.getByRole("button", { name: "Form" })).toBeInTheDocument(),
+    );
+    await userEvent.click(canvas.getByRole("button", { name: "Form" }));
+
+    const descText = () =>
+      canvasElement.querySelector("desc")?.textContent ?? "";
+    await waitFor(() =>
+      expect(descText()).toContain("Ground contact time averages"),
+    );
+
+    // Mobile drops the Smooth control and Grade, but not dynamics; only the
+    // left/right axes are ever visible regardless of screen size: the four
+    // dynamics axes stay hidden, so the narrow card never overlaps axes.
+    expect(
+      canvasElement.querySelectorAll(".recharts-yAxis").length,
+    ).toBeLessThanOrEqual(2);
+
+    // The Form preset's legend carries four dynamics toggles on top of the
+    // usual series; on the narrow mobile card the footer's `flex-wrap: wrap`
+    // (ActivityChart.module.css) must let the legend wrap onto extra rows
+    // rather than overflow horizontally past the card edge.
+    const legendGroup = canvas
+      .getByRole("button", { name: "Toggle Ground Contact Time" })
+      .closest('[role="group"]');
+    expect(legendGroup).not.toBeNull();
+    expect(legendGroup!.scrollWidth).toBeLessThanOrEqual(
+      legendGroup!.clientWidth + 1,
     );
   },
 });

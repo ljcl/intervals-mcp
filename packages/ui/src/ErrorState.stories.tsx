@@ -18,9 +18,9 @@ export const WithRetry = meta.story({
 export const LongMessage = meta.story({
   args: {
     message:
-      "Error: MCP error -32603: Strava API rate limit exceeded. The 15-minute " +
-      "read limit resets at 10:45 UTC; try again after that, or reduce the " +
-      "number of activities requested in a single call.",
+      "Error: MCP error -32603: intervals.icu API rate limit exceeded. The " +
+      "15-minute read limit resets at 10:45 UTC; try again after that, or " +
+      "reduce the number of activities requested in a single call.",
     onRetry: noop,
   },
 });

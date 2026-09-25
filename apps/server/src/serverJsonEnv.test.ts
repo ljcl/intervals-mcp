@@ -73,8 +73,8 @@ describe("server.json environmentVariables", () => {
   it("lists every variable the server reads (or the read is exempt, with a reason)", () => {
     const reads = envReads();
     // A broken walk or regex finding nothing must not pass vacuously: the
-    // server reads at least the Strava credentials, the auth token, and the
-    // port.
+    // server reads at least the intervals.icu credentials, the auth token,
+    // and the port.
     expect(reads.size).toBeGreaterThanOrEqual(8);
 
     const documented = new Set(manifestVariables());

@@ -47,6 +47,43 @@ describe("buildElevationProfile", () => {
     expect(profile.areaPath.endsWith("Z")).toBe(true);
     expect(profile.areaPath).toContain(` ${OPTS.height} `);
   });
+
+  it("breaks the line at a null sample instead of connecting across it", () => {
+    const profile = buildElevationProfile([10, null, 30], undefined, OPTS)!;
+    // Two disjoint segments (one "M" each) rather than one continuous line.
+    expect(profile.linePath.match(/M/g)?.length).toBe(2);
+    expect(profile.linePath.match(/L/g)).toBeNull();
+    // The gap sample is excluded from the altitude domain.
+    expect(profile.min).toBe(10);
+    expect(profile.max).toBe(30);
+  });
+
+  it("keeps ys null at a gap sample instead of a fabricated midline value", () => {
+    const profile = buildElevationProfile([10, null, 30], undefined, OPTS)!;
+    expect(profile.ys[0]).not.toBeNull();
+    expect(profile.ys[1]).toBeNull();
+    expect(profile.ys[2]).not.toBeNull();
+  });
+
+  it("returns null when every sample is a gap", () => {
+    expect(buildElevationProfile([null, null], undefined, OPTS)).toBeNull();
+  });
+
+  it("closes each contiguous segment of the area fill separately, with no bridge across a gap", () => {
+    const profile = buildElevationProfile([10, null, 30, 40], undefined, OPTS)!;
+
+    expect(profile.linePath).toBe("M0 60 M400 25.33 L600 8");
+    expect(profile.areaPath).toBe(
+      "M0 60 L0 60 L0 60 Z M400 25.33 L600 8 L600 60 L400 60 Z",
+    );
+    // Two independently closed subpaths, one per contiguous run of real
+    // samples, instead of one fill spanning the whole strip and shading the
+    // gap as if it were real data.
+    expect(profile.areaPath.match(/Z/g)?.length).toBe(2);
+    // The null sample's own x position (200) never appears: nothing fills
+    // across it.
+    expect(profile.areaPath).not.toContain("200");
+  });
 });
 
 describe("nearestXIndex", () => {

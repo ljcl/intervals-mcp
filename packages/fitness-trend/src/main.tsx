@@ -12,11 +12,12 @@ import { type useApp } from "@modelcontextprotocol/ext-apps/react";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
-import { type FitnessTrendData } from "./types";
+import { type FitnessTrendBaseArgs, type FitnessTrendData } from "./types";
 import "./global.css";
 
 interface ToolArgs {
   days?: number;
+  runOnly?: boolean;
   projectDays?: number;
   targetDate?: string;
   targetTsb?: number;
@@ -37,14 +38,20 @@ interface AppContentProps {
 }
 
 function AppContent({ app, toolArgs, hostCtx, mode }: AppContentProps) {
+  const baseArgs: FitnessTrendBaseArgs = {
+    days: toolArgs.days ?? 90,
+    projectDays: toolArgs.projectDays ?? 14,
+    ...(toolArgs.targetDate ? { targetDate: toolArgs.targetDate } : {}),
+    ...(toolArgs.targetTsb !== undefined
+      ? { targetTsb: toolArgs.targetTsb }
+      : {}),
+  };
+  const initialRunOnly = toolArgs.runOnly ?? false;
+
   const { data, loading, error, progress, retry } =
     useServerToolData<FitnessTrendData>(app, "get-fitness-trend-data", {
-      days: toolArgs.days ?? 90,
-      projectDays: toolArgs.projectDays ?? 14,
-      ...(toolArgs.targetDate ? { targetDate: toolArgs.targetDate } : {}),
-      ...(toolArgs.targetTsb !== undefined
-        ? { targetTsb: toolArgs.targetTsb }
-        : {}),
+      ...baseArgs,
+      runOnly: initialRunOnly,
     });
 
   return (
@@ -57,7 +64,13 @@ function AppContent({ app, toolArgs, hostCtx, mode }: AppContentProps) {
           onRetry={retry}
         />
       ) : (
-        <App app={app} data={data} mode={mode} />
+        <App
+          app={app}
+          data={data}
+          baseArgs={baseArgs}
+          initialRunOnly={initialRunOnly}
+          mode={mode}
+        />
       )}
     </AppShell>
   );

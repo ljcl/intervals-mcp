@@ -18,9 +18,11 @@ export class HttpError extends Error {
 }
 
 /**
- * A single Strava rate-limit window: how many requests are allowed and how many
- * have been used. Strava reports two windows (15-minute and daily) for both the
- * overall and the read-only quotas.
+ * A single rate-limit window: how many requests are allowed and how many
+ * have been used. The convention this parses (two windows, 15-minute and
+ * daily, for both an overall and a read-only quota) is a third-party API's;
+ * intervals.icu sends none of these headers (verified 2026-09-24), so this
+ * stays dormant for it and is kept generic for any future host that does.
  */
 export interface RateLimitWindow {
   limit: number;
@@ -28,11 +30,12 @@ export interface RateLimitWindow {
 }
 
 /**
- * Snapshot of the rate-limit headers from the most recent Strava response.
+ * Snapshot of the rate-limit headers from the most recent response, when the
+ * upstream API sends them.
  *
- * Strava returns comma-separated `X-RateLimit-Limit` / `X-RateLimit-Usage`
- * (overall) and `X-ReadRateLimit-Limit` / `X-ReadRateLimit-Usage` (read-only)
- * headers, each formatted `"<15-min>,<daily>"`. A `Retry-After` header may also
+ * Parses comma-separated `X-RateLimit-Limit` / `X-RateLimit-Usage` (overall)
+ * and `X-ReadRateLimit-Limit` / `X-ReadRateLimit-Usage` (read-only) headers,
+ * each formatted `"<15-min>,<daily>"`. A `Retry-After` header may also
  * accompany a 429.
  */
 export interface RateLimitSnapshot {
@@ -46,8 +49,8 @@ export interface RateLimitSnapshot {
 }
 
 /**
- * Thrown when Strava returns 429 and we have either exhausted our retries or the
- * window will not reset soon enough to be worth waiting on. Carries the parsed
+ * Thrown when a request answers 429 and we have either exhausted our retries or
+ * the window will not reset soon enough to be worth waiting on. Carries the parsed
  * rate-limit snapshot so callers can surface a structured, actionable message
  * (which window is exhausted, when it resets).
  */
@@ -80,31 +83,9 @@ export class RateLimitError extends HttpError {
 }
 
 /**
- * Thrown by the retired Strava client for every call it makes: that
- * client sends no `Authorization` header on purpose (see its own module
- * comment), so every request answers 401. That 401 means "this tool has not
- * been ported to intervals.icu yet", a completely different situation from
- * intervals.icu itself rejecting an API key, and needs its own type so
- * `toolErrorText` (`tools/_errors.ts`) can tell the two apart by type rather
- * than by re-parsing the message. Lives here, not in the Strava client
- * module, so `tools/_errors.ts` never has to import from it: tool tests mock
- * that module with bare factories, which would leave a class imported
- * from there `undefined`.
- */
-export class NotPortedError extends HttpError {
-  constructor(
-    message: string,
-    response: { status: number; statusText: string; data: string },
-  ) {
-    super(message, response);
-    this.name = "NotPortedError";
-  }
-}
-
-/**
  * Thrown when a request exceeds its timeout and could not be recovered by a
- * retry. Distinct from a generic network fault so callers can say "Strava did
- * not answer in time" rather than surfacing an opaque `TimeoutError`.
+ * retry. Distinct from a generic network fault so callers can say the upstream
+ * API did not answer in time rather than surfacing an opaque `TimeoutError`.
  */
 export class RequestTimeoutError extends Error {
   timeoutMs: number;
@@ -119,7 +100,7 @@ export class RequestTimeoutError extends Error {
 /** HTTP statuses we treat as transient and retry on safe (GET) requests. */
 const TRANSIENT_STATUSES = new Set([500, 502, 503, 504]);
 
-/** Default per-request timeout. Strava's slowest reads land well inside this. */
+/** Default per-request timeout. intervals.icu's slowest reads land well inside this. */
 export const DEFAULT_TIMEOUT_MS = 20_000;
 
 /**
@@ -133,7 +114,7 @@ export function isAbortError(error: unknown): boolean {
   return name === "TimeoutError" || name === "AbortError";
 }
 
-/** Parses Strava's comma-separated `"<15-min>,<daily>"` header pair. */
+/** Parses the rate-limit convention's comma-separated `"<15-min>,<daily>"` header pair. */
 function parsePair(
   limitHeader: string | null,
   usageHeader: string | null,
@@ -177,7 +158,7 @@ export function parseRateLimitHeaders(headers: Headers): RateLimitSnapshot {
   };
 }
 
-/** Next quarter-hour boundary (UTC) — when Strava's 15-minute window resets. */
+/** Next quarter-hour boundary (UTC): when a 15-minute rate-limit window resets. */
 function next15MinReset(now: Date): Date {
   const reset = new Date(now);
   const nextQuarter = (Math.floor(now.getUTCMinutes() / 15) + 1) * 15;
@@ -186,7 +167,7 @@ function next15MinReset(now: Date): Date {
   return reset;
 }
 
-/** Next UTC midnight — when Strava's daily window resets. */
+/** Next UTC midnight: when a daily rate-limit window resets. */
 function nextDailyReset(now: Date): Date {
   return new Date(
     Date.UTC(
@@ -238,8 +219,8 @@ export function describeRateLimit(
   } else if (snapshot.shortTerm !== undefined || snapshot.daily !== undefined) {
     // 429 with rate-limit headers present but neither window cleanly
     // exhausted (e.g. the read-only quota, which this snapshot doesn't carry
-    // separately), Strava's 15-minute window is the most likely culprit, and
-    // headers being present at all means this is a Strava response.
+    // separately), the 15-minute window is the most likely culprit, and
+    // headers being present at all means this is a response following that convention.
     const reset = next15MinReset(now);
     const mins = Math.max(
       1,
@@ -251,8 +232,8 @@ export function describeRateLimit(
   } else {
     // No rate-limit headers at all: intervals.icu sends none (see the
     // `intervalsApi` client below) and paces requests itself instead, so
-    // there is no window boundary to report. Guessing at Strava's
-    // quarter-hour reset here would be actively wrong for that provider.
+    // there is no window boundary to report. Guessing at a quarter-hour
+    // reset here would be actively wrong for a provider that paces itself instead.
     parts.push("Rate limit reached; wait a few minutes and retry.");
   }
 
@@ -348,13 +329,16 @@ export interface RetryOptions {
  * Parses a JSON string while preserving integers that exceed
  * `Number.MAX_SAFE_INTEGER` (2^53 - 1).
  *
- * Strava issues 64-bit identifiers; some ids (segment efforts, routes) run
- * well past 2^53, which the default number-based `JSON.parse` silently rounds,
- * corrupting the id before any validation runs (and tripping Zod's safe-integer
- * bound). The reviver's third argument exposes the raw source text for each
- * value (supported by Bun's JavaScriptCore and Node >= 21), so we can detect an
- * unsafe integer and keep its exact digits as a string instead. Downstream id
- * schemas accept string ids, so they round-trip losslessly.
+ * A 64-bit id above 2^53 (the retired Strava client's ids were an example)
+ * would otherwise be silently rounded by the default number-based
+ * `JSON.parse`, corrupting the id before any validation runs (and tripping
+ * Zod's safe-integer bound). The reviver's third argument exposes the raw
+ * source text for each value (supported by Bun's JavaScriptCore and Node >=
+ * 21), so we can detect an unsafe integer and keep its exact digits as a
+ * string instead. intervals.icu's own ids are small, but `mcpEndpoint.ts`
+ * still runs every request body through this seam, so a future oversized id
+ * from any source stays lossless. Downstream id schemas accept string ids,
+ * so they round-trip losslessly.
  *
  * On runtimes that don't expose the source text the reviver is a no-op and
  * parsing falls back to the (lossy) default — same behaviour as before.
@@ -433,7 +417,7 @@ export class FetchClient {
   /**
    * Cacheable GETs currently on the wire, keyed like the cache (full URL).
    * A second identical cacheable GET arriving before the first settles joins
-   * this promise instead of paying Strava again — every MCP App fires its
+   * this promise instead of paying the upstream API again; every MCP App fires its
    * `view-` and `get-…-data` calls together on open, and both miss the cache
    * when they race. Entries are removed on settle; only requests the cache
    * would serve (cacheable path, GET/HEAD, not `skipCache`) ever go here.
@@ -716,7 +700,7 @@ export class FetchClient {
           continue;
         }
         // A write that times out is NOT retried: the request may still have
-        // mutated state on Strava's side. Surface it as a timeout so the caller
+        // mutated state upstream. Surface it as a timeout so the caller
         // can say so rather than reporting an opaque failure.
         throw isAbortError(networkError)
           ? new RequestTimeoutError(url, this.timeoutMs)
@@ -782,7 +766,7 @@ export class FetchClient {
       }
       const contentType = response.headers.get("content-type");
       if (contentType?.includes("application/json")) {
-        // Parse via text so oversized Strava ids survive without precision loss.
+        // Parse via text so oversized ids survive without precision loss.
         return parseJsonWithLargeInts(await response.text()) as T;
       }
       return (await response.text()) as T;
@@ -816,54 +800,6 @@ export class FetchClient {
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
-
-/**
- * Cache TTL policy for Strava GET endpoints, keyed by request path. Returns a
- * TTL in ms for cacheable resources, or `null` to never cache (the default for
- * anything not listed — collection listings and exports, which are paginated,
- * parameterised, or produce a file).
- *
- * Immutable-once-recorded resources (a completed activity's detail, its data
- * streams, and its laps/zones) get long TTLs; identity and aggregate
- * resources that drift (profile, stats) get short ones. Everything under
- * `/activities/{id}` is additionally invalidated
- * whenever the activity is written (see {@link updateActivity}), so those TTLs
- * only bound staleness from edits made outside this server.
- *
- * The short TTLs exist mainly to stop each MCP App paying twice: every app is a
- * `view-` tool plus a `get-…-data` tool running the same loader, so an uncached
- * path costs double the Strava requests for one app open.
- */
-export function stravaCacheTtl(path: string): number | null {
-  // Activity data streams — immutable once the activity is recorded.
-  if (/^\/activities\/\d+\/streams\//.test(path)) return 6 * HOUR_MS;
-  // Detailed activity — immutable-ish; invalidated on update-activity writes.
-  if (/^\/activities\/\d+$/.test(path)) return HOUR_MS;
-  // Laps and zones of a recorded activity — same immutability as the
-  // activity itself, and each is fetched twice per app open.
-  if (/^\/activities\/\d+\/(laps|zones)$/.test(path)) return HOUR_MS;
-  // Authenticated athlete profile — short; name/weight/gear can change.
-  if (path === "/athlete") return 5 * MINUTE_MS;
-  // Athlete stats — short; totals accumulate with each new activity.
-  if (/^\/athletes\/\d+\/stats$/.test(path)) return 5 * MINUTE_MS;
-  // The activity listing behind the cadence-trends, training-load, and
-  // fitness-trend pairs — the three most expensive scans, each a full
-  // pagination at up to a year of history. A bare TTL would hit zero times on
-  // its own: each handler recomputes `after`/`before` from `Date.now()`, so a
-  // pair's two calls built two URLs. server.ts therefore floors those bounds
-  // to the minute (`quantizedEpochAfter`/`quantizedEpochBefore`), making a
-  // pair share one key; this TTL then serves the second scan (every cached
-  // page of it) from memory. Short on purpose: a new activity shows up within
-  // two minutes, and no write invalidates this branch. Other listing shapes
-  // (ad-hoc pages, exports) still churn keys and simply miss.
-  if (path === "/athlete/activities") return 2 * MINUTE_MS;
-  return null;
-}
-
-// Create an instance for Strava API
-export const stravaApi = new FetchClient("https://www.strava.com/api/v3", {
-  cache: { ttlForPath: stravaCacheTtl },
-});
 
 /**
  * Cache TTL policy for intervals.icu GET endpoints, keyed by request path.

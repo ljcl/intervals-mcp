@@ -108,6 +108,14 @@ const allTokens = [
       { var: "--chart-altitude", light: "#b8a48c", dark: "#8c7a66" },
       { var: "--chart-cadence", light: "#f97316", dark: "#fb923c" },
       { var: "--chart-grade", light: "#6b7280", dark: "#9ca3af" },
+      { var: "--chart-stance-time", light: "#3c9c0d", dark: "#8cf25a" },
+      {
+        var: "--chart-vertical-oscillation",
+        light: "#0c9769",
+        dark: "#5af2bf",
+      },
+      { var: "--chart-vertical-ratio", light: "#d052e0", dark: "#dc70eb" },
+      { var: "--chart-step-length", light: "#e052a5", dark: "#eb70b8" },
     ],
   },
 ];

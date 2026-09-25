@@ -8,7 +8,6 @@ import {
   parseRateLimitHeaders,
   RateLimitError,
   RequestTimeoutError,
-  stravaCacheTtl,
 } from "./fetchClient";
 
 describe("HttpError", () => {
@@ -494,42 +493,6 @@ describe("FetchClient retry and rate-limit behaviour", () => {
   });
 });
 
-describe("stravaCacheTtl policy", () => {
-  it("caches activity streams the longest (immutable)", () => {
-    expect(stravaCacheTtl("/activities/123/streams/time,heartrate")).toBe(
-      6 * 60 * 60_000,
-    );
-  });
-
-  it("caches detailed activity for an hour", () => {
-    expect(stravaCacheTtl("/activities/123")).toBe(60 * 60_000);
-  });
-
-  it("caches profile and stats briefly", () => {
-    expect(stravaCacheTtl("/athlete")).toBe(5 * 60_000);
-    expect(stravaCacheTtl("/athletes/999/stats")).toBe(5 * 60_000);
-  });
-
-  it("caches an activity's laps and zones like the activity", () => {
-    // #238: each is fetched once by a `view-` tool and again by its
-    // `get-…-data` twin, so an uncached path doubled the cost of one app open.
-    expect(stravaCacheTtl("/activities/123/laps")).toBe(60 * 60_000);
-    expect(stravaCacheTtl("/activities/123/zones")).toBe(60 * 60_000);
-  });
-
-  it("caches the activity listing briefly, so a view-/get-…-data pair costs one scan", () => {
-    // #329: the three listing-driven app pairs each run a full history
-    // pagination; server.ts quantizes their window bounds to the minute so
-    // the pair builds one URL, and this TTL serves the second scan.
-    expect(stravaCacheTtl("/athlete/activities")).toBe(2 * 60_000);
-  });
-
-  it("does not cache listings, exports, or ad-hoc queries", () => {
-    expect(stravaCacheTtl("/athlete/clubs")).toBeNull();
-    expect(stravaCacheTtl("/activities/123/photos")).toBeNull();
-  });
-});
-
 describe("FetchClient response cache", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -660,18 +623,18 @@ describe("FetchClient response cache", () => {
     // value for its whole TTL.
     const fetchMock = vi
       .fn()
-      .mockImplementation(async () => makeResponse('{"id":55}'));
+      .mockImplementation(async () => makeResponse('{"id":"i55"}'));
     vi.stubGlobal("fetch", fetchMock);
 
     const client = new FetchClient("https://example.test", {
       maxRetries: 0,
       sleep: async () => {},
-      cache: { ttlForPath: stravaCacheTtl },
+      cache: { ttlForPath: intervalsCacheTtl },
     });
 
-    await client.get("/activities/55");
-    await client.put("/activities/55/laps", { note: "edited" });
-    await client.get("/activities/55");
+    await client.get("/activity/i55");
+    await client.put("/activity/i55/intervals", { note: "edited" });
+    await client.get("/activity/i55");
 
     // 1 initial GET + 1 write + 1 re-fetch: the write dropped the parent.
     expect(fetchMock).toHaveBeenCalledTimes(3);
@@ -686,16 +649,18 @@ describe("FetchClient response cache", () => {
     const client = new FetchClient("https://example.test", {
       maxRetries: 0,
       sleep: async () => {},
-      cache: { ttlForPath: stravaCacheTtl },
+      cache: { ttlForPath: intervalsCacheTtl },
     });
 
-    // The same quantized window a view-/get-…-data pair builds seconds apart.
-    const params = { page: 1, per_page: 200, after: 1_700_000_040 };
-    await client.get("/athlete/activities", { params });
-    await client.get("/athlete/activities", { params });
+    // The same calendar-date window a view-/get-…-data pair builds seconds
+    // apart (server.ts's handlers build `oldest`/`newest` from `todayLocal`,
+    // already identical for calls that land the same day).
+    const params = { oldest: "2026-08-01", newest: "2026-08-19" };
+    await client.get("/athlete/0/activities", { params });
+    await client.get("/athlete/0/activities", { params });
     // A different window is a different key and still fetches.
-    await client.get("/athlete/activities", {
-      params: { ...params, after: 1_700_000_100 },
+    await client.get("/athlete/0/activities", {
+      params: { ...params, newest: "2026-08-20" },
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(2);

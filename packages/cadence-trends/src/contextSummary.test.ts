@@ -3,7 +3,7 @@ import { buildCadenceContextSummary } from "./contextSummary";
 import { type RunSummary } from "./types";
 
 const run = (over: Partial<RunSummary>): RunSummary => ({
-  id: 1,
+  id: "1",
   name: "Run",
   date: "2026-05-01",
   distance: 10000,
@@ -32,12 +32,76 @@ describe("buildCadenceContextSummary", () => {
       weeks: 6,
       activeView: "scatter",
       selectedRuns: [
-        run({ id: 1, name: "Tempo Run", averageCadence: 181.6 }),
-        run({ id: 2, name: "Long Run", averageCadence: 175.9 }),
+        run({ id: "1", name: "Tempo Run", averageCadence: 181.6 }),
+        run({ id: "2", name: "Long Run", averageCadence: 175.9 }),
       ],
     });
     expect(text).toBe(
       "Cadence trends, last 6 weeks. View: cadence vs pace scatter. Comparing: Tempo Run (182 spm), Long Run (176 spm).",
     );
+  });
+
+  it("mentions runs excluded for missing cadence", () => {
+    const text = buildCadenceContextSummary({
+      weeks: 6,
+      activeView: "trend",
+      selectedRuns: [],
+      excludedNoCadence: 3,
+    });
+    expect(text).toBe(
+      "Cadence trends, last 6 weeks. View: trend timeline. No runs selected for comparison. 3 runs with no recorded cadence excluded.",
+    );
+  });
+
+  it("uses the singular form for one exclusion and omits it entirely for zero", () => {
+    expect(
+      buildCadenceContextSummary({
+        weeks: 6,
+        activeView: "trend",
+        selectedRuns: [],
+        excludedNoCadence: 1,
+      }),
+    ).toContain("1 run with no recorded cadence excluded.");
+
+    expect(
+      buildCadenceContextSummary({
+        weeks: 6,
+        activeView: "trend",
+        selectedRuns: [],
+        excludedNoCadence: 0,
+      }),
+    ).not.toContain("excluded");
+  });
+
+  it("mentions runs excluded from pace-based views for missing pace", () => {
+    const text = buildCadenceContextSummary({
+      weeks: 6,
+      activeView: "scatter",
+      selectedRuns: [],
+      noPaceCount: 2,
+    });
+    expect(text).toBe(
+      "Cadence trends, last 6 weeks. View: cadence vs pace scatter. No runs selected for comparison. 2 runs with no recorded pace excluded from pace-based views.",
+    );
+  });
+
+  it("uses the singular form for one no-pace run and omits it entirely for zero", () => {
+    expect(
+      buildCadenceContextSummary({
+        weeks: 6,
+        activeView: "trend",
+        selectedRuns: [],
+        noPaceCount: 1,
+      }),
+    ).toContain("1 run with no recorded pace excluded from pace-based views.");
+
+    expect(
+      buildCadenceContextSummary({
+        weeks: 6,
+        activeView: "trend",
+        selectedRuns: [],
+        noPaceCount: 0,
+      }),
+    ).not.toContain("no recorded pace");
   });
 });

@@ -11,7 +11,7 @@ import {
 import { type OverlayPoint, type RunSummary } from "./types";
 
 const run = (overrides: Partial<RunSummary>): RunSummary => ({
-  id: 1,
+  id: "1",
   name: "Run",
   date: "2026-07-01T06:00:00Z",
   distance: 10,
@@ -39,7 +39,7 @@ function makePoints(
 describe("resampleOverlayRuns", () => {
   it("returns an empty dataset when no run has cadence", () => {
     const rows = resampleOverlayRuns(
-      [{ id: 1, points: makePoints(5, 10, 60, () => undefined) }],
+      [{ id: "1", points: makePoints(5, 10, 60, () => undefined) }],
       "distance",
     );
     expect(rows).toEqual([]);
@@ -51,8 +51,8 @@ describe("resampleOverlayRuns", () => {
   it("keeps each run aligned to its own x values on the shared grid", () => {
     // Fast run: 10 km in 11 points; slow run: 5 km over the same 11 indices.
     // Constant cadences make any misalignment show up as a wrong value.
-    const fast = { id: 1, points: makePoints(11, 10, 40, () => 180) };
-    const slow = { id: 2, points: makePoints(11, 5, 40, () => 160) };
+    const fast = { id: "1", points: makePoints(11, 10, 40, () => 180) };
+    const slow = { id: "2", points: makePoints(11, 5, 40, () => 160) };
 
     const rows = resampleOverlayRuns([fast, slow], "distance", 10);
 
@@ -65,7 +65,7 @@ describe("resampleOverlayRuns", () => {
   it("interpolates linearly between samples", () => {
     // Cadence ramps 100 -> 200 over 0..10 km.
     const run = {
-      id: 7,
+      id: "7",
       points: makePoints(11, 10, 60, (i) => 100 + i * 10),
     };
 
@@ -78,8 +78,8 @@ describe("resampleOverlayRuns", () => {
   // Regression for #110: past a shorter run's end the old merge clamped to
   // its final point, fabricating a flat tail out to the longest run.
   it("leaves shorter runs undefined past their own extent", () => {
-    const long = { id: 1, points: makePoints(11, 10, 60, () => 180) };
-    const short = { id: 2, points: makePoints(11, 5, 30, () => 170) };
+    const long = { id: "1", points: makePoints(11, 10, 60, () => 180) };
+    const short = { id: "2", points: makePoints(11, 5, 30, () => 170) };
 
     const rows = resampleOverlayRuns([long, short], "distance", 10);
 
@@ -92,7 +92,7 @@ describe("resampleOverlayRuns", () => {
   });
 
   it("uses time for the x axis in time mode", () => {
-    const run = { id: 3, points: makePoints(11, 10, 50, () => 175) };
+    const run = { id: "3", points: makePoints(11, 10, 50, () => 175) };
 
     const rows = resampleOverlayRuns([run], "time", 10);
 
@@ -101,17 +101,60 @@ describe("resampleOverlayRuns", () => {
     expect(rows.every((r) => r.cadence_3 !== undefined)).toBe(true);
   });
 
-  it("skips samples without cadence instead of plotting gaps as zero", () => {
-    // Middle sample missing: interpolation bridges its neighbours.
+  it("breaks the series at an interior gap instead of bridging it", () => {
+    // Middle sample missing: the line must not interpolate across it.
     const run = {
-      id: 4,
+      id: "4",
       points: makePoints(5, 4, 20, (i) => (i === 2 ? undefined : 150)),
     };
 
     const rows = resampleOverlayRuns([run], "distance", 8);
 
     const at2km = rows.find((r) => Math.abs((r.x ?? 0) - 2) < 1e-9)!;
-    expect(at2km.cadence_4).toBeCloseTo(150);
+    expect(at2km.cadence_4).toBeUndefined();
+    // Either side of the gap keeps its own real value.
+    const at1km = rows.find((r) => Math.abs((r.x ?? 0) - 1) < 1e-9)!;
+    const at3km = rows.find((r) => Math.abs((r.x ?? 0) - 3) < 1e-9)!;
+    expect(at1km.cadence_4).toBeCloseTo(150);
+    expect(at3km.cadence_4).toBeCloseTo(150);
+  });
+
+  it("leaves a run undefined before its leading gap", () => {
+    // First two samples missing cadence.
+    const run = {
+      id: "5",
+      points: makePoints(5, 4, 20, (i) => (i < 2 ? undefined : 150)),
+    };
+
+    const rows = resampleOverlayRuns([run], "distance", 8);
+
+    const before = rows.filter((r) => (r.x ?? 0) < 2 - 1e-9);
+    expect(before.length).toBeGreaterThan(0);
+    for (const row of before) {
+      expect(row.cadence_5).toBeUndefined();
+    }
+    const at3km = rows.find((r) => Math.abs((r.x ?? 0) - 3) < 1e-9)!;
+    expect(at3km.cadence_5).toBeCloseTo(150);
+  });
+
+  it("leaves a run undefined after its trailing gap instead of extending the line", () => {
+    // Last two samples missing cadence; a longer run keeps the grid going
+    // past that point so the truncation is observable.
+    const run = {
+      id: "6",
+      points: makePoints(5, 4, 20, (i) => (i >= 3 ? undefined : 150)),
+    };
+    const longer = { id: "9", points: makePoints(11, 10, 60, () => 160) };
+
+    const rows = resampleOverlayRuns([run, longer], "distance", 10);
+
+    const after = rows.filter((r) => (r.x ?? 0) > 2 + 1e-9);
+    expect(after.length).toBeGreaterThan(0);
+    for (const row of after) {
+      expect(row.cadence_6).toBeUndefined();
+    }
+    const at1km = rows.find((r) => Math.abs((r.x ?? 0) - 1) < 1e-9)!;
+    expect(at1km.cadence_6).toBeCloseTo(150);
   });
 });
 
@@ -119,9 +162,9 @@ describe("rollingAverage", () => {
   it("averages over the centred window sorted by date, skipping zero cadence", () => {
     const result = rollingAverage(
       [
-        run({ id: 3, date: "2026-07-03", averageCadence: 180 }),
-        run({ id: 1, date: "2026-07-01", averageCadence: 160 }),
-        run({ id: 2, date: "2026-07-02", averageCadence: 0 }), // dropout
+        run({ id: "3", date: "2026-07-03", averageCadence: 180 }),
+        run({ id: "1", date: "2026-07-01", averageCadence: 160 }),
+        run({ id: "2", date: "2026-07-02", averageCadence: 0 }), // dropout
       ],
       3,
     );
@@ -189,6 +232,18 @@ describe("computeZoneStats", () => {
     expect(byLabel.get("Easy")?.count).toBe(1);
     expect(byLabel.get("Moderate")?.count).toBe(0);
   });
+
+  it("excludes a run with no recorded pace instead of coercing null into a zone", () => {
+    const stats = computeZoneStats([
+      run({ averagePace: 4.2, averageCadence: 180 }), // Tempo
+      run({ averagePace: null, averageCadence: 175 }), // no speed, excluded
+    ]);
+
+    const byLabel = new Map(stats.map((s) => [s.zone.label, s]));
+    expect(byLabel.get("Tempo")?.count).toBe(1);
+    const totalCount = stats.reduce((sum, s) => sum + s.count, 0);
+    expect(totalCount).toBe(1);
+  });
 });
 
 describe("linearRegression", () => {
@@ -217,7 +272,7 @@ describe("linearRegression", () => {
 
 describe("toOverlayPoints", () => {
   const overlayData = (activityType: string) => ({
-    activityId: 1,
+    activityId: "1",
     activityType,
     name: "Run",
     streams: {
@@ -244,6 +299,34 @@ describe("toOverlayPoints", () => {
     const points = toOverlayPoints(overlayData("Ride"));
 
     expect(points[0]?.cadence).toBe(85);
+  });
+
+  it("leaves cadence and pace undefined at null samples (leading, interior, trailing)", () => {
+    const points = toOverlayPoints({
+      activityId: "1",
+      activityType: "Run",
+      name: "Run",
+      streams: {
+        time: [0, 60, 120, 180],
+        distance: [0, 250, 500, 750],
+        cadence: [null, 86, null, 87],
+        velocity_smooth: [null, 3.0, null, 3.5],
+      },
+    });
+
+    expect(points).toHaveLength(4);
+    // Leading null.
+    expect(points[0]?.cadence).toBeUndefined();
+    expect(points[0]?.pace).toBeUndefined();
+    // Real values stay real (not coerced to 0 spm or pace 15).
+    expect(points[1]?.cadence).toBe(172); // running cadence doubled
+    expect(points[1]?.pace).toBeCloseTo(1000 / 3.0 / 60, 3);
+    // Interior null.
+    expect(points[2]?.cadence).toBeUndefined();
+    expect(points[2]?.pace).toBeUndefined();
+    // Trailing real value after a null still comes through.
+    expect(points[3]?.cadence).toBe(174);
+    expect(points[3]?.pace).toBeCloseTo(1000 / 3.5 / 60, 3);
   });
 });
 

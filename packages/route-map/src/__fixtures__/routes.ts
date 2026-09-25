@@ -1,32 +1,36 @@
 import { type RouteMapData } from "../types";
 
-/** A loopy activity track (start and finish near each other). */
+/**
+ * A loopy activity track (start and finish near each other). Synthetic:
+ * anchored to the sanitized fixture origin (first point -33.8568, 151.2153,
+ * matching `__fixtures__/intervals/streams.json`), not a real place.
+ */
 const loopCoordinates: Array<[number, number]> = [
-  [37.7694, -122.5107],
-  [37.7705, -122.505],
-  [37.7712, -122.499],
-  [37.7719, -122.493],
-  [37.7724, -122.487],
-  [37.7728, -122.481],
-  [37.7731, -122.475],
-  [37.7726, -122.469],
-  [37.771, -122.466],
-  [37.7688, -122.4665],
-  [37.7672, -122.47],
-  [37.7665, -122.476],
-  [37.7662, -122.482],
-  [37.766, -122.488],
-  [37.7659, -122.494],
-  [37.7661, -122.5],
-  [37.7668, -122.5055],
-  [37.768, -122.5095],
-  [37.7692, -122.5106],
+  [-33.8568, 151.2153],
+  [-33.8557, 151.221],
+  [-33.855, 151.227],
+  [-33.8543, 151.233],
+  [-33.8538, 151.239],
+  [-33.8534, 151.245],
+  [-33.8531, 151.251],
+  [-33.8536, 151.257],
+  [-33.8552, 151.26],
+  [-33.8574, 151.2595],
+  [-33.859, 151.256],
+  [-33.8597, 151.25],
+  [-33.86, 151.244],
+  [-33.8602, 151.238],
+  [-33.8603, 151.232],
+  [-33.8601, 151.226],
+  [-33.8594, 151.2205],
+  [-33.8582, 151.2165],
+  [-33.857, 151.2154],
 ];
 
 export const loopActivity: RouteMapData = {
   source: "activity",
-  id: "1234567890",
-  name: "Golden Gate Park Loop",
+  id: "i1234567890",
+  name: "Harbour Loop",
   activityType: "Run",
   distance: 8230,
   elevationGain: 96,
@@ -95,8 +99,8 @@ const gradeSmooth = altitude.map((a, i) => {
 
 export const streamLoopActivity: RouteMapData = {
   source: "activity",
-  id: "1234567891",
-  name: "Golden Gate Park Tempo",
+  id: "i1234567891",
+  name: "Harbour Tempo",
   activityType: "Run",
   distance: distance[n - 1]!,
   elevationGain: 124,
@@ -120,8 +124,8 @@ export const streamLoopActivity: RouteMapData = {
  */
 export const annotatedActivity: RouteMapData = {
   ...streamLoopActivity,
-  id: "1234567892",
-  name: "Golden Gate Park Race",
+  id: "i1234567892",
+  name: "Harbour Race",
   annotations: {
     laps: [
       { lapIndex: 1, name: "Lap 1", endIndex: Math.floor(n / 3) },
@@ -139,15 +143,15 @@ const waypointIndex = (km: number) => distance.findIndex((d) => d >= km * 1000);
  */
 export const waypointedActivity: RouteMapData = {
   ...streamLoopActivity,
-  id: "1234567893",
-  name: "Golden Gate Park Race Plan",
+  id: "i1234567893",
+  name: "Harbour Race Plan",
   annotations: {
     waypoints: [
       { index: waypointIndex(0.5), km: 0.5, label: "Gel 1", kind: "fuel" },
       {
         index: waypointIndex(1),
         km: 1,
-        label: "Stow Lake climb +30m",
+        label: "Lookout climb +30m",
         kind: "climb",
       },
       {
@@ -166,10 +170,44 @@ export const waypointedActivity: RouteMapData = {
   },
 };
 
+/**
+ * Punches a `null` run into a copy of one metric stream, standing in for a
+ * real sensor dropout (GPS loss, HR strap disconnect). Used by
+ * `gappyStreamActivity` to verify the colored track and elevation strip
+ * both break at the gap instead of drawing a fabricated color or dip.
+ */
+function withStreamGap(
+  values: number[],
+  fromIndex: number,
+  toIndex: number,
+): Array<number | null> {
+  const copy: Array<number | null> = [...values];
+  for (let i = fromIndex; i <= toIndex; i += 1) copy[i] = null;
+  return copy;
+}
+
+/**
+ * Task 2: null-safe rendering. Three streams each carry their own gap at a
+ * different point along the track, so the colored line, elevation strip,
+ * and scrub tooltip all have to tolerate a `null` sample without crashing
+ * or fabricating a value.
+ */
+export const gappyStreamActivity: RouteMapData = {
+  ...streamLoopActivity,
+  id: "i1234567894",
+  name: "Harbour Loop (sensor dropouts)",
+  streams: {
+    ...streamLoopActivity.streams,
+    altitude: withStreamGap(altitude, 30, 40),
+    heartrate: withStreamGap(heartrate, 60, 68),
+    velocity_smooth: withStreamGap(velocity, 90, 95),
+  },
+};
+
 /** An indoor activity with no GPS track, to exercise the empty state. */
 export const noGeometryActivity: RouteMapData = {
   source: "activity",
-  id: "5555555555",
+  id: "i5555555555",
   name: "Treadmill Intervals",
   activityType: "Run",
   distance: 6000,

@@ -135,6 +135,55 @@ sport-settings, fitness-model-events, athlete-summary, and one activity, all aga
 - `GET /athlete/{id}/fitness-model-events` (custom `FITNESS_DAYS`/`SET_FITNESS`/`SET_EFTP` events
   that would change the constants above) returns `[]` on this account.
 
+## Phase 4 probes (2026-09-25 research, streams and map, live read-only, run i189807578)
+
+`GET /activity/{id}/streams.json?types=latlng,velocity_smooth,cadence,heartrate,altitude,distance,time,stance_time,vertical_oscillation,vertical_ratio,step_length,grade_smooth`
+(all 12 requested types), 200, about 201 KB:
+
+- Response order is not request order (observed: time, cadence, heartrate,
+  distance, altitude, latlng, velocity_smooth, grade_smooth, then the
+  dynamics streams). Every item carries `allNull, anomalies, custom, data,
+  data2, name, type, valueType, valueTypeIsArray`; `valueTypeIsArray` is
+  `false` for all 12, including `latlng`.
+- All 12 arrays are aligned at length 2,374 on this run (`latlng`'s `data`
+  and `data2` are both 2,374 too).
+- `time`: 0..2373, 0 nulls, no gaps over 1s on this run (continuous 1 Hz;
+  other runs have auto-pause gaps, see the Phase 1 verified section above).
+- Leading/trailing-only nulls: `cadence` 0, `heartrate` 0; `distance` 2,
+  `altitude` 2, `grade_smooth` 2, `latlng` 2 (both `data` and `data2`), all
+  at indices 0-1; `velocity_smooth` 7 (3 leading, 4 trailing).
+- Dynamics nulls (leading / trailing / interior): `stance_time` 59
+  (18/12/29), `vertical_oscillation` 59 (13/17/29), `vertical_ratio` 77
+  (13/17/47), `step_length` 64 (11/14/39). The interior gaps mean a dynamics
+  overlay must handle mid-run nulls, not just edges, matching the gap policy
+  `activityChartData.ts` and `routeMapData.ts` already apply (null metric
+  samples render as a gap; gap-free axes are filled before downsampling).
+- `grade_smooth` is returned even though this activity's own `stream_types`
+  field does not list it: it is computed on request. `stream_types` also
+  lists `watts`, `torque`, `fixed_altitude` (not requested here).
+- Byte sizes (JSON): `latlng` 49 KB, `grade_smooth` 25 KB, `distance` 19 KB,
+  each dynamics stream 12-17 KB; a 40-minute run is about 200 KB raw, which
+  is why app payloads downsample to about 1,000 points.
+
+`GET /activity/{id}/map`, 200, about 53 KB. Response shape (OpenAPI
+`MapData`): `{bounds, latlngs, route, weather}`. On this run: `bounds` has 2
+pairs; `latlngs` has 2,374 entries, the same resolution as the `latlng`
+stream, with 2 null entries and all others `[lat, lng]` pairs; `route` and
+`weather` are both null. It gives nothing the `latlng` stream does not (same
+resolution, same nulls, no encoded polyline), so `routeMapData.ts` uses the
+stream and does not call `/map`. There is no polyline endpoint anywhere in
+`docs/intervals-openapi.json` (checked by path search for
+map/polyline/gps/latlng): the only geometry endpoints are `/activity/{id}/map`
+above plus athlete `/routes`, `/routes/{route_id}`, `/similarity`. A
+stream-less (manual) activity has no GPS at all; there is no polyline
+fallback to reach for.
+
+`GET /activity/{id}?intervals=true`, 200: `icu_intervals` has 2 entries on
+this run (1 WORK, index 0-2075; 1 RECOVERY, index 2075-2374), both carrying
+`start_index`/`end_index`/`start_time`/`end_time`, `label` null on both,
+`icu_lap_count` 1. There is no polyline/map key on the activity payload
+itself.
+
 ## update-activity live write check (2026-09-25, user-approved, one run)
 
 Controller-run, one write to one activity, approved by the user before running: `update-activity`

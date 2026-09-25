@@ -76,8 +76,9 @@ export function buildKmSplits(distanceStream: number[]): SplitMarker[] {
 }
 
 /**
- * The split markers to render: lap boundaries when the server resolved any
- * (multi-lap activities), kilometre marks otherwise.
+ * The split markers to render: WORK-interval end markers when the server
+ * resolved any, kilometre marks otherwise (e.g. an activity with no
+ * intervals recorded).
  */
 export function buildSplitMarkers(data: RouteMapData): SplitMarker[] {
   const laps = data.annotations?.laps;

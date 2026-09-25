@@ -2,13 +2,15 @@
  * A bounded in-memory cache with per-entry TTL and least-recently-used (LRU)
  * eviction.
  *
- * Strava enforces tight rate limits and many of its resources are effectively
- * immutable once recorded (a completed activity's detail and its data streams
- * never change). Re-fetching them on every tool call burns quota for no benefit
- * — `get-best-efforts` alone fetches full activity detail once per activity (up
- * to 100). This cache lets the HTTP layer (see {@link FetchClient}) serve repeat
- * reads of immutable-ish resources without another round-trip, while bounding
- * memory growth and expiring entries so stale data does not linger forever.
+ * Many intervals.icu resources are effectively immutable once recorded (a
+ * completed activity's detail and its data streams never change), and each
+ * MCP App fires its `view-` and `get-…-data` tools together on open, doubling
+ * the cost of an uncached read. Re-fetching an immutable-ish resource on
+ * every tool call burns quota for no benefit: `get-best-efforts` alone
+ * fetches full activity detail once per activity (up to 100). This cache lets
+ * the HTTP layer (see {@link FetchClient}) serve repeat reads of
+ * immutable-ish resources without another round-trip, while bounding memory
+ * growth and expiring entries so stale data does not linger forever.
  *
  * Ordering: JS `Map` preserves insertion order, so the first key is the
  * least-recently-used. Reads and writes re-insert the touched key to move it to

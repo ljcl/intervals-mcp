@@ -312,9 +312,10 @@ export function RouteMap({
 
     const distanceStream = data.streams?.distance;
     if (!distanceStream || distanceStream.length === 0) {
-      // The polyline fallback has coordinates but no distances, so there is
-      // nothing to measure a kilometre against. Say that rather than guess a
-      // position from the point index, which is only right at constant speed.
+      // A track can have coordinates but no distance stream (the server
+      // didn't get one back), so there is nothing to measure a kilometre
+      // against. Say that rather than guess a position from the point
+      // index, which is only right at constant speed.
       return {
         text: "This track has no recorded distances, so the map cannot be positioned by kilometre. Ask to reset the view instead.",
         isError: true,
@@ -929,14 +930,19 @@ export function RouteMap({
                 stroke="var(--color-border-secondary)"
                 strokeWidth={1}
               />
-              <circle
-                cx={profile.xs[scrubIndex]}
-                cy={profile.ys[scrubIndex]}
-                r={3.5}
-                fill="var(--chart-altitude)"
-                stroke="var(--color-background-primary)"
-                strokeWidth={1.5}
-              />
+              {/* No altitude sample at this index (a gap): skip the dot
+                  rather than place it at a made-up altitude. The line above
+                  still marks the scrub position on the time axis. */}
+              {profile.ys[scrubIndex] != null && (
+                <circle
+                  cx={profile.xs[scrubIndex]}
+                  cy={profile.ys[scrubIndex]}
+                  r={3.5}
+                  fill="var(--chart-altitude)"
+                  stroke="var(--color-background-primary)"
+                  strokeWidth={1.5}
+                />
+              )}
             </>
           )}
         </svg>

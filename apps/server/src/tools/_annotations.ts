@@ -1,7 +1,7 @@
 import { type ToolAnnotations } from "@modelcontextprotocol/server";
 
 /**
- * Read-only tool that calls the Strava API.
+ * Read-only tool that calls the intervals.icu API.
  *
  * `destructiveHint: false` is redundant by the letter of the spec — the field
  * is "meaningful only when readOnlyHint == false" — but it is load-bearing in
@@ -19,7 +19,7 @@ export const READ_ONLY: ToolAnnotations = {
   openWorldHint: true,
 };
 
-/** Overwrites user data on Strava (e.g. update-activity). */
+/** Overwrites user data on intervals.icu (e.g. update-activity). */
 export const WRITE_DESTRUCTIVE: ToolAnnotations = {
   readOnlyHint: false,
   destructiveHint: true,

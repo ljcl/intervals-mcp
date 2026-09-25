@@ -41,7 +41,9 @@ export function toLapData(data: ActivityStreamData): ChartLap[] {
     const startDistance = distArr?.[lap.startIndex] ?? 0;
     const endDistance =
       distArr?.[Math.min(lap.endIndex, (distArr?.length ?? 1) - 1)] ?? 0;
-    const isRest = lap.distance === 0 || /rest/i.test(lap.name);
+    // Keyed off the band's raw type, not the display name ("Recovery" is a
+    // name too) or distance (nullable, and a real recovery can be nonzero).
+    const isRest = lap.type === "RECOVERY";
     const lapDistance = endDistance - startDistance;
     const name = swimming ? formatSwimLapName(lap.name, lapDistance) : lap.name;
     return { name, startTime, endTime, startDistance, endDistance, isRest };
@@ -60,7 +62,8 @@ export function extractMeta(data: ActivityStreamData): ActivityMeta {
 /**
  * Convert raw stream data into ChartDataPoint array for Recharts.
  * - velocity_smooth → pace (min/km) for running, speed (km/h) for cycling
- * - cadence doubled for running (Strava reports half-cycles for running)
+ * - cadence doubled for running (intervals.icu reports strides/min for
+ *   running; see docs/api-notes.md)
  */
 export function toChartData(data: ActivityStreamData): ChartDataPoint[] {
   const { streams } = data;
@@ -86,8 +89,12 @@ export function toChartData(data: ActivityStreamData): ChartDataPoint[] {
     }
 
     if (streams.velocity_smooth?.[i] !== undefined) {
-      const mps = streams.velocity_smooth[i]!;
-      if (running) {
+      const mps = streams.velocity_smooth[i];
+      if (mps == null) {
+        // A missing speed sample is a gap, not a "stopped" reading, so it
+        // must not be capped into a fake 15 min/km (run) / 5 min/100m (swim) spike.
+        point.pace = null;
+      } else if (running) {
         // Convert m/s to min/km (pace). Cap at 15 min/km to avoid spikes when stopped.
         point.pace = mps > 0 ? Math.min(1000 / mps / 60, 15) : 15;
       } else if (swimming) {
@@ -108,19 +115,37 @@ export function toChartData(data: ActivityStreamData): ChartDataPoint[] {
     }
 
     if (streams.cadence?.[i] !== undefined) {
-      const raw = streams.cadence[i]!;
-      // Running cadence: Strava reports strides/min, double for steps/min
-      point.cadence = running ? raw * 2 : raw;
+      const raw = streams.cadence[i];
+      // Running cadence: intervals.icu reports strides/min, double for steps/min.
+      // A null sample must stay null: never become 0 via `null * 2`.
+      point.cadence = raw == null ? null : running ? raw * 2 : raw;
     }
 
     if (streams.grade_smooth?.[i] !== undefined) {
       point.grade = streams.grade_smooth[i];
     }
 
+    if (streams.stance_time?.[i] !== undefined) {
+      point.stanceTime = streams.stance_time[i];
+    }
+
+    if (streams.vertical_oscillation?.[i] !== undefined) {
+      point.verticalOscillation = streams.vertical_oscillation[i];
+    }
+
+    if (streams.vertical_ratio?.[i] !== undefined) {
+      point.verticalRatio = streams.vertical_ratio[i];
+    }
+
+    if (streams.step_length?.[i] !== undefined) {
+      point.stepLength = streams.step_length[i];
+    }
+
     points.push(point);
   }
 
-  // Strip all-zero altitude/grade streams (common in swimming)
+  // Strip all-zero/all-null altitude/grade streams (common in swimming, or
+  // when the device never recorded the metric).
   if (points.length > 0 && points.every((p) => !p.altitude)) {
     for (const p of points) p.altitude = undefined;
   } else if (points.length > 0 && points.every((p) => p.altitude === 0)) {
@@ -142,6 +167,10 @@ const SMOOTH_KEYS: MetricKey[] = [
   "altitude",
   "cadence",
   "grade",
+  "stanceTime",
+  "verticalOscillation",
+  "verticalRatio",
+  "stepLength",
 ];
 
 /**

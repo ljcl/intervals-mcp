@@ -8,8 +8,8 @@ import { type RunSummary } from "./types";
 interface RunSelectListProps {
   /** Candidate runs to choose from (already filtered to those with cadence). */
   runs: RunSummary[];
-  selectedRunIds: Set<number>;
-  onToggleRun: (runId: number) => void;
+  selectedRunIds: Set<string>;
+  onToggleRun: (runId: string) => void;
   /** Overlay comparison cap; matches App's toggleRunSelection guard. */
   maxSelected?: number;
   mode?: "mobile" | "desktop";
@@ -54,7 +54,7 @@ export function RunSelectList({
   if (ordered.length === 0) return null;
 
   const value = ordered.flatMap((r) =>
-    selectedRunIds.has(r.id) ? [String(r.id)] : [],
+    selectedRunIds.has(r.id) ? [r.id] : [],
   );
 
   return (
@@ -82,7 +82,7 @@ export function RunSelectList({
           return (
             <Toggle
               key={run.id}
-              value={String(run.id)}
+              value={run.id}
               pressed={selected}
               disabled={disabled}
               onPressedChange={() => onToggleRun(run.id)}

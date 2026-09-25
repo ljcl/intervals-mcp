@@ -15,14 +15,23 @@ export interface ElevationProfileOptions {
 }
 
 export interface ElevationProfile {
-  /** Open polyline along the elevation samples. */
+  /** Open polyline along the elevation samples; breaks (a new "M") at each
+   * null gap. */
   linePath: string;
-  /** Same polyline closed down to the strip floor, for the area fill. */
+  /**
+   * The same polyline as one or more independently closed subpaths (one per
+   * contiguous non-null run), each dropped to the strip floor for its own
+   * area fill. A gap must not be bridged by a single fill spanning the whole
+   * strip, which would shade the missing stretch as if it were real data.
+   */
   areaPath: string;
   /** X position per sample index (scrub sync with the track). */
   xs: number[];
-  /** Y position per sample index. */
-  ys: number[];
+  /** Y position per sample index; `null` at a gap sample. No fallback
+   * midline: a drawn marker at a null `y` would place it at a made-up
+   * altitude, so callers (scrub dot, waypoint diamonds) skip that index
+   * instead. */
+  ys: Array<number | null>;
   /** Altitude domain in metres. */
   min: number;
   max: number;
@@ -40,7 +49,7 @@ function round(value: number): number {
  * too few samples to draw a line.
  */
 export function buildElevationProfile(
-  altitude: number[],
+  altitude: ReadonlyArray<number | null>,
   distance: number[] | undefined,
   opts: ElevationProfileOptions,
 ): ElevationProfile | null {
@@ -61,24 +70,65 @@ export function buildElevationProfile(
   let min = Infinity;
   let max = -Infinity;
   for (const a of altitude) {
+    if (a == null) continue;
     if (a < min) min = a;
     if (a > max) max = a;
   }
+  // Every sample is a gap: nothing to draw.
+  if (min === Infinity) return null;
+
   const span = max - min;
   const drawable = height - padTop;
+  // `null` for a gap sample: no fabricated altitude to place a marker at,
+  // so `ys` carries the gap through to callers instead of a midline guess.
   const ys = altitude.map((a) =>
-    // A flat profile sits on a midline rather than collapsing to the floor.
-    span > 1e-9 ? padTop + ((max - a) / span) * drawable : height / 2,
+    a == null
+      ? null
+      : // A flat profile sits on a midline rather than collapsing to the floor.
+        span > 1e-9
+        ? padTop + ((max - a) / span) * drawable
+        : height / 2,
   );
 
-  const linePath = xs
-    .map((x, i) => `${i === 0 ? "M" : "L"}${round(x)} ${round(ys[i]!)}`)
-    .join(" ");
-  const areaPath = `${linePath} L${round(xs[n - 1]!)} ${height} L${round(
-    xs[0]!,
-  )} ${height} Z`;
+  // Break at gaps: group samples into contiguous non-null segments, each
+  // drawn (and, for the area fill, closed) independently, so a gap neither
+  // connects across as a fabricated line nor gets shaded as if it were real.
+  let linePath = "";
+  let areaPath = "";
+  let segment: Array<{ x: number; y: number }> = [];
 
-  return { linePath, areaPath, xs, ys, min, max };
+  const flushSegment = () => {
+    if (segment.length === 0) return;
+    const linePart = segment
+      .map((p, j) => `${j === 0 ? "M" : "L"}${round(p.x)} ${round(p.y)}`)
+      .join(" ");
+    linePath += (linePath ? " " : "") + linePart;
+    const first = segment[0]!;
+    const last = segment[segment.length - 1]!;
+    areaPath +=
+      (areaPath ? " " : "") +
+      `${linePart} L${round(last.x)} ${height} L${round(first.x)} ${height} Z`;
+    segment = [];
+  };
+
+  for (let i = 0; i < n; i += 1) {
+    const y = ys[i];
+    if (y == null) {
+      flushSegment();
+      continue;
+    }
+    segment.push({ x: xs[i]!, y });
+  }
+  flushSegment();
+
+  return {
+    linePath,
+    areaPath,
+    xs,
+    ys,
+    min,
+    max,
+  };
 }
 
 /** Index of the sample whose x position is closest to `x`. -1 when empty. */

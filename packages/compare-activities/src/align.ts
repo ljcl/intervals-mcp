@@ -27,11 +27,12 @@ export function paceMetricUnit(category: PaceCategory): string {
   return category === "run" ? "min/km" : category === "swim" ? "/100m" : "km/h";
 }
 
-/** Per-sample metric values, index-aligned with the `time`/`distance` axes. */
+/** Per-sample metric values, index-aligned with the `time`/`distance` axes.
+ * `null` is a genuine gap in the recording (kept, not fabricated). */
 export interface MetricSeries {
   time: number[];
   distance?: number[];
-  values: Partial<Record<MetricKey, Array<number | undefined>>>;
+  values: Partial<Record<MetricKey, Array<number | null>>>;
 }
 
 /**
@@ -57,6 +58,9 @@ export function toMetricSeries(
 
   if (streams.velocity_smooth?.length === len) {
     series.values.pace = streams.velocity_smooth.map((mps) => {
+      // A missing speed sample is a gap, not a "stopped" reading, so it
+      // must not be capped into a fake pace/speed spike.
+      if (mps == null) return null;
       if (category === "run") {
         return mps > 0 ? Math.min(1000 / mps / 60, 15) : 15;
       }
@@ -75,11 +79,14 @@ export function toMetricSeries(
   }
   if (streams.cadence?.length === len) {
     const doubled = isRunning(data.activityType);
-    series.values.cadence = streams.cadence.map((c) => (doubled ? c * 2 : c));
+    // A null sample must stay null: never become 0 via `null * 2`.
+    series.values.cadence = streams.cadence.map((c) =>
+      c == null ? null : doubled ? c * 2 : c,
+    );
   }
   if (
     streams.altitude?.length === len &&
-    streams.altitude.some((a) => a !== 0)
+    streams.altitude.some((a) => a != null && a !== 0)
   ) {
     series.values.altitude = streams.altitude;
   }
@@ -99,8 +106,8 @@ const METRIC_ORDER: MetricKey[] = [
 export function sharedMetrics(a: MetricSeries, b: MetricSeries): MetricKey[] {
   return METRIC_ORDER.filter(
     (key) =>
-      a.values[key]?.some((v) => v !== undefined) &&
-      b.values[key]?.some((v) => v !== undefined),
+      a.values[key]?.some((v) => v != null) &&
+      b.values[key]?.some((v) => v != null),
   );
 }
 
@@ -115,11 +122,13 @@ export function sharedAxes(a: MetricSeries, b: MetricSeries): AxisKey[] {
 /**
  * Linear interpolation over a monotonically non-decreasing x array. Returns
  * undefined outside the sampled domain (so a shorter activity's line ends
- * instead of extrapolating) or when a bracketing value is missing.
+ * instead of extrapolating) or when a bracketing value is missing,
+ * including a real recorded gap (`null`), which must not be interpolated
+ * across into a fabricated value.
  */
 function interpolate(
   xs: number[],
-  vs: Array<number | undefined>,
+  vs: Array<number | null | undefined>,
   x: number,
 ): number | undefined {
   const len = xs.length;
@@ -135,7 +144,7 @@ function interpolate(
 
   const v0 = vs[lo];
   const v1 = vs[hi];
-  if (v0 === undefined || v1 === undefined) return undefined;
+  if (v0 == null || v1 == null) return undefined;
   const dx = xs[hi]! - xs[lo]!;
   if (dx <= 0) return v0;
   return v0 + ((v1 - v0) * (x - xs[lo]!)) / dx;

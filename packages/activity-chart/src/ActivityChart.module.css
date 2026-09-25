@@ -18,7 +18,11 @@
 .chartArea[data-hovered="pace"] .seriesPace,
 .chartArea[data-hovered="altitude"] .seriesAltitude,
 .chartArea[data-hovered="cadence"] .seriesCadence,
-.chartArea[data-hovered="grade"] .seriesGrade {
+.chartArea[data-hovered="grade"] .seriesGrade,
+.chartArea[data-hovered="stanceTime"] .seriesStanceTime,
+.chartArea[data-hovered="verticalOscillation"] .seriesVerticalOscillation,
+.chartArea[data-hovered="verticalRatio"] .seriesVerticalRatio,
+.chartArea[data-hovered="stepLength"] .seriesStepLength {
   opacity: 1;
 }
 
