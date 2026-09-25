@@ -288,7 +288,7 @@ export function gradeConfidence(
   if (stretch > 2) {
     demoteTo("low");
     notes.push(
-      `Extrapolated ${stretch.toFixed(1)}× beyond your longest recorded effort (${round1(longestSource / 1000)} km) — Riegel over-predicts across gaps this wide.`,
+      `Extrapolated ${stretch.toFixed(1)}× beyond your longest recorded effort (${round1(longestSource / 1000)} km): Riegel over-predicts across gaps this wide.`,
     );
   } else if (stretch > 1.3) {
     demoteTo("medium");
@@ -301,7 +301,7 @@ export function gradeConfidence(
   if (primary.ageDays > 180) {
     demoteTo("low");
     notes.push(
-      `The effort driving this estimate is ${primary.ageDays} days old — it reflects fitness from ${primary.source.date}, not today.`,
+      `The effort driving this estimate is ${primary.ageDays} days old: it reflects fitness from ${primary.source.date}, not today.`,
     );
   } else if (primary.ageDays > RECENT_WINDOW_DAYS) {
     demoteTo("medium");
@@ -324,7 +324,7 @@ export function gradeConfidence(
     if (rangePct > 25) {
       demoteTo("low");
       notes.push(
-        `Your efforts disagree by ${Math.round(rangePct)}% at this distance — speed and endurance are out of step, so the consensus hides a real range.`,
+        `Your efforts disagree by ${Math.round(rangePct)}% at this distance: speed and endurance are out of step, so the consensus hides a real range.`,
       );
     } else if (rangePct > 12) {
       demoteTo("medium");

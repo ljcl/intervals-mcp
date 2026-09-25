@@ -3,7 +3,7 @@ import { HttpError, NotPortedError, RateLimitError } from "../fetchClient";
 /**
  * The one home for tool-facing error text.
  *
- * `handleApiError` (the Strava client module) rethrows a 429 as a `RateLimitError`,
+ * `handleApiError` (stravaClient.ts) rethrows a 429 as a `RateLimitError`,
  * a 401 (every call, since that client sends no Authorization header on
  * purpose) as `NotPortedError`, and everything else as `StravaApiError extends
  * HttpError`, precisely so a caller can branch on the type or the status. The
@@ -18,11 +18,11 @@ import { HttpError, NotPortedError, RateLimitError } from "../fetchClient";
  * though it is itself an `HttpError` with status 401: without that ordering
  * every unported tool's "not yet ported" message would be swallowed by the
  * 401/403 branch's "intervals.icu rejected the API key" text, which is wrong:
- * that 401 comes from the Strava client module sending no Authorization
+ * that 401 comes from stravaClient.ts sending no Authorization
  * header on purpose, not from intervals.icu rejecting a real key.
  *
  * Imports come from `../fetchClient` only (including `NotPortedError`, which
- * lives there rather than in the Strava client module for this reason). Tool
+ * lives there rather than in stravaClient.ts for this reason). Tool
  * tests replace that module with bare factory mocks, so anything imported
  * from there would be `undefined` here and `instanceof undefined` throws
  * inside the very catch block meant to report the failure.
@@ -86,7 +86,7 @@ export function toolErrorText(
   }
   if (error instanceof NotPortedError) {
     // Checked before the 401/403 branch below: NotPortedError is an
-    // HttpError with status 401 (the Strava client module sends no
+    // HttpError with status 401 (stravaClient.ts sends no
     // Authorization header on purpose), and that 401 means "not yet ported to
     // intervals.icu", not "intervals.icu rejected the API key". Its own
     // message already says so; nothing to add.

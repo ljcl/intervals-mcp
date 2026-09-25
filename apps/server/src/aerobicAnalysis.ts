@@ -103,15 +103,15 @@ const NP_WINDOW_SECONDS = 30;
 /** Interpretation bands for the decoupling headline. */
 export function interpretDecoupling(pct: number): string {
   if (pct < 0) {
-    return "negative — the second half was more efficient; typical of a gradual warm-up or a strong negative split";
+    return "negative: the second half was more efficient; typical of a gradual warm-up or a strong negative split";
   }
   if (pct < 5) {
-    return "excellent — under +5%, the effort was well within aerobic capacity";
+    return "excellent: under +5%, the effort was well within aerobic capacity";
   }
   if (pct <= 10) {
-    return "moderate — +5–10% drift; sustainable but near the aerobic ceiling for this duration";
+    return "moderate: +5-10% drift; sustainable but near the aerobic ceiling for this duration";
   }
-  return "high — over +10%, the effort exceeded current aerobic capacity for this duration";
+  return "high: over +10%, the effort exceeded current aerobic capacity for this duration";
 }
 
 interface WeightedSample {
@@ -200,7 +200,7 @@ export function computeAerobicAnalysis(
 ): AerobicAnalysis {
   if (!streams.heartrate || streams.heartrate.length === 0) {
     throw new AerobicAnalysisError(
-      "No heart rate stream is available for this activity — decoupling and efficiency need HR data.",
+      "No heart rate stream is available for this activity: decoupling and efficiency need HR data.",
     );
   }
   if (streams.time.length < 2) {
@@ -244,7 +244,7 @@ export function computeAerobicAnalysis(
   const movingSeconds = analysed.reduce((sum, s) => sum + s.weight, 0);
   if (movingSeconds <= 0) {
     throw new AerobicAnalysisError(
-      "No usable moving samples remain after exclusions — the activity may be entirely stopped time, lack HR coverage, or the warm-up exclusion may exceed its length.",
+      "No usable moving samples remain after exclusions: the activity may be entirely stopped time, lack HR coverage, or the warm-up exclusion may exceed its length.",
     );
   }
   if (movingSeconds < MIN_MOVING_SECONDS) {

@@ -304,10 +304,10 @@ export function interpretSplit(
   if (gapDeltaPct === null) {
     const clock =
       shape === "positive"
-        ? `Second half ${pct(deltaPct)} slower than the first — a positive split.`
+        ? `Second half ${pct(deltaPct)} slower than the first: a positive split.`
         : shape === "negative"
-          ? `Second half ${pct(deltaPct)} faster than the first — a negative split.`
-          : `Halves within ${EVEN_SPLIT_PCT}% of each other — an even split.`;
+          ? `Second half ${pct(deltaPct)} faster than the first: a negative split.`
+          : `Halves within ${EVEN_SPLIT_PCT}% of each other: an even split.`;
     return `${clock} No elevation data, so none of this is corrected for terrain.`;
   }
 
@@ -320,31 +320,31 @@ export function interpretSplit(
       // number right above it.
       return terrainPct >= EVEN_SPLIT_PCT
         ? `Second half ${pct(deltaPct)} slower on the clock; the terrain explains ${pct(terrainPct)} of that and the remaining ${pct(gapDeltaPct)} grade-adjusted is fade.`
-        : `Second half ${pct(deltaPct)} slower on the clock and still ${pct(gapDeltaPct)} slower grade-adjusted — that is fade, not terrain.`;
+        : `Second half ${pct(deltaPct)} slower on the clock and still ${pct(gapDeltaPct)} slower grade-adjusted: that is fade, not terrain.`;
     }
     if (gapShape === "even") {
-      return `Second half ${pct(deltaPct)} slower on the clock, but grade-adjusted the halves are within ${EVEN_SPLIT_PCT}% — the slowdown was the terrain, not fade.`;
+      return `Second half ${pct(deltaPct)} slower on the clock, but grade-adjusted the halves are within ${EVEN_SPLIT_PCT}%: the slowdown was the terrain, not fade.`;
     }
-    return `Second half ${pct(deltaPct)} slower on the clock yet ${pct(gapDeltaPct)} faster grade-adjusted — the back half was hillier and you pushed harder into it.`;
+    return `Second half ${pct(deltaPct)} slower on the clock yet ${pct(gapDeltaPct)} faster grade-adjusted: the back half was hillier and you pushed harder into it.`;
   }
 
   if (shape === "even") {
     if (gapShape === "negative") {
-      return `Even split on the clock, ${pct(gapDeltaPct)} faster grade-adjusted — the back half was harder ground held at the same pace.`;
+      return `Even split on the clock, ${pct(gapDeltaPct)} faster grade-adjusted: the back half was harder ground held at the same pace.`;
     }
     if (gapShape === "positive") {
-      return `Even split on the clock, but ${pct(gapDeltaPct)} slower grade-adjusted — the back half was easier ground and it took the same pace to hold it.`;
+      return `Even split on the clock, but ${pct(gapDeltaPct)} slower grade-adjusted: the back half was easier ground and it took the same pace to hold it.`;
     }
-    return `Halves within ${EVEN_SPLIT_PCT}% of each other on the clock and grade-adjusted — evenly paced on even terrain.`;
+    return `Halves within ${EVEN_SPLIT_PCT}% of each other on the clock and grade-adjusted: evenly paced on even terrain.`;
   }
 
   if (gapShape === "negative") {
-    return `Second half ${pct(deltaPct)} faster on the clock and ${pct(gapDeltaPct)} faster grade-adjusted — a real negative split.`;
+    return `Second half ${pct(deltaPct)} faster on the clock and ${pct(gapDeltaPct)} faster grade-adjusted: a real negative split.`;
   }
   if (gapShape === "even") {
-    return `Second half ${pct(deltaPct)} faster on the clock, but grade-adjusted the halves are within ${EVEN_SPLIT_PCT}% — the back half was easier ground rather than a stronger finish.`;
+    return `Second half ${pct(deltaPct)} faster on the clock, but grade-adjusted the halves are within ${EVEN_SPLIT_PCT}%: the back half was easier ground rather than a stronger finish.`;
   }
-  return `Second half ${pct(deltaPct)} faster on the clock yet ${pct(gapDeltaPct)} slower grade-adjusted — a downhill finish, not a stronger one.`;
+  return `Second half ${pct(deltaPct)} faster on the clock yet ${pct(gapDeltaPct)} slower grade-adjusted: a downhill finish, not a stronger one.`;
 }
 
 /** Bin a bucket's altitude change, when altitude was recorded. */
@@ -372,7 +372,7 @@ function elevationGain(bins: Bin[]): number {
 export function computeSplitAnalysis(streams: SplitStreams): SplitAnalysis {
   if (!streams.distance || streams.distance.length < 2 || !streams.time) {
     throw new SplitAnalysisError(
-      "No distance and time streams are available — split analysis needs both.",
+      "No distance and time streams are available: split analysis needs both.",
     );
   }
 
@@ -381,7 +381,7 @@ export function computeSplitAnalysis(streams: SplitStreams): SplitAnalysis {
   const totalM = distance[distance.length - 1]! - distance[0]!;
   if (totalM <= 0) {
     throw new SplitAnalysisError(
-      "The activity covers no distance — there is nothing to split.",
+      "The activity covers no distance: there is nothing to split.",
     );
   }
 
@@ -399,7 +399,7 @@ export function computeSplitAnalysis(streams: SplitStreams): SplitAnalysis {
       };
   if (!hasElevation) {
     warnings.push(
-      "No elevation or grade stream — grade-adjusted pace equals raw pace, so the terrain correction is unavailable.",
+      "No elevation or grade stream: grade-adjusted pace equals raw pace, so the terrain correction is unavailable.",
     );
   }
 
@@ -508,7 +508,7 @@ function buildVerdict(
     second.movingTimeS < MIN_HALF_MOVING_SECONDS
   ) {
     warnings.push(
-      `Each half holds under ${Math.round(MIN_HALF_MOVING_SECONDS / 60)} minutes of moving time — too short for a pacing verdict to mean much.`,
+      `Each half holds under ${Math.round(MIN_HALF_MOVING_SECONDS / 60)} minutes of moving time: too short for a pacing verdict to mean much.`,
     );
     return null;
   }

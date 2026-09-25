@@ -20,7 +20,7 @@ import { CompareActivitiesOutputSchema, warnOnSchemaDrift } from "./outputs";
 const name = "compare-activities";
 
 const description = `
-Compares two intervals.icu running activities side-by-side.
+Compares two intervals.icu running activities side-by-side: per-side metrics, calculated differences, and a pace/HR efficiency analysis. Use it to compare the same route on different days, track fitness progress over time, or compare race efforts.
 
 This tool provides:
 - Key metrics for both activities (pace, HR, cadence, load, running dynamics)

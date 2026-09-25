@@ -34,7 +34,7 @@ them and bins the streams into fixed 1 km splits, reporting per split:
 
 The headline is the two-halves verdict, stated twice: once on the clock and
 once grade-adjusted. A hilly back half slows raw pace with no fade at all, and
-a course that flattens out hides real fade — so the verdict names which of the
+a course that flattens out hides real fade, so the verdict names which of the
 two happened, and reports how many percentage points of the raw change the
 terrain accounts for.
 

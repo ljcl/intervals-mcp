@@ -343,8 +343,12 @@ interface ToolDef {
   _meta?: Record<string, unknown>;
 }
 
-/** All existing Strava tools */
-const STRAVA_TOOLS = [
+/**
+ * Every tool implementation. Most are intervals.icu-backed (via
+ * intervalsClient.ts); get-training-load, get-fitness-trend, and
+ * update-activity still call the transitional stravaClient.ts.
+ */
+const TOOLS = [
   getAthleteStatsTool,
   updateActivityTool,
   getActivityZonesTool,
@@ -366,9 +370,9 @@ const STRAVA_TOOLS = [
   getWellnessTool,
 ] as const;
 
-/** Convert existing tool definitions to low-level TOOLS array */
+/** Converts every tool implementation to the low-level TOOL_DEFS array. */
 function buildToolDefs(): ToolDef[] {
-  const defs: ToolDef[] = STRAVA_TOOLS.map((tool) => {
+  const defs: ToolDef[] = TOOLS.map((tool) => {
     const t = tool as {
       name: string;
       description: string;
@@ -596,10 +600,10 @@ function buildToolDefs(): ToolDef[] {
   return defs;
 }
 
-export const TOOLS = buildToolDefs();
+export const TOOL_DEFS = buildToolDefs();
 
 /**
- * Map of tool name → execute function for existing Strava tools.
+ * Map of tool name to execute function, across every tool.
  *
  * The third argument is the call's progress reporter. It is always
  * supplied — {@link NO_PROGRESS} when the caller asked for none — so a handler
@@ -619,7 +623,7 @@ const TOOL_EXECUTORS = new Map<
   }>
 >();
 
-for (const tool of STRAVA_TOOLS) {
+for (const tool of TOOLS) {
   TOOL_EXECUTORS.set(
     tool.name,
     tool.execute as (
@@ -635,7 +639,7 @@ for (const tool of STRAVA_TOOLS) {
 
 /** Tool name → zod input schema, enforced at dispatch time. */
 const TOOL_INPUT_SCHEMAS = new Map<string, z.ZodType>();
-for (const tool of STRAVA_TOOLS) {
+for (const tool of TOOLS) {
   const schema = (tool as { inputSchema?: z.ZodType }).inputSchema;
   if (schema) TOOL_INPUT_SCHEMAS.set(tool.name, schema);
 }
@@ -1568,7 +1572,7 @@ export function createServer(): Server {
   // structurally; the wire shape these serialize to is what the integration
   // suite asserts, so the casts below are confined to this seam.
   server.setRequestHandler("tools/list", async () => ({
-    tools: TOOLS as unknown as ListToolsResult["tools"],
+    tools: TOOL_DEFS as unknown as ListToolsResult["tools"],
   }));
 
   server.setRequestHandler("prompts/list", async () => ({
@@ -1611,7 +1615,7 @@ export function createServer(): Server {
     // table's sake; every emitted block is a spec text block.
     return server.projectCallToolResult(
       result as unknown as CallToolResult,
-      TOOLS.find((tool) => tool.name === name)?.outputSchema,
+      TOOL_DEFS.find((tool) => tool.name === name)?.outputSchema,
     );
   });
 

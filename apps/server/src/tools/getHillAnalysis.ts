@@ -220,11 +220,11 @@ export const getHillAnalysisTool = {
         const sign = d.drift_pct >= 0 ? "+" : "";
         lines.push(
           `Late-vs-early climb drift: ${sign}${d.drift_pct}% (${basisLabel})`,
-          `  Early climbs (${d.early_climbs}): ${d.early_value} → late climbs (${d.late_climbs}): ${d.late_value}`,
+          `  Early climbs (${d.early_climbs}): ${d.early_value}, late climbs (${d.late_climbs}): ${d.late_value}`,
           d.drift_pct > 5
-            ? `  Climbing cost noticeably more late in the run — late-race hill fatigue.`
+            ? `  Climbing cost noticeably more late in the run: late-race hill fatigue.`
             : d.drift_pct < -5
-              ? `  Late climbs were cheaper — warmed into the run or paced conservatively early.`
+              ? `  Late climbs were cheaper: warmed into the run or paced conservatively early.`
               : `  Climb cost held steady across the run.`,
           "",
         );

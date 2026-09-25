@@ -21,7 +21,9 @@ const name = "get-athlete-stats";
 const description = `
 Run totals for the athlete: this week, the last 4 weeks, this month, and
 year-to-date, aggregated from intervals.icu activities (Run, TrailRun,
-VirtualRun). No inputs.
+VirtualRun). No inputs. Use it for a quick "how much have I been running"
+check, or to answer weekly/monthly volume and pace questions without
+aggregating list-activities results by hand.
 
 Each bucket reports run count, distance, moving time, elevation gain,
 training load, and average pace computed from total distance / total moving

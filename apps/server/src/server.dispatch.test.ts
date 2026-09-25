@@ -159,9 +159,9 @@ describe("dispatchToolCall input validation", () => {
     // get-aerobic-analysis, get-interval-analysis) are the exception to the
     // digits-only pattern: they accept an optional "i" prefix, as
     // list-activities returns them (intervalsActivityIdInput, tools/_ids.ts).
-    const { TOOLS } = await import("./server");
+    const { TOOL_DEFS } = await import("./server");
     const idSchemas = (
-      TOOLS as Array<{
+      TOOL_DEFS as Array<{
         name: string;
         inputSchema?: { properties?: Record<string, Record<string, unknown>> };
       }>

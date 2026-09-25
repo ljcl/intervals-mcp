@@ -294,24 +294,24 @@ export function classifyRest(
   if (durationS > REST_LONG_STOP_MIN_SECONDS) {
     return {
       kind: "long_stop",
-      reason: `stopped ${Math.round(durationS / 60)} min — café/regroup/kit stop, excluded from structure`,
+      reason: `stopped ${Math.round(durationS / 60)} min: café/regroup/kit stop, excluded from structure`,
     };
   }
   if (precedingFast && durationS <= REST_RECOVERY_MAX_SECONDS) {
     return {
       kind: "recovery",
-      reason: `${Math.round(durationS)} s rest after a fast effort — interval recovery`,
+      reason: `${Math.round(durationS)} s rest after a fast effort: interval recovery`,
     };
   }
   if (durationS < REST_URBAN_MAX_SECONDS) {
     return {
       kind: "traffic_light",
-      reason: `${Math.round(durationS)} s stop with no fast effort before it — traffic light, excluded`,
+      reason: `${Math.round(durationS)} s stop with no fast effort before it: traffic light, excluded`,
     };
   }
   return {
     kind: "other_stop",
-    reason: `${Math.round(durationS)} s stop that fits neither recovery nor traffic-light patterns — excluded`,
+    reason: `${Math.round(durationS)} s stop that fits neither recovery nor traffic-light patterns: excluded`,
   };
 }
 
@@ -448,10 +448,10 @@ export function computeHrSignal(streams: IntervalStreams): HrSignal | null {
   const share = high / total;
   const assessment =
     share >= HR_HIGH_INTENSITY_SHARE
-      ? "substantial time near max HR — consistent with a hard workout"
+      ? "substantial time near max HR: consistent with a hard workout"
       : share < 0.05
-        ? "little time near max HR — consistent with an easy continuous effort"
-        : "moderate time near max HR — ambiguous between tempo and intervals";
+        ? "little time near max HR: consistent with an easy continuous effort"
+        : "moderate time near max HR: ambiguous between tempo and intervals";
   return { maxHr, highIntensityShare: round(share, 3), assessment };
 }
 
@@ -591,7 +591,7 @@ export function computeIntervalAnalysis(
   ];
   if (!isIntervals && workoutSignal) {
     reasonBits.push(
-      "HR distribution suggests hard work despite no interval structure — possibly a tempo/race effort",
+      "HR distribution suggests hard work despite no interval structure: possibly a tempo/race effort",
     );
   }
 

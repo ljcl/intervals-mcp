@@ -37,7 +37,7 @@ vi.mock("./config", async (importOriginal) => {
 });
 
 const { connectTestClient } = await import("./mcpTestClient");
-const { TOOLS } = await import("./server");
+const { TOOL_DEFS } = await import("./server");
 
 const mockedIntervalsActivity = vi.mocked(getActivity);
 const mockedActivity = vi.mocked(getActivityById);
@@ -190,7 +190,7 @@ describe.each(ERAS)("tools/list (%s era)", (era) => {
     const { result } = await client.send("tools/list");
     const tools = result?.tools as Array<Record<string, unknown>>;
 
-    expect(tools).toHaveLength(TOOLS.length);
+    expect(tools).toHaveLength(TOOL_DEFS.length);
   });
 
   it("gives every tool a well-formed object inputSchema", async () => {
@@ -345,7 +345,7 @@ describe.each(ERAS)("tools/call (%s era)", (era) => {
     // The session survives it: a bad call must not poison the transport.
     const after = await client.send("tools/list");
     expect((after.result?.tools as unknown[] | undefined)?.length).toBe(
-      TOOLS.length,
+      TOOL_DEFS.length,
     );
   });
 

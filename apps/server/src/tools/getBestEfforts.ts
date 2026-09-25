@@ -21,7 +21,7 @@ const TIME_BASIS_NOTE =
   "Best times come from the recorded time stream (a moving-time style curve from intervals.icu's pace curves), not elapsed time.";
 
 const description = `
-Best efforts at standard running distances, from intervals.icu's pace curves.
+Best efforts at standard running distances, from intervals.icu's pace curves. Use it to answer "what's my fastest 5K/10K/etc" or to check a personal best against a recent race, without scanning activities by hand.
 
 Parameters:
 - distances (optional): which distances to report (default: 400m, 1km, 5km, 10km, half marathon, marathon)

@@ -13,7 +13,9 @@ const name = "get-activity-zones";
 const description = `
 Retrieves the time-in-zone distribution for a specific intervals.icu
 activity: how long it spent in each heart rate zone, using the activity's
-own recorded zone bounds (not the athlete's current sport settings).
+own recorded zone bounds (not the athlete's current sport settings). Use it
+after list-activities to see how one workout's effort was distributed
+across HR zones, or to compare effort distribution between activities.
 
 Use Cases:
 - See how a workout was distributed across HR zones
@@ -46,9 +48,9 @@ const ZONE_META: Partial<Record<ZoneSet["type"], string>> = {
 function formatZoneSet(set: ZoneSet): string {
   const lines = set.buckets.map(
     (bucket) =>
-      `   Z${bucket.zone} (${bucket.min}–${bucket.max} ${set.unit}): ${formatDuration(bucket.seconds)} (${bucket.pct}%)`,
+      `   Z${bucket.zone} (${bucket.min}-${bucket.max} ${set.unit}): ${formatDuration(bucket.seconds)} (${bucket.pct}%)`,
   );
-  return `**${ZONE_META[set.type] ?? set.type}**\n${lines.join("\n")}`;
+  return `${ZONE_META[set.type] ?? set.type}\n${lines.join("\n")}`;
 }
 
 /**
@@ -89,7 +91,7 @@ export const getActivityZonesTool = {
       }
 
       const summaryLines = [
-        `**Activity Zones (ID: ${id}):**`,
+        `Activity Zones (ID: ${id}):`,
         "",
         formatActivityZones(zoneSets),
       ];

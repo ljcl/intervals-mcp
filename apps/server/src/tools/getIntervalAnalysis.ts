@@ -27,10 +27,10 @@ Detects and analyses interval structure in one intervals.icu activity, with urba
 Naive rest-based interval detection false-positives on urban runs: traffic-light
 stops read as recovery intervals. This tool classifies every stopped segment
 (from the derived moving stream) before trusting it:
-- Stop under 60 s with no fast effort before it → traffic light, excluded
-- Stop up to 3 min after a fast effort → genuine interval recovery
-- Stop over 5 min → café/regroup/kit stop, noted but excluded
-- Anything else → unclassified, excluded (lowers confidence)
+- Stop under 60 s with no fast effort before it: traffic light, excluded
+- Stop up to 3 min after a fast effort: genuine interval recovery
+- Stop over 5 min: café/regroup/kit stop, noted but excluded
+- Anything else: unclassified, excluded (lowers confidence)
 
 Work reps are reconstructed between recoveries (easy running is merged straight
 through traffic lights) and reported with per-rep pace, HR, cadence, and power.
@@ -208,7 +208,7 @@ export const getIntervalAnalysisTool = {
       const lines = [
         `Interval Analysis: ${structured.name} (${structured.date})`,
         structured.is_intervals
-          ? `Verdict: interval session — ${structured.reps.length} work reps (confidence: ${structured.confidence})`
+          ? `Verdict: interval session, ${structured.reps.length} work reps (confidence: ${structured.confidence})`
           : `Verdict: not an interval session (confidence: ${structured.confidence})`,
         `Reasoning: ${structured.reasoning}`,
         "",
