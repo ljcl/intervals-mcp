@@ -9,11 +9,12 @@ identity, so renames or schema reshapes re-prompt every user. See
 [architecture.md](architecture.md#tool-metadata) before changing either.
 
 > **Status.** Tools are being ported from Strava to intervals.icu (Phases 1
-> through 3). The seventeen tools below are ported and verified against a real
-> account. Still Strava-backed, and failing with a "not yet ported" error
-> until a later phase: `get-training-load`, `update-activity`, and the
-> Phase 4 `view-*`/`get-*-data` app tools (see [Activity tools](#activity-tools)
-> and [Visualization tools](#visualization-tools)).
+> through 3). Sixteen of the seventeen tools below are ported and verified
+> against a real account; `get-fitness-trend` is ported but not yet
+> live-verified (planned for a later task). Still Strava-backed, and failing
+> with a "not yet ported" error until a later phase: `get-training-load`,
+> `update-activity`, and the Phase 4 `view-*`/`get-*-data` app tools (see
+> [Activity tools](#activity-tools) and [Visualization tools](#visualization-tools)).
 
 ## intervals.icu tools
 
@@ -269,25 +270,33 @@ target, or a split row reports one; `units.distance` is `"m"`, matching the
 `distance_m` fields the response actually carries.
 
 `get-fitness-trend` computes the classic CTL/ATL/TSB performance-management
-chart two ways. Whole-body (default) reads CTL/ATL straight from
+chart two ways. Whole-body (default) reads CTL/ATL straight off
 intervals.icu's own daily wellness record (`source: "intervals.icu"`),
-seeded from the wellness day before the window so the 42-day CTL / 7-day ATL
-recurrence reproduces intervals.icu's own numbers exactly; the window ends at
-today in the server's configured time zone. `runOnly: true` computes CTL/ATL
-locally from the daily sum of `icu_training_load` across Run/TrailRun/VirtualRun
-activities only (`source: "computed"`), since intervals.icu has no per-sport
-CTL/ATL: it fetches a `days + 150` day runway and zero-seeds the recurrence so
-the 42-day average has settled by the requested window, then trims the
-displayed series back to it. Both paths report `activity_types_included`
-(whole-body: the distinct types with load in the window; run-only: the three
-run types), and whole-body notes that some types (e.g. strength) may count
-toward fatigue (ATL) only, per this athlete's intervals.icu settings.
-`projectDays` (default 0, or the length of `plannedLoads` when given) projects
-TSB forward assuming rest, or `plannedLoads` (`[{ date: YYYY-MM-DD, load }]`,
-dates after today; unlisted dates in the projection count as rest) projects
-with a specific plan instead. `targetDate`/`targetTsb` solve a load taper
-landing on a target form, unchanged from before. The `view-fitness-trend`/
-`get-fitness-trend-data` MCP App pair (below) shares this whole-body path.
+never recomputed locally, so a custom CTL/ATL time constant configured on the
+account is honoured automatically; a day with no recorded CTL/ATL is a gap,
+not a zero-load day, and is left out of the series with a warning rather than
+corrupting the numbers around it. The window ends at today in the server's
+configured time zone, but `as_of` names the most recent date CTL/ATL is
+actually known for, which projection and a solved taper are seeded from, and
+which can trail today when wellness has not synced yet. `runOnly: true`
+computes CTL/ATL locally from the daily sum of `icu_training_load` across
+Run/TrailRun/VirtualRun activities only (`source: "computed"`), since
+intervals.icu has no per-sport CTL/ATL: it fetches a `days + 150` day runway
+and zero-seeds the recurrence so the 42-day average has settled by the
+requested window, then trims the displayed series back to it. Both paths
+report `activity_types_included` (whole-body: the distinct types with
+nonzero load in the window; run-only: the three run types), and whole-body
+notes that some types (e.g. strength) may count toward fatigue (ATL) only,
+per this athlete's intervals.icu settings. `projectDays` (default 0, or when
+`plannedLoads` is given and this is omitted, the days out to its latest date,
+capped at 60) projects TSB forward assuming rest, or `plannedLoads`
+(`[{ date: YYYY-MM-DD, load }]`, dates after today; unlisted dates in the
+projection count as rest; an entry on or before today, or beyond the
+projection, is ignored and named in a warning) projects with a specific plan
+instead. `targetDate`/`targetTsb` solve a load taper landing on a target
+form, unchanged from before. The `view-fitness-trend`/`get-fitness-trend-data`
+MCP App pair (below) shares this whole-body path (`loadWellnessFitnessSeries`,
+the one home both surfaces build the read series through).
 
 ## Activity tools
 

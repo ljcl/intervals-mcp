@@ -96,10 +96,14 @@ export function buildChartRows(data: FitnessTrendData): ChartRow[] {
 /**
  * Whether the window holds anything to chart. A zero-filled series is not
  * empty by row count but plots a flat line at zero, which is a worse answer
- * than saying so.
+ * than saying so. Whole-body CTL/ATL is read from wellness directly, so a
+ * rest day can carry zero load while still holding real (non-zero) fitness
+ * and fatigue built up from earlier days; either signal is enough to chart.
  */
 export function hasRecordedLoad(data: FitnessTrendData): boolean {
-  return data.series.some((day) => day.load > 0);
+  return data.series.some(
+    (day) => day.load > 0 || day.ctl !== 0 || day.atl !== 0,
+  );
 }
 
 /** Axis label of the last recorded day — where the plan takes over. */

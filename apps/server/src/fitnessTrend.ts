@@ -166,8 +166,8 @@ export const TAPER_WEEK_DECAY = 0.75;
 /** Days averaged for the "percentage of recent training" comparison. */
 export const RECENT_LOAD_DAYS = 28;
 /**
- * Ceiling on a solved daily load. Relative effort above this is a race or a
- * very long hard day, so a plan asking for it every day is not a plan — the
+ * Ceiling on a solved daily load. Training load above this is a race or a
+ * very long hard day, so a plan asking for it every day is not a plan; the
  * solver clamps there and reports the TSB that lands instead.
  */
 export const MAX_TAPER_DAILY_LOAD = 200;
@@ -175,7 +175,8 @@ export const MAX_TAPER_DAILY_LOAD = 200;
 const CTL_DECAY = Math.exp(-1 / CTL_TIME_CONSTANT_DAYS);
 const ATL_DECAY = Math.exp(-1 / ATL_TIME_CONSTANT_DAYS);
 
-const round1 = (value: number) => Math.round(value * 10) / 10;
+/** Round to one decimal place, the display precision every value here uses. */
+export const round1 = (value: number) => Math.round(value * 10) / 10;
 
 /** Add (or subtract, for negative `days`) whole days to an ISO date. */
 export function addDays(isoDate: string, days: number): string {
@@ -268,7 +269,7 @@ export function buildFitnessTrend(
  * from `startDate`; dated entries are matched by date, so a plan that names
  * only its hard days rests on the rest.
  */
-function resolvePlannedLoads(
+export function resolvePlannedLoads(
   startDate: string,
   days: number,
   planned?: PlannedLoads,
@@ -298,7 +299,7 @@ function resolvePlannedLoads(
  * happens on the way out only; the TSB-crossing check reads the raw value, so
  * a -0.04 day does not read as positive because it rounds to -0.
  */
-function projectLoads(
+export function projectLoads(
   start: { ctl: number; atl: number },
   startDate: string,
   loads: number[],
@@ -430,7 +431,7 @@ export function solveTaperPlan(
   if (peakLoad > MAX_TAPER_DAILY_LOAD) {
     scale = MAX_TAPER_DAILY_LOAD / peakWeight;
     feasible = false;
-    note = `Reaching TSB ${signedRound1(targetTsb)} by ${targetDate} would take more than ${MAX_TAPER_DAILY_LOAD} relative effort a day; the plan is capped there.`;
+    note = `Reaching TSB ${signedRound1(targetTsb)} by ${targetDate} would take more than ${MAX_TAPER_DAILY_LOAD} training load a day; the plan is capped there.`;
   }
 
   const loads = shape.map((weight) => weight * scale);

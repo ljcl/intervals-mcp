@@ -3,17 +3,21 @@ import { getTimeZone } from "../config";
 import {
   buildFitnessTrend,
   computeFlags,
+  daysBetween,
   type FitnessTrendDay,
   type FitnessTrendLoadDay,
   type PlannedLoad,
+  projectLoads,
+  RECENT_LOAD_DAYS,
+  recentDailyLoad,
+  resolvePlannedLoads,
+  solveTaperPlan,
+  type TaperPlan,
   type TaperWeek,
   trendBands,
 } from "../fitnessTrend";
-import {
-  getWellness,
-  type IntervalsActivity,
-  listActivities,
-} from "../intervalsClient";
+import { loadWellnessFitnessSeries } from "../fitnessTrendWellness";
+import { type IntervalsActivity, listActivities } from "../intervalsClient";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
 import { addDays, todayLocal } from "../utils/localDate";
 import { READ_ONLY } from "./_annotations";
@@ -33,19 +37,19 @@ const RUN_TYPES: readonly string[] = ["Run", "TrailRun", "VirtualRun"];
  */
 const RUN_ONLY_RUNWAY_DAYS = 150;
 
-/** Fields pulled from wellness, enough to reproduce intervals.icu's own CTL/ATL exactly. */
-const WELLNESS_FIELDS = ["id", "ctl", "atl", "ctlLoad", "atlLoad"];
-
 const description = `
 Computes the fitness/fatigue/form trend (CTL, ATL, TSB) from intervals.icu.
 
 Two ways to compute it:
 - Whole-body (default): reads CTL/ATL straight from intervals.icu's own daily
-  wellness record, the same numbers the intervals.icu fitness page shows.
-  Training load per day is whatever intervals.icu itself counted across all
-  logged activity types (pace/HR/power load blended per its sport settings).
-  Some activity types may count toward fatigue (ATL) only, not fitness (CTL),
-  depending on this athlete's intervals.icu settings; see the response note.
+  wellness record, the same numbers the intervals.icu fitness page shows,
+  never recomputed locally (a custom CTL/ATL time constant configured on the
+  account is honoured automatically this way). Training load per day is
+  whatever intervals.icu itself counted across all logged activity types
+  (pace/HR/power load blended per its sport settings). Some activity types
+  may count toward fatigue (ATL) only, not fitness (CTL), depending on this
+  athlete's intervals.icu settings; see the response note. A day with no
+  recorded CTL/ATL is a gap, not a zero-load day, and is reported as such.
 - Run-only (runOnly: true): intervals.icu has no per-sport CTL/ATL, so this is
   computed locally from the daily sum of icu_training_load across
   Run/TrailRun/VirtualRun activities, zero-seeded well before the requested
@@ -70,12 +74,13 @@ Parameters:
 - runOnly (optional, default false): compute CTL/ATL/TSB from running load
   only instead of intervals.icu's whole-body wellness CTL/ATL
 - projectDays (optional, max 60): also project TSB forward, answering "when
-  do I return to fresh if I rest?" (default 0, or the length of plannedLoads
-  when that is given)
+  do I return to fresh if I rest?" (default: 0, or when plannedLoads is given
+  and this is omitted, the number of days out to its latest date, capped at 60)
 - plannedLoads (optional): future training load to project with instead of
   assuming rest. Array of { date: YYYY-MM-DD, load }, dates after today;
   any date inside the projection window that is not listed counts as rest
-  (zero load)
+  (zero load); an entry on or before today, or beyond the projection, is
+  ignored and named in a warning
 - targetDate (optional, YYYY-MM-DD): solve a load taper landing on targetTsb
   on this date. Returns a week-by-week load plan (each week stepped down
   toward the date, compared to what the athlete has recently been averaging)
@@ -88,7 +93,10 @@ Notes:
   with the form rest would actually land on — the tool does not invent a plan
 - The taper plan is prescriptive load, not recorded load: it says how much
   training load to spend, not which sessions to spend it in
-- Each value is stamped with the local calendar date it was computed for
+- Each value is stamped with the local calendar date it was computed for;
+  as_of names the most recent date CTL/ATL is actually known for, which for
+  the whole-body path can be a day or more behind today if wellness has not
+  synced yet
 `;
 
 const plannedLoadEntrySchema = z.object({
@@ -121,7 +129,8 @@ const inputSchema = z.object({
     .max(60)
     .optional()
     .describe(
-      "Project TSB this many days past today (default 0, or the length of plannedLoads if given)",
+      "Project TSB this many days past today (default 0, or when " +
+        "plannedLoads is given, the days out to its latest date, capped at 60)",
     ),
   plannedLoads: z
     .array(plannedLoadEntrySchema)
@@ -188,6 +197,52 @@ function dailyLoadByDate(activities: IntervalsActivity[]): Map<string, number> {
   return loads;
 }
 
+/**
+ * `projectDays` when not given explicitly: 0, unless `plannedLoads` is
+ * present, in which case the span from `today` out to its latest date
+ * (capped at 60, floored at 0 so an all-past plan doesn't go negative).
+ */
+function resolveProjectDays(
+  projectDays: number | undefined,
+  plannedLoads: PlannedLoad[] | undefined,
+  today: string,
+): number {
+  if (projectDays !== undefined) return projectDays;
+  if (!plannedLoads || plannedLoads.length === 0) return 0;
+  const lastDate = plannedLoads.reduce(
+    (max, p) => (p.date > max ? p.date : max),
+    plannedLoads[0]!.date,
+  );
+  return Math.min(Math.max(daysBetween(today, lastDate), 0), 60);
+}
+
+/** Warns about plannedLoads entries the projection will silently ignore. */
+function plannedLoadWarnings(
+  plannedLoads: PlannedLoad[] | undefined,
+  today: string,
+  projectDays: number,
+): string[] {
+  if (!plannedLoads || plannedLoads.length === 0) return [];
+  const warnings: string[] = [];
+
+  const stale = plannedLoads.filter((p) => p.date <= today);
+  if (stale.length > 0) {
+    warnings.push(
+      `plannedLoads has ${stale.length} ${stale.length === 1 ? "entry" : "entries"} on or before today (${today}); only dates after today count toward the projection.`,
+    );
+  }
+
+  const lastProjected = addDays(today, projectDays);
+  const beyond = plannedLoads.filter((p) => p.date > lastProjected);
+  if (beyond.length > 0) {
+    warnings.push(
+      `plannedLoads has ${beyond.length} ${beyond.length === 1 ? "entry" : "entries"} beyond the ${projectDays}-day projection (after ${lastProjected}); they will not be applied.`,
+    );
+  }
+
+  return warnings;
+}
+
 export const getFitnessTrendTool = {
   name,
   description,
@@ -206,21 +261,30 @@ export const getFitnessTrendTool = {
     apiKey: string,
     progress: ReportProgress = NO_PROGRESS,
   ) => {
-    const resolvedProjectDays =
-      projectDays ?? (plannedLoads ? plannedLoads.length : 0);
+    const typedPlannedLoads = plannedLoads as PlannedLoad[] | undefined;
 
     try {
       const tz = getTimeZone();
       const endDate = todayLocal(tz);
       const windowStart = addDays(endDate, -(days - 1));
+      const resolvedProjectDays = resolveProjectDays(
+        projectDays,
+        typedPlannedLoads,
+        endDate,
+      );
 
-      let series: FitnessTrendLoadDay[];
-      let seed: { ctl: number; atl: number } | undefined;
       let source: "intervals.icu" | "computed";
+      let displaySeries: FitnessTrendDay[];
+      let current: FitnessTrendDay | null;
+      let projection: FitnessTrendDay[];
+      let tsbPositiveDate: string | null;
+      let taper: TaperPlan | null;
       let activityTypesIncluded: string[];
       let activitiesIncluded: number;
       let activitiesMissingLoad: number;
-      const warnings: string[] = [];
+      const warnings: string[] = [
+        ...plannedLoadWarnings(typedPlannedLoads, endDate, resolvedProjectDays),
+      ];
 
       if (runOnly) {
         const runwayDays = days + RUN_ONLY_RUNWAY_DAYS;
@@ -238,11 +302,31 @@ export const getFitnessTrendTool = {
         );
         const loadByDate = dailyLoadByDate(runActivities);
 
-        series = Array.from({ length: runwayDays }, (_, i) => {
-          const date = addDays(runwayStart, i);
-          const load = loadByDate.get(date) ?? 0;
-          return { date, ctlLoad: load, atlLoad: load };
-        });
+        const runwaySeries: FitnessTrendLoadDay[] = Array.from(
+          { length: runwayDays },
+          (_, i) => {
+            const date = addDays(runwayStart, i);
+            const load = loadByDate.get(date) ?? 0;
+            return { date, ctlLoad: load, atlLoad: load };
+          },
+        );
+
+        const trend = buildFitnessTrend(
+          { days: runwaySeries },
+          {
+            projectDays: resolvedProjectDays,
+            plannedLoads: typedPlannedLoads,
+            taper: targetDate ? { targetDate, targetTsb } : undefined,
+          },
+        );
+
+        // The runway settles CTL; trim the display (and the bands/flags read
+        // off it) back to the requested window.
+        displaySeries = trend.days.slice(-days);
+        current = trend.current;
+        projection = trend.projection;
+        tsbPositiveDate = trend.tsbPositiveDate;
+        taper = trend.taper;
 
         source = "computed";
         activityTypesIncluded = [...RUN_TYPES];
@@ -263,26 +347,66 @@ export const getFitnessTrendTool = {
             `own (whole-body) fitness page.`,
         );
       } else {
-        const seedDate = addDays(windowStart, -1);
-
-        progress(`Fetching wellness ${seedDate} to ${endDate}…`, {
+        progress(`Fetching wellness ${windowStart} to ${endDate}…`, {
           important: true,
         });
-        const wellness = await getWellness(
-          apiKey,
-          { oldest: seedDate, newest: endDate },
-          { fields: WELLNESS_FIELDS },
-        );
-        const byDate = new Map(wellness.map((w) => [w.id, w]));
+        const { series, seed, asOfDate, gapDates } =
+          await loadWellnessFitnessSeries(apiKey, {
+            oldest: windowStart,
+            newest: endDate,
+          });
 
-        const seedRow = byDate.get(seedDate);
-        seed = { ctl: seedRow?.ctl ?? 0, atl: seedRow?.atl ?? 0 };
+        displaySeries = series;
+        current =
+          series.length > 0
+            ? {
+                date: series[series.length - 1]!.date,
+                load: series[series.length - 1]!.load,
+                ctl: series[series.length - 1]!.ctl,
+                atl: series[series.length - 1]!.atl,
+                tsb: series[series.length - 1]!.tsb,
+              }
+            : null;
 
-        series = Array.from({ length: days }, (_, i) => {
-          const date = addDays(windowStart, i);
-          const w = byDate.get(date);
-          return { date, ctlLoad: w?.ctlLoad ?? 0, atlLoad: w?.atlLoad ?? 0 };
-        });
+        if (seed && asOfDate) {
+          const firstProjectedDate = addDays(asOfDate, 1);
+          if (targetDate) {
+            taper = solveTaperPlan(
+              seed,
+              asOfDate,
+              { targetDate, targetTsb },
+              recentDailyLoad(series, RECENT_LOAD_DAYS),
+            );
+            projection = [];
+            tsbPositiveDate = null;
+          } else {
+            const loads = resolvePlannedLoads(
+              firstProjectedDate,
+              resolvedProjectDays,
+              typedPlannedLoads,
+            );
+            const projected = projectLoads(seed, firstProjectedDate, loads);
+            projection = projected.days;
+            tsbPositiveDate = projected.tsbPositiveDate;
+            taper = null;
+          }
+        } else {
+          projection = [];
+          tsbPositiveDate = null;
+          taper = null;
+          if (targetDate || resolvedProjectDays > 0) {
+            warnings.push(
+              "No wellness CTL/ATL is available in the window, so there is nothing to project or solve a taper from.",
+            );
+          }
+        }
+
+        source = "intervals.icu";
+        if (gapDates.length > 0) {
+          warnings.push(
+            `${gapDates.length} of ${days} day${gapDates.length === 1 ? "" : "s"} in the window have no wellness CTL/ATL recorded; that is a gap, not zero load, and is left out of the series.`,
+          );
+        }
 
         progress(`Listing activities ${windowStart} to ${endDate}…`);
         const activities = await listActivities(apiKey, {
@@ -291,11 +415,12 @@ export const getFitnessTrendTool = {
         });
         const typesWithLoad = new Set(
           activities
-            .filter((a) => a.icu_training_load != null)
+            .filter(
+              (a) => a.icu_training_load != null && a.icu_training_load !== 0,
+            )
             .map((a) => a.type ?? "Unknown"),
         );
         activityTypesIncluded = Array.from(typesWithLoad).sort();
-        source = "intervals.icu";
         activitiesIncluded = activities.length;
         activitiesMissingLoad = activities.filter(
           (a) => a.icu_training_load == null,
@@ -316,20 +441,8 @@ export const getFitnessTrendTool = {
         }
       }
 
-      const trend = buildFitnessTrend(
-        { days: series, seed },
-        {
-          projectDays: resolvedProjectDays,
-          plannedLoads: plannedLoads as PlannedLoad[] | undefined,
-          taper: targetDate ? { targetDate, targetTsb } : undefined,
-        },
-      );
-
-      // Run-only builds a long runway series to settle CTL; trim the display
-      // (and the bands/flags read off it) back to the requested window.
-      const displaySeries = runOnly ? trend.days.slice(-days) : trend.days;
-      const bands = runOnly ? trendBands(displaySeries) : trend.bands;
-      const flags = runOnly ? computeFlags(displaySeries) : trend.flags;
+      const bands = trendBands(displaySeries);
+      const flags = computeFlags(displaySeries);
 
       if (activitiesIncluded === 0) {
         warnings.push(
@@ -338,18 +451,18 @@ export const getFitnessTrendTool = {
             : "No activities in the window.",
         );
       }
-      if (trend.taper && trend.taper.days.length > LONG_PLAN_DAYS) {
+      if (taper && taper.days.length > LONG_PLAN_DAYS) {
         warnings.push(
-          `${trend.taper.days.length} days is a training block rather than a taper; the plan still steps down each week, so treat its early weeks as maintenance load.`,
+          `${taper.days.length} days is a training block rather than a taper; the plan still steps down each week, so treat its early weeks as maintenance load.`,
         );
       }
 
-      // 7-day deltas for a quick direction read.
-      const current = trend.current;
-      const weekAgo =
-        displaySeries.length >= 8
-          ? displaySeries[displaySeries.length - 8]!
-          : null;
+      // 7-day delta by date, not array index, since a gappy whole-body
+      // series is not necessarily contiguous.
+      const byDate = new Map(displaySeries.map((d) => [d.date, d]));
+      const weekAgo = current
+        ? (byDate.get(addDays(current.date, -7)) ?? null)
+        : null;
       const trendSummary =
         current && weekAgo
           ? {
@@ -365,6 +478,7 @@ export const getFitnessTrendTool = {
           end_date: current?.date ?? "",
         },
         source,
+        as_of: current?.date ?? null,
         current: current
           ? {
               date: current.date,
@@ -378,9 +492,9 @@ export const getFitnessTrendTool = {
         bands,
         warnings,
         daily: displaySeries,
-        projection: trend.projection,
-        tsb_positive_date: trend.tsbPositiveDate,
-        taper: trend.taper,
+        projection,
+        tsb_positive_date: tsbPositiveDate,
+        taper,
         activity_types_included: activityTypesIncluded,
         activities_included: activitiesIncluded,
         activities_missing_load: activitiesMissingLoad,
@@ -393,7 +507,7 @@ export const getFitnessTrendTool = {
       output += `📅 ${result.period.start_date} to ${result.period.end_date} (${days} days, source: ${source})\n\n`;
 
       if (current) {
-        output += `**Current (${current.date})**\n`;
+        output += `**Current (as of ${current.date})**\n`;
         output += `  Fitness (CTL): ${current.ctl}\n`;
         output += `  Fatigue (ATL): ${current.atl}\n`;
         output += `  Form (TSB): ${signed(current.tsb)}\n\n`;
@@ -411,19 +525,18 @@ export const getFitnessTrendTool = {
         output += `\n`;
       }
 
-      if (resolvedProjectDays > 0) {
-        output += `**Projection (${resolvedProjectDays} days${plannedLoads ? ", planned load" : ", zero load"})**\n`;
-        output += trend.tsbPositiveDate
-          ? `  TSB returns positive on ${trend.tsbPositiveDate}\n`
+      if (resolvedProjectDays > 0 && projection.length > 0) {
+        output += `**Projection (${resolvedProjectDays} days${typedPlannedLoads ? ", planned load" : ", zero load"})**\n`;
+        output += tsbPositiveDate
+          ? `  TSB returns positive on ${tsbPositiveDate}\n`
           : `  TSB stays negative for the whole projection\n`;
-        const last = trend.projection[trend.projection.length - 1];
+        const last = projection[projection.length - 1];
         if (last) {
           output += `  End of projection (${last.date}): CTL ${last.ctl}, TSB ${signed(last.tsb)}\n`;
         }
         output += `\n`;
       }
 
-      const taper = trend.taper;
       if (taper) {
         output += `**Taper plan to ${taper.target_date} (target TSB ${signed(taper.target_tsb)})**\n`;
         if (taper.weeks.length > 0) {

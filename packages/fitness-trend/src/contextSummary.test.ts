@@ -59,7 +59,7 @@ describe("buildFitnessTrendContextSummary", () => {
       activitiesMissingLoad: 4,
     })!;
     expect(summary).toContain("4 of");
-    expect(summary).toContain("no relative effort");
+    expect(summary).toContain("no training load recorded");
   });
 
   it("says nothing without a current day", () => {

@@ -239,6 +239,12 @@ export const FitnessTrendOutputSchema = z.object({
     .describe(
       "'intervals.icu' for whole-body CTL/ATL read from wellness, 'computed' for the locally-computed run-only series",
     ),
+  as_of: z
+    .string()
+    .nullable()
+    .describe(
+      "Date current/the projection seed are known for. For whole-body this can trail end_date when wellness has not synced yet; null when no data is available",
+    ),
   current: FitnessTrendDaySchema.omit({ load: true }).nullable(),
   trend: z
     .object({
@@ -279,8 +285,18 @@ export const FitnessTrendOutputSchema = z.object({
     .describe(
       "Whole-body: distinct activity types with load in the window. Run-only: the run types (Run, TrailRun, VirtualRun); some types may count toward fatigue only, per intervals.icu settings",
     ),
-  activities_included: z.number().int(),
-  activities_missing_load: z.number().int(),
+  activities_included: z
+    .number()
+    .int()
+    .describe(
+      "Activities logged in the window. Whole-body: informational only (CTL/ATL is read from wellness, not summed from these). Run-only: the activities the series is built from",
+    ),
+  activities_missing_load: z
+    .number()
+    .int()
+    .describe(
+      "Of activities_included, how many have no icu_training_load recorded. Whole-body: informational only. Run-only: these contributed zero to the computed series",
+    ),
   units: z.object({
     load: z.literal("training load (intervals.icu units, unitless)"),
   }),

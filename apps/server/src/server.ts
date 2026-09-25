@@ -19,14 +19,23 @@ import {
 } from "./activityZones";
 import { getIntervalsApiKey, getTimeZone } from "./config";
 import { RateLimitError } from "./fetchClient";
-import { buildFitnessTrend, type FitnessTrendLoadDay } from "./fitnessTrend";
+import {
+  computeFlags,
+  type FitnessTrendResult,
+  projectLoads,
+  RECENT_LOAD_DAYS,
+  recentDailyLoad,
+  solveTaperPlan,
+  type TaperPlan,
+  trendBands,
+} from "./fitnessTrend";
 import {
   type FitnessTrendAppData,
   mapFitnessTrendApp,
 } from "./fitnessTrendApp";
+import { loadWellnessFitnessSeries } from "./fitnessTrendWellness";
 import {
   getActivity as getIntervalsActivity,
-  getWellness as getWellnessFn,
   listActivities as listActivitiesFn,
 } from "./intervalsClient";
 import {
@@ -862,20 +871,14 @@ async function handleViewTrainingLoad(
   return { content: [{ type: "text", text: lines.join("\n") }] };
 }
 
-/** Wellness fields needed to reproduce intervals.icu's own CTL/ATL exactly. */
-const FITNESS_TREND_APP_WELLNESS_FIELDS = [
-  "id",
-  "ctl",
-  "atl",
-  "ctlLoad",
-  "atlLoad",
-];
-
 /**
  * Shared fetch + solve for the fitness-trend view and data tools. Whole-body
- * only (matching the text tool's default): CTL/ATL come straight from
- * intervals.icu's own wellness record, seeded from the day before the window
- * so the recurrence reproduces intervals.icu's own values exactly.
+ * only (matching the text tool's default): CTL/ATL are read straight off
+ * intervals.icu's own wellness record via `loadWellnessFitnessSeries`, the
+ * one home this and the text tool's whole-body path both build the series
+ * through, never recomputed. Projection/taper are seeded from the most
+ * recent day with a recorded CTL/ATL, which can trail `days` when wellness
+ * has not synced yet.
  */
 async function loadFitnessTrendAppData(
   apiKey: string,
@@ -891,33 +894,45 @@ async function loadFitnessTrendAppData(
   const tz = getTimeZone();
   const endDate = todayLocal(tz);
   const windowStart = addDays(endDate, -(days - 1));
-  const seedDate = addDays(windowStart, -1);
 
-  const wellness = await getWellnessFn(
-    apiKey,
-    { oldest: seedDate, newest: endDate },
-    { fields: FITNESS_TREND_APP_WELLNESS_FIELDS },
-  );
-  const byDate = new Map(wellness.map((w) => [w.id, w]));
-  const seedRow = byDate.get(seedDate);
-  const seed = { ctl: seedRow?.ctl ?? 0, atl: seedRow?.atl ?? 0 };
+  const { series, seed, asOfDate } = await loadWellnessFitnessSeries(apiKey, {
+    oldest: windowStart,
+    newest: endDate,
+  });
+  const current = series.length > 0 ? series[series.length - 1]! : null;
 
-  const loadDays: FitnessTrendLoadDay[] = Array.from(
-    { length: days },
-    (_, i) => {
-      const date = addDays(windowStart, i);
-      const w = byDate.get(date);
-      return { date, ctlLoad: w?.ctlLoad ?? 0, atlLoad: w?.atlLoad ?? 0 };
-    },
-  );
+  let projection: FitnessTrendResult["projection"] = [];
+  let tsbPositiveDate: string | null = null;
+  let taper: TaperPlan | null = null;
+  if (seed && asOfDate) {
+    const firstProjectedDate = addDays(asOfDate, 1);
+    if (targetDate) {
+      taper = solveTaperPlan(
+        seed,
+        asOfDate,
+        { targetDate, targetTsb },
+        recentDailyLoad(series, RECENT_LOAD_DAYS),
+      );
+    } else {
+      const projected = projectLoads(
+        seed,
+        firstProjectedDate,
+        Array.from({ length: projectDays }, () => 0),
+      );
+      projection = projected.days;
+      tsbPositiveDate = projected.tsbPositiveDate;
+    }
+  }
 
-  const trend = buildFitnessTrend(
-    { days: loadDays, seed },
-    {
-      projectDays,
-      taper: targetDate ? { targetDate, targetTsb } : undefined,
-    },
-  );
+  const trend: FitnessTrendResult = {
+    days: series,
+    current,
+    projection,
+    tsbPositiveDate,
+    taper,
+    bands: trendBands(series),
+    flags: computeFlags(series),
+  };
 
   progress("Listing activities for the window…", { important: true });
   const activities = await listActivitiesFn(apiKey, {

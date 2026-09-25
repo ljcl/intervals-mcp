@@ -40,7 +40,7 @@ export function buildFitnessTrendContextSummary(
 
   if (data.activitiesMissingLoad > 0) {
     parts.push(
-      `${data.activitiesMissingLoad} of ${data.activitiesIncluded} activities had no relative effort and contributed zero load.`,
+      `${data.activitiesMissingLoad} of ${data.activitiesIncluded} activities in the window have no training load recorded.`,
     );
   }
 
