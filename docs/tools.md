@@ -8,20 +8,16 @@ Tool names and schemas are a published contract: grants are stored per tool
 identity, so renames or schema reshapes re-prompt every user. See
 [architecture.md](architecture.md#tool-metadata) before changing either.
 
-> **Status.** All twenty tools below are ported from Strava to intervals.icu
-> and verified against a real account (Phases 1 through 3 complete;
-> `get-fitness-trend`, `get-training-load`, and `get-running-dynamics` are
-> exercised by `scripts/live-check.ts`; `update-activity`'s write path was
-> verified once, separately, with explicit user approval, see
-> docs/api-notes.md). Every MCP App tool below (see
-> [Visualization tools](#visualization-tools)), including `route-map`
-> (Phase 4 task 5), now talks to intervals.icu directly; `stravaClient.ts`
-> has no remaining production caller.
+> **Status.** All twenty tools below talk to intervals.icu directly and are
+> verified against a real account. `get-fitness-trend`, `get-training-load`,
+> and `get-running-dynamics` are exercised by `scripts/live-check.ts`;
+> `update-activity`'s write path was verified once, separately, with
+> explicit user approval, see docs/api-notes.md. Every MCP App tool below
+> (see [Visualization tools](#visualization-tools)) reads intervals.icu
+> streams and activity data through the same adapter; the retired Strava
+> client has been deleted from the codebase (see AGENTS.md).
 
 ## intervals.icu tools
-
-Tools that already talk to intervals.icu directly, rather than through the
-Strava port.
 
 | Tool | Description |
 | ---- | ----------- |
@@ -412,6 +408,18 @@ and `view-route-map`/`get-route-map-data` are all ported to intervals.icu.
 | `get-activity-zones-data` | Per-zone time distributions (bucket bounds, seconds, percentages) for the activity-zones UI (app-only) |
 | `view-fitness-trend` | CTL/ATL/TSB over time with shaded fatigue/freshness/ramp bands and a dashed taper plan or rest projection past today; a Whole body/Runs only toggle switches scope, caching each side (MCP App) |
 | `get-fitness-trend-data` | Per-day CTL/ATL/TSB, the projection, the solved taper, and the dated warning bands for the fitness-trend UI; `runOnly` switches between whole-body (intervals.icu wellness) and run-only (computed) (app-only) |
+
+Every `*-data` app-only tool reads intervals.icu streams through
+`loadIntervalsStreams` (see docs/architecture.md#streams) and downsamples to
+about 1,000 points for the chart and route-map payloads. The gap-free axes
+(time, distance, and route-map lat/lng) are filled before downsampling so
+every downstream lookup stays valid; every other metric keeps `null` samples
+as `null`, and the chart draws a gap rather than a fabricated zero or spike.
+This matters most for the running-dynamics overlays (stance time, vertical
+oscillation/ratio, step length), which have interior gaps mid-run, not just
+leading/trailing ones (see docs/api-notes.md). `get-cadence-trend-data`
+leaves runs with no recorded cadence out of its run list rather than
+plotting them at zero.
 
 ## Prompts
 

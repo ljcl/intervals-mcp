@@ -209,10 +209,15 @@ The most complex app; defaults to a MapLibre basemap with a pure-SVG offline
 grid fallback (no Recharts). Calls `get-route-map-data` (app-only) with
 `activity_id`.
 
-- The server prefers the `latlng` stream over the polyline and returns
-  index-aligned metric streams alongside coordinates. Stream-less activities
-  fall back to the decoded polyline (`apps/server/src/polyline.ts`,
-  server-side decode keeping the bundle lean) with no streams.
+- Geometry always comes from the `latlng` stream: intervals.icu has no
+  encoded-polyline endpoint (`GET /activity/{id}/map` returns the same
+  latlng stream at the same resolution, nothing more; see docs/api-notes.md).
+  Samples whose latlng is `null` are dropped from every aligned stream at
+  that index, then everything is jointly downsampled to about 1,000 points:
+  lat/lng/time/distance take the bucket's last sample so the axes stay
+  gap-free, other metrics take the bucket mean of non-null samples and may
+  still render as a gap. Stream-less (manual) activities have no GPS at all
+  and render with no route.
 - Projection math (`src/normalize.ts`): fit to bounds with padding, scale
   longitude by `cos(latitude)`, flip latitude so north is up.
 - Metric colouring when streams exist (`src/metrics.ts`): binned same-colour
@@ -224,11 +229,14 @@ grid fallback (no Recharts). Calls `get-route-map-data` (app-only) with
   zoom/reset) plus always-visible zoom buttons; changes announced via polite
   `aria-live`. Clamped to base frame; marker/stroke sizes counter-scale.
   `touch-action`: `pan-y` at base zoom, `none` once zoomed.
-- Annotation layers, each toggleable via the footer legend: lap/km split dots
-  (`src/annotations.ts`; km marks thinned 1/2/5… per length) and caller-pinned
-  waypoints. The server resolves anchors to coordinate indices in
-  `apps/server/src/mapAnchors.ts` because Strava lap indices reference the
-  full-resolution stream, not the downsampled one. A layer whose fetch fails
+- Annotation layers, each toggleable via the footer legend: a marker at the
+  end of every WORK interval (`activity.icu_intervals`; RECOVERY intervals
+  are auto-pause gaps and are not marked), km split dots (`src/annotations.ts`;
+  km marks thinned 1/2/5… per length), and caller-pinned waypoints. The
+  server resolves anchors to coordinate indices in
+  `apps/server/src/mapAnchors.ts` because intervals.icu's interval and lap
+  indices reference the full-resolution recorded stream, not the downsampled
+  one the map renders. A layer whose fetch fails
   costs that layer and nothing else (429 included): `dropOptionalLayer` logs
   the reason and records a `layerWarnings` note on the payload, sibling of
   `waypointWarnings`, both surfaced by `view-route-map`'s text; a rate limit
@@ -332,11 +340,12 @@ as pure `buildComparison` in `apps/server/src/tools/compareActivities.ts`.
 One activity's time-in-zone distribution (#34). Calls
 `get-activity-zones-data` on mount.
 
-- The server maps the raw `/activities/{id}/zones` response (same fetch behind
-  the `get-activity-zones` text tool) to chart-ready sets in
-  `apps/server/src/activityZones.ts` (`mapActivityZones`): per-bucket seconds
-  and percentages, the `-1` open-ended top bucket normalised to `null`, sets
-  without buckets or zero time dropped.
+- The server maps the activity's own `icu_zone_times`/`icu_hr_zones` fields
+  (same `GET /activity/{id}` fetch behind the `get-activity-zones` text tool)
+  to chart-ready sets in `apps/server/src/activityZones.ts`
+  (`mapIntervalsZones`): per-bucket seconds and percentages, the `-1`
+  open-ended top bucket normalised to `null`, sets without buckets or zero
+  time dropped. Power zones are dropped for now (see docs/api-notes.md).
 - One `BarChart` per zone set (HR in `--chart-heartrate`, power in
   `--chart-power`, opacity ramp Z1→Zn), pct labels on top, shared tooltip; a
   `PillGroup` switches HR/power when both exist; estimated (non-sensor) power
