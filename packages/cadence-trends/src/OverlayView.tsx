@@ -33,11 +33,11 @@ import {
 } from "./types";
 
 interface OverlayViewProps {
-  selectedRunIds: Set<number>;
+  selectedRunIds: Set<string>;
   /** Per-run stream state; a run absent from the map is not yet requested. */
-  streams: Map<number, RunStreamState>;
-  requestStream: (runId: number) => void;
-  retryStream: (runId: number) => void;
+  streams: Map<string, RunStreamState>;
+  requestStream: (runId: string) => void;
+  retryStream: (runId: string) => void;
   mode?: "mobile" | "desktop";
 }
 
@@ -108,7 +108,7 @@ export function OverlayView({
   };
 
   const [xMode, setXMode] = useState<XMode>("distance");
-  const [hiddenRuns, setHiddenRuns] = useState<Set<number>>(new Set());
+  const [hiddenRuns, setHiddenRuns] = useState<Set<string>>(new Set());
 
   // Request every selected run. The fetcher is idempotent per key and never
   // re-fires a failed one, so this effect cannot loop on a failure.

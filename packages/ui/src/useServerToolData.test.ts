@@ -92,7 +92,7 @@ describe("useServerToolData", () => {
       content: [
         {
           type: "text",
-          text: "Tool error: Activity zone history requires a Strava subscription.",
+          text: "Tool error: Activity zone history requires a paid subscription.",
         },
       ],
     }));
@@ -104,7 +104,7 @@ describe("useServerToolData", () => {
     await flush();
 
     expect(harness.current().error).toBe(
-      "Tool error: Activity zone history requires a Strava subscription.",
+      "Tool error: Activity zone history requires a paid subscription.",
     );
     expect(harness.current().data).toBeNull();
     expect(harness.current().loading).toBe(false);

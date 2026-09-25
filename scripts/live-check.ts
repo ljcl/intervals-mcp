@@ -1,9 +1,12 @@
 /**
- * Live check: calls every Phase 1 through Phase 3 intervals.icu read tool's
- * executor directly against a real account, using the key from the root
- * `.env`. `update-activity` is a write tool and is deliberately not called
- * here; it was checked once, separately, with explicit user approval (see
- * docs/api-notes.md's "update-activity live write check").
+ * Live check: calls every intervals.icu read tool and app data tool
+ * directly against a real account, using the key from the root `.env`. Text
+ * tools go through their exported `Tool.execute`; app data tools
+ * (`get-*-data`, private handlers in `server.ts`) go through the same
+ * `dispatchToolCall` a real request uses. `update-activity` is a write tool
+ * and is deliberately not called here; it was checked once, separately,
+ * with explicit user approval (see docs/api-notes.md's "update-activity
+ * live write check").
  *
  * Prints only a short summary per tool (ok/error plus a handful of numbers)
  * so this is safe to run and paste output from in a public repo. It never
@@ -80,6 +83,7 @@ const { getRunningDynamicsTool } = await import(
   "../apps/server/src/tools/getRunningDynamics"
 );
 const { NO_PROGRESS } = await import("../apps/server/src/progress");
+const { dispatchToolCall } = await import("../apps/server/src/server");
 
 const activityId = process.argv[2] ?? "i189807578";
 const apiKey = getIntervalsApiKey();
@@ -140,6 +144,27 @@ function throwSummary(error: unknown): string {
     return status != null ? `${error.name} (${status})` : error.name;
   }
   return "unknown error";
+}
+
+/**
+ * App data tools (`get-*-data`) go through `dispatchToolCall` rather than a
+ * standalone `Tool.execute`, since their handlers are private to
+ * `server.ts`. They reply with a JSON-stringified body in `content[0].text`
+ * and no `structuredContent`, so parse it here. Returns null (never throws)
+ * on a missing or unparseable body; the caller reports that as a failure.
+ */
+function parseDispatchJson<T>(result: {
+  content?: Array<{ text?: unknown }>;
+  isError?: boolean;
+}): T | null {
+  if (result.isError) return null;
+  const text = result.content?.[0]?.text;
+  if (typeof text !== "string") return null;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return null;
+  }
 }
 
 async function checkListActivities(): Promise<void> {
@@ -834,6 +859,180 @@ async function checkGetRunningDynamics(): Promise<void> {
   }
 }
 
+async function checkGetActivityStreamsRaw(): Promise<void> {
+  const name = "get-activity-streams-raw";
+  try {
+    const result = (await dispatchToolCall("get-activity-streams-raw", {
+      activity_id: activityId,
+    })) as { content?: Array<{ text?: unknown }>; isError?: boolean };
+    if (result.isError) {
+      fail(name, errorSummary(result));
+      return;
+    }
+    const data = parseDispatchJson<{
+      streams: Record<string, unknown[]>;
+      laps: unknown[];
+    }>(result);
+    if (!data) {
+      fail(name, "could not parse response");
+      return;
+    }
+    const streamKeys = Object.keys(data.streams);
+    const points = (data.streams.time as number[] | undefined)?.length ?? 0;
+    ok(
+      name,
+      `points=${points} stream_keys=${streamKeys.length} laps=${data.laps.length}`,
+    );
+  } catch (error) {
+    fail(name, throwSummary(error));
+  }
+}
+
+async function checkGetCadenceTrendData(): Promise<void> {
+  const name = "get-cadence-trend-data";
+  try {
+    const result = (await dispatchToolCall("get-cadence-trend-data", {
+      weeks: 6,
+    })) as { content?: Array<{ text?: unknown }>; isError?: boolean };
+    if (result.isError) {
+      fail(name, errorSummary(result));
+      return;
+    }
+    const data = parseDispatchJson<{
+      weeks: number;
+      activities: unknown[];
+      excludedNoCadence: number;
+    }>(result);
+    if (!data) {
+      fail(name, "could not parse response");
+      return;
+    }
+    ok(
+      name,
+      `weeks=${data.weeks} runs=${data.activities.length} excluded_no_cadence=${data.excludedNoCadence}`,
+    );
+  } catch (error) {
+    fail(name, throwSummary(error));
+  }
+}
+
+async function checkGetRouteMapData(): Promise<void> {
+  const name = "get-route-map-data";
+  try {
+    const result = (await dispatchToolCall("get-route-map-data", {
+      activity_id: activityId,
+    })) as { content?: Array<{ text?: unknown }>; isError?: boolean };
+    if (result.isError) {
+      fail(name, errorSummary(result));
+      return;
+    }
+    const data = parseDispatchJson<{
+      coordinates: unknown[];
+      streams?: Record<string, unknown[]>;
+      annotations?: { laps?: unknown[]; waypoints?: unknown[] };
+    }>(result);
+    if (!data) {
+      fail(name, "could not parse response");
+      return;
+    }
+    const streamKeys = data.streams ? Object.keys(data.streams).length : 0;
+    ok(
+      name,
+      `points=${data.coordinates.length} stream_keys=${streamKeys} lap_markers=${data.annotations?.laps?.length ?? 0}`,
+    );
+  } catch (error) {
+    fail(name, throwSummary(error));
+  }
+}
+
+/**
+ * Two distinct recent Run activity ids, for `get-compare-activities-data`
+ * (comparing an activity to itself, as the text-tool check above does,
+ * would not exercise the two-activity alignment path). Returns null on any
+ * failure or fewer than 2 runs found; the caller reports that itself.
+ */
+async function findTwoRecentRunIds(): Promise<[string, string] | null> {
+  try {
+    const result = (await listActivitiesTool.execute(
+      { type: "Run", limit: 5 },
+      apiKey,
+      NO_PROGRESS,
+    )) as {
+      structuredContent?: { activities?: Array<{ id: string }> };
+      isError?: boolean;
+    };
+    const activities = result.structuredContent?.activities ?? [];
+    if (activities.length < 2) return null;
+    return [activities[0]!.id, activities[1]!.id];
+  } catch {
+    return null;
+  }
+}
+
+async function checkGetCompareActivitiesData(): Promise<void> {
+  const name = "get-compare-activities-data";
+  const ids = await findTwoRecentRunIds();
+  if (!ids) {
+    fail(name, "fewer than 2 recent runs found to compare");
+    return;
+  }
+  try {
+    const result = (await dispatchToolCall("get-compare-activities-data", {
+      activity_id_1: ids[0],
+      activity_id_2: ids[1],
+    })) as { content?: Array<{ text?: unknown }>; isError?: boolean };
+    if (result.isError) {
+      fail(name, errorSummary(result));
+      return;
+    }
+    const data = parseDispatchJson<{
+      differences: { distance_km?: number | null };
+      warnings?: string[];
+    }>(result);
+    if (!data) {
+      fail(name, "could not parse response");
+      return;
+    }
+    ok(
+      name,
+      `distance_km_diff=${data.differences.distance_km} warnings=${data.warnings?.length ?? 0}`,
+    );
+  } catch (error) {
+    fail(name, throwSummary(error));
+  }
+}
+
+async function checkGetFitnessTrendDataScope(runOnly: boolean): Promise<void> {
+  const name = `get-fitness-trend-data (${runOnly ? "runOnly" : "whole-body"})`;
+  try {
+    const result = (await dispatchToolCall("get-fitness-trend-data", {
+      days: 90,
+      runOnly,
+      projectDays: 14,
+      targetTsb: 10,
+    })) as { content?: Array<{ text?: unknown }>; isError?: boolean };
+    if (result.isError) {
+      fail(name, errorSummary(result));
+      return;
+    }
+    const data = parseDispatchJson<{
+      series: unknown[];
+      source?: string;
+      current: { ctl: number; atl: number; tsb: number } | null;
+    }>(result);
+    if (!data) {
+      fail(name, "could not parse response");
+      return;
+    }
+    ok(
+      name,
+      `source=${data.source} days=${data.series.length} ctl=${data.current?.ctl} atl=${data.current?.atl} tsb=${data.current?.tsb}`,
+    );
+  } catch (error) {
+    fail(name, throwSummary(error));
+  }
+}
+
 await checkListActivities();
 await checkGetActivity();
 await checkGetActivityStreams();
@@ -856,6 +1055,12 @@ await checkGetFitnessTrendRunOnly();
 await checkGetTrainingLoadWholeBody();
 await checkGetTrainingLoadRunOnly();
 await checkGetRunningDynamics();
+await checkGetActivityStreamsRaw();
+await checkGetCadenceTrendData();
+await checkGetRouteMapData();
+await checkGetCompareActivitiesData();
+await checkGetFitnessTrendDataScope(false);
+await checkGetFitnessTrendDataScope(true);
 
 if (failures > 0) {
   console.log(`${failures} tool(s) failed.`);

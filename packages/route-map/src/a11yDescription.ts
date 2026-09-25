@@ -15,7 +15,7 @@ export interface RouteMapA11yInput {
   /** Ordered `[lat, lng]` pairs; empty when there is no geometry. */
   coordinates: Array<[number, number]>;
   /** Metres above sea level, index-aligned with `coordinates`. */
-  altitude?: number[];
+  altitude?: (number | null)[];
   /** Label of the metric the track is coloured by, when streams are present. */
   colorMetric?: string | null;
   splitCount?: number;
@@ -114,19 +114,22 @@ function describeShape(
 }
 
 function altitudeRange(
-  altitude: number[] | undefined,
+  altitude: ReadonlyArray<number | null> | undefined,
 ): { min: number; max: number } | null {
   if (!altitude || altitude.length === 0) return null;
   let min = Infinity;
   let max = -Infinity;
   for (const value of altitude) {
+    if (value == null) continue;
     if (value < min) min = value;
     if (value > max) max = value;
   }
-  return { min, max };
+  return min === Infinity ? null : { min, max };
 }
 
-function describeAltitude(altitude: number[] | undefined): string | null {
+function describeAltitude(
+  altitude: ReadonlyArray<number | null> | undefined,
+): string | null {
   const range = altitudeRange(altitude);
   if (!range) return null;
   return `Altitude ranges from ${Math.round(range.min)} m to ${Math.round(range.max)} m.`;
@@ -138,7 +141,7 @@ function describeAltitude(altitude: number[] | undefined): string | null {
  * existing name label.
  */
 export function buildElevationStripDescription(
-  altitude: number[],
+  altitude: ReadonlyArray<number | null>,
   distanceKm: number,
 ): string {
   const range = altitudeRange(altitude);

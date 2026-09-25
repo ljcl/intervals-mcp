@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatDuration, round } from "./formatters";
+import { activityDisplayName, formatDuration, round } from "./formatters";
 
 describe("formatDuration", () => {
   it("formats seconds to HH:MM:SS with hours", () => {
@@ -50,5 +50,27 @@ describe("round", () => {
   it("handles negative numbers", () => {
     expect(round(-1.5)).toBe(-1);
     expect(round(-1.25, 1)).toBe(-1.2);
+  });
+});
+
+describe("activityDisplayName", () => {
+  it("prefers the activity's own name", () => {
+    expect(activityDisplayName({ name: "Tempo Run", type: "Run" })).toBe(
+      "Tempo Run",
+    );
+  });
+
+  it("falls back to type when name is missing", () => {
+    expect(activityDisplayName({ name: null, type: "Run" })).toBe("Run");
+    expect(activityDisplayName({ type: "Run" })).toBe("Run");
+  });
+
+  it("falls back to Workout when neither name nor type is set", () => {
+    expect(activityDisplayName({})).toBe("Workout");
+    expect(activityDisplayName({ name: null, type: null })).toBe("Workout");
+  });
+
+  it("keeps an empty-string name as-is (only null/undefined fall through)", () => {
+    expect(activityDisplayName({ name: "", type: "Ride" })).toBe("");
   });
 });

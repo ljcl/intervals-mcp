@@ -44,5 +44,17 @@ export function buildFitnessTrendContextSummary(
     );
   }
 
+  if (data.source) {
+    parts.push(
+      data.runOnly
+        ? "Scope: runs only, computed locally."
+        : "Scope: whole body, from intervals.icu.",
+    );
+  }
+
+  if (data.warnings && data.warnings.length > 0) {
+    parts.push(`Notes: ${data.warnings.join(" ")}`);
+  }
+
   return parts.join(" ");
 }

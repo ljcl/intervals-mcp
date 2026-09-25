@@ -9,7 +9,7 @@ const meta = preview.meta({ component: RunSelectList });
 export const Default = meta.story({
   args: {
     runs: mockRuns,
-    selectedRunIds: new Set<number>(),
+    selectedRunIds: new Set<string>(),
     onToggleRun: fn(),
   },
   play: async ({ canvas }) => {
@@ -25,7 +25,7 @@ export const Default = meta.story({
 export const SomeSelected = meta.story({
   args: {
     runs: mockRuns,
-    selectedRunIds: new Set([10013, 10003]),
+    selectedRunIds: new Set(["i10013", "i10003"]),
     onToggleRun: fn(),
   },
 });
@@ -39,7 +39,7 @@ export const SomeSelected = meta.story({
 export const KeyboardActivation = meta.story({
   args: {
     runs: mockRuns,
-    selectedRunIds: new Set<number>(),
+    selectedRunIds: new Set<string>(),
     onToggleRun: fn(),
   },
   play: async ({ args, userEvent }) => {
@@ -63,7 +63,7 @@ export const KeyboardActivation = meta.story({
 export const AtCap = meta.story({
   args: {
     runs: mockRuns,
-    selectedRunIds: new Set([10015, 10014, 10013, 10012]),
+    selectedRunIds: new Set(["i10015", "i10014", "i10013", "i10012"]),
     onToggleRun: fn(),
   },
   play: async ({ canvas }) => {
@@ -83,7 +83,7 @@ export const Dark = meta.story({
   globals: darkGlobals,
   args: {
     runs: mockRuns,
-    selectedRunIds: new Set([10013, 10003]),
+    selectedRunIds: new Set(["i10013", "i10003"]),
     onToggleRun: fn(),
   },
 });
@@ -91,7 +91,7 @@ export const Dark = meta.story({
 export const Mobile = meta.story({
   args: {
     runs: mockRuns,
-    selectedRunIds: new Set([10013]),
+    selectedRunIds: new Set(["i10013"]),
     onToggleRun: fn(),
     mode: "mobile",
   },

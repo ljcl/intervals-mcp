@@ -84,6 +84,24 @@ describe("buildMetricSeries", () => {
     )[0]!;
     expect(series.format(0.05)).toBe("—");
   });
+
+  it("keeps null samples and computes the color domain from the rest", () => {
+    const series = buildMetricSeries(
+      makeData({ streams: { heartrate: [140, null, 150, 160] } }),
+    )[0]!;
+    expect(series.values).toEqual([140, null, 150, 160]);
+    // Domain comes from the three real samples only: a null must not
+    // widen or shift it toward zero.
+    expect(series.min).toBeGreaterThanOrEqual(140);
+  });
+
+  it("degrades to a degenerate domain when every sample is null", () => {
+    const series = buildMetricSeries(
+      makeData({ streams: { heartrate: [null, null, null, null] } }),
+    )[0]!;
+    expect(series.min).toBe(0);
+    expect(series.max).toBe(0);
+  });
 });
 
 describe("buildTrackSegments", () => {
@@ -138,5 +156,21 @@ describe("buildTrackSegments", () => {
       max: 5,
     });
     expect(segments).toHaveLength(1);
+  });
+
+  it("breaks the colored track instead of coloring a null leg", () => {
+    const points = line(5);
+    // Sample at index 2 (x=20) is null: the legs touching it (1-2 and 2-3)
+    // must be skipped, not colored from a fabricated midpoint.
+    const values = [10, 20, null, 40, 50];
+    const segments = buildTrackSegments(points, { values, min: 10, max: 50 });
+
+    expect(segments).toHaveLength(2);
+    expect(segments[0]!.path).toBe("M0 0 L10 0");
+    expect(segments[1]!.path).toBe("M30 0 L40 0");
+    // Neither drawn path touches the null sample's point (x=20).
+    for (const s of segments) {
+      expect(s.path).not.toContain("20");
+    }
   });
 });

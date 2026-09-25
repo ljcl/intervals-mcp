@@ -4,6 +4,7 @@ import { expect, waitFor } from "storybook/test";
 import {
   baselineRun,
   compareData,
+  gappyPair,
   hrOnlyPair,
   raceRun,
 } from "./__fixtures__/runs";
@@ -80,6 +81,19 @@ export const HeartRateOnly = meta.story({
   args: {
     a: hrOnlyPair[0],
     b: hrOnlyPair[1],
+    compare: null,
+  },
+});
+
+/**
+ * Task 2: null-safe rendering. Each side has a gap in a different stream.
+ * The overlay's two lines must each break at their own gap independently,
+ * never fill it with an interpolated or fabricated value.
+ */
+export const GappyStreams = meta.story({
+  args: {
+    a: gappyPair[0],
+    b: gappyPair[1],
     compare: null,
   },
 });

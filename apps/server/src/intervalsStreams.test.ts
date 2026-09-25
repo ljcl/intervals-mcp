@@ -1,8 +1,7 @@
 /**
- * loadIntervalsStreams: the intervals.icu counterpart to the Strava
- * client's `getActivityStreams`/`StreamsUnavailableError` pair.
- * Turns the raw stream array into named, index-aligned arrays and derives
- * `moving`, which intervals.icu never returns (docs research 2026-09-24).
+ * loadIntervalsStreams: turns the raw `getActivityStreams` stream array into
+ * named, index-aligned arrays and derives `moving`, which intervals.icu
+ * never returns (docs research 2026-09-24).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import streamsFixture from "./__fixtures__/intervals/streams.json";
@@ -81,6 +80,24 @@ describe("loadIntervalsStreams", () => {
     // Not requested: absent, not present-with-undefined.
     expect(Object.hasOwn(streams, "watts")).toBe(false);
     expect(Object.hasOwn(streams, "grade_smooth")).toBe(false);
+  });
+
+  it("returns running-dynamics streams when requested", async () => {
+    mockedGet.mockResolvedValueOnce({ data: streamsFixture });
+
+    const streams = await loadIntervalsStreams("key", "i1", [
+      "time",
+      "stance_time",
+      "vertical_oscillation",
+      "vertical_ratio",
+      "step_length",
+    ]);
+
+    expect(streams.stance_time).toHaveLength(600);
+    expect(streams.vertical_oscillation).toHaveLength(600);
+    expect(streams.vertical_ratio).toHaveLength(600);
+    expect(streams.step_length).toHaveLength(600);
+    expect(streams.stance_time?.some((v) => v === null)).toBe(true);
   });
 
   it("keeps nulls in the requested arrays other than time", async () => {

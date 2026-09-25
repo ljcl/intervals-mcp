@@ -9,7 +9,7 @@ import { type RunSummary } from "./types";
 
 function run(overrides: Partial<RunSummary>): RunSummary {
   return {
-    id: 1,
+    id: "1",
     name: "Morning Run",
     date: "2026-03-02T07:00:00Z",
     distance: 8,
@@ -23,13 +23,13 @@ function run(overrides: Partial<RunSummary>): RunSummary {
 
 const runs: RunSummary[] = [
   run({
-    id: 1,
+    id: "1",
     date: "2026-03-02T07:00:00Z",
     averageCadence: 164,
     averagePace: 6.1,
   }),
   run({
-    id: 2,
+    id: "2",
     date: "2026-04-18T07:00:00Z",
     averageCadence: 178,
     averagePace: 4.5,
@@ -70,6 +70,17 @@ describe("buildScatterA11y", () => {
       "cadence decreasing at faster paces",
     );
     expect(buildScatterA11y(runs, null).desc).not.toContain("trend line");
+  });
+
+  it("skips a null pace in the pace range instead of narrating a fake 0 min/km", () => {
+    const withNullPace = [
+      ...runs,
+      run({ id: "3", averageCadence: 172, averagePace: null }),
+    ];
+    const { desc } = buildScatterA11y(withNullPace, null);
+    // Range stays bounded by the real values; a null would otherwise widen
+    // it toward 0.
+    expect(desc).toContain("pace between 4'30\" and 6'06\" min/km.");
   });
 });
 

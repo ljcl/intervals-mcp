@@ -3,31 +3,33 @@ export type RouteMapSource = "activity";
 
 /**
  * Metric streams aligned index-for-index with `coordinates`. Present only when
- * the server sourced the coordinates from the activity's latlng stream (all
- * streams in one Strava response share the same sample index). Keys mirror
- * Strava's stream type names.
+ * the activity has a recorded GPS track: the server sources `coordinates`
+ * from the intervals.icu latlng stream, jointly downsampled with these
+ * metric streams so they share one sample index. `time` and `distance` are
+ * gap-free and monotonic; every other stream may carry `null` samples.
  */
 export interface RouteStreams {
   /** Seconds since activity start. */
   time?: number[];
   /** Cumulative metres. */
   distance?: number[];
-  /** Metres above sea level. */
-  altitude?: number[];
-  /** Beats per minute. */
-  heartrate?: number[];
-  /** Power in watts. */
-  watts?: number[];
-  /** Smoothed speed in m/s. */
-  velocity_smooth?: number[];
-  /** Smoothed grade in percent. */
-  grade_smooth?: number[];
+  /** Metres above sea level. `null` samples are gaps, drawn as breaks. */
+  altitude?: (number | null)[];
+  /** Beats per minute. `null` samples are gaps, drawn as breaks. */
+  heartrate?: (number | null)[];
+  /** Power in watts. `null` samples are gaps, drawn as breaks. */
+  watts?: (number | null)[];
+  /** Smoothed speed in m/s. `null` samples are gaps, drawn as breaks. */
+  velocity_smooth?: (number | null)[];
+  /** Smoothed grade in percent. `null` samples are gaps, drawn as breaks. */
+  grade_smooth?: (number | null)[];
 }
 
 /**
- * Payload returned by the app-only `get-route-map-data` tool. Coordinates are
- * decoded server-side from Strava's encoded polyline into `[lat, lng]` pairs;
- * the app never decodes, keeping the bundle lean.
+ * Payload returned by the app-only `get-route-map-data` tool. Coordinates
+ * come from the intervals.icu activity's latlng stream, server-side, as
+ * `[lat, lng]` pairs; an activity with no recorded GPS track (e.g. a manual
+ * entry) comes back with empty `coordinates`.
  */
 export interface RouteMapData {
   source: RouteMapSource;
@@ -55,21 +57,17 @@ export interface RouteMapData {
    * (e.g. beyond the track length). Informational; the view tool's text
    * surfaces them to the model. */
   waypointWarnings?: string[];
-  /** Server notes about optional annotation layers (laps) that could
-   * not be fetched — a rate limit, an auth failure — each naming the layer and
-   * the reason. Informational, and the map still renders: the geometry was
-   * already loaded when the layer failed. Surfaced to the model by the view
-   * tool's text, like `waypointWarnings`. */
-  layerWarnings?: string[];
 }
 
 /**
  * Annotation anchors, as indices into `coordinates`. Resolved server-side
- * (lap distances mapped onto the downsampled stream) so the app only
- * projects and renders.
+ * (WORK-interval end times mapped onto the downsampled stream) so the app
+ * only projects and renders.
  */
 export interface RouteAnnotations {
-  /** Lap boundaries (each lap's end), present when the activity has 2+ laps. */
+  /** One marker per WORK interval's end (a one-lap run gets one finish
+   * marker). RECOVERY intervals get no marker: only the splits a runner
+   * planned are shown, not intervals.icu's rest/auto-pause segmentation. */
   laps?: Array<{ lapIndex: number; name: string; endIndex: number }>;
   /** Caller-supplied waypoints anchored by cumulative distance, sorted by
    * km. */

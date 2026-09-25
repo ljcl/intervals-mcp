@@ -8,12 +8,12 @@ export interface ActivityStreamData {
   name: string;
   streams: {
     time?: number[];
-    heartrate?: number[];
-    watts?: number[];
-    velocity_smooth?: number[];
-    altitude?: number[];
-    cadence?: number[];
-    grade_smooth?: number[];
+    heartrate?: (number | null)[];
+    watts?: (number | null)[];
+    velocity_smooth?: (number | null)[];
+    altitude?: (number | null)[];
+    cadence?: (number | null)[];
+    grade_smooth?: (number | null)[];
     distance?: number[];
   };
 }

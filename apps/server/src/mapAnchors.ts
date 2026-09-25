@@ -1,11 +1,11 @@
 /**
  * Anchor-point resolution for route-map annotations. Lap boundaries arrive
- * with distances, while the map app renders by index into the (downsampled)
- * latlng stream — Strava's `start_index`/`end_index` fields refer to the
- * full-resolution stream, so they cannot be used against a
- * `resolution=medium` response. These helpers map distance anchors onto
- * stream indices server-side, keeping the app's bundle lean. Pure math,
- * unit-tested next to `polyline.ts`.
+ * with distances against the full-resolution recorded stream, while the map
+ * app renders by index into the (downsampled) latlng stream, so a lap
+ * boundary's original index no longer lines up once the stream is
+ * downsampled. These helpers map distance anchors onto stream indices
+ * server-side, keeping the app's bundle lean. Pure math, unit-tested in
+ * `mapAnchors.test.ts`.
  */
 
 const DEG_TO_RAD = Math.PI / 180;
@@ -55,9 +55,9 @@ export function haversineMeters(
 /**
  * Cumulative haversine distance (metres) along a `[lat, lng]` track, aligned
  * index-for-index with the coordinates. The distance-anchor fallback when no
- * recorded distance stream exists: polyline-only activities arrive as bare
- * geometry, so anchors like waypoints need a synthetic cumulative stream to
- * resolve against.
+ * recorded distance stream exists: an activity with only a latlng stream and
+ * no recorded distance still needs a synthetic cumulative stream for anchors
+ * like waypoints to resolve against.
  */
 export function cumulativeDistances(
   coordinates: Array<[number, number]>,

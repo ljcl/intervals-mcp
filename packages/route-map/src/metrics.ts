@@ -33,13 +33,26 @@ export interface MetricSeries {
   label: string;
   /** Compact pill label for mobile, where five pills must share a card row. */
   shortLabel: string;
-  /** Raw per-point values used for coloring, aligned with coordinates. */
-  values: number[];
+  /** Raw per-point values used for coloring, aligned with coordinates.
+   * `null` is a genuine recording gap: the colored track breaks there
+   * instead of drawing a fabricated color. */
+  values: Array<number | null>;
   /** Color domain (percentile-clamped so outliers don't flatten the ramp). */
   min: number;
   max: number;
   /** Format a raw value for the scrub tooltip, unit included. */
   format: (value: number) => string;
+}
+
+/** Percentile color domain over only the non-null samples of a stream. A
+ * stream with no non-null samples at all degrades to a degenerate [0, 0]
+ * domain (`percentileDomain` never sees an empty array). */
+function domainOf(values: ReadonlyArray<number | null>): {
+  min: number;
+  max: number;
+} {
+  const present = values.filter((v): v is number => v != null);
+  return present.length > 0 ? percentileDomain(present) : { min: 0, max: 0 };
 }
 
 /**
@@ -52,7 +65,9 @@ export function buildMetricSeries(data: RouteMapData): MetricSeries[] {
   const pointCount = data.coordinates.length;
   if (!streams || pointCount === 0) return [];
 
-  const aligned = (values: number[] | undefined): number[] | null =>
+  const aligned = (
+    values: Array<number | null> | undefined,
+  ): Array<number | null> | null =>
     values && values.length === pointCount ? values : null;
 
   const running = data.activityType ? isRunning(data.activityType) : false;
@@ -65,7 +80,7 @@ export function buildMetricSeries(data: RouteMapData): MetricSeries[] {
       label: running ? "Pace" : "Speed",
       shortLabel: running ? "Pace" : "Speed",
       values: velocity,
-      ...percentileDomain(velocity),
+      ...domainOf(velocity),
       format: running ? formatSpeedAsPace : formatSpeedAsKmh,
     });
   }
@@ -77,7 +92,7 @@ export function buildMetricSeries(data: RouteMapData): MetricSeries[] {
       label: "Heart rate",
       shortLabel: "HR",
       values: heartrate,
-      ...percentileDomain(heartrate),
+      ...domainOf(heartrate),
       format: (v) => `${Math.round(v)} bpm`,
     });
   }
@@ -89,7 +104,7 @@ export function buildMetricSeries(data: RouteMapData): MetricSeries[] {
       label: "Power",
       shortLabel: "Power",
       values: watts,
-      ...percentileDomain(watts),
+      ...domainOf(watts),
       format: (v) => `${Math.round(v)} W`,
     });
   }
@@ -101,7 +116,7 @@ export function buildMetricSeries(data: RouteMapData): MetricSeries[] {
       label: "Elevation",
       shortLabel: "Elev",
       values: altitude,
-      ...percentileDomain(altitude),
+      ...domainOf(altitude),
       format: (v) => `${Math.round(v)} m`,
     });
   }
@@ -113,7 +128,7 @@ export function buildMetricSeries(data: RouteMapData): MetricSeries[] {
       label: "Gradient",
       shortLabel: "Grade",
       values: grade,
-      ...percentileDomain(grade),
+      ...domainOf(grade),
       format: (v) => `${v.toFixed(1)} %`,
     });
   }
@@ -151,7 +166,9 @@ export interface ColorRun {
 /**
  * Group consecutive same-color-bin legs into runs. Each leg is colored by the
  * midpoint of its endpoint values; adjacent runs share their boundary sample,
- * so there are no gaps between strokes.
+ * so there are no gaps between strokes. A leg with either endpoint `null`
+ * (a recording gap) gets no bin at all and is skipped entirely: a break in
+ * the colored track rather than a fabricated color.
  */
 export function buildColorRuns(
   series: Pick<MetricSeries, "values" | "min" | "max">,
@@ -160,8 +177,13 @@ export function buildColorRuns(
   const { values, min, max } = series;
   if (sampleCount < 2 || values.length !== sampleCount) return [];
 
-  const binOf = (i: number) => {
-    const t = normalizeValue((values[i]! + values[i + 1]!) / 2, min, max);
+  /** Color bin for the leg starting at `i`, or `null` when either endpoint
+   * is a gap: never a valid bin index (0..COLOR_BINS - 1). */
+  const binOf = (i: number): number | null => {
+    const v0 = values[i];
+    const v1 = values[i + 1];
+    if (v0 == null || v1 == null) return null;
+    const t = normalizeValue((v0 + v1) / 2, min, max);
     return Math.min(COLOR_BINS - 1, Math.floor(t * COLOR_BINS));
   };
 
@@ -172,11 +194,13 @@ export function buildColorRuns(
     const isLast = i === sampleCount - 1;
     const bin = isLast ? -1 : binOf(i);
     if (bin === runBin && !isLast) continue;
-    runs.push({
-      startIndex: runStart,
-      endIndex: i,
-      color: rampColor((runBin + 0.5) / COLOR_BINS),
-    });
+    if (runBin !== null) {
+      runs.push({
+        startIndex: runStart,
+        endIndex: i,
+        color: rampColor((runBin + 0.5) / COLOR_BINS),
+      });
+    }
     runStart = i;
     runBin = bin;
   }

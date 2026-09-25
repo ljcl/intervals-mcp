@@ -456,7 +456,7 @@ export function CompareActivities({
               stroke={COLOR_A}
               dot={false}
               strokeWidth={tokens.strokeWidth}
-              connectNulls
+              connectNulls={false}
             />
           )}
           {!hidden.b && (
@@ -467,7 +467,7 @@ export function CompareActivities({
               stroke={COLOR_B}
               dot={false}
               strokeWidth={tokens.strokeWidth}
-              connectNulls
+              connectNulls={false}
             />
           )}
         </ComposedChart>

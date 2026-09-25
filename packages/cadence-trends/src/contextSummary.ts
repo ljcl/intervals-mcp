@@ -11,12 +11,20 @@ export interface CadenceContextInput {
   weeks: number;
   activeView: ViewId;
   selectedRuns: RunSummary[];
+  /** Run-type activities in the window with no recorded cadence, left out
+   * of the chart entirely; mentioned so the model knows the average isn't
+   * silently missing them. */
+  excludedNoCadence?: number;
+  /** Runs with cadence but no recorded speed, excluded from pace-based
+   * views (pace zones, scatter) only. */
+  noPaceCount?: number;
 }
 
 export function buildCadenceContextSummary(
   input: CadenceContextInput,
 ): string | null {
-  const { weeks, activeView, selectedRuns } = input;
+  const { weeks, activeView, selectedRuns, excludedNoCadence, noPaceCount } =
+    input;
   if (!weeks) return null;
 
   const parts = [
@@ -30,6 +38,16 @@ export function buildCadenceContextSummary(
     parts.push(`Comparing: ${runs}.`);
   } else {
     parts.push("No runs selected for comparison.");
+  }
+  if (excludedNoCadence) {
+    parts.push(
+      `${excludedNoCadence} run${excludedNoCadence === 1 ? "" : "s"} with no recorded cadence excluded.`,
+    );
+  }
+  if (noPaceCount) {
+    parts.push(
+      `${noPaceCount} run${noPaceCount === 1 ? "" : "s"} with no recorded pace excluded from pace-based views.`,
+    );
   }
   return parts.join(" ");
 }

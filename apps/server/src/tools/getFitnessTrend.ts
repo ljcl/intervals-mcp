@@ -1,21 +1,12 @@
 import { z } from "zod";
 import { getTimeZone } from "../config";
 import {
-  buildRunOnlyFitnessTrend,
-  computeFlags,
   type FitnessTrendDay,
   type PlannedLoad,
-  projectFromWellness,
-  RUN_ONLY_RUNWAY_DAYS,
-  RUN_TYPES,
-  type TaperPlan,
   type TaperWeek,
-  trendBands,
 } from "../fitnessTrend";
-import { loadWellnessFitnessSeries } from "../fitnessTrendWellness";
-import { listActivities } from "../intervalsClient";
+import { loadFitnessTrend } from "../loadFitnessTrend";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
-import { typesWithLoad } from "../trainingLoad";
 import {
   addDays,
   dateInputSchema,
@@ -151,9 +142,6 @@ const inputSchema = z.object({
 
 type GetFitnessTrendInput = z.infer<typeof inputSchema>;
 
-/** Beyond this the solved plan is a training block, not a taper. */
-const LONG_PLAN_DAYS = 28;
-
 const signed = (value: number) => `${value >= 0 ? "+" : ""}${value}`;
 
 function formatDay(day: FitnessTrendDay): string {
@@ -170,8 +158,6 @@ function formatTaperWeek(week: TaperWeek): string {
       : ` — ${week.pct_of_recent}% of recent weekly load`;
   return `  Week ${week.week} (${span}): ${week.daily_load}/day, ${week.week_load} total${recent}`;
 }
-
-const localDay = (isoDateTime: string) => isoDateTime.split("T")[0]!;
 
 /**
  * `projectDays` when not given explicitly: 0, unless `plannedLoads` is
@@ -249,178 +235,36 @@ export const getFitnessTrendTool = {
         endDate,
       );
 
-      let source: "intervals.icu" | "computed";
-      let displaySeries: FitnessTrendDay[];
-      let current: FitnessTrendDay | null;
-      let projection: FitnessTrendDay[];
-      let tsbPositiveDate: string | null;
-      let taper: TaperPlan | null;
-      let activityTypesIncluded: string[];
-      let activitiesIncluded: number;
-      let activitiesMissingLoad: number;
+      const loaded = await loadFitnessTrend(
+        apiKey,
+        {
+          days,
+          runOnly,
+          projectDays: resolvedProjectDays,
+          plannedLoads: typedPlannedLoads,
+          taper: targetDate ? { targetDate, targetTsb } : undefined,
+        },
+        progress,
+      );
+
+      const {
+        source,
+        series: displaySeries,
+        current,
+        projection,
+        tsbPositiveDate,
+        taper,
+        activityTypesIncluded,
+        activitiesIncluded,
+        activitiesMissingLoad,
+        bands,
+        flags,
+      } = loaded;
+
       const warnings: string[] = [
         ...plannedLoadWarnings(typedPlannedLoads, endDate, resolvedProjectDays),
+        ...loaded.warnings,
       ];
-
-      if (runOnly) {
-        const runwayDays = days + RUN_ONLY_RUNWAY_DAYS;
-        const runwayStart = addDays(endDate, -(runwayDays - 1));
-
-        progress(`Listing activities ${runwayStart} to ${endDate}…`, {
-          important: true,
-        });
-        const activities = await listActivities(apiKey, {
-          oldest: runwayStart,
-          newest: endDate,
-        });
-        const runActivities = activities.filter((a) =>
-          RUN_TYPES.includes(a.type ?? ""),
-        );
-
-        const { trend } = buildRunOnlyFitnessTrend(runActivities, {
-          endDate,
-          days,
-          runwayDays,
-          fitnessOptions: {
-            projectDays: resolvedProjectDays,
-            plannedLoads: typedPlannedLoads,
-            taper: targetDate ? { targetDate, targetTsb } : undefined,
-          },
-        });
-
-        // The runway settles CTL; trim the display (and the bands/flags read
-        // off it) back to the requested window.
-        displaySeries = trend.days.slice(-days);
-        current = trend.current;
-        projection = trend.projection;
-        tsbPositiveDate = trend.tsbPositiveDate;
-        taper = trend.taper;
-
-        source = "computed";
-        activityTypesIncluded = [...RUN_TYPES];
-        const inWindow = runActivities.filter((a) => {
-          const date = localDay(a.start_date_local);
-          return date >= windowStart && date <= endDate;
-        });
-        activitiesIncluded = inWindow.length;
-        activitiesMissingLoad = inWindow.filter(
-          (a) => a.icu_training_load == null,
-        ).length;
-
-        warnings.push(
-          `Run-only CTL/ATL is computed locally from Run/TrailRun/VirtualRun ` +
-            `training load, zero-seeded ${RUN_ONLY_RUNWAY_DAYS} days before ` +
-            `the window (from ${runwayStart}) so the 42-day CTL average has ` +
-            `settled by ${windowStart}; it will not exactly match intervals.icu's ` +
-            `own (whole-body) fitness page.`,
-        );
-      } else {
-        progress(`Fetching wellness ${windowStart} to ${endDate}…`, {
-          important: true,
-        });
-        const { series, seed, asOfDate, gapDates } =
-          await loadWellnessFitnessSeries(apiKey, {
-            oldest: windowStart,
-            newest: endDate,
-          });
-
-        displaySeries = series;
-        current =
-          series.length > 0
-            ? {
-                date: series[series.length - 1]!.date,
-                load: series[series.length - 1]!.load,
-                ctl: series[series.length - 1]!.ctl,
-                atl: series[series.length - 1]!.atl,
-                tsb: series[series.length - 1]!.tsb,
-              }
-            : null;
-
-        // Days between the most recent day with recorded CTL/ATL and today:
-        // wellness that has not synced yet, not a zero-load day. Always the
-        // trailing slice of `gapDates` below, so it is folded into that one
-        // warning rather than reported a second time.
-        const projected = projectFromWellness(
-          { series, seed, asOfDate, endDate },
-          {
-            projectDays: resolvedProjectDays,
-            plannedLoads: typedPlannedLoads,
-            taper: targetDate ? { targetDate, targetTsb } : undefined,
-          },
-        );
-        projection = projected.projection;
-        tsbPositiveDate = projected.tsbPositiveDate;
-        taper = projected.taper;
-        warnings.push(...projected.warnings);
-        const unsyncedDays = projected.unsyncedDays;
-
-        if (!seed || !asOfDate) {
-          if (targetDate || resolvedProjectDays > 0) {
-            warnings.push(
-              "No wellness CTL/ATL is available in the window, so there is nothing to project or solve a taper from.",
-            );
-          }
-        }
-
-        source = "intervals.icu";
-        if (gapDates.length > 0) {
-          const plural = gapDates.length !== 1;
-          const willProject = resolvedProjectDays > 0 && !targetDate;
-          const trailingClause =
-            unsyncedDays > 0
-              ? ` The most recent ${unsyncedDays} ${unsyncedDays === 1 ? "day" : "days"} ` +
-                `(${addDays(asOfDate!, 1)} to ${endDate}) ${unsyncedDays === 1 ? "has" : "have"} not ` +
-                `synced yet${willProject ? `; the projection assumes rest for ${unsyncedDays === 1 ? "it" : "them"} before continuing forward` : ""}.`
-              : "";
-          warnings.push(
-            `${gapDates.length} of ${days} day${plural ? "s" : ""} in the window ` +
-              `have no wellness CTL/ATL recorded; ${plural ? "those are gaps" : "that is a gap"}, ` +
-              `not zero load, and ${plural ? "are" : "is"} left out of the series.` +
-              trailingClause,
-          );
-        }
-
-        progress(`Listing activities ${windowStart} to ${endDate}…`);
-        const activities = await listActivities(apiKey, {
-          oldest: windowStart,
-          newest: endDate,
-        });
-        activityTypesIncluded = typesWithLoad(activities);
-        activitiesIncluded = activities.length;
-        activitiesMissingLoad = activities.filter(
-          (a) => a.icu_training_load == null,
-        ).length;
-
-        warnings.push(
-          "Some activity types (e.g. strength/weight training) may count " +
-            "toward fatigue (ATL) only, not fitness (CTL), depending on this " +
-            "athlete's intervals.icu settings.",
-        );
-        if (activitiesMissingLoad > 0) {
-          warnings.push(
-            `${activitiesMissingLoad} of ${activitiesIncluded} activities in ` +
-              "the window have no training load recorded (informational only, " +
-              "since whole-body CTL/ATL comes from intervals.icu's own " +
-              "wellness data, not summed here).",
-          );
-        }
-      }
-
-      const bands = trendBands(displaySeries);
-      const flags = computeFlags(displaySeries);
-
-      if (activitiesIncluded === 0) {
-        warnings.push(
-          runOnly
-            ? "No matching run activities in the window."
-            : "No activities in the window.",
-        );
-      }
-      if (taper && taper.days.length > LONG_PLAN_DAYS) {
-        warnings.push(
-          `${taper.days.length} days is a training block rather than a taper; the plan still steps down each week, so treat its early weeks as maintenance load.`,
-        );
-      }
 
       // 7-day delta by date, not array index, since a gappy whole-body
       // series is not necessarily contiguous.

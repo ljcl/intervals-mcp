@@ -7,6 +7,10 @@ export const METRIC_LABELS: Record<string, string> = {
   altitude: "altitude",
   cadence: "cadence",
   grade: "grade",
+  stanceTime: "ground contact time",
+  verticalOscillation: "vertical oscillation",
+  verticalRatio: "vertical ratio",
+  stepLength: "step length",
 };
 
 export interface ChartContextInput {
@@ -20,12 +24,27 @@ export interface ChartContextInput {
    * knows which part of the run the next question is about.
    */
   zoomWindow?: string | null;
+  /**
+   * Running-dynamics averages (ground contact time, vertical oscillation,
+   * vertical ratio, step length), already formatted with units, e.g.
+   * "Ground contact time averages 245 ms." Precomputed by the caller from
+   * whichever dynamics the activity recorded; omitted entirely when it
+   * recorded none, so the model never asks about metrics that aren't there.
+   */
+  dynamicsSummary?: string | null;
 }
 
 export function buildChartContextSummary(
   input: ChartContextInput,
 ): string | null {
-  const { activityName, availableMetrics, hidden, smooth, zoomWindow } = input;
+  const {
+    activityName,
+    availableMetrics,
+    hidden,
+    smooth,
+    zoomWindow,
+    dynamicsSummary,
+  } = input;
   if (!activityName || availableMetrics.length === 0) return null;
 
   const label = (k: string) => METRIC_LABELS[k] ?? k;
@@ -37,5 +56,6 @@ export function buildChartContextSummary(
   if (off.length) parts.push(`Hidden: ${off.join(", ")}.`);
   parts.push(`Smoothing: ${smooth ? "on" : "off"}.`);
   if (zoomWindow) parts.push(`Zoomed to ${zoomWindow}.`);
+  if (dynamicsSummary) parts.push(dynamicsSummary);
   return parts.join(" ");
 }

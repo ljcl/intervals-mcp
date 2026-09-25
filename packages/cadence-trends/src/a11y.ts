@@ -2,9 +2,9 @@ import { formatPace, formatShortDate } from "@intervals-mcp/data";
 import { type RunSummary } from "./types";
 
 /**
- * Narration spells the year out: "14 Sep 2025". Strava dates are UTC ISO
- * strings and `formatShortDate` reads them in UTC, so the narrated day never
- * shifts by the viewer's (or CI's) timezone.
+ * Narration spells the year out: "14 Sep 2025". intervals.icu dates are UTC
+ * ISO strings and `formatShortDate` reads them in UTC, so the narrated day
+ * never shifts by the viewer's (or CI's) timezone.
  */
 const fullDate = (iso: string) => formatShortDate(iso, "full");
 
@@ -35,6 +35,8 @@ function paceRange(runs: RunSummary[]): { min: number; max: number } {
   let min = Infinity;
   let max = -Infinity;
   for (const run of runs) {
+    // A null pace (no recorded speed) is not a data point on this axis.
+    if (run.averagePace == null) continue;
     if (run.averagePace < min) min = run.averagePace;
     if (run.averagePace > max) max = run.averagePace;
   }

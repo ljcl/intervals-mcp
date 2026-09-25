@@ -86,6 +86,23 @@ describe("toMetricSeries", () => {
     expect(series.values.heartrate).toBeUndefined();
   });
 
+  it("keeps a null velocity sample as a gap, not a capped pace spike", () => {
+    const series = toMetricSeries(
+      streamData({ velocity_smooth: [3.3333, null, 5, 0.5] }),
+      "run",
+    );
+    expect(series.values.pace?.[1]).toBeNull();
+    expect(series.values.pace?.[1]).not.toBe(15);
+  });
+
+  it("keeps a null cadence sample as null, not 0", () => {
+    const run = toMetricSeries(
+      streamData({ cadence: [80, null, 84, 86] }),
+      "run",
+    );
+    expect(run.values.cadence?.[1]).toBeNull();
+  });
+
   it("keeps the distance axis only when aligned with time", () => {
     const withDistance = toMetricSeries(
       streamData({ distance: [0, 50, 100, 150] }),
@@ -172,5 +189,17 @@ describe("alignSeries", () => {
       values: { heartrate: [100, 110] },
     };
     expect(alignSeries(noDistance, linear(120, 1), "distance")).toEqual([]);
+  });
+
+  it("leaves a null sample as a gap instead of interpolating a fake value", () => {
+    // A real dropout mid-recording: any grid point bracketed by the null
+    // sample must come back undefined (Recharts gap), not a fabricated
+    // number blended from the surrounding readings.
+    const withGap: MetricSeries = {
+      time: [0, 25, 50, 75, 100],
+      values: { heartrate: [100, 110, null, 130, 140] },
+    };
+    const points = alignSeries(withGap, withGap, "time", 5);
+    expect(points[2]?.aHeartrate).toBeUndefined();
   });
 });

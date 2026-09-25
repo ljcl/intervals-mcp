@@ -4,17 +4,16 @@
 [![Storybook](https://img.shields.io/badge/Storybook-live-ff4785?logo=storybook&logoColor=white)](https://ljcl.github.io/intervals-mcp/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
-A single-user remote MCP server for intervals.icu run data and analysis, with interactive MCP Apps. Continues from [strava-mcp](https://github.com/ljcl/strava-mcp).
+A single-user remote MCP server for intervals.icu run data and analysis, with interactive MCP Apps.
 
-> **Migration in progress.** The server is being ported from Strava to
-> intervals.icu (Phases 1 through 3 complete). All twenty text tools now
-> talk to intervals.icu directly and are verified against a real account;
-> see [docs/tools.md](docs/tools.md) for the full catalog. Only three app
-> data handlers still call the retired Strava client and fail with a "not
-> yet ported" error: `view-activity-chart`/`get-activity-streams-raw`,
-> `view-cadence-trends`/`get-cadence-trend-data`, and
-> `view-route-map`/`get-route-map-data`, pending Phase 4. The presence of
-> `INTERVALS_API_KEY` is checked at startup and reported on `/health`.
+All twenty text tools and every MCP App talk to intervals.icu directly and
+are verified against a real account; see [docs/tools.md](docs/tools.md) for
+the full catalog. The presence of `INTERVALS_API_KEY` is checked at startup
+and reported on `/health`.
+
+**History.** This project began as [strava-mcp](https://github.com/ljcl/strava-mcp)
+and was migrated to intervals.icu as its data source; nothing in the server
+talks to Strava today.
 
 ## Setup
 
@@ -185,10 +184,8 @@ Any client that speaks [Streamable HTTP](https://modelcontextprotocol.io/docs/co
 ## Tools
 
 The full tool catalog, prompts, permission behaviour, and example requests
-live in [docs/tools.md](docs/tools.md). All twenty text tools talk to
-intervals.icu directly. Only the activity-chart, cadence-trends, and
-route-map app data handlers still call the transitional Strava client and
-return a "not yet ported" error, pending Phase 4.
+live in [docs/tools.md](docs/tools.md). All twenty text tools and every MCP
+App's data handler talk to intervals.icu directly.
 
 ## Documentation
 
@@ -209,7 +206,7 @@ PRs are squash-merged and the **PR title becomes the commit on `main`**, so writ
 
 **AI tool can't reach the server** — MCP requires an HTTPS URL. Use a tunnel (Tailscale Funnel or Cloudflare Tunnel) to expose your local server. See [Connecting to AI Tools](#connecting-to-ai-tools).
 
-**API key errors:** Check `/health` first: `api_key_configured` tells you whether the server has a key set at all. For a tool already ported to intervals.icu, if `api_key_configured` is `true` but calls still fail, the key may be wrong or revoked; generate a new one at intervals.icu, Settings, Developer Settings, and update `INTERVALS_API_KEY`. A tool not yet ported (see [docs/tools.md](docs/tools.md)) fails with a "not yet ported" message regardless of the key. See [operations.md](docs/operations.md#intervalsicu-api-key).
+**API key errors:** Check `/health` first: `api_key_configured` tells you whether the server has a key set at all. If `api_key_configured` is `true` but calls still fail, the key may be wrong or revoked; generate a new one at intervals.icu, Settings, Developer Settings, and update `INTERVALS_API_KEY`. See [operations.md](docs/operations.md#intervalsicu-api-key).
 
 **Is the server up and reachable?** `curl https://your-public-url/health`. It answers without touching the intervals.icu API, so it works even when your rate limit is exhausted.
 

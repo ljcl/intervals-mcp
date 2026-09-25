@@ -1,4 +1,5 @@
 import {
+  type FitnessTrendBaseArgs,
   type FitnessTrendData,
   type TaperWeek,
   type TrendBand,
@@ -287,6 +288,18 @@ export const mockFitnessTrendData: FitnessTrendData = {
   flags: mockFlags,
   activitiesIncluded: 51,
   activitiesMissingLoad: 0,
+  source: "intervals.icu",
+  runOnly: false,
+  activityTypesIncluded: ["Run", "Ride", "WeightTraining"],
+  warnings: [],
+};
+
+/** Args the fixtures above were "fetched" with, shared by both scope stories. */
+export const mockBaseArgs: FitnessTrendBaseArgs = {
+  days: 90,
+  projectDays: 14,
+  targetDate: "2026-07-19",
+  targetTsb: 12,
 };
 
 /** No target date: the forward half is a zero-load rest projection. */
@@ -294,6 +307,53 @@ export const mockRestProjectionData: FitnessTrendData = {
   ...mockFitnessTrendData,
   taper: null,
   tsbPositiveDate: "2026-07-02",
+};
+
+/**
+ * The run-only (computed) scope for the same window: derived from the
+ * whole-body series by scaling CTL/ATL down (running load is a subset of
+ * whole-body load, e.g. strength/cross-training counted whole-body only),
+ * and dropping the taper: run-only projects rest, matching what the
+ * toggle actually shows when only the whole-body scope named a target.
+ * `source`/`runOnly`/`activityTypesIncluded` are the fields the toggle
+ * reads to label the scope.
+ */
+const RUN_ONLY_SCALE = 0.72;
+const scaleDay = (day: TrendDay): TrendDay => ({
+  date: day.date,
+  load: Math.round(day.load * RUN_ONLY_SCALE * 10) / 10,
+  ctl: Math.round(day.ctl * RUN_ONLY_SCALE * 10) / 10,
+  atl: Math.round(day.atl * RUN_ONLY_SCALE * 10) / 10,
+  tsb:
+    Math.round(day.ctl * RUN_ONLY_SCALE * 10) / 10 -
+    Math.round(day.atl * RUN_ONLY_SCALE * 10) / 10,
+});
+
+const mockRunOnlySeries = mockSeries.map(scaleDay);
+const mockRunOnlyProjection = mockProjection.map(scaleDay);
+
+export const mockRunOnlyFitnessTrendData: FitnessTrendData = {
+  days: 90,
+  series: mockRunOnlySeries,
+  projection: mockRunOnlyProjection,
+  taper: null,
+  current: mockRunOnlySeries[mockRunOnlySeries.length - 1]!,
+  tsbPositiveDate: "2026-07-05",
+  bands: mockBands
+    .filter((band) => band.kind !== "fresh")
+    .map((band) => ({ ...band })),
+  flags: mockFlags,
+  activitiesIncluded: 34,
+  activitiesMissingLoad: 0,
+  source: "computed",
+  runOnly: true,
+  activityTypesIncluded: ["Run", "TrailRun", "VirtualRun"],
+  warnings: [
+    "Run-only CTL/ATL is computed locally from Run/TrailRun/VirtualRun " +
+      "training load, zero-seeded 150 days before the window so the " +
+      "42-day CTL average has settled; it will not exactly match " +
+      "intervals.icu's own (whole-body) fitness page.",
+  ],
 };
 
 /**

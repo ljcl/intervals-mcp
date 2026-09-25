@@ -21,8 +21,8 @@ import { type RunSummary } from "./types";
 
 interface ScatterViewProps {
   activities: RunSummary[];
-  onRunClick: (runId: number) => void;
-  selectedRunIds: Set<number>;
+  onRunClick: (runId: string) => void;
+  selectedRunIds: Set<string>;
   mode?: "mobile" | "desktop";
 }
 
@@ -41,7 +41,11 @@ export function ScatterView({
   };
 
   const runs = useMemo(
-    () => activities.filter((a) => a.averageCadence > 0 && a.averagePace > 0),
+    () =>
+      activities.filter(
+        (a): a is RunSummary & { averagePace: number } =>
+          a.averageCadence > 0 && a.averagePace != null && a.averagePace > 0,
+      ),
     [activities],
   );
 

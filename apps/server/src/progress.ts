@@ -26,7 +26,7 @@
  * Progress exists to keep a client's timeout alive and to show liveness, and
  * both are time-shaped concerns — a scan that completes 60 activities in a
  * second needs one notification, not 60. Counting-based throttling (every Nth
- * item) gets this wrong in both directions depending on how fast Strava
+ * item) gets this wrong in both directions depending on how fast intervals.icu
  * answers. `important` updates bypass the throttle, because a phase change or
  * a rate-limit abort is news regardless of when the last tick went out.
  *
@@ -105,15 +105,4 @@ export function createProgressReporter(
       params: { progressToken, progress: ticks, message },
     }).catch(() => {});
   };
-}
-
-/**
- * Adapter for `getAllActivities`'s per-page callback. Five tools paginate the
- * athlete's history; routing them through one adapter keeps the wording
- * identical across all of them rather than five near-miss variants.
- */
-export function listingProgress(
-  progress: ReportProgress,
-): (fetched: number) => void {
-  return (fetched) => progress(`Listed ${fetched} activities`);
 }
