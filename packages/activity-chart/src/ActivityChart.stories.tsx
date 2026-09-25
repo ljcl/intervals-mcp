@@ -432,5 +432,17 @@ export const RunningDynamicsFormMobile = meta.story({
     expect(
       canvasElement.querySelectorAll(".recharts-yAxis").length,
     ).toBeLessThanOrEqual(2);
+
+    // The Form preset's legend carries four dynamics toggles on top of the
+    // usual series; on the narrow mobile card the footer's `flex-wrap: wrap`
+    // (ActivityChart.module.css) must let the legend wrap onto extra rows
+    // rather than overflow horizontally past the card edge.
+    const legendGroup = canvas
+      .getByRole("button", { name: "Toggle Ground Contact Time" })
+      .closest('[role="group"]');
+    expect(legendGroup).not.toBeNull();
+    expect(legendGroup!.scrollWidth).toBeLessThanOrEqual(
+      legendGroup!.clientWidth + 1,
+    );
   },
 });

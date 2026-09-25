@@ -74,13 +74,17 @@ export interface FitnessTrendAppData {
 export interface FitnessTrendAppMeta {
   /** Lookback window the caller asked for. */
   days: number;
+  /** Count of activities within the window whose load fed the series. */
   activitiesIncluded: number;
+  /** Count of activities within the window with no usable load, excluded from the series. */
   activitiesMissingLoad: number;
   /** Defaults to `"intervals.icu"`, the app's original (whole-body only) behavior. */
   source?: "intervals.icu" | "computed";
   /** Defaults to false. */
   runOnly?: boolean;
+  /** Activity types the series' load covers; see {@link FitnessTrendAppData.activityTypesIncluded}. */
   activityTypesIncluded?: string[];
+  /** Notes worth surfacing alongside the chart, carried through onto {@link FitnessTrendAppData.warnings}. */
   warnings?: string[];
 }
 

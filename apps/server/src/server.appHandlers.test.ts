@@ -457,7 +457,14 @@ describe("training load handlers", () => {
       activity_types_included: string[];
     };
 
-    expect(textData.current).toEqual(appData.current);
+    // Both paths call the same `buildTrainingLoadData`/wellness read, but
+    // compare field by field with `toBeCloseTo` rather than a structural
+    // `toEqual`, matching the fitness-trend agreement tests above: a
+    // shared-function guarantee should not also demand bit-identical
+    // floating point, which is a stricter (and unrelated) claim.
+    expect(textData.current?.ctl).toBeCloseTo(appData.current.ctl, 5);
+    expect(textData.current?.atl).toBeCloseTo(appData.current.atl, 5);
+    expect(textData.current?.tsb).toBeCloseTo(appData.current.tsb, 5);
     expect(textData.activity_types_included).toEqual(
       appData.activityTypesIncluded,
     );

@@ -199,6 +199,36 @@ describe("buildRouteMapData", () => {
     expect(data.annotations?.laps?.[0]?.name).toBe("Tempo");
   });
 
+  it("lands a WORK-interval marker on the next known sample when its end falls inside a dropped GPS gap", () => {
+    const time = [0, 1, 2, 3, 4];
+    const latlng: Array<[number, number] | null> = [
+      [0, 0],
+      [0, 1],
+      null,
+      [0, 3],
+      [0, 4],
+    ];
+    const intervals: IntervalsInterval[] = [
+      interval({ type: "WORK", start_time: 0, end_time: 2 }),
+    ];
+
+    const data = buildRouteMapData(
+      activity(),
+      streams({ time, latlng }),
+      intervals,
+    );
+
+    // The sample at time 2 was dropped for a null latlng, so the
+    // downsampled time array is [0, 1, 3, 4]: the marker must land on the
+    // next known sample (time 3), not the dropped one.
+    expect(data.coordinates).toHaveLength(4);
+    expect(data.annotations?.laps?.[0]).toMatchObject({
+      lapIndex: 1,
+      endIndex: 2,
+    });
+    expect(data.streams?.time?.[2]).toBe(3);
+  });
+
   it("has no annotations when there are no WORK intervals", () => {
     const time = [0, 1, 2];
     const latlng: Array<[number, number]> = time.map((t) => [0, t]);
