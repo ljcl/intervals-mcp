@@ -55,10 +55,7 @@ import {
 } from "./telemetry";
 import { READ_ONLY } from "./tools/_annotations";
 import { toolErrorText } from "./tools/_errors";
-import {
-  idJsonSchemaOverride,
-  intervalsActivityIdInput,
-} from "./tools/_ids";
+import { idJsonSchemaOverride, intervalsActivityIdInput } from "./tools/_ids";
 import {
   buildComparison,
   compareActivitiesTool,
