@@ -10,6 +10,7 @@ import { HttpError, RateLimitError, stravaApi } from "./fetchClient";
 import { ATL_TIME_CONSTANT_DAYS, CTL_TIME_CONSTANT_DAYS } from "./fitnessTrend";
 import {
   getActivity as getIntervalsActivityFn,
+  getActivityStreams as getIntervalsStreamsFn,
   getWellness as getWellnessFn,
   type IntervalsActivity,
   type IntervalsWellness,
@@ -20,7 +21,6 @@ import {
   getActivityLaps,
   getAllActivities,
   type StravaDetailedActivity,
-  type StravaLap,
   type StravaSummaryActivity,
 } from "./stravaClient";
 import { addDays } from "./utils/localDate";
@@ -40,6 +40,7 @@ vi.mock("./intervalsClient", async (importOriginal) => {
   return {
     ...actual,
     getActivity: vi.fn(),
+    getActivityStreams: vi.fn(),
     getWellness: vi.fn(),
     listActivities: vi.fn(),
   };
@@ -72,6 +73,7 @@ const mockedToken = vi.mocked(getIntervalsApiKey);
 const mockedById = vi.mocked(getActivityById);
 const mockedLaps = vi.mocked(getActivityLaps);
 const mockedIntervalsActivity = vi.mocked(getIntervalsActivityFn);
+const mockedIntervalsStreams = vi.mocked(getIntervalsStreamsFn);
 const mockedWellness = vi.mocked(getWellnessFn);
 const mockedIntervalsList = vi.mocked(listActivitiesFn);
 const mockedList = vi.mocked(getAllActivities);
@@ -98,6 +100,20 @@ function detailedActivity(
     map: { summary_polyline: POLYLINE },
     ...overrides,
   } as unknown as StravaDetailedActivity;
+}
+
+function intervalsActivity(
+  overrides: Partial<IntervalsActivity> = {},
+): IntervalsActivity {
+  return {
+    id: "i123",
+    name: "Morning Run",
+    type: "Run",
+    start_date_local: "2026-06-01T07:00:00",
+    distance: 10000,
+    moving_time: 3000,
+    ...overrides,
+  } as IntervalsActivity;
 }
 
 function summaryRun(
@@ -157,12 +173,12 @@ describe("app handlers with no key configured", () => {
   );
 
   it("resolves the key once per call and hands it to the handler", async () => {
-    mockedById.mockResolvedValueOnce(detailedActivity());
+    mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
 
-    await dispatchToolCall("view-activity-chart", { activity_id: "123" });
+    await dispatchToolCall("view-activity-chart", { activity_id: "i123" });
 
     expect(mockedToken).toHaveBeenCalledTimes(1);
-    expect(mockedById).toHaveBeenCalledWith("test-token", "123");
+    expect(mockedIntervalsActivity).toHaveBeenCalledWith("test-token", "i123");
   });
 
   it("does not run the handler when the key cannot be resolved", async () => {
@@ -170,32 +186,34 @@ describe("app handlers with no key configured", () => {
       throw new MissingApiKeyError();
     });
 
-    await dispatchToolCall("view-activity-chart", { activity_id: "123" });
+    await dispatchToolCall("view-activity-chart", { activity_id: "i123" });
 
-    expect(mockedById).not.toHaveBeenCalled();
+    expect(mockedIntervalsActivity).not.toHaveBeenCalled();
   });
 });
 
 describe("view-activity-chart", () => {
   it("summarises the activity for the model", async () => {
-    mockedById.mockResolvedValueOnce(detailedActivity());
+    mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
 
     const result = await dispatchToolCall("view-activity-chart", {
-      activity_id: "123",
+      activity_id: "i123",
     });
 
     expect(result.isError).toBeUndefined();
     const text = result.content[0]?.text ?? "";
     expect(text).toContain("Activity: Morning Run");
     expect(text).toContain("Distance: 10.00 km");
-    expect(mockedById).toHaveBeenCalledWith("test-token", "123");
+    expect(mockedIntervalsActivity).toHaveBeenCalledWith("test-token", "i123");
   });
 
-  it("surfaces a Strava failure as a structured tool error", async () => {
-    mockedById.mockRejectedValueOnce(new Error("Record Not Found"));
+  it("surfaces an intervals.icu failure as a structured tool error", async () => {
+    mockedIntervalsActivity.mockRejectedValueOnce(
+      new Error("Record Not Found"),
+    );
 
     const result = await dispatchToolCall("view-activity-chart", {
-      activity_id: "123",
+      activity_id: "i123",
     });
 
     expect(result.isError).toBe(true);
@@ -204,40 +222,42 @@ describe("view-activity-chart", () => {
 });
 
 describe("get-activity-streams-raw", () => {
-  it("returns streams keyed by type plus mapped laps", async () => {
-    mockedById.mockResolvedValueOnce(detailedActivity());
-    mockedApiGet.mockResolvedValueOnce({
-      data: [
-        { type: "time", data: [0, 1, 2] },
-        { type: "heartrate", data: [140, 150, 160] },
-      ],
-    } as never);
-    mockedLaps.mockResolvedValueOnce([
-      {
-        name: "Lap 1",
-        start_index: 0,
-        end_index: 2,
-        distance: 1000,
-        elapsed_time: 300,
-        moving_time: 290,
-        average_speed: 3.3,
-        average_heartrate: 152,
-        lap_index: 1,
-      } as unknown as StravaLap,
+  it("returns downsampled streams keyed by type plus interval bands", async () => {
+    mockedIntervalsActivity.mockResolvedValueOnce(
+      intervalsActivity({
+        icu_intervals: [
+          {
+            type: "WORK",
+            label: null,
+            start_time: 0,
+            end_time: 2,
+            distance: 1000,
+            elapsed_time: 300,
+            moving_time: 290,
+            average_speed: 3.3,
+            average_heartrate: 152,
+          },
+        ],
+      }),
+    );
+    mockedIntervalsStreams.mockResolvedValueOnce([
+      { type: "time", data: [0, 1, 2] },
+      { type: "heartrate", data: [140, 150, 160] },
     ]);
 
     const result = await dispatchToolCall("get-activity-streams-raw", {
-      activity_id: "123",
+      activity_id: "i123",
     });
 
     expect(result.isError).toBeUndefined();
     const parsed = JSON.parse(result.content[0]?.text ?? "");
-    // A string, not a number: ids are 64-bit and `Number()` here used to
-    // round anything past 2^53 (#270).
-    expect(parsed.activityId).toBe("123");
+    expect(parsed.activityId).toBe("i123");
+    expect(parsed.streams.time).toEqual([0, 1, 2]);
     expect(parsed.streams.heartrate).toEqual([140, 150, 160]);
     expect(parsed.laps).toEqual([
       {
+        type: "WORK",
+        label: null,
         name: "Lap 1",
         startIndex: 0,
         endIndex: 2,
@@ -248,15 +268,17 @@ describe("get-activity-streams-raw", () => {
         lapIndex: 1,
       },
     ]);
+    expect(mockedIntervalsActivity).toHaveBeenCalledWith("test-token", "i123", {
+      intervals: true,
+    });
   });
 
   it("returns isError when the stream fetch fails", async () => {
-    mockedById.mockResolvedValueOnce(detailedActivity());
-    mockedApiGet.mockRejectedValueOnce(new Error("Rate limited"));
-    mockedLaps.mockResolvedValueOnce([]);
+    mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
+    mockedIntervalsStreams.mockRejectedValueOnce(new Error("Rate limited"));
 
     const result = await dispatchToolCall("get-activity-streams-raw", {
-      activity_id: "123",
+      activity_id: "i123",
     });
 
     expect(result.isError).toBe(true);

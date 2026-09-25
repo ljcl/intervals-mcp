@@ -16,7 +16,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getActivity } from "./intervalsClient";
 import { type ProtocolEra } from "./mcpTestClient";
-import { getActivityById } from "./stravaClient";
 import { INTERVALS_ID_HINT, STRAVA_ID_HINT } from "./tools/_ids";
 
 vi.mock("./stravaClient", async (importOriginal) => {
@@ -40,7 +39,6 @@ const { connectTestClient } = await import("./mcpTestClient");
 const { TOOL_DEFS } = await import("./server");
 
 const mockedIntervalsActivity = vi.mocked(getActivity);
-const mockedActivity = vi.mocked(getActivityById);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -350,7 +348,7 @@ describe.each(ERAS)("tools/call (%s era)", (era) => {
   });
 
   it("keeps a 64-bit id intact end to end", async () => {
-    mockedActivity.mockResolvedValueOnce({
+    mockedIntervalsActivity.mockResolvedValueOnce({
       id: "9007199254740993",
       name: "Long Run",
       type: "Run",
@@ -367,7 +365,7 @@ describe.each(ERAS)("tools/call (%s era)", (era) => {
     // 2^53 + 1 survives only because ids travel as strings and the body is
     // parsed with `parseJsonWithLargeInts`; a JSON number would arrive as
     // ...992 with the true digits unrecoverable.
-    const [, id] = mockedActivity.mock.calls[0]!;
+    const [, id] = mockedIntervalsActivity.mock.calls[0]!;
     expect(String(id)).toBe("9007199254740993");
   });
 });

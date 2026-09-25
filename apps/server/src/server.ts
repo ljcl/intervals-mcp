@@ -13,6 +13,10 @@ import {
 } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import {
+  type ActivityChartData,
+  buildActivityChartData,
+} from "./activityChartData";
+import {
   type ActivityZonesData,
   hrZoneMismatchWarning,
   mapIntervalsZones,
@@ -34,6 +38,11 @@ import {
   getActivity as getIntervalsActivity,
   listActivities as listActivitiesFn,
 } from "./intervalsClient";
+import {
+  IntervalsStreamsUnavailableError,
+  type IntervalsStreamType,
+  loadIntervalsStreams,
+} from "./intervalsStreams";
 import {
   cumulativeDistances,
   indexAtDistance,
@@ -237,10 +246,12 @@ const trainingLoadInput = z.object({
 
 const APP_TOOL_INPUT_SCHEMAS: Record<string, z.ZodType> = {
   "view-activity-chart": z.object({
-    activity_id: stravaIdInput("The Strava activity ID to visualize."),
+    activity_id: intervalsActivityIdInput(
+      "The intervals.icu activity id to visualize.",
+    ),
   }),
   "get-activity-streams-raw": z.object({
-    activity_id: stravaIdInput("The Strava activity ID."),
+    activity_id: intervalsActivityIdInput("The intervals.icu activity id."),
   }),
   "view-cadence-trends": z.object({ weeks: weeksInput }),
   "get-cadence-trend-data": z.object({ weeks: weeksInput }),
@@ -437,7 +448,7 @@ function buildToolDefs(): ToolDef[] {
   defs.push({
     name: "get-activity-streams-raw",
     description:
-      "Internal data feed for the activity chart UI: returns raw per-sample arrays (time, heartrate, watts, velocity_smooth, altitude, cadence, grade_smooth, distance) as JSON for one activity. " +
+      "Internal data feed for the activity chart UI: returns per-sample arrays (time, distance, heartrate, watts, velocity_smooth, altitude, cadence, grade_smooth, and running dynamics stance_time/vertical_oscillation/vertical_ratio/step_length), downsampled to about 1,000 points, plus interval bands (type, label, start/end index) as JSON for one activity. " +
       "The view-activity-chart app calls this; not intended for direct model use.",
     inputSchema: toInputSchema(
       APP_TOOL_INPUT_SCHEMAS["get-activity-streams-raw"]!,
@@ -678,26 +689,31 @@ for (const [name, schema] of Object.entries(APP_TOOL_INPUT_SCHEMAS)) {
   TOOL_INPUT_SCHEMAS.set(name, schema);
 }
 
-const RAW_STREAM_TYPES = [
+/** Stream types the activity-chart app can plot, including running dynamics. */
+const CHART_STREAM_TYPES: IntervalsStreamType[] = [
   "time",
+  "distance",
   "heartrate",
   "watts",
   "velocity_smooth",
   "altitude",
   "cadence",
   "grade_smooth",
-  "distance",
-] as const;
+  "stance_time",
+  "vertical_oscillation",
+  "vertical_ratio",
+  "step_length",
+];
 
 async function handleViewActivityChart(
   args: Record<string, unknown>,
   token: string,
 ): Promise<ToolCallResult> {
   const activityId = String(args.activity_id);
-  const activity = await getActivityById(token, activityId);
+  const activity = await getIntervalsActivity(token, activityId);
   const lines = [
-    `Activity: ${activity.name}`,
-    `Type: ${activity.type}`,
+    `Activity: ${activity.name ?? activity.type ?? "Workout"}`,
+    `Type: ${activity.type ?? "Workout"}`,
     `Distance: ${((activity.distance ?? 0) / 1000).toFixed(2)} km`,
     `Moving Time: ${Math.floor((activity.moving_time ?? 0) / 60)}min`,
     "",
@@ -711,38 +727,34 @@ async function handleGetActivityStreamsRaw(
   token: string,
 ): Promise<ToolCallResult> {
   const activityId = String(args.activity_id);
-  const activity = await getActivityById(token, activityId);
+  const activity = await getIntervalsActivity(token, activityId, {
+    intervals: true,
+  });
+  const displayName = activity.name ?? activity.type ?? "Workout";
 
-  const [streamSet, stravaLaps] = await Promise.all([
-    getActivityStreams(token, activityId, RAW_STREAM_TYPES, {
-      seriesType: "time",
-      resolution: "medium",
-    }),
-    getActivityLaps(token, activityId),
-  ]);
+  let streams: Awaited<ReturnType<typeof loadIntervalsStreams>>;
+  try {
+    streams = await loadIntervalsStreams(token, activityId, CHART_STREAM_TYPES);
+  } catch (error) {
+    if (error instanceof IntervalsStreamsUnavailableError) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `❌ No data streams are recorded for "${displayName}" (activity ${activityId}): this looks like an activity with no GPS/sensor streams (e.g. a manual entry), so the chart has nothing to plot.`,
+          },
+        ],
+        isError: true,
+      };
+    }
+    throw error;
+  }
 
-  const streams: Record<string, unknown[]> = Object.fromEntries(streamSet);
-
-  const laps = stravaLaps.map((lap) => ({
-    name: lap.name,
-    startIndex: lap.start_index ?? 0,
-    endIndex: lap.end_index ?? 0,
-    distance: lap.distance,
-    elapsedTime: lap.elapsed_time,
-    averageSpeed: lap.average_speed ?? null,
-    averageHeartrate: lap.average_heartrate ?? null,
-    lapIndex: lap.lap_index,
-  }));
-
-  const result = {
-    // A string, like every Strava id on the wire: ids are
-    // 64-bit and `Number()` here silently rounded anything past 2^53.
-    activityId,
-    activityType: activity.type,
-    name: activity.name,
+  const result: ActivityChartData = buildActivityChartData(
+    activity,
     streams,
-    laps,
-  };
+    activity.icu_intervals ?? [],
+  );
 
   return { content: [{ type: "text", text: JSON.stringify(result) }] };
 }

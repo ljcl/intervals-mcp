@@ -14,10 +14,10 @@ identity, so renames or schema reshapes re-prompt every user. See
 > exercised by `scripts/live-check.ts`; `update-activity`'s write path was
 > verified once, separately, with explicit user approval, see
 > docs/api-notes.md). Still Strava-backed, and failing with a "not yet
-> ported" error until Phase 4: the `activity-chart`, `cadence-trends`, and
-> `route-map` app data handlers (see
-> [Visualization tools](#visualization-tools)); every other app tool below
-> already talks to intervals.icu.
+> ported" error until Phase 4: the `cadence-trends` and `route-map` app data
+> handlers (see [Visualization tools](#visualization-tools)); `activity-chart`
+> is ported (Phase 4 task 1) and every other app tool below already talks to
+> intervals.icu.
 
 ## intervals.icu tools
 
@@ -182,7 +182,24 @@ fields; the pace delta renders as `pace_delta_min_per_km` (signed `m:ss`)
 plus `pace_delta_sec_per_km` (the underlying signed seconds) and
 `pace_delta_interpretation`. A non-running activity on either
 side degrades to a warning rather than failing the call. The app's stream
-overlay (`get-activity-streams-raw`) is still Strava-backed, pending Phase 4.
+overlay (`get-activity-streams-raw`) is intervals.icu-backed (see the
+activity-chart entry below).
+
+`view-activity-chart`/`get-activity-streams-raw` (activity-chart MCP App)
+fetch the activity via `getActivity(apiKey, id, { intervals: true })` and its
+streams via `loadIntervalsStreams`, then share one pure mapper
+(`buildActivityChartData` in `activityChartData.ts`) with the streams-raw
+handler. Streams are jointly downsampled to at most 1,000 points
+(`downsampleColumns`); `time`/`distance` are gap-filled so the chart's axes
+stay monotonic and gap-free, while every other metric (including running
+dynamics: `stance_time`, `vertical_oscillation`, `vertical_ratio`,
+`step_length`) keeps `null` samples for the app to draw as gaps. `laps`
+carries one band per `icu_intervals` entry (WORK/RECOVERY, not device laps),
+with `startIndex`/`endIndex` remapped onto the downsampled `time` array from
+the interval's `start_time`/`end_time`, plus `type` and `label` (both
+nullable) alongside the existing display `name` ("Recovery" for an unlabeled
+RECOVERY interval, else "Lap N"). Cadence stays raw strides/min on the wire;
+the app doubles it client-side for step-cadence activity types.
 
 `get-hill-analysis` and `get-split-analysis` both read their streams through
 the shared intervals.icu stream adapter (`distance`, `altitude`,
@@ -372,13 +389,14 @@ Each `view-*` MCP App has an app-only `get-*-data` companion that fetches what
 the UI renders. `view-compare-activities`/`get-compare-activities-data`,
 `view-activity-zones`/`get-activity-zones-data`,
 `view-fitness-trend`/`get-fitness-trend-data`, and
-`view-training-load`/`get-training-load-data` are ported to intervals.icu;
-the rest are still Strava-backed, pending Phase 4.
+`view-training-load`/`get-training-load-data`, and `view-activity-chart`/
+`get-activity-streams-raw` are ported to intervals.icu; `cadence-trends` and
+`route-map` are still Strava-backed, pending Phase 4.
 
 | Tool | Description |
 | ---- | ----------- |
-| `view-activity-chart` | Interactive chart with HR, power, pace, altitude overlays (MCP App) |
-| `get-activity-streams-raw` | Raw stream data for the activity chart UI (app-only) |
+| `view-activity-chart` | Interactive chart with HR, power, pace, altitude, cadence, grade, and running-dynamics overlays; interval bands (MCP App) |
+| `get-activity-streams-raw` | Downsampled per-sample streams plus interval bands for the activity chart UI (app-only) |
 | `view-cadence-trends` | Interactive cadence trends with timeline, scatter, zones, and overlay views (MCP App) |
 | `get-cadence-trend-data` | Summary cadence/pace data for the cadence trends UI (app-only) |
 | `view-route-map` | Interactive map of an activity's GPS track, fit to bounds with start/finish markers; optional distance-anchored waypoints (MCP App) |

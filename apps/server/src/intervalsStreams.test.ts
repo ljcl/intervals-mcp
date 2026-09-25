@@ -83,6 +83,24 @@ describe("loadIntervalsStreams", () => {
     expect(Object.hasOwn(streams, "grade_smooth")).toBe(false);
   });
 
+  it("returns running-dynamics streams when requested", async () => {
+    mockedGet.mockResolvedValueOnce({ data: streamsFixture });
+
+    const streams = await loadIntervalsStreams("key", "i1", [
+      "time",
+      "stance_time",
+      "vertical_oscillation",
+      "vertical_ratio",
+      "step_length",
+    ]);
+
+    expect(streams.stance_time).toHaveLength(600);
+    expect(streams.vertical_oscillation).toHaveLength(600);
+    expect(streams.vertical_ratio).toHaveLength(600);
+    expect(streams.step_length).toHaveLength(600);
+    expect(streams.stance_time?.some((v) => v === null)).toBe(true);
+  });
+
   it("keeps nulls in the requested arrays other than time", async () => {
     mockedGet.mockResolvedValueOnce({ data: streamsFixture });
 

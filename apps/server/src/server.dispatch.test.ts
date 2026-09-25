@@ -121,7 +121,7 @@ describe("dispatchToolCall input validation", () => {
     expect(result.content[0]?.text).toContain(
       "Invalid arguments for view-activity-chart",
     );
-    expect(mockedById).not.toHaveBeenCalled();
+    expect(mockedIntervalsActivity).not.toHaveBeenCalled();
   });
 
   it("rejects a non-numeric activity_id for app tools", async () => {
@@ -130,7 +130,7 @@ describe("dispatchToolCall input validation", () => {
     });
 
     expect(result.isError).toBe(true);
-    expect(mockedById).not.toHaveBeenCalled();
+    expect(mockedIntervalsActivity).not.toHaveBeenCalled();
   });
 
   it("explains an oversized activity_id sent as a JSON number (view-route-map)", async () => {
@@ -168,10 +168,10 @@ describe("dispatchToolCall input validation", () => {
     // activity ids (get-activity, get-activity-streams, get-activity-laps,
     // get-running-summary, get-running-dynamics, get-activity-zones, view-activity-zones,
     // get-activity-zones-data, get-hill-analysis, get-split-analysis,
-    // get-aerobic-analysis, get-interval-analysis, update-activity) are the
-    // exception to the digits-only pattern: they accept an optional "i"
-    // prefix, as list-activities returns them (intervalsActivityIdInput,
-    // tools/_ids.ts).
+    // get-aerobic-analysis, get-interval-analysis, update-activity,
+    // view-activity-chart, get-activity-streams-raw) are the exception to
+    // the digits-only pattern: they accept an optional "i" prefix, as
+    // list-activities returns them (intervalsActivityIdInput, tools/_ids.ts).
     const { TOOL_DEFS } = await import("./server");
     const idSchemas = (
       TOOL_DEFS as Array<{
@@ -199,7 +199,9 @@ describe("dispatchToolCall input validation", () => {
         field === "get-split-analysis.id" ||
         field === "get-aerobic-analysis.id" ||
         field === "get-interval-analysis.id" ||
-        field === "update-activity.id"
+        field === "update-activity.id" ||
+        field === "view-activity-chart.activity_id" ||
+        field === "get-activity-streams-raw.activity_id"
           ? "^i?\\d+$"
           : "^\\d+$";
       expect(`${field}: ${schema.type}`).toBe(`${field}: string`);

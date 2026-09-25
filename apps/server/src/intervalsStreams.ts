@@ -27,7 +27,11 @@ export type IntervalsStreamType =
   | "grade_smooth"
   | "cadence"
   | "watts"
-  | "latlng";
+  | "latlng"
+  | "stance_time"
+  | "vertical_oscillation"
+  | "vertical_ratio"
+  | "step_length";
 
 /** Named, index-aligned streams for one activity. */
 export interface IntervalsStreams {
@@ -43,6 +47,14 @@ export interface IntervalsStreams {
   watts?: (number | null)[];
   /** `[lat, lng]` pairs; intervals.icu stores lat in `data`, lng in `data2`. */
   latlng?: ([number, number] | null)[];
+  /** Ground contact time, ms. Running dynamics; Apple Watch and similar. */
+  stance_time?: (number | null)[];
+  /** Vertical oscillation, mm. */
+  vertical_oscillation?: (number | null)[];
+  /** Vertical ratio, %. */
+  vertical_ratio?: (number | null)[];
+  /** Step length, mm. */
+  step_length?: (number | null)[];
   /** Derived; never returned by the API (see module comment). */
   moving: boolean[];
   /** Number of samples in `time` (and in every other array present). */
@@ -124,6 +136,10 @@ const OPTIONAL_STREAM_TYPES: OptionalStreamType[] = [
   "grade_smooth",
   "cadence",
   "watts",
+  "stance_time",
+  "vertical_oscillation",
+  "vertical_ratio",
+  "step_length",
 ];
 
 /**
