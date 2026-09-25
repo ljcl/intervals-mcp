@@ -49,6 +49,8 @@ describe("getActivityZonesTool.execute", () => {
     expect(result.content[0]?.text).toContain("Heart Rate Zones");
     expect(result.structuredContent?.zone_sets.length).toBeGreaterThan(0);
     expect(mockedGetActivity).toHaveBeenCalledWith("test-key", "i12345");
+    // activity_id echoes the fetched activity's own id, not the raw input.
+    expect(result.structuredContent?.activity_id).toBe(runActivity.id);
   });
 
   it("returns a graceful message when there is no zone data", async () => {
@@ -66,6 +68,7 @@ describe("getActivityZonesTool.execute", () => {
     expect(result.isError).toBeUndefined();
     expect(result.content[0]?.text).toContain("No zone data found");
     expect(result.structuredContent?.zone_sets).toEqual([]);
+    expect(result.structuredContent?.activity_id).toBe(runActivity.id);
   });
 
   it("warns in the text when HR bounds and zone times counts don't match", async () => {
@@ -93,7 +96,7 @@ describe("getActivityZonesTool.execute", () => {
     );
 
     expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toBe("❌ Activity with ID i42 not found.");
+    expect(result.content[0]?.text).toBe("❌ Activity i42 was not found.");
   });
 
   it("renders the rate-limit window on a RateLimitError", async () => {

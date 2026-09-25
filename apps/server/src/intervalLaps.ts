@@ -36,6 +36,9 @@ export interface LapEntry {
   pace_min_per_km: string | null;
   /** Grade-adjusted pace from the interval's `gap` field (m/s, same unit as `average_speed`); runs only. */
   gap_min_per_km: string | null;
+  /** GAP here is always intervals.icu's own `gap` field, distinct from
+   * get-hill-analysis/get-split-analysis's locally-modelled GAP. */
+  gap_source: "intervals.icu";
   /** Set for non-pace sports; falls back to distance/moving_time when the interval carries no `average_speed`. */
   speed_kmh: number | null;
   average_hr: number | null;
@@ -86,6 +89,7 @@ function mapOneInterval(
       ? paceFromDistanceTime(interval.distance, interval.moving_time)
       : null,
     gap_min_per_km: gapPace(interval.gap, type),
+    gap_source: "intervals.icu",
     speed_kmh: speedKmh(interval, isPace),
     average_hr: interval.average_heartrate ?? null,
     max_hr: interval.max_heartrate ?? null,
@@ -130,4 +134,34 @@ export function mapIntervalsToLaps(
 /** The unit `average_cadence` is reported in for a given activity type. */
 export function cadenceUnit(type: string): "spm" | "rpm" {
   return isStepCadenceActivity(type) ? "spm" : "rpm";
+}
+
+/**
+ * One text line for a lap: `<index>. <label>: <comma-separated metrics>`.
+ * The one home for this rendering, shared by `get-activity-laps` and
+ * `get-running-summary`, which each previously hand-rolled a near-identical
+ * copy (the running-summary one hardcoded "spm" and omitted speed/watts/
+ * grade, fields that just never applied to its runs-only laps).
+ */
+export function formatLapLine(lap: LapEntry, cadence: "spm" | "rpm"): string {
+  const parts: string[] = [];
+  if (lap.distance_km != null) parts.push(`${lap.distance_km.toFixed(2)} km`);
+  parts.push(lap.moving_time);
+  if (lap.pace_min_per_km) parts.push(`${lap.pace_min_per_km} /km`);
+  if (lap.gap_min_per_km) parts.push(`GAP ${lap.gap_min_per_km} /km`);
+  if (lap.speed_kmh != null) parts.push(`${lap.speed_kmh} km/h`);
+  if (lap.average_watts != null)
+    parts.push(`${Math.round(lap.average_watts)} W`);
+  if (lap.average_hr != null) {
+    const max = lap.max_hr != null ? `/${Math.round(lap.max_hr)}` : "";
+    parts.push(`HR ${Math.round(lap.average_hr)}${max}`);
+  }
+  if (lap.average_cadence != null)
+    parts.push(`cadence ${lap.average_cadence} ${cadence}`);
+  if (lap.elevation_gain_m != null && lap.elevation_gain_m > 0)
+    parts.push(`+${Math.round(lap.elevation_gain_m)} m`);
+  if (lap.average_gradient_pct != null)
+    parts.push(`${lap.average_gradient_pct}% grade`);
+  const label = lap.label ?? lap.type ?? "lap";
+  return `${lap.lap_index}. ${label}: ${parts.join(", ")}`;
 }

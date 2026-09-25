@@ -10,11 +10,13 @@ import {
 } from "../intervalsClient";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
 import {
-  cadenceSpm,
+  activityCadenceSpm,
+  buildRunningDynamics,
   gapPace,
   isPaceActivity,
   isStepCadenceActivity,
   paceFromDistanceTime,
+  type RunningDynamicsAvg,
 } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
 import { toolErrorText } from "./_errors";
@@ -78,14 +80,6 @@ interface HrZoneEntry {
   seconds: number;
 }
 
-interface RunningDynamics {
-  stance_time_ms: number | null;
-  vertical_oscillation_mm: number | null;
-  vertical_ratio_pct: number | null;
-  step_length_mm: number | null;
-  stride_m: number | null;
-}
-
 interface ActivityIntervalEntry {
   type: string | null;
   label: string | null;
@@ -114,6 +108,10 @@ export interface ActivityDetail {
   elapsed_time_s: number | null;
   pace_min_per_km: string | null;
   gap_min_per_km: string | null;
+  /** GAP here always comes from intervals.icu's own recorded `gap` field,
+   * distinct from get-hill-analysis/get-split-analysis's locally-modelled
+   * GAP (their `gap_source: "model"`). */
+  gap_source: "intervals.icu";
   average_hr: number | null;
   max_hr: number | null;
   average_cadence_spm: number | null;
@@ -125,7 +123,7 @@ export interface ActivityDetail {
   feel: number | null;
   hr_zones: HrZoneEntry[];
   pace_zone_seconds: number[] | null;
-  running_dynamics: RunningDynamics | null;
+  running_dynamics: RunningDynamicsAvg | null;
   intervals: ActivityIntervalEntry[] | null;
   gear_id: string | null;
   /**
@@ -146,26 +144,6 @@ export interface ActivityDetail {
     cadence: "spm";
     temp: "C";
   };
-}
-
-/**
- * `average_cadence_spm` is `null` for anything but a step-cadence type: the
- * field is always in steps/min, and a non-step-cadence type's raw rate would
- * otherwise be mislabelled as one (a swim's `average_cadence` is a stroke
- * rate, not steps/min). Rounds to a whole step. Wraps the shared
- * `cadenceSpm` (`utils/running.ts`), which itself only decides raw vs.
- * doubled by type; the null-for-non-step-cadence-types gate is specific to
- * this field's fixed "spm" unit, so it stays here rather than in the shared
- * helper (get-activity-streams' cadence stream wants the raw, un-nulled rate
- * for a non-step-cadence type instead).
- */
-function activityCadenceSpm(
-  rawCadence: number | null | undefined,
-  type: string,
-): number | null {
-  if (!isStepCadenceActivity(type)) return null;
-  const spm = cadenceSpm(rawCadence, type);
-  return spm == null ? null : Math.round(spm);
 }
 
 /**
@@ -220,29 +198,6 @@ function buildHrZones(
     max_bpm: bucket.max,
     seconds: bucket.seconds,
   }));
-}
-
-function buildRunningDynamics(
-  a: IntervalsActivity,
-  type: string,
-): RunningDynamics | null {
-  if (!isStepCadenceActivity(type) || a.average_stance_time == null)
-    return null;
-  return {
-    stance_time_ms:
-      a.average_stance_time == null ? null : round(a.average_stance_time),
-    vertical_oscillation_mm:
-      a.average_vertical_oscillation == null
-        ? null
-        : round(a.average_vertical_oscillation),
-    vertical_ratio_pct:
-      a.average_vertical_ratio == null
-        ? null
-        : round(a.average_vertical_ratio, 1),
-    step_length_mm:
-      a.average_step_length == null ? null : round(a.average_step_length),
-    stride_m: a.average_stride == null ? null : round(a.average_stride, 2),
-  };
 }
 
 function mapInterval(
@@ -319,6 +274,7 @@ export function mapActivityDetail(
       ? paceFromDistanceTime(activity.distance, activity.moving_time)
       : null,
     gap_min_per_km: gapPace(activity.gap, type),
+    gap_source: "intervals.icu",
     average_hr: activity.average_heartrate ?? null,
     max_hr: activity.max_heartrate ?? null,
     average_cadence_spm: activityCadenceSpm(activity.average_cadence, type),
@@ -365,7 +321,9 @@ export function mapActivityDetail(
 }
 
 /** Exported for reuse by get-running-summary, which composes its own text response from the same building blocks. */
-export function formatMetricsLine(d: ActivityDetail): string {
+export function formatMetricsLine(
+  d: Omit<ActivityDetail, "intervals">,
+): string {
   const parts: string[] = [];
   if (d.distance_km != null) parts.push(`${d.distance_km.toFixed(2)} km`);
   parts.push(d.moving_time);
@@ -383,7 +341,9 @@ export function formatMetricsLine(d: ActivityDetail): string {
 }
 
 /** Exported for reuse by get-running-summary. */
-export function formatLoadLine(d: ActivityDetail): string | null {
+export function formatLoadLine(
+  d: Omit<ActivityDetail, "intervals">,
+): string | null {
   const parts: string[] = [];
   if (d.load.training_load != null)
     parts.push(`load ${Math.round(d.load.training_load)}`);
@@ -429,7 +389,9 @@ function formatZonesLine(d: ActivityDetail): string | null {
 }
 
 /** Exported for reuse by get-running-summary. */
-export function formatGearLine(d: ActivityDetail): string | null {
+export function formatGearLine(
+  d: Omit<ActivityDetail, "intervals">,
+): string | null {
   if (!d.gear_id) return null;
   return d.gear_name
     ? `Gear: ${d.gear_name} [${d.gear_id}]`

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { type IntervalsActivity } from "../intervalsClient";
 import {
+  activityCadenceSpm,
   assessCadence,
+  buildRunningDynamics,
   cadenceSpm,
   formatPaceSeconds,
   gapPace,
@@ -240,5 +243,54 @@ describe("assessCadence", () => {
 
   it("returns null for undefined input", () => {
     expect(assessCadence(undefined)).toBeNull();
+  });
+});
+
+describe("activityCadenceSpm", () => {
+  it("doubles strides/min to steps/min and rounds for a step-cadence type", () => {
+    expect(activityCadenceSpm(83.6, "Run")).toBe(167);
+  });
+
+  it("returns null for a non-step-cadence type (e.g. Ride)", () => {
+    expect(activityCadenceSpm(90, "Ride")).toBeNull();
+  });
+
+  it("returns null when raw cadence is missing", () => {
+    expect(activityCadenceSpm(null, "Run")).toBeNull();
+  });
+});
+
+describe("buildRunningDynamics", () => {
+  function activity(
+    overrides: Partial<IntervalsActivity> = {},
+  ): IntervalsActivity {
+    return {
+      average_stance_time: 233.21266,
+      average_vertical_oscillation: 108.36414,
+      average_vertical_ratio: 8.5,
+      average_step_length: 1200,
+      average_stride: 1.2,
+      ...overrides,
+    } as IntervalsActivity;
+  }
+
+  it("rounds each field for a step-cadence type with device support", () => {
+    expect(buildRunningDynamics(activity(), "Run")).toEqual({
+      stance_time_ms: 233,
+      vertical_oscillation_mm: 108,
+      vertical_ratio_pct: 8.5,
+      step_length_mm: 1200,
+      stride_m: 1.2,
+    });
+  });
+
+  it("returns null for a non-step-cadence type", () => {
+    expect(buildRunningDynamics(activity(), "Ride")).toBeNull();
+  });
+
+  it("returns null when the device recorded no stance time", () => {
+    expect(
+      buildRunningDynamics(activity({ average_stance_time: null }), "Run"),
+    ).toBeNull();
   });
 });

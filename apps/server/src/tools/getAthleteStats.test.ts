@@ -113,6 +113,24 @@ describe("aggregateRunTotals", () => {
     expect(totals.runs).toBe(2);
   });
 
+  it("excludes Strava stub activities (source: STRAVA), which carry no real distance/time data", () => {
+    const activities = [
+      run({ id: "real", start_date_local: "2026-06-01T06:00:00" }),
+      run({
+        id: "stub",
+        source: "STRAVA",
+        start_date_local: "2026-06-02T06:00:00",
+        distance: 10000,
+        moving_time: 3000,
+      }),
+    ];
+
+    const totals = aggregateRunTotals(activities, "2026-06-01", "2026-06-30");
+
+    expect(totals.runs).toBe(1);
+    expect(totals.distance_km).toBe(5);
+  });
+
   it("returns a null average pace and zeroed totals for an empty bucket", () => {
     const totals = aggregateRunTotals([], "2026-09-21", "2026-09-24");
 

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   cadenceUnit,
+  formatLapLine,
   type LapEntry,
   mapIntervalsToLaps,
 } from "../intervalLaps";
@@ -60,29 +61,6 @@ interface ActivityLapsResponse {
     gradient: "%";
   };
   laps: LapEntry[];
-}
-
-function formatLapLine(lap: LapEntry, cadence: "spm" | "rpm"): string {
-  const parts: string[] = [];
-  if (lap.distance_km != null) parts.push(`${lap.distance_km.toFixed(2)} km`);
-  parts.push(lap.moving_time);
-  if (lap.pace_min_per_km) parts.push(`${lap.pace_min_per_km} /km`);
-  if (lap.gap_min_per_km) parts.push(`GAP ${lap.gap_min_per_km} /km`);
-  if (lap.speed_kmh != null) parts.push(`${lap.speed_kmh} km/h`);
-  if (lap.average_watts != null)
-    parts.push(`${Math.round(lap.average_watts)} W`);
-  if (lap.average_hr != null) {
-    const max = lap.max_hr != null ? `/${Math.round(lap.max_hr)}` : "";
-    parts.push(`HR ${Math.round(lap.average_hr)}${max}`);
-  }
-  if (lap.average_cadence != null)
-    parts.push(`cadence ${lap.average_cadence} ${cadence}`);
-  if (lap.elevation_gain_m != null && lap.elevation_gain_m > 0)
-    parts.push(`+${Math.round(lap.elevation_gain_m)} m`);
-  if (lap.average_gradient_pct != null)
-    parts.push(`${lap.average_gradient_pct}% grade`);
-  const label = lap.label ?? lap.type ?? "lap";
-  return `${lap.lap_index}. ${label}: ${parts.join(", ")}`;
 }
 
 /** Builds the tool's text response. Exported for direct testing. */

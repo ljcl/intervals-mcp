@@ -90,6 +90,10 @@ export function aggregateRunTotals(
   for (const activity of activities) {
     const type = activity.type ?? "";
     if (!isPaceActivity(type)) continue;
+    // Strava stub entries carry no real distance/time/load data through
+    // this API (see formatters.ts's STRAVA_STUB_NOTE); counting them would
+    // silently understate pace and overstate run count.
+    if (activity.source === "STRAVA") continue;
     const date =
       activity.start_date_local.split("T")[0] ?? activity.start_date_local;
     if (date < start || date > end) continue;

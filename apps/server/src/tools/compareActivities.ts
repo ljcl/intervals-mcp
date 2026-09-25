@@ -3,13 +3,14 @@ import { formatDuration, round } from "../formatters";
 import { getActivity, type IntervalsActivity } from "../intervalsClient";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
 import {
-  cadenceSpm,
+  activityCadenceSpm,
+  buildRunningDynamics,
   formatPaceSeconds,
   gapPace,
   isPaceActivity,
   isRunningActivity,
-  isStepCadenceActivity,
   paceFromDistanceTime,
+  type RunningDynamicsAvg,
 } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
 import { toolErrorText } from "./_errors";
@@ -54,14 +55,6 @@ const inputSchema = z.object({
 
 type CompareActivitiesInput = z.infer<typeof inputSchema>;
 
-interface RunningDynamicsAvg {
-  stance_time_ms: number | null;
-  vertical_oscillation_mm: number | null;
-  vertical_ratio_pct: number | null;
-  step_length_mm: number | null;
-  stride_m: number | null;
-}
-
 interface ActivitySummary {
   id: string;
   name: string;
@@ -72,6 +65,9 @@ interface ActivitySummary {
   moving_time_s: number;
   pace_min_per_km: string | null;
   gap_min_per_km: string | null;
+  /** GAP here is always intervals.icu's own `gap` field, distinct from
+   * get-hill-analysis/get-split-analysis's locally-modelled GAP. */
+  gap_source: "intervals.icu";
   average_hr: number | null;
   max_hr: number | null;
   cadence_spm: number | null;
@@ -80,39 +76,6 @@ interface ActivitySummary {
   decoupling_pct: number | null;
   efficiency_factor: number | null;
   running_dynamics: RunningDynamicsAvg | null;
-}
-
-/** Cadence in steps/min, `null` for a non-step-cadence type (see {@link isStepCadenceActivity}). */
-function activityCadenceSpm(
-  rawCadence: number | null | undefined,
-  type: string,
-): number | null {
-  if (!isStepCadenceActivity(type)) return null;
-  const spm = cadenceSpm(rawCadence, type);
-  return spm == null ? null : Math.round(spm);
-}
-
-/** Same shape as `get-activity`'s running dynamics: averages only, present for step-cadence types with device support. */
-function buildRunningDynamics(
-  a: IntervalsActivity,
-  type: string,
-): RunningDynamicsAvg | null {
-  if (!isStepCadenceActivity(type) || a.average_stance_time == null)
-    return null;
-  return {
-    stance_time_ms: round(a.average_stance_time),
-    vertical_oscillation_mm:
-      a.average_vertical_oscillation == null
-        ? null
-        : round(a.average_vertical_oscillation),
-    vertical_ratio_pct:
-      a.average_vertical_ratio == null
-        ? null
-        : round(a.average_vertical_ratio, 1),
-    step_length_mm:
-      a.average_step_length == null ? null : round(a.average_step_length),
-    stride_m: a.average_stride == null ? null : round(a.average_stride, 2),
-  };
 }
 
 function extractActivitySummary(activity: IntervalsActivity): ActivitySummary {
@@ -133,6 +96,7 @@ function extractActivitySummary(activity: IntervalsActivity): ActivitySummary {
       ? paceFromDistanceTime(activity.distance, activity.moving_time)
       : null,
     gap_min_per_km: gapPace(activity.gap, type),
+    gap_source: "intervals.icu",
     average_hr: activity.average_heartrate ?? null,
     max_hr: activity.max_heartrate ?? null,
     cadence_spm: activityCadenceSpm(activity.average_cadence, type),

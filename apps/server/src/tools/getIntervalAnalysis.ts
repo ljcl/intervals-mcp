@@ -270,7 +270,7 @@ export const getIntervalAnalysisTool = {
             type: "text" as const,
             text: toolErrorText(error, {
               context: `compute interval analysis for activity ${id}`,
-              notFound: `Activity with ID ${id} not found.`,
+              notFound: `Activity ${id} was not found.`,
             }),
           },
         ],

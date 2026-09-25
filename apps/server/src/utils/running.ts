@@ -5,6 +5,8 @@
  * - Cadence is returned as strides/min but runners think in steps/min
  * - Speed is returned as m/s but runners think in pace (min/km or min/mile)
  */
+import { round } from "../formatters";
+import { type IntervalsActivity } from "../intervalsClient";
 
 /** Activity types that use steps-per-minute cadence */
 export const RUNNING_ACTIVITY_TYPES = [
@@ -216,4 +218,61 @@ export function assessCadence(spm: number | null | undefined): string | null {
     return "very good";
   }
   return "excellent";
+}
+
+/**
+ * Cadence in steps/min (doubled from intervals.icu's strides/min for a
+ * step-cadence type, see {@link isStepCadenceActivity}), rounded to a whole
+ * step, or `null` for a non-step-cadence type.
+ *
+ * The one home for this field, shared by `get-activity`'s activity- and
+ * interval-level `average_cadence_spm` and `compare-activities`' per-side
+ * `cadence_spm`, which each previously hand-rolled an identical copy.
+ */
+export function activityCadenceSpm(
+  rawCadence: number | null | undefined,
+  type: string,
+): number | null {
+  if (!isStepCadenceActivity(type)) return null;
+  const spm = cadenceSpm(rawCadence, type);
+  return spm == null ? null : Math.round(spm);
+}
+
+export interface RunningDynamicsAvg {
+  stance_time_ms: number | null;
+  vertical_oscillation_mm: number | null;
+  vertical_ratio_pct: number | null;
+  step_length_mm: number | null;
+  stride_m: number | null;
+}
+
+/**
+ * Averaged running-dynamics fields (ground contact time, vertical
+ * oscillation/ratio, step length, stride), present only for a step-cadence
+ * type with device support (`average_stance_time` recorded). `null`
+ * otherwise, rather than an object of nulls.
+ *
+ * The one home for this shape, shared by `get-activity` and
+ * `compare-activities`, which each previously hand-rolled an identical copy.
+ */
+export function buildRunningDynamics(
+  a: IntervalsActivity,
+  type: string,
+): RunningDynamicsAvg | null {
+  if (!isStepCadenceActivity(type) || a.average_stance_time == null)
+    return null;
+  return {
+    stance_time_ms: round(a.average_stance_time),
+    vertical_oscillation_mm:
+      a.average_vertical_oscillation == null
+        ? null
+        : round(a.average_vertical_oscillation),
+    vertical_ratio_pct:
+      a.average_vertical_ratio == null
+        ? null
+        : round(a.average_vertical_ratio, 1),
+    step_length_mm:
+      a.average_step_length == null ? null : round(a.average_step_length),
+    stride_m: a.average_stride == null ? null : round(a.average_stride, 2),
+  };
 }

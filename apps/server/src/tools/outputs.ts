@@ -85,6 +85,11 @@ const CompareSideSchema = z.object({
   moving_time_s: z.number().int(),
   pace_min_per_km: z.string().nullable(),
   gap_min_per_km: z.string().nullable(),
+  gap_source: z
+    .literal("intervals.icu")
+    .describe(
+      "GAP here is intervals.icu's own gap field, distinct from get-hill-analysis/get-split-analysis's locally-modelled GAP",
+    ),
   average_hr: z.number().nullable(),
   max_hr: z.number().nullable(),
   cadence_spm: z.number().nullable(),
@@ -310,6 +315,11 @@ export const HillAnalysisOutputSchema = z.object({
     .describe(
       "grade_smooth when intervals.icu's smoothed-grade stream was used, computed when derived from altitude",
     ),
+  gap_source: z
+    .literal("model")
+    .describe(
+      "GAP here is locally modelled from grade, distinct from get-activity/compare-activities/get-activity-laps' gap_source: 'intervals.icu'",
+    ),
   drift: z
     .object({
       basis: z.enum(["hr_per_gap", "gap_pace"]),
@@ -463,6 +473,11 @@ export const SplitAnalysisOutputSchema = z.object({
     .enum(["grade_smooth", "computed"])
     .describe(
       "grade_smooth when intervals.icu's smoothed-grade stream was used, computed when derived from altitude",
+    ),
+  gap_source: z
+    .literal("model")
+    .describe(
+      "GAP here is locally modelled from grade, distinct from get-activity/compare-activities/get-activity-laps' gap_source: 'intervals.icu'",
     ),
   verdict: z
     .object({
@@ -707,6 +722,11 @@ export const ActivityDetailOutputSchema = z.object({
     .nullable()
     .describe(
       "Grade-adjusted pace, from the activity's gap field (m/s, same unit as average_speed); runs only",
+    ),
+  gap_source: z
+    .literal("intervals.icu")
+    .describe(
+      "GAP here is intervals.icu's own gap field, distinct from get-hill-analysis/get-split-analysis's locally-modelled GAP",
     ),
   average_hr: z.number().nullable(),
   max_hr: z.number().nullable(),
@@ -1042,6 +1062,11 @@ const IntervalsLapEntrySchema = z.object({
     .describe(
       "Grade-adjusted pace from the interval's gap field (m/s, same unit as average_speed); runs only",
     ),
+  gap_source: z
+    .literal("intervals.icu")
+    .describe(
+      "GAP here is intervals.icu's own gap field, distinct from get-hill-analysis/get-split-analysis's locally-modelled GAP",
+    ),
   speed_kmh: z.number().nullable().describe("Set for non-pace distance sports"),
   average_hr: z.number().nullable(),
   max_hr: z.number().nullable(),
@@ -1088,11 +1113,16 @@ export const ActivityLapsOutputSchema = z.object({
 const HrZoneSummaryEntrySchema = z.object({
   zone: z.number().int().describe("1-based zone number"),
   min_bpm: z.number().nullable().describe("0 for zone 1"),
-  max_bpm: z.number(),
+  max_bpm: z
+    .number()
+    .nullable()
+    .describe("null only for an open-ended top bucket"),
   seconds: z.number().int(),
   percent: z.number().describe("Share of recorded zone time, 1 dp"),
 });
-export const RunningSummaryOutputSchema = ActivityDetailOutputSchema.extend({
+export const RunningSummaryOutputSchema = ActivityDetailOutputSchema.omit({
+  intervals: true,
+}).extend({
   cadence_assessment: z
     .string()
     .nullable()

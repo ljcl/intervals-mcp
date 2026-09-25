@@ -164,6 +164,11 @@ export const getHillAnalysisTool = {
         date: activity.start_date_local,
         type,
         grade_source: analysis.gradeSource,
+        // GAP throughout this response is locally modelled from grade
+        // (Minetti metabolic-cost curve, hillAnalysis.ts's gapFactor), not
+        // intervals.icu's own gap field (see get-activity/compare-activities/
+        // get-activity-laps' gap_source: "intervals.icu").
+        gap_source: "model" as const,
         drift: analysis.drift
           ? {
               basis: analysis.drift.basis,
@@ -267,7 +272,7 @@ export const getHillAnalysisTool = {
             type: "text" as const,
             text: toolErrorText(error, {
               context: `compute hill analysis for activity ${id}`,
-              notFound: `Activity with ID ${id} not found.`,
+              notFound: `Activity ${id} was not found.`,
             }),
           },
         ],

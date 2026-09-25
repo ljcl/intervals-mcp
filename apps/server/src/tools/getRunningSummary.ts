@@ -5,7 +5,11 @@ import {
   mapIntervalsZones,
 } from "../activityZones";
 import { formatDuration, STRAVA_STUB_NOTE } from "../formatters";
-import { type LapEntry, mapIntervalsToLaps } from "../intervalLaps";
+import {
+  formatLapLine,
+  type LapEntry,
+  mapIntervalsToLaps,
+} from "../intervalLaps";
 import {
   getActivity as getActivityClient,
   getSportSettings,
@@ -66,7 +70,7 @@ const MAX_LAP_LINES = 20;
 interface HrZoneSummaryEntry {
   zone: number;
   min_bpm: number | null;
-  max_bpm: number;
+  max_bpm: number | null;
   seconds: number;
   percent: number;
 }
@@ -82,7 +86,12 @@ interface DynamicsAssessment {
   ground_contact_time: string | null;
 }
 
-export interface RunningSummary extends ActivityDetail {
+/**
+ * `ActivityDetail` minus `intervals`: `laps` (below, from the same
+ * `icu_intervals`) replaces it rather than shipping the same interval
+ * breakdown twice in different shapes.
+ */
+export interface RunningSummary extends Omit<ActivityDetail, "intervals"> {
   cadence_assessment: string | null;
   hr_zone_summary: HrZoneSummary | null;
   hr_zone_note: string | null;
@@ -116,7 +125,7 @@ function buildHrZoneSummary(
     const zones = hrSet.buckets.map((bucket) => ({
       zone: bucket.zone,
       min_bpm: bucket.min,
-      max_bpm: bucket.max ?? 0,
+      max_bpm: bucket.max,
       seconds: bucket.seconds,
       percent: bucket.pct,
     }));
@@ -170,7 +179,7 @@ function buildHrZoneSummary(
   const zones = fallback.buckets.map((bucket) => ({
     zone: bucket.zone,
     min_bpm: bucket.min,
-    max_bpm: bucket.max ?? 0,
+    max_bpm: bucket.max,
     seconds: bucket.seconds,
     percent: bucket.pct,
   }));
@@ -212,7 +221,12 @@ export function mapRunningSummary(
   sportSettings: IntervalsSportSettings | null,
 ): RunningSummary {
   const type = activity.type ?? "Workout";
-  const detail = mapActivityDetail(activity, sportSettings);
+  // `intervals` is dropped: `laps` below carries the same icu_intervals
+  // breakdown in the shape this tool wants, and shipping both duplicates it.
+  const { intervals: _intervals, ...detail } = mapActivityDetail(
+    activity,
+    sportSettings,
+  );
 
   const { summary: hrZoneSummary, note: hrZoneNote } = buildHrZoneSummary(
     activity,
@@ -271,24 +285,6 @@ function formatDynamicsAssessmentLine(d: RunningSummary): string | null {
   return `Dynamics assessment: ${parts.join("; ")}`;
 }
 
-function formatLapLine(lap: LapEntry): string {
-  const parts: string[] = [];
-  if (lap.distance_km != null) parts.push(`${lap.distance_km.toFixed(2)} km`);
-  parts.push(lap.moving_time);
-  if (lap.pace_min_per_km) parts.push(`${lap.pace_min_per_km} /km`);
-  if (lap.gap_min_per_km) parts.push(`GAP ${lap.gap_min_per_km} /km`);
-  if (lap.average_hr != null) {
-    const max = lap.max_hr != null ? `/${Math.round(lap.max_hr)}` : "";
-    parts.push(`HR ${Math.round(lap.average_hr)}${max}`);
-  }
-  if (lap.average_cadence != null)
-    parts.push(`cadence ${lap.average_cadence} spm`);
-  if (lap.elevation_gain_m != null && lap.elevation_gain_m > 0)
-    parts.push(`+${Math.round(lap.elevation_gain_m)} m`);
-  const label = lap.label ?? lap.type ?? "lap";
-  return `${lap.lap_index}. ${label}: ${parts.join(", ")}`;
-}
-
 /** Builds the tool's text response. Exported for direct testing. */
 export function formatRunningSummaryText(d: RunningSummary): string {
   const lines = [`${d.date} ${d.type} ${d.name} [${d.id}]`];
@@ -318,7 +314,7 @@ export function formatRunningSummaryText(d: RunningSummary): string {
   if (d.laps.length > 0) {
     lines.push("Laps:");
     const shown = d.laps.slice(0, MAX_LAP_LINES);
-    for (const lap of shown) lines.push(formatLapLine(lap));
+    for (const lap of shown) lines.push(formatLapLine(lap, "spm"));
     const remaining = d.laps.length - shown.length;
     if (remaining > 0) lines.push(`(${remaining} more)`);
   }

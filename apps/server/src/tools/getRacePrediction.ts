@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { getTimeZone } from "../config";
 import { formatDuration } from "../formatters";
 import { getAthletePaceCurves } from "../intervalsClient";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
@@ -23,6 +24,7 @@ import {
   STANDARD_TARGETS,
   selectSourceEfforts,
 } from "../racePrediction";
+import { todayLocal } from "../utils/localDate";
 import { formatPaceSeconds } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
 import { toolErrorText } from "./_errors";
@@ -213,7 +215,7 @@ export const getRacePredictionTool = {
         allCurve,
         recentCurve,
       );
-      const referenceDate = new Date().toISOString().split("T")[0]!;
+      const referenceDate = todayLocal(getTimeZone());
       const sources = selectSourceEfforts(efforts, referenceDate);
 
       // Prefer the 90-day curve: it reflects current fitness, where "all"

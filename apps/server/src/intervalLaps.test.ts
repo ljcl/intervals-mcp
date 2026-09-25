@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import activityMultilap from "./__fixtures__/intervals/activity-multilap.json";
 import multilapIntervals from "./__fixtures__/intervals/activity-multilap-intervals.json";
-import { cadenceUnit, mapIntervalsToLaps } from "./intervalLaps";
+import {
+  cadenceUnit,
+  formatLapLine,
+  type LapEntry,
+  mapIntervalsToLaps,
+} from "./intervalLaps";
 import {
   type IntervalsActivity,
   type IntervalsInterval,
@@ -113,5 +118,64 @@ describe("cadenceUnit", () => {
     expect(cadenceUnit("Walk")).toBe("spm");
     expect(cadenceUnit("Ride")).toBe("rpm");
     expect(cadenceUnit("WeightTraining")).toBe("rpm");
+  });
+});
+
+describe("formatLapLine", () => {
+  function lap(overrides: Partial<LapEntry> = {}): LapEntry {
+    return {
+      lap_index: 1,
+      type: "WORK",
+      label: null,
+      distance_km: 1.2,
+      moving_time_s: 300,
+      moving_time: "5:00",
+      elapsed_time_s: 300,
+      pace_min_per_km: "4:10",
+      gap_min_per_km: "4:05",
+      gap_source: "intervals.icu",
+      speed_kmh: null,
+      average_hr: 165,
+      max_hr: 172,
+      average_cadence: 170,
+      average_watts: null,
+      elevation_gain_m: 5,
+      average_gradient_pct: null,
+      ...overrides,
+    };
+  }
+
+  it("includes pace/GAP/HR/cadence/elevation for a run lap", () => {
+    expect(formatLapLine(lap(), "spm")).toBe(
+      "1. WORK: 1.20 km, 5:00, 4:10 /km, GAP 4:05 /km, HR 165/172, cadence 170 spm, +5 m",
+    );
+  });
+
+  it("includes speed/watts/grade when present (a cycling lap)", () => {
+    expect(
+      formatLapLine(
+        lap({
+          type: "WORK",
+          pace_min_per_km: null,
+          gap_min_per_km: null,
+          speed_kmh: 32,
+          average_watts: 210,
+          average_cadence: 88,
+          average_gradient_pct: 3.2,
+        }),
+        "rpm",
+      ),
+    ).toBe(
+      "1. WORK: 1.20 km, 5:00, 32 km/h, 210 W, HR 165/172, cadence 88 rpm, +5 m, 3.2% grade",
+    );
+  });
+
+  it("falls back to type, then the literal lap, when label is missing", () => {
+    expect(formatLapLine(lap({ label: "Sprint" }), "spm")).toMatch(
+      /^1\. Sprint:/,
+    );
+    expect(formatLapLine(lap({ label: null, type: null }), "spm")).toMatch(
+      /^1\. lap:/,
+    );
   });
 });

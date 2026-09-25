@@ -92,6 +92,9 @@ describe("mapRunningSummary", () => {
 
     // No power block anywhere in the output.
     expect(summary).not.toHaveProperty("power");
+    // `intervals` is dropped: `laps` carries the same icu_intervals
+    // breakdown, and shipping both would duplicate it.
+    expect(summary).not.toHaveProperty("intervals");
   });
 
   it("falls back to sport settings bounds when the activity has no icu_hr_zones", () => {

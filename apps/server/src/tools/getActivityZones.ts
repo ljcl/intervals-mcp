@@ -74,7 +74,7 @@ export const getActivityZonesTool = {
       const units = { heartrate: "bpm" as const };
 
       if (zoneSets.length === 0) {
-        const empty = { activity_id: id, zone_sets: [], units };
+        const empty = { activity_id: activity.id, zone_sets: [], units };
         warnOnSchemaDrift(
           "get-activity-zones",
           ActivityZonesOutputSchema,
@@ -99,7 +99,7 @@ export const getActivityZonesTool = {
       // the structured payload and the chart cannot describe different
       // zones.
       const structured = {
-        activity_id: id,
+        activity_id: activity.id,
         zone_sets: zoneSets.map((set) => ({
           type: set.type,
           sensor_based: set.sensorBased,
@@ -128,7 +128,7 @@ export const getActivityZonesTool = {
             type: "text" as const,
             text: toolErrorText(error, {
               context: `fetch zones for activity ${id}`,
-              notFound: `Activity with ID ${id} not found.`,
+              notFound: `Activity ${id} was not found.`,
             }),
           },
         ],
