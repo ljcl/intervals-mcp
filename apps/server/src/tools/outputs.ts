@@ -65,6 +65,7 @@ export const TrainingLoadOutputSchema = z.object({
   totals: z.object({
     runs: z.number().int(),
     distance_km: z.number(),
+    time_s: z.number().int(),
     time_hours: z.number(),
     elevation_m: z.number(),
     load: z.number(),
@@ -80,6 +81,7 @@ export const TrainingLoadOutputSchema = z.object({
       week_starting: z.string(),
       runs: z.number().int(),
       distance_km: z.number(),
+      time_s: z.number().int(),
       time_hours: z.number(),
       time_formatted: z.string(),
       elevation_m: z.number(),
@@ -94,7 +96,8 @@ export const TrainingLoadOutputSchema = z.object({
   units: z.object({
     load: z.literal("intervals.icu training load"),
     distance: z.literal("km"),
-    time: z.literal("s"),
+    time_s: z.literal("s"),
+    time_hours: z.literal("h"),
     elevation: z.literal("m"),
   }),
 });

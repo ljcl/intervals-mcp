@@ -19,6 +19,7 @@ describe("schemas align with the real tool rawObjects", () => {
       totals: {
         runs: 8,
         distance_km: 64.2,
+        time_s: 21960,
         time_hours: 6.1,
         elevation_m: 420,
         load: 540,
@@ -34,6 +35,7 @@ describe("schemas align with the real tool rawObjects", () => {
           week_starting: "2026-05-11",
           runs: 3,
           distance_km: 24.1,
+          time_s: 7920,
           time_hours: 2.2,
           time_formatted: "2h 12m",
           elevation_m: 150,
@@ -55,7 +57,8 @@ describe("schemas align with the real tool rawObjects", () => {
       units: {
         load: "intervals.icu training load",
         distance: "km",
-        time: "s",
+        time_s: "s",
+        time_hours: "h",
         elevation: "m",
       },
     };

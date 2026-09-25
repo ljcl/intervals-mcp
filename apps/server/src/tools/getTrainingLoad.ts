@@ -9,7 +9,11 @@ import { loadWellnessFitnessSeries } from "../fitnessTrendWellness";
 import { formatDuration } from "../formatters";
 import { type IntervalsActivity, listActivities } from "../intervalsClient";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
-import { computeWeekWarnings, getWeekStart } from "../trainingLoad";
+import {
+  aggregateWeeks,
+  computeWeekWarnings,
+  getWeekStart,
+} from "../trainingLoad";
 import { addDays, todayLocal } from "../utils/localDate";
 import { READ_ONLY } from "./_annotations";
 import { toolErrorText } from "./_errors";
@@ -80,19 +84,11 @@ const inputSchema = z.object({
 
 type GetTrainingLoadInput = z.infer<typeof inputSchema>;
 
-interface WeekData {
-  runs: number;
-  distance_m: number;
-  time_seconds: number;
-  elevation_m: number;
-  load: number;
-  load_by_type: Record<string, number>;
-  activities: Array<{
-    id: string;
-    name: string;
-    date: string;
-    distance_km: number;
-  }>;
+interface ActivitySummary {
+  id: string;
+  name: string;
+  date: string;
+  distance_km: number;
 }
 
 /**
@@ -206,83 +202,53 @@ export const getTrainingLoadTool = {
       );
       const loadActivities = runOnly ? runActivities : windowActivities;
 
-      // Group by week
-      const weeks = new Map<string, WeekData>();
+      // The one shared weekly timeline (trainingLoad.ts's aggregateWeeks):
+      // the union of run weeks and load weeks, so this tool and the
+      // training-load MCP App feed can never report different weekly or
+      // total load for the same activities.
+      const buckets = aggregateWeeks(runActivities, loadActivities);
 
+      // Individual run activities per week, for the `activities` list this
+      // text tool carries that the app feed does not.
+      const activitiesByWeek = new Map<string, ActivitySummary[]>();
       for (const activity of runActivities) {
         const weekKey = getWeekStart(activity.start_date_local);
-
-        if (!weeks.has(weekKey)) {
-          weeks.set(weekKey, {
-            runs: 0,
-            distance_m: 0,
-            time_seconds: 0,
-            elevation_m: 0,
-            load: 0,
-            load_by_type: {},
-            activities: [],
-          });
-        }
-
-        const week = weeks.get(weekKey)!;
-        week.runs += 1;
-        week.distance_m += activity.distance || 0;
-        week.time_seconds += activity.moving_time || 0;
-        week.elevation_m += activity.total_elevation_gain || 0;
-        week.activities.push({
+        const list = activitiesByWeek.get(weekKey) ?? [];
+        list.push({
           id: activity.id,
           name: activity.name ?? "",
           date: localDay(activity.start_date_local),
           distance_km: Math.round((activity.distance || 0) / 10) / 100,
         });
+        activitiesByWeek.set(weekKey, list);
       }
 
-      for (const activity of loadActivities) {
-        const weekKey = getWeekStart(activity.start_date_local);
-        // A load activity's week can be outside the run-derived weeks map
-        // (e.g. a cross-training-only week for whole-body load); create it.
-        if (!weeks.has(weekKey)) {
-          weeks.set(weekKey, {
-            runs: 0,
-            distance_m: 0,
-            time_seconds: 0,
-            elevation_m: 0,
-            load: 0,
-            load_by_type: {},
-            activities: [],
-          });
-        }
-        const week = weeks.get(weekKey)!;
-        const load = activity.icu_training_load ?? 0;
-        const type = activity.type ?? "Unknown";
-        week.load += load;
-        week.load_by_type[type] = (week.load_by_type[type] ?? 0) + load;
-      }
-
-      // Sort weeks chronologically and format
-      const sortedWeeks = Array.from(weeks.entries())
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([weekStart, data]) => ({
-          week_starting: weekStart,
-          runs: data.runs,
-          distance_km: Math.round(data.distance_m / 10) / 100,
-          time_hours: Math.round((data.time_seconds / 3600) * 100) / 100,
-          time_formatted: formatDuration(data.time_seconds),
-          elevation_m: Math.round(data.elevation_m),
-          load: Math.round(data.load),
-          load_by_type: Object.fromEntries(
-            Object.entries(data.load_by_type).map(([type, load]) => [
-              type,
-              Math.round(load),
-            ]),
-          ),
-          activities: data.activities,
-        }));
+      const sortedWeeks = buckets.map((bucket) => ({
+        week_starting: bucket.weekStarting,
+        runs: bucket.runs,
+        distance_km: Math.round(bucket.distanceM / 10) / 100,
+        time_s: Math.round(bucket.timeS),
+        time_hours: Math.round((bucket.timeS / 3600) * 100) / 100,
+        time_formatted: formatDuration(bucket.timeS),
+        elevation_m: Math.round(bucket.elevationM),
+        load: Math.round(bucket.load),
+        load_by_type: Object.fromEntries(
+          Object.entries(bucket.loadByType).map(([type, load]) => [
+            type,
+            Math.round(load),
+          ]),
+        ),
+        activities: activitiesByWeek.get(bucket.weekStarting) ?? [],
+      }));
 
       // Calculate totals
       const totalRuns = sortedWeeks.reduce((sum, w) => sum + w.runs, 0);
       const totalDistanceKm = sortedWeeks.reduce(
         (sum, w) => sum + w.distance_km,
+        0,
+      );
+      const totalTimeSeconds = sortedWeeks.reduce(
+        (sum, w) => sum + w.time_s,
         0,
       );
       const totalTimeHours = sortedWeeks.reduce(
@@ -356,6 +322,7 @@ export const getTrainingLoadTool = {
         totals: {
           runs: totalRuns,
           distance_km: Math.round(totalDistanceKm * 100) / 100,
+          time_s: totalTimeSeconds,
           time_hours: Math.round(totalTimeHours * 100) / 100,
           elevation_m: totalElevation,
           load: totalLoad,
@@ -373,7 +340,8 @@ export const getTrainingLoadTool = {
         units: {
           load: "intervals.icu training load" as const,
           distance: "km" as const,
-          time: "s" as const,
+          time_s: "s" as const,
+          time_hours: "h" as const,
           elevation: "m" as const,
         },
       };

@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { addDays } from "../fitnessTrend";
+import { addDays, RUN_TYPES } from "../fitnessTrend";
 import {
   getWellness,
   type IntervalsActivity,
   type IntervalsWellness,
   listActivities,
 } from "../intervalsClient";
+import { buildTrainingLoadData } from "../trainingLoad";
 import { getTrainingLoadTool } from "./getTrainingLoad";
 import { TrainingLoadOutputSchema } from "./outputs";
 
@@ -225,6 +226,71 @@ describe("get-training-load execute", () => {
     expect(
       structured.warnings.some((w) => w.includes("Run/TrailRun/VirtualRun")),
     ).toBe(true);
+  });
+
+  it("reports load for a window with no runs at all (whole-body)", async () => {
+    mockedListActivities.mockResolvedValueOnce([
+      run(2, {
+        id: "strength",
+        type: "WeightTraining",
+        icu_training_load: 30,
+        distance: 0,
+      }),
+    ]);
+    mockedWellness.mockResolvedValueOnce([]);
+
+    const result = await getTrainingLoadTool.execute(
+      DEFAULT_INPUT,
+      "test-token",
+    );
+
+    const structured = result.structuredContent as {
+      totals: { runs: number; load: number };
+      weekly_breakdown: unknown[];
+    };
+    expect(structured.totals.runs).toBe(0);
+    expect(structured.totals.load).toBe(30);
+    expect(structured.weekly_breakdown.length).toBe(1);
+  });
+
+  it("produces the same weekly load as the training-load app feed for the same activities", async () => {
+    const activities = [
+      run(2),
+      run(9, {
+        id: "strength",
+        type: "WeightTraining",
+        icu_training_load: 25,
+        distance: 0,
+      }),
+    ];
+    mockedListActivities.mockResolvedValueOnce(activities);
+    mockedWellness.mockResolvedValueOnce([]);
+
+    const result = await getTrainingLoadTool.execute(
+      DEFAULT_INPUT,
+      "test-token",
+    );
+    const structured = result.structuredContent as {
+      weekly_breakdown: Array<{ week_starting: string; load: number }>;
+      totals: { load: number };
+    };
+
+    const runActivities = activities.filter((a) =>
+      RUN_TYPES.includes(a.type ?? ""),
+    );
+    const appData = buildTrainingLoadData(runActivities, 28, {
+      loadActivities: activities,
+      runOnly: false,
+    });
+
+    const textLoadByWeek = Object.fromEntries(
+      structured.weekly_breakdown.map((w) => [w.week_starting, w.load]),
+    );
+    const appLoadByWeek = Object.fromEntries(
+      appData.weeks.map((w) => [w.weekStarting, w.load]),
+    );
+    expect(textLoadByWeek).toEqual(appLoadByWeek);
+    expect(structured.totals.load).toBe(appData.totals.load);
   });
 
   it("returns isError when the fetch fails", async () => {

@@ -315,9 +315,16 @@ CTL/ATL/TSB locally the same way `get-fitness-trend`'s run-only path does,
 through the shared `buildRunOnlyFitnessTrend` helper in `fitnessTrend.ts` and
 its `days + 150` day zero-seeded runway, so the two tools can never disagree
 (`source: "computed"`). `activity_types_included` names which types `load`
-covers either way. Weeks start Monday in the server's configured time zone
-(`startOfWeekMonday` in `utils/localDate.ts`, the same helper
-`get-athlete-stats` uses).
+covers either way. The weekly timeline (`aggregateWeeks` in `trainingLoad.ts`,
+also shared with the app feed below) spans the union of weeks with a run and
+weeks with load: a strength-only week, or a whole-body window with no runs at
+all, still gets a row, with run fields zeroed rather than the week being
+dropped, so weekly and total load can never differ between this tool and the
+app feed for the same activities. Weeks start Monday in the server's
+configured time zone (`startOfWeekMonday` in `utils/localDate.ts`, the same
+helper `get-athlete-stats` uses). Time is reported both ways: `time_s`
+(seconds, matching `units.time_s`) and `time_hours` (matching
+`units.time_hours`), per week and in `totals`.
 
 ## Activity tools
 

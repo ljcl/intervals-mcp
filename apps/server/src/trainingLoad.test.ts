@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  aggregateWeeks,
   buildTrainingLoadData,
   computeWeekWarnings,
   getWeekStart,
@@ -235,5 +236,104 @@ describe("buildTrainingLoadData", () => {
     const lastWeek = data.weeks[data.weeks.length - 1]!;
     expect(lastWeek.warning).toBe(false);
     expect(lastWeek.warningReasons).toEqual([]);
+  });
+
+  it("carries a strength-only week inside the run window, run fields zeroed", () => {
+    const data = buildTrainingLoadData(
+      [run("2026-06-01", 20), run("2026-06-15", 20)],
+      42,
+      {
+        runOnly: false,
+        loadActivities: [
+          run("2026-06-01", 0, { type: "Run", icu_training_load: 40 }),
+          run("2026-06-08", 0, {
+            type: "WeightTraining",
+            icu_training_load: 25,
+          }),
+          run("2026-06-15", 0, { type: "Run", icu_training_load: 40 }),
+        ],
+      },
+    );
+    // Week of 2026-06-08 has no run but the strength load still appears.
+    const midWeek = data.weeks.find((w) => w.weekStarting === "2026-06-08")!;
+    expect(midWeek).toMatchObject({
+      runs: 0,
+      distanceKm: 0,
+      load: 25,
+      loadByType: { WeightTraining: 25 },
+    });
+    expect(data.totals.load).toBe(105);
+  });
+
+  it("returns the whole-body load for a window with no runs at all", () => {
+    const data = buildTrainingLoadData([], 28, {
+      runOnly: false,
+      loadActivities: [
+        run("2026-06-01", 0, { type: "WeightTraining", icu_training_load: 30 }),
+      ],
+    });
+    expect(data.weeks).toHaveLength(1);
+    expect(data.weeks[0]).toMatchObject({
+      weekStarting: "2026-06-01",
+      runs: 0,
+      distanceKm: 0,
+      load: 30,
+      loadByType: { WeightTraining: 30 },
+    });
+    expect(data.totals.load).toBe(30);
+    expect(data.totals.runs).toBe(0);
+  });
+});
+
+describe("aggregateWeeks", () => {
+  const run = (
+    date: string,
+    distanceKm: number,
+    overrides: Partial<TrainingLoadActivity> = {},
+  ): TrainingLoadActivity => ({
+    start_date: `${date}T08:00:00Z`,
+    start_date_local: `${date}T08:00:00Z`,
+    distance: distanceKm * 1000,
+    moving_time: distanceKm * 360,
+    total_elevation_gain: distanceKm * 10,
+    ...overrides,
+  });
+
+  it("returns nothing for no activities on either side", () => {
+    expect(aggregateWeeks([], [])).toEqual([]);
+  });
+
+  it("unions run weeks and load-only weeks, extending the timeline past the run range", () => {
+    const buckets = aggregateWeeks(
+      [run("2026-06-08", 10)],
+      [
+        run("2026-06-08", 0, { type: "Run", icu_training_load: 50 }),
+        run("2026-06-22", 0, { type: "WeightTraining", icu_training_load: 20 }),
+      ],
+    );
+    expect(buckets.map((b) => b.weekStarting)).toEqual([
+      "2026-06-08",
+      "2026-06-15",
+      "2026-06-22",
+    ]);
+    expect(buckets[2]).toMatchObject({
+      runs: 0,
+      distanceM: 0,
+      load: 20,
+      loadByType: { WeightTraining: 20 },
+    });
+  });
+
+  it("gives the same weekly load whichever surface calls it with the same input", () => {
+    const runs = [run("2026-06-01", 10), run("2026-06-08", 12)];
+    const loadActivities = [
+      run("2026-06-01", 0, { type: "Run", icu_training_load: 55 }),
+      run("2026-06-08", 0, { type: "Run", icu_training_load: 60 }),
+      run("2026-06-08", 0, { type: "WeightTraining", icu_training_load: 15 }),
+    ];
+    const a = aggregateWeeks(runs, loadActivities);
+    const b = aggregateWeeks(runs, loadActivities);
+    expect(a).toEqual(b);
+    expect(a.reduce((sum, w) => sum + w.load, 0)).toBe(130);
   });
 });

@@ -133,10 +133,82 @@ export interface TrainingLoadAppData {
   source: "intervals.icu" | "computed" | null;
 }
 
-function addDays(isoDate: string, days: number): string {
+export function addDays(isoDate: string, days: number): string {
   const d = new Date(`${isoDate}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().split("T")[0]!;
+}
+
+/** One week's raw (unrounded) totals, keyed by Monday-start date. */
+export interface WeekBucket {
+  weekStarting: string;
+  runs: number;
+  distanceM: number;
+  timeS: number;
+  elevationM: number;
+  load: number;
+  loadByType: Record<string, number>;
+}
+
+/**
+ * Builds the weekly timeline both `get-training-load` and
+ * `get-training-load-data` read from: a continuous Monday-to-Monday run,
+ * spanning from the earliest to the latest week that has either a run
+ * activity (`runs`) or a load activity (`loadActivities`); a load-only
+ * week (e.g. a strength-only week, or a window with no runs at all) is not
+ * dropped, it just carries zeroed run fields, and a run-only week carries
+ * zeroed load fields. Any week between the earliest and latest active week
+ * with neither is zero-filled too, so the series is gap-visible. The one
+ * home this timeline is built through, so the text tool and the app feed
+ * can never disagree on a week's load or volume (see AGENTS.md's "derived
+ * numbers have exactly one home").
+ */
+export function aggregateWeeks(
+  runs: TrainingLoadActivity[],
+  loadActivities: TrainingLoadActivity[],
+): WeekBucket[] {
+  const emptyBucket = (weekStarting: string): WeekBucket => ({
+    weekStarting,
+    runs: 0,
+    distanceM: 0,
+    timeS: 0,
+    elevationM: 0,
+    load: 0,
+    loadByType: {},
+  });
+
+  const buckets = new Map<string, WeekBucket>();
+
+  for (const activity of runs) {
+    const weekKey = getWeekStart(activity.start_date_local);
+    const bucket = buckets.get(weekKey) ?? emptyBucket(weekKey);
+    bucket.runs += 1;
+    bucket.distanceM += activity.distance || 0;
+    bucket.timeS += activity.moving_time || 0;
+    bucket.elevationM += activity.total_elevation_gain || 0;
+    buckets.set(weekKey, bucket);
+  }
+
+  for (const activity of loadActivities) {
+    const weekKey = getWeekStart(activity.start_date_local);
+    const bucket = buckets.get(weekKey) ?? emptyBucket(weekKey);
+    const load = activity.icu_training_load ?? 0;
+    const type = activity.type ?? "Unknown";
+    bucket.load += load;
+    bucket.loadByType[type] = (bucket.loadByType[type] ?? 0) + load;
+    buckets.set(weekKey, bucket);
+  }
+
+  const sortedKeys = [...buckets.keys()].sort();
+  if (sortedKeys.length === 0) return [];
+
+  const weekKeys: string[] = [];
+  const last = sortedKeys[sortedKeys.length - 1]!;
+  for (let key = sortedKeys[0]!; key <= last; key = addDays(key, 7)) {
+    weekKeys.push(key);
+  }
+
+  return weekKeys.map((key) => buckets.get(key) ?? emptyBucket(key));
 }
 
 export interface BuildTrainingLoadDataOptions {
@@ -144,8 +216,8 @@ export interface BuildTrainingLoadDataOptions {
    * Activities to sum `icu_training_load` over, per week: all fetched
    * activity types for whole-body load, or the same run activities for
    * run-only load. Defaults to `runs` (run-only), so an omitted option is a
-   * run-only call. Only weeks inside the run-anchored timeline (below) carry
-   * load; a cross-training week outside that span is not represented.
+   * run-only call. A week outside the run timeline (e.g. a load-only
+   * cross-training week) still appears; see `aggregateWeeks`.
    */
   loadActivities?: TrainingLoadActivity[];
   /** True when `loadActivities` is a run-only set rather than whole-body. */
@@ -156,13 +228,15 @@ export interface BuildTrainingLoadDataOptions {
 }
 
 /**
- * Aggregate activities into the chart-ready weekly payload: per-week volume,
- * gap weeks filled with zeros (so the timeline is continuous and a skipped
- * week is visible), a rolling-average trend value per week, and the warning
- * flags. Warnings are computed on the non-empty weeks only, exactly like the
- * text tool, so both surfaces always agree. `runs` drives volume and the
- * warning rules always (they are run-based regardless of `options.runOnly`);
- * `options.loadActivities` (default `runs`) drives `load`/`loadByType`.
+ * Aggregate activities into the chart-ready weekly payload: per-week volume
+ * and load from {@link aggregateWeeks} (gap weeks and load-only weeks
+ * zero-filled either way, so the timeline is continuous and a skipped week
+ * is visible), a rolling-average trend value per week, and the warning
+ * flags. Warnings are computed on the weeks that actually had a run, exactly
+ * like the text tool, so both surfaces always agree. `runs` drives volume
+ * and the warning rules always (they are run-based regardless of
+ * `options.runOnly`); `options.loadActivities` (default `runs`) drives
+ * `load`/`loadByType`.
  */
 export function buildTrainingLoadData(
   runs: TrainingLoadActivity[],
@@ -172,74 +246,24 @@ export function buildTrainingLoadData(
   const loadActivities = options.loadActivities ?? runs;
   const runOnly = options.runOnly ?? true;
 
-  interface Bucket {
-    runs: number;
-    distanceM: number;
-    timeS: number;
-    elevationM: number;
-  }
-  const buckets = new Map<string, Bucket>();
+  const buckets = aggregateWeeks(runs, loadActivities);
 
-  for (const activity of runs) {
-    const weekKey = getWeekStart(activity.start_date_local);
-    const bucket = buckets.get(weekKey) ?? {
-      runs: 0,
-      distanceM: 0,
-      timeS: 0,
-      elevationM: 0,
-    };
-    bucket.runs += 1;
-    bucket.distanceM += activity.distance || 0;
-    bucket.timeS += activity.moving_time || 0;
-    bucket.elevationM += activity.total_elevation_gain || 0;
-    buckets.set(weekKey, bucket);
-  }
-
-  const sortedKeys = [...buckets.keys()].sort();
-
-  // Same rounding as the text tool's weekly breakdown.
-  const nonEmptyWeeks: WeeklyVolume[] = sortedKeys.map((key) => ({
-    week_starting: key,
-    distance_km: Math.round(buckets.get(key)!.distanceM / 10) / 100,
-  }));
+  const nonEmptyRunWeeks: WeeklyVolume[] = buckets
+    .filter((b) => b.runs > 0)
+    .map((b) => ({
+      week_starting: b.weekStarting,
+      distance_km: Math.round(b.distanceM / 10) / 100,
+    }));
 
   const reasonsByWeek = new Map<string, string[]>();
-  for (const warning of computeWeekWarnings(nonEmptyWeeks)) {
+  for (const warning of computeWeekWarnings(nonEmptyRunWeeks)) {
     const reasons = reasonsByWeek.get(warning.week_starting) ?? [];
     reasons.push(warning.reason);
     reasonsByWeek.set(warning.week_starting, reasons);
   }
 
-  // Continuous Monday-to-Monday timeline from first to last active week.
-  const weekKeys: string[] = [];
-  if (sortedKeys.length > 0) {
-    const last = sortedKeys[sortedKeys.length - 1]!;
-    for (let key = sortedKeys[0]!; key <= last; key = addDays(key, 7)) {
-      weekKeys.push(key);
-    }
-  }
-
-  const distances = weekKeys.map((key) =>
-    buckets.has(key) ? Math.round(buckets.get(key)!.distanceM / 10) / 100 : 0,
-  );
+  const distances = buckets.map((b) => Math.round(b.distanceM / 10) / 100);
   const trend = rollingTrend(distances);
-
-  // Load per week, from `loadActivities` (a separate set from `runs` for
-  // whole-body). Only weeks already in `weekKeys` (the run-anchored
-  // timeline) collect load; a load activity outside that span is dropped.
-  const loadBuckets = new Map<
-    string,
-    { load: number; byType: Record<string, number> }
-  >();
-  for (const activity of loadActivities) {
-    const weekKey = getWeekStart(activity.start_date_local);
-    const bucket = loadBuckets.get(weekKey) ?? { load: 0, byType: {} };
-    const load = activity.icu_training_load ?? 0;
-    const type = activity.type ?? "Unknown";
-    bucket.load += load;
-    bucket.byType[type] = (bucket.byType[type] ?? 0) + load;
-    loadBuckets.set(weekKey, bucket);
-  }
 
   const activityTypesIncluded = runOnly
     ? [...RUN_TYPES]
@@ -253,22 +277,20 @@ export function buildTrainingLoadData(
         ),
       ).sort();
 
-  const weeks: TrainingLoadWeek[] = weekKeys.map((key, i) => {
-    const bucket = buckets.get(key);
-    const warningReasons = reasonsByWeek.get(key) ?? [];
-    const loadBucket = loadBuckets.get(key);
+  const weeks: TrainingLoadWeek[] = buckets.map((bucket, i) => {
+    const warningReasons = reasonsByWeek.get(bucket.weekStarting) ?? [];
     return {
-      weekStarting: key,
-      runs: bucket?.runs ?? 0,
+      weekStarting: bucket.weekStarting,
+      runs: bucket.runs,
       distanceKm: distances[i]!,
-      timeHours: bucket ? Math.round((bucket.timeS / 3600) * 100) / 100 : 0,
-      elevationM: bucket ? Math.round(bucket.elevationM) : 0,
+      timeHours: Math.round((bucket.timeS / 3600) * 100) / 100,
+      elevationM: Math.round(bucket.elevationM),
       trendKm: Math.round(trend[i]! * 100) / 100,
       warning: warningReasons.length > 0,
       warningReasons,
-      load: Math.round(loadBucket?.load ?? 0),
+      load: Math.round(bucket.load),
       loadByType: Object.fromEntries(
-        Object.entries(loadBucket?.byType ?? {}).map(([type, load]) => [
+        Object.entries(bucket.loadByType).map(([type, load]) => [
           type,
           Math.round(load),
         ]),
