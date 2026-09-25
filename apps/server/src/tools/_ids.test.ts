@@ -94,7 +94,8 @@ describe("intervalsActivityIdInput", () => {
     it("leaves schemas that are not intervals.icu ids alone", () => {
       const json = advertise(z.union([z.string(), z.number()]));
 
-      expect(json.anyOf).toBeDefined();
+      expect(json.type).toEqual(["string", "number"]);
+      expect(json.pattern).toBeUndefined();
     });
 
     it("narrows a nested field to exactly type, pattern, description", () => {

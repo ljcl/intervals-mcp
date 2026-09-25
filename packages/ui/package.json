@@ -12,19 +12,19 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@base-ui/react": "1.7.0",
-    "@modelcontextprotocol/ext-apps": "1.7.5",
+    "@base-ui/react": "1.8.0",
+    "@modelcontextprotocol/ext-apps": "2.0.0",
     "@intervals-mcp/design-system": "workspace:*",
-    "react": "19.2.8"
+    "react": "19.3.0"
   },
   "devDependencies": {
     "@intervals-mcp/tsconfig": "workspace:*",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
-    "happy-dom": "20.11.2",
-    "react-dom": "19.2.8",
-    "storybook": "10.5.8",
+    "happy-dom": "20.14.5",
+    "react-dom": "19.3.0",
+    "storybook": "10.6.0",
     "typescript": "7.0.2",
-    "vitest": "4.1.10"
+    "vitest": "4.1.11"
   }
 }

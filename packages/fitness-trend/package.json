@@ -14,12 +14,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@modelcontextprotocol/ext-apps": "1.7.5",
+    "@modelcontextprotocol/ext-apps": "2.0.0",
     "@intervals-mcp/data": "workspace:*",
     "@intervals-mcp/design-system": "workspace:*",
     "@intervals-mcp/ui": "workspace:*",
-    "react": "19.2.8",
-    "react-dom": "19.2.8",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
     "recharts": "3.10.1"
   },
   "devDependencies": {
@@ -27,9 +27,9 @@
     "@intervals-mcp/vite-config": "workspace:*",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
-    "storybook": "10.5.8",
+    "storybook": "10.6.0",
     "typescript": "7.0.2",
-    "vite": "8.2.1",
-    "vitest": "4.1.10"
+    "vite": "8.3.0",
+    "vitest": "4.1.11"
   }
 }
