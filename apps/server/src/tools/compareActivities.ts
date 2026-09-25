@@ -172,19 +172,15 @@ export function buildComparison(
     ? rawPaceSecondsPerKm(activity2.distance, activity2.moving_time)
     : null;
 
-  let paceDiff: {
-    seconds_per_km: number;
-    min_per_km: string;
-    interpretation: string;
-  } | null = null;
+  let paceDeltaSecPerKm: number | null = null;
+  let paceDeltaMinPerKm: string | null = null;
+  let paceDeltaInterpretation: string | null = null;
   if (paceSec1 != null && paceSec2 != null) {
     const diffSeconds = Math.round(paceSec2 - paceSec1);
-    paceDiff = {
-      seconds_per_km: diffSeconds,
-      min_per_km: signedPaceDelta(diffSeconds),
-      interpretation:
-        diffSeconds < -5 ? "faster" : diffSeconds > 5 ? "slower" : "same",
-    };
+    paceDeltaSecPerKm = diffSeconds;
+    paceDeltaMinPerKm = signedPaceDelta(diffSeconds);
+    paceDeltaInterpretation =
+      diffSeconds < -5 ? "faster" : diffSeconds > 5 ? "slower" : "same";
   }
 
   const hrDiff =
@@ -241,7 +237,9 @@ export function buildComparison(
     activity_2: summary2,
     differences: {
       distance_km: distanceDiff,
-      pace: paceDiff,
+      pace_delta_sec_per_km: paceDeltaSecPerKm,
+      pace_delta_min_per_km: paceDeltaMinPerKm,
+      pace_delta_interpretation: paceDeltaInterpretation,
       avg_hr: hrDiff,
       cadence_spm: cadenceDiff,
       elevation_gain_m: elevationDiff,
@@ -279,7 +277,9 @@ export const compareActivitiesTool = {
       } = result;
       const {
         distance_km: distanceDiff,
-        pace: paceDiff,
+        pace_delta_sec_per_km: paceDeltaSecPerKm,
+        pace_delta_min_per_km: paceDeltaMinPerKm,
+        pace_delta_interpretation: paceDeltaInterpretation,
         avg_hr: hrDiff,
         cadence_spm: cadenceDiff,
         elevation_gain_m: elevationDiff,
@@ -312,9 +312,9 @@ export const compareActivitiesTool = {
       lines.push(
         `  Distance: ${distanceDiff > 0 ? "+" : ""}${distanceDiff} km`,
       );
-      if (paceDiff) {
+      if (paceDeltaSecPerKm != null) {
         lines.push(
-          `  Pace: ${paceDiff.min_per_km} /km (${paceDiff.seconds_per_km > 0 ? "+" : ""}${paceDiff.seconds_per_km} s/km, ${paceDiff.interpretation})`,
+          `  Pace: ${paceDeltaMinPerKm} /km (${paceDeltaSecPerKm > 0 ? "+" : ""}${paceDeltaSecPerKm} s/km, ${paceDeltaInterpretation})`,
         );
       }
       if (hrDiff !== null)

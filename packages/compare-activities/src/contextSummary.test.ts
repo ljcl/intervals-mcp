@@ -51,11 +51,9 @@ const compare: CompareData = {
   },
   differences: {
     distance_km: 0,
-    pace: {
-      seconds_per_km: -12,
-      min_per_km: "-0:12",
-      interpretation: "faster",
-    },
+    pace_delta_sec_per_km: -12,
+    pace_delta_min_per_km: "-0:12",
+    pace_delta_interpretation: "faster",
     avg_hr: 8,
     cadence_spm: 4,
     elevation_gain_m: -2,

@@ -177,11 +177,9 @@ describe("schemas align with the real tool rawObjects", () => {
       activity_2: { ...side, id: "222", name: "Run B" },
       differences: {
         distance_km: 0,
-        pace: {
-          seconds_per_km: -10,
-          min_per_km: "-0:10",
-          interpretation: "faster",
-        },
+        pace_delta_sec_per_km: -10,
+        pace_delta_min_per_km: "-0:10",
+        pace_delta_interpretation: "faster",
         avg_hr: -2,
         cadence_spm: 1,
         elevation_gain_m: 5,

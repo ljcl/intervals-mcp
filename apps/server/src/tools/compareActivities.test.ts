@@ -52,9 +52,9 @@ describe("buildComparison", () => {
 
     expect(result.activity_1.name).toBe("Morning Run");
     expect(result.activity_2.name).toBe("Race Day");
-    expect(result.differences.pace?.seconds_per_km).toBeLessThan(-5);
-    expect(result.differences.pace?.interpretation).toBe("faster");
-    expect(result.differences.pace?.min_per_km).toMatch(/^-\d+:\d{2}$/);
+    expect(result.differences.pace_delta_sec_per_km).toBeLessThan(-5);
+    expect(result.differences.pace_delta_interpretation).toBe("faster");
+    expect(result.differences.pace_delta_min_per_km).toMatch(/^-\d+:\d{2}$/);
     expect(result.differences.avg_hr).toBe(10);
     expect(result.differences.cadence_spm).toBe(6);
     expect(result.differences.elevation_gain_m).toBe(-2);
@@ -89,7 +89,9 @@ describe("buildComparison", () => {
     const result = buildComparison(bare, faster);
 
     expect(result.activity_1.pace_min_per_km).toBeNull();
-    expect(result.differences.pace).toBeNull();
+    expect(result.differences.pace_delta_sec_per_km).toBeNull();
+    expect(result.differences.pace_delta_min_per_km).toBeNull();
+    expect(result.differences.pace_delta_interpretation).toBeNull();
     expect(result.differences.avg_hr).toBeNull();
     expect(result.differences.cadence_spm).toBeNull();
     expect(result.efficiency).toBeNull();

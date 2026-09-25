@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { getTimeZone } from "../config";
-import { formatDuration } from "../formatters";
+import { formatDuration, round } from "../formatters";
 import { getAthletePaceCurves } from "../intervalsClient";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
 import {
@@ -90,12 +90,24 @@ const inputSchema = z.object({
 
 type GetRacePredictionInput = z.infer<typeof inputSchema>;
 
-const NO_PACE = { min_per_km: "N/A" };
-
-/** `racePace` speaks camelCase; the payload is snake_case. */
-function paceFields(seconds: number, distanceMeters: number) {
-  const pace = racePace(seconds, distanceMeters);
-  return pace ? { min_per_km: pace.minPerKm } : NO_PACE;
+/**
+ * Flat `pace_sec_per_km`/`pace_min_per_km` fields (bare `m:ss`, no unit
+ * suffix), matching every other tool's pace convention rather than this
+ * tool's former nested `pace: { min_per_km }` object. Null fields (not an
+ * "N/A" sentinel) when either input is non-positive.
+ */
+function paceFields(
+  seconds: number,
+  distanceMeters: number,
+): { pace_sec_per_km: number | null; pace_min_per_km: string | null } {
+  if (!(seconds > 0) || !(distanceMeters > 0)) {
+    return { pace_sec_per_km: null, pace_min_per_km: null };
+  }
+  const secPerKm = (seconds / distanceMeters) * 1000;
+  return {
+    pace_sec_per_km: round(secPerKm, 2),
+    pace_min_per_km: formatPaceSeconds(secPerKm),
+  };
 }
 
 const serializeSource = (source: SourceEffort) => ({
@@ -109,7 +121,7 @@ const serializeSource = (source: SourceEffort) => ({
 });
 
 const UNITS = {
-  distance: "km" as const,
+  distance: "m" as const,
   pace: "min/km" as const,
   time: "s" as const,
 };
@@ -127,7 +139,7 @@ function criticalSpeedPrediction(
   return {
     predicted_seconds: rounded,
     predicted_formatted: formatRaceTime(rounded),
-    pace: { min_per_km: formatPaceSeconds((seconds / targetMeters) * 1000) },
+    ...paceFields(seconds, targetMeters),
     within_model_range: isWithinCriticalSpeedValidity(seconds),
   };
 }
@@ -147,7 +159,8 @@ const serializeSplitPlan = (plan: SplitPlan) => ({
     split_formatted: formatRaceTime(split.splitSeconds),
     cumulative_seconds: split.cumulativeSeconds,
     cumulative_formatted: formatRaceTime(split.cumulativeSeconds),
-    pace_per_unit: formatPaceSeconds(split.paceSecPerUnit),
+    pace_sec_per_km: round(split.paceSecPerUnit, 2),
+    pace_min_per_km: formatPaceSeconds(split.paceSecPerUnit),
   })),
 });
 
@@ -292,7 +305,8 @@ export const getRacePredictionTool = {
         basis: "goal" | "predicted";
         total_seconds: number;
         total_formatted: string;
-        pace: { min_per_km: string };
+        pace_sec_per_km: number | null;
+        pace_min_per_km: string | null;
         goal_vs_predicted_seconds: number | null;
         goal_assessment: string | null;
         splits: ReturnType<typeof serializeSplitPlan>[];
@@ -336,7 +350,7 @@ export const getRacePredictionTool = {
             basis: goalSeconds !== null ? "goal" : "predicted",
             total_seconds: totalSeconds,
             total_formatted: formatRaceTime(totalSeconds),
-            pace: paceFields(totalSeconds, targetMeters),
+            ...paceFields(totalSeconds, targetMeters),
             goal_vs_predicted_seconds: delta,
             goal_assessment: assessment,
             splits: targetPlans.map(serializeSplitPlan),
@@ -350,7 +364,7 @@ export const getRacePredictionTool = {
           distance_m: p.distanceMeters,
           predicted_seconds: p.predictedSeconds,
           predicted_formatted: formatRaceTime(p.predictedSeconds),
-          pace: paceFields(p.predictedSeconds, p.distanceMeters),
+          ...paceFields(p.predictedSeconds, p.distanceMeters),
           confidence: p.confidence,
           confidence_notes: p.confidenceNotes,
           primary_source: serializeSource(p.primary.source),
@@ -395,7 +409,7 @@ export const getRacePredictionTool = {
         output += "\n";
         const cs = criticalSpeedPrediction(csModel, p.distanceMeters);
         if (cs) {
-          output += `     critical speed: ${cs.predicted_formatted} (${cs.pace.min_per_km} /km)`;
+          output += `     critical speed: ${cs.predicted_formatted} (${cs.pace_min_per_km} /km)`;
           output += cs.within_model_range
             ? "\n"
             : " - outside the model's 3-60 minute validity window\n";
@@ -420,7 +434,7 @@ export const getRacePredictionTool = {
         const [kmPlan, negativePlan] = targetPlans;
         output += `\n${target.distance} target: ${target.total_formatted} `;
         output += target.basis === "goal" ? "(your goal)\n" : "(predicted)\n";
-        output += `   ${target.pace.min_per_km} /km\n`;
+        output += `   ${target.pace_min_per_km} /km\n`;
         if (target.goal_assessment) {
           output += `   ${target.goal_assessment}\n`;
         }

@@ -1365,9 +1365,9 @@ async function handleViewCompareActivities(
     `Activity 1: ${data.activity_1.name} (${data.activity_1.date}), ${data.activity_1.distance_km} km in ${data.activity_1.moving_time}`,
     `Activity 2: ${data.activity_2.name} (${data.activity_2.date}), ${data.activity_2.distance_km} km in ${data.activity_2.moving_time}`,
   ];
-  if (data.differences.pace) {
+  if (data.differences.pace_delta_min_per_km != null) {
     lines.push(
-      `Pace delta: ${data.differences.pace.min_per_km} /km (${data.differences.pace.interpretation})`,
+      `Pace delta: ${data.differences.pace_delta_min_per_km} /km (${data.differences.pace_delta_interpretation})`,
     );
   }
   if (data.differences.avg_hr != null) {

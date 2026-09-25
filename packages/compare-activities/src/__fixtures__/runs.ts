@@ -144,11 +144,9 @@ export const compareData: CompareData = {
   },
   differences: {
     distance_km: 0.01,
-    pace: {
-      seconds_per_km: -15,
-      min_per_km: "-0:15",
-      interpretation: "faster",
-    },
+    pace_delta_sec_per_km: -15,
+    pace_delta_min_per_km: "-0:15",
+    pace_delta_interpretation: "faster",
     avg_hr: 8,
     cadence_spm: 6,
     elevation_gain_m: -2,

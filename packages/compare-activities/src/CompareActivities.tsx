@@ -221,17 +221,21 @@ export function buildDeltaTiles(compare: CompareData): DeltaTile[] {
     },
   ];
 
-  if (a1.pace_min_per_km && a2.pace_min_per_km && differences.pace) {
+  if (
+    a1.pace_min_per_km &&
+    a2.pace_min_per_km &&
+    differences.pace_delta_min_per_km
+  ) {
     tiles.push({
       key: "pace",
       label: "Pace",
       a: a1.pace_min_per_km,
       b: a2.pace_min_per_km,
-      delta: `${differences.pace.min_per_km}/km`,
+      delta: `${differences.pace_delta_min_per_km}/km`,
       trend:
-        differences.pace.interpretation === "faster"
+        differences.pace_delta_interpretation === "faster"
           ? "better"
-          : differences.pace.interpretation === "slower"
+          : differences.pace_delta_interpretation === "slower"
             ? "worse"
             : undefined,
     });

@@ -1,7 +1,7 @@
 {
   "note": "Permission-relevant identity of every advertised tool (#303). Changing an entry invalidates the stored 'Allow always' grant for that tool. See apps/server/src/toolSurface.test.ts for how to regenerate.",
   "tools": {
-    "compare-activities": "d590ce89a4c2942e",
+    "compare-activities": "98aeb65bcadf92ae",
     "get-activity": "a68ee12fc40e3d02",
     "get-activity-laps": "0541848ac4fdfdfb",
     "get-activity-streams": "77fc1c30b18dd91f",
@@ -17,7 +17,7 @@
     "get-fitness-trend-data": "c38dbe2fba194dba",
     "get-hill-analysis": "e1b68d6281338608",
     "get-interval-analysis": "c588a69b7cb2d4fc",
-    "get-race-prediction": "819dd19da5e6b75b",
+    "get-race-prediction": "97175f1b2d0a78e1",
     "get-route-map-data": "f92ab4cc2184cd4e",
     "get-running-summary": "79a542e21a6de47c",
     "get-split-analysis": "8a504567834a57e0",

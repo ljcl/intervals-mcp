@@ -65,11 +65,9 @@ export interface CompareData {
   activity_2: CompareSide;
   differences: {
     distance_km: number;
-    pace: {
-      seconds_per_km: number;
-      min_per_km: string;
-      interpretation: string;
-    } | null;
+    pace_delta_sec_per_km: number | null;
+    pace_delta_min_per_km: string | null;
+    pace_delta_interpretation: string | null;
     avg_hr: number | null;
     cadence_spm: number | null;
     elevation_gain_m: number;

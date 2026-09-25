@@ -112,13 +112,9 @@ export const CompareActivitiesOutputSchema = z.object({
   activity_2: CompareSideSchema,
   differences: z.object({
     distance_km: z.number(),
-    pace: z
-      .object({
-        seconds_per_km: z.number(),
-        min_per_km: z.string(),
-        interpretation: z.string(),
-      })
-      .nullable(),
+    pace_delta_sec_per_km: z.number().nullable(),
+    pace_delta_min_per_km: z.string().nullable(),
+    pace_delta_interpretation: z.string().nullable(),
     avg_hr: z.number().nullable(),
     cadence_spm: z.number().nullable(),
     elevation_gain_m: z.number(),
@@ -914,11 +910,6 @@ export const BestEffortsOutputSchema = z.object({
 });
 
 // ---------- get-race-prediction ----------
-/** km-only pace: get-race-prediction dropped mile paces and splits in
- * favour of km-only output. */
-const KmPaceSchema = z.object({
-  min_per_km: z.string(),
-});
 const PredictionSourceSchema = z.object({
   name: z.string().describe("A label for the effort, e.g. '5000 m'"),
   distance_m: z.number(),
@@ -941,7 +932,8 @@ const CriticalSpeedPredictionSchema = z
   .object({
     predicted_seconds: z.number().int(),
     predicted_formatted: z.string(),
-    pace: KmPaceSchema,
+    pace_sec_per_km: z.number().nullable(),
+    pace_min_per_km: z.string().nullable(),
     within_model_range: z
       .boolean()
       .describe(
@@ -957,7 +949,8 @@ const RacePredictionEntrySchema = z.object({
   distance_m: z.number(),
   predicted_seconds: z.number().int(),
   predicted_formatted: z.string(),
-  pace: KmPaceSchema,
+  pace_sec_per_km: z.number().nullable(),
+  pace_min_per_km: z.string().nullable(),
   confidence: z.enum(["high", "medium", "low"]),
   confidence_notes: z.array(z.string()),
   primary_source: PredictionSourceSchema.describe(
@@ -985,7 +978,8 @@ const SplitRowSchema = z.object({
   split_formatted: z.string(),
   cumulative_seconds: z.number(),
   cumulative_formatted: z.string(),
-  pace_per_unit: z.string().describe("Pace over this split, per full km"),
+  pace_sec_per_km: z.number().describe("Pace over this split, per full km"),
+  pace_min_per_km: z.string().describe("Pace over this split, per full km"),
 });
 const SplitPlanSchema = z.object({
   unit: z.enum(["km"]),
@@ -1005,7 +999,8 @@ export const RacePredictionOutputSchema = z.object({
       basis: z.enum(["goal", "predicted"]),
       total_seconds: z.number().int(),
       total_formatted: z.string(),
-      pace: KmPaceSchema,
+      pace_sec_per_km: z.number().nullable(),
+      pace_min_per_km: z.string().nullable(),
       /** Seconds the goal is faster (negative) or slower than the prediction. */
       goal_vs_predicted_seconds: z.number().int().nullable(),
       goal_assessment: z.string().nullable(),
@@ -1032,7 +1027,7 @@ export const RacePredictionOutputSchema = z.object({
       "intervals.icu's type: CS model from the athlete's pace curve; null when no fit is available",
     ),
   units: z.object({
-    distance: z.literal("km"),
+    distance: z.literal("m"),
     pace: z.literal("min/km"),
     time: z.literal("s"),
   }),

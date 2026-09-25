@@ -116,7 +116,8 @@ describe("getRacePredictionTool.execute", () => {
     const tenK = prediction(result, "10K");
     expect(tenK.predicted_seconds).toBe(2400);
     expect(tenK.predicted_formatted).toBe("40:00");
-    expect(tenK.pace.min_per_km).toBe("4:00");
+    expect(tenK.pace_min_per_km).toBe("4:00");
+    expect(tenK.pace_sec_per_km).toBe(240);
     expect(tenK.primary_source.name).toBe("10000 m");
 
     expect(result.content[0]?.text).toContain("Race prediction");

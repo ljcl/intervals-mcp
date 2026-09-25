@@ -36,10 +36,10 @@ export function buildCompareContextSummary(
 
   const deltas: string[] = [];
   const { differences } = compare;
-  if (differences.pace) {
-    const s = differences.pace.seconds_per_km;
+  if (differences.pace_delta_sec_per_km != null) {
+    const s = differences.pace_delta_sec_per_km;
     deltas.push(
-      `pace ${s > 0 ? "+" : ""}${s} s/km (${differences.pace.interpretation})`,
+      `pace ${s > 0 ? "+" : ""}${s} s/km (${differences.pace_delta_interpretation})`,
     );
   }
   if (differences.avg_hr != null) {
