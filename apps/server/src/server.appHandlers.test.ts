@@ -351,20 +351,51 @@ describe("cadence trends handlers", () => {
 });
 
 describe("training load handlers", () => {
+  const TL_TODAY = "2026-06-01";
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(`${TL_TODAY}T12:00:00Z`));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function intervalsRun(
+    overrides: Partial<IntervalsActivity> = {},
+  ): IntervalsActivity {
+    return {
+      id: "1",
+      name: "Easy Run",
+      type: "Run",
+      start_date_local: `${TL_TODAY}T07:00:00`,
+      distance: 8000,
+      moving_time: 2400,
+      total_elevation_gain: 60,
+      icu_training_load: 50,
+      ...overrides,
+    } as IntervalsActivity;
+  }
+
   it("view-training-load summarises totals and warning weeks", async () => {
-    mockedList.mockResolvedValueOnce([summaryRun()]);
+    mockedIntervalsList.mockResolvedValueOnce([intervalsRun()]);
+    mockedWellness.mockResolvedValueOnce([]);
 
     const result = await dispatchToolCall("view-training-load", {});
 
     expect(result.isError).toBeUndefined();
     const text = result.content[0]?.text ?? "";
-    expect(text).toContain("Training Load (last 84 days)");
+    expect(text).toContain(
+      "Training Load (last 84 days, load source: intervals.icu)",
+    );
     expect(text).toContain("Runs: 1");
     expect(text).toContain("Distance: 8 km");
   });
 
-  it("get-training-load-data returns the weekly aggregation", async () => {
-    mockedList.mockResolvedValueOnce([summaryRun()]);
+  it("get-training-load-data returns the weekly aggregation, whole-body by default", async () => {
+    mockedIntervalsList.mockResolvedValueOnce([intervalsRun()]);
+    mockedWellness.mockResolvedValueOnce([]);
 
     const result = await dispatchToolCall("get-training-load-data", {
       days: 84,
@@ -373,8 +404,32 @@ describe("training load handlers", () => {
     expect(result.isError).toBeUndefined();
     const parsed = JSON.parse(result.content[0]?.text ?? "");
     expect(parsed.days).toBe(84);
+    expect(parsed.runOnly).toBe(false);
+    expect(parsed.source).toBe("intervals.icu");
     expect(parsed.totals.runs).toBe(1);
+    expect(parsed.totals.load).toBe(50);
     expect(parsed.weeks.length).toBeGreaterThan(0);
+  });
+
+  it("get-training-load-data computes run-only load/current in one listActivities call", async () => {
+    mockedIntervalsList.mockResolvedValueOnce([intervalsRun()]);
+
+    const result = await dispatchToolCall("get-training-load-data", {
+      days: 84,
+      runOnly: true,
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect(mockedIntervalsList).toHaveBeenCalledTimes(1);
+    expect(mockedWellness).not.toHaveBeenCalled();
+    const parsed = JSON.parse(result.content[0]?.text ?? "");
+    expect(parsed.runOnly).toBe(true);
+    expect(parsed.source).toBe("computed");
+    expect(parsed.activityTypesIncluded).toEqual([
+      "Run",
+      "TrailRun",
+      "VirtualRun",
+    ]);
   });
 });
 

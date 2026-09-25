@@ -6,7 +6,7 @@ import {
   listActivities as listActivitiesClient,
 } from "../intervalsClient";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
-import { addDays, todayLocal } from "../utils/localDate";
+import { addDays, startOfWeekMonday, todayLocal } from "../utils/localDate";
 import { isPaceActivity, paceFromDistanceTime } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
 import { toolErrorText } from "./_errors";
@@ -48,19 +48,8 @@ export interface RunTotals {
   average_pace_min_per_km: string | null;
 }
 
-/**
- * Monday of the week containing `ymd` (YYYY-MM-DD), in the same UTC-midnight
- * math as {@link addDays}. `getUTCDay()` returns 0 (Sunday) through 6
- * (Saturday); `(dow + 6) % 7` turns that into days-since-Monday.
- */
-export function startOfWeekMonday(ymd: string): string {
-  const [year, month, day] = ymd.split("-").map(Number);
-  const dow = new Date(
-    Date.UTC(year ?? 1970, (month ?? 1) - 1, day ?? 1),
-  ).getUTCDay();
-  const daysSinceMonday = (dow + 6) % 7;
-  return addDays(ymd, -daysSinceMonday);
-}
+/** Re-exported for backward compatibility; canonical home is `utils/localDate`. */
+export { startOfWeekMonday };
 
 /** First day of the local calendar month containing `ymd`. */
 export function startOfMonth(ymd: string): string {

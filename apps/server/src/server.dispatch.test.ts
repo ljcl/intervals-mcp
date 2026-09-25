@@ -8,7 +8,9 @@ import { handledNotFound, handledRateLimit } from "./__fixtures__";
 import {
   getAthletePaceCurves,
   getActivity as getIntervalsActivity,
+  getWellness as getIntervalsWellness,
   type IntervalsAthletePaceCurves,
+  listActivities as listIntervalsActivities,
 } from "./intervalsClient";
 import { getActivityById, getAllActivities } from "./stravaClient";
 
@@ -23,7 +25,13 @@ vi.mock("./stravaClient", async (importOriginal) => {
 
 vi.mock("./intervalsClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./intervalsClient")>();
-  return { ...actual, getActivity: vi.fn(), getAthletePaceCurves: vi.fn() };
+  return {
+    ...actual,
+    getActivity: vi.fn(),
+    getAthletePaceCurves: vi.fn(),
+    listActivities: vi.fn(),
+    getWellness: vi.fn(),
+  };
 });
 
 // dispatchToolCall resolves the API key once per call (#240).
@@ -38,6 +46,8 @@ const { getIntervalsApiKey, MissingApiKeyError } = await import("./config");
 const mockedToken = vi.mocked(getIntervalsApiKey);
 
 const mockedList = vi.mocked(getAllActivities);
+const mockedIntervalsList = vi.mocked(listIntervalsActivities);
+const mockedIntervalsWellness = vi.mocked(getIntervalsWellness);
 const mockedById = vi.mocked(getActivityById);
 const mockedIntervalsActivity = vi.mocked(getIntervalsActivity);
 const mockedAthleteCurves = vi.mocked(getAthletePaceCurves);
@@ -71,14 +81,16 @@ describe("dispatchToolCall input validation", () => {
     });
   });
 
-  it("applies zod defaults for get-training-load (no NaN after timestamp)", async () => {
-    mockedList.mockResolvedValueOnce([]);
+  it("applies zod defaults for get-training-load (a real date window, not NaN)", async () => {
+    mockedIntervalsList.mockResolvedValueOnce([]);
+    mockedIntervalsWellness.mockResolvedValueOnce([]);
 
     const result = await dispatchToolCall("get-training-load", {});
 
     expect(result.isError).toBeUndefined();
-    const params = mockedList.mock.calls[0]?.[1];
-    expect(Number.isFinite(params?.after)).toBe(true);
+    const params = mockedIntervalsList.mock.calls[0]?.[1];
+    expect(params?.oldest).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(params?.newest).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
   it("rejects args above the documented bounds without calling intervals.icu", async () => {
@@ -205,7 +217,8 @@ describe("dispatchToolCall input validation", () => {
   });
 
   it("applies the days default for get-training-load-data", async () => {
-    mockedList.mockResolvedValueOnce([]);
+    mockedIntervalsList.mockResolvedValueOnce([]);
+    mockedIntervalsWellness.mockResolvedValueOnce([]);
 
     const result = await dispatchToolCall("get-training-load-data", {});
 
@@ -213,11 +226,16 @@ describe("dispatchToolCall input validation", () => {
     const text = result.content[0]?.text ?? "";
     expect(JSON.parse(text)).toEqual({
       days: 84,
-      totals: { runs: 0, distanceKm: 0, timeHours: 0, elevationM: 0 },
+      activityTypesIncluded: [],
+      runOnly: false,
+      current: null,
+      source: "intervals.icu",
+      totals: { runs: 0, distanceKm: 0, timeHours: 0, elevationM: 0, load: 0 },
       weeks: [],
     });
-    const params = mockedList.mock.calls[0]?.[1];
-    expect(Number.isFinite(params?.after)).toBe(true);
+    const params = mockedIntervalsList.mock.calls[0]?.[1];
+    expect(params?.oldest).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(params?.newest).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
   it("rejects days above the documented bound for view-training-load", async () => {
@@ -295,7 +313,9 @@ describe("dispatchToolCall input validation", () => {
   // dispatcher's final catch is the only place their failures get the typed
   // 404/429 treatment and the ❌ prefix the text tools give themselves.
   it("renders a thrown RateLimitError with the rate-limit window", async () => {
-    mockedList.mockRejectedValueOnce(handledRateLimit("getAllActivities"));
+    mockedIntervalsList.mockRejectedValueOnce(
+      handledRateLimit("listActivities"),
+    );
 
     const result = await dispatchToolCall("get-training-load-data", {});
 
@@ -321,7 +341,7 @@ describe("dispatchToolCall input validation", () => {
   });
 
   it("reports other thrown failures with the tool name and message", async () => {
-    mockedList.mockRejectedValueOnce(new Error("boom"));
+    mockedIntervalsList.mockRejectedValueOnce(new Error("boom"));
 
     const result = await dispatchToolCall("get-training-load-data", {});
 

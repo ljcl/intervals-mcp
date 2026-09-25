@@ -1,14 +1,15 @@
 import { z } from "zod";
 import { getTimeZone } from "../config";
 import {
-  buildFitnessTrend,
+  buildRunOnlyFitnessTrend,
   computeFlags,
   daysBetween,
   type FitnessTrendDay,
-  type FitnessTrendLoadDay,
   type PlannedLoad,
   projectLoads,
   RECENT_LOAD_DAYS,
+  RUN_ONLY_RUNWAY_DAYS,
+  RUN_TYPES,
   recentDailyLoad,
   resolvePlannedLoads,
   solveTaperPlan,
@@ -17,7 +18,7 @@ import {
   trendBands,
 } from "../fitnessTrend";
 import { loadWellnessFitnessSeries } from "../fitnessTrendWellness";
-import { type IntervalsActivity, listActivities } from "../intervalsClient";
+import { listActivities } from "../intervalsClient";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
 import { addDays, todayLocal } from "../utils/localDate";
 import { READ_ONLY } from "./_annotations";
@@ -25,17 +26,6 @@ import { toolErrorText } from "./_errors";
 import { FitnessTrendOutputSchema, warnOnSchemaDrift } from "./outputs";
 
 const name = "get-fitness-trend";
-
-/** Run types intervals.icu has no dedicated per-sport CTL/ATL for. */
-const RUN_TYPES: readonly string[] = ["Run", "TrailRun", "VirtualRun"];
-
-/**
- * How far before the requested window a run-only computation starts summing
- * load. intervals.icu has no per-sport CTL/ATL, so the run-only series is
- * built locally, zero-seeded, and needs enough runway for the 42-day CTL
- * average to settle before the displayed window starts.
- */
-const RUN_ONLY_RUNWAY_DAYS = 150;
 
 const description = `
 Computes the fitness/fatigue/form trend (CTL, ATL, TSB) from intervals.icu.
@@ -185,19 +175,6 @@ function formatTaperWeek(week: TaperWeek): string {
 const localDay = (isoDateTime: string) => isoDateTime.split("T")[0]!;
 
 /**
- * Sums `icu_training_load` per local date for the given activities, keyed by
- * `start_date_local`.
- */
-function dailyLoadByDate(activities: IntervalsActivity[]): Map<string, number> {
-  const loads = new Map<string, number>();
-  for (const activity of activities) {
-    const date = localDay(activity.start_date_local);
-    loads.set(date, (loads.get(date) ?? 0) + (activity.icu_training_load ?? 0));
-  }
-  return loads;
-}
-
-/**
  * `projectDays` when not given explicitly: 0, unless `plannedLoads` is
  * present, in which case the span from `today` out to its latest date
  * (capped at 60, floored at 0 so an all-past plan doesn't go negative).
@@ -300,25 +277,17 @@ export const getFitnessTrendTool = {
         const runActivities = activities.filter((a) =>
           RUN_TYPES.includes(a.type ?? ""),
         );
-        const loadByDate = dailyLoadByDate(runActivities);
 
-        const runwaySeries: FitnessTrendLoadDay[] = Array.from(
-          { length: runwayDays },
-          (_, i) => {
-            const date = addDays(runwayStart, i);
-            const load = loadByDate.get(date) ?? 0;
-            return { date, ctlLoad: load, atlLoad: load };
-          },
-        );
-
-        const trend = buildFitnessTrend(
-          { days: runwaySeries },
-          {
+        const { trend } = buildRunOnlyFitnessTrend(runActivities, {
+          endDate,
+          days,
+          runwayDays,
+          fitnessOptions: {
             projectDays: resolvedProjectDays,
             plannedLoads: typedPlannedLoads,
             taper: targetDate ? { targetDate, targetTsb } : undefined,
           },
-        );
+        });
 
         // The runway settles CTL; trim the display (and the bands/flags read
         // off it) back to the requested window.

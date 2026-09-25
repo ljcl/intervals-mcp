@@ -10,16 +10,20 @@ import {
 describe("getWeekStart", () => {
   it("returns the Monday of the week", () => {
     // 2026-06-10 is a Wednesday.
-    expect(getWeekStart(new Date("2026-06-10T12:00:00Z"))).toBe("2026-06-08");
+    expect(getWeekStart("2026-06-10")).toBe("2026-06-08");
   });
 
   it("keeps a Monday as-is", () => {
-    expect(getWeekStart(new Date("2026-06-08T12:00:00Z"))).toBe("2026-06-08");
+    expect(getWeekStart("2026-06-08")).toBe("2026-06-08");
   });
 
   it("maps Sunday back to the preceding Monday", () => {
     // 2026-06-14 is a Sunday.
-    expect(getWeekStart(new Date("2026-06-14T12:00:00Z"))).toBe("2026-06-08");
+    expect(getWeekStart("2026-06-14")).toBe("2026-06-08");
+  });
+
+  it("uses only the date portion of a start_date_local datetime string", () => {
+    expect(getWeekStart("2026-06-10T23:45:00")).toBe("2026-06-08");
   });
 });
 
@@ -110,7 +114,11 @@ describe("buildTrainingLoadData", () => {
     const data = buildTrainingLoadData([], 84);
     expect(data).toEqual({
       days: 84,
-      totals: { runs: 0, distanceKm: 0, timeHours: 0, elevationM: 0 },
+      activityTypesIncluded: ["Run", "TrailRun", "VirtualRun"],
+      runOnly: true,
+      current: null,
+      source: null,
+      totals: { runs: 0, distanceKm: 0, timeHours: 0, elevationM: 0, load: 0 },
       weeks: [],
     });
   });
@@ -136,7 +144,47 @@ describe("buildTrainingLoadData", () => {
       distanceKm: 15,
       timeHours: 1.5,
       elevationM: 150,
+      load: 0,
     });
+  });
+
+  it("sums load per week from a separate loadActivities set (whole-body)", () => {
+    const data = buildTrainingLoadData(
+      [run("2026-06-09", 10), run("2026-06-11", 5)],
+      28,
+      {
+        runOnly: false,
+        loadActivities: [
+          run("2026-06-09", 10, { type: "Run", icu_training_load: 60 }),
+          run("2026-06-10", 0, {
+            type: "WeightTraining",
+            icu_training_load: 20,
+          }),
+        ],
+      },
+    );
+    expect(data.activityTypesIncluded).toEqual(["Run", "WeightTraining"]);
+    expect(data.runOnly).toBe(false);
+    expect(data.weeks[0]).toMatchObject({
+      load: 80,
+      loadByType: { Run: 60, WeightTraining: 20 },
+    });
+    expect(data.totals.load).toBe(80);
+  });
+
+  it("attaches the caller-supplied current CTL/ATL/TSB and source", () => {
+    const data = buildTrainingLoadData([run("2026-06-09", 10)], 28, {
+      current: { date: "2026-06-11", ctl: 42, atl: 30, tsb: 12 },
+      source: "intervals.icu",
+      runOnly: false,
+    });
+    expect(data.current).toEqual({
+      date: "2026-06-11",
+      ctl: 42,
+      atl: 30,
+      tsb: 12,
+    });
+    expect(data.source).toBe("intervals.icu");
   });
 
   it("fills gap weeks with zero rows so the timeline is continuous", () => {

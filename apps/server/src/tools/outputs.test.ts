@@ -12,7 +12,17 @@ describe("schemas align with the real tool rawObjects", () => {
   it("TrainingLoadOutputSchema matches the training-load result object", () => {
     const result = {
       period: { days: 28, start_date: "2026-05-09", end_date: "2026-06-06" },
-      totals: { runs: 8, distance_km: 64.2, time_hours: 6.1, elevation_m: 420 },
+      run_only: false,
+      source: "intervals.icu",
+      current: { date: "2026-06-06", ctl: 42.1, atl: 38.4, tsb: 3.7 },
+      activity_types_included: ["Run", "WeightTraining"],
+      totals: {
+        runs: 8,
+        distance_km: 64.2,
+        time_hours: 6.1,
+        elevation_m: 420,
+        load: 540,
+      },
       averages: {
         runs_per_week: 2,
         distance_km_per_week: 16.05,
@@ -27,6 +37,8 @@ describe("schemas align with the real tool rawObjects", () => {
           time_hours: 2.2,
           time_formatted: "2h 12m",
           elevation_m: 150,
+          load: 210,
+          load_by_type: { Run: 180, WeightTraining: 30 },
           activities: [
             {
               id: "123",
@@ -40,6 +52,12 @@ describe("schemas align with the real tool rawObjects", () => {
       warnings: [
         "Week of 2026-05-11: Volume increased 35% - consider injury risk",
       ],
+      units: {
+        load: "intervals.icu training load",
+        distance: "km",
+        time: "s",
+        elevation: "m",
+      },
     };
     expect(TrainingLoadOutputSchema.safeParse(result).success).toBe(true);
   });

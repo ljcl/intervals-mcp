@@ -602,3 +602,81 @@ export function computeFlags(series: FitnessTrendDay[]): string[] {
     .filter((band) => band.end_date === last.date)
     .map((band) => band.reason);
 }
+
+/** Run types intervals.icu has no dedicated per-sport CTL/ATL for. */
+export const RUN_TYPES: readonly string[] = ["Run", "TrailRun", "VirtualRun"];
+
+/**
+ * How far before the requested window a run-only computation starts summing
+ * load. intervals.icu has no per-sport CTL/ATL, so the run-only series is
+ * built locally, zero-seeded, and needs enough runway for the 42-day CTL
+ * average to settle before the displayed window starts.
+ */
+export const RUN_ONLY_RUNWAY_DAYS = 150;
+
+/** Minimal activity shape the run-only daily-load sum needs. */
+export interface RunOnlyLoadActivity {
+  start_date_local: string;
+  icu_training_load?: number | null;
+}
+
+/**
+ * Sums `icu_training_load` per local date for the given activities, keyed by
+ * `start_date_local`.
+ */
+export function dailyLoadByDate(
+  activities: RunOnlyLoadActivity[],
+): Map<string, number> {
+  const loads = new Map<string, number>();
+  for (const activity of activities) {
+    const date = activity.start_date_local.split("T")[0]!;
+    loads.set(date, (loads.get(date) ?? 0) + (activity.icu_training_load ?? 0));
+  }
+  return loads;
+}
+
+export interface RunOnlyFitnessTrend {
+  trend: FitnessTrendResult;
+  /** First date of the zero-seeded runway (before the displayed window). */
+  runwayStart: string;
+  runwayDays: number;
+}
+
+/**
+ * Builds the run-only CTL/ATL/TSB trend: sums `icu_training_load` per local
+ * day over `runActivities` (caller-filtered to {@link RUN_TYPES}),
+ * zero-seeds {@link RUN_ONLY_RUNWAY_DAYS} days before `options.endDate` minus
+ * `options.days` so the 42-day CTL average has settled, then rolls
+ * {@link buildFitnessTrend}'s recurrence forward across the whole runway.
+ * The one home `get-fitness-trend`'s run-only path and `get-training-load`
+ * both build this series through, so they can never disagree.
+ */
+export function buildRunOnlyFitnessTrend(
+  runActivities: RunOnlyLoadActivity[],
+  options: {
+    endDate: string;
+    days: number;
+    runwayDays?: number;
+    fitnessOptions?: FitnessTrendOptions;
+  },
+): RunOnlyFitnessTrend {
+  const runwayDays = options.runwayDays ?? options.days + RUN_ONLY_RUNWAY_DAYS;
+  const runwayStart = addDays(options.endDate, -(runwayDays - 1));
+  const loadByDate = dailyLoadByDate(runActivities);
+
+  const runwaySeries: FitnessTrendLoadDay[] = Array.from(
+    { length: runwayDays },
+    (_, i) => {
+      const date = addDays(runwayStart, i);
+      const load = loadByDate.get(date) ?? 0;
+      return { date, ctlLoad: load, atlLoad: load };
+    },
+  );
+
+  const trend = buildFitnessTrend(
+    { days: runwaySeries },
+    options.fitnessOptions ?? {},
+  );
+
+  return { trend, runwayStart, runwayDays };
+}

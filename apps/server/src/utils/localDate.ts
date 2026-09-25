@@ -54,6 +54,23 @@ export function daysBetween(oldest: string, newest: string): number {
 }
 
 /**
+ * Monday of the week containing `ymd` (YYYY-MM-DD), in the same UTC-midnight
+ * math as {@link addDays}. `getUTCDay()` returns 0 (Sunday) through 6
+ * (Saturday); `(dow + 6) % 7` turns that into days-since-Monday. Shared by
+ * every tool that buckets activities into Monday-start weeks
+ * (`get-athlete-stats`, `get-training-load`) so the week boundary can never
+ * drift between them.
+ */
+export function startOfWeekMonday(ymd: string): string {
+  const [year, month, day] = ymd.split("-").map(Number);
+  const dow = new Date(
+    Date.UTC(year ?? 1970, (month ?? 1) - 1, day ?? 1),
+  ).getUTCDay();
+  const daysSinceMonday = (dow + 6) % 7;
+  return addDays(ymd, -daysSinceMonday);
+}
+
+/**
  * True when `ymd` is both `YYYY-MM-DD` shaped and a real calendar date.
  * `Date.UTC` silently rolls an out-of-range month/day forward (e.g.
  * 2026-02-30 becomes 2026-03-02 internally), so a regex-only shape check lets

@@ -4,14 +4,18 @@
  * warning rules live here once, so the chart's per-week flags can never
  * drift from the text tool's prose warnings.
  */
+import { RUN_TYPES } from "./fitnessTrend";
+import { startOfWeekMonday } from "./utils/localDate";
 
-/** Monday-start week key (YYYY-MM-DD) for an activity date. */
-export function getWeekStart(date: Date): string {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust for Monday start
-  d.setDate(diff);
-  return d.toISOString().split("T")[0]!;
+/**
+ * Monday-start week key (YYYY-MM-DD) for a local calendar date. `localDate`
+ * is a plain `YYYY-MM-DD` date, or an ISO datetime string whose date portion
+ * is used (e.g. an intervals.icu `start_date_local`), never re-interpreted
+ * through a `Date` object's own time zone, so the week boundary matches the
+ * athlete's local calendar day exactly as intervals.icu reported it.
+ */
+export function getWeekStart(localDate: string): string {
+  return startOfWeekMonday(localDate.split("T")[0]!);
 }
 
 export interface WeeklyVolume {
@@ -82,13 +86,15 @@ export function rollingTrend(values: number[], window = 3): number[] {
   });
 }
 
-/** Minimal slice of a Strava activity the aggregation needs. */
+/** Minimal slice of an intervals.icu activity the aggregation needs. */
 export interface TrainingLoadActivity {
-  start_date: string;
-  start_date_local?: string;
-  distance?: number;
-  moving_time?: number;
-  total_elevation_gain?: number;
+  start_date_local: string;
+  start_date?: string | null;
+  distance?: number | null;
+  moving_time?: number | null;
+  total_elevation_gain?: number | null;
+  type?: string | null;
+  icu_training_load?: number | null;
 }
 
 export interface TrainingLoadWeek {
@@ -101,6 +107,10 @@ export interface TrainingLoadWeek {
   trendKm: number;
   warning: boolean;
   warningReasons: string[];
+  /** Sum of `icu_training_load` over the included types this week. */
+  load: number;
+  /** `load` split by activity type. */
+  loadByType: Record<string, number>;
 }
 
 export interface TrainingLoadAppData {
@@ -110,8 +120,17 @@ export interface TrainingLoadAppData {
     distanceKm: number;
     timeHours: number;
     elevationM: number;
+    load: number;
   };
   weeks: TrainingLoadWeek[];
+  /** Activity types `load`/`loadByType` are summed over. */
+  activityTypesIncluded: string[];
+  /** True when load is run-only rather than whole-body. */
+  runOnly: boolean;
+  /** Most recent CTL/ATL/TSB, when supplied by the caller. */
+  current: { date: string; ctl: number; atl: number; tsb: number } | null;
+  /** Where `current` came from: intervals.icu wellness, or computed locally (run-only). */
+  source: "intervals.icu" | "computed" | null;
 }
 
 function addDays(isoDate: string, days: number): string {
@@ -120,17 +139,39 @@ function addDays(isoDate: string, days: number): string {
   return d.toISOString().split("T")[0]!;
 }
 
+export interface BuildTrainingLoadDataOptions {
+  /**
+   * Activities to sum `icu_training_load` over, per week: all fetched
+   * activity types for whole-body load, or the same run activities for
+   * run-only load. Defaults to `runs` (run-only), so an omitted option is a
+   * run-only call. Only weeks inside the run-anchored timeline (below) carry
+   * load; a cross-training week outside that span is not represented.
+   */
+  loadActivities?: TrainingLoadActivity[];
+  /** True when `loadActivities` is a run-only set rather than whole-body. */
+  runOnly?: boolean;
+  /** Most recent CTL/ATL/TSB, computed by the caller (async, off wellness or a run-only fitness trend). */
+  current?: { date: string; ctl: number; atl: number; tsb: number } | null;
+  source?: "intervals.icu" | "computed";
+}
+
 /**
  * Aggregate activities into the chart-ready weekly payload: per-week volume,
  * gap weeks filled with zeros (so the timeline is continuous and a skipped
  * week is visible), a rolling-average trend value per week, and the warning
  * flags. Warnings are computed on the non-empty weeks only, exactly like the
- * text tool, so both surfaces always agree.
+ * text tool, so both surfaces always agree. `runs` drives volume and the
+ * warning rules always (they are run-based regardless of `options.runOnly`);
+ * `options.loadActivities` (default `runs`) drives `load`/`loadByType`.
  */
 export function buildTrainingLoadData(
-  activities: TrainingLoadActivity[],
+  runs: TrainingLoadActivity[],
   days: number,
+  options: BuildTrainingLoadDataOptions = {},
 ): TrainingLoadAppData {
+  const loadActivities = options.loadActivities ?? runs;
+  const runOnly = options.runOnly ?? true;
+
   interface Bucket {
     runs: number;
     distanceM: number;
@@ -139,10 +180,8 @@ export function buildTrainingLoadData(
   }
   const buckets = new Map<string, Bucket>();
 
-  for (const activity of activities) {
-    const weekKey = getWeekStart(
-      new Date(activity.start_date_local || activity.start_date),
-    );
+  for (const activity of runs) {
+    const weekKey = getWeekStart(activity.start_date_local);
     const bucket = buckets.get(weekKey) ?? {
       runs: 0,
       distanceM: 0,
@@ -185,9 +224,39 @@ export function buildTrainingLoadData(
   );
   const trend = rollingTrend(distances);
 
+  // Load per week, from `loadActivities` (a separate set from `runs` for
+  // whole-body). Only weeks already in `weekKeys` (the run-anchored
+  // timeline) collect load; a load activity outside that span is dropped.
+  const loadBuckets = new Map<
+    string,
+    { load: number; byType: Record<string, number> }
+  >();
+  for (const activity of loadActivities) {
+    const weekKey = getWeekStart(activity.start_date_local);
+    const bucket = loadBuckets.get(weekKey) ?? { load: 0, byType: {} };
+    const load = activity.icu_training_load ?? 0;
+    const type = activity.type ?? "Unknown";
+    bucket.load += load;
+    bucket.byType[type] = (bucket.byType[type] ?? 0) + load;
+    loadBuckets.set(weekKey, bucket);
+  }
+
+  const activityTypesIncluded = runOnly
+    ? [...RUN_TYPES]
+    : Array.from(
+        new Set(
+          loadActivities
+            .filter(
+              (a) => a.icu_training_load != null && a.icu_training_load !== 0,
+            )
+            .map((a) => a.type ?? "Unknown"),
+        ),
+      ).sort();
+
   const weeks: TrainingLoadWeek[] = weekKeys.map((key, i) => {
     const bucket = buckets.get(key);
     const warningReasons = reasonsByWeek.get(key) ?? [];
+    const loadBucket = loadBuckets.get(key);
     return {
       weekStarting: key,
       runs: bucket?.runs ?? 0,
@@ -197,12 +266,24 @@ export function buildTrainingLoadData(
       trendKm: Math.round(trend[i]! * 100) / 100,
       warning: warningReasons.length > 0,
       warningReasons,
+      load: Math.round(loadBucket?.load ?? 0),
+      loadByType: Object.fromEntries(
+        Object.entries(loadBucket?.byType ?? {}).map(([type, load]) => [
+          type,
+          Math.round(load),
+        ]),
+      ),
     };
   });
 
   return {
     days,
+    activityTypesIncluded,
+    runOnly,
+    current: options.current ?? null,
+    source: options.source ?? null,
     totals: {
+      load: Math.round(weeks.reduce((sum, w) => sum + w.load, 0)),
       runs: weeks.reduce((sum, w) => sum + w.runs, 0),
       distanceKm:
         Math.round(weeks.reduce((sum, w) => sum + w.distanceKm, 0) * 100) / 100,

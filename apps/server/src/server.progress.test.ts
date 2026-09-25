@@ -91,14 +91,14 @@ describe("dispatchToolCall progress", () => {
     const messages: string[] = [];
 
     await dispatchToolCall(
-      "get-training-load-data",
-      { days: 84 },
+      "get-cadence-trend-data",
+      { weeks: 6 },
       { progress: (message) => messages.push(message) },
     );
 
-    // The app-data tools page through a history that can run to thousands of
-    // activities; the sweep is the whole call, so it is the only thing there
-    // is to report.
+    // The Strava-backed app-data tools page through a history that can run
+    // to thousands of activities; the sweep is the whole call, so it is the
+    // only thing there is to report.
     const [, params] = mockedList.mock.calls[0]!;
     params?.onProgress?.(200, 1);
     expect(messages).toEqual(["Listed 200 activities"]);

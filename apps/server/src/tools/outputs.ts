@@ -37,11 +37,37 @@ export const TrainingLoadOutputSchema = z.object({
     start_date: z.string(),
     end_date: z.string(),
   }),
+  run_only: z
+    .boolean()
+    .describe(
+      "Whether load/activity_types_included are run-only. Volume/warnings are always run-based regardless",
+    ),
+  source: z
+    .enum(["intervals.icu", "computed"])
+    .describe(
+      "'intervals.icu' for whole-body CTL/ATL read from wellness, 'computed' for the locally-computed run-only series",
+    ),
+  current: z
+    .object({
+      date: z.string().describe("ISO date CTL/ATL/TSB were computed for"),
+      ctl: z.number(),
+      atl: z.number(),
+      tsb: z.number(),
+    })
+    .nullable()
+    .describe("Most recent CTL/ATL/TSB; null when no data is available"),
+  activity_types_included: z
+    .array(z.string())
+    .describe(
+      "Activity types load/load_by_type are summed over: run-only is Run/TrailRun/VirtualRun; " +
+        "whole-body is every distinct type carrying load in the window",
+    ),
   totals: z.object({
     runs: z.number().int(),
     distance_km: z.number(),
     time_hours: z.number(),
     elevation_m: z.number(),
+    load: z.number(),
   }),
   averages: z.object({
     runs_per_week: z.number(),
@@ -57,10 +83,20 @@ export const TrainingLoadOutputSchema = z.object({
       time_hours: z.number(),
       time_formatted: z.string(),
       elevation_m: z.number(),
+      load: z
+        .number()
+        .describe("Sum of icu_training_load over the included types this week"),
+      load_by_type: z.record(z.string(), z.number()),
       activities: z.array(TrainingActivitySchema),
     }),
   ),
   warnings: z.array(z.string()),
+  units: z.object({
+    load: z.literal("intervals.icu training load"),
+    distance: z.literal("km"),
+    time: z.literal("s"),
+    elevation: z.literal("m"),
+  }),
 });
 
 // get-running-summary's output schema is defined near the end of this file

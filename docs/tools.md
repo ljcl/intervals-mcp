@@ -9,12 +9,13 @@ identity, so renames or schema reshapes re-prompt every user. See
 [architecture.md](architecture.md#tool-metadata) before changing either.
 
 > **Status.** Tools are being ported from Strava to intervals.icu (Phases 1
-> through 3). Sixteen of the seventeen tools below are ported and verified
-> against a real account; `get-fitness-trend` is ported but not yet
-> live-verified (planned for a later task). Still Strava-backed, and failing
-> with a "not yet ported" error until a later phase: `get-training-load`,
-> `update-activity`, and the Phase 4 `view-*`/`get-*-data` app tools (see
-> [Activity tools](#activity-tools) and [Visualization tools](#visualization-tools)).
+> through 3). Sixteen of the eighteen tools below are ported and verified
+> against a real account; `get-fitness-trend` and `get-training-load` are
+> ported but not yet live-verified (planned for a later task). Still
+> Strava-backed, and failing with a "not yet ported" error until a later
+> phase: `update-activity` and the remaining Phase 4 `view-*`/`get-*-data`
+> app tools (see [Activity tools](#activity-tools) and
+> [Visualization tools](#visualization-tools)).
 
 ## intervals.icu tools
 
@@ -40,6 +41,7 @@ Strava port.
 | `get-race-prediction` | Predicted race times from intervals.icu pace-curve points (Riegel) alongside intervals.icu's own critical-speed model, with confidence, source point, and km goal-pace splits |
 | `get-athlete-stats` | Run totals (this week, last 4 weeks, this month, YTD) aggregated from list-activities data |
 | `get-fitness-trend` | Fitness/fatigue/form (CTL/ATL/TSB), whole-body from intervals.icu wellness or run-only computed locally, with rest/planned-load projection and a solved taper to a target form on a target date |
+| `get-training-load` | Weekly running volume and injury-risk warnings, weekly intervals.icu training load and the types it covers, plus current CTL/ATL/TSB |
 
 `list-activities` defaults to the last 28 days (today back to 27 days
 earlier) in the server's configured time zone, sorted newest first. Filter
@@ -298,6 +300,25 @@ form, unchanged from before. The `view-fitness-trend`/`get-fitness-trend-data`
 MCP App pair (below) shares this whole-body path (`loadWellnessFitnessSeries`,
 the one home both surfaces build the read series through).
 
+`get-training-load` reports weekly running volume (distance, time,
+elevation, run count) and the same injury-risk warnings as before
+(`computeWeekWarnings` in `trainingLoad.ts`, shared with the app feed below),
+always from Run/TrailRun/VirtualRun activities regardless of `runOnly`. It
+also reports weekly `load` (the sum of `icu_training_load` over the included
+types) and `load_by_type`, plus the athlete's current CTL/ATL/TSB.
+Whole-body (default) sums load across every activity type in the window and
+reads CTL/ATL/TSB straight off intervals.icu's own wellness record (`source:
+"intervals.icu"`, today or the most recent day with a recorded value; see
+`get-fitness-trend` above for why that can trail today).
+`runOnly: true` sums load over Run/TrailRun/VirtualRun only and computes
+CTL/ATL/TSB locally the same way `get-fitness-trend`'s run-only path does,
+through the shared `buildRunOnlyFitnessTrend` helper in `fitnessTrend.ts` and
+its `days + 150` day zero-seeded runway, so the two tools can never disagree
+(`source: "computed"`). `activity_types_included` names which types `load`
+covers either way. Weeks start Monday in the server's configured time zone
+(`startOfWeekMonday` in `utils/localDate.ts`, the same helper
+`get-athlete-stats` uses).
+
 ## Activity tools
 
 Still Strava-backed; not yet ported to intervals.icu (Phase 3+).
@@ -305,15 +326,15 @@ Still Strava-backed; not yet ported to intervals.icu (Phase 3+).
 | Tool | Description |
 | ---- | ----------- |
 | `update-activity` | Update an activity's description, title, sport type, gear, or flags |
-| `get-training-load` | Training load summary with trend analysis |
 
 ## Visualization tools
 
 Each `view-*` MCP App has an app-only `get-*-data` companion that fetches what
 the UI renders. `view-compare-activities`/`get-compare-activities-data`,
-`view-activity-zones`/`get-activity-zones-data`, and
-`view-fitness-trend`/`get-fitness-trend-data` are ported to intervals.icu; the
-rest are still Strava-backed, pending Phase 4.
+`view-activity-zones`/`get-activity-zones-data`,
+`view-fitness-trend`/`get-fitness-trend-data`, and
+`view-training-load`/`get-training-load-data` are ported to intervals.icu;
+the rest are still Strava-backed, pending Phase 4.
 
 | Tool | Description |
 | ---- | ----------- |
@@ -324,7 +345,7 @@ rest are still Strava-backed, pending Phase 4.
 | `view-route-map` | Interactive map of an activity's GPS track, fit to bounds with start/finish markers; optional distance-anchored waypoints (MCP App) |
 | `get-route-map-data` | Decoded `[lat, lng]` coordinates plus index-aligned metric streams for the route map UI (app-only) |
 | `view-training-load` | Weekly running-volume bars with a rolling trend line and injury-risk warning weeks (MCP App) |
-| `get-training-load-data` | Per-week volume, trend value, and warning flags for the training-load UI (app-only) |
+| `get-training-load-data` | Per-week volume, trend value, warning flags, weekly load, and current CTL/ATL/TSB for the training-load UI (app-only) |
 | `view-compare-activities` | Interactive overlay of two activities' streams on a shared distance/time axis with a delta summary (MCP App) |
 | `get-compare-activities-data` | Aggregate comparison (summaries, activity2−activity1 differences, efficiency) for the compare-activities UI (app-only) |
 | `view-activity-zones` | Time-in-zone bar chart for one activity's HR zones with an easy/moderate/hard split (power zones dropped for now; see docs/api-notes.md) (MCP App) |

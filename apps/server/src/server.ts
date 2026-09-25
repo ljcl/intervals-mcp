@@ -20,11 +20,14 @@ import {
 import { getIntervalsApiKey, getTimeZone } from "./config";
 import { RateLimitError } from "./fetchClient";
 import {
+  buildRunOnlyFitnessTrend,
   computeFlags,
   daysBetween,
   type FitnessTrendResult,
   projectLoads,
   RECENT_LOAD_DAYS,
+  RUN_ONLY_RUNWAY_DAYS,
+  RUN_TYPES,
   recentDailyLoad,
   solveTaperPlan,
   type TaperPlan,
@@ -95,7 +98,11 @@ import { getWellnessTool } from "./tools/getWellness";
 import { listActivitiesTool } from "./tools/listActivities";
 import { listGearTool } from "./tools/listGear";
 import { updateActivityTool } from "./tools/updateActivity";
-import { buildTrainingLoadData } from "./trainingLoad";
+import {
+  buildTrainingLoadData,
+  type TrainingLoadActivity,
+  type TrainingLoadAppData,
+} from "./trainingLoad";
 import { addDays, todayLocal } from "./utils/localDate";
 import { SERVER_VERSION } from "./version";
 
@@ -221,6 +228,22 @@ const fitnessTrendInput = z.object({
     ),
 });
 
+/**
+ * Training-load args, shared by the view and data tools. Volume/warnings are
+ * always run-based; `runOnly` scopes load and current CTL/ATL/TSB the same
+ * way `get-training-load`'s input does.
+ */
+const trainingLoadInput = z.object({
+  days: daysInput,
+  runOnly: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Sum load and compute CTL/ATL/TSB from Run/TrailRun/VirtualRun training " +
+        "load only, instead of whole-body. Weekly volume/warnings are always run-based.",
+    ),
+});
+
 const APP_TOOL_INPUT_SCHEMAS: Record<string, z.ZodType> = {
   "view-activity-chart": z.object({
     activity_id: stravaIdInput("The Strava activity ID to visualize."),
@@ -238,8 +261,8 @@ const APP_TOOL_INPUT_SCHEMAS: Record<string, z.ZodType> = {
     activity_id: stravaIdInput("The Strava activity ID."),
     waypoints: waypointsInput,
   }),
-  "view-training-load": z.object({ days: daysInput }),
-  "get-training-load-data": z.object({ days: daysInput }),
+  "view-training-load": trainingLoadInput,
+  "get-training-load-data": trainingLoadInput,
   "view-fitness-trend": fitnessTrendInput,
   "get-fitness-trend-data": fitnessTrendInput,
   "view-activity-zones": z.object({
@@ -825,19 +848,91 @@ async function handleViewCadenceTrends(
   return { content: [{ type: "text", text: lines.join("\n") }] };
 }
 
-/** Fetch the window of running activities the training-load feed aggregates. */
-async function loadTrainingLoadRuns(
-  token: string,
-  days: number,
+/**
+ * Shared fetch + aggregate for the training-load view and data tools, from
+ * intervals.icu. Volume/warnings are always run-based (Run/TrailRun/
+ * VirtualRun); load and current CTL/ATL/TSB are whole-body by default, or
+ * run-only when `args.runOnly` is set: the run-only series is built through
+ * `buildRunOnlyFitnessTrend`, the same helper `get-training-load` and
+ * `get-fitness-trend`'s run-only path use, so the three surfaces can never
+ * disagree.
+ */
+async function loadTrainingLoadAppData(
+  apiKey: string,
+  args: Record<string, unknown>,
   progress: ReportProgress,
-) {
-  const after = quantizedEpochAfter(days * 24 * 60 * 60 * 1000);
-  const allActivities = await getAllActivitiesFn(token, {
-    perPage: 200,
-    after,
-    onProgress: listingProgress(progress),
+): Promise<TrainingLoadAppData> {
+  const days = Number(args.days) || 84;
+  const runOnly = Boolean(args.runOnly);
+
+  const tz = getTimeZone();
+  const endDate = todayLocal(tz);
+  const windowStart = addDays(endDate, -(days - 1));
+
+  let runs: TrainingLoadActivity[];
+  let loadActivities: TrainingLoadActivity[];
+  let current: { date: string; ctl: number; atl: number; tsb: number } | null;
+  let source: "intervals.icu" | "computed";
+
+  if (runOnly) {
+    const runwayDays = days + RUN_ONLY_RUNWAY_DAYS;
+    const runwayStart = addDays(endDate, -(runwayDays - 1));
+
+    progress("Listing activities for the window…", { important: true });
+    const activities = await listActivitiesFn(apiKey, {
+      oldest: runwayStart,
+      newest: endDate,
+    });
+    const runActivities = activities.filter((a) =>
+      RUN_TYPES.includes(a.type ?? ""),
+    );
+    runs = runActivities.filter((a) => {
+      const date = a.start_date_local.split("T")[0]!;
+      return date >= windowStart && date <= endDate;
+    });
+    loadActivities = runs;
+
+    const { trend } = buildRunOnlyFitnessTrend(runActivities, {
+      endDate,
+      days,
+      runwayDays,
+    });
+    current = trend.current
+      ? {
+          date: trend.current.date,
+          ctl: trend.current.ctl,
+          atl: trend.current.atl,
+          tsb: trend.current.tsb,
+        }
+      : null;
+    source = "computed";
+  } else {
+    progress("Listing activities for the window…", { important: true });
+    const activities = await listActivitiesFn(apiKey, {
+      oldest: windowStart,
+      newest: endDate,
+    });
+    runs = activities.filter((a) => RUN_TYPES.includes(a.type ?? ""));
+    loadActivities = activities;
+
+    progress("Fetching wellness for the window…");
+    const { series } = await loadWellnessFitnessSeries(apiKey, {
+      oldest: windowStart,
+      newest: endDate,
+    });
+    const last = series[series.length - 1];
+    current = last
+      ? { date: last.date, ctl: last.ctl, atl: last.atl, tsb: last.tsb }
+      : null;
+    source = "intervals.icu";
+  }
+
+  return buildTrainingLoadData(runs, days, {
+    loadActivities,
+    runOnly,
+    current,
+    source,
   });
-  return allActivities.filter((a) => a.type && RUNNING_TYPES.has(a.type));
 }
 
 async function handleGetTrainingLoadData(
@@ -845,9 +940,7 @@ async function handleGetTrainingLoadData(
   token: string,
   progress: ReportProgress,
 ): Promise<ToolCallResult> {
-  const days = Number(args.days) || 84;
-  const runs = await loadTrainingLoadRuns(token, days, progress);
-  const result = buildTrainingLoadData(runs, days);
+  const result = await loadTrainingLoadAppData(token, args, progress);
   return { content: [{ type: "text", text: JSON.stringify(result) }] };
 }
 
@@ -856,15 +949,14 @@ async function handleViewTrainingLoad(
   token: string,
   progress: ReportProgress,
 ): Promise<ToolCallResult> {
-  const days = Number(args.days) || 84;
-  const runs = await loadTrainingLoadRuns(token, days, progress);
-  const data = buildTrainingLoadData(runs, days);
+  const data = await loadTrainingLoadAppData(token, args, progress);
   const warningWeeks = data.weeks.filter((w) => w.warning).length;
 
   const lines = [
-    `Training Load (last ${days} days)`,
+    `Training Load (last ${data.days} days, load source: ${data.source})`,
     `Runs: ${data.totals.runs}`,
     `Distance: ${data.totals.distanceKm} km`,
+    `Load: ${data.totals.load}`,
     `Warning weeks: ${warningWeeks}`,
     "",
     "[Interactive training load chart rendered above]",
