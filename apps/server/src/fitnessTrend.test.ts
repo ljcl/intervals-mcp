@@ -216,11 +216,11 @@ describe("exact reproduction of the 42/7 recurrence", () => {
     // formula bug both shared would not be caught by comparing against it.
     // These numbers are computed by hand from the closed form
     // `x_1 = load * (1 - e^(-1/N))`, `x_2 = x_1 * e^(-1/N)` (day 2 rests):
-    //   CTL_DECAY = e^(-1/42) = 0.97645...; ATL_DECAY = e^(-1/7) = 0.86688...
-    //   day 1: ctl = 100 * (1 - 0.97645) = 2.3546 -> 2.4
+    //   CTL_DECAY = e^(-1/42) = 0.97647...; ATL_DECAY = e^(-1/7) = 0.86688...
+    //   day 1: ctl = 100 * (1 - 0.97647) = 2.3528 -> 2.4
     //          atl = 100 * (1 - 0.86688) = 13.3122 -> 13.3
-    //   day 2: ctl = 2.3546 * 0.97645 = 2.2993 -> 2.3
-    //          atl = 13.3122 * 0.86688 = 11.5406 -> 11.5
+    //   day 2: ctl = 2.3528 * 0.97647 = 2.2975 -> 2.3
+    //          atl = 13.3122 * 0.86688 = 11.5401 -> 11.5
     const trend = buildFitnessTrend({
       days: [
         { date: "2026-03-01", ctlLoad: 100, atlLoad: 100 },
@@ -765,7 +765,7 @@ describe("projectFromWellness", () => {
     expect(result.warnings).toEqual([]);
   });
 
-  it("tsbPositiveDate never lands before endDate + 1", () => {
+  it("tsbPositiveDate never lands before endDate + 1 (no lag)", () => {
     const result = projectFromWellness(
       {
         series,
@@ -775,8 +775,33 @@ describe("projectFromWellness", () => {
       },
       { projectDays: 30 },
     );
-    if (result.tsbPositiveDate !== null) {
-      expect(result.tsbPositiveDate > ENDDATE).toBe(true);
-    }
+    // No catch-up days at all (asOfDate === endDate), so a crossing is
+    // necessarily in the future: this is the always-safe baseline case.
+    expect(result.tsbPositiveDate).not.toBeNull();
+    expect(result.tsbPositiveDate! > ENDDATE).toBe(true);
+  });
+
+  it("reports endDate itself, not a past catch-up date, when a lagging series is already positive", () => {
+    // ASOF is 2 days behind ENDDATE. Seeded deeply TSB-positive (+40), so
+    // TSB stays positive through every catch-up day AND today: the old bug
+    // would have reported the first catch-up day (ASOF + 1, a past date, two
+    // days before ENDDATE) as "returns positive on".
+    const result = projectFromWellness(
+      { series, seed: { ctl: 50, atl: 10 }, asOfDate: ASOF, endDate: ENDDATE },
+      { projectDays: 7 },
+    );
+    expect(result.unsyncedDays).toBe(2);
+    expect(result.tsbPositiveDate).toBe(ENDDATE);
+  });
+
+  it("reports a genuine future date when TSB is negative through the catch-up and crosses later", () => {
+    // Seeded deeply negative; even after 2 catch-up rest days plus several
+    // projected rest days, TSB should still cross well after ENDDATE.
+    const result = projectFromWellness(
+      { series, seed: { ctl: 10, atl: 90 }, asOfDate: ASOF, endDate: ENDDATE },
+      { projectDays: 30 },
+    );
+    expect(result.tsbPositiveDate).not.toBeNull();
+    expect(result.tsbPositiveDate! > ENDDATE).toBe(true);
   });
 });

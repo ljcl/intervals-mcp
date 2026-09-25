@@ -504,6 +504,27 @@ describe("fitness trend handlers", () => {
     });
   }
 
+  /**
+   * `days` rows of a deeply TSB-positive (ctl=50, atl=10) wellness series,
+   * but stopping `lagDays` short of `endDate`, the asOfDate-trails-endDate
+   * shape a sync lag produces. TSB stays positive well past `lagDays` of
+   * rest (see fitnessTrend.test.ts's own hand-verified simulation), so the
+   * only question this exercises is whether the reported crossing date is
+   * the lagging asOfDate (a past date, the old bug) or `endDate` itself.
+   */
+  function laggingPositiveWellnessSeries(
+    endDate: string,
+    days: number,
+    lagDays: number,
+  ): IntervalsWellness[] {
+    const asOf = addDays(endDate, -lagDays);
+    const start = addDays(asOf, -(days - 1));
+    return Array.from({ length: days }, (_, i) => {
+      const date = addDays(start, i);
+      return { id: date, ctl: 50, atl: 10, ctlLoad: 0, atlLoad: 0 };
+    });
+  }
+
   /** YYYY-MM-DD `days` from TODAY, for taper target dates. */
   function inDays(days: number): string {
     return addDays(TODAY, days);
@@ -584,13 +605,37 @@ describe("fitness trend handlers", () => {
     expect(text).not.toContain("Taper to");
   });
 
+  it("view-fitness-trend reports today, not a past catch-up date, when already positive", async () => {
+    mockedWellness.mockResolvedValueOnce(
+      laggingPositiveWellnessSeries(TODAY, 91, 2),
+    );
+    mockedIntervalsList.mockResolvedValueOnce([]);
+
+    const result = await dispatchToolCall("view-fitness-trend", {});
+
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain(`Form is already positive today (${TODAY})`);
+    expect(text).not.toContain(`form turns positive on ${addDays(TODAY, -1)}`);
+  });
+
   it("rejects a malformed target date via the input schema", async () => {
     const result = await dispatchToolCall("get-fitness-trend-data", {
       targetDate: "next Sunday",
     });
 
     expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toContain("Invalid target date");
+    expect(result.content[0]?.text).toContain("YYYY-MM-DD");
+    expect(mockedWellness).not.toHaveBeenCalled();
+    expect(mockedIntervalsList).not.toHaveBeenCalled();
+  });
+
+  it("rejects a target date that is not a real calendar date via the shared dateInputSchema", async () => {
+    const result = await dispatchToolCall("get-fitness-trend-data", {
+      targetDate: "2026-02-30",
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("real calendar date");
     expect(mockedWellness).not.toHaveBeenCalled();
     expect(mockedIntervalsList).not.toHaveBeenCalled();
   });
@@ -687,7 +732,7 @@ describe("fitness trend handlers", () => {
     expect(textData.tsb_positive_date).toBeNull();
   });
 
-  it("tsbPositiveDate is never in the past", async () => {
+  it("tsbPositiveDate is never in the past (fully synced, no crossing)", async () => {
     // A fully-synced series (asOfDate === TODAY) with heavy recent load, so
     // TSB is well negative today; the projection should only ever cross
     // positive on a date after TODAY.
@@ -699,9 +744,25 @@ describe("fitness trend handlers", () => {
     });
     const data = JSON.parse(result.content[0]?.text ?? "");
 
-    if (data.tsbPositiveDate !== null) {
-      expect(data.tsbPositiveDate > TODAY).toBe(true);
-    }
+    expect(data.tsbPositiveDate).not.toBeNull();
+    expect(data.tsbPositiveDate > TODAY).toBe(true);
+  });
+
+  it("reports TODAY, not a past catch-up date, when a lagging series is already positive", async () => {
+    // asOfDate trails TODAY by 2 days; TSB is deeply positive throughout the
+    // catch-up. The old bug reported the first catch-up day (asOf + 1, two
+    // days before TODAY) as "returns positive on".
+    mockedWellness.mockResolvedValueOnce(
+      laggingPositiveWellnessSeries(TODAY, 91, 2),
+    );
+    mockedIntervalsList.mockResolvedValueOnce([]);
+
+    const result = await dispatchToolCall("get-fitness-trend-data", {
+      projectDays: 7,
+    });
+    const data = JSON.parse(result.content[0]?.text ?? "");
+
+    expect(data.tsbPositiveDate).toBe(TODAY);
   });
 });
 

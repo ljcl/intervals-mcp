@@ -286,11 +286,19 @@ export function resolvePlannedLoads(
  * Roll the CTL/ATL recurrence forward over a run of daily loads. Rounding
  * happens on the way out only; the TSB-crossing check reads the raw value, so
  * a -0.04 day does not read as positive because it rounds to -0.
+ *
+ * `positiveDateFrom` (inclusive) excludes an earlier crossing from
+ * `tsbPositiveDate` without excluding those days from `days` itself: a
+ * caller projecting unsynced "catch-up" days before today alongside the
+ * actual future projection (`projectFromWellness`) still wants those catch-up
+ * days in the series, but a crossing during them is a past or already-today
+ * date, not a future one worth reporting as "returns positive on".
  */
 export function projectLoads(
   start: { ctl: number; atl: number },
   startDate: string,
   loads: number[],
+  options: { positiveDateFrom?: string } = {},
 ): { days: FitnessTrendDay[]; tsbPositiveDate: string | null } {
   const days: FitnessTrendDay[] = [];
   let tsbPositiveDate: string | null = null;
@@ -310,7 +318,11 @@ export function projectLoads(
       atl: round1(atl),
       tsb: round1(tsb),
     });
-    if (tsbPositiveDate === null && tsb >= 0) tsbPositiveDate = date;
+    const eligible =
+      options.positiveDateFrom === undefined ||
+      date >= options.positiveDateFrom;
+    if (tsbPositiveDate === null && tsb >= 0 && eligible)
+      tsbPositiveDate = date;
   }
 
   return { days, tsbPositiveDate };
@@ -573,7 +585,12 @@ export function projectFromWellness(
     totalProjectDays,
     futurePlannedLoads,
   );
-  const projected = projectLoads(seed, firstProjectedDate, loads);
+  // A crossing during the unsynced catch-up days (before endDate) is a past
+  // date, not a future one worth reporting: only a crossing on or after
+  // endDate ("today") counts.
+  const projected = projectLoads(seed, firstProjectedDate, loads, {
+    positiveDateFrom: endDate,
+  });
   return {
     projection: projected.days,
     tsbPositiveDate: projected.tsbPositiveDate,

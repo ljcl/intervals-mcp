@@ -404,6 +404,30 @@ describe("get-fitness-trend execute (whole-body, default)", () => {
     );
   });
 
+  it("reports today, not a past catch-up day, when TSB is already positive and wellness lags", async () => {
+    // Wellness has synced through 2 days ago; today and yesterday are gaps.
+    // Deeply TSB-positive, so the old bug would have reported the first
+    // catch-up day (asOf + 1, yesterday) as "returns positive on".
+    mockedWellness.mockResolvedValueOnce([
+      wellnessRow(addDays(TODAY, -2), { ctl: 50, atl: 10 }),
+    ]);
+    mockedListActivities.mockResolvedValueOnce([]);
+
+    const result = await getFitnessTrendTool.execute(
+      { ...DEFAULT_INPUT, days: 3, projectDays: 7 },
+      "test-key",
+    );
+
+    expect(result.isError).toBeUndefined();
+    const structured = result.structuredContent as {
+      tsb_positive_date: string | null;
+    };
+    expect(structured.tsb_positive_date).toBe(TODAY);
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain(`TSB is already positive today (${TODAY})`);
+    expect(text).not.toContain(`TSB returns positive on ${addDays(TODAY, -1)}`);
+  });
+
   it("solves a taper plan to a target date and prints the weekly plan", async () => {
     mockedWellness.mockResolvedValueOnce(
       wellnessWindow(TODAY, 30, (daysAgo) => ({

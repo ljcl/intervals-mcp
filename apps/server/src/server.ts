@@ -96,7 +96,7 @@ import {
   type TrainingLoadAppData,
 } from "./trainingLoad";
 import { loadTrainingLoadInputs } from "./trainingLoadInputs";
-import { addDays, todayLocal } from "./utils/localDate";
+import { addDays, dateInputSchema, todayLocal } from "./utils/localDate";
 import { SERVER_VERSION } from "./version";
 
 const EMPTY_SCHEMA = { type: "object", properties: {}, required: [] } as const;
@@ -204,11 +204,7 @@ const fitnessTrendInput = z.object({
     .describe(
       "Days to project past today assuming rest (default 14; ignored when targetDate is set)",
     ),
-  targetDate: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, {
-      error: "Invalid target date. Use YYYY-MM-DD.",
-    })
+  targetDate: dateInputSchema
     .optional()
     .describe(
       "Race or peak date (YYYY-MM-DD) to chart a solved taper toward. Omit for a rest projection.",
@@ -996,9 +992,11 @@ async function handleViewFitnessTrend(
         .map((week) => `week ${week.week} ${week.dailyLoad}/day`)
         .join(
           ", ",
-        )} — lands TSB ${taper.achievedTsb >= 0 ? "+" : ""}${taper.achievedTsb}`,
+        )}; lands TSB ${taper.achievedTsb >= 0 ? "+" : ""}${taper.achievedTsb}`,
     );
     if (!taper.feasible && taper.note) lines.push(`Warning: ${taper.note}`);
+  } else if (data.tsbPositiveDate === todayLocal(getTimeZone())) {
+    lines.push(`Form is already positive today (${data.tsbPositiveDate})`);
   } else if (data.tsbPositiveDate) {
     lines.push(
       `Resting from here, form turns positive on ${data.tsbPositiveDate}`,

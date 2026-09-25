@@ -55,7 +55,7 @@ Use Cases:
 - "When does my form (TSB) return positive, and does it align with my next quality day?"
 - Judge whether a training block is digging too deep (sustained very negative TSB)
 - Compare whole-body fitness/fatigue against a running-only view of the same window
-- Plan a taper: "my race is on 2026-09-13 — what should the next three weeks
+- Plan a taper: "my race is on 2026-09-13, what should the next three weeks
   look like so I arrive at TSB +10 instead of overcooked or detrained?"
   (pass targetDate, and targetTsb if you want something other than +10)
 - Project forward with a specific plan instead of assuming rest (plannedLoads)
@@ -81,7 +81,7 @@ Parameters:
 
 Notes:
 - A taper that even complete rest cannot reach in time is reported as such,
-  with the form rest would actually land on — the tool does not invent a plan
+  with the form rest would actually land on; the tool does not invent a plan
 - The taper plan is prescriptive load, not recorded load: it says how much
   training load to spend, not which sessions to spend it in
 - Each value is stamped with the local calendar date it was computed for;
@@ -492,9 +492,13 @@ export const getFitnessTrendTool = {
 
       if (resolvedProjectDays > 0 && projection.length > 0) {
         output += `**Projection (${resolvedProjectDays} days${typedPlannedLoads ? ", planned load" : ", zero load"})**\n`;
-        output += tsbPositiveDate
-          ? `  TSB returns positive on ${tsbPositiveDate}\n`
-          : `  TSB stays negative for the whole projection\n`;
+        if (tsbPositiveDate === endDate) {
+          output += `  TSB is already positive today (${endDate})\n`;
+        } else if (tsbPositiveDate) {
+          output += `  TSB returns positive on ${tsbPositiveDate}\n`;
+        } else {
+          output += `  TSB stays negative for the whole projection\n`;
+        }
         const last = projection[projection.length - 1];
         if (last) {
           output += `  End of projection (${last.date}): CTL ${last.ctl}, TSB ${signed(last.tsb)}\n`;

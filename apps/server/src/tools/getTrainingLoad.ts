@@ -183,13 +183,23 @@ export const getTrainingLoadTool = {
       );
       const totalLoad = sortedWeeks.reduce((sum, w) => sum + w.load, 0);
 
-      // Weekly averages and the trend verdict are run-based (volume is
-      // run-based), computed over weeks that actually had a run rather than
-      // the full calendar span `sortedWeeks` covers: whole-body's shared
-      // timeline also includes load-only weeks (e.g. a bike-only week before
-      // or after the run window), which would otherwise dilute the run
-      // averages and shift the trend comparison only for runOnly: false.
-      const runWeeks = sortedWeeks.filter((w) => w.runs > 0);
+      // Weekly averages, the trend verdict, and injury-risk warnings are
+      // run-based (volume is run-based), computed over the run span: every
+      // week from the first run week to the last run week inclusive,
+      // matching the old runOnly behaviour. Empty (zero-run) weeks inside
+      // that span are kept, not dropped: a layoff or a missed week is a
+      // real gap the trend/warnings should see, and dropping it would also
+      // silently compare non-adjacent weeks as if they were consecutive.
+      // Only load-only weeks *outside* the span (e.g. a bike-only week
+      // before the first run or after the last, which whole-body's shared
+      // timeline also includes) are excluded, so they cannot dilute the
+      // run averages or shift the trend comparison only for runOnly: false.
+      const firstRunIndex = sortedWeeks.findIndex((w) => w.runs > 0);
+      const lastRunIndex = sortedWeeks.findLastIndex((w) => w.runs > 0);
+      const runWeeks =
+        firstRunIndex === -1
+          ? []
+          : sortedWeeks.slice(firstRunIndex, lastRunIndex + 1);
       const numWeeks = runWeeks.length || 1;
 
       // Calculate trend (compare last 2 run weeks to previous 2 run weeks).
@@ -215,8 +225,9 @@ export const getTrainingLoadTool = {
         trend = "limited data - need 4+ weeks for trend";
       }
 
-      // Generate warnings, always run-based, over run-only weeks (not the
-      // whole-body cross-training weeks that only carry load).
+      // Generate warnings, always run-based, over the same run-span weeks
+      // (gaps kept) as the averages/trend above, so the week-over-week
+      // comparison never treats two non-adjacent weeks as consecutive.
       const warnings = generateWarnings(runWeeks);
       warnings.push(
         "Weekly volume and injury-risk warnings are computed from " +

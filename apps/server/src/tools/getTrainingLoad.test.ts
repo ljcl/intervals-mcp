@@ -176,6 +176,45 @@ describe("get-training-load execute", () => {
     expect(withRideStructured.trend).toBe(baselineStructured.trend);
   });
 
+  it("keeps empty weeks inside the run span (runOnly): averages and trend see the gap", async () => {
+    // 5 runs (10 km each) over a 7-week span, with weeks at daysAgo 16-22 and
+    // 30-36 (the two middle-ish weeks) left empty on purpose.
+    mockedListActivities.mockResolvedValueOnce([
+      run(2), // week of 2026-06-22 (newest)
+      run(9), // week of 2026-06-15
+      // week of 2026-06-08: empty
+      run(23), // week of 2026-06-01
+      // week of 2026-05-25: empty
+      run(37), // week of 2026-05-18
+      run(44), // week of 2026-05-11 (oldest)
+    ]);
+
+    const result = await getTrainingLoadTool.execute(
+      { days: 49, runOnly: true },
+      "test-token",
+    );
+
+    const structured = result.structuredContent as {
+      averages: { runs_per_week: number };
+      trend: string;
+      weekly_breakdown: Array<{ week_starting: string; runs: number }>;
+    };
+
+    // The run span is 7 calendar weeks (2026-05-11 through 2026-06-22); 5 of
+    // them had a run, so numWeeks is 7, not 5.
+    expect(structured.weekly_breakdown).toHaveLength(7);
+    expect(
+      structured.weekly_breakdown.filter((w) => w.runs === 0),
+    ).toHaveLength(2);
+    expect(structured.averages.runs_per_week).toBeCloseTo(5 / 7, 1);
+
+    // Recent 2 weeks (both real runs, 20 km) vs previous 2 weeks (one empty
+    // + one real run, 10 km): a real 100% increase the gap should not hide.
+    // Dropping the empty weeks (the old behaviour) would instead compare two
+    // 10 km fortnights and report "stable".
+    expect(structured.trend).toBe("increasing significantly");
+  });
+
   it("reads whole-body current CTL/ATL/TSB from wellness (last available day)", async () => {
     mockedListActivities.mockResolvedValueOnce([run(2)]);
     mockedWellness.mockResolvedValueOnce([
