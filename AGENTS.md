@@ -68,8 +68,12 @@ breaking them has shipped bugs — do not work around them locally.
   `intervalsStreams.ts`**; only a genuine 404 or empty result throws
   `IntervalsStreamsUnavailableError`, the one error a caller may degrade on.
 - **Derived numbers have exactly one home.** GAP: `hillAnalysis.ts`
-  (`gapFactor`, `computeGrades`) — `splitAnalysis.ts` imports, never
+  (`gapFactor`, `computeGrades`); `splitAnalysis.ts` imports, never
   re-derives. CTL/ATL/TSB and any projection/taper math: `fitnessTrend.ts`.
+  Step-cadence spm and averaged running dynamics: `activityCadenceSpm`/
+  `buildRunningDynamics` in `utils/running.ts` (shared by `get-activity` and
+  `compare-activities`). Lap text rendering: `formatLapLine` in
+  `intervalLaps.ts` (shared by `get-activity-laps` and `get-running-summary`).
   Text tool and app reading different copies is the failure mode these
   prevent.
 - **Telemetry:** `dispatchToolCall` emits one JSON line per call; timer starts
@@ -97,8 +101,8 @@ breaking them has shipped bugs — do not work around them locally.
   parsing back.
 - **Tools returning data publish `outputSchema` + matching
   `structuredContent`** from `tools/outputs.ts` (schemas grouped, not per
-  file). Text tools reuse the apps' mappers rather than re-deriving — e.g.
-  `get-activity-zones` calls `mapActivityZones` from `activityZones.ts`. Empty
+  file). Text tools reuse the apps' mappers rather than re-deriving, e.g.
+  `get-activity-zones` calls `mapIntervalsZones` from `activityZones.ts`. Empty
   results emit a valid payload (`count: 0`). `warnOnSchemaDrift` keeps dev
   honest.
 - **`sportType` is an enum**: `SPORT_TYPES` (`utils/activityWrite.ts`) backs
@@ -155,7 +159,7 @@ breaking them has shipped bugs — do not work around them locally.
 - `packages/training-load/` — React + Recharts MCP App for weekly training volume with trend line and injury-risk warnings
 - `packages/route-map/` — React MCP App for activity GPS maps (MapLibre basemap by default, pure-SVG offline grid fallback; no Recharts)
 - `packages/compare-activities/` — React + Recharts MCP App overlaying two activities' streams with a delta summary
-- `packages/activity-zones/` — React + Recharts MCP App for per-activity HR/power time-in-zone distribution
+- `packages/activity-zones/`: React + Recharts MCP App for per-activity HR time-in-zone distribution (power zones dropped for now; see docs/api-notes.md)
 - `packages/fitness-trend/` — React + Recharts MCP App charting CTL/ATL/TSB with warning bands and a dashed taper plan
 - `packages/data/` — Shared pure data utilities (formatting, activity types, smoothing). Formatters live here, once (`formatting.ts`): MCP App packages cannot import each other, so a formatter two apps need has exactly one home; duplicated copies are invisible to knip and Biome. Server-side equivalent: `apps/server/src/formatters.ts`; sport-specific transforms in `utils/running.ts`
 - `packages/ui/` — Shared presentational React components (Pill, Tooltip, Legend, SummaryBar, AppShell, CardHeader, EmptyState, ErrorState, LoadingState, Skeleton) plus the app-shell runtime (`AppRoot`, `useServerToolData`, `useServerToolFetcher`, `useModelContextSync`, `useMobileMode`)

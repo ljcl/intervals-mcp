@@ -76,7 +76,8 @@ export function startOfYear(ymd: string): string {
  * Sums Run/TrailRun/VirtualRun activities whose local date falls in
  * `[start, end]` (both inclusive) into one totals bucket. Exported for direct
  * testing. Average pace comes from total distance / total moving time, not
- * an average of per-activity paces, per the controller brief.
+ * an average of per-activity paces: a bucket's headline pace should reflect
+ * its aggregate effort, not be skewed by a handful of short, fast reps.
  */
 export function aggregateRunTotals(
   activities: IntervalsActivity[],

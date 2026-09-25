@@ -52,7 +52,7 @@ const PROMPTS: PromptDefinition[] = [
   {
     name: "annotate-last-run",
     description:
-      "Analyse the most recent run and append a short coaching note to its Strava description (confirms before writing).",
+      "Analyse the most recent run and append a short coaching note to its activity description (confirms before writing).",
     arguments: [
       {
         name: "activity_id",
@@ -63,7 +63,7 @@ const PROMPTS: PromptDefinition[] = [
     build: (args) => {
       const target = args.activity_id
         ? `Use activity ${args.activity_id}.`
-        : "Find my most recent run — via the official Strava connector's list_activities if available.";
+        : "Find my most recent run, via the official Strava connector's list_activities if available.";
       return [
         "Annotate my latest run with a short coaching note.",
         "",

@@ -270,8 +270,9 @@ Still Strava-backed; not yet ported to intervals.icu (Phase 3+).
 ## Visualization tools
 
 Each `view-*` MCP App has an app-only `get-*-data` companion that fetches what
-the UI renders. Every tool in this section is still Strava-backed, pending
-Phase 4.
+the UI renders. `view-compare-activities`/`get-compare-activities-data` and
+`view-activity-zones`/`get-activity-zones-data` are ported to intervals.icu;
+the rest are still Strava-backed, pending Phase 4.
 
 | Tool | Description |
 | ---- | ----------- |
@@ -285,7 +286,7 @@ Phase 4.
 | `get-training-load-data` | Per-week volume, trend value, and warning flags for the training-load UI (app-only) |
 | `view-compare-activities` | Interactive overlay of two activities' streams on a shared distance/time axis with a delta summary (MCP App) |
 | `get-compare-activities-data` | Aggregate comparison (summaries, activity2−activity1 differences, efficiency) for the compare-activities UI (app-only) |
-| `view-activity-zones` | Time-in-zone bar chart for one activity's HR and power zones with an easy/moderate/hard split (MCP App) |
+| `view-activity-zones` | Time-in-zone bar chart for one activity's HR zones with an easy/moderate/hard split (power zones dropped for now; see docs/api-notes.md) (MCP App) |
 | `get-activity-zones-data` | Per-zone time distributions (bucket bounds, seconds, percentages) for the activity-zones UI (app-only) |
 | `view-fitness-trend` | CTL/ATL/TSB over time with shaded fatigue/freshness/ramp bands and a dashed taper plan or rest projection past today (MCP App) |
 | `get-fitness-trend-data` | Per-day CTL/ATL/TSB, the projection, the solved taper, and the dated warning bands for the fitness-trend UI (app-only) |
@@ -296,8 +297,8 @@ Reusable multi-step workflows a host can offer as slash commands or starters.
 
 | Prompt | Arguments | What it does |
 | ------ | --------- | ------------ |
-| `weekly-review` | `weeks` (optional, default 4) | Reviews recent training — load trend, key workouts, cadence patterns — ending with focus points for next week |
-| `annotate-last-run` | `activity_id` (optional, defaults to the most recent run) | Analyses a run and appends a short coaching note to its Strava description. Confirms before writing |
+| `weekly-review` | `weeks` (optional, default 4) | Reviews recent training (load trend, key workouts, cadence patterns), ending with focus points for next week |
+| `annotate-last-run` | `activity_id` (optional, defaults to the most recent run) | Analyses a run and appends a short coaching note to its activity description. Confirms before writing |
 
 In Claude Desktop and Claude Code these appear in the prompt picker once the
 server is connected. `annotate-last-run` uses a write tool (`update-activity`),

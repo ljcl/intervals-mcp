@@ -60,10 +60,10 @@ at `apps/server/src/__fixtures__/intervals/`.
 - Missing activity returns HTTP 404 with a small JSON body.
 - Responses carry no `X-RateLimit-*` or `Retry-After` headers (only Cloudflare headers).
 - An activity's (and each interval's) `gap` field is grade-adjusted speed in m/s, the same unit as
-  `average_speed`: not documented by the spec, but verified in Task 6 by checking `gap` sits in the
+  `average_speed`: not documented by the spec, but verified by checking `gap` sits in the
   same range as `average_speed` and that each interval's `gap` tracks its `average_speed` up or
   down with the interval's grade direction, the signature of a grade-adjusted speed rather than a
-  pace-per-metre value. See `gapPace` in `apps/server/src/tools/getActivity.ts` for the conversion
+  pace-per-metre value. See `gapPace` in `apps/server/src/utils/running.ts` for the conversion
   to a pace string with `metersPerSecToPace`.
 - Strava stub spike: the account has no Strava-sourced activities to test against; every activity
   in `GET /athlete/0/activities` is `source: "OAUTH_CLIENT"` (HealthFit) with `strava_id: null`, not
@@ -79,7 +79,7 @@ at `apps/server/src/__fixtures__/intervals/`.
 | --- | --- | --- |
 | `GET /athlete/0/pace-curves.json?type=Run&curves=all,90d,...` | 200 | Works with athlete id `0`; `{list[{id,label,distance[],values[] s,activity_id[],paceModels[{type:"CS",criticalSpeed m/s,dPrime m,r2}]}], activities{}}`. Curve ids used: `1y` (get-best-efforts default), `all`, `90d` (get-race-prediction) |
 | `GET /athlete/0/activity-pace-curves.json?...` | 403 | Athlete id `0` is denied on this endpoint specifically (unlike `pace-curves.json` above); needs the bare numeric athlete id |
-| `GET /athlete/{numericId}/athlete-summary.json?start&end` | 200 | Weekly rows (Monday-aligned, newest first), totals plus `byCategory[]`; used by get-athlete-stats for run totals |
+| `GET /athlete/{numericId}/athlete-summary.json?start&end` | 200 | Weekly rows (Monday-aligned, newest first), totals plus `byCategory[]`; probed but not used: get-athlete-stats instead fetches `list-activities`' underlying `/activities` and aggregates run totals locally (`aggregateRunTotals`), so its bucket boundaries (Monday-aligned week, local calendar month/year) match the rest of the server rather than this endpoint's own |
 | `GET /activity/{id}/interval-stats?start_index&end_index` | 200 | Interval-shaped stats for any stream index range, including `gap` (m/s) |
 | `GET /activity/{id}/time-at-hr` | 200 | `{max_bpm, min_bpm, secs[], cumulative_secs[]}` |
 | `GET /activity/{id}/streams.json` | 200 | `moving` is never returned (silently omitted, not an error); `grade_smooth` (%) and `fixed_altitude` (m) are present; `gap` is not a valid stream type (422 "Invalid stream type") |
@@ -100,5 +100,5 @@ at `apps/server/src/__fixtures__/intervals/`.
   percent of FTP, whether `icu_zone_times` has one entry per `icu_power_zones` bound or one
   extra (SS), and whether pairing by `id` (rather than by array index, as `activityZones.ts`
   did before this was dropped) is needed to line entries up correctly.
-- `average_gradient` (interval field) is a fraction, not a percent: confirmed in Task 6 by checking
+- `average_gradient` (interval field) is a fraction, not a percent: confirmed by checking
   elevation gain against `average_gradient * distance` (see `intervalLaps.ts`).

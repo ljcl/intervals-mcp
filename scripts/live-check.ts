@@ -7,8 +7,10 @@
  * so this is safe to run and paste output from in a public repo. It never
  * prints the API key, and never prints a raw tool payload (names,
  * descriptions, comments, coordinates, or any id other than the activity id
- * argument) since those are the athlete's data, not ours to publish. No
- * write calls are made.
+ * argument) since those are the athlete's data, not ours to publish. A
+ * failure prints only an error class or a known status category
+ * (`errorSummary`/`throwSummary` below), never the error's own message
+ * text, which can interpolate an activity name. No write calls are made.
  *
  * Usage: `bun scripts/live-check.ts [activityId]` (default i189807578).
  */
@@ -82,10 +84,51 @@ function fail(name: string, detail: string): void {
   console.log(`${name}: error - ${detail}`);
 }
 
-/** The tool's own error text (content[0].text), instead of a generic message, so a live failure is diagnosable from the check output alone. */
-function errorText(result: { content?: Array<{ text?: unknown }> }): string {
+/**
+ * Known `toolErrorText` (`tools/_errors.ts`) categories, matched by the
+ * fixed prefix each branch always uses. A tool's own inline error text
+ * (e.g. a streams-unavailable message naming the activity) matches none of
+ * these and falls to "unclassified" rather than being printed in full.
+ */
+const KNOWN_ERROR_CATEGORIES: Array<[RegExp, string]> = [
+  [/rate limit/i, "rate limited"],
+  [/was not found/i, "not found"],
+  [/subscription/i, "subscription required"],
+  [/not yet ported/i, "not yet ported"],
+  [/rejected the API key|not configured/i, "auth/config error"],
+];
+
+/**
+ * A short, safe-to-print category for the tool's own `isError` text
+ * (content[0].text), never the text itself: that text can interpolate the
+ * activity's name (e.g. a streams-unavailable message), which is the
+ * athlete's data, not ours to print (see the module doc comment above).
+ */
+function errorSummary(result: { content?: Array<{ text?: unknown }> }): string {
   const text = result.content?.[0]?.text;
-  return typeof text === "string" ? text : "tool returned isError";
+  if (typeof text !== "string") return "tool returned isError";
+  for (const [pattern, label] of KNOWN_ERROR_CATEGORIES) {
+    if (pattern.test(text)) return label;
+  }
+  return "tool error (unclassified)";
+}
+
+/**
+ * A short, safe-to-print summary for a thrown error: its class name plus an
+ * HTTP status when the error carries one (`HttpError`'s `response.status`),
+ * never `error.message`, which can carry interpolated context (e.g. an
+ * activity id or name) from deep in the call stack.
+ */
+function throwSummary(error: unknown): string {
+  if (error instanceof Error) {
+    const response = (error as { response?: { status?: unknown } }).response;
+    const status =
+      response && typeof response === "object" && "status" in response
+        ? response.status
+        : undefined;
+    return status != null ? `${error.name} (${status})` : error.name;
+  }
+  return "unknown error";
 }
 
 async function checkListActivities(): Promise<void> {
@@ -103,7 +146,7 @@ async function checkListActivities(): Promise<void> {
       content?: Array<{ text?: unknown }>;
     };
     if (result.isError || !result.structuredContent) {
-      fail(name, errorText(result));
+      fail(name, errorSummary(result));
       return;
     }
     const activities = result.structuredContent.activities as Array<{
@@ -117,7 +160,7 @@ async function checkListActivities(): Promise<void> {
       `count=${count} target_occurrences=${matches.length} target_is_strava_stub=${matches[0]?.is_strava_stub}`,
     );
   } catch (error) {
-    fail(name, error instanceof Error ? error.message : String(error));
+    fail(name, throwSummary(error));
   }
 }
 
@@ -134,7 +177,7 @@ async function checkGetActivity(): Promise<void> {
       content?: Array<{ text?: unknown }>;
     };
     if (result.isError || !result.structuredContent) {
-      fail(name, errorText(result));
+      fail(name, errorSummary(result));
       return;
     }
     const d = result.structuredContent as {
@@ -151,7 +194,7 @@ async function checkGetActivity(): Promise<void> {
       `distance_km=${d.distance_km} cadence_spm=${d.average_cadence_spm} gct_ms=${d.running_dynamics?.stance_time_ms} vo_mm=${d.running_dynamics?.vertical_oscillation_mm} intervals=${d.intervals?.length ?? 0}`,
     );
   } catch (error) {
-    fail(name, error instanceof Error ? error.message : String(error));
+    fail(name, throwSummary(error));
   }
 }
 
@@ -172,7 +215,7 @@ async function checkGetActivityStreams(): Promise<void> {
       content?: Array<{ text?: unknown }>;
     };
     if (result.isError || !result.structuredContent) {
-      fail(name, errorText(result));
+      fail(name, errorSummary(result));
       return;
     }
     const streams = result.structuredContent.streams as Record<
@@ -187,7 +230,7 @@ async function checkGetActivityStreams(): Promise<void> {
       `returned_points=${result.structuredContent.returned_points} ${lengths}`,
     );
   } catch (error) {
-    fail(name, error instanceof Error ? error.message : String(error));
+    fail(name, throwSummary(error));
   }
 }
 
@@ -204,12 +247,12 @@ async function checkListGear(): Promise<void> {
       content?: Array<{ text?: unknown }>;
     };
     if (result.isError || !result.structuredContent) {
-      fail(name, errorText(result));
+      fail(name, errorSummary(result));
       return;
     }
     ok(name, `count=${result.structuredContent.count}`);
   } catch (error) {
-    fail(name, error instanceof Error ? error.message : String(error));
+    fail(name, throwSummary(error));
   }
 }
 
@@ -227,7 +270,7 @@ async function checkGetWellness(): Promise<void> {
       content?: Array<{ text?: unknown }>;
     };
     if (result.isError || !result.structuredContent) {
-      fail(name, errorText(result));
+      fail(name, errorSummary(result));
       return;
     }
     const days = result.structuredContent.days as Array<{
@@ -240,7 +283,7 @@ async function checkGetWellness(): Promise<void> {
       `resting_hr=${day?.resting_hr} hrv_sdnn_ms=${day?.hrv_sdnn_ms != null ? "present" : "null"}`,
     );
   } catch (error) {
-    fail(name, error instanceof Error ? error.message : String(error));
+    fail(name, throwSummary(error));
   }
 }
 
@@ -257,7 +300,7 @@ async function checkGetActivityLaps(): Promise<void> {
       content?: Array<{ text?: unknown }>;
     };
     if (result.isError || !result.structuredContent) {
-      fail(name, errorText(result));
+      fail(name, errorSummary(result));
       return;
     }
     const d = result.structuredContent as {
@@ -266,7 +309,7 @@ async function checkGetActivityLaps(): Promise<void> {
     };
     ok(name, `lap_count=${d.lap_count} device_lap_count=${d.device_lap_count}`);
   } catch (error) {
-    fail(name, error instanceof Error ? error.message : String(error));
+    fail(name, throwSummary(error));
   }
 }
 
@@ -283,7 +326,7 @@ async function checkGetRunningSummary(): Promise<void> {
       content?: Array<{ text?: unknown }>;
     };
     if (result.isError || !result.structuredContent) {
-      fail(name, errorText(result));
+      fail(name, errorSummary(result));
       return;
     }
     const d = result.structuredContent as {
@@ -295,7 +338,7 @@ async function checkGetRunningSummary(): Promise<void> {
       `laps=${d.laps.length} hr_zone_total_s=${d.hr_zone_summary?.total_seconds ?? "n/a"}`,
     );
   } catch (error) {
-    fail(name, error instanceof Error ? error.message : String(error));
+    fail(name, throwSummary(error));
   }
 }
 
@@ -312,7 +355,7 @@ async function checkGetActivityZones(): Promise<void> {
       content?: Array<{ text?: unknown }>;
     };
     if (result.isError || !result.structuredContent) {
-      fail(name, errorText(result));
+      fail(name, errorSummary(result));
       return;
     }
     const zoneSets = result.structuredContent.zone_sets as Array<{
@@ -322,7 +365,7 @@ async function checkGetActivityZones(): Promise<void> {
     const totalSeconds = zoneSets.reduce((sum, z) => sum + z.total_seconds, 0);
     ok(name, `zone_sets=${zoneSets.length} total_seconds=${totalSeconds}`);
   } catch (error) {
-    fail(name, error instanceof Error ? error.message : String(error));
+    fail(name, throwSummary(error));
   }
 }
 
@@ -339,7 +382,7 @@ async function checkCompareActivities(): Promise<void> {
       content?: Array<{ text?: unknown }>;
     };
     if (result.isError || !result.structuredContent) {
-      fail(name, errorText(result));
+      fail(name, errorSummary(result));
       return;
     }
     const d = result.structuredContent as {
@@ -351,7 +394,7 @@ async function checkCompareActivities(): Promise<void> {
       `distance_km_diff=${d.differences.distance_km} efficiency=${d.efficiency ? "present" : "null"}`,
     );
   } catch (error) {
-    fail(name, error instanceof Error ? error.message : String(error));
+    fail(name, throwSummary(error));
   }
 }
 
@@ -368,7 +411,7 @@ async function checkGetHillAnalysis(): Promise<void> {
       content?: Array<{ text?: unknown }>;
     };
     if (result.isError || !result.structuredContent) {
-      fail(name, errorText(result));
+      fail(name, errorSummary(result));
       return;
     }
     const d = result.structuredContent as {
@@ -380,7 +423,7 @@ async function checkGetHillAnalysis(): Promise<void> {
       `grade_source=${d.grade_source} climbs=${d.totals.climb_count} descents=${d.totals.descent_count}`,
     );
   } catch (error) {
-    fail(name, error instanceof Error ? error.message : String(error));
+    fail(name, throwSummary(error));
   }
 }
 
@@ -397,7 +440,7 @@ async function checkGetSplitAnalysis(): Promise<void> {
       content?: Array<{ text?: unknown }>;
     };
     if (result.isError || !result.structuredContent) {
-      fail(name, errorText(result));
+      fail(name, errorSummary(result));
       return;
     }
     const d = result.structuredContent as {
@@ -406,7 +449,7 @@ async function checkGetSplitAnalysis(): Promise<void> {
     };
     ok(name, `splits=${d.splits.length} shape=${d.verdict?.shape ?? "n/a"}`);
   } catch (error) {
-    fail(name, error instanceof Error ? error.message : String(error));
+    fail(name, throwSummary(error));
   }
 }
 
@@ -423,7 +466,7 @@ async function checkGetAerobicAnalysis(): Promise<void> {
       content?: Array<{ text?: unknown }>;
     };
     if (result.isError || !result.structuredContent) {
-      fail(name, errorText(result));
+      fail(name, errorSummary(result));
       return;
     }
     const d = result.structuredContent as {
@@ -435,7 +478,7 @@ async function checkGetAerobicAnalysis(): Promise<void> {
       `decoupling_source=${d.decoupling_source} decoupling_pct=${d.decoupling_pct}`,
     );
   } catch (error) {
-    fail(name, error instanceof Error ? error.message : String(error));
+    fail(name, throwSummary(error));
   }
 }
 
@@ -452,7 +495,7 @@ async function checkGetIntervalAnalysis(): Promise<void> {
       content?: Array<{ text?: unknown }>;
     };
     if (result.isError || !result.structuredContent) {
-      fail(name, errorText(result));
+      fail(name, errorSummary(result));
       return;
     }
     const d = result.structuredContent as {
@@ -465,7 +508,7 @@ async function checkGetIntervalAnalysis(): Promise<void> {
       `reps=${d.reps.length} source=${d.source} confidence=${d.confidence}`,
     );
   } catch (error) {
-    fail(name, error instanceof Error ? error.message : String(error));
+    fail(name, throwSummary(error));
   }
 }
 
@@ -482,7 +525,7 @@ async function checkGetBestEfforts(): Promise<void> {
       content?: Array<{ text?: unknown }>;
     };
     if (result.isError || !result.structuredContent) {
-      fail(name, errorText(result));
+      fail(name, errorSummary(result));
       return;
     }
     const bestEfforts = result.structuredContent.best_efforts as Record<
@@ -492,7 +535,7 @@ async function checkGetBestEfforts(): Promise<void> {
     const best5k = bestEfforts["5km"]?.[0];
     ok(name, `best_5km=${best5k?.time_formatted ?? "none"}`);
   } catch (error) {
-    fail(name, error instanceof Error ? error.message : String(error));
+    fail(name, throwSummary(error));
   }
 }
 
@@ -509,7 +552,7 @@ async function checkGetRacePrediction(): Promise<void> {
       content?: Array<{ text?: unknown }>;
     };
     if (result.isError || !result.structuredContent) {
-      fail(name, errorText(result));
+      fail(name, errorSummary(result));
       return;
     }
     const predictions = result.structuredContent.predictions as Array<{
@@ -519,7 +562,7 @@ async function checkGetRacePrediction(): Promise<void> {
     const tenK = predictions.find((p) => p.distance === "10K");
     ok(name, `predicted_10k=${tenK?.predicted_formatted ?? "none"}`);
   } catch (error) {
-    fail(name, error instanceof Error ? error.message : String(error));
+    fail(name, throwSummary(error));
   }
 }
 
@@ -536,7 +579,7 @@ async function checkGetAthleteStats(): Promise<void> {
       content?: Array<{ text?: unknown }>;
     };
     if (result.isError || !result.structuredContent) {
-      fail(name, errorText(result));
+      fail(name, errorSummary(result));
       return;
     }
     const d = result.structuredContent as {
@@ -544,7 +587,7 @@ async function checkGetAthleteStats(): Promise<void> {
     };
     ok(name, `ytd_runs=${d.ytd.runs} ytd_distance_km=${d.ytd.distance_km}`);
   } catch (error) {
-    fail(name, error instanceof Error ? error.message : String(error));
+    fail(name, throwSummary(error));
   }
 }
 
