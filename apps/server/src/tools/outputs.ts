@@ -1275,6 +1275,7 @@ const RunningDynamicsIntervalRowSchema = z.object({
   vertical_oscillation_status: DynamicsStatusSchema.nullable(),
   vertical_ratio_pct: z.number().nullable(),
   step_length_mm: z.number().nullable(),
+  stride_m: z.number().nullable(),
   cadence_spm: z.number().nullable(),
 });
 export const RunningDynamicsOutputSchema = z.object({

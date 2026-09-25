@@ -345,4 +345,36 @@ describe("assessRunningDynamics", () => {
       ground_contact_time: null,
     });
   });
+
+  describe("boundaries", () => {
+    it("flags a vertical oscillation of exactly 100 mm as high (the target is strictly under 100)", () => {
+      expect(
+        assessRunningDynamics(100, null).vertical_oscillation?.status,
+      ).toBe("high");
+    });
+
+    it("treats a ground contact time of exactly 200 ms as within (the range's lower bound is inclusive)", () => {
+      expect(assessRunningDynamics(null, 200).ground_contact_time?.status).toBe(
+        "within",
+      );
+    });
+
+    it("treats a ground contact time of exactly 260 ms as within (the range's upper bound is inclusive)", () => {
+      expect(assessRunningDynamics(null, 260).ground_contact_time?.status).toBe(
+        "within",
+      );
+    });
+
+    it("flags a ground contact time of 199 ms as low", () => {
+      expect(assessRunningDynamics(null, 199).ground_contact_time?.status).toBe(
+        "low",
+      );
+    });
+
+    it("flags a ground contact time of 261 ms as high", () => {
+      expect(assessRunningDynamics(null, 261).ground_contact_time?.status).toBe(
+        "high",
+      );
+    });
+  });
 });

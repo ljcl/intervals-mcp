@@ -118,6 +118,7 @@ describe("intervalsClient", () => {
     expect(parsedIntervals.length).toBeGreaterThan(0);
     const firstInterval: IntervalsInterval | undefined = parsedIntervals[0];
     expect(firstInterval?.average_vertical_ratio).toBeCloseTo(8.869921);
+    expect(firstInterval?.average_stride).toBeCloseTo(1.219285);
     mockJson(streams);
     expect((await getActivityStreams("k", "i189807578", ["time"])).length).toBe(
       streams.length,

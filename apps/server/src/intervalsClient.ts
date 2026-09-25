@@ -58,6 +58,7 @@ const IntervalsIntervalSchema = z
     average_vertical_oscillation: z.number().nullable().optional(),
     average_vertical_ratio: z.number().nullable().optional(),
     average_step_length: z.number().nullable().optional(),
+    average_stride: z.number().nullable().optional(),
     zone: z.number().nullable().optional(),
     gap: z.number().nullable().optional(),
     total_elevation_gain: z.number().nullable().optional(),

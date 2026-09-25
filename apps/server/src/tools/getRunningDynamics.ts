@@ -93,6 +93,7 @@ interface RunningDynamicsIntervalRow {
   vertical_oscillation_status: DynamicsStatus | null;
   vertical_ratio_pct: number | null;
   step_length_mm: number | null;
+  stride_m: number | null;
   cadence_spm: number | null;
 }
 
@@ -184,6 +185,10 @@ function mapIntervalRow(
       interval.average_step_length == null
         ? null
         : round(interval.average_step_length),
+    stride_m:
+      interval.average_stride == null
+        ? null
+        : round(interval.average_stride, 2),
     cadence_spm: cadence == null ? null : Math.round(cadence),
   };
 }
@@ -297,6 +302,7 @@ function formatIntervalRow(row: RunningDynamicsIntervalRow): string {
   if (row.vertical_ratio_pct != null)
     parts.push(`VR ${row.vertical_ratio_pct}%`);
   if (row.step_length_mm != null) parts.push(`step ${row.step_length_mm} mm`);
+  if (row.stride_m != null) parts.push(`stride ${row.stride_m} m`);
   if (row.cadence_spm != null) parts.push(`cadence ${row.cadence_spm} spm`);
   const label = row.label ?? `lap ${row.lap_index}`;
   return `${row.lap_index}. ${label}: ${parts.join(", ")}`;

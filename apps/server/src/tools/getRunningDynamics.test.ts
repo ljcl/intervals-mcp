@@ -82,6 +82,8 @@ describe("mapRunningDynamics", () => {
       stance_time_status: "within",
       vertical_oscillation_mm: 108,
       vertical_oscillation_status: "high",
+      // average_stride 1.219285 -> 1.22 m.
+      stride_m: 1.22,
     });
   });
 
@@ -169,6 +171,7 @@ describe("formatRunningDynamicsText", () => {
       vertical_oscillation_status: "within" as const,
       vertical_ratio_pct: 8,
       step_length_mm: 1200,
+      stride_m: 1.2,
       cadence_spm: 170,
     };
     const d: RunningDynamicsResponse = {
