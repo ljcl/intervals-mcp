@@ -104,6 +104,49 @@ describe("toChartData", () => {
     expect(points[0]?.timeFormatted).toBe("00:00");
     expect(points.every((p) => (p.pace ?? 0) <= 15)).toBe(true);
   });
+
+  it("renders a null velocity sample as a gap, not a capped pace spike", () => {
+    const points = toChartData(
+      streamData({
+        activityType: "Run",
+        streams: { time: [0, 1, 2], velocity_smooth: [3.33, null, 3.33] },
+      }),
+    );
+
+    expect(points[1]?.pace).toBeNull();
+    expect(points[1]?.pace).not.toBe(15);
+  });
+
+  it("renders a null cadence sample as null, not 0", () => {
+    const points = toChartData(
+      streamData({
+        activityType: "Run",
+        streams: { time: [0, 1], cadence: [87, null] },
+      }),
+    );
+
+    expect(points[0]?.cadence).toBe(174);
+    expect(points[1]?.cadence).toBeNull();
+  });
+
+  it("passes through null heartrate/power/altitude/grade samples as gaps", () => {
+    const points = toChartData(
+      streamData({
+        streams: {
+          time: [0, 1],
+          heartrate: [140, null],
+          watts: [200, null],
+          altitude: [10, null],
+          grade_smooth: [1, null],
+        },
+      }),
+    );
+
+    expect(points[1]?.heartrate).toBeNull();
+    expect(points[1]?.power).toBeNull();
+    expect(points[1]?.altitude).toBeNull();
+    expect(points[1]?.grade).toBeNull();
+  });
 });
 
 describe("toLapData", () => {
@@ -136,22 +179,27 @@ describe("toLapData", () => {
     expect(laps[1]?.name).toBe("Kick set · 300m"); // meaningful name kept
   });
 
-  it("flags rest laps by zero distance or name", () => {
+  it("flags rest laps by band type, not name or distance", () => {
     const laps = toLapData(
       streamData({
         streams: { time: [0, 60, 120] },
         laps: [
           {
             ...base,
-            distance: 0,
-            name: "Lap 2",
+            type: "RECOVERY",
+            distance: 300,
+            name: "Recovery",
             startIndex: 0,
             endIndex: 1,
             lapIndex: 1,
           },
           {
             ...base,
-            name: "Rest at wall",
+            type: "WORK",
+            // Null distance (server can't always compute it) must not be
+            // mistaken for a rest band.
+            distance: null,
+            name: "Surge",
             startIndex: 1,
             endIndex: 2,
             lapIndex: 2,
@@ -161,7 +209,27 @@ describe("toLapData", () => {
     );
 
     expect(laps[0]?.isRest).toBe(true);
-    expect(laps[1]?.isRest).toBe(true);
+    expect(laps[1]?.isRest).toBe(false);
+  });
+
+  it("does not flag a lap named 'Rest' as rest unless its type is RECOVERY", () => {
+    const laps = toLapData(
+      streamData({
+        streams: { time: [0, 60] },
+        laps: [
+          {
+            ...base,
+            type: "WORK",
+            name: "Rest at wall",
+            startIndex: 0,
+            endIndex: 1,
+            lapIndex: 1,
+          },
+        ],
+      }),
+    );
+
+    expect(laps[0]?.isRest).toBe(false);
   });
 
   it("clamps lap end indices to the stream length", () => {

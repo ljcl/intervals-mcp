@@ -310,7 +310,9 @@ export function ActivityChart({
   const availableMetrics = useMemo(() => {
     const s = new Set<MetricKey>();
     for (const metric of ALL_METRICS) {
-      if (data.some((d) => d[metric] !== undefined)) s.add(metric);
+      // != null: a metric that is present but null (gap) at every sample has
+      // no data to show, same as never having recorded it at all.
+      if (data.some((d) => d[metric] != null)) s.add(metric);
     }
     return s;
   }, [data]);
@@ -686,7 +688,7 @@ export function ActivityChart({
               fill="url(#gradAltitude)"
               stroke={COLORS.altitude}
               strokeWidth={1}
-              connectNulls
+              connectNulls={false}
               name="Altitude"
               fillOpacity={0.25}
             />
@@ -703,7 +705,7 @@ export function ActivityChart({
               stroke={COLORS.heartrate}
               dot={false}
               strokeWidth={tokens.strokeWidth}
-              connectNulls
+              connectNulls={false}
             />
           )}
 
@@ -718,7 +720,7 @@ export function ActivityChart({
               stroke={COLORS.power}
               dot={false}
               strokeWidth={tokens.strokeWidth}
-              connectNulls
+              connectNulls={false}
             />
           )}
 
@@ -733,7 +735,7 @@ export function ActivityChart({
               stroke={COLORS.pace}
               dot={false}
               strokeWidth={tokens.strokeWidth}
-              connectNulls
+              connectNulls={false}
             />
           )}
 
@@ -748,7 +750,7 @@ export function ActivityChart({
               stroke={COLORS.cadence}
               dot={false}
               strokeWidth={tokens.cadenceStrokeWidth}
-              connectNulls
+              connectNulls={false}
             />
           )}
 
@@ -764,7 +766,7 @@ export function ActivityChart({
               stroke={COLORS.grade}
               dot={false}
               strokeWidth={1}
-              connectNulls
+              connectNulls={false}
             />
           )}
 

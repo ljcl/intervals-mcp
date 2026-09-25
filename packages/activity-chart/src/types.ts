@@ -8,12 +8,15 @@ export interface Lap {
   name: string;
   startIndex: number;
   endIndex: number;
-  distance: number;
-  elapsedTime: number;
+  distance: number | null;
+  elapsedTime: number | null;
   averageSpeed: number | null;
   averageHeartrate: number | null;
   lapIndex: number;
-  /** e.g. "WORK", "RECOVERY". `null` when intervals.icu did not set one. */
+  /** e.g. "WORK", "RECOVERY". `null` when intervals.icu did not set one.
+   * Rest/recovery bands are identified by `type === "RECOVERY"`, never by
+   * matching the display name or by `distance === 0` (distance is nullable
+   * and a real recovery interval can have a nonzero distance). */
   type?: string | null;
   /** Raw intervals.icu label. `null` when intervals.icu did not set one. */
   label?: string | null;
@@ -31,12 +34,12 @@ export interface ActivityStreamData {
   name: string;
   streams: {
     time?: number[];
-    heartrate?: number[];
-    watts?: number[];
-    velocity_smooth?: number[];
-    altitude?: number[];
-    cadence?: number[];
-    grade_smooth?: number[];
+    heartrate?: (number | null)[];
+    watts?: (number | null)[];
+    velocity_smooth?: (number | null)[];
+    altitude?: (number | null)[];
+    cadence?: (number | null)[];
+    grade_smooth?: (number | null)[];
     distance?: number[];
     /** Ground contact time, ms. */
     stance_time?: (number | null)[];
@@ -59,17 +62,22 @@ export type MetricKey =
   | "cadence"
   | "grade";
 
-/** Normalized data point for Recharts */
+/**
+ * Normalized data point for Recharts. Metric fields are `number | null`:
+ * `null` is a genuine gap in the recording (Recharts breaks the line there
+ * with `connectNulls={false}`); the key is absent entirely (`undefined`) only
+ * when the activity never recorded that metric at all.
+ */
 export interface ChartDataPoint {
   time: number;
   timeFormatted: string;
   distance?: number;
-  heartrate?: number;
-  power?: number;
-  pace?: number;
-  altitude?: number;
-  cadence?: number;
-  grade?: number;
+  heartrate?: number | null;
+  power?: number | null;
+  pace?: number | null;
+  altitude?: number | null;
+  cadence?: number | null;
+  grade?: number | null;
 }
 
 /** Display metadata for the activity */

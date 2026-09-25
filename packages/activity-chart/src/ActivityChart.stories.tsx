@@ -1,6 +1,7 @@
 import preview, { darkGlobals } from "@intervals-mcp/design-system/preview";
 import { MobileCardShell } from "@intervals-mcp/ui";
 import { expect, waitFor } from "storybook/test";
+import { gappyRun } from "./__fixtures__/gappy-run";
 import { manualEntry, timeOnlyRecording } from "./__fixtures__/manual-entry";
 import { poolSwim } from "./__fixtures__/pool-swim";
 import { tempoRun } from "./__fixtures__/tempo-run";
@@ -116,6 +117,40 @@ export const DarkPoolSwim = meta.story({
     meta: extractMeta(poolSwim),
     laps: toLapData(poolSwim),
   },
+});
+
+/**
+ * Task 2: null-safe rendering. Synthetic run with deliberate gaps in
+ * heartrate, velocity (pace), cadence, and altitude. The lines must break
+ * at each gap instead of drawing a fabricated zero, spike, or interpolated
+ * value, and the Recovery band (null distance) must still shade correctly.
+ */
+export const GappyRun = meta.story({
+  args: {
+    data: toChartData(gappyRun),
+    meta: extractMeta(gappyRun),
+    laps: toLapData(gappyRun),
+  },
+});
+
+export const GappyRunMobile = meta.story({
+  args: {
+    data: toChartData(gappyRun),
+    meta: extractMeta(gappyRun),
+    laps: toLapData(gappyRun),
+    mode: "mobile",
+  },
+  globals: {
+    viewport: { value: "claudeIosCard" },
+  },
+  parameters: { layout: "fullscreen" },
+  decorators: [
+    (StoryFn) => (
+      <MobileCardShell>
+        <StoryFn />
+      </MobileCardShell>
+    ),
+  ],
 });
 
 export const MobileRun = meta.story({

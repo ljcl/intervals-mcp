@@ -166,6 +166,40 @@ export const waypointedActivity: RouteMapData = {
   },
 };
 
+/**
+ * Punches a `null` run into a copy of one metric stream, standing in for a
+ * real sensor dropout (GPS loss, HR strap disconnect). Used by
+ * `gappyStreamActivity` to verify the colored track and elevation strip
+ * both break at the gap instead of drawing a fabricated color or dip.
+ */
+function withStreamGap(
+  values: number[],
+  fromIndex: number,
+  toIndex: number,
+): Array<number | null> {
+  const copy: Array<number | null> = [...values];
+  for (let i = fromIndex; i <= toIndex; i += 1) copy[i] = null;
+  return copy;
+}
+
+/**
+ * Task 2: null-safe rendering. Three streams each carry their own gap at a
+ * different point along the track, so the colored line, elevation strip,
+ * and scrub tooltip all have to tolerate a `null` sample without crashing
+ * or fabricating a value.
+ */
+export const gappyStreamActivity: RouteMapData = {
+  ...streamLoopActivity,
+  id: "1234567894",
+  name: "Golden Gate Park Loop (sensor dropouts)",
+  streams: {
+    ...streamLoopActivity.streams,
+    altitude: withStreamGap(altitude, 30, 40),
+    heartrate: withStreamGap(heartrate, 60, 68),
+    velocity_smooth: withStreamGap(velocity, 90, 95),
+  },
+};
+
 /** An indoor activity with no GPS track, to exercise the empty state. */
 export const noGeometryActivity: RouteMapData = {
   source: "activity",

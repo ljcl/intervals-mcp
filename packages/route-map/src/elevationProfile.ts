@@ -40,7 +40,7 @@ function round(value: number): number {
  * too few samples to draw a line.
  */
 export function buildElevationProfile(
-  altitude: number[],
+  altitude: ReadonlyArray<number | null>,
   distance: number[] | undefined,
   opts: ElevationProfileOptions,
 ): ElevationProfile | null {
@@ -61,24 +61,51 @@ export function buildElevationProfile(
   let min = Infinity;
   let max = -Infinity;
   for (const a of altitude) {
+    if (a == null) continue;
     if (a < min) min = a;
     if (a > max) max = a;
   }
+  // Every sample is a gap: nothing to draw.
+  if (min === Infinity) return null;
+
   const span = max - min;
   const drawable = height - padTop;
+  // `null` for a gap sample; a fallback midline value only for `ys`'s
+  // scrub-marker placement, never fed into the drawn path below.
   const ys = altitude.map((a) =>
-    // A flat profile sits on a midline rather than collapsing to the floor.
-    span > 1e-9 ? padTop + ((max - a) / span) * drawable : height / 2,
+    a == null
+      ? null
+      : // A flat profile sits on a midline rather than collapsing to the floor.
+        span > 1e-9
+        ? padTop + ((max - a) / span) * drawable
+        : height / 2,
   );
 
-  const linePath = xs
-    .map((x, i) => `${i === 0 ? "M" : "L"}${round(x)} ${round(ys[i]!)}`)
-    .join(" ");
+  // Break the line at gaps instead of connecting across a fabricated value.
+  let linePath = "";
+  let penDown = false;
+  for (let i = 0; i < n; i += 1) {
+    const y = ys[i];
+    if (y == null) {
+      penDown = false;
+      continue;
+    }
+    linePath += `${penDown ? "L" : "M"}${round(xs[i]!)} ${round(y)} `;
+    penDown = true;
+  }
+  linePath = linePath.trim();
   const areaPath = `${linePath} L${round(xs[n - 1]!)} ${height} L${round(
     xs[0]!,
   )} ${height} Z`;
 
-  return { linePath, areaPath, xs, ys, min, max };
+  return {
+    linePath,
+    areaPath,
+    xs,
+    ys: ys.map((y) => y ?? height / 2),
+    min,
+    max,
+  };
 }
 
 /** Index of the sample whose x position is closest to `x`. -1 when empty. */

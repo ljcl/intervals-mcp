@@ -39,7 +39,7 @@ function seriesRange(
   let max = -Infinity;
   for (const point of data) {
     const value = point[key];
-    if (value === undefined) continue;
+    if (value == null) continue;
     if (value < min) min = value;
     if (value > max) max = value;
   }

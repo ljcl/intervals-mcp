@@ -4,6 +4,7 @@ import { useState } from "react";
 import { expect, waitFor } from "storybook/test";
 import {
   annotatedActivity,
+  gappyStreamActivity,
   loopActivity,
   noGeometryActivity,
   streamLoopActivity,
@@ -31,6 +32,15 @@ export const MetricColoredTrack = meta.story({
 export const DarkMetricColoredTrack = meta.story({
   globals: darkGlobals,
   args: { data: streamLoopActivity, basemapEnabled: false },
+});
+
+/**
+ * Task 2: null-safe rendering. Altitude, heartrate, and velocity each carry
+ * their own dropout. The colored track and elevation strip must break at
+ * those gaps instead of drawing a fabricated color or dip.
+ */
+export const GappyStreams = meta.story({
+  args: { data: gappyStreamActivity, basemapEnabled: false },
 });
 
 /**

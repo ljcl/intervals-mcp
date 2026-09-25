@@ -12,16 +12,16 @@ export interface RouteStreams {
   time?: number[];
   /** Cumulative metres. */
   distance?: number[];
-  /** Metres above sea level. */
-  altitude?: number[];
-  /** Beats per minute. */
-  heartrate?: number[];
-  /** Power in watts. */
-  watts?: number[];
-  /** Smoothed speed in m/s. */
-  velocity_smooth?: number[];
-  /** Smoothed grade in percent. */
-  grade_smooth?: number[];
+  /** Metres above sea level. `null` samples are gaps, drawn as breaks. */
+  altitude?: (number | null)[];
+  /** Beats per minute. `null` samples are gaps, drawn as breaks. */
+  heartrate?: (number | null)[];
+  /** Power in watts. `null` samples are gaps, drawn as breaks. */
+  watts?: (number | null)[];
+  /** Smoothed speed in m/s. `null` samples are gaps, drawn as breaks. */
+  velocity_smooth?: (number | null)[];
+  /** Smoothed grade in percent. `null` samples are gaps, drawn as breaks. */
+  grade_smooth?: (number | null)[];
 }
 
 /**

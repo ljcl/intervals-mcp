@@ -47,6 +47,20 @@ describe("buildElevationProfile", () => {
     expect(profile.areaPath.endsWith("Z")).toBe(true);
     expect(profile.areaPath).toContain(` ${OPTS.height} `);
   });
+
+  it("breaks the line at a null sample instead of connecting across it", () => {
+    const profile = buildElevationProfile([10, null, 30], undefined, OPTS)!;
+    // Two disjoint segments (one "M" each) rather than one continuous line.
+    expect(profile.linePath.match(/M/g)?.length).toBe(2);
+    expect(profile.linePath.match(/L/g)).toBeNull();
+    // The gap sample is excluded from the altitude domain.
+    expect(profile.min).toBe(10);
+    expect(profile.max).toBe(30);
+  });
+
+  it("returns null when every sample is a gap", () => {
+    expect(buildElevationProfile([null, null], undefined, OPTS)).toBeNull();
+  });
 });
 
 describe("nearestXIndex", () => {
