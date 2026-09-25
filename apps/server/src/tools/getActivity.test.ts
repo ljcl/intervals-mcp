@@ -106,11 +106,11 @@ describe("mapActivityDetail", () => {
     );
 
     expect(detail.hr_zones).toEqual([
-      { zone: 1, min_bpm: 0, max_bpm: 147, seconds: 103 },
-      { zone: 2, min_bpm: 147, max_bpm: 160, seconds: 146 },
-      { zone: 3, min_bpm: 160, max_bpm: 169, seconds: 330 },
-      { zone: 4, min_bpm: 169, max_bpm: 178, seconds: 1684 },
-      { zone: 5, min_bpm: 178, max_bpm: 197, seconds: 111 },
+      { zone: 1, min_bpm: 0, max_bpm: 142, seconds: 103 },
+      { zone: 2, min_bpm: 142, max_bpm: 154, seconds: 146 },
+      { zone: 3, min_bpm: 154, max_bpm: 163, seconds: 330 },
+      { zone: 4, min_bpm: 163, max_bpm: 171, seconds: 1684 },
+      { zone: 5, min_bpm: 171, max_bpm: 190, seconds: 111 },
     ]);
     expect(detail.pace_zone_seconds).toBeNull();
   });
@@ -129,11 +129,11 @@ describe("mapActivityDetail", () => {
     };
     const detail = mapActivityDetail(noOwnBounds, sportSettingsRun);
     expect(detail.hr_zones).toEqual([
-      { zone: 1, min_bpm: 0, max_bpm: 147, seconds: 103 },
-      { zone: 2, min_bpm: 147, max_bpm: 160, seconds: 146 },
-      { zone: 3, min_bpm: 160, max_bpm: 169, seconds: 330 },
-      { zone: 4, min_bpm: 169, max_bpm: 178, seconds: 1684 },
-      { zone: 5, min_bpm: 178, max_bpm: 197, seconds: 111 },
+      { zone: 1, min_bpm: 0, max_bpm: 142, seconds: 103 },
+      { zone: 2, min_bpm: 142, max_bpm: 154, seconds: 146 },
+      { zone: 3, min_bpm: 154, max_bpm: 163, seconds: 330 },
+      { zone: 4, min_bpm: 163, max_bpm: 171, seconds: 1684 },
+      { zone: 5, min_bpm: 171, max_bpm: 190, seconds: 111 },
     ]);
   });
 
@@ -158,7 +158,7 @@ describe("mapActivityDetail", () => {
   it("does not fall back to sport settings when the activity's own bounds/times counts mismatch", () => {
     const mismatched: IntervalsActivity = {
       ...runActivityWithIntervals,
-      icu_hr_zones: [147, 160, 169],
+      icu_hr_zones: [142, 154, 163],
     };
     const detail = mapActivityDetail(mismatched, sportSettingsRun);
     expect(detail.hr_zones).toEqual([]);
@@ -274,13 +274,13 @@ describe("mapActivityDetail", () => {
     // group, distinct from the Run group's 5) is used even with no sport
     // settings passed in at all.
     expect(detail.hr_zones).toEqual([
-      { zone: 1, min_bpm: 0, max_bpm: 151, seconds: 3351 },
-      { zone: 2, min_bpm: 151, max_bpm: 160, seconds: 0 },
-      { zone: 3, min_bpm: 160, max_bpm: 169, seconds: 0 },
-      { zone: 4, min_bpm: 169, max_bpm: 178, seconds: 0 },
-      { zone: 5, min_bpm: 178, max_bpm: 183, seconds: 0 },
-      { zone: 6, min_bpm: 183, max_bpm: 188, seconds: 0 },
-      { zone: 7, min_bpm: 188, max_bpm: 197, seconds: 0 },
+      { zone: 1, min_bpm: 0, max_bpm: 146, seconds: 3351 },
+      { zone: 2, min_bpm: 146, max_bpm: 154, seconds: 0 },
+      { zone: 3, min_bpm: 154, max_bpm: 163, seconds: 0 },
+      { zone: 4, min_bpm: 163, max_bpm: 171, seconds: 0 },
+      { zone: 5, min_bpm: 171, max_bpm: 176, seconds: 0 },
+      { zone: 6, min_bpm: 176, max_bpm: 181, seconds: 0 },
+      { zone: 7, min_bpm: 181, max_bpm: 190, seconds: 0 },
     ]);
     expect(detail.intervals).toBeNull();
     expect(detail.gear_id).toBeNull();
@@ -312,7 +312,7 @@ describe("formatActivityDetailText", () => {
     expect(text).toContain("Dynamics:");
     expect(text).toContain("GCT 233 ms");
     expect(text).toContain("HR zones:");
-    expect(text).toContain("Z1 0-147");
+    expect(text).toContain("Z1 0-142");
     expect(text).toContain("Intervals:");
     expect(text).toContain("1. WORK:");
     expect(text).toContain("2. RECOVERY:");

@@ -44,6 +44,49 @@ function scrubActivity(a: Rec, i: number): Rec {
   delete out.oauth_client_id;
   for (const k of ["icu_athlete_id", "athlete_id"]) if (k in out) out[k] = "i0";
   if ("icu_weight" in out) out.icu_weight = 70;
+  return scrubHeartRateProfile(out);
+}
+
+/**
+ * Fixed synthetic heart-rate profile written over every captured threshold.
+ * Constants rather than a transform of the real values, because a scale
+ * factor committed to a public repo would be trivially reversible.
+ */
+const SYNTHETIC_HR = {
+  lthr: 172,
+  max: 190,
+  resting: 55,
+  zones: {
+    5: [142, 154, 163, 171, 190],
+    7: [146, 154, 163, 171, 176, 181, 190],
+  } as Record<number, number[]>,
+};
+
+/**
+ * Replaces LTHR, max HR, resting HR and zone boundaries with
+ * {@link SYNTHETIC_HR}. Applies to activities (`lthr`, `athlete_max_hr`,
+ * `icu_resting_hr`, `icu_hr_zones`) and sport settings (`lthr`, `max_hr`,
+ * `hr_zones`). A zone count with no fixed ladder gets an evenly spaced one
+ * ending at the synthetic max.
+ */
+function scrubHeartRateProfile(r: Rec): Rec {
+  const out: Rec = { ...r };
+  if (typeof out.lthr === "number") out.lthr = SYNTHETIC_HR.lthr;
+  for (const k of ["max_hr", "athlete_max_hr"]) {
+    if (typeof out[k] === "number") out[k] = SYNTHETIC_HR.max;
+  }
+  if (typeof out.icu_resting_hr === "number") {
+    out.icu_resting_hr = SYNTHETIC_HR.resting;
+  }
+  for (const k of ["hr_zones", "icu_hr_zones"]) {
+    const zones = out[k];
+    if (!Array.isArray(zones)) continue;
+    out[k] =
+      SYNTHETIC_HR.zones[zones.length] ??
+      zones.map((_, i) =>
+        Math.round(SYNTHETIC_HR.max * (0.7 + (0.3 * (i + 1)) / zones.length)),
+      );
+  }
   return out;
 }
 
@@ -348,7 +391,9 @@ function scrubActivityPaceCurves(data: Rec): Rec {
 
 write(
   "sport-settings-run.json",
-  scrubAthleteId((await get("/athlete/0/sport-settings/Run")) as Rec),
+  scrubHeartRateProfile(
+    scrubAthleteId((await get("/athlete/0/sport-settings/Run")) as Rec),
+  ),
 );
 const gear = (await get("/athlete/0/gear")) as Rec[];
 write("gear.json", gear.map(scrubAthleteId));

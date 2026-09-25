@@ -97,7 +97,7 @@ describe("schemas align with the real tool rawObjects", () => {
       efficiency_factor: 1.5,
       rpe: 5,
       feel: 4,
-      hr_zones: [{ zone: 1, min_bpm: 0, max_bpm: 147, seconds: 60 }],
+      hr_zones: [{ zone: 1, min_bpm: 0, max_bpm: 142, seconds: 60 }],
       pace_zone_seconds: null,
       running_dynamics: {
         stance_time_ms: 233,
@@ -125,7 +125,7 @@ describe("schemas align with the real tool rawObjects", () => {
         source: "activity",
         total_seconds: 60,
         zones: [
-          { zone: 1, min_bpm: 0, max_bpm: 147, seconds: 60, percent: 100 },
+          { zone: 1, min_bpm: 0, max_bpm: 142, seconds: 60, percent: 100 },
         ],
       },
       hr_zone_note: null,

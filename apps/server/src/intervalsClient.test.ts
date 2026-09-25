@@ -333,7 +333,7 @@ describe("intervalsClient", () => {
     expect(result.icu_lap_count).toBe(12);
     expect(result.icu_intervals_edited).toBe(true);
     expect(result.average_speed).toBeCloseTo(3.372);
-    expect(result.icu_hr_zones).toEqual([147, 160, 169, 178, 197]);
+    expect(result.icu_hr_zones).toEqual([142, 154, 163, 171, 190]);
     expect(result.icu_power_zones).toBeNull();
     expect(result.pace_zones).toBeNull();
     expect(result.race).toBe(false);

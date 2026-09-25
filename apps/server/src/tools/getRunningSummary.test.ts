@@ -79,11 +79,11 @@ describe("mapRunningSummary", () => {
       source: "activity",
       total_seconds: 2374,
       zones: [
-        { zone: 1, min_bpm: 0, max_bpm: 147, seconds: 103, percent: 4.3 },
-        { zone: 2, min_bpm: 147, max_bpm: 160, seconds: 146, percent: 6.1 },
-        { zone: 3, min_bpm: 160, max_bpm: 169, seconds: 330, percent: 13.9 },
-        { zone: 4, min_bpm: 169, max_bpm: 178, seconds: 1684, percent: 70.9 },
-        { zone: 5, min_bpm: 178, max_bpm: 197, seconds: 111, percent: 4.7 },
+        { zone: 1, min_bpm: 0, max_bpm: 142, seconds: 103, percent: 4.3 },
+        { zone: 2, min_bpm: 142, max_bpm: 154, seconds: 146, percent: 6.1 },
+        { zone: 3, min_bpm: 154, max_bpm: 163, seconds: 330, percent: 13.9 },
+        { zone: 4, min_bpm: 163, max_bpm: 171, seconds: 1684, percent: 70.9 },
+        { zone: 5, min_bpm: 171, max_bpm: 190, seconds: 111, percent: 4.7 },
       ],
     });
     expect(summary.hr_zone_note).toBeNull();
@@ -107,7 +107,7 @@ describe("mapRunningSummary", () => {
 
     expect(summary.hr_zone_summary?.source).toBe("sport_settings");
     expect(summary.hr_zone_summary?.zones.map((z) => z.max_bpm)).toEqual([
-      147, 160, 169, 178, 197,
+      142, 154, 163, 171, 190,
     ]);
   });
 
@@ -183,7 +183,7 @@ describe("formatRunningSummaryText", () => {
 
     expect(text).toContain("Cadence assessment: moderate");
     expect(text).toContain("Dynamics assessment: VO high");
-    expect(text).toContain("HR zones: Z1 0-147");
+    expect(text).toContain("HR zones: Z1 0-142");
     expect(text).toContain("Laps:");
     expect(text).toContain("(16 more)");
     expect(text).not.toContain("🏃");
