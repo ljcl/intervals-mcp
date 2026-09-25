@@ -129,7 +129,8 @@ breaking them has shipped bugs — do not work around them locally.
   `bun-version-file`; `dockerRuntime.test.ts` pins the Dockerfile's
   `FROM oven/bun:<tag>` lines to the same x.y.z, because Dependabot bumps the
   base image but never `packageManager`, and the lockfile must be resolved and
-  installed by the same Bun.
+  installed by the same Bun. The same test pins `.tool-versions` (mise/asdf)
+  so a local install cannot resolve the lockfile with a stale Bun.
 
 ## Key Directories
 
