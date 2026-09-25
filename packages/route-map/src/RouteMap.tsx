@@ -312,9 +312,10 @@ export function RouteMap({
 
     const distanceStream = data.streams?.distance;
     if (!distanceStream || distanceStream.length === 0) {
-      // The polyline fallback has coordinates but no distances, so there is
-      // nothing to measure a kilometre against. Say that rather than guess a
-      // position from the point index, which is only right at constant speed.
+      // A track can have coordinates but no distance stream (the server
+      // didn't get one back), so there is nothing to measure a kilometre
+      // against. Say that rather than guess a position from the point
+      // index, which is only right at constant speed.
       return {
         text: "This track has no recorded distances, so the map cannot be positioned by kilometre. Ask to reset the view instead.",
         isError: true,

@@ -26,10 +26,10 @@ describe("RouteMap accessibility wiring", () => {
     expect(labelledBy).toBeTruthy();
     expect(describedBy).toBeTruthy();
     expect(markup).toContain(
-      `<title id="${labelledBy}">Map of Golden Gate Park Loop, 8.23 kilometres</title>`,
+      `<title id="${labelledBy}">Map of Harbour Loop, 8.23 kilometres</title>`,
     );
     expect(markup).toContain(
-      `<desc id="${describedBy}">Map of Run activity &quot;Golden Gate Park Loop&quot;. 8.2 km with 96 m of climbing. A loop returning to its start,`,
+      `<desc id="${describedBy}">Map of Run activity &quot;Harbour Loop&quot;. 8.2 km with 96 m of climbing. A loop returning to its start,`,
     );
   });
 
@@ -38,7 +38,7 @@ describe("RouteMap accessibility wiring", () => {
       <RouteMap data={loopActivity} basemapEnabled={true} />,
     );
     expect(markup).toMatch(
-      /<p class="[^"]*srOnly[^"]*">Map of Run activity &quot;Golden Gate Park Loop&quot;\./,
+      /<p class="[^"]*srOnly[^"]*">Map of Run activity &quot;Harbour Loop&quot;\./,
     );
   });
 
@@ -53,9 +53,7 @@ describe("RouteMap accessibility wiring", () => {
     const markup = renderToStaticMarkup(
       <RouteMap data={withAltitude} basemapEnabled={false} />,
     );
-    expect(markup).toContain(
-      'aria-label="Elevation profile of Golden Gate Park Loop"',
-    );
+    expect(markup).toContain('aria-label="Elevation profile of Harbour Loop"');
     const [, stripDescribedBy] =
       markup.match(
         /aria-label="Elevation profile[^"]*" aria-describedby="([^"]+)"/,

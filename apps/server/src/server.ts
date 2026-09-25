@@ -26,7 +26,6 @@ import {
   type CadenceTrendData,
 } from "./cadenceTrendData";
 import { getIntervalsApiKey, getTimeZone } from "./config";
-import { RateLimitError } from "./fetchClient";
 import {
   computeFlags,
   type FitnessTrendResult,
@@ -47,26 +46,14 @@ import {
   type IntervalsStreamType,
   loadIntervalsStreams,
 } from "./intervalsStreams";
-import {
-  cumulativeDistances,
-  indexAtDistance,
-  type ResolvedWaypoint,
-  resolveWaypoints,
-  type WaypointInput,
-} from "./mapAnchors";
-import { decodePolyline } from "./polyline";
+import { type WaypointInput } from "./mapAnchors";
 import {
   createProgressReporter,
   NO_PROGRESS,
   type ReportProgress,
 } from "./progress";
 import { getPrompt, listPrompts } from "./prompts";
-import {
-  getActivityById,
-  getActivityLaps,
-  getActivityStreams,
-  StreamsUnavailableError,
-} from "./stravaClient";
+import { buildRouteMapData, type RouteMapData } from "./routeMapData";
 import {
   recordToolCall,
   type ToolCallRecord,
@@ -76,7 +63,6 @@ import { READ_ONLY } from "./tools/_annotations";
 import { toolErrorText } from "./tools/_errors";
 import {
   intervalsActivityIdInput,
-  stravaIdInput,
   stravaIdJsonSchemaOverride,
 } from "./tools/_ids";
 import {
@@ -258,11 +244,13 @@ const APP_TOOL_INPUT_SCHEMAS: Record<string, z.ZodType> = {
   "view-cadence-trends": z.object({ weeks: weeksInput }),
   "get-cadence-trend-data": z.object({ weeks: weeksInput }),
   "view-route-map": z.object({
-    activity_id: stravaIdInput("The Strava activity ID to map."),
+    activity_id: intervalsActivityIdInput(
+      "The intervals.icu activity id to map.",
+    ),
     waypoints: waypointsInput,
   }),
   "get-route-map-data": z.object({
-    activity_id: stravaIdInput("The Strava activity ID."),
+    activity_id: intervalsActivityIdInput("The intervals.icu activity id."),
     waypoints: waypointsInput,
   }),
   "view-training-load": trainingLoadInput,
@@ -387,9 +375,9 @@ interface ToolDef {
 
 /**
  * Every tool implementation, all intervals.icu-backed (via
- * intervalsClient.ts). The transitional stravaClient.ts is called only by
- * this file's Phase 4 app data handlers (activity-chart, cadence-trends,
- * route-map), not by any tool.
+ * intervalsClient.ts). This file's Phase 4 app data handlers
+ * (activity-chart, cadence-trends, route-map) are intervals.icu-backed too;
+ * the transitional stravaClient.ts has no remaining production caller.
  */
 const TOOLS = [
   getAthleteStatsTool,
@@ -509,8 +497,8 @@ function buildToolDefs(): ToolDef[] {
   defs.push({
     name: "get-route-map-data",
     description:
-      "Internal data feed for the route-map UI: returns decoded [lat, lng] coordinates plus start/end points, distance, elevation gain, and (for activities with GPS streams) index-aligned metric streams (time, distance, altitude, heartrate, watts, velocity_smooth, grade_smooth) " +
-      "and annotation anchors (lap boundaries, caller-supplied distance-anchored waypoints) for one activity as JSON. " +
+      "Internal data feed for the route-map UI: returns [lat, lng] coordinates from the activity's recorded GPS track plus start/end points, distance, elevation gain, and (for activities with GPS streams) index-aligned metric streams (time, distance, altitude, heartrate, watts, velocity_smooth, grade_smooth) " +
+      "and annotation anchors (WORK-interval end markers, caller-supplied distance-anchored waypoints) for one activity as JSON. " +
       "The view-route-map app calls this; not intended for direct model use.",
     inputSchema: toInputSchema(APP_TOOL_INPUT_SCHEMAS["get-route-map-data"]!),
     annotations: READ_ONLY,
@@ -1037,308 +1025,63 @@ async function handleViewActivityZones(
   lines.push("", "[Interactive zone distribution chart rendered above]");
   return { content: [{ type: "text", text: lines.join("\n") }] };
 }
-
-/** Metric streams aligned index-for-index with `coordinates`. */
-interface RouteMapStreams {
-  time?: number[];
-  distance?: number[];
-  altitude?: number[];
-  heartrate?: number[];
-  watts?: number[];
-  velocity_smooth?: number[];
-  grade_smooth?: number[];
-}
-
-/** Annotation anchors, as indices into `coordinates`. */
-interface RouteMapAnnotations {
-  /** Lap boundaries (each lap's end), present when the activity has 2+ laps. */
-  laps?: Array<{ lapIndex: number; name: string; endIndex: number }>;
-  /** Caller-supplied waypoints anchored by cumulative distance. */
-  waypoints?: ResolvedWaypoint[];
-}
-
-interface RouteMapData {
-  source: "activity";
-  id: string;
-  name: string;
-  activityType: string | null;
-  distance: number;
-  elevationGain: number;
-  coordinates: Array<[number, number]>;
-  start: [number, number] | null;
-  end: [number, number] | null;
-  streams?: RouteMapStreams;
-  annotations?: RouteMapAnnotations;
-  /** Human-readable notes about waypoints that could not be placed. */
-  waypointWarnings?: string[];
-  /** Human-readable notes about optional annotation layers that could not be
-   * fetched, each naming the layer and the reason. */
-  layerWarnings?: string[];
-}
-
-const ROUTE_MAP_METRIC_STREAM_KEYS = [
-  "time",
+/** Stream types the route-map app needs: latlng plus the chartable metrics. */
+const ROUTE_MAP_STREAM_TYPES: IntervalsStreamType[] = [
+  "latlng",
   "distance",
   "altitude",
   "heartrate",
   "watts",
   "velocity_smooth",
   "grade_smooth",
-] as const;
+];
 
 /**
- * Fetch the latlng stream plus metric streams for an activity. All streams in
- * one Strava response share the same sample index, so latlng[i] lines up with
- * heartrate[i] etc. — the app can color the track without resampling. Returns
- * null when the activity has no GPS stream (the caller falls back to the
- * encoded polyline, which has no aligned metrics).
- */
-async function loadActivityMapStreams(
-  token: string,
-  activityId: string,
-): Promise<{
-  coordinates: Array<[number, number]>;
-  streams: RouteMapStreams;
-} | null> {
-  let byType: Awaited<ReturnType<typeof getActivityStreams>>;
-  try {
-    byType = await getActivityStreams(
-      token,
-      activityId,
-      ["latlng", ...ROUTE_MAP_METRIC_STREAM_KEYS],
-      { seriesType: "time", resolution: "medium" },
-    );
-  } catch (error) {
-    // Streams are an enhancement: an activity that recorded none still renders
-    // from the polyline. An expired token or an exhausted rate limit is not
-    // that, and must not be silently downgraded to a metric-less map.
-    if (error instanceof StreamsUnavailableError) return null;
-    throw error;
-  }
-
-  const latlng = byType.get("latlng") as Array<[number, number]> | undefined;
-  if (!latlng || latlng.length === 0) return null;
-
-  const streams: RouteMapStreams = {};
-  for (const key of ROUTE_MAP_METRIC_STREAM_KEYS) {
-    const data = byType.get(key);
-    // Only forward streams that align with the coordinates; a mismatched
-    // length would color the wrong part of the track.
-    if (Array.isArray(data) && data.length === latlng.length) {
-      streams[key] = data as number[];
-    }
-  }
-  return { coordinates: latlng, streams };
-}
-
-/**
- * Anchor caller-supplied waypoints onto the loaded geometry, in place. Uses
- * the recorded distance stream when present; polyline-fallback activities get
- * a synthetic haversine cumulative stream instead. Out-of-range waypoints
- * become a `waypointWarnings` note (surfaced by the view tool's text) instead
- * of an error or an off-track marker.
- */
-function attachWaypoints(
-  data: RouteMapData,
-  waypoints: WaypointInput[] | undefined,
-): RouteMapData {
-  if (!waypoints || waypoints.length === 0) return data;
-  if (data.coordinates.length === 0) return data;
-
-  const recorded = data.streams?.distance;
-  const distanceStream =
-    recorded && recorded.length === data.coordinates.length
-      ? recorded
-      : cumulativeDistances(data.coordinates);
-  const { resolved, dropped } = resolveWaypoints(
-    waypoints,
-    distanceStream,
-    data.distance,
-  );
-
-  if (resolved.length > 0) {
-    data.annotations = { ...data.annotations, waypoints: resolved };
-  }
-  if (dropped.length > 0) {
-    const labels = dropped.map((w) => `"${w.label}" (${w.km} km)`).join(", ");
-    data.waypointWarnings = [
-      `Dropped ${dropped.length} waypoint${dropped.length === 1 ? "" : "s"} beyond the ${(data.distance / 1000).toFixed(1)} km track: ${labels}.`,
-    ];
-  }
-  return data;
-}
-
-/**
- * Resolve an activity_id into a decoded, render-ready payload. Geometry
- * arrives only as a Google encoded polyline, so we decode here (next to the
- * zod schemas and unit tests) and hand the app plain [lat, lng] pairs.
+ * Resolve an activity_id into a route-map payload. intervals.icu has no
+ * encoded-polyline endpoint (research note 2026-09-25 section 6), so the
+ * geometry always comes from the latlng stream, jointly downsampled with the
+ * metric streams and annotated with WORK-interval end markers
+ * (`buildRouteMapData`, `routeMapData.ts`) and any caller waypoints. A
+ * genuinely stream-less activity (e.g. a manual entry) comes back with empty
+ * `coordinates`; the view tool's "No GPS track" text covers that case.
  */
 async function loadRouteMapData(
   args: Record<string, unknown>,
   token: string,
-  options: { includeStreams?: boolean } = {},
-): Promise<RouteMapData> {
-  return attachWaypoints(
-    await loadRouteMapGeometry(args, token, options),
-    args.waypoints as WaypointInput[] | undefined,
-  );
-}
-
-/** The geometry + annotation half of `loadRouteMapData` (pre-waypoints). */
-async function loadRouteMapGeometry(
-  args: Record<string, unknown>,
-  token: string,
-  options: { includeStreams?: boolean } = {},
 ): Promise<RouteMapData> {
   const activityId = args.activity_id ? String(args.activity_id) : undefined;
-
   if (!activityId) {
     throw new Error("activity_id is required.");
   }
 
-  const [activity, streamData] = await Promise.all([
-    getActivityById(token, activityId),
-    options.includeStreams
-      ? loadActivityMapStreams(token, activityId)
-      : Promise.resolve(null),
-  ]);
-  // Prefer the latlng stream over the polyline: it is index-aligned with
-  // the metric streams, so the app can color the track by them.
-  if (streamData) {
-    const { annotations, layerWarnings } = await loadRouteMapAnnotations(
+  const activity = await getIntervalsActivity(token, activityId, {
+    intervals: true,
+  });
+
+  let streams: Awaited<ReturnType<typeof loadIntervalsStreams>> | null = null;
+  try {
+    streams = await loadIntervalsStreams(
       token,
       activityId,
-      streamData.coordinates,
-      streamData.streams.distance,
+      ROUTE_MAP_STREAM_TYPES,
     );
-    return {
-      source: "activity",
-      id: String(activity.id),
-      name: activity.name,
-      activityType: activity.type ?? null,
-      distance: activity.distance ?? 0,
-      elevationGain: activity.total_elevation_gain ?? 0,
-      coordinates: streamData.coordinates,
-      start: streamData.coordinates[0] ?? null,
-      end: streamData.coordinates[streamData.coordinates.length - 1] ?? null,
-      streams: streamData.streams,
-      annotations,
-      ...(layerWarnings ? { layerWarnings } : {}),
-    };
-  }
-  const encoded =
-    activity.map?.polyline || activity.map?.summary_polyline || "";
-  const coordinates = decodePolyline(encoded);
-  return {
-    source: "activity",
-    id: String(activity.id),
-    name: activity.name,
-    activityType: activity.type ?? null,
-    distance: activity.distance ?? 0,
-    elevationGain: activity.total_elevation_gain ?? 0,
-    coordinates,
-    start: coordinates[0] ?? null,
-    end: coordinates[coordinates.length - 1] ?? null,
-  };
-}
-
-/**
- * An optional annotation layer could not be fetched: drop the layer, keep the
- * map.
- *
- * The geometry is already in hand by the time these layers are fetched, so
- * failing the call would turn "a map without lap markers" into "no map at all"
- * — strictly worse for the athlete, an exhausted quota included. But a
- * failure must never be misreported as an absence, so the layer is dropped
- * *and* the loss is stated: the reason is logged and recorded in
- * `layerWarnings`, which `view-route-map`'s text surfaces beside
- * `waypointWarnings`. A rate limit quotes `RateLimitError.detail` — the bare
- * window description — rather than the internal call that happened to hit it.
- *
- * Report every cause, not only the quota, and never swallow one with a bare
- * `catch {}`: a refused token and a malformed response look exactly as much
- * like "this activity has no lap markers" as a 429 does.
- */
-function dropOptionalLayer(
-  layer: string,
-  activityId: string,
-  error: unknown,
-  warnings: string[],
-): void {
-  console.error(
-    `route-map: ${layer} unavailable for activity ${activityId} (${
-      error instanceof Error ? error.message : String(error)
-    }); the map renders without them.`,
-  );
-  const reason =
-    error instanceof RateLimitError
-      ? error.detail
-      : error instanceof Error
-        ? error.message
-        : String(error);
-  warnings.push(
-    `Dropped ${layer}: ${reason.trim().replace(/\.$/, "")}. The map renders without them.`,
-  );
-}
-
-/**
- * Resolve lap boundaries into indices on the (downsampled) coordinate
- * stream. The layer degrades independently: a failed laps fetch drops it,
- * with a log line and a caller-visible `layerWarnings` note saying why,
- * rather than failing the map. See {@link dropOptionalLayer}.
- */
-async function loadRouteMapAnnotations(
-  token: string,
-  activityId: string,
-  coordinates: Array<[number, number]>,
-  distanceStream: number[] | undefined,
-): Promise<{
-  annotations?: RouteMapAnnotations;
-  layerWarnings?: string[];
-}> {
-  const annotations: RouteMapAnnotations = {};
-  const layerWarnings: string[] = [];
-
-  // Laps: anchor each lap's end by cumulative distance. Strava's lap
-  // start/end indices refer to the full-resolution stream, so they cannot be
-  // used against the medium-resolution coordinates. A single-lap activity
-  // gets no markers (the whole track is one lap); the final lap's end is the
-  // finish marker, so it is skipped too.
-  if (distanceStream && distanceStream.length === coordinates.length) {
-    try {
-      const laps = await getActivityLaps(token, activityId);
-      if (laps.length >= 2) {
-        let cumulative = 0;
-        const lapMarkers = [];
-        for (const lap of laps.slice(0, -1)) {
-          cumulative += lap.distance;
-          const endIndex = indexAtDistance(distanceStream, cumulative);
-          if (endIndex >= 0) {
-            lapMarkers.push({
-              lapIndex: lap.lap_index,
-              name: lap.name,
-              endIndex,
-            });
-          }
-        }
-        if (lapMarkers.length > 0) annotations.laps = lapMarkers;
-      }
-    } catch (error) {
-      dropOptionalLayer("lap markers", activityId, error, layerWarnings);
-    }
+  } catch (error) {
+    if (!(error instanceof IntervalsStreamsUnavailableError)) throw error;
   }
 
-  return {
-    ...(Object.keys(annotations).length > 0 ? { annotations } : {}),
-    ...(layerWarnings.length > 0 ? { layerWarnings } : {}),
-  };
+  return buildRouteMapData(
+    activity,
+    streams,
+    activity.icu_intervals ?? [],
+    args.waypoints as WaypointInput[] | undefined,
+  );
 }
 
 async function handleGetRouteMapData(
   args: Record<string, unknown>,
   token: string,
 ): Promise<ToolCallResult> {
-  const data = await loadRouteMapData(args, token, { includeStreams: true });
+  const data = await loadRouteMapData(args, token);
   return { content: [{ type: "text", text: JSON.stringify(data) }] };
 }
 
@@ -1362,9 +1105,6 @@ async function handleViewRouteMap(
     );
   }
   for (const warning of data.waypointWarnings ?? []) {
-    lines.push(`Warning: ${warning}`);
-  }
-  for (const warning of data.layerWarnings ?? []) {
     lines.push(`Warning: ${warning}`);
   }
   lines.push("", "[Interactive route map rendered above]");

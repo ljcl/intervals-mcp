@@ -201,7 +201,9 @@ describe("dispatchToolCall input validation", () => {
         field === "get-interval-analysis.id" ||
         field === "update-activity.id" ||
         field === "view-activity-chart.activity_id" ||
-        field === "get-activity-streams-raw.activity_id"
+        field === "get-activity-streams-raw.activity_id" ||
+        field === "view-route-map.activity_id" ||
+        field === "get-route-map-data.activity_id"
           ? "^i?\\d+$"
           : "^\\d+$";
       expect(`${field}: ${schema.type}`).toBe(`${field}: string`);

@@ -123,3 +123,24 @@ export function lastValuePerBucket(
     bucketLast(data, start, end),
   );
 }
+
+/**
+ * The first index in `time` whose value is `>= target`, or the last index
+ * when every sample is below `target` (e.g. an interval that runs to the
+ * recording's end). `time` is assumed sorted ascending: every caller passes
+ * a gap-filled, downsampled time array. Empty `time` returns 0. Shared by
+ * `activityChartData.ts` (interval bands) and `routeMapData.ts` (WORK-end
+ * markers): both remap an intervals.icu interval's `start_time`/`end_time`
+ * onto a downsampled time array whose indices no longer match the raw
+ * stream's.
+ */
+export function indexAtOrAfterTime(
+  time: readonly number[],
+  target: number,
+): number {
+  if (time.length === 0) return 0;
+  for (let i = 0; i < time.length; i += 1) {
+    if ((time[i] as number) >= target) return i;
+  }
+  return time.length - 1;
+}

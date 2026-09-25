@@ -13,11 +13,10 @@ identity, so renames or schema reshapes re-prompt every user. See
 > `get-fitness-trend`, `get-training-load`, and `get-running-dynamics` are
 > exercised by `scripts/live-check.ts`; `update-activity`'s write path was
 > verified once, separately, with explicit user approval, see
-> docs/api-notes.md). Still Strava-backed, and failing with a "not yet
-> ported" error until Phase 4: the `cadence-trends` and `route-map` app data
-> handlers (see [Visualization tools](#visualization-tools)); `activity-chart`
-> is ported (Phase 4 task 1) and every other app tool below already talks to
-> intervals.icu.
+> docs/api-notes.md). Every MCP App tool below (see
+> [Visualization tools](#visualization-tools)), including `route-map`
+> (Phase 4 task 5), now talks to intervals.icu directly; `stravaClient.ts`
+> has no remaining production caller.
 
 ## intervals.icu tools
 
@@ -388,10 +387,10 @@ warning rather than failing the call.
 Each `view-*` MCP App has an app-only `get-*-data` companion that fetches what
 the UI renders. `view-compare-activities`/`get-compare-activities-data`,
 `view-activity-zones`/`get-activity-zones-data`,
-`view-fitness-trend`/`get-fitness-trend-data`, and
-`view-training-load`/`get-training-load-data`, and `view-activity-chart`/
-`get-activity-streams-raw` are ported to intervals.icu; `cadence-trends` and
-`route-map` are still Strava-backed, pending Phase 4.
+`view-fitness-trend`/`get-fitness-trend-data`,
+`view-training-load`/`get-training-load-data`, `view-activity-chart`/
+`get-activity-streams-raw`, `view-cadence-trends`/`get-cadence-trend-data`,
+and `view-route-map`/`get-route-map-data` are all ported to intervals.icu.
 
 | Tool | Description |
 | ---- | ----------- |
@@ -400,7 +399,7 @@ the UI renders. `view-compare-activities`/`get-compare-activities-data`,
 | `view-cadence-trends` | Interactive cadence trends with timeline, scatter, zones, and overlay views (MCP App) |
 | `get-cadence-trend-data` | Summary cadence/pace data for the cadence trends UI (app-only) |
 | `view-route-map` | Interactive map of an activity's GPS track, fit to bounds with start/finish markers; optional distance-anchored waypoints (MCP App) |
-| `get-route-map-data` | Decoded `[lat, lng]` coordinates plus index-aligned metric streams for the route map UI (app-only) |
+| `get-route-map-data` | `[lat, lng]` coordinates from the activity's latlng stream plus index-aligned metric streams and WORK-interval end markers for the route map UI (app-only) |
 | `view-training-load` | Weekly running-volume bars with a rolling trend line and injury-risk warning weeks (MCP App) |
 | `get-training-load-data` | Per-week volume, trend value, warning flags, weekly load, and current CTL/ATL/TSB for the training-load UI (app-only) |
 | `view-compare-activities` | Interactive overlay of two activities' streams on a shared distance/time axis with a delta summary (MCP App) |

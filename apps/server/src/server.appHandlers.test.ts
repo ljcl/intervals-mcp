@@ -1,12 +1,12 @@
 /**
  * Success and error paths for the MCP App tool handlers in server.ts (#115).
- * Table-driven through dispatchToolCall — the same path the host uses — with
- * the Strava client mocked. The missing-key table pins the regression where
- * those early returns lacked `isError: true` and surfaced as ordinary content.
+ * Table-driven through dispatchToolCall, the same path the host uses, with
+ * the intervals.icu client mocked. The missing-key table pins the regression
+ * where those early returns lacked `isError: true` and surfaced as ordinary
+ * content.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { handledRateLimit } from "./__fixtures__";
-import { HttpError, RateLimitError, stravaApi } from "./fetchClient";
+import { RateLimitError } from "./fetchClient";
 import { ATL_TIME_CONSTANT_DAYS, CTL_TIME_CONSTANT_DAYS } from "./fitnessTrend";
 import {
   getActivity as getIntervalsActivityFn,
@@ -16,21 +16,7 @@ import {
   type IntervalsWellness,
   listActivities as listActivitiesFn,
 } from "./intervalsClient";
-import {
-  getActivityById,
-  getActivityLaps,
-  type StravaDetailedActivity,
-} from "./stravaClient";
 import { addDays } from "./utils/localDate";
-
-vi.mock("./stravaClient", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./stravaClient")>();
-  return {
-    ...actual,
-    getActivityById: vi.fn(),
-    getActivityLaps: vi.fn(),
-  };
-});
 
 vi.mock("./intervalsClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./intervalsClient")>();
@@ -40,14 +26,6 @@ vi.mock("./intervalsClient", async (importOriginal) => {
     getActivityStreams: vi.fn(),
     getWellness: vi.fn(),
     listActivities: vi.fn(),
-  };
-});
-
-vi.mock("./fetchClient", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./fetchClient")>();
-  return {
-    ...actual,
-    stravaApi: { get: vi.fn() },
   };
 });
 
@@ -67,36 +45,10 @@ const { dispatchToolCall } = await import("./server");
 const { getIntervalsApiKey, MissingApiKeyError } = await import("./config");
 const mockedToken = vi.mocked(getIntervalsApiKey);
 
-const mockedById = vi.mocked(getActivityById);
-const mockedLaps = vi.mocked(getActivityLaps);
 const mockedIntervalsActivity = vi.mocked(getIntervalsActivityFn);
 const mockedIntervalsStreams = vi.mocked(getIntervalsStreamsFn);
 const mockedWellness = vi.mocked(getWellnessFn);
 const mockedIntervalsList = vi.mocked(listActivitiesFn);
-const mockedApiGet = vi.mocked(stravaApi.get);
-
-// Google's polyline example: three points near (38.5, -120.2).
-const POLYLINE = "_p~iF~ps|U_ulLnnqC_mqNvxq`@";
-
-function detailedActivity(
-  overrides: Record<string, unknown> = {},
-): StravaDetailedActivity {
-  return {
-    id: "123",
-    name: "Morning Run",
-    type: "Run",
-    sport_type: "Run",
-    start_date: "2026-06-01T07:00:00Z",
-    start_date_local: "2026-06-01T07:00:00Z",
-    distance: 10000,
-    moving_time: 3000,
-    total_elevation_gain: 120,
-    average_speed: 3.33,
-    average_heartrate: 150,
-    map: { summary_polyline: POLYLINE },
-    ...overrides,
-  } as unknown as StravaDetailedActivity;
-}
 
 function intervalsActivity(
   overrides: Partial<IntervalsActivity> = {},
@@ -801,9 +753,31 @@ describe("fitness trend handlers", () => {
   });
 });
 
+/** A minimal intervals.icu raw stream set: latlng plus distance, index-aligned to `time`. */
+function routeMapStreamsFixture(
+  overrides: Partial<{
+    time: number[];
+    lat: Array<number | null>;
+    lng: Array<number | null>;
+    distance: number[];
+  }> = {},
+) {
+  const time = overrides.time ?? [0, 1, 2];
+  const lat = overrides.lat ?? [38.5, 40.7, 43.252];
+  const lng = overrides.lng ?? [-120.2, -120.95, -126.453];
+  return [
+    { type: "time", data: time },
+    { type: "latlng", data: lat, data2: lng },
+    { type: "distance", data: overrides.distance ?? [0, 5000, 10000] },
+  ];
+}
+
 describe("route map handlers", () => {
-  it("view-route-map decodes an activity polyline", async () => {
-    mockedById.mockResolvedValueOnce(detailedActivity());
+  it("view-route-map summarises distance and elevation for the model", async () => {
+    mockedIntervalsActivity.mockResolvedValueOnce(
+      intervalsActivity({ total_elevation_gain: 120 }),
+    );
+    mockedIntervalsStreams.mockResolvedValueOnce(routeMapStreamsFixture());
 
     const result = await dispatchToolCall("view-route-map", {
       activity_id: "123",
@@ -817,7 +791,9 @@ describe("route map handlers", () => {
   });
 
   it("view-route-map flags an empty track", async () => {
-    mockedById.mockResolvedValueOnce(detailedActivity({ map: {} }));
+    mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
+    // intervals.icu returns no streams for a manual/no-GPS entry.
+    mockedIntervalsStreams.mockResolvedValueOnce([]);
 
     const result = await dispatchToolCall("view-route-map", {
       activity_id: "123",
@@ -827,20 +803,9 @@ describe("route map handlers", () => {
     expect(result.content[0]?.text).toContain("No GPS track is available");
   });
 
-  it("get-route-map-data prefers latlng streams over the polyline", async () => {
-    const coords: Array<[number, number]> = [
-      [38.5, -120.2],
-      [40.7, -120.95],
-      [43.252, -126.453],
-    ];
-    mockedById.mockResolvedValueOnce(detailedActivity());
-    mockedApiGet.mockResolvedValueOnce({
-      data: [
-        { type: "latlng", data: coords },
-        { type: "distance", data: [0, 5000, 10000] },
-      ],
-    } as never);
-    mockedLaps.mockResolvedValueOnce([]);
+  it("get-route-map-data returns coordinates from the latlng stream with aligned metrics", async () => {
+    mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
+    mockedIntervalsStreams.mockResolvedValueOnce(routeMapStreamsFixture());
 
     const result = await dispatchToolCall("get-route-map-data", {
       activity_id: "123",
@@ -849,54 +814,22 @@ describe("route map handlers", () => {
     expect(result.isError).toBeUndefined();
     const parsed = JSON.parse(result.content[0]?.text ?? "");
     expect(parsed.source).toBe("activity");
-    expect(parsed.coordinates).toEqual(coords);
-    expect(parsed.streams.distance).toEqual([0, 5000, 10000]);
-  });
-
-  it("get-route-map-data still renders the map when the lap layer hits a rate limit", async () => {
-    // The lap layer sat behind a bare `catch {}`, so an exhausted quota lost
-    // the markers with nothing said — #237 again, one layer down. The
-    // geometry is already fetched by then, so the fix is a warning naming
-    // the exhausted window, not the loss of the whole map.
-    const coords: Array<[number, number]> = [
+    expect(parsed.coordinates).toEqual([
       [38.5, -120.2],
       [40.7, -120.95],
       [43.252, -126.453],
-    ];
-    mockedById.mockResolvedValueOnce(detailedActivity());
-    mockedApiGet.mockResolvedValueOnce({
-      data: [
-        { type: "latlng", data: coords },
-        { type: "distance", data: [0, 5000, 10000] },
-      ],
-    } as never);
-    mockedLaps.mockRejectedValueOnce(handledRateLimit("getActivityLaps(123)"));
-    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
-
-    const result = await dispatchToolCall("get-route-map-data", {
-      activity_id: "123",
-    });
-
-    expect(result.isError).toBeUndefined();
-    const parsed = JSON.parse(result.content[0]?.text ?? "");
-    expect(parsed.coordinates).toEqual(coords);
-    expect(parsed.annotations?.laps).toBeUndefined();
-    expect(parsed.layerWarnings).toEqual([
-      "Dropped lap markers: 15-minute rate limit reached (100/100 requests). The map renders without them.",
     ]);
-    // The bare window description, not the internal call that hit it.
-    expect(parsed.layerWarnings[0]).not.toContain("getActivityLaps");
-    logged.mockRestore();
+    expect(parsed.streams.distance).toEqual([0, 5000, 10000]);
   });
 
-  it("get-route-map-data falls back to the polyline for a stream-less activity", async () => {
-    mockedById.mockResolvedValueOnce(detailedActivity());
-    // Strava answers 404 for an activity that recorded no samples.
-    mockedApiGet.mockRejectedValueOnce(
-      new HttpError("HTTP 404: Record Not Found", {
-        status: 404,
-        statusText: "Not Found",
-        data: "Record Not Found",
+  it("get-route-map-data drops samples whose latlng is null", async () => {
+    mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
+    mockedIntervalsStreams.mockResolvedValueOnce(
+      routeMapStreamsFixture({
+        time: [0, 1, 2, 3],
+        lat: [null, 38.5, 40.7, null],
+        lng: [null, -120.2, -120.95, null],
+        distance: [0, 100, 5000, 9000],
       }),
     );
 
@@ -906,15 +839,70 @@ describe("route map handlers", () => {
 
     expect(result.isError).toBeUndefined();
     const parsed = JSON.parse(result.content[0]?.text ?? "");
-    expect(parsed.coordinates).toHaveLength(3);
+    expect(parsed.coordinates).toEqual([
+      [38.5, -120.2],
+      [40.7, -120.95],
+    ]);
+  });
+
+  it("get-route-map-data marks only WORK interval ends, one finish marker for a one-lap run", async () => {
+    mockedIntervalsActivity.mockResolvedValueOnce(
+      intervalsActivity({
+        icu_intervals: [{ type: "WORK", start_time: 0, end_time: 2 }],
+      }),
+    );
+    mockedIntervalsStreams.mockResolvedValueOnce(routeMapStreamsFixture());
+
+    const result = await dispatchToolCall("get-route-map-data", {
+      activity_id: "123",
+    });
+
+    expect(result.isError).toBeUndefined();
+    const parsed = JSON.parse(result.content[0]?.text ?? "");
+    expect(parsed.annotations.laps).toEqual([
+      { lapIndex: 1, name: "Lap 1", endIndex: 2 },
+    ]);
+  });
+
+  it("get-route-map-data skips RECOVERY intervals when marking laps", async () => {
+    mockedIntervalsActivity.mockResolvedValueOnce(
+      intervalsActivity({
+        icu_intervals: [
+          { type: "WORK", start_time: 0, end_time: 1 },
+          { type: "RECOVERY", start_time: 1, end_time: 2 },
+        ],
+      }),
+    );
+    mockedIntervalsStreams.mockResolvedValueOnce(routeMapStreamsFixture());
+
+    const result = await dispatchToolCall("get-route-map-data", {
+      activity_id: "123",
+    });
+
+    expect(result.isError).toBeUndefined();
+    const parsed = JSON.parse(result.content[0]?.text ?? "");
+    expect(parsed.annotations.laps).toHaveLength(1);
+    expect(parsed.annotations.laps[0].name).toBe("Lap 1");
+  });
+
+  it("get-route-map-data returns empty coordinates for a stream-less activity", async () => {
+    mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
+    // intervals.icu returns no streams for a manual/no-GPS entry.
+    mockedIntervalsStreams.mockResolvedValueOnce([]);
+
+    const result = await dispatchToolCall("get-route-map-data", {
+      activity_id: "123",
+    });
+
+    expect(result.isError).toBeUndefined();
+    const parsed = JSON.parse(result.content[0]?.text ?? "");
+    expect(parsed.coordinates).toEqual([]);
     expect(parsed.streams).toBeUndefined();
   });
 
   it("get-route-map-data reports a rate limit rather than silently dropping streams", async () => {
-    // #237: an exhausted quota used to be swallowed into the polyline path,
-    // so the user got a metric-less map with no hint that waiting would fix it.
-    mockedById.mockResolvedValueOnce(detailedActivity());
-    mockedApiGet.mockRejectedValueOnce(
+    mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
+    mockedIntervalsStreams.mockRejectedValueOnce(
       new RateLimitError(
         "15-minute rate limit reached (100/100 requests).",
         { status: 429, statusText: "Too Many Requests", data: "" },
@@ -932,19 +920,8 @@ describe("route map handlers", () => {
   });
 
   it("get-route-map-data anchors waypoints on the distance stream and drops out-of-range ones", async () => {
-    const coords: Array<[number, number]> = [
-      [38.5, -120.2],
-      [40.7, -120.95],
-      [43.252, -126.453],
-    ];
-    mockedById.mockResolvedValueOnce(detailedActivity());
-    mockedApiGet.mockResolvedValueOnce({
-      data: [
-        { type: "latlng", data: coords },
-        { type: "distance", data: [0, 5000, 10000] },
-      ],
-    } as never);
-    mockedLaps.mockResolvedValueOnce([]);
+    mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
+    mockedIntervalsStreams.mockResolvedValueOnce(routeMapStreamsFixture());
 
     const result = await dispatchToolCall("get-route-map-data", {
       activity_id: "123",
@@ -967,7 +944,8 @@ describe("route map handlers", () => {
   });
 
   it("view-route-map reports pinned waypoints and warns about dropped ones", async () => {
-    mockedById.mockResolvedValueOnce(detailedActivity());
+    mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
+    mockedIntervalsStreams.mockResolvedValueOnce(routeMapStreamsFixture());
 
     const result = await dispatchToolCall("view-route-map", {
       activity_id: "123",

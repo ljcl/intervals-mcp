@@ -29,7 +29,11 @@ import {
   type IntervalsInterval,
 } from "./intervalsClient";
 import { type IntervalsStreams } from "./intervalsStreams";
-import { type Columns, downsampleColumns } from "./streamDownsample";
+import {
+  type Columns,
+  downsampleColumns,
+  indexAtOrAfterTime,
+} from "./streamDownsample";
 
 /** Points per stream after downsampling; matches Strava's old "medium" resolution. */
 export const MAX_CHART_POINTS = 1000;
@@ -151,20 +155,6 @@ export function fillGaps(data: ReadonlyArray<number | null>): number[] {
   }
 
   return result as number[];
-}
-
-/**
- * The first index in `time` whose value is `>= target`, or the last index
- * when every sample is below `target` (an interval that runs to the
- * recording's end). `time` is assumed sorted ascending (guaranteed: it is
- * gap-filled and monotonic by the time this runs). Empty `time` returns 0.
- */
-function indexAtOrAfterTime(time: readonly number[], target: number): number {
-  if (time.length === 0) return 0;
-  for (let i = 0; i < time.length; i += 1) {
-    if ((time[i] as number) >= target) return i;
-  }
-  return time.length - 1;
 }
 
 function bandName(interval: IntervalsInterval, lapIndex: number): string {

@@ -80,7 +80,7 @@ export const SwitchColorMetric = meta.story({
 export const GridZoomControls = meta.story({
   args: { data: loopActivity, basemapEnabled: false },
   play: async ({ canvas, userEvent }) => {
-    const map = canvas.getByRole("img", { name: /Golden Gate Park Loop/ });
+    const map = canvas.getByRole("img", { name: /Harbour Loop/ });
     const viewWidth = () =>
       Number(map.getAttribute("viewBox")?.split(" ")[2] ?? Number.NaN);
     const zoomIn = canvas.getByRole("button", { name: "Zoom in" });
