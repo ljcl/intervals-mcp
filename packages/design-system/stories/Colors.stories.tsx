@@ -29,6 +29,10 @@ const colorTokens: Record<string, ColorToken[]> = {
     { var: "--chart-altitude", label: "Altitude" },
     { var: "--chart-cadence", label: "Cadence" },
     { var: "--chart-grade", label: "Grade" },
+    { var: "--chart-stance-time", label: "Ground Contact Time" },
+    { var: "--chart-vertical-oscillation", label: "Vertical Oscillation" },
+    { var: "--chart-vertical-ratio", label: "Vertical Ratio" },
+    { var: "--chart-step-length", label: "Step Length" },
   ],
 };
 

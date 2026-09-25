@@ -3,8 +3,54 @@ import { METRIC_LABELS } from "./contextSummary";
 import {
   type ActivityMeta,
   type ChartDataPoint,
+  type DynamicsMetricKey,
   type MetricKey,
 } from "./types";
+
+/** Running-dynamics metrics: narrated as averages (see `describeDynamicsSeries`),
+ * never as a min-max range: the typical value is what matters, not the spread. */
+const DYNAMICS_KEYS = new Set<MetricKey>([
+  "stanceTime",
+  "verticalOscillation",
+  "verticalRatio",
+  "stepLength",
+]);
+
+function isDynamicsKey(key: MetricKey): key is DynamicsMetricKey {
+  return DYNAMICS_KEYS.has(key);
+}
+
+/** Mean of a metric's non-null samples, or `null` if every sample is a gap. */
+export function seriesAverage(
+  data: ChartDataPoint[],
+  key: MetricKey,
+): number | null {
+  let sum = 0;
+  let count = 0;
+  for (const point of data) {
+    const value = point[key];
+    if (value == null) continue;
+    sum += value;
+    count += 1;
+  }
+  return count === 0 ? null : sum / count;
+}
+
+export function describeDynamicsSeries(
+  key: DynamicsMetricKey,
+  average: number,
+): string {
+  switch (key) {
+    case "stanceTime":
+      return `Ground contact time averages ${Math.round(average)} ms.`;
+    case "verticalOscillation":
+      return `Vertical oscillation averages ${average.toFixed(1)} mm.`;
+    case "verticalRatio":
+      return `Vertical ratio averages ${average.toFixed(1)}%.`;
+    case "stepLength":
+      return `Step length averages ${Math.round(average)} mm.`;
+  }
+}
 
 /**
  * Screen-reader narration for the activity chart. Recharts'
@@ -47,7 +93,7 @@ function seriesRange(
 }
 
 function describeSeries(
-  key: MetricKey,
+  key: Exclude<MetricKey, DynamicsMetricKey>,
   range: { min: number; max: number },
   meta: ActivityMeta,
 ): string {
@@ -90,6 +136,10 @@ export function buildChartA11yDescription(input: ChartA11yInput): string {
 
   const described = visibleMetrics
     .map((key) => {
+      if (isDynamicsKey(key)) {
+        const average = seriesAverage(data, key);
+        return average === null ? null : describeDynamicsSeries(key, average);
+      }
       const range = seriesRange(data, key);
       return range ? describeSeries(key, range, meta) : null;
     })

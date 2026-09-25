@@ -28,7 +28,12 @@ import {
   YAxis,
 } from "recharts";
 import styles from "./ActivityChart.module.css";
-import { buildChartA11yDescription, buildChartA11yTitle } from "./a11y";
+import {
+  buildChartA11yDescription,
+  buildChartA11yTitle,
+  describeDynamicsSeries,
+  seriesAverage,
+} from "./a11y";
 import { describeZoomWindow, indexRangeForValues } from "./brushWindow";
 import { buildChartContextSummary } from "./contextSummary";
 import { selectLapLabels } from "./lapLabels";
@@ -36,6 +41,7 @@ import { type ChartLap, smoothData } from "./normalize";
 import {
   type ActivityMeta,
   type ChartDataPoint,
+  type DynamicsMetricKey,
   type MetricKey,
 } from "./types";
 
@@ -46,7 +52,19 @@ const COLORS = {
   heartrate: "var(--chart-heartrate)",
   pace: "var(--chart-pace)",
   power: "var(--chart-power)",
+  stanceTime: "var(--chart-stance-time)",
+  verticalOscillation: "var(--chart-vertical-oscillation)",
+  verticalRatio: "var(--chart-vertical-ratio)",
+  stepLength: "var(--chart-step-length)",
 };
+
+/** Running-dynamics metrics, in the order the "Form" preset and legend draw them. */
+const DYNAMICS_METRICS: DynamicsMetricKey[] = [
+  "stanceTime",
+  "verticalOscillation",
+  "verticalRatio",
+  "stepLength",
+];
 
 const ALL_METRICS: MetricKey[] = [
   "heartrate",
@@ -55,6 +73,7 @@ const ALL_METRICS: MetricKey[] = [
   "altitude",
   "cadence",
   "grade",
+  ...DYNAMICS_METRICS,
 ];
 
 /* ── Preset system ────────────────────────────────────────────── */
@@ -83,7 +102,12 @@ const RUNNING_PRESETS: ViewPreset[] = [
   {
     id: "form",
     label: "Form",
-    metrics: ["cadence", "pace", "heartrate"],
+    // Cadence, pace, and heart rate alongside the four running-dynamics
+    // metrics (ground contact time, vertical oscillation, vertical ratio,
+    // step length): the dynamics simply have nothing to show when the
+    // activity never recorded them (gated by `availableMetrics` like every
+    // other metric).
+    metrics: ["cadence", "pace", "heartrate", ...DYNAMICS_METRICS],
     requires: ["cadence"],
   },
   {
@@ -169,6 +193,10 @@ const SERIES_CLASS: Record<MetricKey, string> = {
   altitude: `${styles.series} ${styles.seriesAltitude}`,
   cadence: `${styles.series} ${styles.seriesCadence}`,
   grade: `${styles.series} ${styles.seriesGrade}`,
+  stanceTime: `${styles.series} ${styles.seriesStanceTime}`,
+  verticalOscillation: `${styles.series} ${styles.seriesVerticalOscillation}`,
+  verticalRatio: `${styles.series} ${styles.seriesVerticalRatio}`,
+  stepLength: `${styles.series} ${styles.seriesStepLength}`,
 };
 
 /* ── PresetSelector component ─────────────────────────────────── */
@@ -237,6 +265,10 @@ export function ChartTooltip({
     "Heart Rate": "bpm",
     Pace: paceUnit,
     Power: "W",
+    "Ground Contact Time": "ms",
+    "Vertical Oscillation": "mm",
+    "Vertical Ratio": "%",
+    "Step Length": "mm",
   };
 
   const timestamp = xIsDistance
@@ -400,6 +432,20 @@ export function ActivityChart({
     return { text: `Zoomed the chart to ${shown} of ${meta.name}.` };
   });
 
+  // Running-dynamics averages for the model-facing context summary: the
+  // activity's recorded dynamics regardless of the legend's show/hide
+  // state, since this is "what did the run look like", not "what's drawn
+  // right now". Empty when the activity recorded none of the four.
+  const dynamicsSummary = useMemo(() => {
+    const parts = DYNAMICS_METRICS.filter((key) => availableMetrics.has(key))
+      .map((key) => {
+        const average = seriesAverage(data, key);
+        return average === null ? null : describeDynamicsSeries(key, average);
+      })
+      .filter((text): text is string => text !== null);
+    return parts.length ? parts.join(" ") : null;
+  }, [availableMetrics, data]);
+
   useModelContextSync(
     app,
     () =>
@@ -414,8 +460,9 @@ export function ActivityChart({
           zoomRange,
           formatTime,
         ),
+        dynamicsSummary,
       }),
-    [meta, hidden, smooth, availableMetrics, data, zoomRange],
+    [meta, hidden, smooth, availableMetrics, data, zoomRange, dynamicsSummary],
   );
 
   const displayData = useMemo(
@@ -509,6 +556,30 @@ export function ActivityChart({
     });
   if (availableMetrics.has("grade") && !isMobile)
     legendItems.push({ key: "grade", color: COLORS.grade, label: "Grade" });
+  if (availableMetrics.has("stanceTime"))
+    legendItems.push({
+      key: "stanceTime",
+      color: COLORS.stanceTime,
+      label: "Ground Contact Time",
+    });
+  if (availableMetrics.has("verticalOscillation"))
+    legendItems.push({
+      key: "verticalOscillation",
+      color: COLORS.verticalOscillation,
+      label: "Vertical Oscillation",
+    });
+  if (availableMetrics.has("verticalRatio"))
+    legendItems.push({
+      key: "verticalRatio",
+      color: COLORS.verticalRatio,
+      label: "Vertical Ratio",
+    });
+  if (availableMetrics.has("stepLength"))
+    legendItems.push({
+      key: "stepLength",
+      color: COLORS.stepLength,
+      label: "Step Length",
+    });
 
   // Screen-reader narration, computed outside the chart memo so the
   // memo's dependency is the resulting string, not the smoothing flag.
@@ -640,6 +711,15 @@ export function ActivityChart({
             domain={["auto", "auto"]}
             reversed={meta.isRunning || meta.isSwimming}
           />
+          {/* Hidden Y-axes for running dynamics: ground contact time (ms),
+              vertical oscillation (mm), vertical ratio (%), and step length
+              (mm) sit on wildly different scales from each other and from
+              the left/right axes, so each gets its own independent,
+              unrendered axis. */}
+          <YAxis yAxisId="stanceTime" hide domain={["auto", "auto"]} />
+          <YAxis yAxisId="verticalOscillation" hide domain={["auto", "auto"]} />
+          <YAxis yAxisId="verticalRatio" hide domain={["auto", "auto"]} />
+          <YAxis yAxisId="stepLength" hide domain={["auto", "auto"]} />
           <Tooltip
             content={<ChartTooltip meta={meta} xIsDistance={meta.isSwimming} />}
             isAnimationActive={false}
@@ -766,6 +846,66 @@ export function ActivityChart({
               stroke={COLORS.grade}
               dot={false}
               strokeWidth={1}
+              connectNulls={false}
+            />
+          )}
+
+          {/* Ground contact time */}
+          {show("stanceTime") && (
+            <Line
+              yAxisId="stanceTime"
+              type="monotone"
+              dataKey="stanceTime"
+              name="Ground Contact Time"
+              className={SERIES_CLASS.stanceTime}
+              stroke={COLORS.stanceTime}
+              dot={false}
+              strokeWidth={tokens.secondaryStrokeWidth}
+              connectNulls={false}
+            />
+          )}
+
+          {/* Vertical oscillation */}
+          {show("verticalOscillation") && (
+            <Line
+              yAxisId="verticalOscillation"
+              type="monotone"
+              dataKey="verticalOscillation"
+              name="Vertical Oscillation"
+              className={SERIES_CLASS.verticalOscillation}
+              stroke={COLORS.verticalOscillation}
+              dot={false}
+              strokeWidth={tokens.secondaryStrokeWidth}
+              connectNulls={false}
+            />
+          )}
+
+          {/* Vertical ratio */}
+          {show("verticalRatio") && (
+            <Line
+              yAxisId="verticalRatio"
+              type="monotone"
+              dataKey="verticalRatio"
+              name="Vertical Ratio"
+              className={SERIES_CLASS.verticalRatio}
+              stroke={COLORS.verticalRatio}
+              dot={false}
+              strokeWidth={tokens.secondaryStrokeWidth}
+              connectNulls={false}
+            />
+          )}
+
+          {/* Step length */}
+          {show("stepLength") && (
+            <Line
+              yAxisId="stepLength"
+              type="monotone"
+              dataKey="stepLength"
+              name="Step Length"
+              className={SERIES_CLASS.stepLength}
+              stroke={COLORS.stepLength}
+              dot={false}
+              strokeWidth={tokens.secondaryStrokeWidth}
               connectNulls={false}
             />
           )}

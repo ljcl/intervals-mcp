@@ -24,4 +24,29 @@ describe("buildChartContextSummary", () => {
       'Viewing activity "Tempo Run". Showing: heart rate, pace. Hidden: cadence. Smoothing: on.',
     );
   });
+
+  it("appends dynamics averages when the activity recorded them", () => {
+    const text = buildChartContextSummary({
+      activityName: "Dynamics Pod Run",
+      availableMetrics: ["heartrate", "stanceTime"],
+      hidden: new Set(),
+      smooth: false,
+      dynamicsSummary: "Ground contact time averages 245 ms.",
+    });
+    expect(text).toBe(
+      'Viewing activity "Dynamics Pod Run". Showing: heart rate, ground contact time. ' +
+        "Smoothing: off. Ground contact time averages 245 ms.",
+    );
+  });
+
+  it("omits dynamics text when the activity recorded none", () => {
+    const text = buildChartContextSummary({
+      activityName: "Tempo Run",
+      availableMetrics: ["heartrate"],
+      hidden: new Set(),
+      smooth: false,
+      dynamicsSummary: null,
+    });
+    expect(text).not.toContain("averages");
+  });
 });

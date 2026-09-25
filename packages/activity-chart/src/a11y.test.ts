@@ -136,4 +136,52 @@ describe("buildChartA11yDescription", () => {
     });
     expect(desc).not.toContain("not shown at this screen size");
   });
+
+  it("narrates running dynamics as averages, not a range", () => {
+    const dynamicsData: ChartDataPoint[] = [
+      {
+        time: 0,
+        timeFormatted: "00:00",
+        stanceTime: 250,
+        verticalOscillation: 8.0,
+        verticalRatio: 7.0,
+        stepLength: 1200,
+      },
+      {
+        time: 10,
+        timeFormatted: "00:10",
+        stanceTime: 240,
+        verticalOscillation: 8.4,
+        verticalRatio: 6.8,
+        stepLength: 1220,
+      },
+    ];
+    const desc = buildChartA11yDescription({
+      meta: runMeta,
+      data: dynamicsData,
+      visibleMetrics: [
+        "stanceTime",
+        "verticalOscillation",
+        "verticalRatio",
+        "stepLength",
+      ],
+    });
+    expect(desc).toContain("Ground contact time averages 245 ms.");
+    expect(desc).toContain("Vertical oscillation averages 8.2 mm.");
+    expect(desc).toContain("Vertical ratio averages 6.9%.");
+    expect(desc).toContain("Step length averages 1210 mm.");
+    expect(desc).not.toContain("ranges from");
+  });
+
+  it("omits a dynamics metric with no non-null samples", () => {
+    const desc = buildChartA11yDescription({
+      meta: runMeta,
+      data: [
+        { time: 0, timeFormatted: "00:00", stanceTime: null },
+        { time: 10, timeFormatted: "00:10", stanceTime: null },
+      ],
+      visibleMetrics: ["stanceTime"],
+    });
+    expect(desc).toContain("No metrics are currently shown.");
+  });
 });

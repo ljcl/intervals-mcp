@@ -84,4 +84,31 @@ describe("ChartTooltip", () => {
     expect(markup).toContain("m Altitude");
     expect(markup).toContain(">12.4<");
   });
+
+  it("shows running-dynamics entries with their units (ms/mm/%/mm)", () => {
+    const runMeta: ActivityMeta = {
+      name: "Dynamics Pod Run",
+      activityType: "Run",
+      isRunning: true,
+      isSwimming: false,
+    };
+    const markup = renderToStaticMarkup(
+      <ChartTooltip
+        active
+        payload={[
+          { name: "Ground Contact Time", value: 248, color: "#0d9488" },
+          { name: "Vertical Oscillation", value: 8.1, color: "#db2777" },
+          { name: "Vertical Ratio", value: 6.9, color: "#ca8a04" },
+          { name: "Step Length", value: 1210, color: "#4f46e5" },
+        ]}
+        label={60}
+        meta={runMeta}
+      />,
+    );
+
+    expect(markup).toContain("ms Ground Contact Time");
+    expect(markup).toContain("mm Vertical Oscillation");
+    expect(markup).toContain("% Vertical Ratio");
+    expect(markup).toContain("mm Step Length");
+  });
 });

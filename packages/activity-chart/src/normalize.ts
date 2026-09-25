@@ -124,6 +124,22 @@ export function toChartData(data: ActivityStreamData): ChartDataPoint[] {
       point.grade = streams.grade_smooth[i];
     }
 
+    if (streams.stance_time?.[i] !== undefined) {
+      point.stanceTime = streams.stance_time[i];
+    }
+
+    if (streams.vertical_oscillation?.[i] !== undefined) {
+      point.verticalOscillation = streams.vertical_oscillation[i];
+    }
+
+    if (streams.vertical_ratio?.[i] !== undefined) {
+      point.verticalRatio = streams.vertical_ratio[i];
+    }
+
+    if (streams.step_length?.[i] !== undefined) {
+      point.stepLength = streams.step_length[i];
+    }
+
     points.push(point);
   }
 
@@ -150,6 +166,10 @@ const SMOOTH_KEYS: MetricKey[] = [
   "altitude",
   "cadence",
   "grade",
+  "stanceTime",
+  "verticalOscillation",
+  "verticalRatio",
+  "stepLength",
 ];
 
 /**

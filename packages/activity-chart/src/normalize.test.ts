@@ -147,6 +147,42 @@ describe("toChartData", () => {
     expect(points[1]?.altitude).toBeNull();
     expect(points[1]?.grade).toBeNull();
   });
+
+  it("passes running-dynamics streams through with their raw units, keeping nulls", () => {
+    const points = toChartData(
+      streamData({
+        activityType: "Run",
+        streams: {
+          time: [0, 10],
+          stance_time: [248, null],
+          vertical_oscillation: [8.1, null],
+          vertical_ratio: [6.9, null],
+          step_length: [1210, null],
+        },
+      }),
+    );
+
+    expect(points[0]?.stanceTime).toBe(248);
+    expect(points[0]?.verticalOscillation).toBe(8.1);
+    expect(points[0]?.verticalRatio).toBe(6.9);
+    expect(points[0]?.stepLength).toBe(1210);
+    expect(points[1]?.stanceTime).toBeNull();
+    expect(points[1]?.verticalOscillation).toBeNull();
+    expect(points[1]?.verticalRatio).toBeNull();
+    expect(points[1]?.stepLength).toBeNull();
+  });
+
+  it("leaves dynamics fields absent entirely when the activity never recorded them", () => {
+    const points = toChartData(
+      streamData({
+        activityType: "Run",
+        streams: { time: [0], heartrate: [140] },
+      }),
+    );
+
+    expect(points[0]?.stanceTime).toBeUndefined();
+    expect("stanceTime" in (points[0] ?? {})).toBe(false);
+  });
 });
 
 describe("toLapData", () => {
@@ -292,5 +328,18 @@ describe("smoothData", () => {
     const short = series(2, 1);
 
     expect(smoothData(short)).toBe(short);
+  });
+
+  it("smooths dynamics metrics but keeps their gaps as gaps", () => {
+    const points: ChartDataPoint[] = Array.from({ length: 10 }, (_, i) => ({
+      time: i,
+      timeFormatted: "",
+      stanceTime: i === 5 ? null : 240 + i,
+    }));
+
+    const smoothed = smoothData(points, 3);
+    expect(smoothed[5]?.stanceTime).toBeNull();
+    // Neighbours still average (gap excluded from the window's sum).
+    expect(smoothed[4]?.stanceTime).toBeCloseTo((243 + 244) / 2, 5);
   });
 });

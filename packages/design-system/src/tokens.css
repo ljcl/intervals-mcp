@@ -83,6 +83,12 @@
   --chart-altitude: #b8a48c;
   --chart-cadence: #f97316;
   --chart-grade: #6b7280;
+
+  /* Chart colors (running dynamics) */
+  --chart-stance-time: #0d9488;
+  --chart-vertical-oscillation: #db2777;
+  --chart-vertical-ratio: #ca8a04;
+  --chart-step-length: #4f46e5;
 }
 
 /* Dark theme overrides — applied explicitly via `.dark` class or
@@ -120,6 +126,12 @@
   --chart-altitude: #8c7a66;
   --chart-cadence: #fb923c;
   --chart-grade: #9ca3af;
+
+  /* Chart colors (running dynamics), brighter for dark backgrounds */
+  --chart-stance-time: #2dd4bf;
+  --chart-vertical-oscillation: #f472b6;
+  --chart-vertical-ratio: #fbbf24;
+  --chart-step-length: #818cf8;
 
   /* Shadows */
   --shadow-sm:

@@ -53,14 +53,24 @@ export interface ActivityStreamData {
   laps?: Lap[];
 }
 
-/** The 6 chart metric keys */
+/** Running-dynamics metric keys (ground contact time, vertical oscillation,
+ * vertical ratio, step length): narrated as averages, not ranges, since a
+ * spread across a run is less meaningful than the typical value. */
+export type DynamicsMetricKey =
+  | "stanceTime"
+  | "verticalOscillation"
+  | "verticalRatio"
+  | "stepLength";
+
+/** The chart metric keys */
 export type MetricKey =
   | "heartrate"
   | "power"
   | "pace"
   | "altitude"
   | "cadence"
-  | "grade";
+  | "grade"
+  | DynamicsMetricKey;
 
 /**
  * Normalized data point for Recharts. Metric fields are `number | null`:
@@ -78,6 +88,14 @@ export interface ChartDataPoint {
   altitude?: number | null;
   cadence?: number | null;
   grade?: number | null;
+  /** Ground contact time, ms. */
+  stanceTime?: number | null;
+  /** Vertical oscillation, mm. */
+  verticalOscillation?: number | null;
+  /** Vertical ratio, %. */
+  verticalRatio?: number | null;
+  /** Step length, mm. */
+  stepLength?: number | null;
 }
 
 /** Display metadata for the activity */
