@@ -305,3 +305,17 @@ describe("Dockerfile base image", () => {
     expect(skewed).toEqual([]);
   });
 });
+
+describe("local toolchain pin", () => {
+  it("pins .tool-versions to the same Bun as root packageManager", () => {
+    // mise/asdf read .tool-versions. A loose `bun 1` resolves to whatever
+    // 1.x is already installed, so a local `bun install` can rewrite
+    // bun.lock with a different Bun than CI and the image use.
+    const toolVersions = readFileSync(
+      new URL(".tool-versions", REPO_ROOT),
+      "utf8",
+    );
+    const pinned = /^bun\s+(\S+)\s*$/m.exec(toolVersions)?.[1];
+    expect(pinned).toBe(packageManagerVersion());
+  });
+});
