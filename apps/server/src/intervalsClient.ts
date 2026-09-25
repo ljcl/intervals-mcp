@@ -110,6 +110,14 @@ const IntervalsActivitySchema = z
     pace_load: z.number().nullable().optional(),
     trimp: z.number().nullable().optional(),
     icu_intensity: z.number().nullable().optional(),
+    /** Power-meter load; null on every activity on the account this client
+     * was verified against (no power meter, docs/api-notes.md). */
+    power_load: z.number().nullable().optional(),
+    /** Session RPE (icu_rpe scaled by duration), populated by most uploads. */
+    session_rpe: z.number().nullable().optional(),
+    /** Present on every activity but observed always null (no power meter,
+     * docs/api-notes.md). */
+    strain_score: z.number().nullable().optional(),
     decoupling: z.number().nullable().optional(),
     icu_efficiency_factor: z.number().nullable().optional(),
     icu_rpe: z.number().nullable().optional(),
@@ -212,7 +220,18 @@ const IntervalsWellnessSchema = z
     id: z.string(),
     ctl: z.number().nullable().optional(),
     atl: z.number().nullable().optional(),
+    /** That day's load fed into the CTL curve; differs from `atlLoad` on
+     * days the account's WeightTraining/Workout activities are excluded
+     * from fitness but still count toward fatigue (docs/api-notes.md). */
+    ctlLoad: z.number().nullable().optional(),
+    /** That day's load fed into the ATL curve (the daily sum of activity
+     * `icu_training_load`, docs/api-notes.md). */
+    atlLoad: z.number().nullable().optional(),
     rampRate: z.number().nullable().optional(),
+    /** Per-sport eFTP snapshot, not a per-sport CTL/ATL (docs/api-notes.md);
+     * kept loose since the shape is unconfirmed beyond one observed
+     * `{type, eftp, wPrime, pMax}` row and is always null on this account. */
+    sportInfo: z.array(z.unknown()).nullable().optional(),
     weight: z.number().nullable().optional(),
     restingHR: z.number().nullable().optional(),
     hrv: z.number().nullable().optional(),
@@ -543,12 +562,14 @@ export async function listActivities(
 /**
  * Fetches a single activity. `options.intervals: true` adds
  * `?intervals=true`, which populates the activity's `icu_intervals` field
- * (empty otherwise; see docs/api-notes.md).
+ * (empty otherwise; see docs/api-notes.md). `options.skipCache: true` bypasses
+ * the response cache entirely (neither reads nor stores), for a caller that
+ * needs a guaranteed-fresh read, e.g. immediately after `updateActivity`.
  */
 export async function getActivity(
   apiKey: string,
   id: string,
-  options: { intervals?: boolean } = {},
+  options: { intervals?: boolean; skipCache?: boolean } = {},
 ): Promise<IntervalsActivity> {
   requireApiKey(apiKey);
   const context = `getActivity for ID ${id}`;
@@ -560,11 +581,60 @@ export async function getActivity(
     const response = await intervalsApi.get<unknown>(`/activity/${id}`, {
       headers: authHeaders(apiKey),
       params,
+      skipCache: options.skipCache,
     });
     data = response.data;
   } catch (error) {
     handleApiError(error, context);
   }
+  return parseOrThrow(IntervalsActivitySchema, data, context);
+}
+
+/** Writable activity fields for {@link updateActivity}; only the keys the
+ * caller supplies are sent (unset keys are `undefined`, dropped by
+ * `JSON.stringify`), so a partial patch never overwrites an untouched field. */
+export interface IntervalsActivityUpdate {
+  name?: string;
+  description?: string;
+  gear?: { id: string };
+  icu_rpe?: number;
+  feel?: number;
+}
+
+/**
+ * Updates an activity via `PUT /activity/{id}`, sending only the keys in
+ * `patch`. Like every write in this client, it goes through `intervalsApi`
+ * unretried (fetchClient.ts only retries GET/HEAD; a PUT that fails mid-flight
+ * may already have mutated state, so it surfaces the error instead of
+ * silently repeating it): a `RateLimitError` is rethrown intact, anything else
+ * wrapped in {@link IntervalsApiError}.
+ *
+ * On success, the write's own request URL already invalidates that
+ * activity's cached reads (`fetchClient.ts`'s automatic write invalidation);
+ * this additionally invalidates the athlete's activities list and gear
+ * list, which live on a different branch of the cache and would otherwise
+ * keep serving pre-write data (the gear list, e.g., no longer reflects this
+ * activity's distance).
+ */
+export async function updateActivity(
+  apiKey: string,
+  id: string,
+  patch: IntervalsActivityUpdate,
+): Promise<IntervalsActivity> {
+  requireApiKey(apiKey);
+  const context = `updateActivity for ID ${id}`;
+
+  let data: unknown;
+  try {
+    const response = await intervalsApi.put<unknown>(`/activity/${id}`, patch, {
+      headers: authHeaders(apiKey),
+    });
+    data = response.data;
+  } catch (error) {
+    handleApiError(error, context);
+  }
+  intervalsApi.invalidatePath(athletePath("/activities"));
+  intervalsApi.invalidatePath(athletePath("/gear"));
   return parseOrThrow(IntervalsActivitySchema, data, context);
 }
 
@@ -628,19 +698,32 @@ export async function listGear(apiKey: string): Promise<IntervalsGear[]> {
   return parseOrThrow(IntervalsGearResponseSchema, data, context);
 }
 
-/** Fetches daily wellness records across `range`. */
+/**
+ * Fetches daily wellness records across `range`. `options.fields` sends
+ * `fields=` (comma-joined) so the response carries only the requested keys
+ * (verified 2026-09-25, docs/api-notes.md), useful for a caller that only
+ * needs `ctl`/`atl`/`ctlLoad`/`atlLoad` from a long window.
+ */
 export async function getWellness(
   apiKey: string,
   range: DateRange,
+  options: { fields?: string[] } = {},
 ): Promise<IntervalsWellness[]> {
   requireApiKey(apiKey);
   const context = `getWellness for ${range.oldest} to ${range.newest}`;
+  const params: Record<string, string> = {
+    oldest: range.oldest,
+    newest: range.newest,
+  };
+  if (options.fields && options.fields.length > 0) {
+    params.fields = options.fields.join(",");
+  }
 
   let data: unknown;
   try {
     const response = await intervalsApi.get<unknown>(athletePath("/wellness"), {
       headers: authHeaders(apiKey),
-      params: { oldest: range.oldest, newest: range.newest },
+      params,
     });
     data = response.data;
   } catch (error) {

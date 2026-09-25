@@ -102,3 +102,34 @@ at `apps/server/src/__fixtures__/intervals/`.
   did before this was dropped) is needed to line entries up correctly.
 - `average_gradient` (interval field) is a fraction, not a percent: confirmed by checking
   elevation gain against `average_gradient * distance` (see `intervalLaps.ts`).
+
+## Phase 3 probes (2026-09-25 research, load and fitness fields)
+
+Fetched wellness and activities 2026-01-01..2026-09-24 (267 wellness rows, 244 activities),
+sport-settings, fitness-model-events, athlete-summary, and one activity, all against athlete 0.
+
+- Every wellness row has `ctl`, `atl`, `rampRate`, `ctlLoad`, `atlLoad` (floats). `ctlLoad`/`atlLoad`
+  are that day's load feeding each curve and differ on about 1 in 5 days (e.g. `ctlLoad` 0,
+  `atlLoad` 21 on a day with a WeightTraining-only session).
+- `sportInfo` is present on every wellness row but is not a per-sport CTL/ATL: shape
+  `[{type, eftp, wPrime, pMax}]` (only `type: "Ride"` observed, all values null on this account).
+  intervals.icu has no run-only CTL/ATL anywhere in wellness.
+- `GET /athlete/0/wellness?fields=id,ctl,atl,ctlLoad,atlLoad` returns only the requested keys: use
+  `fields=` to keep a wellness read small.
+- Activity load fields by type (2026-08-01..2026-09-24): Run's `icu_training_load` equals
+  `pace_load`, not `hr_load`; every other observed type (WeightTraining, Pilates, Swim, Ride,
+  Workout) has `icu_training_load` equal `hr_load` (HRSS). Sport settings' `load_order` confirms
+  this: Run is `POWER_PACE_HR`, everything else is `POWER_HR_PACE`. `power_load` and
+  `strain_score` are present as keys but null on every activity on this account (no power meter).
+  `icu_rpe` is populated on most activities; `session_rpe` is `icu_rpe` scaled by duration.
+- Reproducing the fitness model: seeding from wellness `ctl`/`atl` the day before a window and
+  feeding wellness `ctlLoad`/`atlLoad` into `x += (load - x) * (1 - exp(-1/N))` with `N = 42` (CTL)
+  and `N = 7` (ATL) reproduces intervals.icu's own `ctl`/`atl` exactly (max error 0.000 over
+  2026-06-01..2026-09-24). Feeding the daily sum of activity `icu_training_load` instead
+  reproduces `atl` exactly (`atlLoad` is exactly that sum) but not `ctl` (max error ~3.2): solving
+  per day shows WeightTraining and Workout activities are excluded from `ctlLoad` on this account
+  (they still count into `atlLoad`) while Run, Pilates, Swim, Ride, Walk, and OpenWaterSwim are
+  included. No sport-settings field explains the exclusion; it is reported here as an observed
+  fact for this account, not a documented rule.
+- `GET /athlete/{id}/fitness-model-events` (custom `FITNESS_DAYS`/`SET_FITNESS`/`SET_EFTP` events
+  that would change the constants above) returns `[]` on this account.

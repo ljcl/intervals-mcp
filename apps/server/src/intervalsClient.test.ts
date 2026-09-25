@@ -27,6 +27,7 @@ import {
   listActivities,
   listGear,
   resolveNumericAthleteId,
+  updateActivity,
 } from "./intervalsClient";
 
 /**
@@ -53,10 +54,20 @@ vi.mock("./fetchClient", async (importOriginal) => {
 });
 
 function mockJson(body: unknown, status = 200) {
-  const calls: Array<{ url: string; headers: Headers }> = [];
+  const calls: Array<{
+    url: string;
+    headers: Headers;
+    method?: string;
+    body?: string;
+  }> = [];
   globalThis.fetch = vi.fn(
     async (input: RequestInfo | URL, init?: RequestInit) => {
-      calls.push({ url: String(input), headers: new Headers(init?.headers) });
+      calls.push({
+        url: String(input),
+        headers: new Headers(init?.headers),
+        method: init?.method,
+        body: typeof init?.body === "string" ? init.body : undefined,
+      });
       return new Response(JSON.stringify(body), {
         status,
         headers: { "content-type": "application/json" },
@@ -166,6 +177,136 @@ describe("intervalsClient", () => {
       name: null,
       distance: null,
       primary: null,
+    });
+    expect(result.pace_load).toBe(activity.pace_load);
+    expect(result.power_load).toBe(activity.power_load);
+    expect(result.session_rpe).toBe(activity.session_rpe);
+    expect(result.strain_score).toBe(activity.strain_score);
+  });
+
+  it("types ctlLoad, atlLoad, and sportInfo on a wellness row", async () => {
+    mockJson([
+      {
+        ...wellness[0],
+        ctlLoad: 74,
+        atlLoad: 21,
+        sportInfo: [{ type: "Ride", eftp: null, wPrime: null, pMax: null }],
+      },
+    ]);
+    const result = await getWellness("k", {
+      oldest: "2026-09-24",
+      newest: "2026-09-24",
+    });
+    expect(result[0]?.ctlLoad).toBe(74);
+    expect(result[0]?.atlLoad).toBe(21);
+    expect(result[0]?.sportInfo).toEqual([
+      { type: "Ride", eftp: null, wPrime: null, pMax: null },
+    ]);
+  });
+
+  it("sends fields= as a comma-joined query param on getWellness", async () => {
+    const calls = mockJson(wellness);
+    await getWellness(
+      "k",
+      { oldest: "2026-09-10", newest: "2026-09-24" },
+      { fields: ["id", "ctl", "atl", "ctlLoad", "atlLoad"] },
+    );
+    const url = new URL(calls[0]?.url ?? "");
+    expect(url.searchParams.get("fields")).toBe("id,ctl,atl,ctlLoad,atlLoad");
+  });
+
+  it("omits fields= when no fields are requested", async () => {
+    const calls = mockJson(wellness);
+    await getWellness("k", { oldest: "2026-09-10", newest: "2026-09-24" });
+    const url = new URL(calls[0]?.url ?? "");
+    expect(url.searchParams.has("fields")).toBe(false);
+  });
+
+  it("skipCache bypasses a warm cache entry on getActivity", async () => {
+    let calls = mockJson(activity);
+    await getActivity("k", "i189807578");
+    expect(calls).toHaveLength(1);
+
+    // Cache hit: same body, no new fetch.
+    await getActivity("k", "i189807578");
+    expect(calls).toHaveLength(1);
+
+    // skipCache: bypasses the warm entry and hits the wire again.
+    calls = mockJson(activity);
+    await getActivity("k", "i189807578", { skipCache: true });
+    expect(calls).toHaveLength(1);
+  });
+
+  describe("updateActivity", () => {
+    it("sends PUT with only the provided keys and returns the parsed activity", async () => {
+      const calls = mockJson(activity);
+      const result = await updateActivity("k", "i189807578", {
+        name: "New name",
+      });
+      expect(calls).toHaveLength(1);
+      expect(calls[0]?.method).toBe("PUT");
+      expect(new URL(calls[0]?.url ?? "").pathname).toBe(
+        "/api/v1/activity/i189807578",
+      );
+      expect(JSON.parse(calls[0]?.body ?? "{}")).toEqual({
+        name: "New name",
+      });
+      expect(result.id).toBe(activity.id);
+    });
+
+    it("is not retried on a transient 5xx (one fetch call) and wraps it in IntervalsApiError", async () => {
+      let count = 0;
+      globalThis.fetch = vi.fn(async () => {
+        count += 1;
+        return new Response("boom", { status: 503 });
+      }) as unknown as typeof fetch;
+
+      await expect(
+        updateActivity("k", "i189807578", { name: "x" }),
+      ).rejects.toBeInstanceOf(IntervalsApiError);
+      expect(count).toBe(1);
+    });
+
+    it("rethrows RateLimitError on 429", async () => {
+      mockJson({}, 429);
+      await expect(
+        updateActivity("k", "i189807578", { name: "x" }),
+      ).rejects.toBeInstanceOf(RateLimitError);
+    });
+
+    it("invalidates that activity's cached read so a subsequent getActivity misses the cache", async () => {
+      let calls = mockJson(activity);
+      await getActivity("k", "i189807578");
+      expect(calls).toHaveLength(1);
+
+      calls = mockJson(activity);
+      await updateActivity("k", "i189807578", { name: "Updated" });
+      expect(calls).toHaveLength(1);
+
+      await getActivity("k", "i189807578");
+      expect(calls).toHaveLength(2);
+    });
+
+    it("invalidates the athlete's activities list and gear list on success", async () => {
+      let calls = mockJson([]);
+      await listActivities("k", {
+        oldest: "2026-09-01",
+        newest: "2026-09-24",
+      });
+      await listGear("k");
+      expect(calls).toHaveLength(2);
+
+      calls = mockJson(activity);
+      await updateActivity("k", "i189807578", { name: "x" });
+      expect(calls).toHaveLength(1);
+
+      calls = mockJson([]);
+      await listActivities("k", {
+        oldest: "2026-09-01",
+        newest: "2026-09-24",
+      });
+      await listGear("k");
+      expect(calls).toHaveLength(2);
     });
   });
 

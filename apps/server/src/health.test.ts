@@ -6,7 +6,7 @@
 import { createRequire } from "node:module";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { apiKeyConfigured, getIntervalsAthleteId, getTimeZone } from "./config";
-import { stravaApi } from "./fetchClient";
+import { intervalsApi } from "./fetchClient";
 import { handleHealth } from "./health";
 import { SERVER_VERSION } from "./version";
 
@@ -24,11 +24,11 @@ vi.mock("./fetchClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./fetchClient")>();
   return {
     ...actual,
-    stravaApi: { getRateLimitSnapshot: vi.fn() },
+    intervalsApi: { getRateLimitSnapshot: vi.fn() },
   };
 });
 
-const mockedSnapshot = vi.mocked(stravaApi.getRateLimitSnapshot);
+const mockedSnapshot = vi.mocked(intervalsApi.getRateLimitSnapshot);
 const mockedApiKeyConfigured = vi.mocked(apiKeyConfigured);
 const mockedAthleteId = vi.mocked(getIntervalsAthleteId);
 const mockedTimeZone = vi.mocked(getTimeZone);
@@ -60,7 +60,7 @@ describe("handleHealth", () => {
       shortTerm: { usage: 42, limit: 100 },
       daily: { usage: 310, limit: 1000 },
       observedAt: 1_752_300_000_000,
-    } as ReturnType<typeof stravaApi.getRateLimitSnapshot>);
+    } as ReturnType<typeof intervalsApi.getRateLimitSnapshot>);
 
     const { req, url } = get();
     const response = handleHealth(req, url);

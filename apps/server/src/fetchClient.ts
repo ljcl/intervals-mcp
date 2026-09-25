@@ -486,6 +486,18 @@ export class FetchClient {
   }
 
   /**
+   * Invalidates every cached read on the same branch as `path` (descendants
+   * and ancestors, same rule as {@link invalidateWritten}), for a branch a
+   * write's own request URL doesn't itself touch, e.g. `updateActivity`
+   * dropping the athlete's activities list and gear list alongside the
+   * written activity's own cache entry, which the write already invalidates
+   * automatically.
+   */
+  invalidatePath(path: string): void {
+    this.invalidateWritten(path);
+  }
+
+  /**
    * The rate-limit snapshot from the most recent response, or `null` if no
    * request carrying rate-limit headers has completed yet.
    */
