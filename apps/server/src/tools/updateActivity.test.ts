@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { handledNotFound } from "../__fixtures__";
+import { RequestTimeoutError } from "../fetchClient";
 import {
   getActivity,
   type IntervalsActivity,
@@ -76,6 +77,55 @@ describe("updateActivityTool input schema", () => {
       updateActivityTool.inputSchema.safeParse({ id: "555", name: "x" })
         .success,
     ).toBe(true);
+  });
+  it("rejects an empty name", () => {
+    expect(
+      updateActivityTool.inputSchema.safeParse({ id: "555", name: "" }).success,
+    ).toBe(false);
+  });
+  it("rejects a whitespace-only name", () => {
+    expect(
+      updateActivityTool.inputSchema.safeParse({ id: "555", name: "   " })
+        .success,
+    ).toBe(false);
+  });
+  it("rejects a whitespace-only description in append mode", () => {
+    const result = updateActivityTool.inputSchema.safeParse({
+      id: "555",
+      description: "   ",
+      descriptionMode: "append",
+    });
+    expect(result.success).toBe(false);
+  });
+  it("rejects an empty description in append mode", () => {
+    const result = updateActivityTool.inputSchema.safeParse({
+      id: "555",
+      description: "",
+      descriptionMode: "append",
+    });
+    expect(result.success).toBe(false);
+  });
+  it("accepts an empty description in replace mode (an explicit clear)", () => {
+    expect(
+      updateActivityTool.inputSchema.safeParse({
+        id: "555",
+        description: "",
+        descriptionMode: "replace",
+      }).success,
+    ).toBe(true);
+  });
+  it("accepts an empty description with no descriptionMode (replace is the default)", () => {
+    expect(
+      updateActivityTool.inputSchema.safeParse({ id: "555", description: "" })
+        .success,
+    ).toBe(true);
+  });
+  it("rejects descriptionMode without description", () => {
+    const result = updateActivityTool.inputSchema.safeParse({
+      id: "555",
+      descriptionMode: "append",
+    });
+    expect(result.success).toBe(false);
   });
 });
 
@@ -158,6 +208,37 @@ describe("updateActivityTool.execute", () => {
     });
   });
 
+  it("clears the description with an explicit empty string in replace mode", async () => {
+    mockedGetActivity.mockResolvedValueOnce(
+      activity({ description: "Existing notes" }),
+    );
+    mockedPut.mockResolvedValueOnce(activity({ description: null }));
+    mockedGetActivity.mockResolvedValueOnce(activity({ description: null }));
+
+    const result = await updateActivityTool.execute(
+      { id: "555", description: "" } as never,
+      "test-token",
+    );
+
+    expect(mockedPut).toHaveBeenCalledWith("test-token", "555", {
+      description: "",
+    });
+    expect(result.isError).toBeUndefined();
+  });
+
+  it("treats null and empty-string description as equal, sending no PUT", async () => {
+    mockedGetActivity.mockResolvedValueOnce(activity({ description: null }));
+
+    const result = await updateActivityTool.execute(
+      { id: "555", description: "" } as never,
+      "test-token",
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0]?.text).toContain("No change");
+    expect(mockedPut).not.toHaveBeenCalled();
+  });
+
   it("sends only the fields that differ from the current value", async () => {
     mockedGetActivity.mockResolvedValueOnce(
       activity({ name: "Morning Run", icu_rpe: 5 }),
@@ -194,7 +275,23 @@ describe("updateActivityTool.execute", () => {
     expect(mockedPut).not.toHaveBeenCalled();
   });
 
-  it("validates gearId against list-gear and rejects an unknown id, listing available gear", async () => {
+  it("reads the activity before validating gear, so a missing activity reports not-found first", async () => {
+    mockedGetActivity.mockRejectedValueOnce(
+      handledNotFound("getActivity for ID 555"),
+    );
+
+    const result = await updateActivityTool.execute(
+      { id: "555", gearId: "g99" } as never,
+      "test-token",
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("Activity 555 was not found.");
+    expect(mockedListGear).not.toHaveBeenCalled();
+  });
+
+  it("validates gearId against a fresh list-gear read and rejects an unknown id, listing available gear", async () => {
+    mockedGetActivity.mockResolvedValueOnce(activity());
     mockedListGear.mockResolvedValueOnce(gearList);
 
     const result = await updateActivityTool.execute(
@@ -206,13 +303,16 @@ describe("updateActivityTool.execute", () => {
     expect(result.content[0]?.text).toContain('Unknown gear id "g99"');
     expect(result.content[0]?.text).toContain("g1 (Pegasus)");
     expect(result.content[0]?.text).toContain("g2 (Old Trainers, retired)");
-    expect(mockedGetActivity).not.toHaveBeenCalled();
+    expect(mockedGetActivity).toHaveBeenCalledTimes(1);
+    expect(mockedListGear).toHaveBeenCalledWith("test-token", {
+      skipCache: true,
+    });
     expect(mockedPut).not.toHaveBeenCalled();
   });
 
   it("allows retired gear with a warning", async () => {
-    mockedListGear.mockResolvedValueOnce(gearList);
     mockedGetActivity.mockResolvedValueOnce(activity({ gear: null }));
+    mockedListGear.mockResolvedValueOnce(gearList);
     mockedPut.mockResolvedValueOnce(
       activity({ gear: { id: "g2", name: null } }),
     );
@@ -237,9 +337,9 @@ describe("updateActivityTool.execute", () => {
     expect(structured.warnings.some((w) => w.includes("retired"))).toBe(true);
   });
 
-  it("warns when the re-read shows gear was not applied", async () => {
-    mockedListGear.mockResolvedValueOnce(gearList);
+  it("warns when the re-read shows gear was not applied, and leaves gear_name null", async () => {
     mockedGetActivity.mockResolvedValueOnce(activity({ gear: null }));
+    mockedListGear.mockResolvedValueOnce(gearList);
     mockedPut.mockResolvedValueOnce(activity({ gear: null }));
     // Re-read shows the gear never actually took (e.g. server ignored it).
     mockedGetActivity.mockResolvedValueOnce(activity({ gear: null }));
@@ -256,6 +356,7 @@ describe("updateActivityTool.execute", () => {
     expect(
       structured.warnings.some((w) => w.includes("gear was not applied")),
     ).toBe(true);
+    expect(structured.gear_name).toBeNull();
   });
 
   it("echoes before/after for every changed field", async () => {
@@ -279,6 +380,30 @@ describe("updateActivityTool.execute", () => {
       { field: "name", before: "Morning Run", after: "Tempo" },
       { field: "feel", before: 3, after: 1 },
     ]);
+  });
+
+  it("shows the description change as its length and a 120-character preview in the text response", async () => {
+    const longText = "x".repeat(200);
+    mockedGetActivity.mockResolvedValueOnce(activity({ description: null }));
+    mockedPut.mockResolvedValueOnce(activity({ description: longText }));
+    mockedGetActivity.mockResolvedValueOnce(
+      activity({ description: longText }),
+    );
+
+    const result = await updateActivityTool.execute(
+      { id: "555", description: longText } as never,
+      "test-token",
+    );
+
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain(`description to ${longText.length} chars`);
+    expect(text).toContain(`"${"x".repeat(120)}..."`);
+    expect(text).not.toContain(longText);
+    // The full text is still in structuredContent.changes.
+    const structured = ActivityWriteOutputSchema.parse(
+      result.structuredContent,
+    );
+    expect(structured.changes[0]?.after).toBe(longText);
   });
 
   it("never retries: exactly one PUT even when it rejects", async () => {
@@ -323,6 +448,47 @@ describe("updateActivityTool.execute", () => {
       result.structuredContent,
     );
     expect(structured.url).toBe("https://intervals.icu/activities/555");
+  });
+
+  it("reports a possibly-applied write when the PUT itself times out", async () => {
+    mockedGetActivity.mockResolvedValueOnce(activity());
+    mockedPut.mockRejectedValueOnce(
+      new RequestTimeoutError(
+        "https://intervals.icu/api/v1/activity/555",
+        30000,
+      ),
+    );
+
+    const result = await updateActivityTool.execute(
+      { id: "555", name: "Tempo" } as never,
+      "test-token",
+    );
+
+    expect(result.isError).toBe(true);
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain("timed out");
+    expect(text).toContain("may already have been applied");
+    expect(text).toContain("get-activity");
+    expect(text.toLowerCase()).not.toContain("retry now");
+  });
+
+  it("reports a possibly-applied write when the confirming re-read fails after the PUT resolved", async () => {
+    mockedGetActivity.mockResolvedValueOnce(activity());
+    mockedPut.mockResolvedValueOnce(activity({ name: "Tempo" }));
+    mockedGetActivity.mockRejectedValueOnce(new Error("network reset"));
+
+    const result = await updateActivityTool.execute(
+      { id: "555", name: "Tempo" } as never,
+      "test-token",
+    );
+
+    expect(result.isError).toBe(true);
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain("was sent and may have been applied");
+    expect(text).toContain("confirming it afterward failed");
+    expect(text).toContain("network reset");
+    expect(text).toContain("get-activity");
+    expect(mockedPut).toHaveBeenCalledTimes(1);
   });
 });
 

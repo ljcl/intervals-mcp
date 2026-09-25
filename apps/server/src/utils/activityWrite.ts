@@ -61,6 +61,13 @@ export function describeGearOptions(gear: readonly IntervalsGear[]): string {
     .join(", ");
 }
 
+/** `null` and `""` both mean "no description"; treating them as equal keeps
+ * an explicit clear (`description: ""` in replace mode) from being sent as a
+ * no-op change when the activity already has no description. */
+function normalizeDescription(value: string | null | undefined): string {
+  return value ?? "";
+}
+
 /** The activity fields update-activity reads, writes, and echoes. */
 export interface CurrentActivityFields {
   name: string | null;
@@ -95,7 +102,8 @@ export function buildActivityPatch(
   }
   if (
     requested.description !== undefined &&
-    requested.description !== current.description
+    normalizeDescription(requested.description) !==
+      normalizeDescription(current.description)
   ) {
     patch.description = requested.description;
   }
@@ -144,7 +152,10 @@ export function diffActivityWrite(
       before: before.description,
       after: after.description,
     });
-    if (after.description !== patch.description) {
+    if (
+      normalizeDescription(after.description) !==
+      normalizeDescription(patch.description)
+    ) {
       warnings.push("description was not applied as sent.");
     }
   }

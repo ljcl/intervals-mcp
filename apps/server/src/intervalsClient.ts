@@ -681,8 +681,16 @@ export async function getActivityStreams(
   return parseOrThrow(IntervalsStreamsResponseSchema, data, context);
 }
 
-/** Lists the authenticated athlete's gear (shoes/bikes). */
-export async function listGear(apiKey: string): Promise<IntervalsGear[]> {
+/**
+ * Lists the authenticated athlete's gear (shoes/bikes). `options.skipCache:
+ * true` bypasses the response cache entirely, for a caller that needs a
+ * guaranteed-fresh list, e.g. `update-activity` validating a `gearId`
+ * against gear that may have just been added.
+ */
+export async function listGear(
+  apiKey: string,
+  options: { skipCache?: boolean } = {},
+): Promise<IntervalsGear[]> {
   requireApiKey(apiKey);
   const context = "listGear";
 
@@ -690,6 +698,7 @@ export async function listGear(apiKey: string): Promise<IntervalsGear[]> {
   try {
     const response = await intervalsApi.get<unknown>(athletePath("/gear"), {
       headers: authHeaders(apiKey),
+      skipCache: options.skipCache,
     });
     data = response.data;
   } catch (error) {

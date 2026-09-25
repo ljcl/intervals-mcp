@@ -105,9 +105,13 @@ breaking them has shipped bugs — do not work around them locally.
   `get-activity-zones` calls `mapIntervalsZones` from `activityZones.ts`. Empty
   results emit a valid payload (`count: 0`). `warnOnSchemaDrift` keeps dev
   honest.
-- **`sportType` is an enum**: `SPORT_TYPES` (`utils/activityWrite.ts`) backs
-  both the advertised schema and the runtime check; rejections name the near
-  miss (`Weightlifting` → `WeightTraining`).
+- **`update-activity` never claims success or silently fails on an
+  ambiguous write.** It reads the activity fresh, then validates `gearId`
+  against a `skipCache: true` `list-gear` read, in that order, so a missing
+  activity reports not-found before any gear error. If the PUT itself times
+  out, or anything fails after it resolved (the confirming re-read,
+  parsing), it cannot tell whether the write landed, so it says so and
+  points at `get-activity` rather than inviting a blind retry.
 - **Annotations come from the four `_annotations.ts` constants**, never inline
   objects — they decide whether hosts grant reads durably or re-prompt forever.
   `READ_ONLY` states `destructiveHint: false` explicitly (its documented

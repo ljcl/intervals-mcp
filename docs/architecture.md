@@ -239,14 +239,32 @@ not have to handle "absent" as a third case.
 
 ## Input validation
 
-**`sportType` is an enum, not a string.** `SPORT_TYPES` in
-`utils/activityWrite.ts` is the single list behind both the advertised JSON
-Schema and the runtime check, so a model picks a valid value without a failed
-round-trip to Strava. It is pinned from Strava's documented SportType model
-because there is no machine-readable feed — the cost is that a sport Strava
-adds later is rejected locally until the array is updated. Rejections name the
-near miss (`Weightlifting` → `WeightTraining`), since an error listing fifty
-values is complete but not actionable.
+**`update-activity` validates against fresh reads, not cached ones.** Its
+input schema (`superRefine`, `tools/updateActivity.ts`) rejects a `name`
+that is empty or whitespace-only, and rejects `descriptionMode` without
+`description`; `append` mode additionally rejects an empty or
+whitespace-only `description` (`replace` mode's default, an empty string, is
+the explicit way to clear a description instead; `null` and `""` are
+treated as equal when diffing, so clearing an already-empty description
+sends no PUT). `gearId` is checked against a `skipCache: true` `list-gear`
+read, so gear added moments earlier is accepted; an unknown id fails and
+lists the available gear ids and names, while a retired id is accepted with
+a warning. The activity itself is also read fresh (`skipCache: true`)
+before gear validation, so a missing activity reports not-found rather than
+an unrelated gear error. `utils/activityWrite.ts` holds the pure, unit-tested
+pieces this depends on: `buildActivityPatch` (keeps only fields that differ
+from the current value), `diffActivityWrite` (before/after echoes plus a
+warning when a fresh re-read does not match what was sent), and
+`composeDescription` (replace/append).
+
+**A write that may have landed is never silently treated as failed.** If
+the PUT to intervals.icu itself times out (`RequestTimeoutError`), or
+anything fails after it resolved (the confirming re-read, or parsing its
+response), `update-activity` cannot tell whether the write actually
+applied. Both cases report an `isError` that says so explicitly and points
+at `get-activity` to check before sending the same update again, rather
+than either claiming success or inviting a blind retry that could double
+the effect of a write that already landed.
 
 ## Tool metadata
 
