@@ -7,7 +7,11 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RateLimitError } from "./fetchClient";
-import { ATL_TIME_CONSTANT_DAYS, CTL_TIME_CONSTANT_DAYS } from "./fitnessTrend";
+import {
+  ATL_TIME_CONSTANT_DAYS,
+  CTL_TIME_CONSTANT_DAYS,
+  RUN_TYPES,
+} from "./fitnessTrend";
 import {
   getActivity as getIntervalsActivityFn,
   getActivityStreams as getIntervalsStreamsFn,
@@ -750,6 +754,102 @@ describe("fitness trend handlers", () => {
     const data = JSON.parse(result.content[0]?.text ?? "");
 
     expect(data.tsbPositiveDate).toBe(TODAY);
+  });
+
+  /** A run activity `daysAgo` days before TODAY, carrying `load`. */
+  function runActivity(daysAgo: number, load: number): IntervalsActivity {
+    const date = addDays(TODAY, -daysAgo);
+    return {
+      id: `run-${daysAgo}`,
+      name: `Run ${daysAgo}d ago`,
+      type: "Run",
+      start_date_local: `${date}T07:00:00`,
+      icu_training_load: load,
+    } as IntervalsActivity;
+  }
+
+  /** The trailing `activeDays` days before (and including) TODAY, each with `load`. */
+  function runActivities(
+    activeDays: number,
+    load: number,
+  ): IntervalsActivity[] {
+    return Array.from({ length: activeDays }, (_, i) => runActivity(i, load));
+  }
+
+  it("get-fitness-trend-data with runOnly reports the computed source and run activity types, never touching wellness", async () => {
+    mockedIntervalsList.mockResolvedValueOnce(runActivities(21, 80));
+
+    const result = await dispatchToolCall("get-fitness-trend-data", {
+      runOnly: true,
+    });
+
+    expect(result.isError).toBeUndefined();
+    const parsed = JSON.parse(result.content[0]?.text ?? "");
+    expect(parsed.source).toBe("computed");
+    expect(parsed.runOnly).toBe(true);
+    expect(parsed.activityTypesIncluded).toEqual(RUN_TYPES);
+    expect(mockedWellness).not.toHaveBeenCalled();
+  });
+
+  it(
+    "get-fitness-trend-data (runOnly) equals get-fitness-trend's run-only " +
+      "series for the same inputs (the shared loader, not two computations)",
+    async () => {
+      mockedIntervalsList.mockResolvedValueOnce(runActivities(21, 80));
+      const appResult = await dispatchToolCall("get-fitness-trend-data", {
+        runOnly: true,
+        projectDays: 14,
+      });
+      const appData = JSON.parse(appResult.content[0]?.text ?? "");
+
+      mockedIntervalsList.mockResolvedValueOnce(runActivities(21, 80));
+      const textResult = await dispatchToolCall("get-fitness-trend", {
+        runOnly: true,
+        projectDays: 14,
+      });
+      const textData = textResult.structuredContent as {
+        source: string;
+        daily: { date: string; ctl: number; atl: number; tsb: number }[];
+        current: { ctl: number; atl: number; tsb: number };
+        projection: { date: string; tsb: number }[];
+      };
+
+      expect(appData.source).toBe(textData.source);
+      expect(appData.series).toHaveLength(textData.daily.length);
+      for (const [i, day] of (
+        appData.series as {
+          date: string;
+          ctl: number;
+          atl: number;
+          tsb: number;
+        }[]
+      ).entries()) {
+        const textDay = textData.daily[i]!;
+        expect(day.date).toBe(textDay.date);
+        expect(day.ctl).toBeCloseTo(textDay.ctl, 5);
+        expect(day.atl).toBeCloseTo(textDay.atl, 5);
+        expect(day.tsb).toBeCloseTo(textDay.tsb, 5);
+      }
+      expect(appData.current.ctl).toBeCloseTo(textData.current.ctl, 5);
+      expect(appData.current.atl).toBeCloseTo(textData.current.atl, 5);
+      expect(appData.current.tsb).toBeCloseTo(textData.current.tsb, 5);
+      expect(appData.projection).toHaveLength(textData.projection.length);
+      expect(appData.projection.at(-1)?.tsb).toBeCloseTo(
+        textData.projection.at(-1)!.tsb,
+        5,
+      );
+    },
+  );
+
+  it("get-fitness-trend-data defaults runOnly to false (whole-body, unchanged)", async () => {
+    mockedWellness.mockResolvedValueOnce(wellnessSeries(TODAY, 91, 21, 80));
+    mockedIntervalsList.mockResolvedValueOnce([]);
+
+    const result = await dispatchToolCall("get-fitness-trend-data", {});
+
+    const parsed = JSON.parse(result.content[0]?.text ?? "");
+    expect(parsed.source).toBe("intervals.icu");
+    expect(parsed.runOnly).toBe(false);
   });
 });
 

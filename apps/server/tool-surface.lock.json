@@ -14,7 +14,7 @@
     "get-cadence-trend-data": "c8f0ebf6975e8c17",
     "get-compare-activities-data": "be4784b2a537c514",
     "get-fitness-trend": "029a9b3e46b010f9",
-    "get-fitness-trend-data": "cec0cff4d9658341",
+    "get-fitness-trend-data": "1e945ab449a4f43f",
     "get-hill-analysis": "e1b68d6281338608",
     "get-interval-analysis": "c588a69b7cb2d4fc",
     "get-race-prediction": "97175f1b2d0a78e1",
@@ -32,7 +32,7 @@
     "view-activity-zones": "3db69cbf14494a7f",
     "view-cadence-trends": "2c0263e8c4ca662d",
     "view-compare-activities": "359100b73b5705b5",
-    "view-fitness-trend": "e64185b5dc822860",
+    "view-fitness-trend": "0f6d551307f94644",
     "view-route-map": "a9957c8ed5456bbe",
     "view-training-load": "635880ffdc405479"
   }

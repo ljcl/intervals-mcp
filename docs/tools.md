@@ -332,9 +332,13 @@ capped at 60) projects TSB forward assuming rest, or `plannedLoads`
 projection count as rest; an entry on or before today, or beyond the
 projection, is ignored and named in a warning) projects with a specific plan
 instead. `targetDate`/`targetTsb` solve a load taper landing on a target
-form, unchanged from before. The `view-fitness-trend`/`get-fitness-trend-data`
-MCP App pair (below) shares this whole-body path (`loadWellnessFitnessSeries`,
-the one home both surfaces build the read series through).
+form, unchanged from before. `get-fitness-trend` and the
+`view-fitness-trend`/`get-fitness-trend-data` MCP App pair (below) share one
+loader (`loadFitnessTrend` in `loadFitnessTrend.ts`) for both the whole-body
+and run-only paths, so the app's `runOnly: true` payload is built the same
+way as the text tool's and the two can never disagree. The app's payload adds
+`source`, `runOnly`, `activityTypesIncluded`, and `warnings` alongside the
+series/projection/taper it already carried.
 
 `get-training-load` reports weekly running volume (distance, time,
 elevation, run count) and the same injury-risk warnings as before
@@ -406,8 +410,8 @@ and `view-route-map`/`get-route-map-data` are all ported to intervals.icu.
 | `get-compare-activities-data` | Aggregate comparison (summaries, activity2−activity1 differences, efficiency) for the compare-activities UI (app-only) |
 | `view-activity-zones` | Time-in-zone bar chart for one activity's HR zones with an easy/moderate/hard split (power zones dropped for now; see docs/api-notes.md) (MCP App) |
 | `get-activity-zones-data` | Per-zone time distributions (bucket bounds, seconds, percentages) for the activity-zones UI (app-only) |
-| `view-fitness-trend` | CTL/ATL/TSB over time with shaded fatigue/freshness/ramp bands and a dashed taper plan or rest projection past today (MCP App) |
-| `get-fitness-trend-data` | Per-day CTL/ATL/TSB, the projection, the solved taper, and the dated warning bands for the fitness-trend UI (app-only) |
+| `view-fitness-trend` | CTL/ATL/TSB over time with shaded fatigue/freshness/ramp bands and a dashed taper plan or rest projection past today; a Whole body/Runs only toggle switches scope, caching each side (MCP App) |
+| `get-fitness-trend-data` | Per-day CTL/ATL/TSB, the projection, the solved taper, and the dated warning bands for the fitness-trend UI; `runOnly` switches between whole-body (intervals.icu wellness) and run-only (computed) (app-only) |
 
 ## Prompts
 

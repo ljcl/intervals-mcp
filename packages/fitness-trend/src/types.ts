@@ -47,6 +47,17 @@ export interface TaperPlan {
   recentDailyLoad: number;
 }
 
+/**
+ * Args shared by both the whole-body and run-only scopes; `runOnly` is
+ * layered on per fetch by whichever scope is being requested.
+ */
+export interface FitnessTrendBaseArgs {
+  days: number;
+  projectDays: number;
+  targetDate?: string;
+  targetTsb?: number;
+}
+
 /** Response from the get-fitness-trend-data tool. */
 export interface FitnessTrendData {
   /** Lookback window in days. */
@@ -65,4 +76,16 @@ export interface FitnessTrendData {
   flags: string[];
   activitiesIncluded: number;
   activitiesMissingLoad: number;
+  /**
+   * Where `current`/`series` came from: `"intervals.icu"` for the
+   * whole-body wellness path, `"computed"` for run-only (locally derived).
+   * Optional since older payloads never carried it.
+   */
+  source?: "intervals.icu" | "computed";
+  /** True when this payload is the run-only (computed) scope. */
+  runOnly?: boolean;
+  /** Activity types `series`' load covers. */
+  activityTypesIncluded?: string[];
+  /** Notes worth surfacing alongside the chart (gaps, computed-locally disclaimer, etc). */
+  warnings?: string[];
 }

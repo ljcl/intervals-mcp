@@ -27,16 +27,9 @@ import {
 } from "./cadenceTrendData";
 import { getIntervalsApiKey, getTimeZone } from "./config";
 import {
-  computeFlags,
-  type FitnessTrendResult,
-  projectFromWellness,
-  trendBands,
-} from "./fitnessTrend";
-import {
   type FitnessTrendAppData,
   mapFitnessTrendApp,
 } from "./fitnessTrendApp";
-import { loadWellnessFitnessSeries } from "./fitnessTrendWellness";
 import {
   getActivity as getIntervalsActivity,
   listActivities as listActivitiesFn,
@@ -46,6 +39,7 @@ import {
   type IntervalsStreamType,
   loadIntervalsStreams,
 } from "./intervalsStreams";
+import { loadFitnessTrend } from "./loadFitnessTrend";
 import { type WaypointInput } from "./mapAnchors";
 import {
   createProgressReporter,
@@ -191,6 +185,14 @@ const fitnessTrendInput = z.object({
       "Days to look back (default 90, a useful CTL/ATL/TSB trend window; max 365). " +
         "Whole-body CTL/ATL is read straight from intervals.icu wellness, not " +
         "recomputed locally, so this window does not need extra runway.",
+    ),
+  runOnly: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Compute CTL/ATL/TSB from Run/TrailRun/VirtualRun training load only, " +
+        "computed locally (intervals.icu has no per-sport CTL/ATL). Default " +
+        "false reads whole-body CTL/ATL directly from intervals.icu wellness.",
     ),
   projectDays: z
     .number()
@@ -878,54 +880,43 @@ async function loadFitnessTrendAppData(
   progress: ReportProgress,
 ): Promise<FitnessTrendAppData> {
   const days = Number(args.days) || 90;
+  const runOnly = args.runOnly === true;
   const projectDays = Number(args.projectDays ?? 14);
   const targetDate =
     typeof args.targetDate === "string" ? args.targetDate : undefined;
   const targetTsb = Number(args.targetTsb ?? 10);
 
-  const tz = getTimeZone();
-  const endDate = todayLocal(tz);
-  const windowStart = addDays(endDate, -(days - 1));
-
-  const { series, seed, asOfDate } = await loadWellnessFitnessSeries(apiKey, {
-    oldest: windowStart,
-    newest: endDate,
-  });
-  const current = series.length > 0 ? series[series.length - 1]! : null;
-
-  const projected = projectFromWellness(
-    { series, seed, asOfDate, endDate },
+  const loaded = await loadFitnessTrend(
+    apiKey,
     {
+      days,
+      runOnly,
       projectDays,
       taper: targetDate ? { targetDate, targetTsb } : undefined,
     },
+    progress,
   );
-  const projection = projected.projection;
-  const tsbPositiveDate = projected.tsbPositiveDate;
-  const taper = projected.taper;
 
-  const trend: FitnessTrendResult = {
-    days: series,
-    current,
-    projection,
-    tsbPositiveDate,
-    taper,
-    bands: trendBands(series),
-    flags: computeFlags(series),
-  };
-
-  progress("Listing activities for the window…", { important: true });
-  const activities = await listActivitiesFn(apiKey, {
-    oldest: windowStart,
-    newest: endDate,
-  });
-
-  return mapFitnessTrendApp(trend, {
-    days,
-    activitiesIncluded: activities.length,
-    activitiesMissingLoad: activities.filter((a) => a.icu_training_load == null)
-      .length,
-  });
+  return mapFitnessTrendApp(
+    {
+      days: loaded.series,
+      current: loaded.current,
+      projection: loaded.projection,
+      tsbPositiveDate: loaded.tsbPositiveDate,
+      taper: loaded.taper,
+      bands: loaded.bands,
+      flags: loaded.flags,
+    },
+    {
+      days,
+      activitiesIncluded: loaded.activitiesIncluded,
+      activitiesMissingLoad: loaded.activitiesMissingLoad,
+      source: loaded.source,
+      runOnly,
+      activityTypesIncluded: loaded.activityTypesIncluded,
+      warnings: loaded.warnings,
+    },
+  );
 }
 
 async function handleGetFitnessTrendData(
@@ -944,7 +935,10 @@ async function handleViewFitnessTrend(
 ): Promise<ToolCallResult> {
   const data = await loadFitnessTrendAppData(token, args, progress);
   const current = data.current;
-  const lines = [`Fitness Trend (last ${data.days} days)`];
+  const lines = [
+    `Fitness Trend (last ${data.days} days)`,
+    `Source: ${data.source === "computed" ? "computed locally (runs only)" : "intervals.icu (whole body)"}`,
+  ];
 
   if (current) {
     lines.push(

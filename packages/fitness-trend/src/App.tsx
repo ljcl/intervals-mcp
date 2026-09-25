@@ -1,13 +1,19 @@
 import { getChartTokens } from "@intervals-mcp/design-system";
 import {
   CardHeader,
+  ErrorState,
   Legend,
   LegendItem,
+  LoadingState,
+  Pill,
+  PillGroup,
+  Skeleton,
   SummaryBar,
   useModelContextSync,
+  useServerToolFetcher,
 } from "@intervals-mcp/ui";
 import { type useApp } from "@modelcontextprotocol/ext-apps/react";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import styles from "./App.module.css";
 import { buildFitnessTrendContextSummary } from "./contextSummary";
 import {
@@ -18,19 +24,46 @@ import {
   countBandKinds,
   isPlanned,
   planDays,
+  sourceLabel,
 } from "./normalize";
 import { TaperPlanList } from "./TaperPlanList";
 import { TrendChart } from "./TrendChart";
-import { type FitnessTrendData, type TrendBand } from "./types";
+import {
+  type FitnessTrendBaseArgs,
+  type FitnessTrendData,
+  type TrendBand,
+} from "./types";
+
+/** Which fitness scope is on screen. */
+type Scope = "wholeBody" | "runOnly";
+
+const scopeOf = (runOnly: boolean): Scope =>
+  runOnly ? "runOnly" : "wholeBody";
 
 interface AppProps {
   app: ReturnType<typeof useApp>["app"];
+  /** The scope fetched at mount (whichever `initialRunOnly` names). */
   data: FitnessTrendData;
+  /** Args shared by both scopes; `runOnly` is layered on per fetch. */
+  baseArgs: FitnessTrendBaseArgs;
+  /** Which scope `data` belongs to: the toggle's starting position. */
+  initialRunOnly: boolean;
   mode?: "mobile" | "desktop";
 }
 
-export function App({ app, data, mode = "desktop" }: AppProps) {
+export function App({
+  app,
+  data: initialData,
+  baseArgs,
+  initialRunOnly,
+  mode = "desktop",
+}: AppProps) {
   const isMobile = mode === "mobile";
+  const initialScope = scopeOf(initialRunOnly);
+  const otherScope: Scope =
+    initialScope === "wholeBody" ? "runOnly" : "wholeBody";
+  const [scope, setScope] = useState<Scope>(initialScope);
+
   const [showCtl, setShowCtl] = useState(true);
   const [showAtl, setShowAtl] = useState(true);
   const [showTsb, setShowTsb] = useState(true);
@@ -39,10 +72,36 @@ export function App({ app, data, mode = "desktop" }: AppProps) {
     [],
   );
 
-  const summaryStats = useMemo(() => buildSummaryStats(data), [data]);
-  const planLength = planDays(data).length;
-  const planned = isPlanned(data);
-  const bandKinds = useMemo(() => countBandKinds(data.bands), [data.bands]);
+  // The other scope's result is fetched on demand and cached by the shared
+  // keyed store, so flipping back to it (or to the initial scope, already
+  // held in `initialData`) never re-fetches.
+  const fetcher = useServerToolFetcher<FitnessTrendData>(
+    app,
+    "get-fitness-trend-data",
+    (key) => ({ ...baseArgs, runOnly: key === "runOnly" }),
+  );
+  const { request } = fetcher;
+  useEffect(() => {
+    if (scope === otherScope) request(otherScope);
+  }, [scope, otherScope, request]);
+
+  const otherEntry = fetcher.entries.get(otherScope);
+  const data: FitnessTrendData | null =
+    scope === initialScope ? initialData : (otherEntry?.data ?? null);
+  const otherLoading = scope === otherScope && !otherEntry?.data;
+  const otherError = scope === otherScope ? (otherEntry?.error ?? null) : null;
+  const retryOther = useCallback(
+    () => fetcher.retry(otherScope),
+    [fetcher, otherScope],
+  );
+
+  const summaryStats = useMemo(
+    () => (data ? buildSummaryStats(data) : []),
+    [data],
+  );
+  const planLength = data ? planDays(data).length : 0;
+  const planned = data ? isPlanned(data) : false;
+  const bandKinds = useMemo(() => countBandKinds(data?.bands ?? []), [data]);
 
   const toggleBandKind = (kind: TrendBand["kind"]) =>
     setHiddenBandKinds((hidden) =>
@@ -53,7 +112,7 @@ export function App({ app, data, mode = "desktop" }: AppProps) {
 
   useModelContextSync(
     app ?? undefined,
-    () => buildFitnessTrendContextSummary(data),
+    () => (data ? buildFitnessTrendContextSummary(data) : null),
     [data],
   );
 
@@ -61,25 +120,63 @@ export function App({ app, data, mode = "desktop" }: AppProps) {
     <div className={styles.container} data-compact={isMobile || undefined}>
       <CardHeader
         title="Fitness trend"
-        subtitle={buildTrendSubtitle(data)}
+        subtitle={
+          data ? buildTrendSubtitle(data) : `Last ${baseArgs.days} days`
+        }
         compact={isMobile}
       />
-      <SummaryBar compact={isMobile} stats={summaryStats} />
-      <div className={styles.viewContainer}>
-        <TrendChart
-          data={data}
-          showCtl={showCtl}
-          showAtl={showAtl}
-          showTsb={showTsb}
-          showPlan={showPlan}
-          hiddenBandKinds={hiddenBandKinds}
-          mode={mode}
-        />
+      <div className={styles.scopeRow}>
+        <PillGroup>
+          <Pill
+            active={scope === "wholeBody"}
+            onClick={() => setScope("wholeBody")}
+          >
+            Whole body
+          </Pill>
+          <Pill
+            active={scope === "runOnly"}
+            onClick={() => setScope("runOnly")}
+          >
+            Runs only
+          </Pill>
+        </PillGroup>
+        {data && (
+          <span className={styles.sourceNote}>
+            {sourceLabel(data)}
+            {data.current ? ` · as of ${data.current.date}` : ""}
+          </span>
+        )}
       </div>
-      {data.taper && showPlan && (
-        <TaperPlanList plan={data.taper} compact={isMobile} />
+      {otherLoading ? (
+        <LoadingState label="Loading fitness trend">
+          <Skeleton variant="bar" />
+          <Skeleton variant="chart" />
+        </LoadingState>
+      ) : otherError || !data ? (
+        <ErrorState
+          message={otherError ?? "No fitness trend data available"}
+          onRetry={retryOther}
+        />
+      ) : (
+        <>
+          <SummaryBar compact={isMobile} stats={summaryStats} />
+          <div className={styles.viewContainer}>
+            <TrendChart
+              data={data}
+              showCtl={showCtl}
+              showAtl={showAtl}
+              showTsb={showTsb}
+              showPlan={showPlan}
+              hiddenBandKinds={hiddenBandKinds}
+              mode={mode}
+            />
+          </div>
+          {data.taper && showPlan && (
+            <TaperPlanList plan={data.taper} compact={isMobile} />
+          )}
+        </>
       )}
-      {data.series.length > 0 && (
+      {data && data.series.length > 0 && (
         <div className={styles.footer}>
           <Legend size={getChartTokens(mode).legendSize}>
             <LegendItem
