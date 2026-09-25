@@ -14,7 +14,7 @@
  * keeps `null` samples as `null`: the app draws them as gaps rather than a
  * fabricated zero or spike.
  *
- * Bands: one per `icu_intervals` entry (WORK/RECOVERY, not device laps —
+ * Bands: one per `icu_intervals` entry (WORK/RECOVERY, not device laps;
  * see docs/api-notes.md). `start_index`/`end_index` are recomputed against
  * the *downsampled* time array from the interval's `start_time`/`end_time`
  * (seconds since activity start), because raw stream indices shift once

@@ -244,10 +244,11 @@ grid fallback (no Recharts). Calls `get-route-map-data` (app-only) with
   (`src/annotations.ts`; km marks thinned 1/2/5… per length), and
   caller-pinned waypoints. WORK-interval end times are resolved to coordinate
   indices via `indexAtOrAfterTime` (`apps/server/src/streamDownsample.ts`,
-  called from `buildLapMarkers` in `routeMapData.ts`); waypoints are resolved
-  separately in `apps/server/src/mapAnchors.ts` (which only handles
-  waypoints, not lap markers) because intervals.icu's indices reference the
-  full-resolution recorded stream, not the downsampled one the map renders.
+  called from `buildLapMarkers` in `routeMapData.ts`), by time rather than by
+  intervals.icu's own indices, because those reference the full-resolution
+  recorded stream, not the downsampled one the map renders. Waypoints are
+  anchored by km in `apps/server/src/mapAnchors.ts`, which only handles
+  waypoints, not lap markers.
 - Waypoints: `waypoints` array (`km`, `label`, `kind: fuel|climb|water|custom`)
   anchored by cumulative distance (`resolveWaypoints` in `mapAnchors.ts`;
   recorded distance stream when present, else haversine cumulative distances).
