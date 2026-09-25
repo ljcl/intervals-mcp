@@ -457,14 +457,12 @@ describe("training load handlers", () => {
       activity_types_included: string[];
     };
 
-    // Both paths call the same `buildTrainingLoadData`/wellness read, but
-    // compare field by field with `toBeCloseTo` rather than a structural
-    // `toEqual`, matching the fitness-trend agreement tests above: a
-    // shared-function guarantee should not also demand bit-identical
-    // floating point, which is a stricter (and unrelated) claim.
-    expect(textData.current?.ctl).toBeCloseTo(appData.current.ctl, 5);
-    expect(textData.current?.atl).toBeCloseTo(appData.current.atl, 5);
-    expect(textData.current?.tsb).toBeCloseTo(appData.current.tsb, 5);
+    // Both paths call the same `loadTrainingLoadInputs`/wellness read with
+    // identical mocked inputs here, and `current`'s shape is `{date, ctl,
+    // atl, tsb}` on both sides (no extra fields to trip up a structural
+    // comparison), so an exact `toEqual` is the right claim: same shared
+    // function, same floats, not merely close.
+    expect(textData.current).toEqual(appData.current);
     expect(textData.activity_types_included).toEqual(
       appData.activityTypesIncluded,
     );
@@ -669,13 +667,17 @@ describe("fitness trend handlers", () => {
       projection: { date: string; ctl: number; atl: number; tsb: number }[];
     };
 
-    expect(textData.current?.ctl).toBeCloseTo(appData.current.ctl, 5);
-    expect(textData.current?.atl).toBeCloseTo(appData.current.atl, 5);
-    expect(textData.current?.tsb).toBeCloseTo(appData.current.tsb, 5);
+    // Both paths call the same `loadFitnessTrend` with identical mocked
+    // wellness here, so the floats must match exactly, not merely be close;
+    // compared field by field (not a structural `current` toEqual) since the
+    // app's `current` is a `FitnessTrendDay` and carries an extra `load`
+    // field the text tool's `current` does not.
+    expect(textData.current?.ctl).toBe(appData.current.ctl);
+    expect(textData.current?.atl).toBe(appData.current.atl);
+    expect(textData.current?.tsb).toBe(appData.current.tsb);
     expect(textData.projection).toHaveLength(appData.projection.length);
-    expect(textData.projection.at(-1)?.tsb).toBeCloseTo(
+    expect(textData.projection.at(-1)?.tsb).toBe(
       appData.projection.at(-1)!.tsb,
-      5,
     );
 
     mockedWellness.mockResolvedValueOnce(wellnessSeries(TODAY, 91, 21, 80));
@@ -699,7 +701,9 @@ describe("fitness trend handlers", () => {
     ).taper;
 
     expect(textTaper.target_date).toBe(appTaper.targetDate);
-    expect(textTaper.achieved_tsb).toBeCloseTo(appTaper.achievedTsb, 5);
+    // Same shared `solveTaperPlan` (closed-form, no bisection/tolerance) via
+    // the same `loadFitnessTrend`, so exact rather than close.
+    expect(textTaper.achieved_tsb).toBe(appTaper.achievedTsb);
   });
 
   it("projectDays: 0 gives an empty projection in both, even with unsynced wellness days (#catch-up bug)", async () => {
@@ -833,17 +837,18 @@ describe("fitness trend handlers", () => {
       ).entries()) {
         const textDay = textData.daily[i]!;
         expect(day.date).toBe(textDay.date);
-        expect(day.ctl).toBeCloseTo(textDay.ctl, 5);
-        expect(day.atl).toBeCloseTo(textDay.atl, 5);
-        expect(day.tsb).toBeCloseTo(textDay.tsb, 5);
+        // Same shared `loadFitnessTrend`, same mocked activities on both
+        // calls: exact, not merely close.
+        expect(day.ctl).toBe(textDay.ctl);
+        expect(day.atl).toBe(textDay.atl);
+        expect(day.tsb).toBe(textDay.tsb);
       }
-      expect(appData.current.ctl).toBeCloseTo(textData.current.ctl, 5);
-      expect(appData.current.atl).toBeCloseTo(textData.current.atl, 5);
-      expect(appData.current.tsb).toBeCloseTo(textData.current.tsb, 5);
+      expect(appData.current.ctl).toBe(textData.current.ctl);
+      expect(appData.current.atl).toBe(textData.current.atl);
+      expect(appData.current.tsb).toBe(textData.current.tsb);
       expect(appData.projection).toHaveLength(textData.projection.length);
-      expect(appData.projection.at(-1)?.tsb).toBeCloseTo(
+      expect(appData.projection.at(-1)?.tsb).toBe(
         textData.projection.at(-1)!.tsb,
-        5,
       );
     },
   );

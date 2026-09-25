@@ -21,10 +21,10 @@ Get your key from intervals.icu: Settings, Developer Settings. Set it as
 `INTERVALS_API_KEY`. intervals.icu authenticates this key with HTTP Basic
 auth using the literal username `API_KEY`.
 
-The tools themselves are in the process of being ported from Strava to
-intervals.icu, so the configured key is not yet used to call the
-intervals.icu API; the server validates and reports on it (`/health`), and
-tools will start using it as each is ported.
+Every tool call and every MCP App data fetch uses this key: `dispatchToolCall`
+resolves it once per call via `getIntervalsApiKey()` and passes it to the
+handler, which sends it as the Basic auth password on every intervals.icu
+request. `/health` also validates and reports on it (`api_key_configured`).
 
 The key grants full read/write access on the account it belongs to, with no
 scoping. Keep `MCP_AUTH_TOKEN` set whenever the server is reachable from
@@ -32,9 +32,9 @@ outside localhost, so a stranger who finds the URL cannot use your key.
 
 ## Health check
 
-`GET /health` reports server state without spending a Strava API request —
-served entirely from local state, safe to poll. The container's `HEALTHCHECK`
-uses it.
+`GET /health` reports server state without spending an intervals.icu API
+request: served entirely from local state, safe to poll. The container's
+`HEALTHCHECK` uses it.
 
 Unauthenticated callers get liveness only:
 
@@ -59,11 +59,13 @@ rate-limit state:
 ```
 
 `version` is `SERVER_VERSION`, resolved from the root `package.json` that
-release-please bumps, so it tracks the release you are running. `rate_limit` is
-a snapshot from the most recent Strava response, so it stays `null` until the
-server has made one. Wiring monitoring: point an uptime check at the
-unauthenticated shape; send the secret only when you want the config and quota
-detail.
+release-please bumps, so it tracks the release you are running. `rate_limit`
+is a snapshot parsed from the most recent intervals.icu response's
+`X-RateLimit-*`/`Retry-After` headers (`intervalsApi.getRateLimitSnapshot()`);
+intervals.icu sends none of these today (verified 2026-09-24), so `rate_limit`
+stays `null` even after calls have been made, not just before the first one.
+Wiring monitoring: point an uptime check at the unauthenticated shape; send
+the secret only when you want the config and quota detail.
 
 ## Securing the endpoint
 
@@ -85,22 +87,25 @@ athlete id or quota state.
 
 ## Rate limits and resilience
 
-The HTTP layer handles Strava's limits centrally — passive, nothing to
-configure:
+The HTTP layer handles rate limits centrally: passive, nothing to configure
+(see [architecture.md](architecture.md#request-pacing) and
+[architecture.md](architecture.md#response-cache) for the implementation):
 
-- Every response's `X-RateLimit-*` / `X-ReadRateLimit-*` (15-minute and daily
-  windows) and `Retry-After` headers are parsed. Strava allows 100
-  requests/15 min and 1000/day by default
-  ([docs](https://developers.strava.com/docs/rate-limits/)).
-- On a rate-limit response the client honours `Retry-After` and retries
-  (bounded). When the limit is genuinely exhausted the model gets a structured
-  message naming which window is gone and when it resets.
+- intervals.icu sends no `X-RateLimit-*` or `Retry-After` headers (verified
+  2026-09-24). Draft limits (go-live unconfirmed): 5,000 requests/day and
+  2,500 per rolling 15 minutes per API key, about 10/s per IP. With no
+  headers to react to, the client spaces requests 200ms apart instead
+  (`intervalsApi`'s `minIntervalMs`), which stays well under that ceiling.
+- If a response ever does carry `X-RateLimit-*`/`Retry-After` headers, the
+  client still parses and honours them: a rate-limit response gets bounded
+  retries respecting `Retry-After`, and a genuinely exhausted limit surfaces
+  as a structured message naming which window is gone and when it resets.
 - Transient `5xx` and network faults retry with bounded exponential backoff;
   only idempotent reads are retried, never writes.
 
 Read `rate_limit` from [`/health`](#health-check) to see where you stand — it
-reports the snapshot from the most recent Strava response without spending a
-request.
+reports the snapshot from the most recent intervals.icu response's headers,
+which is `null` today since intervals.icu sends none.
 
 ## Docker notes
 
