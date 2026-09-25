@@ -88,7 +88,13 @@ per-tool.
   detail/streams/zones/laps) **and** ancestors, since a write to a
   sub-resource can change how its parent reads. No current tool writes a
   sub-resource, but `invalidateWritten` (`fetchClient.ts`) still walks both
-  directions so a future one is covered without a second rule.
+  directions so a future one is covered without a second rule. This
+  automatic invalidation only fires when the PUT itself resolves
+  successfully; `updateActivity` (`intervalsClient.ts`) additionally
+  invalidates the activity, the athlete's activities list, and the gear
+  list in a `finally`, so a *failed* PUT that may still have mutated state
+  server-side (a 5xx, a network fault, a timeout) does not leave a stale
+  pre-write entry being served afterward.
 - `skipCache: true` bypasses entirely; the `update-activity` append read uses
   it so it never composes onto a stale description.
 - **The cache never shares references.** Every value it hands out (a hit, the
@@ -237,27 +243,39 @@ and the chart cannot describe different zones. Empty results still emit a valid
 payload (`count: 0`), because a caller branching on `structuredContent` should
 not have to handle "absent" as a third case.
 
-## Exports
-
-Exports have two delivery modes (`tools/_exportOutput.ts`): the transport is
-remote, so a path inside the container is unreachable and file-only exports
-were dead over the wire. `output: "content"` returns the document, `"file"`
-writes it, and **omitting it** picks file when `ROUTE_EXPORT_PATH` is set and
-content when it is not — a published default could only have been right for
-one deployment. Content mode caps at `MAX_EXPORT_CONTENT_BYTES` and says
-outright that a truncated GPX will not open, rather than handing back something
-that looks complete.
-
 ## Input validation
 
-**`sportType` is an enum, not a string.** `SPORT_TYPES` in
-`utils/activityWrite.ts` is the single list behind both the advertised JSON
-Schema and the runtime check, so a model picks a valid value without a failed
-round-trip to Strava. It is pinned from Strava's documented SportType model
-because there is no machine-readable feed — the cost is that a sport Strava
-adds later is rejected locally until the array is updated. Rejections name the
-near miss (`Weightlifting` → `WeightTraining`), since an error listing fifty
-values is complete but not actionable.
+**`update-activity` validates against fresh reads, not cached ones.** Its
+input schema (`superRefine`, `tools/updateActivity.ts`) rejects a `name`
+that is empty or whitespace-only, and rejects `descriptionMode` without
+`description`; `append` mode additionally rejects an empty or
+whitespace-only `description` (`replace` mode's default, an empty string, is
+the explicit way to clear a description instead; `null` and `""` are
+treated as equal when diffing, so clearing an already-empty description
+sends no PUT). `gearId` is checked against a `skipCache: true` `list-gear`
+read, so gear added moments earlier is accepted; an unknown id fails and
+lists the available gear ids and names, while a retired id is accepted with
+a warning. The activity itself is also read fresh (`skipCache: true`)
+before gear validation, so a missing activity reports not-found rather than
+an unrelated gear error. `utils/activityWrite.ts` holds the pure, unit-tested
+pieces this depends on: `buildActivityPatch` (keeps only fields that differ
+from the current value), `diffActivityWrite` (before/after echoes plus a
+warning when a fresh re-read does not match what was sent), and
+`composeDescription` (replace/append).
+
+**A write that may have landed is never silently treated as failed.**
+`update-activity` (`tools/updateActivity.ts`) can tell a definite rejection
+of the PUT from an ambiguous one: a 4xx `HttpError` (the request itself was
+rejected, e.g. a bad gear id) or a `RateLimitError` (throttled before it
+ran) never reached the write, so those report a normal error. Anything
+else (the PUT times out (`RequestTimeoutError`), returns a 5xx, a network
+fault, or the client fails to parse an otherwise-200 response) leaves the
+write's outcome unknown, same as a failure after the PUT resolved (the
+confirming re-read, or diffing its response). All of these report an
+`isError` that says so explicitly and points at `get-activity` to check
+before sending the same update again, rather than either claiming success,
+reporting a flat failure, or inviting a blind retry that could double the
+effect of a write that already landed.
 
 ## Tool metadata
 
@@ -306,7 +324,7 @@ resources and their `_meta.ui`, and the prompts. A tool one era serves and the
 other drops is exactly what dual-era serving must not allow. Era-specific
 describes pin the modern result envelope (`resultType`, cache fields,
 per-response `serverInfo`) and that none of it leaks onto the legacy wire.
-Asserting against the in-memory `TOOLS` table proves nothing — an annotation or
+Asserting against the in-memory `TOOL_DEFS` table proves nothing: an annotation or
 schema that does not serialize cannot influence a host. The bootstrap was
 copied into three suites before the shared client existed; add to the client
 rather than making a fourth copy.

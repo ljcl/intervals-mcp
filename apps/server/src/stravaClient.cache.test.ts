@@ -6,7 +6,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { stravaApi } from "./fetchClient";
-import { getActivityLaps, getActivityZones } from "./stravaClient";
+import { getActivityLaps, getActivityStreams } from "./stravaClient";
 
 const realFetch = globalThis.fetch;
 
@@ -23,7 +23,10 @@ function stubFetch(bodyForUrl: (url: string) => unknown) {
   return fn;
 }
 
-const bodyByPath = (_url: string) => [];
+/** Laps parse fine as an empty array; a streams response must carry at
+ * least one entry or the client treats it as StreamsUnavailableError. */
+const bodyByPath = (url: string) =>
+  url.includes("/streams/") ? [{ type: "time", data: [0, 1, 2] }] : [];
 
 beforeEach(() => {
   // The client is a module-level singleton with a shared cache.
@@ -37,12 +40,12 @@ afterEach(() => {
 });
 
 describe("view/data tool pairs share one upstream fetch", () => {
-  it("serves an activity's zones and laps from cache on the second load", async () => {
+  it("serves an activity's streams and laps from cache on the second load", async () => {
     const fetchMock = stubFetch(bodyByPath);
 
-    await getActivityZones("token", "123");
+    await getActivityStreams("token", "123", ["time", "heartrate"]);
     await getActivityLaps("token", "123");
-    await getActivityZones("token", "123");
+    await getActivityStreams("token", "123", ["time", "heartrate"]);
     await getActivityLaps("token", "123");
 
     expect(fetchMock).toHaveBeenCalledTimes(2);

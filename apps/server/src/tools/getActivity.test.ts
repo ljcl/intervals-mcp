@@ -62,8 +62,9 @@ describe("mapActivityDetail", () => {
     expect(detail.moving_time).toBe("39:32");
     expect(detail.elapsed_time_s).toBe(2373);
     expect(detail.pace_min_per_km).toBe("4:55");
-    // gap (3.4783862) is m/s, same unit as average_speed; see getActivity.ts's
-    // gapPace() comment for the fixture evidence this rests on.
+    // gap (3.4783862) is m/s, same unit as average_speed; see
+    // utils/running.ts's gapPace() comment for the fixture evidence this
+    // rests on.
     expect(detail.gap_min_per_km).toBe("4:47");
     expect(detail.average_hr).toBe(171);
     expect(detail.max_hr).toBe(185);
@@ -98,7 +99,7 @@ describe("mapActivityDetail", () => {
     });
   });
 
-  it("builds HR zones from sport settings bounds and activity zone times", () => {
+  it("builds HR zones from the activity's own icu_hr_zones and zone times", () => {
     const detail = mapActivityDetail(
       runActivityWithIntervals,
       sportSettingsRun,
@@ -114,17 +115,52 @@ describe("mapActivityDetail", () => {
     expect(detail.pace_zone_seconds).toBeNull();
   });
 
-  it("returns empty hr_zones when sport settings are unavailable", () => {
+  it("still builds hr_zones from the activity's own zones when sport settings are unavailable", () => {
+    // The fixture's own icu_hr_zones now beats sport settings, so a null
+    // sportSettings no longer blanks hr_zones (#task-6).
     const detail = mapActivityDetail(runActivityWithIntervals, null);
+    expect(detail.hr_zones).toHaveLength(5);
+  });
+
+  it("falls back to sport settings bounds when the activity has no icu_hr_zones of its own", () => {
+    const noOwnBounds: IntervalsActivity = {
+      ...runActivityWithIntervals,
+      icu_hr_zones: null,
+    };
+    const detail = mapActivityDetail(noOwnBounds, sportSettingsRun);
+    expect(detail.hr_zones).toEqual([
+      { zone: 1, min_bpm: 0, max_bpm: 147, seconds: 103 },
+      { zone: 2, min_bpm: 147, max_bpm: 160, seconds: 146 },
+      { zone: 3, min_bpm: 160, max_bpm: 169, seconds: 330 },
+      { zone: 4, min_bpm: 169, max_bpm: 178, seconds: 1684 },
+      { zone: 5, min_bpm: 178, max_bpm: 197, seconds: 111 },
+    ]);
+  });
+
+  it("returns empty hr_zones when neither the activity nor sport settings have bounds", () => {
+    const detail = mapActivityDetail(
+      { ...runActivityWithIntervals, icu_hr_zones: null },
+      null,
+    );
     expect(detail.hr_zones).toEqual([]);
   });
 
-  it("returns empty hr_zones when icu_hr_zone_times is missing", () => {
+  it("returns empty hr_zones when icu_hr_zone_times is missing, even with sport settings available", () => {
     const noZoneTimes: IntervalsActivity = {
       ...runActivityWithIntervals,
+      icu_hr_zones: null,
       icu_hr_zone_times: null,
     };
     const detail = mapActivityDetail(noZoneTimes, sportSettingsRun);
+    expect(detail.hr_zones).toEqual([]);
+  });
+
+  it("does not fall back to sport settings when the activity's own bounds/times counts mismatch", () => {
+    const mismatched: IntervalsActivity = {
+      ...runActivityWithIntervals,
+      icu_hr_zones: [147, 160, 169],
+    };
+    const detail = mapActivityDetail(mismatched, sportSettingsRun);
     expect(detail.hr_zones).toEqual([]);
   });
 
@@ -200,10 +236,11 @@ describe("mapActivityDetail", () => {
     expect(detail.average_cadence_spm).toBe(166);
     expect(detail.running_dynamics).not.toBeNull();
     expect(detail.running_dynamics?.stance_time_ms).toBe(233);
-    // The fetched sport settings are the Run group (types: ["Run",
-    // "VirtualRun", "TrailRun"]), which does not cover Walk: its zone
-    // bounds must not be applied to a Walk's recorded zone times.
-    expect(detail.hr_zones).toEqual([]);
+    // The activity's own icu_hr_zones (present on this fixture regardless
+    // of type) are the correct settings group for any activity type, so a
+    // Walk still gets hr_zones; the fetched sport settings are the Run
+    // group and are never even consulted here.
+    expect(detail.hr_zones).toHaveLength(5);
   });
 
   it("resolves gear_name from the activity payload when it's present, without an extra call", () => {
@@ -233,7 +270,18 @@ describe("mapActivityDetail", () => {
     expect(detail.average_hr).toBe(114);
     expect(detail.max_hr).toBe(149);
     expect(detail.running_dynamics).toBeNull();
-    expect(detail.hr_zones).toEqual([]);
+    // The activity's own icu_hr_zones (a 7-zone WeightTraining settings
+    // group, distinct from the Run group's 5) is used even with no sport
+    // settings passed in at all.
+    expect(detail.hr_zones).toEqual([
+      { zone: 1, min_bpm: 0, max_bpm: 151, seconds: 3351 },
+      { zone: 2, min_bpm: 151, max_bpm: 160, seconds: 0 },
+      { zone: 3, min_bpm: 160, max_bpm: 169, seconds: 0 },
+      { zone: 4, min_bpm: 169, max_bpm: 178, seconds: 0 },
+      { zone: 5, min_bpm: 178, max_bpm: 183, seconds: 0 },
+      { zone: 6, min_bpm: 183, max_bpm: 188, seconds: 0 },
+      { zone: 7, min_bpm: 188, max_bpm: 197, seconds: 0 },
+    ]);
     expect(detail.intervals).toBeNull();
     expect(detail.gear_id).toBeNull();
     expect(detail.load).toEqual({
@@ -414,8 +462,26 @@ describe("getActivityTool.execute", () => {
     });
   });
 
-  it("degrades to empty hr_zones when sport settings fail, without failing the call", async () => {
+  it("still builds hr_zones from the activity's own zones when sport settings fail", async () => {
     mockedGetActivity.mockResolvedValueOnce(runActivity);
+    mockedGetSportSettings.mockRejectedValueOnce(
+      handledNotFound("getSportSettings"),
+    );
+
+    const result = await getActivityTool.execute(
+      { id: "i189807578", includeIntervals: true },
+      "key",
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(result.structuredContent?.hr_zones).toHaveLength(5);
+  });
+
+  it("degrades to empty hr_zones when neither the activity nor sport settings have bounds", async () => {
+    mockedGetActivity.mockResolvedValueOnce({
+      ...runActivity,
+      icu_hr_zones: null,
+    });
     mockedGetSportSettings.mockRejectedValueOnce(
       handledNotFound("getSportSettings"),
     );
@@ -429,7 +495,7 @@ describe("getActivityTool.execute", () => {
     expect(result.structuredContent?.hr_zones).toEqual([]);
   });
 
-  it("ignores sport settings for a non-run activity type", async () => {
+  it("uses a non-run activity's own zones rather than the fetched Run sport settings", async () => {
     mockedGetActivity.mockResolvedValueOnce(strengthActivity);
     mockedGetSportSettings.mockResolvedValueOnce(sportSettingsRun);
 
@@ -439,7 +505,9 @@ describe("getActivityTool.execute", () => {
     );
 
     expect(result.isError).toBeUndefined();
-    expect(result.structuredContent?.hr_zones).toEqual([]);
+    // 7 zones, not the Run group's 5 - proves it came from the activity's
+    // own icu_hr_zones, not the fetched sport settings.
+    expect(result.structuredContent?.hr_zones).toHaveLength(7);
     expect(result.structuredContent?.average_cadence_spm).toBeNull();
   });
 

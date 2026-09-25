@@ -1,33 +1,40 @@
 /**
  * Hill/grade performance math for `get-hill-analysis`. Pure functions
- * over Strava streams, unit-tested next to `trainingLoad.ts`.
+ * over the intervals.icu stream adapter's named arrays
+ * (`intervalsStreams.ts`), unit-tested next to `trainingLoad.ts`.
  *
  * Detects sustained climbs and descents from the distance + grade streams,
  * summarises each (grade, pace, grade-adjusted pace, HR, cadence, power),
  * and reports the headline late-race question: did climbing cost more late
  * in the run than early? Effort is normalised as HR per unit of
  * grade-adjusted speed, so a slower-but-easier late climb is not misread as
- * fade. Altitude comes from Strava's corrected elevation stream, not raw
- * barometric values.
+ * fade. Altitude comes from intervals.icu's elevation stream.
  */
 
-/** Streams as returned by Strava, index-aligned. */
+/**
+ * Streams as returned by `loadIntervalsStreams`, index-aligned. Every
+ * optional array is per-sample nullable (a gap in the recording, not a
+ * missing stream). `distance` and `altitude` drive the index-based windowing
+ * below and are interpolated across nulls by {@link normalizeHillStreams};
+ * everything else keeps a null sample as "no data for this sample" and is
+ * simply excluded from whatever it would have fed, never coerced to 0.
+ */
 export interface HillStreams {
   /** Seconds since activity start, non-decreasing. */
   time: number[];
   /** Cumulative metres. Required. */
-  distance: number[];
-  /** Corrected elevation in metres. */
-  altitude?: number[];
-  /** Strava's smoothed grade in percent. */
-  grade_smooth?: number[];
-  heartrate?: number[];
+  distance: (number | null)[];
+  /** Elevation in metres. */
+  altitude?: (number | null)[];
+  /** intervals.icu's smoothed grade in percent, preferred when present. */
+  grade_smooth?: (number | null)[];
+  heartrate?: (number | null)[];
   /** Smoothed speed in m/s. */
-  velocity_smooth?: number[];
-  watts?: number[];
-  /** Run cadence in strides-per-minute (one leg, as Strava records it). */
-  cadence?: number[];
-  /** Strava's moving flag; false = stopped. */
+  velocity_smooth?: (number | null)[];
+  watts?: (number | null)[];
+  /** Run cadence in strides-per-minute (one leg, as intervals.icu records it). */
+  cadence?: (number | null)[];
+  /** Derived stopped/moving flag; false = stopped. */
   moving?: boolean[];
 }
 
@@ -90,10 +97,14 @@ export interface HillDrift {
   lateClimbs: number;
 }
 
+/** Where the per-sample grade came from: intervals.icu's own stream, or derived from altitude. */
+export type GradeSource = "grade_smooth" | "computed";
+
 export interface HillAnalysis {
   climbs: HillSegment[];
   descents: HillSegment[];
   drift: HillDrift | null;
+  gradeSource: GradeSource;
   totals: {
     climbCount: number;
     descentCount: number;
@@ -122,20 +133,109 @@ export function gapFactor(gradeFraction: number): number {
 }
 
 /**
- * Per-sample grade in percent: Strava's grade_smooth when present, otherwise
- * altitude change over a trailing ~GRADE_WINDOW_M window (single-sample
- * altitude noise otherwise produces phantom micro-climbs).
+ * Linearly interpolates null samples in a stream that index-based math below
+ * depends on staying fully populated (distance, altitude, grade): a null run
+ * bounded by two known samples gets the straight-line value between them; a
+ * leading or trailing run of nulls holds the nearest known value flat (there
+ * is nothing to interpolate against). Never coerces a gap to 0: a missing
+ * altitude sample is not sea level. A stream where "no data here" should stay
+ * absent instead of being filled in (heart rate, cadence, velocity) is left
+ * alone and its null samples are skipped where they are consumed, not routed
+ * through this function.
+ */
+export function interpolateNulls(values: (number | null)[]): number[] {
+  const out = new Array<number>(values.length);
+  let i = 0;
+  while (i < values.length) {
+    const v = values[i];
+    if (v != null) {
+      out[i] = v;
+      i++;
+      continue;
+    }
+    let j = i;
+    while (j < values.length && values[j] == null) j++;
+    const prev = i > 0 ? out[i - 1] : undefined;
+    const next = j < values.length ? (values[j] as number) : undefined;
+    const span = j - (i - 1);
+    for (let k = i; k < j; k++) {
+      if (prev != null && next != null) {
+        out[k] = prev + ((next - prev) * (k - (i - 1))) / span;
+      } else {
+        out[k] = prev ?? next ?? 0;
+      }
+    }
+    i = j;
+  }
+  return out;
+}
+
+/**
+ * `HillStreams` with distance/altitude/grade_smooth resolved to plain,
+ * fully-populated numeric arrays (nulls interpolated, see
+ * {@link interpolateNulls}) so every downstream function below can index
+ * them without a null check. `grade_smooth` is dropped entirely (treated as
+ * absent) when the raw stream has no length match or is entirely null, so
+ * {@link computeGrades} falls back to computing grade from altitude exactly
+ * as it would for a genuinely missing stream. Every other stream is passed
+ * through unchanged: a null sample there means "no data for this sample",
+ * which the functions below already skip rather than treat as 0.
+ */
+export interface NormalizedHillStreams {
+  time: number[];
+  distance: number[];
+  altitude?: number[];
+  grade_smooth?: number[];
+  heartrate?: (number | null)[];
+  velocity_smooth?: (number | null)[];
+  watts?: (number | null)[];
+  cadence?: (number | null)[];
+  moving?: boolean[];
+}
+
+/** Resolves nulls in `distance`/`altitude`/`grade_smooth`; see {@link NormalizedHillStreams}. */
+export function normalizeHillStreams(
+  streams: HillStreams,
+): NormalizedHillStreams {
+  const hasUsableGrade =
+    streams.grade_smooth != null &&
+    streams.grade_smooth.length === streams.distance.length &&
+    streams.grade_smooth.some((g) => g != null);
+
+  return {
+    time: streams.time,
+    distance: interpolateNulls(streams.distance),
+    altitude: streams.altitude ? interpolateNulls(streams.altitude) : undefined,
+    grade_smooth: hasUsableGrade
+      ? interpolateNulls(streams.grade_smooth as (number | null)[])
+      : undefined,
+    heartrate: streams.heartrate,
+    velocity_smooth: streams.velocity_smooth,
+    watts: streams.watts,
+    cadence: streams.cadence,
+    moving: streams.moving,
+  };
+}
+
+/**
+ * Per-sample grade in percent: intervals.icu's grade_smooth when present,
+ * otherwise altitude change over a trailing ~GRADE_WINDOW_M window
+ * (single-sample altitude noise otherwise produces phantom micro-climbs).
+ * Reports which source it used so callers can say so.
  */
 export function computeGrades(
-  streams: Pick<HillStreams, "distance" | "altitude" | "grade_smooth">,
-): number[] {
+  streams: Pick<
+    NormalizedHillStreams,
+    "distance" | "altitude" | "grade_smooth"
+  >,
+): { grades: number[]; source: GradeSource } {
   const { distance, altitude, grade_smooth } = streams;
-  if (grade_smooth && grade_smooth.length === distance.length) {
-    return grade_smooth;
+  if (grade_smooth) {
+    return { grades: grade_smooth, source: "grade_smooth" };
   }
   if (!altitude || altitude.length !== distance.length) {
     throw new HillAnalysisError(
-      "Neither a grade nor an altitude stream is available — hill analysis needs elevation data.",
+      "Neither a grade nor an altitude stream is available: hill analysis needs elevation data.",
     );
   }
   const grades = new Array<number>(distance.length).fill(0);
@@ -145,7 +245,7 @@ export function computeGrades(
     const run = distance[i]! - distance[j]!;
     grades[i] = run > 0 ? ((altitude[i]! - altitude[j]!) / run) * 100 : 0;
   }
-  return grades;
+  return { grades, source: "computed" };
 }
 
 interface IndexRange {
@@ -222,7 +322,7 @@ const round = (value: number, dp = 2) =>
   Math.round(value * 10 ** dp) / 10 ** dp;
 
 function summarizeSegment(
-  streams: HillStreams,
+  streams: NormalizedHillStreams,
   grades: number[],
   range: IndexRange,
 ): HillSegment {
@@ -268,7 +368,7 @@ function summarizeSegment(
       wattsW += weight;
     }
     const v = velocity_smooth?.[i] ?? (distance[i]! - distance[i - 1]!) / dt;
-    if (v > 0) {
+    if (v != null && v > 0) {
       gapSpeedSum += v * gapFactor(grades[i]! / 100) * weight;
       gapW += weight;
     }
@@ -357,7 +457,7 @@ export function computeDrift(
 export function computeHillAnalysis(streams: HillStreams): HillAnalysis {
   if (!streams.distance || streams.distance.length < 2) {
     throw new HillAnalysisError(
-      "No distance stream is available — hill analysis needs distance and elevation data.",
+      "No distance stream is available: hill analysis needs distance and elevation data.",
     );
   }
   if (streams.time.length !== streams.distance.length) {
@@ -366,14 +466,15 @@ export function computeHillAnalysis(streams: HillStreams): HillAnalysis {
     );
   }
 
+  const normalized = normalizeHillStreams(streams);
   const warnings: string[] = [];
-  const grades = computeGrades(streams);
-  if (!streams.grade_smooth) {
+  const { grades, source: gradeSource } = computeGrades(normalized);
+  if (gradeSource === "computed") {
     warnings.push(
       "No smoothed-grade stream; grade was derived from altitude over ~30 m windows.",
     );
   }
-  if (!streams.heartrate) {
+  if (!normalized.heartrate) {
     warnings.push(
       "No heart rate stream; climb drift falls back to grade-adjusted pace only.",
     );
@@ -381,27 +482,29 @@ export function computeHillAnalysis(streams: HillStreams): HillAnalysis {
 
   const climbRanges = detectSustained(
     grades,
-    streams.distance,
-    streams.altitude,
+    normalized.distance,
+    normalized.altitude,
     1,
   );
   const descentRanges = detectSustained(
     grades,
-    streams.distance,
-    streams.altitude,
+    normalized.distance,
+    normalized.altitude,
     -1,
   );
 
-  const climbs = climbRanges.map((r) => summarizeSegment(streams, grades, r));
+  const climbs = climbRanges.map((r) =>
+    summarizeSegment(normalized, grades, r),
+  );
   const descents = descentRanges.map((r) =>
-    summarizeSegment(streams, grades, r),
+    summarizeSegment(normalized, grades, r),
   );
 
-  const totalDistanceM = streams.distance[streams.distance.length - 1]!;
+  const totalDistanceM = normalized.distance[normalized.distance.length - 1]!;
   const drift = computeDrift(climbs, totalDistanceM);
   if (climbs.length === 0) {
     warnings.push(
-      "No sustained climbs detected (grade ≥ 2% for ≥ 200 m) — this looks like a flat activity.",
+      "No sustained climbs detected (grade ≥ 2% for ≥ 200 m): this looks like a flat activity.",
     );
   } else if (drift == null) {
     warnings.push(
@@ -413,6 +516,7 @@ export function computeHillAnalysis(streams: HillStreams): HillAnalysis {
     climbs,
     descents,
     drift,
+    gradeSource,
     totals: {
       climbCount: climbs.length,
       descentCount: descents.length,

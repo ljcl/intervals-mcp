@@ -12,7 +12,7 @@
 import { Server } from "@modelcontextprotocol/server";
 import { describe, expect, it } from "vitest";
 import { connectTestClient } from "./mcpTestClient";
-import { createServer, TOOLS } from "./server";
+import { createServer, TOOL_DEFS } from "./server";
 import {
   READ_ONLY,
   WRITE_DESTRUCTIVE,
@@ -54,17 +54,14 @@ describe("annotation constants", () => {
  * table fails the exhaustiveness check below, so adding one forces a
  * deliberate answer to "does this mutate anything?" — the question the host's
  * permission bucket is derived from.
- *
- * The three `export-*` tools are writes on purpose: they save a file into
- * ROUTE_EXPORT_PATH on the server's own disk. They will keep prompting, and
- * should.
  */
-const EXPECTED_CLASS: Record<string, "read" | "destroy" | "write"> = {
+const EXPECTED_CLASS: Record<string, "read" | "destroy"> = {
   // Reads — the Strava API surface.
   "get-athlete-stats": "read",
   "get-activity-zones": "read",
   "get-activity-laps": "read",
   "get-running-summary": "read",
+  "get-running-dynamics": "read",
   "get-aerobic-analysis": "read",
   "get-hill-analysis": "read",
   "get-split-analysis": "read",
@@ -100,19 +97,17 @@ const EXPECTED_CLASS: Record<string, "read" | "destroy" | "write"> = {
 
   // Writes.
   "update-activity": "destroy",
-  "export-activity-gpx": "write",
 };
 
 const ANNOTATIONS_FOR_CLASS = {
   read: READ_ONLY,
   destroy: WRITE_DESTRUCTIVE,
-  write: WRITE_IDEMPOTENT,
 } as const;
 
 describe("tool annotations exhaustiveness", () => {
-  it("every tool in TOOLS carries an annotations object", () => {
-    expect(TOOLS.length).toBeGreaterThan(0);
-    for (const tool of TOOLS) {
+  it("every tool in TOOL_DEFS carries an annotations object", () => {
+    expect(TOOL_DEFS.length).toBeGreaterThan(0);
+    for (const tool of TOOL_DEFS) {
       expect(
         tool.annotations,
         `${tool.name} is missing annotations`,
@@ -121,7 +116,7 @@ describe("tool annotations exhaustiveness", () => {
   });
 
   it("every tool is classified in the table, and vice versa", () => {
-    const advertised = TOOLS.map((t) => t.name).sort();
+    const advertised = TOOL_DEFS.map((t) => t.name).sort();
     const classified = Object.keys(EXPECTED_CLASS).sort();
     // Named both ways so the failure says which side is short.
     expect(
@@ -135,16 +130,16 @@ describe("tool annotations exhaustiveness", () => {
   });
 
   it("each tool carries exactly the annotations its class prescribes", () => {
-    for (const tool of TOOLS) {
+    for (const tool of TOOL_DEFS) {
       const expected = ANNOTATIONS_FOR_CLASS[EXPECTED_CLASS[tool.name]!];
       expect(tool.annotations, tool.name).toEqual(expected);
     }
   });
 
   it("every read tool spells out both hints a permission bucket reads", () => {
-    const reads = TOOLS.filter((t) => EXPECTED_CLASS[t.name] === "read");
+    const reads = TOOL_DEFS.filter((t) => EXPECTED_CLASS[t.name] === "read");
     // Guards the table itself: an empty filter would make this vacuous.
-    expect(reads.length).toBe(32);
+    expect(reads.length).toBe(33);
     for (const tool of reads) {
       expect(tool.annotations?.readOnlyHint, tool.name).toBe(true);
       expect(tool.annotations?.destructiveHint, tool.name).toBe(false);
@@ -155,7 +150,7 @@ describe("tool annotations exhaustiveness", () => {
     // `_meta["anthropic/requiresUserInteraction"]` makes a host prompt on
     // every call with no "don't ask again" option, and allow-rules do not
     // skip it. Nothing here wants that; pin it so nothing acquires it.
-    for (const tool of TOOLS) {
+    for (const tool of TOOL_DEFS) {
       const meta = tool._meta as Record<string, unknown> | undefined;
       expect(
         meta?.["anthropic/requiresUserInteraction"],
@@ -166,7 +161,7 @@ describe("tool annotations exhaustiveness", () => {
 });
 
 /**
- * Serialization check. The in-memory TOOLS table having correct annotations
+ * Serialization check. The in-memory TOOL_DEFS table having correct annotations
  * proves nothing about what the host receives: SDK result schemas can drop
  * fields they do not model, and an annotation that does not reach the wire
  * cannot influence a permission decision. So this drives a real initialize +
@@ -183,7 +178,7 @@ describe("annotations on the wire", () => {
   it("tools/list serializes every tool's annotations", async () => {
     const tools = await listToolsOverTheWire();
 
-    expect(tools.length).toBe(TOOLS.length);
+    expect(tools.length).toBe(TOOL_DEFS.length);
     for (const tool of tools) {
       const name = tool.name as string;
       const expected = ANNOTATIONS_FOR_CLASS[EXPECTED_CLASS[name]!];
@@ -200,7 +195,7 @@ describe("annotations on the wire", () => {
     const reads = tools.filter(
       (t) => EXPECTED_CLASS[t.name as string] === "read",
     );
-    expect(reads.length).toBe(32);
+    expect(reads.length).toBe(33);
     for (const tool of reads) {
       const annotations = tool.annotations as Record<string, unknown>;
       // `in` rather than a truthiness check: the failure mode being guarded

@@ -1,27 +1,53 @@
 /**
- * CTL/ATL/TSB fitness-trend math for `get-fitness-trend`. Pure
- * functions over daily relative-effort loads, unit-tested next to
+ * CTL/ATL/TSB fitness-trend math for `get-fitness-trend`. Pure, source-agnostic
+ * functions over daily loads the caller supplies, unit-tested next to
  * `trainingLoad.ts`.
  *
  * The model is the classic performance-management chart: CTL ("fitness") is
  * an exponentially weighted average of daily load with a 42-day time
  * constant, ATL ("fatigue") the same with a 7-day constant, and
- * TSB ("form") = CTL − ATL. Load is Strava's relative effort
- * (`suffer_score`), which is HR-based — directionally consistent with
- * TRIMP-based CTL/ATL from other tools, but not absolutely comparable.
+ * TSB ("form") = CTL − ATL. CTL and ATL read separate load series
+ * (`ctlLoad`/`atlLoad`) so a caller can, for example, count strength work
+ * toward fatigue only; reproducing intervals.icu's own wellness CTL/ATL
+ * exactly requires exactly this split. Callers own how load is measured
+ * (relative effort, TRIMP, or anything else) and how it maps to each series.
  */
+import { addDays, daysBetween } from "./utils/localDate";
+import { PACE_ACTIVITY_TYPES } from "./utils/running";
 
-/** Minimal slice of a Strava activity the trend needs. */
-export interface FitnessTrendActivity {
-  start_date: string;
-  start_date_local?: string;
-  suffer_score?: number | null;
+/** One day's inputs to the CTL/ATL recurrence. */
+export interface FitnessTrendLoadDay {
+  /** ISO date (YYYY-MM-DD) the loads apply to. */
+  date: string;
+  /** Load feeding the 42-day CTL ("fitness") recurrence that day. */
+  ctlLoad: number;
+  /** Load feeding the 7-day ATL ("fatigue") recurrence that day. */
+  atlLoad: number;
+}
+
+/** Starting CTL/ATL the first day of `days` applies its recurrence to. */
+export interface FitnessTrendSeed {
+  ctl: number;
+  atl: number;
+}
+
+export interface FitnessTrendInput {
+  /** Consecutive daily loads, oldest first; the last entry is the current day. */
+  days: FitnessTrendLoadDay[];
+  /** Seed CTL/ATL to roll forward from. Defaults to `{ ctl: 0, atl: 0 }`. */
+  seed?: FitnessTrendSeed;
 }
 
 export interface FitnessTrendDay {
   /** ISO date (YYYY-MM-DD) the values were computed for. */
   date: string;
-  /** Total relative effort recorded that day (0 on rest days). */
+  /**
+   * The day's load, for display (0 on rest days). For the recorded series
+   * this is `atlLoad`, the fuller of the two input measures, since a
+   * caller's ATL load is typically a superset of its CTL load (e.g. strength
+   * counting toward fatigue only). For projected/planned/taper days the same
+   * load is fed to both series, so the distinction does not apply.
+   */
   load: number;
   ctl: number;
   atl: number;
@@ -91,11 +117,7 @@ export interface TaperPlan {
 }
 
 export interface FitnessTrendOptions {
-  /** Last day of the series (YYYY-MM-DD). Days count back from here. */
-  endDate: string;
-  /** Length of the computed series in days. */
-  days: number;
-  /** Project this many days past endDate (zero load unless plannedLoads says otherwise). */
+  /** Project this many days past the last input day (zero load unless plannedLoads says otherwise). */
   projectDays?: number;
   /**
    * Load to project with instead of rest. `projectDays` defaults to its
@@ -146,8 +168,8 @@ export const TAPER_WEEK_DECAY = 0.75;
 /** Days averaged for the "percentage of recent training" comparison. */
 export const RECENT_LOAD_DAYS = 28;
 /**
- * Ceiling on a solved daily load. Relative effort above this is a race or a
- * very long hard day, so a plan asking for it every day is not a plan — the
+ * Ceiling on a solved daily load. Training load above this is a race or a
+ * very long hard day, so a plan asking for it every day is not a plan; the
  * solver clamps there and reports the TSB that lands instead.
  */
 export const MAX_TAPER_DAILY_LOAD = 200;
@@ -155,74 +177,54 @@ export const MAX_TAPER_DAILY_LOAD = 200;
 const CTL_DECAY = Math.exp(-1 / CTL_TIME_CONSTANT_DAYS);
 const ATL_DECAY = Math.exp(-1 / ATL_TIME_CONSTANT_DAYS);
 
-const round1 = (value: number) => Math.round(value * 10) / 10;
-
-function addDays(isoDate: string, days: number): string {
-  const d = new Date(`${isoDate}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().split("T")[0]!;
-}
-
-/** Whole days from `from` to `to`; negative when `to` is earlier. */
-export function daysBetween(from: string, to: string): number {
-  const a = Date.parse(`${from}T00:00:00Z`);
-  const b = Date.parse(`${to}T00:00:00Z`);
-  return Math.round((b - a) / 86_400_000);
-}
-
-/** Local calendar day (YYYY-MM-DD) an activity belongs to. */
-export function activityDay(activity: FitnessTrendActivity): string {
-  return (activity.start_date_local || activity.start_date).split("T")[0]!;
-}
+/** Round to one decimal place, the display precision every value here uses. */
+export const round1 = (value: number) => Math.round(value * 10) / 10;
 
 /**
- * Sum relative effort per local calendar day. Activities without a
- * `suffer_score` (no HR data) contribute zero load.
- */
-export function dailyLoads(
-  activities: FitnessTrendActivity[],
-): Map<string, number> {
-  const loads = new Map<string, number>();
-  for (const activity of activities) {
-    const day = activityDay(activity);
-    loads.set(day, (loads.get(day) ?? 0) + (activity.suffer_score ?? 0));
-  }
-  return loads;
-}
-
-/**
- * Build the daily CTL/ATL/TSB series. Both averages start from zero at the
- * window start, so the first few weeks under-read true fitness — callers
- * should use a lookback of ~90 days so the early ramp has settled by the
- * dates that matter. Rest days decay both curves; multiple activities on one
- * day are summed before the update.
+ * Build the daily CTL/ATL/TSB series from `input.days`, rolling the
+ * recurrence forward from `input.seed` (default `{ ctl: 0, atl: 0 }`). A
+ * caller starting from zero should supply enough runway (~90 days) that the
+ * early ramp has settled by the dates that matter; a caller with a known
+ * prior CTL/ATL (e.g. intervals.icu's own wellness data) should seed it
+ * instead. `input.days` must be consecutive calendar days; gaps are not
+ * inferred as rest days.
  */
 export function buildFitnessTrend(
-  activities: FitnessTrendActivity[],
-  options: FitnessTrendOptions,
+  input: FitnessTrendInput,
+  options: FitnessTrendOptions = {},
 ): FitnessTrendResult {
-  const { endDate, days, plannedLoads, taper } = options;
+  const { plannedLoads, taper } = options;
   const projectDays =
     options.projectDays ??
     (plannedLoads !== undefined ? plannedLoads.length : 0);
-  const loads = dailyLoads(activities);
-  const startDate = addDays(endDate, -(days - 1));
 
   const series: FitnessTrendDay[] = [];
-  let ctl = 0;
-  let atl = 0;
-  for (let i = 0; i < days; i++) {
-    const date = addDays(startDate, i);
-    const load = loads.get(date) ?? 0;
-    ctl = load * (1 - CTL_DECAY) + ctl * CTL_DECAY;
-    atl = load * (1 - ATL_DECAY) + atl * ATL_DECAY;
+  const seed = input.seed ?? { ctl: 0, atl: 0 };
+  let ctl = seed.ctl;
+  let atl = seed.atl;
+  for (const { date, ctlLoad, atlLoad } of input.days) {
+    ctl = ctlLoad * (1 - CTL_DECAY) + ctl * CTL_DECAY;
+    atl = atlLoad * (1 - ATL_DECAY) + atl * ATL_DECAY;
     series.push({
       date,
-      load: round1(load),
+      load: round1(atlLoad),
       ctl: round1(ctl),
       atl: round1(atl),
       tsb: round1(ctl - atl),
     });
+  }
+
+  const endDate = series[series.length - 1]?.date;
+  if (endDate === undefined) {
+    return {
+      days: series,
+      current: null,
+      projection: [],
+      tsbPositiveDate: null,
+      taper: null,
+      bands: [],
+      flags: [],
+    };
   }
 
   const firstProjectedDate = addDays(endDate, 1);
@@ -255,7 +257,7 @@ export function buildFitnessTrend(
  * from `startDate`; dated entries are matched by date, so a plan that names
  * only its hard days rests on the rest.
  */
-function resolvePlannedLoads(
+export function resolvePlannedLoads(
   startDate: string,
   days: number,
   planned?: PlannedLoads,
@@ -284,11 +286,19 @@ function resolvePlannedLoads(
  * Roll the CTL/ATL recurrence forward over a run of daily loads. Rounding
  * happens on the way out only; the TSB-crossing check reads the raw value, so
  * a -0.04 day does not read as positive because it rounds to -0.
+ *
+ * `positiveDateFrom` (inclusive) excludes an earlier crossing from
+ * `tsbPositiveDate` without excluding those days from `days` itself: a
+ * caller projecting unsynced "catch-up" days before today alongside the
+ * actual future projection (`projectFromWellness`) still wants those catch-up
+ * days in the series, but a crossing during them is a past or already-today
+ * date, not a future one worth reporting as "returns positive on".
  */
-function projectLoads(
+export function projectLoads(
   start: { ctl: number; atl: number },
   startDate: string,
   loads: number[],
+  options: { positiveDateFrom?: string } = {},
 ): { days: FitnessTrendDay[]; tsbPositiveDate: string | null } {
   const days: FitnessTrendDay[] = [];
   let tsbPositiveDate: string | null = null;
@@ -308,7 +318,11 @@ function projectLoads(
       atl: round1(atl),
       tsb: round1(tsb),
     });
-    if (tsbPositiveDate === null && tsb >= 0) tsbPositiveDate = date;
+    const eligible =
+      options.positiveDateFrom === undefined ||
+      date >= options.positiveDateFrom;
+    if (tsbPositiveDate === null && tsb >= 0 && eligible)
+      tsbPositiveDate = date;
   }
 
   return { days, tsbPositiveDate };
@@ -417,7 +431,7 @@ export function solveTaperPlan(
   if (peakLoad > MAX_TAPER_DAILY_LOAD) {
     scale = MAX_TAPER_DAILY_LOAD / peakWeight;
     feasible = false;
-    note = `Reaching TSB ${signedRound1(targetTsb)} by ${targetDate} would take more than ${MAX_TAPER_DAILY_LOAD} relative effort a day; the plan is capped there.`;
+    note = `Reaching TSB ${signedRound1(targetTsb)} by ${targetDate} would take more than ${MAX_TAPER_DAILY_LOAD} training load a day; the plan is capped there.`;
   }
 
   const loads = shape.map((weight) => weight * scale);
@@ -455,6 +469,137 @@ export function solveTaperPlan(
   };
 }
 
+/** Read-then-solve series from `loadWellnessFitnessSeries`, whole-body only. */
+export interface ProjectFromWellnessInput {
+  series: FitnessTrendDay[];
+  /** Raw (unrounded) CTL/ATL to roll forward from; null when there is no usable data. */
+  seed: { ctl: number; atl: number } | null;
+  /** Date `seed` came from, the most recent day with a recorded CTL/ATL. */
+  asOfDate: string | null;
+  /** Today, in the caller's configured time zone. */
+  endDate: string;
+}
+
+export interface ProjectFromWellnessOptions {
+  /** Days to project past `endDate`; 0 (or a `taper` request) means no projection. */
+  projectDays: number;
+  plannedLoads?: PlannedLoads;
+  taper?: TaperRequest;
+}
+
+export interface ProjectFromWellnessResult {
+  projection: FitnessTrendDay[];
+  tsbPositiveDate: string | null;
+  taper: TaperPlan | null;
+  /** Days between `asOfDate` and `endDate` not yet synced, rolled forward as rest. */
+  unsyncedDays: number;
+  /** e.g. plannedLoads dropped because a taper was solved instead. */
+  warnings: string[];
+}
+
+/**
+ * Whole-body projection/taper, shared by `get-fitness-trend`'s whole-body
+ * path and the fitness-trend MCP App's data handler (see AGENTS.md's
+ * "derived numbers have exactly one home") so the two surfaces cannot drift
+ * the way they used to: a `projectDays: 0` request now always yields an
+ * empty projection in both (previously the app kept rolling any unsynced
+ * days forward as a "catch-up" projection even when none was asked for,
+ * which could also surface a `tsbPositiveDate` that had already passed), and
+ * a taper is always solved from `endDate` ("today"), never from `asOfDate`,
+ * with any unsynced days between the two rolled forward as rest first, the
+ * same catch-up rest days the projection uses, so the taper's day count
+ * does not shrink just because wellness has not synced yet.
+ */
+export function projectFromWellness(
+  input: ProjectFromWellnessInput,
+  options: ProjectFromWellnessOptions,
+): ProjectFromWellnessResult {
+  const { series, seed, asOfDate, endDate } = input;
+  const { projectDays, plannedLoads, taper } = options;
+  const warnings: string[] = [];
+
+  if (!seed || !asOfDate) {
+    return {
+      projection: [],
+      tsbPositiveDate: null,
+      taper: null,
+      unsyncedDays: 0,
+      warnings,
+    };
+  }
+
+  const unsyncedDays = daysBetween(asOfDate, endDate);
+  const firstProjectedDate = addDays(asOfDate, 1);
+
+  if (taper) {
+    if (plannedLoads && plannedLoads.length > 0) {
+      warnings.push(
+        "plannedLoads is ignored: a targetDate taper plan is solved instead of a projection.",
+      );
+    }
+    // Roll any unsynced days forward as rest so the solve is anchored at
+    // `endDate` ("today"), matching the projection below, rather than at
+    // whatever day wellness last synced.
+    const todaySeed =
+      unsyncedDays > 0
+        ? projectLoads(
+            seed,
+            firstProjectedDate,
+            new Array(unsyncedDays).fill(0),
+          ).days.at(-1)!
+        : seed;
+    return {
+      projection: [],
+      tsbPositiveDate: null,
+      taper: solveTaperPlan(
+        { ctl: todaySeed.ctl, atl: todaySeed.atl },
+        endDate,
+        taper,
+        recentDailyLoad(series, RECENT_LOAD_DAYS),
+      ),
+      unsyncedDays,
+      warnings,
+    };
+  }
+
+  if (projectDays <= 0) {
+    return {
+      projection: [],
+      tsbPositiveDate: null,
+      taper: null,
+      unsyncedDays,
+      warnings,
+    };
+  }
+
+  // The projection always ends at endDate + projectDays, regardless of how
+  // far as_of trails endDate: the unsynced days in between are projected as
+  // rest, then the actual projectDays continue past endDate. An explicit
+  // projectDays always means "N days past today", not "N days past as_of".
+  const totalProjectDays = unsyncedDays + projectDays;
+  const futurePlannedLoads = (
+    plannedLoads as PlannedLoad[] | undefined
+  )?.filter((p) => p.date > endDate);
+  const loads = resolvePlannedLoads(
+    firstProjectedDate,
+    totalProjectDays,
+    futurePlannedLoads,
+  );
+  // A crossing during the unsynced catch-up days (before endDate) is a past
+  // date, not a future one worth reporting: only a crossing on or after
+  // endDate ("today") counts.
+  const projected = projectLoads(seed, firstProjectedDate, loads, {
+    positiveDateFrom: endDate,
+  });
+  return {
+    projection: projected.days,
+    tsbPositiveDate: projected.tsbPositiveDate,
+    taper: null,
+    unsyncedDays,
+    warnings,
+  };
+}
+
 const signedRound1 = (value: number) => {
   const rounded = round1(value);
   return `${rounded >= 0 ? "+" : ""}${rounded}`;
@@ -476,23 +621,40 @@ export interface TrendBand {
  * can shade the actual days — which is why the flag strings are built here
  * rather than beside them, and `computeFlags` is a filter over these bands
  * (the chart and the prose cannot disagree about what counts as deep fatigue).
+ *
+ * `series` need not be calendar-consecutive (a whole-body series read from
+ * wellness can have gaps, days with no recorded CTL/ATL, left out rather
+ * than zero-filled): a run breaks at a gap rather than bridging it, and the
+ * 7-day CTL ramp looks its prior day up by date, not by array index, so a
+ * gap elsewhere in the series never misattributes which day is "7 days ago".
  */
 export function trendBands(series: FitnessTrendDay[]): TrendBand[] {
   const bands: TrendBand[] = [];
   if (series.length === 0) return bands;
+
+  const indexByDate = new Map(series.map((day, index) => [day.date, index]));
 
   const runs = (
     predicate: (day: FitnessTrendDay, index: number) => boolean,
   ): { start: number; end: number }[] => {
     const found: { start: number; end: number }[] = [];
     let start: number | null = null;
+    let prevDate: string | null = null;
     for (let i = 0; i < series.length; i++) {
-      if (predicate(series[i]!, i)) {
+      const day = series[i]!;
+      const gapFromPrev =
+        prevDate !== null && addDays(prevDate, 1) !== day.date;
+      if (gapFromPrev && start !== null) {
+        found.push({ start, end: i - 1 });
+        start = null;
+      }
+      if (predicate(day, i)) {
         if (start === null) start = i;
       } else if (start !== null) {
         found.push({ start, end: i - 1 });
         start = null;
       }
+      prevDate = day.date;
     }
     if (start !== null) found.push({ start, end: series.length - 1 });
     return found;
@@ -536,8 +698,13 @@ export function trendBands(series: FitnessTrendDay[]): TrendBand[] {
     );
   }
 
-  const rampAt = (index: number) =>
-    index >= 7 ? round1(series[index]!.ctl - series[index - 7]!.ctl) : 0;
+  const rampAt = (index: number) => {
+    const day = series[index]!;
+    const priorIndex = indexByDate.get(addDays(day.date, -7));
+    return priorIndex === undefined
+      ? 0
+      : round1(day.ctl - series[priorIndex]!.ctl);
+  };
   for (const { start, end } of runs(
     (_, index) => rampAt(index) >= RAMP_RISK_PER_WEEK,
   )) {
@@ -565,4 +732,88 @@ export function computeFlags(series: FitnessTrendDay[]): string[] {
   return trendBands(series)
     .filter((band) => band.end_date === last.date)
     .map((band) => band.reason);
+}
+
+/**
+ * Run types intervals.icu has no dedicated per-sport CTL/ATL for. Callers
+ * here use array methods (`.includes()`, spread into a JSON-serialisable
+ * list), so this re-exports `utils/running.ts`'s `PACE_ACTIVITY_TYPES`
+ * (a `Set`, for `.has()` callers) as an array rather than duplicating the
+ * same three literal strings a second time.
+ */
+export const RUN_TYPES: readonly string[] = [...PACE_ACTIVITY_TYPES];
+
+/**
+ * How far before the requested window a run-only computation starts summing
+ * load. intervals.icu has no per-sport CTL/ATL, so the run-only series is
+ * built locally, zero-seeded, and needs enough runway for the 42-day CTL
+ * average to settle before the displayed window starts.
+ */
+export const RUN_ONLY_RUNWAY_DAYS = 150;
+
+/** Minimal activity shape the run-only daily-load sum needs. */
+export interface RunOnlyLoadActivity {
+  start_date_local: string;
+  icu_training_load?: number | null;
+}
+
+/**
+ * Sums `icu_training_load` per local date for the given activities, keyed by
+ * `start_date_local`.
+ */
+export function dailyLoadByDate(
+  activities: RunOnlyLoadActivity[],
+): Map<string, number> {
+  const loads = new Map<string, number>();
+  for (const activity of activities) {
+    const date = activity.start_date_local.split("T")[0]!;
+    loads.set(date, (loads.get(date) ?? 0) + (activity.icu_training_load ?? 0));
+  }
+  return loads;
+}
+
+export interface RunOnlyFitnessTrend {
+  trend: FitnessTrendResult;
+  /** First date of the zero-seeded runway (before the displayed window). */
+  runwayStart: string;
+  runwayDays: number;
+}
+
+/**
+ * Builds the run-only CTL/ATL/TSB trend: sums `icu_training_load` per local
+ * day over `runActivities` (caller-filtered to {@link RUN_TYPES}),
+ * zero-seeds {@link RUN_ONLY_RUNWAY_DAYS} days before `options.endDate` minus
+ * `options.days` so the 42-day CTL average has settled, then rolls
+ * {@link buildFitnessTrend}'s recurrence forward across the whole runway.
+ * The one home `get-fitness-trend`'s run-only path and `get-training-load`
+ * both build this series through, so they can never disagree.
+ */
+export function buildRunOnlyFitnessTrend(
+  runActivities: RunOnlyLoadActivity[],
+  options: {
+    endDate: string;
+    days: number;
+    runwayDays?: number;
+    fitnessOptions?: FitnessTrendOptions;
+  },
+): RunOnlyFitnessTrend {
+  const runwayDays = options.runwayDays ?? options.days + RUN_ONLY_RUNWAY_DAYS;
+  const runwayStart = addDays(options.endDate, -(runwayDays - 1));
+  const loadByDate = dailyLoadByDate(runActivities);
+
+  const runwaySeries: FitnessTrendLoadDay[] = Array.from(
+    { length: runwayDays },
+    (_, i) => {
+      const date = addDays(runwayStart, i);
+      const load = loadByDate.get(date) ?? 0;
+      return { date, ctlLoad: load, atlLoad: load };
+    },
+  );
+
+  const trend = buildFitnessTrend(
+    { days: runwaySeries },
+    options.fitnessOptions ?? {},
+  );
+
+  return { trend, runwayStart, runwayDays };
 }

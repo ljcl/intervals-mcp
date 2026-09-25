@@ -11,7 +11,7 @@
  * in `docker compose logs`, which is where this server's operator already is.
  */
 
-import { type RateLimitSnapshot, stravaApi } from "./fetchClient";
+import { intervalsApi, type RateLimitSnapshot } from "./fetchClient";
 
 export type ToolOutcome = "ok" | "error" | "not_connected" | "invalid_args";
 
@@ -23,7 +23,8 @@ export interface ToolCallRecord {
   outcome: ToolOutcome;
   /** Constructor name of the thrown error, when one was thrown. */
   error_class?: string;
-  /** Strava quota as of the most recent response, when known. */
+  /** intervals.icu quota as of the most recent response, when known
+   * (currently always null: intervals.icu sends no rate-limit headers). */
   rate_limit?: RateLimitSnapshot | null;
 }
 
@@ -43,10 +44,11 @@ export interface ToolCounters {
  */
 const counters = new Map<string, ToolCounters>();
 
-/** The quota as of the last Strava response, or null if it cannot be read. */
+/** The quota as of the last intervals.icu response, or null if it cannot be
+ * read. */
 function rateLimitSnapshot(): RateLimitSnapshot | null {
   try {
-    return stravaApi.getRateLimitSnapshot();
+    return intervalsApi.getRateLimitSnapshot();
   } catch {
     return null;
   }

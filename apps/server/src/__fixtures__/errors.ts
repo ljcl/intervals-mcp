@@ -1,7 +1,7 @@
 import { HttpError, RateLimitError } from "../fetchClient";
 
 /**
- * The rate-limit error a `stravaClient` call actually throws.
+ * The rate-limit error a Strava client call actually throws.
  *
  * Every client function funnels its failures through `handleApiError`, which
  * rethrows a 429 with the context prefixed onto the message. A tool test that
@@ -10,8 +10,8 @@ import { HttpError, RateLimitError } from "../fetchClient";
  * abort passed its tests while being dead in the server (the client used to
  * flatten the error into a plain `Error`, so `instanceof RateLimitError` was
  * never true). Building it here keeps the three scan tools testing against one
- * definition of that shape; `stravaClient.errors.test.ts` pins the translation
- * itself.
+ * definition of that shape; the Strava client's own error-translation test
+ * pins the translation itself.
  */
 export function handledRateLimit(
   context: string,
@@ -30,8 +30,8 @@ export function handledRateLimit(
  * Builds the `StravaApiError` shape `handleApiError` throws for a non-429
  * HTTP failure: the interpreted message with the status still attached.
  *
- * The class itself lives in `stravaClient.ts`, which tool tests replace with
- * bare factory mocks, so importing it here would leave the constructor
+ * The class itself lives in the Strava client module, which tool tests
+ * replace with bare factory mocks, so importing it here would leave the constructor
  * `undefined` under those mocks. `HttpError` from the fetch layer is what the
  * tools' error helper tests `instanceof` against, and it is the base
  * `StravaApiError` extends, so the shape is faithful where it matters: the
@@ -47,7 +47,7 @@ function handledHttpError(
 }
 
 /**
- * The not-found error a `stravaClient` call actually throws. A plain
+ * The not-found error a Strava client call actually throws. A plain
  * `Error("404 Not Found")` is a shape only string matching could recognise,
  * and string matching is what the typed rethrow exists to make unnecessary.
  */
@@ -62,7 +62,7 @@ export function handledNotFound(context: string): HttpError {
   );
 }
 
-/** The subscription-gated error a `stravaClient` call actually throws. */
+/** The subscription-gated error a Strava client call actually throws. */
 export function handledSubscriptionRequired(context: string): HttpError {
   return handledHttpError(
     `SUBSCRIPTION_REQUIRED: Access to this feature requires a Strava subscription. Context: ${context}`,

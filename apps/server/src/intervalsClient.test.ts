@@ -1,22 +1,33 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import activities from "./__fixtures__/intervals/activities.json";
 import activity from "./__fixtures__/intervals/activity.json";
+import activityHilly from "./__fixtures__/intervals/activity-hilly.json";
 import intervals from "./__fixtures__/intervals/activity-intervals.json";
+import activityMultilap from "./__fixtures__/intervals/activity-multilap.json";
+import multilapIntervals from "./__fixtures__/intervals/activity-multilap-intervals.json";
+import activityPaceCurvesFixture from "./__fixtures__/intervals/activity-pace-curves.json";
 import gearFixture from "./__fixtures__/intervals/gear.json";
+import paceCurvesFixture from "./__fixtures__/intervals/pace-curves.json";
 import sportSettings from "./__fixtures__/intervals/sport-settings-run.json";
 import streams from "./__fixtures__/intervals/streams.json";
+import streamsHilly from "./__fixtures__/intervals/streams-hilly.json";
+import streamsMultilap from "./__fixtures__/intervals/streams-multilap.json";
 import wellness from "./__fixtures__/intervals/wellness.json";
 import { intervalsApi, RateLimitError } from "./fetchClient";
 import {
   getActivity,
   getActivityIntervals,
+  getActivityPaceCurves,
   getActivityStreams,
+  getAthletePaceCurves,
   getSportSettings,
   getWellness,
   IntervalsApiError,
   type IntervalsInterval,
   listActivities,
   listGear,
+  resolveNumericAthleteId,
+  updateActivity,
 } from "./intervalsClient";
 
 /**
@@ -24,9 +35,10 @@ import {
  * match production exactly), but with an instant `sleep` and no
  * `minIntervalMs` spacing, so a 429's retry backoff and the production
  * 200ms request spacing never actually wait: tests stay fast without
- * bypassing the request-building code they assert on. This mirrors how
- * `stravaClient.errors.test.ts` avoids backoff (mocking `./fetchClient` to
- * swap out the client instance the module under test imports), adapted
+ * bypassing the request-building code they assert on. This mirrors how the
+ * Strava client's own error-translation tests avoid backoff (mocking
+ * `./fetchClient` to swap out the client instance the module under test
+ * imports), adapted
  * because these tests assert against real request/URL construction via a
  * mocked `globalThis.fetch` rather than mocking `.get()` directly.
  */
@@ -42,10 +54,20 @@ vi.mock("./fetchClient", async (importOriginal) => {
 });
 
 function mockJson(body: unknown, status = 200) {
-  const calls: Array<{ url: string; headers: Headers }> = [];
+  const calls: Array<{
+    url: string;
+    headers: Headers;
+    method?: string;
+    body?: string;
+  }> = [];
   globalThis.fetch = vi.fn(
     async (input: RequestInfo | URL, init?: RequestInit) => {
-      calls.push({ url: String(input), headers: new Headers(init?.headers) });
+      calls.push({
+        url: String(input),
+        headers: new Headers(init?.headers),
+        method: init?.method,
+        body: typeof init?.body === "string" ? init.body : undefined,
+      });
       return new Response(JSON.stringify(body), {
         status,
         headers: { "content-type": "application/json" },
@@ -96,6 +118,7 @@ describe("intervalsClient", () => {
     expect(parsedIntervals.length).toBeGreaterThan(0);
     const firstInterval: IntervalsInterval | undefined = parsedIntervals[0];
     expect(firstInterval?.average_vertical_ratio).toBeCloseTo(8.869921);
+    expect(firstInterval?.average_stride).toBeCloseTo(1.219285);
     mockJson(streams);
     expect((await getActivityStreams("k", "i189807578", ["time"])).length).toBe(
       streams.length,
@@ -109,6 +132,27 @@ describe("intervalsClient", () => {
     expect((await getSportSettings("k", "Run")).lthr).toBe(sportSettings.lthr);
     mockJson([]);
     expect(await listGear("k")).toEqual([]);
+    mockJson(activityMultilap);
+    expect((await getActivity("k", activityMultilap.id)).id).toBe(
+      activityMultilap.id,
+    );
+    mockJson(activityHilly);
+    expect((await getActivity("k", activityHilly.id)).id).toBe(
+      activityHilly.id,
+    );
+    mockJson(multilapIntervals);
+    expect(
+      (await getActivityIntervals("k", activityMultilap.id)).icu_intervals
+        .length,
+    ).toBe(multilapIntervals.icu_intervals.length);
+    mockJson(streamsMultilap);
+    expect(
+      (await getActivityStreams("k", activityMultilap.id, ["time"])).length,
+    ).toBe(streamsMultilap.length);
+    mockJson(streamsHilly);
+    expect(
+      (await getActivityStreams("k", activityHilly.id, ["time"])).length,
+    ).toBe(streamsHilly.length);
   });
 
   it("types the fields the read tools use from a detailed activity", async () => {
@@ -135,6 +179,229 @@ describe("intervalsClient", () => {
       distance: null,
       primary: null,
     });
+    expect(result.pace_load).toBe(activity.pace_load);
+    expect(result.power_load).toBe(activity.power_load);
+    expect(result.session_rpe).toBe(activity.session_rpe);
+    expect(result.strain_score).toBe(activity.strain_score);
+  });
+
+  it("types ctlLoad, atlLoad, and sportInfo on a wellness row", async () => {
+    mockJson([
+      {
+        ...wellness[0],
+        ctlLoad: 74,
+        atlLoad: 21,
+        sportInfo: [{ type: "Ride", eftp: null, wPrime: null, pMax: null }],
+      },
+    ]);
+    const result = await getWellness("k", {
+      oldest: "2026-09-24",
+      newest: "2026-09-24",
+    });
+    expect(result[0]?.ctlLoad).toBe(74);
+    expect(result[0]?.atlLoad).toBe(21);
+    expect(result[0]?.sportInfo).toEqual([
+      { type: "Ride", eftp: null, wPrime: null, pMax: null },
+    ]);
+  });
+
+  it("sends fields= as a comma-joined query param on getWellness", async () => {
+    const calls = mockJson(wellness);
+    await getWellness(
+      "k",
+      { oldest: "2026-09-10", newest: "2026-09-24" },
+      { fields: ["id", "ctl", "atl", "ctlLoad", "atlLoad"] },
+    );
+    const url = new URL(calls[0]?.url ?? "");
+    expect(url.searchParams.get("fields")).toBe("id,ctl,atl,ctlLoad,atlLoad");
+  });
+
+  it("omits fields= when no fields are requested", async () => {
+    const calls = mockJson(wellness);
+    await getWellness("k", { oldest: "2026-09-10", newest: "2026-09-24" });
+    const url = new URL(calls[0]?.url ?? "");
+    expect(url.searchParams.has("fields")).toBe(false);
+  });
+
+  it("skipCache bypasses a warm cache entry on getActivity", async () => {
+    let calls = mockJson(activity);
+    await getActivity("k", "i189807578");
+    expect(calls).toHaveLength(1);
+
+    // Cache hit: same body, no new fetch.
+    await getActivity("k", "i189807578");
+    expect(calls).toHaveLength(1);
+
+    // skipCache: bypasses the warm entry and hits the wire again.
+    calls = mockJson(activity);
+    await getActivity("k", "i189807578", { skipCache: true });
+    expect(calls).toHaveLength(1);
+  });
+
+  describe("updateActivity", () => {
+    it("sends PUT with only the provided keys and returns the parsed activity", async () => {
+      const calls = mockJson(activity);
+      const result = await updateActivity("k", "i189807578", {
+        name: "New name",
+      });
+      expect(calls).toHaveLength(1);
+      expect(calls[0]?.method).toBe("PUT");
+      expect(new URL(calls[0]?.url ?? "").pathname).toBe(
+        "/api/v1/activity/i189807578",
+      );
+      expect(JSON.parse(calls[0]?.body ?? "{}")).toEqual({
+        name: "New name",
+      });
+      expect(result.id).toBe(activity.id);
+    });
+
+    it("is not retried on a transient 5xx (one fetch call) and wraps it in IntervalsApiError", async () => {
+      let count = 0;
+      globalThis.fetch = vi.fn(async () => {
+        count += 1;
+        return new Response("boom", { status: 503 });
+      }) as unknown as typeof fetch;
+
+      await expect(
+        updateActivity("k", "i189807578", { name: "x" }),
+      ).rejects.toBeInstanceOf(IntervalsApiError);
+      expect(count).toBe(1);
+    });
+
+    it("rethrows RateLimitError on 429", async () => {
+      mockJson({}, 429);
+      await expect(
+        updateActivity("k", "i189807578", { name: "x" }),
+      ).rejects.toBeInstanceOf(RateLimitError);
+    });
+
+    it("invalidates that activity's cached read so a subsequent getActivity misses the cache", async () => {
+      let calls = mockJson(activity);
+      await getActivity("k", "i189807578");
+      expect(calls).toHaveLength(1);
+
+      calls = mockJson(activity);
+      await updateActivity("k", "i189807578", { name: "Updated" });
+      expect(calls).toHaveLength(1);
+
+      await getActivity("k", "i189807578");
+      expect(calls).toHaveLength(2);
+    });
+
+    it("invalidates the activity cache after a failed PUT, so a subsequent getActivity misses the cache", async () => {
+      let calls = mockJson(activity);
+      await getActivity("k", "i189807578");
+      expect(calls).toHaveLength(1);
+
+      globalThis.fetch = vi.fn(async () => {
+        return new Response("boom", { status: 503 });
+      }) as unknown as typeof fetch;
+      await expect(
+        updateActivity("k", "i189807578", { name: "x" }),
+      ).rejects.toBeInstanceOf(IntervalsApiError);
+
+      calls = mockJson(activity);
+      await getActivity("k", "i189807578");
+      expect(calls).toHaveLength(1);
+    });
+
+    it("invalidates the athlete's activities list and gear list on success", async () => {
+      let calls = mockJson([]);
+      await listActivities("k", {
+        oldest: "2026-09-01",
+        newest: "2026-09-24",
+      });
+      await listGear("k");
+      expect(calls).toHaveLength(2);
+
+      calls = mockJson(activity);
+      await updateActivity("k", "i189807578", { name: "x" });
+      expect(calls).toHaveLength(1);
+
+      calls = mockJson([]);
+      await listActivities("k", {
+        oldest: "2026-09-01",
+        newest: "2026-09-24",
+      });
+      await listGear("k");
+      expect(calls).toHaveLength(2);
+    });
+  });
+
+  it("parses the multi-lap fixture and types the widened activity fields", async () => {
+    mockJson(activityMultilap);
+    const result = await getActivity("k", activityMultilap.id);
+    expect(result.icu_lap_count).toBe(12);
+    expect(result.icu_intervals_edited).toBe(true);
+    expect(result.average_speed).toBeCloseTo(3.372);
+    expect(result.icu_hr_zones).toEqual([147, 160, 169, 178, 197]);
+    expect(result.icu_power_zones).toBeNull();
+    expect(result.pace_zones).toBeNull();
+    expect(result.race).toBe(false);
+    expect(result.sub_type).toBeNull();
+    expect(result.recording_stops).toEqual([164, 431, 530, 2215, 3023, 3283]);
+    expect(result.icu_warmup_time).toBe(300);
+    expect(result.icu_average_watts).toBeNull();
+    expect(result.icu_ftp).toBeNull();
+  });
+
+  it("parses the hilly fixture (largest total_elevation_gain in range)", async () => {
+    mockJson(activityHilly);
+    const result = await getActivity("k", activityHilly.id);
+    expect(result.icu_lap_count).toBe(43);
+    expect(result.total_elevation_gain).toBeCloseTo(692.83905);
+    expect(result.average_speed).toBeCloseTo(3.077);
+    expect(result.recording_stops).toBeNull();
+  });
+
+  it("types the widened interval fields from the multi-lap intervals fixture", async () => {
+    mockJson(multilapIntervals);
+    const result = await getActivityIntervals("k", activityMultilap.id);
+    const firstInterval: IntervalsInterval | undefined =
+      result.icu_intervals[0];
+    expect(firstInterval?.gap).toBeCloseTo(3.427648);
+    expect(firstInterval?.total_elevation_gain).toBeCloseTo(4.2);
+    expect(firstInterval?.average_gradient).toBeCloseTo(0.0039488245);
+    expect(firstInterval?.intensity).toBe(77);
+    expect(firstInterval?.decoupling).toBeNull();
+    expect(firstInterval?.group_id).toBe("311s@139bpm81rpm");
+    expect(firstInterval?.start_time).toBe(0);
+    expect(firstInterval?.end_time).toBe(311);
+    expect(firstInterval?.max_heartrate).toBe(157);
+    expect(firstInterval?.average_speed).toBeCloseTo(3.2055695);
+    expect(firstInterval?.average_watts).toBeNull();
+  });
+
+  it("parses the multi-lap and hilly stream fixtures, including grade_smooth and watts", async () => {
+    mockJson(streamsMultilap);
+    const multilapStreams = await getActivityStreams("k", activityMultilap.id, [
+      "time",
+    ]);
+    expect(multilapStreams.map((s) => s.type)).toEqual(
+      streamsMultilap.map((s) => s.type),
+    );
+    expect(multilapStreams.map((s) => s.type)).toContain("grade_smooth");
+    expect(multilapStreams.map((s) => s.type)).toContain("watts");
+    for (const s of multilapStreams) {
+      expect(s.data.length).toBeLessThanOrEqual(600);
+    }
+
+    mockJson(streamsHilly);
+    const hillyStreams = await getActivityStreams("k", activityHilly.id, [
+      "time",
+    ]);
+    expect(hillyStreams.map((s) => s.type)).toContain("grade_smooth");
+    for (const s of hillyStreams) {
+      expect(s.data.length).toBeLessThanOrEqual(600);
+    }
+  });
+
+  it("types sport-settings ftp and warmup_time", async () => {
+    mockJson(sportSettings);
+    const result = await getSportSettings("k", "Run");
+    expect(result.warmup_time).toBe(300);
+    expect(result.ftp).toBeNull();
+    expect(result.threshold_pace).toBeNull();
   });
 
   it("parses the real gear fixture", async () => {
@@ -236,6 +503,80 @@ describe("intervalsClient", () => {
       newest: "2026-09-24",
     });
     expect(result.map((a) => a.id)).toEqual(["b", "a"]);
+  });
+
+  it("fetches athlete pace curves with the requested curve ids, parsing the real fixture", async () => {
+    const calls = mockJson(paceCurvesFixture);
+    const result = await getAthletePaceCurves("k", {
+      type: "Run",
+      curves: ["all", "1y", "90d"],
+    });
+    const url = new URL(calls[0]?.url ?? "");
+    expect(url.pathname).toBe("/api/v1/athlete/0/pace-curves.json");
+    expect(url.searchParams.get("type")).toBe("Run");
+    expect(url.searchParams.get("curves")).toBe("all,1y,90d");
+    expect(result.list.length).toBe(paceCurvesFixture.list.length);
+    expect(result.activities[Object.keys(result.activities)[0]!]?.name).toBe(
+      paceCurvesFixture.activities[
+        Object.keys(
+          paceCurvesFixture.activities,
+        )[0] as keyof typeof paceCurvesFixture.activities
+      ]?.name,
+    );
+  });
+
+  it("fetches activity pace curves against the resolved numeric athlete id, parsing the real fixture", async () => {
+    process.env.INTERVALS_ATHLETE_ID = "555555";
+    const calls = mockJson(activityPaceCurvesFixture);
+    const result = await getActivityPaceCurves("k", {
+      oldest: "2026-09-01",
+      newest: "2026-09-24",
+      type: "Run",
+      distances: [400, 1000, 5000, 10000],
+    });
+    const url = new URL(calls[0]?.url ?? "");
+    expect(url.pathname).toBe(
+      "/api/v1/athlete/555555/activity-pace-curves.json",
+    );
+    expect(url.searchParams.get("oldest")).toBe("2026-09-01");
+    expect(url.searchParams.get("distances")).toBe("400,1000,5000,10000");
+    expect(result.curves.length).toBe(activityPaceCurvesFixture.curves.length);
+    expect(result.curves[0]?.secs).toEqual(
+      activityPaceCurvesFixture.curves[0]?.secs,
+    );
+  });
+
+  describe("resolveNumericAthleteId", () => {
+    it("uses a bare numeric INTERVALS_ATHLETE_ID directly, without a network call", async () => {
+      process.env.INTERVALS_ATHLETE_ID = "555555";
+      const calls = mockJson({});
+      expect(await resolveNumericAthleteId("k")).toBe("555555");
+      expect(calls).toHaveLength(0);
+    });
+
+    it("strips an i-prefixed INTERVALS_ATHLETE_ID, without a network call", async () => {
+      process.env.INTERVALS_ATHLETE_ID = "i555555";
+      const calls = mockJson({});
+      expect(await resolveNumericAthleteId("k")).toBe("555555");
+      expect(calls).toHaveLength(0);
+    });
+
+    it('resolves via GET /athlete/0 when unset ("0"), keeping only id', async () => {
+      process.env.INTERVALS_ATHLETE_ID = "0";
+      const calls = mockJson({ id: "999999", icu_api_key: "should-not-leak" });
+      const id = await resolveNumericAthleteId("k-resolve");
+      expect(id).toBe("999999");
+      expect(calls).toHaveLength(1);
+      expect(new URL(calls[0]!.url).pathname).toBe("/api/v1/athlete/0");
+    });
+
+    it("caches the resolved id per apiKey across calls", async () => {
+      process.env.INTERVALS_ATHLETE_ID = "0";
+      const calls = mockJson({ id: "999999" });
+      await resolveNumericAthleteId("k-cache");
+      await resolveNumericAthleteId("k-cache");
+      expect(calls).toHaveLength(1);
+    });
   });
 
   it("maps 404 and 401 to IntervalsApiError with the status", async () => {

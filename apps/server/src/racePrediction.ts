@@ -15,7 +15,8 @@
  * why the prediction is or is not trustworthy.
  */
 
-import { metersPerSecToPace } from "./utils/running";
+import { type IntervalsAthletePaceCurves } from "./intervalsClient";
+import { paceFromDistanceTime } from "./utils/running";
 
 /** Riegel's fatigue exponent. 1.06 is the value from the original paper. */
 export const RIEGEL_EXPONENT = 1.06;
@@ -47,8 +48,6 @@ export const RECENT_WINDOW_DAYS = 90;
 /** Default first-half/second-half offset for the negative-split variant. */
 export const NEGATIVE_SPLIT_PCT = 0.01;
 
-const METERS_PER_MILE = 1609.34;
-
 /** Named race distances the tool can predict and split. */
 export const RACE_DISTANCES = {
   "5K": 5000,
@@ -70,9 +69,9 @@ export const STANDARD_TARGETS: RaceDistanceName[] = [
   "Marathon",
 ];
 
-/** One recorded best effort, normalised out of Strava's `best_efforts`. */
+/** One recorded best effort, normalised out of intervals.icu's pace curves. */
 export interface SourceEffort {
-  /** Strava's label for the effort, e.g. "10K". */
+  /** A label for the effort, e.g. "5000 m" or a curve activity's name. */
   name: string;
   distanceMeters: number;
   elapsedSeconds: number;
@@ -102,7 +101,6 @@ export interface Prediction {
   distanceMeters: number;
   predictedSeconds: number;
   paceSecPerKm: number;
-  paceSecPerMile: number;
   confidence: Confidence;
   /** Plain-English reasons the confidence is what it is. */
   confidenceNotes: string[];
@@ -120,7 +118,7 @@ export interface Prediction {
   } | null;
 }
 
-export type SplitUnit = "km" | "mile";
+export type SplitUnit = "km";
 
 export interface Split {
   /** 1-based split number. */
@@ -290,7 +288,7 @@ export function gradeConfidence(
   if (stretch > 2) {
     demoteTo("low");
     notes.push(
-      `Extrapolated ${stretch.toFixed(1)}× beyond your longest recorded effort (${round1(longestSource / 1000)} km) — Riegel over-predicts across gaps this wide.`,
+      `Extrapolated ${stretch.toFixed(1)}× beyond your longest recorded effort (${round1(longestSource / 1000)} km): Riegel over-predicts across gaps this wide.`,
     );
   } else if (stretch > 1.3) {
     demoteTo("medium");
@@ -303,7 +301,7 @@ export function gradeConfidence(
   if (primary.ageDays > 180) {
     demoteTo("low");
     notes.push(
-      `The effort driving this estimate is ${primary.ageDays} days old — it reflects fitness from ${primary.source.date}, not today.`,
+      `The effort driving this estimate is ${primary.ageDays} days old: it reflects fitness from ${primary.source.date}, not today.`,
     );
   } else if (primary.ageDays > RECENT_WINDOW_DAYS) {
     demoteTo("medium");
@@ -326,7 +324,7 @@ export function gradeConfidence(
     if (rangePct > 25) {
       demoteTo("low");
       notes.push(
-        `Your efforts disagree by ${Math.round(rangePct)}% at this distance — speed and endurance are out of step, so the consensus hides a real range.`,
+        `Your efforts disagree by ${Math.round(rangePct)}% at this distance: speed and endurance are out of step, so the consensus hides a real range.`,
       );
     } else if (rangePct > 12) {
       demoteTo("medium");
@@ -413,9 +411,6 @@ export function predictRace(
     distanceMeters: targetMeters,
     predictedSeconds,
     paceSecPerKm: Math.round((predictedSeconds / targetMeters) * 1000),
-    paceSecPerMile: Math.round(
-      (predictedSeconds / targetMeters) * METERS_PER_MILE,
-    ),
     confidence,
     confidenceNotes: notes,
     primary: contributions[0]!,
@@ -463,17 +458,17 @@ function cumulativeSecondsAt(
 }
 
 /**
- * Per-km or per-mile split table for a target time. The final split is the
- * partial remainder (a marathon ends with 195 m), and its pace is stated per
- * full unit so it stays comparable with the rows above it.
+ * Per-km split table for a target time. The final split is the partial
+ * remainder (a marathon ends with 195 m), and its pace is stated per full km
+ * so it stays comparable with the rows above it.
  */
 export function buildSplits(
   totalSeconds: number,
   distanceMeters: number,
-  unit: SplitUnit,
+  unit: SplitUnit = "km",
   negativeSplitPct = 0,
 ): SplitPlan {
-  const unitMeters = unit === "km" ? 1000 : METERS_PER_MILE;
+  const unitMeters = 1000;
   const splits: Split[] = [];
 
   if (totalSeconds > 0 && distanceMeters > 0) {
@@ -564,18 +559,139 @@ export function formatRaceTime(seconds: number): string {
     : `${minutes}:${pad(secs)}`;
 }
 
-/** "4:35" from 275 seconds-per-unit. */
-export function formatPaceSeconds(secondsPerUnit: number): string {
-  const total = Math.round(Math.max(0, secondsPerUnit));
-  return `${Math.floor(total / 60)}:${(total % 60).toString().padStart(2, "0")}`;
-}
-
-/** Both pace units for a race time, via the shared m/s converter. */
+/** Pace (km only) for a race time, via the shared distance/time converter
+ * (`paceFromDistanceTime`) rather than its own m/s-and-formatting logic. */
 export function racePace(
   seconds: number,
   distanceMeters: number,
-): { minPerKm: string; minPerMile: string } | null {
-  if (!(seconds > 0) || !(distanceMeters > 0)) return null;
-  const pace = metersPerSecToPace(distanceMeters / seconds);
-  return pace ? { minPerKm: pace.minPerKm, minPerMile: pace.minPerMile } : null;
+): { minPerKm: string } | null {
+  const minPerKm = paceFromDistanceTime(distanceMeters, seconds);
+  return minPerKm ? { minPerKm } : null;
+}
+
+/**
+ * intervals.icu's `type: "CS"` critical-speed model off a pace-curve list
+ * item's `paceModels`: `criticalSpeed` (m/s) and `dPrime` (m) fit an
+ * exponential-decay curve to the athlete's own points, alongside Riegel.
+ */
+export interface CriticalSpeedModel {
+  criticalSpeedMetersPerSec: number;
+  dPrimeMeters: number;
+  r2: number;
+}
+
+/** intervals.icu's stated validity window for the critical-speed model:
+ * roughly 3 to 60 minutes of racing. A prediction outside this range is
+ * still returned by {@link criticalSpeedPredict}, so the caller flags it
+ * rather than hiding it. */
+export const CS_MODEL_MIN_SECONDS = 180;
+export const CS_MODEL_MAX_SECONDS = 3600;
+
+/** `true` when `seconds` falls inside the critical-speed model's stated
+ * validity window ({@link CS_MODEL_MIN_SECONDS}-{@link CS_MODEL_MAX_SECONDS}). */
+export function isWithinCriticalSpeedValidity(seconds: number): boolean {
+  return seconds >= CS_MODEL_MIN_SECONDS && seconds <= CS_MODEL_MAX_SECONDS;
+}
+
+/**
+ * Reads the `type: "CS"` model off one pace-curve list item's `paceModels`,
+ * or `null` when the item is absent or carries no usable CS fit.
+ */
+export function criticalSpeedModel(
+  item: IntervalsAthletePaceCurves["list"][number] | undefined,
+): CriticalSpeedModel | null {
+  const model = item?.paceModels?.find((m) => m.type === "CS");
+  if (
+    !model ||
+    model.criticalSpeed == null ||
+    model.dPrime == null ||
+    model.r2 == null ||
+    !(model.criticalSpeed > 0) ||
+    !(model.dPrime >= 0)
+  ) {
+    return null;
+  }
+  return {
+    criticalSpeedMetersPerSec: model.criticalSpeed,
+    dPrimeMeters: model.dPrime,
+    r2: model.r2,
+  };
+}
+
+/**
+ * intervals.icu's critical-speed prediction at `targetMeters`:
+ * `(distance - dPrime) / criticalSpeed`. `null` when the target does not
+ * exceed `dPrime` (the model has no positive time there), or the result is
+ * not finite.
+ */
+export function criticalSpeedPredict(
+  model: CriticalSpeedModel,
+  targetMeters: number,
+): number | null {
+  if (!(targetMeters > model.dPrimeMeters)) return null;
+  const seconds =
+    (targetMeters - model.dPrimeMeters) / model.criticalSpeedMetersPerSec;
+  return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
+}
+
+/** One list item's index-aligned `distance`/`values`/`activity_id` arrays,
+ * turned into {@link SourceEffort}s. Points under `minDistanceMeters`, or
+ * with no recorded value or owning activity at that index, are skipped. */
+function sourceEffortsFromCurve(
+  item: IntervalsAthletePaceCurves["list"][number] | undefined,
+  activities: IntervalsAthletePaceCurves["activities"],
+  minDistanceMeters: number,
+): SourceEffort[] {
+  if (!item) return [];
+  const efforts: SourceEffort[] = [];
+  for (let i = 0; i < item.distance.length; i += 1) {
+    const distanceMeters = item.distance[i];
+    const elapsedSeconds = item.values[i];
+    const activityId = item.activity_id[i];
+    if (
+      distanceMeters == null ||
+      distanceMeters < minDistanceMeters ||
+      elapsedSeconds == null ||
+      !activityId
+    ) {
+      continue;
+    }
+    const activity = activities[activityId];
+    efforts.push({
+      name: `${Math.round(distanceMeters)} m`,
+      distanceMeters,
+      elapsedSeconds,
+      date: (activity?.start_date_local ?? "").split("T")[0] ?? "",
+      activityId,
+      activityName: activity?.name ?? "Unknown activity",
+    });
+  }
+  return efforts;
+}
+
+/**
+ * Adapts intervals.icu's `all`/`90d` athlete pace curves into
+ * {@link SourceEffort}s for {@link selectSourceEfforts}: one entry per
+ * distance-grid point on each curve, the `all` curve giving the fastest ever
+ * at that distance and the `90d` curve the fastest of the last 90 days.
+ * `selectSourceEfforts` then keeps, per distance, the fastest of the two
+ * (and both when the outright fastest is itself stale) exactly as it does
+ * for any other pile of recorded efforts.
+ *
+ * Takes the already-found `all`/`90d` list items rather than the whole
+ * `curves` payload plus a `curves.list.find` of its own, so a caller that
+ * also needs {@link criticalSpeedModel} finds each curve once and threads
+ * it to both.
+ */
+export function paceCurveSourceEfforts(
+  activities: IntervalsAthletePaceCurves["activities"],
+  allCurve: IntervalsAthletePaceCurves["list"][number] | undefined,
+  recentCurve: IntervalsAthletePaceCurves["list"][number] | undefined,
+  options: { minDistanceMeters?: number } = {},
+): SourceEffort[] {
+  const minDistance = options.minDistanceMeters ?? MIN_SOURCE_DISTANCE_M;
+  return [
+    ...sourceEffortsFromCurve(allCurve, activities, minDistance),
+    ...sourceEffortsFromCurve(recentCurve, activities, minDistance),
+  ];
 }

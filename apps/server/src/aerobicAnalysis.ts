@@ -1,6 +1,7 @@
 /**
  * Aerobic decoupling and efficiency math for `get-aerobic-analysis`.
- * Pure functions over Strava streams, unit-tested next to `trainingLoad.ts`.
+ * Pure functions over the intervals.icu stream adapter's named arrays
+ * (`intervalsStreams.ts`), unit-tested next to `trainingLoad.ts`.
  *
  * Decoupling is the % drift in the output:HR ratio between the first and
  * second half of the *moving* portion of a run (Friel's Pw:Hr / Pa:Hr):
@@ -8,19 +9,30 @@
  * the aerobic system fading; negative = warmed into the run. Stopped time is
  * excluded before splitting halves so traffic lights and café stops cannot
  * poison the ratio.
+ *
+ * The basis (power vs. speed) is chosen by the caller, not auto-detected
+ * here: `get-aerobic-analysis` decides which output stream to pass in based
+ * on its `basis` input, so a `pace`-basis request never silently reads watts
+ * and a `power`-basis request never silently falls back to speed.
  */
 
-/** Streams as returned by Strava, index-aligned. `time` is required. */
+/**
+ * Streams as returned by `loadIntervalsStreams` (`intervalsStreams.ts`),
+ * index-aligned. `time` is required and non-null; every other stream is
+ * per-sample nullable (a gap in the recording), which the functions below
+ * already skip rather than coerce to 0. Pass only the output stream (`watts`
+ * or `velocity_smooth`) matching the basis the caller wants analysed.
+ */
 export interface AerobicStreams {
   /** Seconds since activity start, non-decreasing. */
   time: number[];
   /** Beats per minute. Required for any analysis. */
-  heartrate?: number[];
-  /** Power in watts (preferred basis). */
-  watts?: number[];
-  /** Smoothed speed in m/s (fallback basis when watts are absent). */
-  velocity_smooth?: number[];
-  /** Strava's moving flag per sample; false = stopped (traffic light, café). */
+  heartrate?: (number | null)[];
+  /** Power in watts (power basis). */
+  watts?: (number | null)[];
+  /** Smoothed speed in m/s (speed/pace basis). */
+  velocity_smooth?: (number | null)[];
+  /** Derived moving flag per sample; false = stopped (traffic light, café). */
   moving?: boolean[];
 }
 
@@ -91,15 +103,15 @@ const NP_WINDOW_SECONDS = 30;
 /** Interpretation bands for the decoupling headline. */
 export function interpretDecoupling(pct: number): string {
   if (pct < 0) {
-    return "negative — the second half was more efficient; typical of a gradual warm-up or a strong negative split";
+    return "negative: the second half was more efficient; typical of a gradual warm-up or a strong negative split";
   }
   if (pct < 5) {
-    return "excellent — under +5%, the effort was well within aerobic capacity";
+    return "excellent: under +5%, the effort was well within aerobic capacity";
   }
   if (pct <= 10) {
-    return "moderate — +5–10% drift; sustainable but near the aerobic ceiling for this duration";
+    return "moderate: +5-10% drift; sustainable but near the aerobic ceiling for this duration";
   }
-  return "high — over +10%, the effort exceeded current aerobic capacity for this duration";
+  return "high: over +10%, the effort exceeded current aerobic capacity for this duration";
 }
 
 interface WeightedSample {
@@ -114,7 +126,7 @@ interface WeightedSample {
  */
 function collectMovingSamples(
   streams: AerobicStreams,
-  output: number[],
+  output: (number | null)[],
 ): { samples: WeightedSample[]; stoppedSeconds: number } {
   const { time, heartrate, moving } = streams;
   const samples: WeightedSample[] = [];
@@ -188,7 +200,7 @@ export function computeAerobicAnalysis(
 ): AerobicAnalysis {
   if (!streams.heartrate || streams.heartrate.length === 0) {
     throw new AerobicAnalysisError(
-      "No heart rate stream is available for this activity — decoupling and efficiency need HR data.",
+      "No heart rate stream is available for this activity: decoupling and efficiency need HR data.",
     );
   }
   if (streams.time.length < 2) {
@@ -232,7 +244,7 @@ export function computeAerobicAnalysis(
   const movingSeconds = analysed.reduce((sum, s) => sum + s.weight, 0);
   if (movingSeconds <= 0) {
     throw new AerobicAnalysisError(
-      "No usable moving samples remain after exclusions — the activity may be entirely stopped time, lack HR coverage, or the warm-up exclusion may exceed its length.",
+      "No usable moving samples remain after exclusions: the activity may be entirely stopped time, lack HR coverage, or the warm-up exclusion may exceed its length.",
     );
   }
   if (movingSeconds < MIN_MOVING_SECONDS) {

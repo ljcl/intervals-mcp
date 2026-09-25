@@ -7,13 +7,14 @@
 A single-user remote MCP server for intervals.icu run data and analysis, with interactive MCP Apps. Continues from [strava-mcp](https://github.com/ljcl/strava-mcp).
 
 > **Migration in progress.** The server is being ported from Strava to
-> intervals.icu. Five tools (`list-activities`, `get-activity`,
-> `get-activity-streams`, `list-gear`, `get-wellness`) already talk to
-> intervals.icu directly and are verified against a real account. The
-> remaining analysis tools still call the retired Strava client and fail
-> with a "not yet ported" error until each is moved over in Phases 1 and 2.
-> The presence of `INTERVALS_API_KEY` is checked at startup and reported on
-> `/health`.
+> intervals.icu (Phases 1 through 3 complete). All twenty text tools now
+> talk to intervals.icu directly and are verified against a real account;
+> see [docs/tools.md](docs/tools.md) for the full catalog. Only three app
+> data handlers still call the retired Strava client and fail with a "not
+> yet ported" error: `view-activity-chart`/`get-activity-streams-raw`,
+> `view-cadence-trends`/`get-cadence-trend-data`, and
+> `view-route-map`/`get-route-map-data`, pending Phase 4. The presence of
+> `INTERVALS_API_KEY` is checked at startup and reported on `/health`.
 
 ## Setup
 
@@ -184,9 +185,10 @@ Any client that speaks [Streamable HTTP](https://modelcontextprotocol.io/docs/co
 ## Tools
 
 The full tool catalog, prompts, permission behaviour, and example requests
-live in [docs/tools.md](docs/tools.md). Most of the tools listed there still
-call the transitional Strava client and return a "not yet ported" error until
-Phases 1 and 2 land.
+live in [docs/tools.md](docs/tools.md). All twenty text tools talk to
+intervals.icu directly. Only the activity-chart, cadence-trends, and
+route-map app data handlers still call the transitional Strava client and
+return a "not yet ported" error, pending Phase 4.
 
 ## Documentation
 
@@ -195,7 +197,7 @@ Phases 1 and 2 land.
 | [docs/tools.md](docs/tools.md) | Full tool catalog, prompts, permission behaviour, example requests |
 | [docs/operations.md](docs/operations.md) | Environment variables, the API key, health endpoint, rate limits, endpoint security |
 | [docs/architecture.md](docs/architecture.md) | Server architecture: transport, HTTP layer, cache, error taxonomy, analysis math |
-| [docs/api-notes.md](docs/api-notes.md) | Calling the intervals.icu API: auth, endpoints, open questions for Phase 1 |
+| [docs/api-notes.md](docs/api-notes.md) | Calling the intervals.icu API: auth, endpoints, verified behaviour from Phases 1 and 2 |
 | [docs/mcp-apps.md](docs/mcp-apps.md) | MCP App packages: shared shell, mobile, theming, per-app details |
 | [docs/development.md](docs/development.md) | Monorepo mechanics: Turborepo, coverage gates, Storybook gates, Docker build |
 | [docs/releasing.md](docs/releasing.md) | Release automation: Conventional Commit PR titles, release-please, publishing |
@@ -207,7 +209,7 @@ PRs are squash-merged and the **PR title becomes the commit on `main`**, so writ
 
 **AI tool can't reach the server** — MCP requires an HTTPS URL. Use a tunnel (Tailscale Funnel or Cloudflare Tunnel) to expose your local server. See [Connecting to AI Tools](#connecting-to-ai-tools).
 
-**API key errors:** Check `/health` first: `api_key_configured` tells you whether the server has a key set at all. This applies once tools are ported to intervals.icu: if `api_key_configured` is `true` but calls still fail, the key may be wrong or revoked; generate a new one at intervals.icu, Settings, Developer Settings, and update `INTERVALS_API_KEY`. Today, every tool fails with a "not yet ported" message regardless of the key. See [operations.md](docs/operations.md#intervalsicu-api-key).
+**API key errors:** Check `/health` first: `api_key_configured` tells you whether the server has a key set at all. For a tool already ported to intervals.icu, if `api_key_configured` is `true` but calls still fail, the key may be wrong or revoked; generate a new one at intervals.icu, Settings, Developer Settings, and update `INTERVALS_API_KEY`. A tool not yet ported (see [docs/tools.md](docs/tools.md)) fails with a "not yet ported" message regardless of the key. See [operations.md](docs/operations.md#intervalsicu-api-key).
 
 **Is the server up and reachable?** `curl https://your-public-url/health`. It answers without touching the intervals.icu API, so it works even when your rate limit is exhausted.
 

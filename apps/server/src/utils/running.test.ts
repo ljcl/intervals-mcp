@@ -1,17 +1,45 @@
 import { describe, expect, it } from "vitest";
+import { type IntervalsActivity } from "../intervalsClient";
 import {
+  activityCadenceSpm,
   assessCadence,
+  assessRunningDynamics,
+  buildRunningDynamics,
   cadenceSpm,
-  computeTimeInZones,
-  computeWattsPerKg,
-  getZoneForHr,
+  formatPaceSeconds,
+  gapPace,
   isPaceActivity,
   isRunningActivity,
   isStepCadenceActivity,
   metersPerSecToPace,
   paceFromDistanceTime,
-  transformCadence,
 } from "./running";
+
+describe("formatPaceSeconds", () => {
+  it("formats 282 seconds as 4:42", () => {
+    expect(formatPaceSeconds(282)).toBe("4:42");
+  });
+
+  it("rounds 299.6 seconds up into the next minute as 5:00", () => {
+    expect(formatPaceSeconds(299.6)).toBe("5:00");
+  });
+
+  it("returns 0:00 for zero seconds rather than throwing", () => {
+    expect(formatPaceSeconds(0)).toBe("0:00");
+  });
+
+  it("returns 0:00 for NaN rather than emitting NaN:NaN", () => {
+    expect(formatPaceSeconds(Number.NaN)).toBe("0:00");
+  });
+
+  it("returns 0:00 for Infinity rather than throwing", () => {
+    expect(formatPaceSeconds(Number.POSITIVE_INFINITY)).toBe("0:00");
+  });
+
+  it("returns 0:00 for a negative input", () => {
+    expect(formatPaceSeconds(-5)).toBe("0:00");
+  });
+});
 
 describe("isRunningActivity", () => {
   it("returns true for Run", () => {
@@ -40,33 +68,6 @@ describe("isRunningActivity", () => {
 
   it("returns false for Swim", () => {
     expect(isRunningActivity("Swim")).toBe(false);
-  });
-});
-
-describe("transformCadence", () => {
-  it("doubles cadence for running activities (strides to steps)", () => {
-    const result = transformCadence(85, "Run");
-    expect(result?.spm).toBe(170);
-    expect(result?.display).toBe("170 spm");
-  });
-
-  it("returns rpm unchanged for cycling", () => {
-    const result = transformCadence(90, "Ride");
-    expect(result?.rpm).toBe(90);
-    expect(result?.display).toBe("90 rpm");
-  });
-
-  it("returns null for null input", () => {
-    expect(transformCadence(null, "Run")).toBeNull();
-  });
-
-  it("returns null for undefined input", () => {
-    expect(transformCadence(undefined, "Run")).toBeNull();
-  });
-
-  it("preserves raw value", () => {
-    const result = transformCadence(85, "Run");
-    expect(result?.raw).toBe(85);
   });
 });
 
@@ -198,6 +199,24 @@ describe("paceFromDistanceTime", () => {
   });
 });
 
+describe("gapPace", () => {
+  it("converts a pace type's gap (m/s) to a min/km string", () => {
+    // 3.4783862 m/s -> 4:47/km; the fixture value get-activity's
+    // gap_min_per_km rests on.
+    expect(gapPace(3.4783862, "Run")).toBe("4:47");
+  });
+
+  it("returns null for a non-pace sport, even with a gap value", () => {
+    expect(gapPace(9.5, "Ride")).toBeNull();
+    expect(gapPace(9.5, "WeightTraining")).toBeNull();
+  });
+
+  it("returns null when gap is missing", () => {
+    expect(gapPace(null, "Run")).toBeNull();
+    expect(gapPace(undefined, "Run")).toBeNull();
+  });
+});
+
 describe("assessCadence", () => {
   it("returns low assessment for cadence under 160", () => {
     expect(assessCadence(155)).toContain("low");
@@ -228,123 +247,134 @@ describe("assessCadence", () => {
   });
 });
 
-describe("computeWattsPerKg", () => {
-  it("computes ratio correctly", () => {
-    const result = computeWattsPerKg(250, 70);
-    expect(result?.wattsPerKg).toBeCloseTo(3.57, 2);
+describe("activityCadenceSpm", () => {
+  it("doubles strides/min to steps/min and rounds for a step-cadence type", () => {
+    expect(activityCadenceSpm(83.6, "Run")).toBe(167);
   });
 
-  it("returns null if watts missing", () => {
-    expect(computeWattsPerKg(null, 70)).toBeNull();
+  it("returns null for a non-step-cadence type (e.g. Ride)", () => {
+    expect(activityCadenceSpm(90, "Ride")).toBeNull();
   });
 
-  it("returns null if weight missing", () => {
-    expect(computeWattsPerKg(250, null)).toBeNull();
-  });
-
-  it("returns null if weight is zero", () => {
-    expect(computeWattsPerKg(250, 0)).toBeNull();
-  });
-
-  it("classifies easy intensity correctly", () => {
-    const result = computeWattsPerKg(150, 70); // ~2.14 W/kg
-    expect(result?.intensity).toBe("easy");
-  });
-
-  it("classifies moderate intensity correctly", () => {
-    const result = computeWattsPerKg(240, 70); // ~3.43 W/kg
-    expect(result?.intensity).toBe("moderate");
-  });
-
-  it("classifies tempo intensity correctly", () => {
-    const result = computeWattsPerKg(315, 70); // ~4.5 W/kg
-    expect(result?.intensity).toBe("tempo");
-  });
-
-  it("classifies high intensity correctly", () => {
-    const result = computeWattsPerKg(400, 70); // ~5.7 W/kg
-    expect(result?.intensity).toBe("high");
+  it("returns null when raw cadence is missing", () => {
+    expect(activityCadenceSpm(null, "Run")).toBeNull();
   });
 });
 
-describe("getZoneForHr", () => {
-  const zones = [
-    { min: 0, max: 120 },
-    { min: 120, max: 140 },
-    { min: 140, max: 160 },
-    { min: 160, max: 180 },
-    { min: 180, max: -1 },
-  ];
+describe("buildRunningDynamics", () => {
+  function activity(
+    overrides: Partial<IntervalsActivity> = {},
+  ): IntervalsActivity {
+    return {
+      average_stance_time: 233.21266,
+      average_vertical_oscillation: 108.36414,
+      average_vertical_ratio: 8.5,
+      average_step_length: 1200,
+      average_stride: 1.2,
+      ...overrides,
+    } as IntervalsActivity;
+  }
 
-  it("returns zone 1 for low HR", () => {
-    expect(getZoneForHr(100, zones)).toBe(1);
+  it("rounds each field for a step-cadence type with device support", () => {
+    expect(buildRunningDynamics(activity(), "Run")).toEqual({
+      stance_time_ms: 233,
+      vertical_oscillation_mm: 108,
+      vertical_ratio_pct: 8.5,
+      step_length_mm: 1200,
+      stride_m: 1.2,
+    });
   });
 
-  it("returns zone 2 for HR at boundary", () => {
-    expect(getZoneForHr(120, zones)).toBe(2);
+  it("returns null for a non-step-cadence type", () => {
+    expect(buildRunningDynamics(activity(), "Ride")).toBeNull();
   });
 
-  it("returns zone 3 for moderate HR", () => {
-    expect(getZoneForHr(150, zones)).toBe(3);
-  });
-
-  it("returns zone 4 for elevated HR", () => {
-    expect(getZoneForHr(170, zones)).toBe(4);
-  });
-
-  it("returns zone 5 for high HR", () => {
-    expect(getZoneForHr(185, zones)).toBe(5);
-  });
-
-  it("handles -1 max as unbounded", () => {
-    expect(getZoneForHr(200, zones)).toBe(5);
+  it("returns null when the device recorded no stance time", () => {
+    expect(
+      buildRunningDynamics(activity({ average_stance_time: null }), "Run"),
+    ).toBeNull();
   });
 });
 
-describe("computeTimeInZones", () => {
-  const zones = [
-    { min: 0, max: 120 },
-    { min: 120, max: 140 },
-    { min: 140, max: 160 },
-    { min: 160, max: 180 },
-    { min: 180, max: -1 },
-  ];
-
-  it("computes time in zones correctly", () => {
-    // 10 seconds in each zone
-    const hrStream = [100, 130, 150, 170, 190];
-    const timeStream = [0, 10, 20, 30, 40];
-
-    const result = computeTimeInZones(hrStream, timeStream, zones);
-
-    expect(result).not.toBeNull();
-    expect(result?.totalTimeSeconds).toBe(40);
+describe("assessRunningDynamics", () => {
+  it("flags a vertical oscillation of 108 mm as high, above the 100 mm target", () => {
+    const rd = assessRunningDynamics(108, 233);
+    expect(rd.vertical_oscillation).toEqual({
+      status: "high",
+      target: "under 100 mm",
+      message: "high - above the 100 mm target",
+    });
   });
 
-  it("returns null for empty streams", () => {
-    expect(computeTimeInZones([], [], zones)).toBeNull();
+  it("flags a ground contact time of 233 ms as within the 200-260 ms target range", () => {
+    const rd = assessRunningDynamics(108, 233);
+    expect(rd.ground_contact_time).toEqual({
+      status: "within",
+      target: "200-260 ms",
+      message: "good - within the 200-260 ms target range",
+    });
   });
 
-  it("returns null for mismatched stream lengths", () => {
-    expect(computeTimeInZones([100, 120], [0], zones)).toBeNull();
+  it("treats a vertical oscillation under 100 mm as within target", () => {
+    expect(assessRunningDynamics(95, null).vertical_oscillation).toEqual({
+      status: "within",
+      target: "under 100 mm",
+      message: "good - under the 100 mm target",
+    });
   });
 
-  it("returns null for single-point streams", () => {
-    expect(computeTimeInZones([100], [0], zones)).toBeNull();
+  it("flags a ground contact time under 200 ms as low", () => {
+    expect(assessRunningDynamics(null, 190).ground_contact_time).toEqual({
+      status: "low",
+      target: "200-260 ms",
+      message: "fast - below the 200-260 ms target range",
+    });
   });
 
-  it("returns null for empty zones", () => {
-    expect(computeTimeInZones([100, 120], [0, 10], [])).toBeNull();
+  it("flags a ground contact time over 260 ms as high", () => {
+    expect(assessRunningDynamics(null, 270).ground_contact_time).toEqual({
+      status: "high",
+      target: "200-260 ms",
+      message: "long - above the 200-260 ms target range",
+    });
   });
 
-  it("calculates percentages correctly", () => {
-    // All time in zone 1
-    const hrStream = [100, 100, 100, 100];
-    const timeStream = [0, 10, 20, 30];
+  it("returns null per metric when its input is null", () => {
+    expect(assessRunningDynamics(null, null)).toEqual({
+      vertical_oscillation: null,
+      ground_contact_time: null,
+    });
+  });
 
-    const result = computeTimeInZones(hrStream, timeStream, zones);
+  describe("boundaries", () => {
+    it("flags a vertical oscillation of exactly 100 mm as high (the target is strictly under 100)", () => {
+      expect(
+        assessRunningDynamics(100, null).vertical_oscillation?.status,
+      ).toBe("high");
+    });
 
-    expect(result?.zones.zone_1.percentage).toBe(100);
-    expect(result?.zones.zone_2.percentage).toBe(0);
+    it("treats a ground contact time of exactly 200 ms as within (the range's lower bound is inclusive)", () => {
+      expect(assessRunningDynamics(null, 200).ground_contact_time?.status).toBe(
+        "within",
+      );
+    });
+
+    it("treats a ground contact time of exactly 260 ms as within (the range's upper bound is inclusive)", () => {
+      expect(assessRunningDynamics(null, 260).ground_contact_time?.status).toBe(
+        "within",
+      );
+    });
+
+    it("flags a ground contact time of 199 ms as low", () => {
+      expect(assessRunningDynamics(null, 199).ground_contact_time?.status).toBe(
+        "low",
+      );
+    });
+
+    it("flags a ground contact time of 261 ms as high", () => {
+      expect(assessRunningDynamics(null, 261).ground_contact_time?.status).toBe(
+        "high",
+      );
+    });
   });
 });

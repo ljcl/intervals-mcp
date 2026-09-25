@@ -35,11 +35,11 @@ describe("getPrompt", () => {
     expect(text).toContain("days=28");
   });
 
-  it("references official-connector discovery when no activity_id is given", () => {
+  it("references this server's own list-activities discovery when no activity_id is given", () => {
     const withoutId = getPrompt("annotate-last-run");
     const withId = getPrompt("annotate-last-run", { activity_id: "12345" });
 
-    expect(withoutId.messages[0]?.content.text).toContain("list_activities");
+    expect(withoutId.messages[0]?.content.text).toContain("list-activities");
     expect(withId.messages[0]?.content.text).toContain("activity 12345");
   });
 

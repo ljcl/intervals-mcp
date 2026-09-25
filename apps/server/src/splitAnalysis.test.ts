@@ -4,7 +4,6 @@ import {
   EVEN_SPLIT_PCT,
   interpretSplit,
   MIN_HALF_MOVING_SECONDS,
-  SPLIT_UNIT_METRES,
   SplitAnalysisError,
   type SplitStreams,
 } from "./splitAnalysis";
@@ -63,19 +62,18 @@ describe("computeSplitAnalysis", () => {
   it("splits an even flat run into equal kilometres", () => {
     const analysis = computeSplitAnalysis(flat5k());
 
-    expect(analysis.unit).toBe("km");
     expect(analysis.splits).toHaveLength(5);
     for (const split of analysis.splits) {
       expect(split.partial).toBe(false);
       expect(split.distanceM).toBe(1000);
-      expect(split.paceSecPerUnit).toBeCloseTo(300, 0);
+      expect(split.paceSecPerKm).toBeCloseTo(300, 0);
       expect(split.avgHr).toBe(140);
     }
     expect(analysis.splits.map((s) => s.index)).toEqual([1, 2, 3, 4, 5]);
     expect(analysis.splits[0]!.startM).toBe(0);
     expect(analysis.splits[4]!.endM).toBe(5000);
     expect(analysis.totals.distanceM).toBe(5000);
-    expect(analysis.totals.avgPaceSecPerUnit).toBeCloseTo(300, 0);
+    expect(analysis.totals.avgPaceSecPerKm).toBeCloseTo(300, 0);
   });
 
   it("marks a trailing partial split and keeps it out of fastest/slowest", () => {
@@ -92,25 +90,9 @@ describe("computeSplitAnalysis", () => {
     expect(last.partial).toBe(true);
     expect(last.distanceM).toBe(400);
     // Its pace is extrapolated to a full km, so it must not win "fastest".
-    expect(last.paceSecPerUnit).toBeLessThan(300);
+    expect(last.paceSecPerKm).toBeLessThan(300);
     expect(analysis.fastestSplitIndex).not.toBe(4);
     expect(analysis.slowestSplitIndex).not.toBe(4);
-  });
-
-  it("splits by mile when asked", () => {
-    const analysis = computeSplitAnalysis(
-      streams([{ metres: 3218, secPerKm: 300 }]),
-      { unit: "mile" },
-    );
-
-    expect(analysis.unit).toBe("mile");
-    // 3220 m recorded: two miles and a 1.3 m sliver folded into the second.
-    expect(analysis.splits).toHaveLength(2);
-    expect(analysis.splits[0]!.distanceM).toBe(
-      Math.round(SPLIT_UNIT_METRES.mile),
-    );
-    // 5:00/km is 8:03/mile (300 × 1.609344 = 482.8 s).
-    expect(analysis.splits[0]!.paceSecPerUnit).toBe(483);
   });
 
   it("names the fastest and slowest split", () => {
@@ -143,7 +125,7 @@ describe("computeSplitAnalysis", () => {
   it("excludes stopped samples from pace but not from elapsed time", () => {
     const moved = flat5k();
     // Two minutes at a red light in the middle of split 3.
-    const pauseIndex = moved.distance.findIndex((d) => d >= 2500);
+    const pauseIndex = moved.distance.findIndex((d) => d != null && d >= 2500);
     const stopped: SplitStreams = {
       ...moved,
       time: moved.time.map((t, i) => (i >= pauseIndex ? t + 120 : t)),
@@ -154,7 +136,7 @@ describe("computeSplitAnalysis", () => {
     const third = analysis.splits[2]!;
 
     expect(third.elapsedTimeS).toBeGreaterThan(third.movingTimeS + 100);
-    expect(third.paceSecPerUnit).toBeCloseTo(300, -1);
+    expect(third.paceSecPerKm).toBeCloseTo(300, -1);
     expect(analysis.totals.elapsedTimeS).toBeGreaterThan(
       analysis.totals.movingTimeS + 100,
     );
@@ -197,6 +179,29 @@ describe("computeSplitAnalysis", () => {
     expect(analysis.splits).toHaveLength(1);
     expect(analysis.splits[0]!.partial).toBe(true);
     expect(analysis.warnings.join(" ")).toContain("shorter than one km");
+  });
+
+  it("interpolates null distance samples rather than treating them as zero", () => {
+    const base = flat5k();
+    const withGaps: SplitStreams = {
+      ...base,
+      distance: base.distance.map((d, i) => (i % 40 === 3 ? null : d)),
+    };
+    const analysis = computeSplitAnalysis(withGaps);
+    expect(analysis.totals.distanceM).toBeCloseTo(5000, -1);
+    expect(analysis.splits).toHaveLength(5);
+  });
+
+  it("skips null heart rate samples instead of dragging the average to zero", () => {
+    const base = flat5k();
+    const withGaps: SplitStreams = {
+      ...base,
+      heartrate: base.heartrate!.map((hr, i) => (i % 3 === 0 ? null : hr)),
+    };
+    const analysis = computeSplitAnalysis(withGaps);
+    for (const split of analysis.splits) {
+      expect(split.avgHr).toBe(140);
+    }
   });
 });
 
@@ -270,8 +275,8 @@ describe("split verdict", () => {
     const verdict = analysis.verdict!;
 
     expect(analysis.splits).toHaveLength(7);
-    expect(verdict.firstHalfPaceSecPerUnit).toBeCloseTo(
-      verdict.secondHalfPaceSecPerUnit,
+    expect(verdict.firstHalfPaceSecPerKm).toBeCloseTo(
+      verdict.secondHalfPaceSecPerKm,
       0,
     );
   });
@@ -299,6 +304,7 @@ describe("split verdict", () => {
       ),
     );
 
+    expect(analysis.gradeSource).toBe("computed");
     expect(analysis.warnings.join(" ")).toContain("No elevation or grade");
     const verdict = analysis.verdict!;
     // Grade is unknown, so GAP is raw pace: reported, but never dressed up as
@@ -306,6 +312,11 @@ describe("split verdict", () => {
     expect(verdict.gapDeltaPct).toBeCloseTo(verdict.deltaPct, 0);
     expect(analysis.splits[0]!.elevationChangeM).toBeNull();
     expect(analysis.splits[0]!.avgGradePct).toBeNull();
+  });
+
+  it("reports grade_smooth as the source when the stream is present", () => {
+    const analysis = computeSplitAnalysis(flat5k());
+    expect(analysis.gradeSource).toBe("grade_smooth");
   });
 });
 

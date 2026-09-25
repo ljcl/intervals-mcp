@@ -39,8 +39,10 @@ breaking them has shipped bugs — do not work around them locally.
   kept) and wraps everything else in `StravaApiError extends HttpError`
   (`stravaClient.ts`) or `IntervalsApiError extends HttpError`
   (`intervalsClient.ts`). `stravaClient.ts` sends no `Authorization` header on
-  purpose (it is retired, pending the Phase 1/2 port), so every call there
-  gets a 401 wrapped as `NotPortedError extends HttpError`
+  purpose (it is retired; Phases 1 through 3 ported all twenty text tools
+  off it, leaving only the Phase 4 activity-chart, cadence-trends, and
+  route-map app data handlers), so every call there gets a 401 wrapped as
+  `NotPortedError extends HttpError`
   (`fetchClient.ts`) instead of `StravaApiError`, a different type from
   intervals.icu itself rejecting an API key (also a 401), so
   `tools/_errors.ts` can tell them apart without string-matching. Flattening
@@ -62,9 +64,16 @@ breaking them has shipped bugs — do not work around them locally.
   with 401, mapped to a not-yet-ported message. Only genuine 404/empty throws
   `StreamsUnavailableError` (the one error a caller may degrade on); catching
   more misreports failures as absences.
+- **Intervals stream reads go through `loadIntervalsStreams` in
+  `intervalsStreams.ts`**; only a genuine 404 or empty result throws
+  `IntervalsStreamsUnavailableError`, the one error a caller may degrade on.
 - **Derived numbers have exactly one home.** GAP: `hillAnalysis.ts`
-  (`gapFactor`, `computeGrades`) — `splitAnalysis.ts` imports, never
+  (`gapFactor`, `computeGrades`); `splitAnalysis.ts` imports, never
   re-derives. CTL/ATL/TSB and any projection/taper math: `fitnessTrend.ts`.
+  Step-cadence spm and averaged running dynamics: `activityCadenceSpm`/
+  `buildRunningDynamics` in `utils/running.ts` (shared by `get-activity` and
+  `compare-activities`). Lap text rendering: `formatLapLine` in
+  `intervalLaps.ts` (shared by `get-activity-laps` and `get-running-summary`).
   Text tool and app reading different copies is the failure mode these
   prevent.
 - **Telemetry:** `dispatchToolCall` emits one JSON line per call; timer starts
@@ -79,9 +88,10 @@ breaking them has shipped bugs — do not work around them locally.
   elsewhere. A missing key maps to one not-configured message naming the env
   var.
 - **intervals.icu reads go through `intervalsClient.ts`; `stravaClient.ts` is
-  transitional.** Tools are being ported from the retired Strava client to
-  `intervalsClient.ts` (Phases 1 and 2). Do not add new `stravaClient.ts`
-  callers.
+  transitional.** Phases 1 through 3 ported all twenty text tools from the
+  retired Strava client to `intervalsClient.ts`; only the Phase 4
+  activity-chart, cadence-trends, and route-map app data handlers still call
+  `stravaClient.ts`. Do not add new `stravaClient.ts` callers.
 - **Ids go through `stravaIdInput`** (Strava) or `intervalsActivityIdInput`
   (intervals.icu; accepts an optional `i` prefix, e.g. `i189807578`), both in
   `tools/_ids.ts`. Advertised schema is string-only
@@ -91,16 +101,17 @@ breaking them has shipped bugs — do not work around them locally.
   parsing back.
 - **Tools returning data publish `outputSchema` + matching
   `structuredContent`** from `tools/outputs.ts` (schemas grouped, not per
-  file). Text tools reuse the apps' mappers rather than re-deriving — e.g.
-  `get-activity-zones` calls `mapActivityZones` from `activityZones.ts`. Empty
+  file). Text tools reuse the apps' mappers rather than re-deriving, e.g.
+  `get-activity-zones` calls `mapIntervalsZones` from `activityZones.ts`. Empty
   results emit a valid payload (`count: 0`). `warnOnSchemaDrift` keeps dev
   honest.
-- **Exports choose delivery via `_exportOutput.ts`**: omitting `output` picks
-  file when `ROUTE_EXPORT_PATH` is set, content otherwise. Content mode caps
-  bytes and says outright that a truncated GPX will not open.
-- **`sportType` is an enum**: `SPORT_TYPES` (`utils/activityWrite.ts`) backs
-  both the advertised schema and the runtime check; rejections name the near
-  miss (`Weightlifting` → `WeightTraining`).
+- **`update-activity` never claims success or silently fails on an
+  ambiguous write.** It reads the activity fresh, then validates `gearId`
+  against a `skipCache: true` `list-gear` read, in that order, so a missing
+  activity reports not-found before any gear error. If the PUT itself times
+  out, or anything fails after it resolved (the confirming re-read,
+  parsing), it cannot tell whether the write landed, so it says so and
+  points at `get-activity` rather than inviting a blind retry.
 - **Annotations come from the four `_annotations.ts` constants**, never inline
   objects — they decide whether hosts grant reads durably or re-prompt forever.
   `READ_ONLY` states `destructiveHint: false` explicitly (its documented
@@ -152,7 +163,7 @@ breaking them has shipped bugs — do not work around them locally.
 - `packages/training-load/` — React + Recharts MCP App for weekly training volume with trend line and injury-risk warnings
 - `packages/route-map/` — React MCP App for activity GPS maps (MapLibre basemap by default, pure-SVG offline grid fallback; no Recharts)
 - `packages/compare-activities/` — React + Recharts MCP App overlaying two activities' streams with a delta summary
-- `packages/activity-zones/` — React + Recharts MCP App for per-activity HR/power time-in-zone distribution
+- `packages/activity-zones/`: React + Recharts MCP App for per-activity HR time-in-zone distribution (power zones dropped for now; see docs/api-notes.md)
 - `packages/fitness-trend/` — React + Recharts MCP App charting CTL/ATL/TSB with warning bands and a dashed taper plan
 - `packages/data/` — Shared pure data utilities (formatting, activity types, smoothing). Formatters live here, once (`formatting.ts`): MCP App packages cannot import each other, so a formatter two apps need has exactly one home; duplicated copies are invisible to knip and Biome. Server-side equivalent: `apps/server/src/formatters.ts`; sport-specific transforms in `utils/running.ts`
 - `packages/ui/` — Shared presentational React components (Pill, Tooltip, Legend, SummaryBar, AppShell, CardHeader, EmptyState, ErrorState, LoadingState, Skeleton) plus the app-shell runtime (`AppRoot`, `useServerToolData`, `useServerToolFetcher`, `useModelContextSync`, `useMobileMode`)

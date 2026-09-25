@@ -1,117 +1,110 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  activityZones as activityZonesFixture,
-  handledNotFound,
-  handledRateLimit,
-} from "../__fixtures__";
-import {
-  getActivityZones as getActivityZonesClient,
-  type StravaActivityZone,
-} from "../stravaClient";
+import { handledNotFound, handledRateLimit } from "../__fixtures__";
+import activityFixture from "../__fixtures__/intervals/activity.json";
+import { mapIntervalsZones } from "../activityZones";
+import { getActivity, type IntervalsActivity } from "../intervalsClient";
 import { formatActivityZones, getActivityZonesTool } from "./getActivityZones";
 
-// The fixture's `type` field widens to `string`; assert the discriminated shape.
-const activityZones = activityZonesFixture as StravaActivityZone[];
+vi.mock("../intervalsClient", async () => {
+  const actual =
+    await vi.importActual<typeof import("../intervalsClient")>(
+      "../intervalsClient",
+    );
+  return { ...actual, getActivity: vi.fn() };
+});
 
-vi.mock("../stravaClient", () => ({
-  getActivityZones: vi.fn(),
-}));
+const mockedGetActivity = vi.mocked(getActivity);
 
-const mockedClient = vi.mocked(getActivityZonesClient);
+const runActivity = activityFixture as unknown as IntervalsActivity;
 
 describe("formatActivityZones", () => {
-  it("renders time and percentage per zone for HR and power", () => {
-    const text = formatActivityZones(activityZones);
+  it("renders time and percentage per zone", () => {
+    const text = formatActivityZones(mapIntervalsZones(runActivity));
 
-    // Both zone sections are present.
     expect(text).toContain("Heart Rate Zones");
-    expect(text).toContain("Power Zones");
-
-    // HR total = 2220s; zone 2 (1200s) = 54.1%.
-    expect(text).toContain("Z2 (115–152 bpm): 20:00 (54.1%)");
-    // Final HR bucket uses the "+" notation and shows 0%. Durations come from
-    // the one server-side formatDuration, which does not zero-pad the leading
-    // unit — so "0:00" and "8:40", not "00:00" and "08:40" (#277).
-    expect(text).toContain("Z5 (190+ bpm): 0:00 (0.0%)");
-
-    // Power total = 2220s; zone 2 (1500s) = 67.6%.
-    expect(text).toContain("Z2 (100–250 W): 25:00 (67.6%)");
-    expect(text).toContain("Z3 (250+ W): 8:40 (23.4%)");
-  });
-
-  it("notes when a zone set has no distribution buckets", () => {
-    const text = formatActivityZones([
-      { type: "power", distribution_buckets: [] },
-    ]);
-    expect(text).toContain("Distribution data not available.");
+    // Fixture: icu_hr_zones [147,160,169,178,197], times [103,146,330,1684,111].
+    // Total = 2374s; zone 4 (1684s) = 70.9%.
+    expect(text).toContain("Z4 (169-178 bpm): 28:04 (70.9%)");
+    // The top zone keeps its real upper bound, not an open-ended "+".
+    expect(text).toContain("Z5 (178-197 bpm): 1:51 (4.7%)");
   });
 });
 
 describe("getActivityZonesTool.execute", () => {
   beforeEach(() => {
-    mockedClient.mockReset();
+    mockedGetActivity.mockReset();
   });
 
   it("returns the formatted summary as the only text block", async () => {
-    mockedClient.mockResolvedValue(activityZones);
+    mockedGetActivity.mockResolvedValue(runActivity);
 
     const result = await getActivityZonesTool.execute(
-      { id: "12345" },
-      "test-token",
+      { id: "i12345" },
+      "test-key",
     );
 
     expect(result.isError).toBeUndefined();
     expect(result.content).toHaveLength(1);
-    expect(result.content[0]?.text).toContain("Activity Zones (ID: 12345)");
-    expect(result.content[0]?.text).toContain("54.1%");
-    expect(result.content[0]?.text).not.toContain("Complete Zone Data");
+    expect(result.content[0]?.text).toContain("Activity Zones (ID: i12345)");
+    expect(result.content[0]?.text).toContain("Heart Rate Zones");
     expect(result.structuredContent?.zone_sets.length).toBeGreaterThan(0);
-    expect(mockedClient).toHaveBeenCalledWith("test-token", "12345");
+    expect(mockedGetActivity).toHaveBeenCalledWith("test-key", "i12345");
+    // activity_id echoes the fetched activity's own id, not the raw input.
+    expect(result.structuredContent?.activity_id).toBe(runActivity.id);
   });
 
   it("returns a graceful message when there is no zone data", async () => {
-    mockedClient.mockResolvedValue([]);
+    mockedGetActivity.mockResolvedValue({
+      ...runActivity,
+      icu_hr_zones: null,
+      icu_hr_zone_times: null,
+    });
 
     const result = await getActivityZonesTool.execute(
-      { id: "999" },
-      "test-token",
+      { id: "i999" },
+      "test-key",
     );
 
     expect(result.isError).toBeUndefined();
     expect(result.content[0]?.text).toContain("No zone data found");
+    expect(result.structuredContent?.zone_sets).toEqual([]);
+    expect(result.structuredContent?.activity_id).toBe(runActivity.id);
   });
 
-  it("returns a graceful message when buckets are empty", async () => {
-    mockedClient.mockResolvedValue([
-      { type: "heartrate", distribution_buckets: [] },
-    ]);
+  it("warns in the text when HR bounds and zone times counts don't match", async () => {
+    mockedGetActivity.mockResolvedValue({
+      ...runActivity,
+      icu_hr_zones: [147, 160, 169, 178, 197],
+      icu_hr_zone_times: [103, 146],
+    });
 
     const result = await getActivityZonesTool.execute(
-      { id: "999" },
-      "test-token",
+      { id: "i999" },
+      "test-key",
     );
 
-    expect(result.content[0]?.text).toContain("No zone data found");
+    expect(result.content[0]?.text).toContain("Heart rate zones omitted");
+    expect(result.structuredContent?.zone_sets).toEqual([]);
   });
 
   it("maps a not-found error to a friendly message", async () => {
-    mockedClient.mockRejectedValue(handledNotFound("getActivityZones"));
+    mockedGetActivity.mockRejectedValue(handledNotFound("getActivity"));
 
     const result = await getActivityZonesTool.execute(
-      { id: "42" },
-      "test-token",
+      { id: "i42" },
+      "test-key",
     );
 
     expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toBe("❌ Activity with ID 42 not found.");
+    expect(result.content[0]?.text).toBe("❌ Activity i42 was not found.");
   });
 
   it("renders the rate-limit window on a RateLimitError", async () => {
-    mockedClient.mockRejectedValue(handledRateLimit("getActivityZones"));
+    mockedGetActivity.mockRejectedValue(handledRateLimit("getActivity"));
 
     const result = await getActivityZonesTool.execute(
-      { id: "42" },
-      "test-token",
+      { id: "i42" },
+      "test-key",
     );
 
     expect(result.isError).toBe(true);
@@ -122,16 +115,16 @@ describe("getActivityZonesTool.execute", () => {
   });
 
   it("reports other failures with details", async () => {
-    mockedClient.mockRejectedValue(new Error("Bad Gateway"));
+    mockedGetActivity.mockRejectedValue(new Error("Bad Gateway"));
 
     const result = await getActivityZonesTool.execute(
-      { id: "42" },
-      "test-token",
+      { id: "i42" },
+      "test-key",
     );
 
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toBe(
-      "❌ Failed to fetch zones for activity 42: Bad Gateway",
+      "❌ Failed to fetch zones for activity i42: Bad Gateway",
     );
   });
 });

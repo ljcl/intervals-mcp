@@ -1,194 +1,209 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { handledNotFound, handledRateLimit } from "../__fixtures__";
+import activityMultilap from "../__fixtures__/intervals/activity-multilap.json";
+import multilapIntervals from "../__fixtures__/intervals/activity-multilap-intervals.json";
 import {
-  getActivityById,
-  getActivityLaps,
-  type StravaDetailedActivity,
-  type StravaLap,
-} from "../stravaClient";
-import { getActivityLapsTool, mapLap } from "./getActivityLaps";
+  getActivity,
+  type IntervalsActivity,
+  type IntervalsInterval,
+} from "../intervalsClient";
+import { formatActivityLapsText, getActivityLapsTool } from "./getActivityLaps";
 
-vi.mock("../stravaClient", () => ({
-  getActivityById: vi.fn(),
-  getActivityLaps: vi.fn(),
-}));
-
-const mockedById = vi.mocked(getActivityById);
-const mockedLaps = vi.mocked(getActivityLaps);
-
-const baseLap: StravaLap = {
-  id: "900001",
-  resource_state: 2,
-  name: "Lap 1",
-  activity: { id: "12345", resource_state: 1 },
-  athlete: { id: "67890", resource_state: 1 },
-  elapsed_time: 300,
-  moving_time: 295,
-  start_date: "2026-07-01T06:00:00Z",
-  start_date_local: "2026-07-01T16:00:00Z",
-  distance: 1000,
-  lap_index: 1,
-  average_speed: 3.33, // 5:00 /km
-  average_cadence: 87,
-  average_heartrate: 152.4,
-  max_heartrate: 165,
-  total_elevation_gain: 12,
-} as unknown as StravaLap;
-
-const asDetail = (a: unknown) => a as unknown as StravaDetailedActivity;
-
-describe("mapLap", () => {
-  it("formats a run lap with pace and doubled cadence", () => {
-    const entry = mapLap(baseLap, true);
-
-    expect(entry.pace?.min_per_km).toBe("5:00");
-    expect(entry.speed_kmh).toBeNull();
-    expect(entry.average_cadence).toBe(174); // 87 strides -> 174 spm
-    expect(entry.distance_km).toBe(1);
-    expect(entry.average_heartrate).toBe(152.4);
-  });
-
-  it("formats a ride lap with speed, power, and rpm cadence", () => {
-    const rideLap = {
-      ...baseLap,
-      distance: 5000,
-      average_speed: 10, // 36 km/h
-      average_watts: 214.6,
-      device_watts: true,
-      average_cadence: 88,
-    } as unknown as StravaLap;
-
-    const entry = mapLap(rideLap, false);
-
-    expect(entry.pace).toBeNull();
-    expect(entry.speed_kmh).toBe(36);
-    expect(entry.average_watts).toBe(214.6);
-    expect(entry.average_cadence).toBe(88); // rpm, not doubled
-  });
-
-  it("leaves missing sensors null instead of zero", () => {
-    const bareLap = {
-      ...baseLap,
-      average_speed: null,
-      average_cadence: null,
-      average_heartrate: null,
-      max_heartrate: null,
-      total_elevation_gain: null,
-    } as unknown as StravaLap;
-
-    const entry = mapLap(bareLap, true);
-
-    expect(entry.pace).toBeNull();
-    expect(entry.average_cadence).toBeNull();
-    expect(entry.average_heartrate).toBeNull();
-    expect(entry.total_elevation_gain_m).toBeNull();
-  });
+vi.mock("../intervalsClient", async () => {
+  const actual =
+    await vi.importActual<typeof import("../intervalsClient")>(
+      "../intervalsClient",
+    );
+  return { ...actual, getActivity: vi.fn() };
 });
+
+const mockedGetActivity = vi.mocked(getActivity);
+
+const runActivityWithIntervals: IntervalsActivity = {
+  ...(activityMultilap as unknown as IntervalsActivity),
+  icu_intervals:
+    multilapIntervals.icu_intervals as unknown as IntervalsInterval[],
+};
+
+const rideActivity: IntervalsActivity = {
+  id: "i555",
+  name: "Crit Practice",
+  type: "Ride",
+  start_date_local: "2026-09-20T09:00:00",
+  icu_lap_count: 1,
+  icu_intervals_edited: false,
+  icu_intervals: [
+    {
+      type: "WORK",
+      label: null,
+      distance: 5000,
+      moving_time: 500,
+      elapsed_time: 500,
+      average_heartrate: 150,
+      max_heartrate: 165,
+      average_cadence: 88,
+      average_speed: 10,
+      gap: 9.5,
+      total_elevation_gain: 20,
+      average_watts: 214.6,
+      average_gradient: 0.01,
+    } as unknown as IntervalsInterval,
+  ],
+} as unknown as IntervalsActivity;
 
 describe("getActivityLapsTool.execute", () => {
   beforeEach(() => {
-    mockedById.mockReset();
-    mockedLaps.mockReset();
+    mockedGetActivity.mockReset();
   });
 
-  it("renders run laps with pace and structured output", async () => {
-    mockedById.mockResolvedValueOnce(
-      asDetail({ id: "12345", name: "Track Tuesday", sport_type: "Run" }),
-    );
-    mockedLaps.mockResolvedValueOnce([
-      baseLap,
-      { ...baseLap, lap_index: 2, name: "Lap 2" } as unknown as StravaLap,
-    ]);
+  it("renders run laps with pace, GAP, and doubled cadence, in order", async () => {
+    mockedGetActivity.mockResolvedValueOnce(runActivityWithIntervals);
 
     const result = await getActivityLapsTool.execute(
-      { id: "12345" },
-      "test-token",
+      { id: "i189757183" },
+      "test-key",
     );
+
+    expect(mockedGetActivity).toHaveBeenCalledWith("test-key", "i189757183", {
+      intervals: true,
+    });
+
+    const structured = result.structuredContent as unknown as Record<
+      string,
+      unknown
+    >;
+    expect(structured.sport_type).toBe("Run");
+    expect(structured.lap_source).toBe("intervals.icu intervals");
+    expect(structured.device_lap_count).toBe(12);
+    expect(structured.intervals_edited).toBe(true);
+    const laps = structured.laps as Array<Record<string, unknown>>;
+    expect(structured.lap_count).toBe(laps.length);
+    expect(laps.length).toBe(
+      (multilapIntervals.icu_intervals as unknown[]).length,
+    );
+    expect(laps.map((lap) => lap.lap_index)).toEqual(laps.map((_, i) => i + 1));
+    expect(laps[0]?.pace_min_per_km).toBe("5:12");
+    expect(laps[0]?.gap_min_per_km).toBe("4:52");
+    expect(laps[0]?.average_cadence).toBe(161);
 
     const text = result.content[0]?.text ?? "";
-    expect(text).toContain('Laps for "Track Tuesday"');
-    expect(text).toContain("5:00 /km");
-    expect(text).toContain("174 spm");
-    expect(result.structuredContent?.sport_type).toBe("Run");
-    expect(result.structuredContent?.lap_count).toBe(2);
-    expect(result.structuredContent?.laps[0]?.pace?.min_per_km).toBe("5:00");
+    expect(text).toContain('Run laps for "Run 1"');
+    expect(text).toContain("5:12 /km");
+    expect(text).toContain("GAP 4:52 /km");
+    expect(text).toContain("161 spm");
+    // 12 device laps but 18 icu_intervals, plus icu_intervals_edited true.
+    expect(text).toContain("intervals were edited in intervals.icu");
+    expect(text).toContain("device recorded 12 laps, not 18");
   });
 
-  it("renders ride laps with speed and power", async () => {
-    mockedById.mockResolvedValueOnce(
-      asDetail({ id: "555", name: "Crit Practice", sport_type: "Ride" }),
-    );
-    mockedLaps.mockResolvedValueOnce([
-      {
-        ...baseLap,
-        distance: 5000,
-        average_speed: 10,
-        average_watts: 214.6,
-        device_watts: true,
-        average_cadence: 88,
-      } as unknown as StravaLap,
-    ]);
+  it("renders speed and rpm cadence for a non-pace sport (Ride)", async () => {
+    mockedGetActivity.mockResolvedValueOnce(rideActivity);
 
     const result = await getActivityLapsTool.execute(
-      { id: "555" },
-      "test-token",
+      { id: "i555" },
+      "test-key",
     );
+
+    const structured = result.structuredContent as unknown as Record<
+      string,
+      unknown
+    >;
+    const laps = structured.laps as Array<Record<string, unknown>>;
+    expect(structured.units).toMatchObject({ cadence: "rpm" });
+    expect(laps[0]?.pace_min_per_km).toBeNull();
+    expect(laps[0]?.speed_kmh).toBe(36);
+    expect(laps[0]?.average_cadence).toBe(88);
+    expect(laps[0]?.average_watts).toBe(214.6);
 
     const text = result.content[0]?.text ?? "";
     expect(text).toContain("36 km/h");
-    expect(text).toContain("215 W");
     expect(text).toContain("88 rpm");
     expect(text).not.toContain("/km");
-    expect(result.structuredContent?.laps[0]?.speed_kmh).toBe(36);
+    // Device lap count matches, and nothing was edited: no flag line.
+    expect(text).not.toContain("Note:");
   });
 
-  it("reports gracefully when the activity has no laps", async () => {
-    mockedById.mockResolvedValueOnce(
-      asDetail({ id: "777", name: "Rest Day Walk", sport_type: "Walk" }),
-    );
-    mockedLaps.mockResolvedValueOnce([]);
+  it("returns a valid empty payload when the activity has no intervals", async () => {
+    mockedGetActivity.mockResolvedValueOnce({
+      id: "i777",
+      name: "Rest Day Walk",
+      type: "Walk",
+      start_date_local: "2026-09-21T09:00:00",
+      icu_lap_count: null,
+      icu_intervals_edited: null,
+      icu_intervals: [],
+    } as unknown as IntervalsActivity);
 
     const result = await getActivityLapsTool.execute(
-      { id: "777" },
-      "test-token",
+      { id: "i777" },
+      "test-key",
     );
 
     expect(result.isError).toBeUndefined();
-    expect(result.content[0]?.text).toContain("No laps recorded");
-    // A tool that publishes an outputSchema must still answer with structured
-    // content: the SDK client rejects a text-only success as a protocol error,
-    // so "no laps" used to reach the host as a hard failure.
+    expect(result.content[0]?.text).toContain(
+      "No intervals recorded for this activity.",
+    );
     expect(result.structuredContent).toEqual({
-      activity_id: "777",
+      activity_id: "i777",
       activity_name: "Rest Day Walk",
       sport_type: "Walk",
       lap_count: 0,
+      lap_source: "intervals.icu intervals",
+      device_lap_count: null,
+      intervals_edited: null,
+      units: {
+        distance: "km",
+        pace: "min/km",
+        speed: "km/h",
+        time: "s",
+        hr: "bpm",
+        elevation: "m",
+        cadence: "spm",
+        gradient: "%",
+      },
       laps: [],
     });
   });
 
-  it("returns a friendly error for a missing activity", async () => {
-    mockedById.mockRejectedValueOnce(handledNotFound("getActivityById"));
-    mockedLaps.mockResolvedValueOnce([]);
+  it("returns a valid empty payload when icu_intervals is absent (intervals not requested)", async () => {
+    mockedGetActivity.mockResolvedValueOnce({
+      id: "i888",
+      name: "No Intervals",
+      type: "Run",
+      start_date_local: "2026-09-22T09:00:00",
+    } as unknown as IntervalsActivity);
 
     const result = await getActivityLapsTool.execute(
-      { id: "404404" },
-      "test-token",
+      { id: "i888" },
+      "test-key",
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(result.structuredContent).toMatchObject({ lap_count: 0, laps: [] });
+  });
+
+  it("returns a friendly error for a missing activity", async () => {
+    mockedGetActivity.mockRejectedValueOnce(
+      handledNotFound("getActivity for ID i404404"),
+    );
+
+    const result = await getActivityLapsTool.execute(
+      { id: "i404404" },
+      "test-key",
     );
 
     expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toBe(
-      "❌ Activity with ID 404404 not found.",
-    );
+    expect(result.content[0]?.text).toBe("❌ Activity i404404 was not found.");
   });
 
   it("renders the rate-limit window on a RateLimitError", async () => {
-    mockedById.mockRejectedValueOnce(handledRateLimit("getActivityById"));
-    mockedLaps.mockResolvedValueOnce([]);
+    mockedGetActivity.mockRejectedValueOnce(
+      handledRateLimit("getActivity for ID i123"),
+    );
 
     const result = await getActivityLapsTool.execute(
-      { id: "123" },
-      "test-token",
+      { id: "i123" },
+      "test-key",
     );
 
     expect(result.isError).toBe(true);
@@ -199,17 +214,45 @@ describe("getActivityLapsTool.execute", () => {
   });
 
   it("reports other failures with details", async () => {
-    mockedById.mockRejectedValueOnce(new Error("Bad Gateway"));
-    mockedLaps.mockResolvedValueOnce([]);
+    mockedGetActivity.mockRejectedValueOnce(new Error("Bad Gateway"));
 
     const result = await getActivityLapsTool.execute(
-      { id: "123" },
-      "test-token",
+      { id: "i123" },
+      "test-key",
     );
 
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toBe(
-      "❌ Failed to fetch laps for activity 123: Bad Gateway",
+      "❌ Failed to fetch laps for activity i123: Bad Gateway",
+    );
+  });
+});
+
+describe("formatActivityLapsText", () => {
+  it("flags an edited count without a lap list when there are no laps", () => {
+    const text = formatActivityLapsText({
+      activity_id: "i1",
+      activity_name: "Empty",
+      sport_type: "Run",
+      lap_count: 0,
+      lap_source: "intervals.icu intervals",
+      device_lap_count: 3,
+      intervals_edited: null,
+      units: {
+        distance: "km",
+        pace: "min/km",
+        speed: "km/h",
+        time: "s",
+        hr: "bpm",
+        elevation: "m",
+        cadence: "spm",
+        gradient: "%",
+      },
+      laps: [],
+    });
+
+    expect(text).toBe(
+      'Run laps for "Empty" [i1]\nNo intervals recorded for this activity.',
     );
   });
 });

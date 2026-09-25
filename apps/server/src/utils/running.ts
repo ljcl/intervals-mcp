@@ -5,8 +5,8 @@
  * - Cadence is returned as strides/min but runners think in steps/min
  * - Speed is returned as m/s but runners think in pace (min/km or min/mile)
  */
-
-import { formatDuration } from "../formatters";
+import { round } from "../formatters";
+import { type IntervalsActivity } from "../intervalsClient";
 
 /** Activity types that use steps-per-minute cadence */
 export const RUNNING_ACTIVITY_TYPES = [
@@ -25,47 +25,6 @@ export function isRunningActivity(activityType: string): boolean {
 }
 
 /**
- * Cadence transformation result.
- */
-export interface CadenceResult {
-  raw: number;
-  spm: number | null; // steps per minute (running)
-  rpm: number | null; // revolutions per minute (cycling)
-  display: string;
-}
-
-/**
- * Transform cadence based on activity type.
- * Running activities get doubled to show steps per minute (Strava returns strides).
- */
-export function transformCadence(
-  rawCadence: number | null | undefined,
-  activityType: string,
-): CadenceResult | null {
-  if (rawCadence === null || rawCadence === undefined) {
-    return null;
-  }
-
-  if (isRunningActivity(activityType)) {
-    const spm = rawCadence * 2;
-    return {
-      raw: rawCadence,
-      spm,
-      rpm: null,
-      display: `${Math.round(spm)} spm`,
-    };
-  }
-
-  // Cycling, swimming, etc. - return as-is
-  return {
-    raw: rawCadence,
-    spm: null,
-    rpm: rawCadence,
-    display: `${Math.round(rawCadence)} rpm`,
-  };
-}
-
-/**
  * Pace conversion result.
  */
 export interface PaceResult {
@@ -79,12 +38,23 @@ export interface PaceResult {
 }
 
 /**
- * Format seconds as M:SS pace string.
+ * Formats a pace given in seconds-per-kilometre as `m:ss`, rounding to the
+ * nearest second first so a value like 299.6 carries into `5:00` rather than
+ * flooring to 4 minutes and rendering an invalid `4:60`.
+ *
+ * The one home for seconds -> pace-string formatting: {@link metersPerSecToPace}
+ * and (transitively) {@link paceFromDistanceTime} both render their `m:ss`
+ * strings through this function rather than each rounding independently.
+ *
+ * Null-safe by returning a value, never throwing or emitting `NaN:NaN`: zero
+ * or a non-finite input (`NaN`, `Infinity`, `-Infinity`) returns `"0:00"`.
+ * Callers that need to distinguish "no pace" from a genuine zero pace decide
+ * that before calling this, the same way {@link metersPerSecToPace} already
+ * returns `null` for `mps <= 0` instead of calling through.
  */
-function formatPaceString(totalSeconds: number): string {
-  // Round first, then split, so 359.5s carries into 6:00 rather than
-  // flooring to 5 minutes and rounding the remainder to an invalid ":60".
-  const rounded = Math.round(totalSeconds);
+export function formatPaceSeconds(secPerKm: number): string {
+  if (!Number.isFinite(secPerKm) || secPerKm <= 0) return "0:00";
+  const rounded = Math.round(secPerKm);
   const minutes = Math.floor(rounded / 60);
   const seconds = rounded % 60;
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
@@ -107,11 +77,11 @@ export function metersPerSecToPace(
   return {
     metersPerSecond: Math.round(mps * 100) / 100,
     kmh: Math.round(mps * 3.6 * 10) / 10,
-    minPerKm: formatPaceString(secondsPerKm),
+    minPerKm: formatPaceSeconds(secondsPerKm),
     minPerKmRaw: Math.round((secondsPerKm / 60) * 100) / 100,
-    minPerMile: formatPaceString(secondsPerMile),
+    minPerMile: formatPaceSeconds(secondsPerMile),
     minPerMileRaw: Math.round((secondsPerMile / 60) * 100) / 100,
-    display: `${formatPaceString(secondsPerKm)} /km`,
+    display: `${formatPaceSeconds(secondsPerKm)} /km`,
   };
 }
 
@@ -127,8 +97,8 @@ export const PACE_ACTIVITY_TYPES = new Set(["Run", "TrailRun", "VirtualRun"]);
  * Activity types whose cadence (and step-based running dynamics: ground
  * contact time, vertical oscillation, step length, stride) intervals.icu
  * tools report in steps/min, doubled from strides/min: runs, plus walks and
- * hikes, matching {@link RUNNING_ACTIVITY_TYPES} above (the Strava-era set
- * `transformCadence` already uses) rather than {@link PACE_ACTIVITY_TYPES}.
+ * hikes, matching {@link RUNNING_ACTIVITY_TYPES} above (the same
+ * Strava-era set) rather than {@link PACE_ACTIVITY_TYPES}.
  * A Walk or Hike has a step cadence worth doubling even though intervals.icu
  * doesn't compute a pace for it.
  */
@@ -201,47 +171,49 @@ export function paceFromDistanceTime(
 }
 
 /**
- * Power-to-weight result.
+ * Pace in seconds/km from distance (metres) and moving time (seconds), the
+ * numeric companion to {@link paceFromDistanceTime}'s `m:ss` display string
+ * (the `pace_sec_per_km` alongside `pace_min_per_km` convention used across
+ * the split/interval/hill analysis tools, e.g. `get-interval-analysis`'s
+ * `IntervalRepSchema`).
  */
-export interface WattsPerKgResult {
-  watts: number;
-  weightKg: number;
-  wattsPerKg: number;
-  intensity: "easy" | "moderate" | "tempo" | "high";
+export function paceSecPerKmFromDistanceTime(
+  distanceM: number | null | undefined,
+  movingTimeS: number | null | undefined,
+): number | null {
+  if (!distanceM || distanceM <= 0 || !movingTimeS || movingTimeS <= 0) {
+    return null;
+  }
+  return round(movingTimeS / (distanceM / 1000));
 }
 
 /**
- * Compute power-to-weight ratio.
- * Returns null if either value is missing or invalid.
+ * Grade-adjusted pace from an activity's or interval's `gap` field (m/s,
+ * the same unit as `average_speed`, both typed on `IntervalsActivity`/
+ * `IntervalsInterval` in `intervalsClient.ts`). This is undocumented by the
+ * spec, but confirmed against the fixture: the activity's `gap` (3.478)
+ * sits in the same range as its `average_speed` (3.384), and each interval's
+ * `gap` tracks its `average_speed` up or down with the interval's grade, the
+ * signature of a grade-adjusted speed, not a pace-per-metre value. Converted
+ * with the same `metersPerSecToPace` used for on-the-clock pace.
+ *
+ * `null` for a non-pace activity type (see {@link isPaceActivity}), the same
+ * way {@link paceFromDistanceTime} gates on distance/time being present: a
+ * grade-adjusted pace is meaningless for a sport that doesn't get an
+ * on-the-clock pace either.
+ *
+ * The one home for this transform, shared by `get-activity` (activity-level
+ * `gap_min_per_km`), `intervalLaps.ts` (per-lap `gap_min_per_km`, shared by
+ * `get-activity-laps` and `get-running-summary`), and `compare-activities`
+ * (per-side `gap_min_per_km`), which previously each hand-rolled an
+ * identical copy.
  */
-export function computeWattsPerKg(
-  watts: number | null | undefined,
-  weightKg: number | null | undefined,
-): WattsPerKgResult | null {
-  if (!watts || !weightKg || weightKg <= 0) {
-    return null;
-  }
-
-  const wattsPerKg = watts / weightKg;
-
-  // Basic intensity interpretation for running
-  let intensity: WattsPerKgResult["intensity"];
-  if (wattsPerKg < 3.0) {
-    intensity = "easy";
-  } else if (wattsPerKg < 4.0) {
-    intensity = "moderate";
-  } else if (wattsPerKg < 5.0) {
-    intensity = "tempo";
-  } else {
-    intensity = "high";
-  }
-
-  return {
-    watts: Math.round(watts * 10) / 10,
-    weightKg: Math.round(weightKg * 10) / 10,
-    wattsPerKg: Math.round(wattsPerKg * 100) / 100,
-    intensity,
-  };
+export function gapPace(
+  gapMps: number | null | undefined,
+  type: string,
+): string | null {
+  if (!isPaceActivity(type) || gapMps == null) return null;
+  return metersPerSecToPace(gapMps)?.minPerKm ?? null;
 }
 
 /**
@@ -268,115 +240,143 @@ export function assessCadence(spm: number | null | undefined): string | null {
 }
 
 /**
- * Heart rate zone boundaries from athlete profile.
+ * Cadence in steps/min (doubled from intervals.icu's strides/min for a
+ * step-cadence type, see {@link isStepCadenceActivity}), rounded to a whole
+ * step, or `null` for a non-step-cadence type.
+ *
+ * The one home for this field, shared by `get-activity`'s activity- and
+ * interval-level `average_cadence_spm` and `compare-activities`' per-side
+ * `cadence_spm`, which each previously hand-rolled an identical copy.
  */
-export interface ZoneBoundary {
-  min: number;
-  max: number;
+export function activityCadenceSpm(
+  rawCadence: number | null | undefined,
+  type: string,
+): number | null {
+  if (!isStepCadenceActivity(type)) return null;
+  const spm = cadenceSpm(rawCadence, type);
+  return spm == null ? null : Math.round(spm);
+}
+
+/** `within` the target (VO's only band, or GCT's middle band); `high`/`low`
+ * on the wrong side of a target or range. */
+export type DynamicsStatus = "within" | "high" | "low";
+
+export interface DynamicsMetricAssessment {
+  status: DynamicsStatus;
+  target: string;
+  message: string;
+}
+
+export interface RunningDynamicsAssessment {
+  vertical_oscillation: DynamicsMetricAssessment | null;
+  ground_contact_time: DynamicsMetricAssessment | null;
 }
 
 /**
- * Determine which HR zone a heart rate falls into.
+ * Vertical oscillation target from the spec: under 100 mm. Exported so
+ * `get-running-dynamics` builds its own target strings from the same
+ * literal instead of a second hardcoded copy.
  */
-export function getZoneForHr(
-  hr: number,
-  zoneBoundaries: ZoneBoundary[],
-): number {
-  for (let i = 0; i < zoneBoundaries.length; i += 1) {
-    const zone = zoneBoundaries[i]!;
-    const zoneMin = zone.min ?? 0;
-    const zoneMax = zone.max ?? 999;
-    // Handle Strava's -1 for unbounded max
-    const effectiveMax = zoneMax === -1 ? 999 : zoneMax;
+export const VO_TARGET = "under 100 mm";
+/**
+ * Ground contact time target range from the spec: 200-260 ms. Exported for
+ * the same reason as {@link VO_TARGET}.
+ */
+export const GCT_TARGET = "200-260 ms";
 
-    if (hr >= zoneMin && hr < effectiveMax) {
-      return i + 1;
-    }
-  }
-  return 5; // Default to zone 5 if above all boundaries
+function assessVerticalOscillation(
+  voMm: number | null,
+): DynamicsMetricAssessment | null {
+  if (voMm == null) return null;
+  return voMm < 100
+    ? {
+        status: "within",
+        target: VO_TARGET,
+        message: "good - under the 100 mm target",
+      }
+    : {
+        status: "high",
+        target: VO_TARGET,
+        message: "high - above the 100 mm target",
+      };
 }
 
-/**
- * Time-in-zone result for a single zone.
- */
-export interface ZoneTime {
-  seconds: number;
-  formatted: string;
-  percentage: number;
-}
-
-/**
- * Complete time-in-zones result.
- */
-export interface TimeInZonesResult {
-  totalTimeSeconds: number;
-  zones: {
-    zone_1: ZoneTime;
-    zone_2: ZoneTime;
-    zone_3: ZoneTime;
-    zone_4: ZoneTime;
-    zone_5: ZoneTime;
-  };
-  distribution: {
-    easy_1_2: number;
-    moderate_3: number;
-    hard_4_5: number;
-  };
-}
-
-/**
- * Compute time spent in each heart rate zone.
- */
-export function computeTimeInZones(
-  hrStream: number[],
-  timeStream: number[],
-  zoneBoundaries: ZoneBoundary[],
-): TimeInZonesResult | null {
-  if (
-    !hrStream ||
-    !timeStream ||
-    hrStream.length !== timeStream.length ||
-    hrStream.length < 2 ||
-    !zoneBoundaries ||
-    zoneBoundaries.length === 0
-  ) {
-    return null;
-  }
-
-  const zones: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-
-  for (let i = 1; i < hrStream.length; i += 1) {
-    const hr = hrStream[i]!;
-    const timeDelta = timeStream[i]! - timeStream[i - 1]!;
-    const zone = getZoneForHr(hr, zoneBoundaries);
-    zones[zone]! += timeDelta;
-  }
-
-  const totalTime = Object.values(zones).reduce((a, b) => a + b, 0);
-
-  if (totalTime <= 0) {
-    return null;
-  }
-
-  const makeZoneTime = (seconds: number): ZoneTime => ({
-    seconds,
-    formatted: formatDuration(seconds),
-    percentage: Math.round((seconds / totalTime) * 1000) / 10,
-  });
-
+function assessGroundContactTime(
+  gctMs: number | null,
+): DynamicsMetricAssessment | null {
+  if (gctMs == null) return null;
+  if (gctMs < 200)
+    return {
+      status: "low",
+      target: GCT_TARGET,
+      message: "fast - below the 200-260 ms target range",
+    };
+  if (gctMs <= 260)
+    return {
+      status: "within",
+      target: GCT_TARGET,
+      message: "good - within the 200-260 ms target range",
+    };
   return {
-    totalTimeSeconds: totalTime,
-    zones: {
-      zone_1: makeZoneTime(zones[1]!),
-      zone_2: makeZoneTime(zones[2]!),
-      zone_3: makeZoneTime(zones[3]!),
-      zone_4: makeZoneTime(zones[4]!),
-      zone_5: makeZoneTime(zones[5]!),
-    },
-    distribution: {
-      easy_1_2: Math.round(((zones[1]! + zones[2]!) / totalTime) * 1000) / 10,
-      moderate_3: Math.round((zones[3]! / totalTime) * 1000) / 10,
-      hard_4_5: Math.round(((zones[4]! + zones[5]!) / totalTime) * 1000) / 10,
-    },
+    status: "high",
+    target: GCT_TARGET,
+    message: "long - above the 200-260 ms target range",
+  };
+}
+
+/**
+ * Vertical oscillation and ground contact time target assessments, the one
+ * home for these thresholds (VO under 100 mm; GCT 200-260 ms). Shared by
+ * `get-running-summary` (which renders only `.message`) and
+ * `get-running-dynamics` (which also uses `.status`/`.target`); each metric
+ * is `null` when its input is `null` rather than the pair being all-or-
+ * nothing, since a device can report one dynamic without the other.
+ */
+export function assessRunningDynamics(
+  voMm: number | null,
+  gctMs: number | null,
+): RunningDynamicsAssessment {
+  return {
+    vertical_oscillation: assessVerticalOscillation(voMm),
+    ground_contact_time: assessGroundContactTime(gctMs),
+  };
+}
+
+export interface RunningDynamicsAvg {
+  stance_time_ms: number | null;
+  vertical_oscillation_mm: number | null;
+  vertical_ratio_pct: number | null;
+  step_length_mm: number | null;
+  stride_m: number | null;
+}
+
+/**
+ * Averaged running-dynamics fields (ground contact time, vertical
+ * oscillation/ratio, step length, stride), present only for a step-cadence
+ * type with device support (`average_stance_time` recorded). `null`
+ * otherwise, rather than an object of nulls.
+ *
+ * The one home for this shape, shared by `get-activity` and
+ * `compare-activities`, which each previously hand-rolled an identical copy.
+ */
+export function buildRunningDynamics(
+  a: IntervalsActivity,
+  type: string,
+): RunningDynamicsAvg | null {
+  if (!isStepCadenceActivity(type) || a.average_stance_time == null)
+    return null;
+  return {
+    stance_time_ms: round(a.average_stance_time),
+    vertical_oscillation_mm:
+      a.average_vertical_oscillation == null
+        ? null
+        : round(a.average_vertical_oscillation),
+    vertical_ratio_pct:
+      a.average_vertical_ratio == null
+        ? null
+        : round(a.average_vertical_ratio, 1),
+    step_length_mm:
+      a.average_step_length == null ? null : round(a.average_step_length),
+    stride_m: a.average_stride == null ? null : round(a.average_stride, 2),
   };
 }

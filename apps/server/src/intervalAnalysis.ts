@@ -1,7 +1,10 @@
+import { interpolateNulls } from "./hillAnalysis";
+
 /**
  * Urban-stop-aware interval detection for `get-interval-analysis`.
- * Pure functions over Strava streams and laps, unit-tested next to
- * `trainingLoad.ts`.
+ * Pure functions over the intervals.icu stream adapter's named arrays
+ * (`intervalsStreams.ts`) and intervals.icu-derived laps, unit-tested next
+ * to `trainingLoad.ts`.
  *
  * Rest-segment-based interval detection false-positives on urban runs:
  * traffic-light stops read as recovery intervals. The corrective heuristic
@@ -14,23 +17,29 @@
  * because device laps corrupt in rain/sweat but are exact when healthy.
  */
 
-/** Streams as returned by Strava, index-aligned. */
+/**
+ * Streams as returned by `loadIntervalsStreams`, index-aligned. `distance`
+ * is interpolated across nulls internally (see `computeIntervalAnalysis`,
+ * mirroring `hillAnalysis.ts`'s `normalizeHillStreams`); every other stream
+ * keeps a null sample as "no data for this sample" and is simply excluded
+ * from whatever average it would have fed.
+ */
 export interface IntervalStreams {
   /** Seconds since activity start, non-decreasing. */
   time: number[];
   /** Cumulative metres. Required. */
-  distance: number[];
-  /** Strava's moving flag; false = stopped. Needed for rest detection. */
+  distance: (number | null)[];
+  /** Derived stopped/moving flag; false = stopped. Needed for rest detection. */
   moving?: boolean[];
-  heartrate?: number[];
+  heartrate?: (number | null)[];
   /** Smoothed speed in m/s. */
-  velocity_smooth?: number[];
-  watts?: number[];
-  /** Run cadence in strides-per-minute (one leg, as Strava records it). */
-  cadence?: number[];
+  velocity_smooth?: (number | null)[];
+  watts?: (number | null)[];
+  /** Run cadence in strides-per-minute (one leg, as intervals.icu records it). */
+  cadence?: (number | null)[];
 }
 
-/** Minimal slice of a Strava lap the analysis needs. */
+/** Minimal slice of an intervals.icu lap the analysis needs. */
 export interface IntervalLap {
   lapIndex: number;
   distanceM: number;
@@ -285,24 +294,24 @@ export function classifyRest(
   if (durationS > REST_LONG_STOP_MIN_SECONDS) {
     return {
       kind: "long_stop",
-      reason: `stopped ${Math.round(durationS / 60)} min — café/regroup/kit stop, excluded from structure`,
+      reason: `stopped ${Math.round(durationS / 60)} min: café/regroup/kit stop, excluded from structure`,
     };
   }
   if (precedingFast && durationS <= REST_RECOVERY_MAX_SECONDS) {
     return {
       kind: "recovery",
-      reason: `${Math.round(durationS)} s rest after a fast effort — interval recovery`,
+      reason: `${Math.round(durationS)} s rest after a fast effort: interval recovery`,
     };
   }
   if (durationS < REST_URBAN_MAX_SECONDS) {
     return {
       kind: "traffic_light",
-      reason: `${Math.round(durationS)} s stop with no fast effort before it — traffic light, excluded`,
+      reason: `${Math.round(durationS)} s stop with no fast effort before it: traffic light, excluded`,
     };
   }
   return {
     kind: "other_stop",
-    reason: `${Math.round(durationS)} s stop that fits neither recovery nor traffic-light patterns — excluded`,
+    reason: `${Math.round(durationS)} s stop that fits neither recovery nor traffic-light patterns: excluded`,
   };
 }
 
@@ -439,10 +448,10 @@ export function computeHrSignal(streams: IntervalStreams): HrSignal | null {
   const share = high / total;
   const assessment =
     share >= HR_HIGH_INTENSITY_SHARE
-      ? "substantial time near max HR — consistent with a hard workout"
+      ? "substantial time near max HR: consistent with a hard workout"
       : share < 0.05
-        ? "little time near max HR — consistent with an easy continuous effort"
-        : "moderate time near max HR — ambiguous between tempo and intervals";
+        ? "little time near max HR: consistent with an easy continuous effort"
+        : "moderate time near max HR: ambiguous between tempo and intervals";
   return { maxHr, highIntensityShare: round(share, 3), assessment };
 }
 
@@ -468,8 +477,16 @@ export function computeIntervalAnalysis(
     );
   }
 
+  // `distance` drives index-based windowing below and must be fully
+  // populated; every other stream keeps null samples as "no data" and is
+  // skipped where consumed (see `aggregate`/`computeHrSignal`).
+  const normalized: IntervalStreams = {
+    ...streams,
+    distance: interpolateNulls(streams.distance),
+  };
+
   // --- Rest detection and classification (stream path) ---
-  const rawRests = detectRests(streams);
+  const rawRests = detectRests(normalized);
 
   // Work segments between rests.
   const boundaries: Array<{ start: number; end: number }> = [];
@@ -480,11 +497,11 @@ export function computeIntervalAnalysis(
     }
     cursor = rest.endIdx;
   }
-  if (cursor < streams.time.length - 1) {
-    boundaries.push({ start: cursor, end: streams.time.length - 1 });
+  if (cursor < normalized.time.length - 1) {
+    boundaries.push({ start: cursor, end: normalized.time.length - 1 });
   }
 
-  const segments = boundaries.map((b) => aggregate(streams, b.start, b.end));
+  const segments = boundaries.map((b) => aggregate(normalized, b.start, b.end));
   const totalMoving = segments.reduce((sum, s) => sum + s.movingTimeS, 0);
   const totalDistance = segments.reduce((sum, s) => sum + s.distanceM, 0);
   const overallSpeed = totalMoving > 0 ? totalDistance / totalMoving : 0;
@@ -498,7 +515,7 @@ export function computeIntervalAnalysis(
     return {
       startTimeS: Math.round(rest.startTimeS),
       durationS: Math.round(rest.durationS),
-      atKm: round(streams.distance[rest.startIdx]! / 1000),
+      atKm: round(normalized.distance[rest.startIdx]! / 1000),
       kind,
       reason,
     };
@@ -524,7 +541,7 @@ export function computeIntervalAnalysis(
 
   const streamReps = blocks
     .filter((b) => isFast(b) && b.movingTimeS > 0)
-    .map((b, i) => toRep(b, i + 1, streams));
+    .map((b, i) => toRep(b, i + 1, normalized));
 
   // --- Lap path: prefer clean structured laps when they exist ---
   const cleanWork = selectCleanWorkLaps(laps);
@@ -574,7 +591,7 @@ export function computeIntervalAnalysis(
   ];
   if (!isIntervals && workoutSignal) {
     reasonBits.push(
-      "HR distribution suggests hard work despite no interval structure — possibly a tempo/race effort",
+      "HR distribution suggests hard work despite no interval structure: possibly a tempo/race effort",
     );
   }
 

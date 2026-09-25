@@ -2,13 +2,26 @@
  * Telemetry record shape and the rolling counters behind /health (#241).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { intervalsApi } from "./fetchClient";
 import { recordToolCall, resetToolCallStats, toolCallStats } from "./telemetry";
+
+vi.mock("./fetchClient", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./fetchClient")>();
+  return {
+    ...actual,
+    intervalsApi: { getRateLimitSnapshot: vi.fn() },
+  };
+});
+
+const mockedSnapshot = vi.mocked(intervalsApi.getRateLimitSnapshot);
 
 describe("recordToolCall", () => {
   let stderr: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     resetToolCallStats();
+    mockedSnapshot.mockReset();
+    mockedSnapshot.mockReturnValue(null);
     stderr = vi.spyOn(console, "error").mockImplementation(() => {});
   });
 
@@ -55,6 +68,21 @@ describe("recordToolCall", () => {
     // Present as a key even when nothing has been fetched yet, so a log
     // consumer can rely on the field existing.
     expect(lastRecord()).toHaveProperty("rate_limit");
+  });
+
+  it("reads the rate-limit snapshot from intervalsApi, not the retired Strava client", () => {
+    mockedSnapshot.mockReturnValue({
+      shortTerm: { usage: 1, limit: 100 },
+      daily: { usage: 2, limit: 1000 },
+      observedAt: 1_752_300_000_000,
+    } as ReturnType<typeof intervalsApi.getRateLimitSnapshot>);
+
+    recordToolCall({ tool: "get-best-efforts", duration_ms: 5, outcome: "ok" });
+
+    expect(mockedSnapshot).toHaveBeenCalled();
+    expect(lastRecord().rate_limit).toMatchObject({
+      shortTerm: { usage: 1, limit: 100 },
+    });
   });
 });
 

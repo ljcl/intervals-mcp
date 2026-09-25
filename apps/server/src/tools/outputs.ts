@@ -1,64 +1,28 @@
 import { z } from "zod";
-import { type StravaStats } from "../stravaClient";
 
 // ---------- get-athlete-stats ----------
-const TotalSchema = z.object({
-  count: z.number().int(),
-  distance_m: z.number().describe("Distance in meters"),
+const RunTotalsSchema = z.object({
+  runs: z.number().int(),
+  distance_km: z.number(),
   moving_time_s: z.number().int(),
+  moving_time: z.string(),
   elevation_gain_m: z.number(),
+  load: z.number(),
+  average_pace_min_per_km: z.string().nullable(),
 });
 export const AthleteStatsOutputSchema = z.object({
-  recent_run_totals: TotalSchema.nullable(),
-  ytd_run_totals: TotalSchema.nullable(),
-  all_run_totals: TotalSchema.nullable(),
-  recent_ride_totals: TotalSchema.nullable(),
-  ytd_ride_totals: TotalSchema.nullable(),
-  all_ride_totals: TotalSchema.nullable(),
-  recent_swim_totals: TotalSchema.nullable(),
-  ytd_swim_totals: TotalSchema.nullable(),
-  all_swim_totals: TotalSchema.nullable(),
-  biggest_ride_distance_m: z.number().nullable(),
-  biggest_climb_elevation_gain_m: z.number().nullable(),
+  this_week: RunTotalsSchema,
+  last_4_weeks: RunTotalsSchema,
+  this_month: RunTotalsSchema,
+  ytd: RunTotalsSchema,
+  units: z.object({
+    distance: z.literal("km"),
+    pace: z.literal("min/km"),
+    time: z.literal("s"),
+    elevation: z.literal("m"),
+  }),
 });
 export type AthleteStatsOutput = z.infer<typeof AthleteStatsOutputSchema>;
-
-type RawTotal =
-  | {
-      count: number;
-      distance: number;
-      moving_time: number;
-      elevation_gain: number;
-    }
-  | null
-  | undefined;
-
-function mapTotal(t: RawTotal) {
-  return t
-    ? {
-        count: t.count,
-        distance_m: t.distance,
-        moving_time_s: t.moving_time,
-        elevation_gain_m: t.elevation_gain,
-      }
-    : null;
-}
-
-export function buildAthleteStatsOutput(s: StravaStats): AthleteStatsOutput {
-  return {
-    recent_run_totals: mapTotal(s.recent_run_totals),
-    ytd_run_totals: mapTotal(s.ytd_run_totals),
-    all_run_totals: mapTotal(s.all_run_totals),
-    recent_ride_totals: mapTotal(s.recent_ride_totals),
-    ytd_ride_totals: mapTotal(s.ytd_ride_totals),
-    all_ride_totals: mapTotal(s.all_ride_totals),
-    recent_swim_totals: mapTotal(s.recent_swim_totals),
-    ytd_swim_totals: mapTotal(s.ytd_swim_totals),
-    all_swim_totals: mapTotal(s.all_swim_totals),
-    biggest_ride_distance_m: s.biggest_ride_distance ?? null,
-    biggest_climb_elevation_gain_m: s.biggest_climb_elevation_gain ?? null,
-  };
-}
 
 // ---------- get-training-load ----------
 const TrainingActivitySchema = z.object({
@@ -73,11 +37,38 @@ export const TrainingLoadOutputSchema = z.object({
     start_date: z.string(),
     end_date: z.string(),
   }),
+  run_only: z
+    .boolean()
+    .describe(
+      "Whether load/activity_types_included are run-only. Volume/warnings are always run-based regardless",
+    ),
+  source: z
+    .enum(["intervals.icu", "computed"])
+    .describe(
+      "'intervals.icu' for whole-body CTL/ATL read from wellness, 'computed' for the locally-computed run-only series",
+    ),
+  current: z
+    .object({
+      date: z.string().describe("ISO date CTL/ATL/TSB were computed for"),
+      ctl: z.number(),
+      atl: z.number(),
+      tsb: z.number(),
+    })
+    .nullable()
+    .describe("Most recent CTL/ATL/TSB; null when no data is available"),
+  activity_types_included: z
+    .array(z.string())
+    .describe(
+      "Activity types load/load_by_type are summed over: run-only is Run/TrailRun/VirtualRun; " +
+        "whole-body is every distinct type carrying load in the window",
+    ),
   totals: z.object({
     runs: z.number().int(),
     distance_km: z.number(),
+    time_s: z.number().int(),
     time_hours: z.number(),
     elevation_m: z.number(),
+    load: z.number(),
   }),
   averages: z.object({
     runs_per_week: z.number(),
@@ -90,88 +81,79 @@ export const TrainingLoadOutputSchema = z.object({
       week_starting: z.string(),
       runs: z.number().int(),
       distance_km: z.number(),
+      time_s: z.number().int(),
       time_hours: z.number(),
       time_formatted: z.string(),
       elevation_m: z.number(),
+      load: z
+        .number()
+        .describe("Sum of icu_training_load over the included types this week"),
+      load_by_type: z.record(z.string(), z.number()),
       activities: z.array(TrainingActivitySchema),
     }),
   ),
   warnings: z.array(z.string()),
+  units: z.object({
+    load: z.literal("intervals.icu training load"),
+    distance: z.literal("km"),
+    time: z.literal("s"),
+    time_hours: z.literal("h"),
+    elevation: z.literal("m"),
+  }),
 });
 
-// ---------- get-running-summary ----------
-const PaceSchema = z.object({
-  min_per_km: z.string(),
-  min_per_mile: z.string(),
-});
-export const RunningSummaryOutputSchema = z.object({
-  activity_id: z
-    .union([z.number(), z.string()])
-    .describe("The requested Strava activity id (as supplied to the tool)"),
-  name: z.string(),
-  date: z.string(),
-  type: z.string(),
-  distance: z.object({
-    meters: z.number(),
-    km: z.number(),
-    miles: z.number(),
-  }),
-  time: z.object({
-    moving_seconds: z.number().int(),
-    moving_formatted: z.string(),
-    elapsed_seconds: z.number().int(),
-    elapsed_formatted: z.string(),
-  }),
-  pace: PaceSchema.extend({ display: z.string() }).nullable(),
-  elevation: z.object({ gain_m: z.number(), gain_ft: z.number() }),
-  cadence: z
-    .object({
-      average_spm: z.number(),
-      assessment: z.string().nullable(),
-    })
-    .nullable(),
-  heart_rate: z
-    .object({
-      average: z.number().nullable(),
-      max: z.number().nullable(),
-      zones: z.unknown().nullable(),
-    })
-    .nullable(),
-  power: z
-    .object({
-      average_watts: z.number(),
-      max_watts: z.number().nullable(),
-    })
-    .nullable(),
-  laps: z.array(z.unknown()),
-  gear: z.string().nullable(),
-});
+// get-running-summary's output schema is defined near the end of this file
+// (RunningSummaryOutputSchema), after ActivityDetailOutputSchema and
+// IntervalsLapEntrySchema, which it extends/reuses.
 
 // ---------- compare-activities ----------
+const CompareRunningDynamicsSchema = z.object({
+  stance_time_ms: z.number().nullable(),
+  vertical_oscillation_mm: z.number().nullable(),
+  vertical_ratio_pct: z.number().nullable(),
+  step_length_mm: z.number().nullable(),
+  stride_m: z.number().nullable(),
+});
 const CompareSideSchema = z.object({
   id: z.string(),
   name: z.string(),
   date: z.string(),
   type: z.string(),
   distance_km: z.number(),
-  time_formatted: z.string(),
-  pace: PaceSchema.extend({ raw_min_per_km: z.number() }).nullable(),
-  avg_hr: z.number().nullable(),
+  moving_time: z.string(),
+  moving_time_s: z.number().int(),
+  pace_min_per_km: z.string().nullable(),
+  gap_min_per_km: z.string().nullable(),
+  gap_source: z
+    .literal("intervals.icu")
+    .describe(
+      "GAP here is intervals.icu's own gap field, distinct from get-hill-analysis/get-split-analysis's locally-modelled GAP",
+    ),
+  average_hr: z.number().nullable(),
   max_hr: z.number().nullable(),
   cadence_spm: z.number().nullable(),
   elevation_gain_m: z.number(),
+  load: z.number().nullable().describe("icu_training_load"),
+  decoupling_pct: z.number().nullable(),
+  efficiency_factor: z.number().nullable(),
+  running_dynamics: CompareRunningDynamicsSchema.nullable(),
 });
 export const CompareActivitiesOutputSchema = z.object({
+  units: z.object({
+    distance: z.literal("km"),
+    pace: z.literal("min/km"),
+    time: z.literal("s"),
+    hr: z.literal("bpm"),
+    elevation: z.literal("m"),
+    cadence: z.literal("spm"),
+  }),
   activity_1: CompareSideSchema,
   activity_2: CompareSideSchema,
   differences: z.object({
     distance_km: z.number(),
-    pace: z
-      .object({
-        seconds_per_km: z.number(),
-        interpretation: z.string(),
-      })
-      .nullable(),
+    pace_delta_sec_per_km: z.number().nullable(),
+    pace_delta_min_per_km: z.string().nullable(),
+    pace_delta_interpretation: z.string().nullable(),
     avg_hr: z.number().nullable(),
     cadence_spm: z.number().nullable(),
     elevation_gain_m: z.number(),
@@ -189,39 +171,66 @@ export const CompareActivitiesOutputSchema = z.object({
 });
 
 const AerobicHalfSchema = z.object({
-  avg_output: z.number(),
+  avg_output: z
+    .number()
+    .describe("m/s on the pace basis, W on the power basis"),
+  avg_pace_min_per_km: z
+    .string()
+    .nullable()
+    .describe("m:ss on the pace basis; null on the power basis"),
   avg_hr: z.number(),
-  output_per_beat: z.number(),
+  output_per_beat: z
+    .number()
+    .describe("m/min per beat on the pace basis, W/beat on the power basis"),
   minutes: z.number(),
 });
+
+const AerobicSourceEnum = z.enum(["intervals.icu", "computed"]);
 
 export const AerobicAnalysisOutputSchema = z.object({
   activity_id: z.union([z.string(), z.number()]),
   name: z.string(),
   date: z.string(),
   type: z.string(),
-  /** power = Pw:Hr from the watts stream; speed = Pa:Hr fallback. */
-  basis: z.enum(["power", "speed"]),
+  basis: z.enum(["pace", "power"]),
   decoupling_pct: z.number(),
+  decoupling_source: AerobicSourceEnum,
   interpretation: z.string(),
-  first_half: AerobicHalfSchema,
-  second_half: AerobicHalfSchema,
-  /** Normalized power (W) on the power basis, avg speed (m/s) otherwise. */
-  normalized_output: z.number(),
-  /** W/beat on the power basis, metres-per-minute/beat on the speed basis. */
+  /** m/min per beat on the pace basis, W/beat on the power basis. */
   efficiency_factor: z.number(),
+  efficiency_factor_source: AerobicSourceEnum,
   intensity_factor: z.number().nullable(),
   threshold_power_w: z.number().nullable(),
-  moving_minutes: z.number(),
-  excluded_stopped_minutes: z.number(),
-  excluded_warmup_minutes: z.number(),
+  breakdown: z
+    .object({
+      first_half: AerobicHalfSchema,
+      second_half: AerobicHalfSchema,
+      normalized_output: z
+        .number()
+        .describe(
+          "m/s on the pace basis, W (normalized power) on the power basis",
+        ),
+      normalized_pace_min_per_km: z.string().nullable(),
+      moving_minutes: z.number(),
+      excluded_stopped_minutes: z.number(),
+      excluded_warmup_minutes: z.number(),
+    })
+    .nullable()
+    .describe(
+      "Null when both decoupling and efficiency factor came from intervals.icu and includeBreakdown was not set",
+    ),
+  units: z.object({
+    pace: z.literal("min/km"),
+    power: z.literal("W"),
+    efficiency_factor: z.string(),
+  }),
   warnings: z.array(z.string()),
 });
 
 // ---------- get-fitness-trend ----------
 const FitnessTrendDaySchema = z.object({
   date: z.string().describe("ISO date YYYY-MM-DD the values were computed for"),
-  load: z.number().describe("Total relative effort recorded that day"),
+  load: z.number().describe("Total training load recorded that day"),
   ctl: z.number().describe("Chronic training load ('fitness'), 42-day EWA"),
   atl: z.number().describe("Acute training load ('fatigue'), 7-day EWA"),
   tsb: z.number().describe("Training stress balance ('form'): CTL − ATL"),
@@ -234,8 +243,8 @@ const TaperWeekSchema = z.object({
     .number()
     .int()
     .describe("Days in this week (the last week can be short)"),
-  daily_load: z.number().describe("Relative effort to average per day"),
-  week_load: z.number().describe("Total relative effort for the week"),
+  daily_load: z.number().describe("Training load to average per day"),
+  week_load: z.number().describe("Total training load for the week"),
   pct_of_recent: z
     .number()
     .nullable()
@@ -264,6 +273,17 @@ export const FitnessTrendOutputSchema = z.object({
     start_date: z.string(),
     end_date: z.string(),
   }),
+  source: z
+    .enum(["intervals.icu", "computed"])
+    .describe(
+      "'intervals.icu' for whole-body CTL/ATL read from wellness, 'computed' for the locally-computed run-only series",
+    ),
+  as_of: z
+    .string()
+    .nullable()
+    .describe(
+      "Date current/the projection seed are known for. For whole-body this can trail end_date when wellness has not synced yet; null when no data is available",
+    ),
   current: FitnessTrendDaySchema.omit({ load: true }).nullable(),
   trend: z
     .object({
@@ -299,8 +319,26 @@ export const FitnessTrendOutputSchema = z.object({
   taper: TaperPlanSchema.nullable().describe(
     "Solved load taper to the requested target date, or null if none was requested",
   ),
-  activities_included: z.number().int(),
-  activities_missing_load: z.number().int(),
+  activity_types_included: z
+    .array(z.string())
+    .describe(
+      "Whole-body: distinct activity types with load in the window. Run-only: the run types (Run, TrailRun, VirtualRun); some types may count toward fatigue only, per intervals.icu settings",
+    ),
+  activities_included: z
+    .number()
+    .int()
+    .describe(
+      "Activities logged in the window. Whole-body: informational only (CTL/ATL is read from wellness, not summed from these). Run-only: the activities the series is built from",
+    ),
+  activities_missing_load: z
+    .number()
+    .int()
+    .describe(
+      "Of activities_included, how many have no icu_training_load recorded. Whole-body: informational only. Run-only: these contributed zero to the computed series",
+    ),
+  units: z.object({
+    load: z.literal("intervals.icu training load"),
+  }),
 });
 
 // ---------- get-hill-analysis ----------
@@ -314,12 +352,12 @@ const HillSegmentSchema = z.object({
   avg_grade_pct: z.number(),
   moving_time_s: z.number().int(),
   pace_sec_per_km: z.number().nullable(),
-  pace_formatted: z.string().nullable(),
+  pace_min_per_km: z.string().nullable(),
   gap_pace_sec_per_km: z
     .number()
     .nullable()
     .describe("Grade-adjusted (flat-equivalent) pace"),
-  gap_pace_formatted: z.string().nullable(),
+  gap_pace_min_per_km: z.string().nullable(),
   avg_hr: z.number().nullable(),
   avg_cadence: z
     .number()
@@ -336,6 +374,16 @@ export const HillAnalysisOutputSchema = z.object({
   name: z.string(),
   date: z.string(),
   type: z.string(),
+  grade_source: z
+    .enum(["grade_smooth", "computed"])
+    .describe(
+      "grade_smooth when intervals.icu's smoothed-grade stream was used, computed when derived from altitude",
+    ),
+  gap_source: z
+    .literal("model")
+    .describe(
+      "GAP here is locally modelled from grade, distinct from get-activity/compare-activities/get-activity-laps' gap_source: 'intervals.icu'",
+    ),
   drift: z
     .object({
       basis: z.enum(["hr_per_gap", "gap_pace"]),
@@ -356,6 +404,17 @@ export const HillAnalysisOutputSchema = z.object({
     climb_distance_m: z.number(),
     climb_gain_m: z.number(),
   }),
+  units: z.object({
+    distance: z.literal("km"),
+    length: z.literal("m"),
+    elevation: z.literal("m"),
+    pace: z.literal("min/km"),
+    time: z.literal("s"),
+    grade: z.literal("%"),
+    hr: z.literal("bpm"),
+    cadence: z.union([z.literal("spm"), z.literal("rpm")]),
+    power: z.literal("W"),
+  }),
   warnings: z.array(z.string()),
 });
 
@@ -364,7 +423,11 @@ export const ActivityZonesOutputSchema = z.object({
   activity_id: z.union([z.string(), z.number()]),
   zone_sets: z.array(
     z.object({
-      type: z.string().describe("heartrate or power"),
+      type: z
+        .string()
+        .describe(
+          "heartrate (power zones are dropped for now; see docs/api-notes.md)",
+        ),
       sensor_based: z.boolean().nullable(),
       total_seconds: z.number().int(),
       buckets: z.array(
@@ -374,88 +437,84 @@ export const ActivityZonesOutputSchema = z.object({
           max: z
             .number()
             .nullable()
-            .describe("null on the open-ended top bucket"),
+            .describe(
+              "the zone's recorded upper bound; null only for an open-ended top bucket",
+            ),
           seconds: z.number().int(),
           pct: z.number(),
         }),
       ),
     }),
   ),
+  units: z.object({
+    heartrate: z.literal("bpm"),
+  }),
 });
 
 /** Minimal slice of a written activity the mapper reads. */
 interface WrittenActivityLike {
-  id: string | number;
-  name: string;
-  sport_type?: string | null;
-  type?: string | null;
-  start_date_local?: string | null;
-  distance?: number | null;
-  elapsed_time?: number | null;
+  id: string;
+  name?: string | null;
   description?: string | null;
-  gear_id?: string | null;
-  commute?: boolean | null;
-  trainer?: boolean | null;
+  gear?: { id?: string | null; name?: string | null } | null;
+  icu_rpe?: number | null;
+  feel?: number | null;
 }
 
-/** Both write tools return the activity Strava echoed back, in one shape. */
-export function toActivityWriteOutput(activity: WrittenActivityLike) {
+/** One field update-activity changed, echoing the pre-write and post-write
+ * values (the post-write value comes from a fresh re-read). */
+const ActivityWriteChangeSchema = z.object({
+  field: z.string(),
+  before: z.union([z.string(), z.number(), z.null()]),
+  after: z.union([z.string(), z.number(), z.null()]),
+});
+
+/**
+ * update-activity's structured output: the activity as freshly re-read after
+ * the write, the fields that actually changed, and any warnings (e.g. a
+ * field whose re-read value does not match what was sent).
+ *
+ * `gearName` is passed separately because the activity payload never carries
+ * the assigned gear's name (`gear.name` is always `null`; see
+ * docs/api-notes.md). update-activity resolves it from `list-gear` when
+ * `gearId` was part of the request.
+ */
+export function toActivityWriteOutput(
+  activity: WrittenActivityLike,
+  changes: {
+    field: string;
+    before: string | number | null;
+    after: string | number | null;
+  }[],
+  warnings: string[],
+  gearName?: string | null,
+) {
   return {
     activity_id: activity.id,
-    name: activity.name,
-    sport_type: activity.sport_type ?? activity.type ?? null,
-    start_date_local: activity.start_date_local ?? null,
-    distance_m: activity.distance ?? null,
-    elapsed_time_s: activity.elapsed_time ?? null,
+    name: activity.name ?? null,
     description: activity.description ?? null,
-    gear_id: activity.gear_id ?? null,
-    commute: activity.commute ?? null,
-    trainer: activity.trainer ?? null,
-    url: `https://www.strava.com/activities/${activity.id}`,
+    gear_id: activity.gear?.id ?? null,
+    gear_name:
+      gearName !== undefined ? gearName : (activity.gear?.name ?? null),
+    rpe: activity.icu_rpe ?? null,
+    feel: activity.feel ?? null,
+    changes,
+    warnings,
+    url: `https://intervals.icu/activities/${activity.id}`,
   };
 }
 
 export const ActivityWriteOutputSchema = z.object({
-  activity_id: z.union([z.string(), z.number()]),
-  name: z.string(),
-  sport_type: z.string().nullable(),
-  start_date_local: z.string().nullable(),
-  distance_m: z.number().nullable(),
-  elapsed_time_s: z.number().int().nullable(),
+  activity_id: z.string(),
+  name: z.string().nullable(),
   description: z.string().nullable(),
   gear_id: z.string().nullable(),
-  commute: z.boolean().nullable(),
-  trainer: z.boolean().nullable(),
-  url: z.string().describe("Strava web URL for the activity"),
-});
-
-// ---------- export-activity-gpx ----------
-/**
- * `mode` is what actually happened, not what was asked for: with no `output`
- * argument the tool picks by whether the server has an export directory, and
- * a caller chaining on the result needs to know which it got.
- */
-export const ExportOutputSchema = z.object({
-  resource_id: z
-    .string()
-    .describe("Route or activity id the export was produced from"),
-  format: z.enum(["gpx", "tcx"]),
-  mode: z
-    .enum(["file", "content"])
-    .describe("How the export was delivered — file path, or inline content"),
-  filename: z.string(),
-  path: z
-    .string()
-    .nullable()
-    .describe("Absolute server-side path in file mode; null in content mode"),
-  bytes: z.number().int().describe("Size of the document delivered"),
-  truncated: z
-    .boolean()
-    .describe("True when content mode cut the document at the size cap"),
-  note: z
-    .string()
-    .optional()
-    .describe("Caveat about the export's completeness, when one applies"),
+  gear_name: z.string().nullable(),
+  rpe: z.number().nullable(),
+  feel: z.number().nullable(),
+  changes: z.array(ActivityWriteChangeSchema),
+  warnings: z.array(z.string()),
+  url: z.string().describe("intervals.icu web URL for the activity"),
 });
 
 // ---------- get-split-analysis ----------
@@ -467,19 +526,19 @@ const SplitSchema = z.object({
   distance_m: z.number(),
   partial: z
     .boolean()
-    .describe("True on a trailing split shorter than a full unit"),
+    .describe("True on a trailing split shorter than a full km"),
   moving_time_s: z.number().int(),
   elapsed_time_s: z.number().int(),
-  pace_sec_per_unit: z
+  pace_sec_per_km: z
     .number()
     .nullable()
-    .describe("Moving pace per split unit (extrapolated on a partial split)"),
-  pace_formatted: z.string().nullable(),
-  gap_pace_sec_per_unit: z
+    .describe("Moving pace per km (extrapolated on a partial split)"),
+  pace_min_per_km: z.string().nullable(),
+  gap_pace_sec_per_km: z
     .number()
     .nullable()
-    .describe("Grade-adjusted (flat-equivalent) pace per split unit"),
-  gap_pace_formatted: z.string().nullable(),
+    .describe("Grade-adjusted (flat-equivalent) pace per km"),
+  gap_pace_min_per_km: z.string().nullable(),
   elevation_change_m: z.number().nullable(),
   avg_grade_pct: z.number().nullable(),
   avg_hr: z.number().nullable(),
@@ -494,19 +553,28 @@ export const SplitAnalysisOutputSchema = z.object({
   name: z.string(),
   date: z.string(),
   type: z.string(),
-  unit: z.enum(["km", "mile"]),
+  grade_source: z
+    .enum(["grade_smooth", "computed"])
+    .describe(
+      "grade_smooth when intervals.icu's smoothed-grade stream was used, computed when derived from altitude",
+    ),
+  gap_source: z
+    .literal("model")
+    .describe(
+      "GAP here is locally modelled from grade, distinct from get-activity/compare-activities/get-activity-laps' gap_source: 'intervals.icu'",
+    ),
   verdict: z
     .object({
       shape: SplitShapeSchema.describe(
         "On the clock: positive = second half slower",
       ),
       gap_shape: SplitShapeSchema.describe("Same, corrected for grade"),
-      first_half_pace_sec_per_unit: z.number(),
-      second_half_pace_sec_per_unit: z.number(),
-      first_half_pace_formatted: z.string().nullable(),
-      second_half_pace_formatted: z.string().nullable(),
-      first_half_gap_pace_sec_per_unit: z.number().nullable(),
-      second_half_gap_pace_sec_per_unit: z.number().nullable(),
+      first_half_pace_sec_per_km: z.number(),
+      second_half_pace_sec_per_km: z.number(),
+      first_half_pace_min_per_km: z.string().nullable(),
+      second_half_pace_min_per_km: z.string().nullable(),
+      first_half_gap_pace_sec_per_km: z.number().nullable(),
+      second_half_gap_pace_sec_per_km: z.number().nullable(),
       delta_pct: z
         .number()
         .describe("Pace change second half vs first; positive = slower"),
@@ -535,9 +603,19 @@ export const SplitAnalysisOutputSchema = z.object({
     moving_time_s: z.number().int(),
     elapsed_time_s: z.number().int(),
     elevation_gain_m: z.number(),
-    avg_pace_sec_per_unit: z.number().nullable(),
-    avg_pace_formatted: z.string().nullable(),
-    avg_gap_pace_sec_per_unit: z.number().nullable(),
+    avg_pace_sec_per_km: z.number().nullable(),
+    avg_pace_min_per_km: z.string().nullable(),
+    avg_gap_pace_sec_per_km: z.number().nullable(),
+  }),
+  units: z.object({
+    distance: z.literal("km"),
+    elevation: z.literal("m"),
+    pace: z.literal("min/km"),
+    time: z.literal("s"),
+    grade: z.literal("%"),
+    hr: z.literal("bpm"),
+    cadence: z.union([z.literal("spm"), z.literal("rpm")]),
+    power: z.literal("W"),
   }),
   warnings: z.array(z.string()),
 });
@@ -550,7 +628,7 @@ const IntervalRepSchema = z.object({
   moving_time_s: z.number().int(),
   moving_time_formatted: z.string(),
   pace_sec_per_km: z.number().nullable(),
-  pace_formatted: z.string().nullable(),
+  pace_min_per_km: z.string().nullable(),
   avg_hr: z.number().nullable(),
   avg_cadence: z
     .number()
@@ -603,6 +681,14 @@ export const IntervalAnalysisOutputSchema = z.object({
       assessment: z.string(),
     })
     .nullable(),
+  units: z.object({
+    distance: z.literal("km"),
+    pace: z.literal("min/km"),
+    time: z.literal("s"),
+    hr: z.literal("bpm"),
+    cadence: z.union([z.literal("spm"), z.literal("rpm")]),
+    power: z.literal("W"),
+  }),
   warnings: z.array(z.string()),
 });
 
@@ -720,6 +806,11 @@ export const ActivityDetailOutputSchema = z.object({
     .nullable()
     .describe(
       "Grade-adjusted pace, from the activity's gap field (m/s, same unit as average_speed); runs only",
+    ),
+  gap_source: z
+    .literal("intervals.icu")
+    .describe(
+      "GAP here is intervals.icu's own gap field, distinct from get-hill-analysis/get-split-analysis's locally-modelled GAP",
     ),
   average_hr: z.number().nullable(),
   max_hr: z.number().nullable(),
@@ -872,40 +963,46 @@ export function warnOnSchemaDrift<T>(
 
 // ---------- get-best-efforts ----------
 const BestEffortEntrySchema = z.object({
+  rank: z.number().int(),
+  time_seconds: z.number(),
+  time_formatted: z.string(),
+  pace_min_per_km: z.string().nullable(),
+  date: z.string().describe("ISO date YYYY-MM-DD"),
   activity_id: z.string(),
   activity_name: z.string(),
-  date: z.string(),
-  elapsed_time_seconds: z.number().int(),
-  elapsed_time_formatted: z.string(),
-  moving_time_seconds: z.number().int(),
-  moving_time_formatted: z.string(),
-  pace: PaceSchema.nullable(),
-  pr_rank: z.number().int().nullable(),
+  race: z.boolean(),
 });
 export const BestEffortsOutputSchema = z.object({
-  best_efforts: z.record(z.string(), z.array(BestEffortEntrySchema)),
-  activities_analyzed: z.number().int(),
-  activities_with_efforts: z.number().int(),
-  activities_skipped: z
-    .number()
-    .int()
+  window: z.object({
+    id: z.string().describe('"all", "1y", "90d", or "r.<oldest>.<newest>"'),
+    oldest: z.string().describe("ISO date YYYY-MM-DD"),
+    newest: z.string().describe("ISO date YYYY-MM-DD"),
+  }),
+  top_n: z.number().int(),
+  units: z.object({
+    time: z.literal("s"),
+    pace: z.literal("min/km"),
+  }),
+  note: z
+    .string()
     .describe(
-      "Activities whose detail could not be fetched, so their efforts are absent from the table",
+      "Time-basis note: best times come from the recorded time stream (a moving-time style curve), not elapsed time",
     ),
-  warnings: z
+  best_efforts: z.record(z.string(), z.array(BestEffortEntrySchema)),
+  missing: z
     .array(z.string())
     .describe(
-      "Reasons the scan is incomplete (e.g. rate limit reached part-way)",
+      "Requested distances with no curve point within tolerance (2% of the target or 50m, whichever is larger)",
     ),
-  note: z.string(),
+  warnings: z.array(z.string()),
 });
 
 // ---------- get-race-prediction ----------
 const PredictionSourceSchema = z.object({
-  name: z.string().describe("Strava's label for the effort, e.g. '10K'"),
+  name: z.string().describe("A label for the effort, e.g. '5000 m'"),
   distance_m: z.number(),
-  elapsed_time_seconds: z.number().int(),
-  elapsed_time_formatted: z.string(),
+  time_seconds: z.number().int(),
+  time_formatted: z.string(),
   date: z.string().describe("ISO date YYYY-MM-DD"),
   activity_id: z.string(),
   activity_name: z.string(),
@@ -917,18 +1014,35 @@ const PredictionContributionSchema = z.object({
   age_days: z.number().int(),
   weight: z
     .number()
-    .describe("Recency × extrapolation weight in the consensus"),
+    .describe("Recency x extrapolation weight in the consensus"),
 });
+const CriticalSpeedPredictionSchema = z
+  .object({
+    predicted_seconds: z.number().int(),
+    predicted_formatted: z.string(),
+    pace_sec_per_km: z.number().nullable(),
+    pace_min_per_km: z.string().nullable(),
+    within_model_range: z
+      .boolean()
+      .describe(
+        "True when the predicted time falls inside the model's roughly 3-60 minute validity window",
+      ),
+  })
+  .nullable()
+  .describe(
+    "intervals.icu's critical-speed prediction at this distance; null when no CS model is available or the target does not exceed dPrime",
+  );
 const RacePredictionEntrySchema = z.object({
   distance: z.string(),
   distance_m: z.number(),
   predicted_seconds: z.number().int(),
   predicted_formatted: z.string(),
-  pace: PaceSchema,
+  pace_sec_per_km: z.number().nullable(),
+  pace_min_per_km: z.string().nullable(),
   confidence: z.enum(["high", "medium", "low"]),
   confidence_notes: z.array(z.string()),
   primary_source: PredictionSourceSchema.describe(
-    "The effort driving the estimate",
+    "The pace-curve point driving the estimate",
   ),
   spread: z
     .object({
@@ -940,6 +1054,7 @@ const RacePredictionEntrySchema = z.object({
     .nullable()
     .describe("Disagreement across sources; null with a single source"),
   contributions: z.array(PredictionContributionSchema),
+  critical_speed: CriticalSpeedPredictionSchema,
 });
 const SplitRowSchema = z.object({
   index: z.number().int(),
@@ -951,12 +1066,11 @@ const SplitRowSchema = z.object({
   split_formatted: z.string(),
   cumulative_seconds: z.number(),
   cumulative_formatted: z.string(),
-  pace_per_unit: z
-    .string()
-    .describe("Pace over this split, per full km or mile"),
+  pace_sec_per_km: z.number().describe("Pace over this split, per full km"),
+  pace_min_per_km: z.string().describe("Pace over this split, per full km"),
 });
 const SplitPlanSchema = z.object({
-  unit: z.enum(["km", "mile"]),
+  unit: z.enum(["km"]),
   strategy: z.enum(["even", "negative"]),
   negative_split_pct: z.number(),
   total_seconds: z.number().int(),
@@ -973,7 +1087,8 @@ export const RacePredictionOutputSchema = z.object({
       basis: z.enum(["goal", "predicted"]),
       total_seconds: z.number().int(),
       total_formatted: z.string(),
-      pace: PaceSchema,
+      pace_sec_per_km: z.number().nullable(),
+      pace_min_per_km: z.string().nullable(),
       /** Seconds the goal is faster (negative) or slower than the prediction. */
       goal_vs_predicted_seconds: z.number().int().nullable(),
       goal_assessment: z.string().nullable(),
@@ -983,44 +1098,213 @@ export const RacePredictionOutputSchema = z.object({
     .describe("Set only when raceDistance was supplied"),
   sources: z
     .array(PredictionSourceSchema)
-    .describe("Efforts used as prediction inputs, shortest first"),
-  activities_analyzed: z.number().int(),
-  activities_with_efforts: z.number().int(),
-  activities_skipped: z
-    .number()
-    .int()
+    .describe("Pace-curve points used as prediction inputs, shortest first"),
+  critical_speed_model: z
+    .object({
+      critical_speed_min_per_km: z.string(),
+      d_prime_m: z.number(),
+      r2: z.number(),
+      source: z
+        .enum(["90d", "all"])
+        .describe(
+          "Which pace curve the fit came from: 90d (current fitness) preferred, all as fallback",
+        ),
+    })
+    .nullable()
     .describe(
-      "Activities whose detail could not be fetched, so their efforts are absent",
+      "intervals.icu's type: CS model from the athlete's pace curve; null when no fit is available",
     ),
+  units: z.object({
+    distance: z.literal("m"),
+    pace: z.literal("min/km"),
+    time: z.literal("s"),
+  }),
   warnings: z.array(z.string()),
   method: z.string(),
 });
 
 // ---------- get-activity-laps ----------
-const LapEntrySchema = z.object({
-  lap_index: z.number().int(),
-  name: z.string(),
-  distance_km: z.number(),
-  elapsed_time_seconds: z.number().int(),
-  elapsed_time_formatted: z.string(),
-  moving_time_seconds: z.number().int(),
-  moving_time_formatted: z.string(),
-  pace: PaceSchema.nullable().describe("Set for runs; null for other sports"),
-  speed_kmh: z.number().nullable().describe("Set for non-run sports"),
-  average_watts: z.number().nullable(),
-  device_watts: z.boolean().nullable(),
+const IntervalsLapEntrySchema = z.object({
+  lap_index: z
+    .number()
+    .int()
+    .describe("1-based; icu_intervals carry no lap number of their own"),
+  type: z.string().nullable().describe("e.g. WORK, RECOVERY"),
+  label: z.string().nullable(),
+  distance_km: z.number().nullable(),
+  moving_time_s: z.number().int().nullable(),
+  moving_time: z.string().describe("h:mm:ss, or mm:ss under an hour"),
+  elapsed_time_s: z.number().int().nullable(),
+  pace_min_per_km: z
+    .string()
+    .nullable()
+    .describe("Set for Run/TrailRun/VirtualRun only"),
+  gap_min_per_km: z
+    .string()
+    .nullable()
+    .describe(
+      "Grade-adjusted pace from the interval's gap field (m/s, same unit as average_speed); runs only",
+    ),
+  gap_source: z
+    .literal("intervals.icu")
+    .describe(
+      "GAP here is intervals.icu's own gap field, distinct from get-hill-analysis/get-split-analysis's locally-modelled GAP",
+    ),
+  speed_kmh: z.number().nullable().describe("Set for non-pace distance sports"),
+  average_hr: z.number().nullable(),
+  max_hr: z.number().nullable(),
   average_cadence: z
     .number()
     .nullable()
-    .describe("spm (doubled) for runs, rpm for rides"),
-  average_heartrate: z.number().nullable(),
-  max_heartrate: z.number().nullable(),
-  total_elevation_gain_m: z.number().nullable(),
+    .describe(
+      "Strides doubled to steps/min for a step-cadence type, raw rpm otherwise; see units.cadence",
+    ),
+  average_watts: z.number().nullable(),
+  elevation_gain_m: z.number().nullable(),
+  average_gradient_pct: z.number().nullable(),
 });
 export const ActivityLapsOutputSchema = z.object({
   activity_id: z.string(),
   activity_name: z.string(),
   sport_type: z.string(),
   lap_count: z.number().int(),
-  laps: z.array(LapEntrySchema),
+  lap_source: z
+    .literal("intervals.icu intervals")
+    .describe("icu_intervals, usually mirroring the device's laps"),
+  device_lap_count: z
+    .number()
+    .int()
+    .nullable()
+    .describe("icu_lap_count; may differ from lap_count"),
+  intervals_edited: z.boolean().nullable().describe("icu_intervals_edited"),
+  units: z.object({
+    distance: z.literal("km"),
+    pace: z.literal("min/km"),
+    speed: z.literal("km/h"),
+    time: z.literal("s"),
+    hr: z.literal("bpm"),
+    elevation: z.literal("m"),
+    cadence: z.union([z.literal("spm"), z.literal("rpm")]),
+    gradient: z.literal("%"),
+  }),
+  laps: z.array(IntervalsLapEntrySchema),
+});
+
+// ---------- get-running-summary ----------
+// A thin wrapper over get-activity: every ActivityDetailOutputSchema field,
+// plus run-specific assessments and a lap breakdown. No power fields.
+const HrZoneSummaryEntrySchema = z.object({
+  zone: z.number().int().describe("1-based zone number"),
+  min_bpm: z.number().nullable().describe("0 for zone 1"),
+  max_bpm: z
+    .number()
+    .nullable()
+    .describe("null only for an open-ended top bucket"),
+  seconds: z.number().int(),
+  percent: z.number().describe("Share of recorded zone time, 1 dp"),
+});
+export const RunningSummaryOutputSchema = ActivityDetailOutputSchema.omit({
+  intervals: true,
+}).extend({
+  cadence_assessment: z
+    .string()
+    .nullable()
+    .describe("From average_cadence_spm via assessCadence"),
+  hr_zone_summary: z
+    .object({
+      source: z
+        .union([z.literal("activity"), z.literal("sport_settings")])
+        .describe(
+          "Bounds from the activity's own icu_hr_zones when present, else the Run sport settings group",
+        ),
+      total_seconds: z.number().int(),
+      zones: z.array(HrZoneSummaryEntrySchema),
+    })
+    .nullable()
+    .describe(
+      "Null when no zone bounds match the recorded zone time count; see hr_zone_note",
+    ),
+  hr_zone_note: z
+    .string()
+    .nullable()
+    .describe("Set when hr_zone_summary is omitted, explaining why"),
+  dynamics_assessment: z
+    .object({
+      vertical_oscillation: z.string().nullable(),
+      ground_contact_time: z.string().nullable(),
+    })
+    .nullable()
+    .describe("Only set when running_dynamics is present"),
+  laps: z.array(IntervalsLapEntrySchema).describe("From mapIntervalsToLaps"),
+});
+
+// ---------- get-running-dynamics ----------
+const DynamicsStatusSchema = z.union([
+  z.literal("within"),
+  z.literal("high"),
+  z.literal("low"),
+]);
+const DynamicsMetricAssessmentSchema = z.object({
+  value: z.number().nullable(),
+  target: z.string(),
+  status: DynamicsStatusSchema.nullable().describe("Null when value is null"),
+  message: z.string().nullable(),
+});
+const RunningDynamicsAveragesSchema = z.object({
+  stance_time_ms: z.number().nullable(),
+  vertical_oscillation_mm: z.number().nullable(),
+  vertical_ratio_pct: z
+    .number()
+    .nullable()
+    .describe("No assessed status; reported for context only"),
+  step_length_mm: z.number().nullable(),
+  stride_m: z.number().nullable(),
+  cadence_spm: z.number().nullable(),
+});
+const RunningDynamicsIntervalRowSchema = z.object({
+  lap_index: z
+    .number()
+    .int()
+    .describe("1-based position in icu_intervals, WORK rows only"),
+  label: z.string().nullable(),
+  distance_km: z.number().nullable(),
+  pace_sec_per_km: z.number().nullable(),
+  pace_min_per_km: z.string().nullable(),
+  stance_time_ms: z.number().nullable(),
+  stance_time_status: DynamicsStatusSchema.nullable(),
+  vertical_oscillation_mm: z.number().nullable(),
+  vertical_oscillation_status: DynamicsStatusSchema.nullable(),
+  vertical_ratio_pct: z.number().nullable(),
+  step_length_mm: z.number().nullable(),
+  stride_m: z.number().nullable(),
+  cadence_spm: z.number().nullable(),
+});
+export const RunningDynamicsOutputSchema = z.object({
+  activity_id: z.string(),
+  activity_name: z.string(),
+  type: z.string(),
+  has_dynamics: z.boolean(),
+  message: z
+    .string()
+    .nullable()
+    .describe("Set when the device/activity type recorded no running dynamics"),
+  averages: RunningDynamicsAveragesSchema.nullable(),
+  assessments: z
+    .object({
+      vertical_oscillation: DynamicsMetricAssessmentSchema,
+      ground_contact_time: DynamicsMetricAssessmentSchema,
+    })
+    .nullable(),
+  intervals: z
+    .array(RunningDynamicsIntervalRowSchema)
+    .describe("WORK intervals only; empty when includeIntervals is false"),
+  units: z.object({
+    stance_time: z.literal("ms"),
+    vertical_oscillation: z.literal("mm"),
+    vertical_ratio: z.literal("%"),
+    step_length: z.literal("mm"),
+    stride: z.literal("m"),
+    cadence: z.literal("spm"),
+    pace: z.literal("min/km"),
+  }),
 });
