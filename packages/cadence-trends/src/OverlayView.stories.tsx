@@ -172,15 +172,19 @@ export const WithGaps = meta.story({
     retryStream: noop,
   },
   play: async ({ canvasElement }) => {
-    // The gappy run renders as two disjoint path segments (before/after the
-    // gap) plus one whole path for the intact run: more curves than a plain
-    // two-run overlay, proving the line actually breaks rather than
-    // bridging or flattening to zero.
-    await waitFor(() =>
-      expect(
-        canvasElement.querySelectorAll("path.recharts-line-curve").length,
-      ).toBeGreaterThan(2),
-    );
+    // Both runs still draw one <path> each (recharts keeps one path per
+    // <Line>, even with connectNulls off): the gap shows up as a second
+    // "M" (moveto) command inside that path's `d`, splitting it into two
+    // disjoint subpaths instead of bridging across the null samples or
+    // flattening them to zero.
+    await waitFor(() => {
+      const paths = canvasElement.querySelectorAll("path.recharts-line-curve");
+      expect(paths.length).toBe(2);
+      const moveCommandCounts = Array.from(paths).map(
+        (path) => (path.getAttribute("d")?.match(/M/g) ?? []).length,
+      );
+      expect(Math.max(...moveCommandCounts)).toBeGreaterThan(1);
+    });
   },
 });
 
