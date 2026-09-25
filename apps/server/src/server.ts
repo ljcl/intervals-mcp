@@ -56,8 +56,8 @@ import {
 import { READ_ONLY } from "./tools/_annotations";
 import { toolErrorText } from "./tools/_errors";
 import {
+  idJsonSchemaOverride,
   intervalsActivityIdInput,
-  stravaIdJsonSchemaOverride,
 } from "./tools/_ids";
 import {
   buildComparison,
@@ -94,20 +94,20 @@ const EMPTY_SCHEMA = { type: "object", properties: {}, required: [] } as const;
 
 /**
  * Build the advertised JSON Schema for a tool's *input*. Uses zod's `io:
- * "input"` projection so schemas that coerce their input (e.g. `stravaIdInput`,
- * `intervalsActivityIdInput`, which each accept a digit string or a
- * safe-integer number and normalise to a string) advertise the accepted
+ * "input"` projection so schemas that coerce their input (e.g.
+ * `intervalsActivityIdInput`, which accepts a digit string or a
+ * safe-integer number and normalises to a string) advertise the accepted
  * input shape rather than throwing on the output-side transform. Output
  * schemas keep the default (output) projection.
  *
- * `stravaIdJsonSchemaOverride` then narrows every such id to its string form
- * (`^\d+$` for Strava, `^i?\d+$` for intervals.icu activities) so a host
- * cannot generate the lossy number branch for an id above 2^53.
+ * `idJsonSchemaOverride` then narrows every such id to its string form
+ * (`^i?\d+$` for intervals.icu activities) so a host cannot generate the
+ * lossy number branch for an id above 2^53.
  */
 function toInputSchema(schema: z.ZodType): Record<string, unknown> {
   return z.toJSONSchema(schema, {
     io: "input",
-    override: stravaIdJsonSchemaOverride,
+    override: idJsonSchemaOverride,
   });
 }
 
@@ -116,7 +116,7 @@ function toInputSchema(schema: z.ZodType): Record<string, unknown> {
  * advertised JSON Schemas in buildToolDefs derive from these, and dispatch
  * validates every call against them, so a host omitting or mistyping an
  * argument gets a structured error instead of `"undefined"`/NaN flowing
- * into Strava request paths.
+ * into intervals.icu request paths.
  */
 const weeksInput = z
   .number()
@@ -379,7 +379,7 @@ interface ToolDef {
  * Every tool implementation, all intervals.icu-backed (via
  * intervalsClient.ts). This file's Phase 4 app data handlers
  * (activity-chart, cadence-trends, route-map) are intervals.icu-backed too;
- * the transitional stravaClient.ts has no remaining production caller.
+ * the retired Strava client has been deleted.
  */
 const TOOLS = [
   getAthleteStatsTool,
@@ -1164,7 +1164,7 @@ interface ToolCallResult {
   isError?: boolean;
 }
 
-/** MCP App tool name → handler (same dispatch path as the Strava tools). */
+/** MCP App tool name to handler (same dispatch path as the text tools). */
 const APP_TOOL_HANDLERS: Record<
   string,
   (
@@ -1209,7 +1209,7 @@ export interface DispatchOptions {
  * Single dispatch path for every tool call. Validates the raw host args
  * against the tool's zod schema BEFORE executing, so defaults always
  * apply and invalid types surface as a structured error instead of flowing
- * into Strava URLs and math as `"undefined"` or NaN.
+ * into intervals.icu URLs and math as `"undefined"` or NaN.
  *
  * It also resolves the intervals.icu API key once per call and hands it to
  * the handler as argument 2. A tool must not read

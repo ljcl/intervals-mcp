@@ -98,13 +98,13 @@ describe("createProgressReporter", () => {
     report("Read 2 of 50");
     time.advance(1);
     // A rate-limit abort is news whenever it lands.
-    report("Strava rate limit reached — stopping the scan", {
+    report("Rate limit reached, stopping the scan", {
       important: true,
     });
 
     expect(sent.map((p) => p.message)).toEqual([
       "Read 1 of 50",
-      "Strava rate limit reached — stopping the scan",
+      "Rate limit reached, stopping the scan",
     ]);
   });
 

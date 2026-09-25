@@ -16,12 +16,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getActivity } from "./intervalsClient";
 import { type ProtocolEra } from "./mcpTestClient";
-import { INTERVALS_ID_HINT, STRAVA_ID_HINT } from "./tools/_ids";
-
-vi.mock("./stravaClient", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./stravaClient")>();
-  return { ...actual, getActivityById: vi.fn() };
-});
+import { INTERVALS_ID_HINT } from "./tools/_ids";
 
 vi.mock("./intervalsClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./intervalsClient")>();
@@ -134,11 +129,12 @@ describe("modern result envelope", () => {
 });
 
 /**
- * Every input field naming a Strava resource id, in each spelling the surface
- * uses: `id`, `activity_id`, `activity_id_1`, `activityId`, `activityId2`.
- * The narrower `/(^|_)(id|Id)$/` this replaced matched only the first two,
- * skipping 28 of the 43 id arguments — the camelCase and numbered ones,
- * including all four tools that were still hand-rolling their id schema.
+ * Every input field naming an intervals.icu activity id, in each spelling the
+ * surface uses: `id`, `activity_id`, `activity_id_1`, `activityId`,
+ * `activityId2`. The narrower `/(^|_)(id|Id)$/` this replaced matched only
+ * the first two, skipping 28 of the 43 id arguments: the camelCase and
+ * numbered ones, including all four tools that were still hand-rolling their
+ * id schema.
  */
 const ID_FIELD = /(^|_)id(_\d+)?$|Id\d*$/;
 
@@ -147,7 +143,7 @@ const ID_FIELD_COUNT = 23;
 
 /**
  * Gear ids are alphanumeric (`g123456`), not digit strings, so they are the
- * one id argument `stravaIdInput` does not serve.
+ * one id argument `intervalsActivityIdInput` does not serve.
  */
 const NON_NUMERIC_ID_FIELDS = new Set(["gearId"]);
 
@@ -231,7 +227,7 @@ describe.each(ERAS)("tools/list (%s era)", (era) => {
     }
   });
 
-  it("advertises Strava ids as strings, never as numbers", async () => {
+  it("advertises intervals.icu activity ids as strings, never as numbers", async () => {
     const ids = await advertisedIdFields(era);
 
     // Activity ids already exceed 2^53, so a host that generates a JSON
@@ -249,29 +245,26 @@ describe.each(ERAS)("tools/list (%s era)", (era) => {
     );
   });
 
-  it("routes every numeric id through stravaIdInput or intervalsActivityIdInput", async () => {
+  it("routes every numeric id through intervalsActivityIdInput", async () => {
     const ids = await advertisedIdFields(era);
 
-    // Advertising `type: "string"` is only half the convention: `stravaIdInput`
-    // and `intervalsActivityIdInput` also accept a safe-integer number at
-    // runtime and normalise it, so a host emitting `routeId: 12345` is not
+    // Advertising `type: "string"` is only half the convention:
+    // `intervalsActivityIdInput` also accepts a safe-integer number at
+    // runtime and normalises it, so a host emitting `routeId: 12345` is not
     // left stuck on "expected string, received number" (#282). A hand-rolled
     // `z.string().regex(/^\d+$/)` serialises to the same shape while
     // rejecting that call, so the hint appended to every id's description is
-    // what distinguishes them here: each helper's own hint, matched at the
-    // end of the description so a copy of it would not accidentally pass.
+    // what distinguishes it here: `intervalsActivityIdInput`'s own hint,
+    // matched at the end of the description so a copy of it would not
+    // accidentally pass.
     for (const { tool, field, prop } of ids) {
       if (NON_NUMERIC_ID_FIELDS.has(field)) continue;
       const description = prop.description ?? "";
-      const usesIntervals = description.endsWith(INTERVALS_ID_HINT);
-      const usesStrava = description.endsWith(STRAVA_ID_HINT);
       expect(
-        usesStrava || usesIntervals,
-        `${tool}.${field} must use stravaIdInput or intervalsActivityIdInput`,
+        description.endsWith(INTERVALS_ID_HINT),
+        `${tool}.${field} must use intervalsActivityIdInput`,
       ).toBe(true);
-      expect(prop.pattern, `${tool}.${field} pattern`).toBe(
-        usesIntervals ? "^i?\\d+$" : "^\\d+$",
-      );
+      expect(prop.pattern, `${tool}.${field} pattern`).toBe("^i?\\d+$");
     }
   });
 });

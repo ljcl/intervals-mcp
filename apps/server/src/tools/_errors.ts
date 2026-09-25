@@ -1,34 +1,25 @@
-import { HttpError, NotPortedError, RateLimitError } from "../fetchClient";
+import { HttpError, RateLimitError } from "../fetchClient";
 
 /**
  * The one home for tool-facing error text.
  *
- * `handleApiError` (the retired Strava client) rethrows a 429 as a
- * `RateLimitError`, a 401 (every call, since that client sends no
- * Authorization header on purpose) as `NotPortedError`, and everything else
- * as `StravaApiError extends HttpError`, precisely so a caller can branch on
- * the type or the status. The catch blocks this replaced string-matched
- * `message` for Strava's not-found phrase or "404" instead, which misread
- * any message that happened to contain those characters, could not tell a
- * 402 from a 404 without a second prefix convention, and let an exhausted
- * quota fall into the generic branch as "An unexpected error occurred".
- * Branch here on the typed error only; never on its message.
+ * `handleApiError` (`intervalsClient.ts`) rethrows a 429 as a
+ * `RateLimitError` and everything else as `IntervalsApiError extends
+ * HttpError`, precisely so a caller can branch on the type or the status.
+ * The catch blocks this replaced string-matched `message` for a not-found
+ * phrase or "404" instead, which misread any message that happened to
+ * contain those characters, could not tell a 402 from a 404 without a
+ * second prefix convention, and let an exhausted quota fall into the
+ * generic branch as "An unexpected error occurred". Branch here on the
+ * typed error only; never on its message.
  *
- * `NotPortedError` is checked before the generic 401/403 branch below, even
- * though it is itself an `HttpError` with status 401: without that ordering
- * every unported tool's "not yet ported" message would be swallowed by the
- * 401/403 branch's "intervals.icu rejected the API key" text, which is wrong:
- * that 401 comes from the retired Strava client sending no Authorization
- * header on purpose, not from intervals.icu rejecting a real key.
- *
- * Imports come from `../fetchClient` only (including `NotPortedError`, which
- * lives there rather than in the Strava client module for this reason). Tool
- * tests replace that module with bare factory mocks, so anything imported
- * from there would be `undefined` here and `instanceof undefined` throws
- * inside the very catch block meant to report the failure.
- * `StreamsUnavailableError` is deliberately not translated for the same
- * reason, and because every stream tool already treats it as a degrade
- * signal in its own success path: it never reaches a tool's outer catch.
+ * Imports come from `../fetchClient` only. Tool tests replace the client
+ * module with bare factory mocks, so anything imported from there would be
+ * `undefined` here and `instanceof undefined` throws inside the very catch
+ * block meant to report the failure. `IntervalsStreamsUnavailableError` is
+ * deliberately not translated for the same reason, and because every stream
+ * tool already treats it as a degrade signal in its own success path: it
+ * never reaches a tool's outer catch.
  *
  * This produces the text, not the `{ content, isError }` result, on purpose.
  * A tool's catch block writes that literal itself, as every other branch in
@@ -83,14 +74,6 @@ export function toolErrorText(
     // function's name in front of it, which means nothing to the athlete.
     const detail = error.detail || error.message;
     return `${PREFIX} Rate limit reached while trying to ${context}. ${detail} Retry after the window resets.`;
-  }
-  if (error instanceof NotPortedError) {
-    // Checked before the 401/403 branch below: NotPortedError is an
-    // HttpError with status 401 (the retired Strava client sends no
-    // Authorization header on purpose), and that 401 means "not yet ported to
-    // intervals.icu", not "intervals.icu rejected the API key". Its own
-    // message already says so; nothing to add.
-    return `${PREFIX} ${error.message}`;
   }
   if (error instanceof HttpError && error.response.status === 404) {
     return `${PREFIX} ${notFound ?? DEFAULT_NOT_FOUND}`;

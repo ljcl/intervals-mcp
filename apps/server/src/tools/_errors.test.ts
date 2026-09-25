@@ -4,7 +4,7 @@ import {
   handledRateLimit,
   handledSubscriptionRequired,
 } from "../__fixtures__";
-import { HttpError, NotPortedError } from "../fetchClient";
+import { HttpError } from "../fetchClient";
 import { IntervalsApiError } from "../intervalsClient";
 import { toolErrorText } from "./_errors";
 
@@ -105,7 +105,7 @@ describe("toolErrorText", () => {
 
   it("reports other HTTP statuses with the message", () => {
     const text = toolErrorText(
-      new HttpError("Strava API Error in getActivityById (500): boom", {
+      new HttpError("intervals.icu API Error in getActivity (500): boom", {
         status: 500,
         statusText: "Internal Server Error",
         data: "",
@@ -114,7 +114,7 @@ describe("toolErrorText", () => {
     );
 
     expect(text).toBe(
-      "❌ Failed to fetch activity 789: Strava API Error in getActivityById (500): boom",
+      "❌ Failed to fetch activity 789: intervals.icu API Error in getActivity (500): boom",
     );
   });
 
@@ -130,22 +130,7 @@ describe("toolErrorText", () => {
     ).toBe("❌ Failed to fetch activity 789: string failure");
   });
 
-  it("keeps a not-yet-ported error's own message on a 401, rather than the intervals.icu key message", () => {
-    const text = toolErrorText(
-      new NotPortedError(
-        "getActivityLaps(55): this tool still uses the retired Strava client and has not been ported to intervals.icu yet.",
-        { status: 401, statusText: "Unauthorized", data: "" },
-      ),
-      { context: "fetch activity laps 55" },
-    );
-
-    expect(text).toBe(
-      "❌ getActivityLaps(55): this tool still uses the retired Strava client and has not been ported to intervals.icu yet.",
-    );
-    expect(text).not.toContain("INTERVALS_API_KEY");
-  });
-
-  it("names INTERVALS_API_KEY for a real IntervalsApiError 401, not the not-ported text", () => {
+  it("names INTERVALS_API_KEY for an IntervalsApiError 401", () => {
     const text = toolErrorText(
       new IntervalsApiError("getActivity for ID i1: 401 Unauthorized", {
         status: 401,
@@ -158,7 +143,6 @@ describe("toolErrorText", () => {
     expect(text).toBe(
       "❌ intervals.icu rejected the API key (HTTP 401). Check INTERVALS_API_KEY.",
     );
-    expect(text).not.toContain("not been ported");
   });
 
   it("keeps the detail in operator logs", () => {

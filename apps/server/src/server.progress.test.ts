@@ -10,14 +10,6 @@ import {
   type IntervalsAthletePaceCurves,
 } from "./intervalsClient";
 
-vi.mock("./stravaClient", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./stravaClient")>();
-  return {
-    ...actual,
-    getActivityById: vi.fn(),
-  };
-});
-
 vi.mock("./intervalsClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./intervalsClient")>();
   return { ...actual, getAthletePaceCurves: vi.fn() };
