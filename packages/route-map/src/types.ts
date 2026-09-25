@@ -66,8 +66,8 @@ export interface RouteMapData {
  */
 export interface RouteAnnotations {
   /** One marker per WORK interval's end (a one-lap run gets one finish
-   * marker). RECOVERY intervals are auto-pause gaps, not a split a runner
-   * cares about, so they get no marker. */
+   * marker). RECOVERY intervals get no marker: only the splits a runner
+   * planned are shown, not intervals.icu's rest/auto-pause segmentation. */
   laps?: Array<{ lapIndex: number; name: string; endIndex: number }>;
   /** Caller-supplied waypoints anchored by cumulative distance, sorted by
    * km. */

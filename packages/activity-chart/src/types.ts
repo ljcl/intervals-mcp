@@ -25,8 +25,8 @@ export interface Lap {
 /**
  * Raw data from the server's get-activity-streams-raw tool. Streams are
  * downsampled to at most about 1,000 points; `time`/`distance` are gap-free,
- * every other metric may carry `null` samples (a later task makes the chart
- * render those as gaps). The running-dynamics fields are additive.
+ * every other metric may carry `null` samples, which the chart renders as
+ * gaps. The running-dynamics fields are additive.
  */
 export interface ActivityStreamData {
   activityId: string;

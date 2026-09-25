@@ -32,11 +32,11 @@ export interface McpEndpoint {
  * the 2025 spec allows).
  *
  * POST bodies are parsed here with the large-int-preserving reviver and handed
- * to the SDK as `parsedBody`, never re-read from the request: a 64-bit Strava
- * id sent as a JSON number (e.g. a route id above 2^53) would otherwise be
- * rounded by a plain `JSON.parse` before any tool schema could see it. When
- * the exact digits do reach us they survive as a string, which the id schemas
- * accept losslessly.
+ * to the SDK as `parsedBody`, never re-read from the request: a 64-bit
+ * intervals.icu id sent as a JSON number (e.g. a route id above 2^53) would
+ * otherwise be rounded by a plain `JSON.parse` before any tool schema could
+ * see it. When the exact digits do reach us they survive as a string, which
+ * the id schemas accept losslessly.
  */
 export function createMcpEndpoint(createServer: () => Server): McpEndpoint {
   const handler = createMcpHandler(() => createServer(), {

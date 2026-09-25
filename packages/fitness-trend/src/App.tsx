@@ -147,6 +147,9 @@ export function App({
           </span>
         )}
       </div>
+      {data?.warnings && data.warnings.length > 0 && (
+        <span className={styles.sourceNote}>{data.warnings.join(" ")}</span>
+      )}
       {otherLoading ? (
         <LoadingState label="Loading fitness trend">
           <Skeleton variant="bar" />

@@ -17,9 +17,10 @@
  *
  * Annotations mark the end of every WORK interval (`activity.icu_intervals`)
  * on the downsampled coordinate stream, so a one-lap run's single WORK
- * interval gives one finish marker. RECOVERY intervals are auto-pause gaps,
- * not a split a runner cares about, so they get no marker. Waypoints anchor
- * onto the downsampled distance stream via `mapAnchors.ts`.
+ * interval gives one finish marker. RECOVERY intervals get no marker: the
+ * app only marks the splits a runner planned, not intervals.icu's rest/
+ * auto-pause segmentation. Waypoints anchor onto the downsampled distance
+ * stream via `mapAnchors.ts`.
  */
 
 import { activityDisplayName } from "./formatters";

@@ -62,7 +62,8 @@ export function extractMeta(data: ActivityStreamData): ActivityMeta {
 /**
  * Convert raw stream data into ChartDataPoint array for Recharts.
  * - velocity_smooth → pace (min/km) for running, speed (km/h) for cycling
- * - cadence doubled for running (Strava reports half-cycles for running)
+ * - cadence doubled for running (intervals.icu reports strides/min for
+ *   running; see docs/api-notes.md)
  */
 export function toChartData(data: ActivityStreamData): ChartDataPoint[] {
   const { streams } = data;
@@ -115,7 +116,7 @@ export function toChartData(data: ActivityStreamData): ChartDataPoint[] {
 
     if (streams.cadence?.[i] !== undefined) {
       const raw = streams.cadence[i];
-      // Running cadence: Strava reports strides/min, double for steps/min.
+      // Running cadence: intervals.icu reports strides/min, double for steps/min.
       // A null sample must stay null: never become 0 via `null * 2`.
       point.cadence = raw == null ? null : running ? raw * 2 : raw;
     }

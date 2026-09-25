@@ -78,4 +78,24 @@ describe("buildFitnessTrendContextSummary", () => {
     })!;
     expect(summary).toContain("No fatigue or ramp flags.");
   });
+
+  it("passes warnings through so the model can talk about them", () => {
+    const summary = buildFitnessTrendContextSummary({
+      ...mockFitnessTrendData,
+      warnings: [
+        "plannedLoads is ignored: a targetDate taper plan is solved instead.",
+      ],
+    })!;
+    expect(summary).toContain(
+      "Notes: plannedLoads is ignored: a targetDate taper plan is solved instead.",
+    );
+  });
+
+  it("says nothing about warnings when there are none", () => {
+    const summary = buildFitnessTrendContextSummary({
+      ...mockFitnessTrendData,
+      warnings: [],
+    })!;
+    expect(summary).not.toContain("Notes:");
+  });
 });

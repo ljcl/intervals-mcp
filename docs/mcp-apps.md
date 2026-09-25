@@ -188,6 +188,14 @@ altitude overlays; cadence and grade where recorded).
   previously drawn one — the first of a crowded run wins, the rest drop out.
   Plot width comes from a `ResizeObserver` bucketed to ~24px (floored at a
   mode-based estimate) so minor reflows don't churn the memoized tree.
+- Running-dynamics overlays (ground contact time, vertical oscillation, and
+  related metrics recorded on run activities) are available via the "Form"
+  preset, which draws them alongside its own legend toggles on top of the
+  base metric set.
+- A metric that is present but `null` at a given sample (a real gap in the
+  recorded stream) draws as a break in the line rather than a fabricated
+  zero, spike, or interpolated value; see the `gappyRun` fixture and stories
+  for the intended rendering.
 
 ### Cadence Trends
 
@@ -231,17 +239,15 @@ grid fallback (no Recharts). Calls `get-route-map-data` (app-only) with
   `touch-action`: `pan-y` at base zoom, `none` once zoomed.
 - Annotation layers, each toggleable via the footer legend: a marker at the
   end of every WORK interval (`activity.icu_intervals`; RECOVERY intervals
-  are auto-pause gaps and are not marked), km split dots (`src/annotations.ts`;
-  km marks thinned 1/2/5… per length), and caller-pinned waypoints. The
-  server resolves anchors to coordinate indices in
-  `apps/server/src/mapAnchors.ts` because intervals.icu's interval and lap
-  indices reference the full-resolution recorded stream, not the downsampled
-  one the map renders. A layer whose fetch fails
-  costs that layer and nothing else (429 included): `dropOptionalLayer` logs
-  the reason and records a `layerWarnings` note on the payload, sibling of
-  `waypointWarnings`, both surfaced by `view-route-map`'s text; a rate limit
-  quotes `RateLimitError.detail`. Misreporting a failure as an absence is the
-  forbidden shape — every cause is named, none swallowed.
+  get no marker, since the app only shows the splits a runner planned, not
+  intervals.icu's rest/auto-pause segmentation), km split dots
+  (`src/annotations.ts`; km marks thinned 1/2/5… per length), and
+  caller-pinned waypoints. WORK-interval end times are resolved to coordinate
+  indices via `indexAtOrAfterTime` (`apps/server/src/streamDownsample.ts`,
+  called from `buildLapMarkers` in `routeMapData.ts`); waypoints are resolved
+  separately in `apps/server/src/mapAnchors.ts` (which only handles
+  waypoints, not lap markers) because intervals.icu's indices reference the
+  full-resolution recorded stream, not the downsampled one the map renders.
 - Waypoints: `waypoints` array (`km`, `label`, `kind: fuel|climb|water|custom`)
   anchored by cumulative distance (`resolveWaypoints` in `mapAnchors.ts`;
   recorded distance stream when present, else haversine cumulative distances).
@@ -384,3 +390,8 @@ weeks take them. Calls `get-fitness-trend-data` on mount with `days`,
 - Story fixture is **generated** by running real `buildFitnessTrend` over a
   scripted 12-week block — CTL/ATL are recurrences, so a handwritten series
   charts a shape the server can never produce.
+- A "Whole body" / "Runs only" `PillGroup` (`App.tsx`) switches the `runOnly`
+  scope. The scope not shown at mount is fetched on demand through the shared
+  keyed `useServerToolFetcher` store and cached, so flipping back never
+  re-fetches; `sourceLabel` notes when a scope's numbers are computed locally
+  rather than read from intervals.icu.

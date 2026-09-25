@@ -52,5 +52,9 @@ export function buildFitnessTrendContextSummary(
     );
   }
 
+  if (data.warnings && data.warnings.length > 0) {
+    parts.push(`Notes: ${data.warnings.join(" ")}`);
+  }
+
   return parts.join(" ");
 }

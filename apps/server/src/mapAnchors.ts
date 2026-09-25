@@ -55,9 +55,9 @@ export function haversineMeters(
 /**
  * Cumulative haversine distance (metres) along a `[lat, lng]` track, aligned
  * index-for-index with the coordinates. The distance-anchor fallback when no
- * recorded distance stream exists: polyline-only activities arrive as bare
- * geometry, so anchors like waypoints need a synthetic cumulative stream to
- * resolve against.
+ * recorded distance stream exists: an activity with only a latlng stream and
+ * no recorded distance still needs a synthetic cumulative stream for anchors
+ * like waypoints to resolve against.
  */
 export function cumulativeDistances(
   coordinates: Array<[number, number]>,
