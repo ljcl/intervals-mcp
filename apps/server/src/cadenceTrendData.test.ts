@@ -52,14 +52,34 @@ describe("buildCadenceTrendData", () => {
     expect(result.activities[0]?.averageCadence).toBe(168);
   });
 
-  it("returns 0 cadence, not a dropped run, when average_cadence is missing", () => {
+  it("excludes a run with no recorded cadence rather than plotting it at 0 spm, and counts it", () => {
     const result = buildCadenceTrendData(
       [activity({ average_cadence: null })],
       { weeks: 4 },
     );
 
-    expect(result.activities).toHaveLength(1);
-    expect(result.activities[0]?.averageCadence).toBe(0);
+    expect(result.activities).toHaveLength(0);
+    expect(result.excludedNoCadence).toBe(1);
+  });
+
+  it("counts multiple exclusions and leaves cadence-bearing runs untouched", () => {
+    const result = buildCadenceTrendData(
+      [
+        activity({ id: "i1", average_cadence: 84 }),
+        activity({ id: "i2", average_cadence: null }),
+        activity({ id: "i3", average_cadence: undefined }),
+      ],
+      { weeks: 4 },
+    );
+
+    expect(result.activities.map((a) => a.id)).toEqual(["i1"]);
+    expect(result.excludedNoCadence).toBe(2);
+  });
+
+  it("reports zero exclusions when every run has cadence", () => {
+    const result = buildCadenceTrendData([activity()], { weeks: 4 });
+
+    expect(result.excludedNoCadence).toBe(0);
   });
 
   it("derives pace in decimal minutes/km from average_speed", () => {

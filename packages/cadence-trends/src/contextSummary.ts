@@ -11,12 +11,16 @@ export interface CadenceContextInput {
   weeks: number;
   activeView: ViewId;
   selectedRuns: RunSummary[];
+  /** Run-type activities in the window with no recorded cadence, left out
+   * of the chart entirely; mentioned so the model knows the average isn't
+   * silently missing them. */
+  excludedNoCadence?: number;
 }
 
 export function buildCadenceContextSummary(
   input: CadenceContextInput,
 ): string | null {
-  const { weeks, activeView, selectedRuns } = input;
+  const { weeks, activeView, selectedRuns, excludedNoCadence } = input;
   if (!weeks) return null;
 
   const parts = [
@@ -30,6 +34,11 @@ export function buildCadenceContextSummary(
     parts.push(`Comparing: ${runs}.`);
   } else {
     parts.push("No runs selected for comparison.");
+  }
+  if (excludedNoCadence) {
+    parts.push(
+      `${excludedNoCadence} run${excludedNoCadence === 1 ? "" : "s"} with no recorded cadence excluded.`,
+    );
   }
   return parts.join(" ");
 }

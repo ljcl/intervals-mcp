@@ -810,6 +810,9 @@ async function handleViewCadenceTrends(
     `Cadence Trends (last ${data.weeks} weeks)`,
     `Runs: ${runs.length}`,
     `Average cadence: ${avgCadence} spm`,
+    ...(data.excludedNoCadence > 0
+      ? [`Excluded (no cadence recorded): ${data.excludedNoCadence}`]
+      : []),
     "",
     "[Interactive cadence trends chart rendered above]",
   ];

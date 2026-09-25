@@ -40,4 +40,36 @@ describe("buildCadenceContextSummary", () => {
       "Cadence trends, last 6 weeks. View: cadence vs pace scatter. Comparing: Tempo Run (182 spm), Long Run (176 spm).",
     );
   });
+
+  it("mentions runs excluded for missing cadence", () => {
+    const text = buildCadenceContextSummary({
+      weeks: 6,
+      activeView: "trend",
+      selectedRuns: [],
+      excludedNoCadence: 3,
+    });
+    expect(text).toBe(
+      "Cadence trends, last 6 weeks. View: trend timeline. No runs selected for comparison. 3 runs with no recorded cadence excluded.",
+    );
+  });
+
+  it("uses the singular form for one exclusion and omits it entirely for zero", () => {
+    expect(
+      buildCadenceContextSummary({
+        weeks: 6,
+        activeView: "trend",
+        selectedRuns: [],
+        excludedNoCadence: 1,
+      }),
+    ).toContain("1 run with no recorded cadence excluded.");
+
+    expect(
+      buildCadenceContextSummary({
+        weeks: 6,
+        activeView: "trend",
+        selectedRuns: [],
+        excludedNoCadence: 0,
+      }),
+    ).not.toContain("excluded");
+  });
 });

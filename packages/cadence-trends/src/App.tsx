@@ -132,8 +132,9 @@ export function App({ app, data, mode = "desktop" }: AppProps) {
         weeks: data.weeks,
         activeView,
         selectedRuns,
+        excludedNoCadence: data.excludedNoCadence,
       }),
-    [data.weeks, activeView, selectedRuns],
+    [data.weeks, activeView, selectedRuns, data.excludedNoCadence],
   );
 
   return (

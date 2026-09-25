@@ -17,6 +17,10 @@ export interface RunSummary {
 export interface CadenceTrendData {
   weeks: number;
   activities: RunSummary[];
+  /** Run-type activities in the window with no recorded cadence, left out
+   * of `activities` rather than plotted at a fabricated 0 spm. Optional so
+   * an older feed shape still parses. */
+  excludedNoCadence?: number;
 }
 
 /** Stream data for a single run used in overlay view (reuses activity-chart shape) */

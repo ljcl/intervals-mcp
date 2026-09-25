@@ -27,6 +27,10 @@ export interface RunSummary {
 export interface CadenceTrendData {
   weeks: number;
   activities: RunSummary[];
+  /** Run-type activities in the window with no recorded cadence, left out
+   * of `activities` (see {@link buildCadenceTrendData}) rather than counted
+   * toward it. */
+  excludedNoCadence: number;
 }
 
 /**
@@ -34,9 +38,11 @@ export interface CadenceTrendData {
  * via `listActivities`: filters to run types (Run/TrailRun/VirtualRun),
  * doubles cadence through {@link activityCadenceSpm} (the one home for
  * strides-to-steps doubling), and derives pace from `average_speed`.
- * Activities without the run types are dropped; a run with no recorded
- * cadence gets `averageCadence: 0` rather than being dropped, matching the
- * Strava-era behaviour this replaces.
+ * Activities without a run type are dropped. A run whose device recorded no
+ * cadence is left out of `activities` too, rather than plotted at a
+ * fabricated `averageCadence: 0`: a zero nobody ran would drag the trend
+ * line and every average toward it; `excludedNoCadence` counts how many
+ * were left out so the view/text summary can say so.
  */
 export function buildCadenceTrendData(
   activities: IntervalsActivity[],
@@ -44,21 +50,29 @@ export function buildCadenceTrendData(
 ): CadenceTrendData {
   const runs = activities.filter((a) => a.type && isPaceActivity(a.type));
 
-  const summaries: RunSummary[] = runs.map((a) => {
+  const summaries: RunSummary[] = [];
+  let excludedNoCadence = 0;
+
+  for (const a of runs) {
     const type = a.type ?? "Run";
+    const averageCadence = activityCadenceSpm(a.average_cadence, type);
+    if (averageCadence == null) {
+      excludedNoCadence += 1;
+      continue;
+    }
     const avgSpeed = a.average_speed ?? 0;
     const avgPace = avgSpeed > 0 ? 1000 / avgSpeed / 60 : 0;
-    return {
+    summaries.push({
       id: a.id,
       name: a.name ?? type,
       date: a.start_date_local.split("T")[0]!,
       distance: Math.round(((a.distance ?? 0) / 1000) * 100) / 100,
       duration: a.moving_time ?? 0,
-      averageCadence: activityCadenceSpm(a.average_cadence, type) ?? 0,
+      averageCadence,
       averagePace: Math.round(avgPace * 100) / 100,
       type,
-    };
-  });
+    });
+  }
 
-  return { weeks: options.weeks, activities: summaries };
+  return { weeks: options.weeks, activities: summaries, excludedNoCadence };
 }

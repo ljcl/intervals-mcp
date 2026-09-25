@@ -305,13 +305,33 @@ describe("cadence trends handlers", () => {
 
   it("narrates the local calendar date for a late-evening run, not a UTC-shifted one", async () => {
     mockedIntervalsList.mockResolvedValueOnce([
-      intervalsActivity({ start_date_local: "2026-06-01T23:30:00" }),
+      intervalsActivity({
+        start_date_local: "2026-06-01T23:30:00",
+        average_cadence: 84,
+      }),
     ]);
 
     const result = await dispatchToolCall("get-cadence-trend-data", {});
 
     const parsed = JSON.parse(result.content[0]?.text ?? "");
     expect(parsed.activities[0]?.date).toBe("2026-06-01");
+  });
+
+  it("excludes runs with no recorded cadence and reports the count on both surfaces", async () => {
+    mockedIntervalsList.mockResolvedValue([
+      intervalsActivity({ id: "i1", average_cadence: 84 }),
+      intervalsActivity({ id: "i2", average_cadence: null }),
+    ]);
+
+    const dataResult = await dispatchToolCall("get-cadence-trend-data", {});
+    const parsed = JSON.parse(dataResult.content[0]?.text ?? "");
+    expect(parsed.activities).toHaveLength(1);
+    expect(parsed.excludedNoCadence).toBe(1);
+
+    const viewResult = await dispatchToolCall("view-cadence-trends", {});
+    const text = viewResult.content[0]?.text ?? "";
+    expect(text).toContain("Runs: 1");
+    expect(text).toContain("Excluded (no cadence recorded): 1");
   });
 
   it("a view-/get-…-data pair shares one local-date window (#329)", async () => {
