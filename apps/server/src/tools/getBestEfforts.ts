@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { getTimeZone } from "../config";
+import { HttpError } from "../fetchClient";
 import { formatDuration } from "../formatters";
 import {
   getActivity,
@@ -357,9 +358,16 @@ async function buildTopNEfforts(
     async (activityId) => {
       try {
         activityById.set(activityId, await getActivity(apiKey, activityId));
-      } catch {
-        // Name/race flag are cosmetic; a lookup failure falls back to
-        // "Unknown activity" rather than failing the whole tool call.
+      } catch (error) {
+        // A genuinely missing activity (e.g. deleted since the pace curve
+        // was computed) falls back to "Unknown activity" rather than
+        // failing the whole call; anything else, including a rate limit,
+        // is a real failure and should surface as one, not be silently
+        // swallowed into a misleading "Unknown activity".
+        if (error instanceof HttpError && error.response.status === 404) {
+          return;
+        }
+        throw error;
       }
     },
   );

@@ -295,7 +295,7 @@ resources and their `_meta.ui`, and the prompts. A tool one era serves and the
 other drops is exactly what dual-era serving must not allow. Era-specific
 describes pin the modern result envelope (`resultType`, cache fields,
 per-response `serverInfo`) and that none of it leaks onto the legacy wire.
-Asserting against the in-memory `TOOLS` table proves nothing — an annotation or
+Asserting against the in-memory `TOOL_DEFS` table proves nothing: an annotation or
 schema that does not serialize cannot influence a host. The bootstrap was
 copied into three suites before the shared client existed; add to the client
 rather than making a fourth copy.

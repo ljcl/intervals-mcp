@@ -1,8 +1,8 @@
 /**
- * MCP prompts: slash-invokable guided workflows packaging the
- * "supplement the official Strava connector" story. Each prompt's text
- * references both this server's tools and official-connector discovery
- * (`list_activities`), mirroring the recommended workflow in the README.
+ * MCP prompts: slash-invokable guided workflows built from this server's
+ * own tools. Discovery goes through this server's own `list-activities`
+ * (intervals.icu-backed, ported in Phase 2), not the official Strava
+ * connector.
  *
  * Prompts are data; the ListPrompts/GetPrompt handlers in server.ts serve
  * from this table.
@@ -41,7 +41,7 @@ const PROMPTS: PromptDefinition[] = [
         "",
         "Work through it in this order:",
         `1. Call get-training-load with days=${Number(weeks) * 7 || 28} for volume, trend, and any overtraining warnings.`,
-        "2. If the official Strava connector is available, use its list_activities to identify the standout sessions (longest run, hardest effort); otherwise use the training-load breakdown.",
+        "2. Call list-activities to identify the standout sessions (longest run, hardest effort).",
         "3. For the 1-2 standout runs, call get-running-summary (and compare-activities if two are directly comparable).",
         `4. Render view-cadence-trends with weeks=${weeks} so I can explore cadence patterns interactively.`,
         "",
@@ -63,7 +63,7 @@ const PROMPTS: PromptDefinition[] = [
     build: (args) => {
       const target = args.activity_id
         ? `Use activity ${args.activity_id}.`
-        : "Find my most recent run, via the official Strava connector's list_activities if available.";
+        : "Find my most recent run via list-activities.";
       return [
         "Annotate my latest run with a short coaching note.",
         "",

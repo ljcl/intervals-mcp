@@ -189,6 +189,27 @@ describe("formatRunningSummaryText", () => {
     expect(text).not.toContain("🏃");
     expect(text).not.toContain("Strava");
   });
+
+  it("renders an open-ended top zone bound as N+ rather than N-null", () => {
+    const summary = mapRunningSummary(
+      multilapActivityWithIntervals,
+      sportSettingsRun,
+    );
+    const withOpenTopZone = {
+      ...summary,
+      hr_zone_summary: summary.hr_zone_summary && {
+        ...summary.hr_zone_summary,
+        zones: summary.hr_zone_summary.zones.map((z, i, zones) =>
+          i === zones.length - 1 ? { ...z, max_bpm: null } : z,
+        ),
+      },
+    };
+
+    const text = formatRunningSummaryText(withOpenTopZone);
+
+    expect(text).toMatch(/Z5 \d+\+/);
+    expect(text).not.toContain("null");
+  });
 });
 
 describe("getRunningSummaryTool.execute", () => {

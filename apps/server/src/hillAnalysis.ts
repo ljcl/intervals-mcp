@@ -235,7 +235,7 @@ export function computeGrades(
   }
   if (!altitude || altitude.length !== distance.length) {
     throw new HillAnalysisError(
-      "Neither a grade nor an altitude stream is available — hill analysis needs elevation data.",
+      "Neither a grade nor an altitude stream is available: hill analysis needs elevation data.",
     );
   }
   const grades = new Array<number>(distance.length).fill(0);
@@ -457,7 +457,7 @@ export function computeDrift(
 export function computeHillAnalysis(streams: HillStreams): HillAnalysis {
   if (!streams.distance || streams.distance.length < 2) {
     throw new HillAnalysisError(
-      "No distance stream is available — hill analysis needs distance and elevation data.",
+      "No distance stream is available: hill analysis needs distance and elevation data.",
     );
   }
   if (streams.time.length !== streams.distance.length) {
@@ -504,7 +504,7 @@ export function computeHillAnalysis(streams: HillStreams): HillAnalysis {
   const drift = computeDrift(climbs, totalDistanceM);
   if (climbs.length === 0) {
     warnings.push(
-      "No sustained climbs detected (grade ≥ 2% for ≥ 200 m) — this looks like a flat activity.",
+      "No sustained climbs detected (grade ≥ 2% for ≥ 200 m): this looks like a flat activity.",
     );
   } else if (drift == null) {
     warnings.push(

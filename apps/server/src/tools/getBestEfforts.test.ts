@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { handledNotFound, handledRateLimit } from "../__fixtures__";
 import activitiesFixture from "../__fixtures__/intervals/activities.json";
 import activityPaceCurvesFixture from "../__fixtures__/intervals/activity-pace-curves.json";
 import paceCurvesFixture from "../__fixtures__/intervals/pace-curves.json";
@@ -378,6 +379,61 @@ describe("getBestEffortsTool.execute", () => {
 
     // Both activities place in both distances; still one lookup per unique id.
     expect(mockedGetActivity).toHaveBeenCalledTimes(2);
+  });
+
+  it('topN>1: falls back to "Unknown activity" when a name lookup 404s (activity deleted since the pace curve was computed), without failing the call', async () => {
+    mockedActivityCurves.mockResolvedValueOnce({
+      distances: [1000],
+      gap: false,
+      curves: [
+        {
+          id: "i999999",
+          start_date_local: "2026-09-10",
+          weight: 70,
+          secs: [269],
+        },
+      ],
+    } as unknown as IntervalsActivityPaceCurves);
+    mockedGetActivity.mockRejectedValueOnce(handledNotFound("getActivity"));
+
+    const result = await getBestEffortsTool.execute(
+      { distances: ["1km"], window: "2026-09-01..2026-09-24", topN: 2 },
+      "k",
+    );
+
+    expect(result.isError).toBeUndefined();
+    const content = result.structuredContent as {
+      best_efforts: Record<string, Array<{ activity_name: string }>>;
+    };
+    expect(content.best_efforts["1km"]?.[0]?.activity_name).toBe(
+      "Unknown activity",
+    );
+  });
+
+  it('topN>1: a rate limit during a name lookup fails the whole call rather than being swallowed into "Unknown activity"', async () => {
+    mockedActivityCurves.mockResolvedValueOnce({
+      distances: [1000],
+      gap: false,
+      curves: [
+        {
+          id: "i189757188",
+          start_date_local: "2026-09-10",
+          weight: 70,
+          secs: [269],
+        },
+      ],
+    } as unknown as IntervalsActivityPaceCurves);
+    mockedGetActivity.mockRejectedValueOnce(
+      handledRateLimit("getActivity for ID i189757188"),
+    );
+
+    const result = await getBestEffortsTool.execute(
+      { distances: ["1km"], window: "2026-09-01..2026-09-24", topN: 2 },
+      "k",
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toMatch(/rate limit/i);
   });
 
   it("rejects an invalid window without calling the client", async () => {

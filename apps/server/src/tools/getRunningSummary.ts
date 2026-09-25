@@ -264,7 +264,11 @@ function formatHrZoneSummaryLine(d: RunningSummary): string | null {
     const zones = d.hr_zone_summary.zones
       .map((z) => {
         const range =
-          z.min_bpm != null ? `${z.min_bpm}-${z.max_bpm}` : `<=${z.max_bpm}`;
+          z.max_bpm == null
+            ? `${z.min_bpm}+`
+            : z.min_bpm != null
+              ? `${z.min_bpm}-${z.max_bpm}`
+              : `<=${z.max_bpm}`;
         return `Z${z.zone} ${range} ${formatDuration(z.seconds)} (${z.percent}%)`;
       })
       .join(", ");

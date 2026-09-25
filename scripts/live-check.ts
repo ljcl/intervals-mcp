@@ -92,7 +92,7 @@ function fail(name: string, detail: string): void {
  */
 const KNOWN_ERROR_CATEGORIES: Array<[RegExp, string]> = [
   [/rate limit/i, "rate limited"],
-  [/was not found/i, "not found"],
+  [/not found\.?/i, "not found"],
   [/subscription/i, "subscription required"],
   [/not yet ported/i, "not yet ported"],
   [/rejected the API key|not configured/i, "auth/config error"],

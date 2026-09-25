@@ -111,7 +111,9 @@ derived from the activity's intervals (`icu_intervals`, fetched via
 list, and `icu_intervals` usually mirrors the device's own laps (typically
 one WORK interval per lap, sometimes with a short RECOVERY inserted between
 them), for any sport. Runs report `pace_min_per_km` and grade-adjusted
-`gap_min_per_km`; other distance sports report `speed_kmh`. Cadence is spm
+`gap_min_per_km` (`gap_source: "intervals.icu"`, from the lap's own `gap`
+field, not the locally-modelled GAP hill/split analysis compute); other
+distance sports report `speed_kmh`. Cadence is spm
 (doubled from strides) for Run/TrailRun/VirtualRun/Walk/Hike, rpm otherwise,
 with the unit named in `units.cadence`. The response also carries
 `device_lap_count` (`icu_lap_count`) and `intervals_edited`
@@ -147,12 +149,14 @@ data returns a valid empty payload, not an error.
 `compare-activities` and the `view-compare-activities`/`get-compare-activities-data`
 MCP App's summary half share one `buildComparison(a, b)`, so text and app
 output can never drift. Each side reports the same fields `get-activity`
-does for one activity: `pace_min_per_km`/`gap_min_per_km` as `m:ss` strings,
-training load (`icu_training_load`), decoupling, efficiency factor, and
-running-dynamics averages when the device recorded them. Differences are
-derived from each activity's raw distance/time/HR/cadence, never from the
-rounded or formatted per-side fields; the pace delta renders as a signed
-`m:ss` string plus the underlying seconds. A non-running activity on either
+does for one activity: `pace_min_per_km`/`gap_min_per_km` as `m:ss` strings
+(`gap_source: "intervals.icu"`), training load (`icu_training_load`),
+decoupling, efficiency factor, and running-dynamics averages when the
+device recorded them. Differences are derived from each activity's raw
+distance/time/HR/cadence, never from the rounded or formatted per-side
+fields; the pace delta renders as `pace_delta_min_per_km` (signed `m:ss`)
+plus `pace_delta_sec_per_km` (the underlying signed seconds) and
+`pace_delta_interpretation`. A non-running activity on either
 side degrades to a warning rather than failing the call. The app's stream
 overlay (`get-activity-streams-raw`) is still Strava-backed, pending Phase 4.
 
@@ -168,8 +172,11 @@ is interpolated between its known neighbours (held flat across a leading or
 trailing gap) rather than treated as zero; a null HR/cadence/velocity sample
 is simply excluded from whatever average it would have fed. Pace is a bare
 `m:ss` string in `pace_min_per_km`/`gap_pace_min_per_km`, the `/km` suffix
-added only in the text output; splits are kilometres only. An activity with
-no recorded
+added only in the text output; splits are kilometres only. GAP here is
+locally modelled from grade (`gap_source: "model"`), distinct from
+get-activity/compare-activities/get-activity-laps/get-running-summary's
+`gap_source: "intervals.icu"` (their own recorded `gap` field). An activity
+with no recorded
 streams at all (e.g. Pilates, or a manual entry) fails with a message naming
 the activity rather than an empty analysis.
 
@@ -255,7 +262,10 @@ roughly 3 to 60 minute efforts; a prediction outside that window, a marathon
 for instance, is still returned and flagged rather than hidden. `raceDistance`
 (optional) adds a km split table (even and negative-split) for that race, and
 `goalTime` paces it to a goal instead of the prediction. Output is km only, no
-mile paces or splits.
+mile paces or splits. Pace is a flat `pace_sec_per_km`/`pace_min_per_km` pair
+(bare `m:ss`), matching every other tool, wherever a prediction, the goal
+target, or a split row reports one; `units.distance` is `"m"`, matching the
+`distance_m` fields the response actually carries.
 
 ## Activity tools
 
