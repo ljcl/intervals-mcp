@@ -1,88 +1,132 @@
 import { z } from "zod";
 import {
-  getActivityById as fetchActivityById,
+  getActivity as fetchActivity,
+  type IntervalsActivity,
+  listGear,
   updateActivity as putActivity,
-} from "../stravaClient";
+} from "../intervalsClient";
 import {
+  type ActivityWriteChange,
+  buildActivityPatch,
+  type CurrentActivityFields,
   composeDescription,
-  SportTypeSchema,
-  type UpdateActivityParams,
+  describeGearOptions,
+  diffActivityWrite,
+  findGear,
+  isGearRetired,
 } from "../utils/activityWrite";
 import { WRITE_DESTRUCTIVE } from "./_annotations";
-import { stravaIdInput } from "./_ids";
+import { toolErrorText } from "./_errors";
+import { intervalsActivityIdInput } from "./_ids";
 import {
   ActivityWriteOutputSchema,
   toActivityWriteOutput,
   warnOnSchemaDrift,
 } from "./outputs";
 
-const UpdateActivityInputSchema = z.object({
-  activityId: stravaIdInput("The unique identifier of the activity to update."),
+const name = "update-activity";
+
+const description = `
+Updates an intervals.icu activity's name, description, gear, RPE, or feel.
+
+Reads the activity fresh, writes only the fields that actually differ from
+the current value in a single PUT (never retried, even on a 5xx), then
+re-reads fresh and echoes before/after values for every field that changed.
+
+Parameters:
+- id (required): the intervals.icu activity id, exactly as returned by list-activities
+- name (optional): new title
+- description (optional): text to set; descriptionMode controls how
+- descriptionMode (optional): "replace" (default) overwrites the existing description; "append" keeps it and adds the new text below it, separated by a blank line
+- gearId (optional): gear id to assign, from list-gear; an unknown id fails and lists the available gear ids and names; a retired gear id is accepted with a warning
+- rpe (optional): session RPE, integer 1 to 10, maps to icu_rpe
+- feel (optional): integer 1 to 5; on intervals.icu's scale 1 is the strongest feeling and 5 the weakest (to be confirmed by a live check)
+
+At least one of name, description, gearId, rpe, or feel is required.
+Gear can be switched but not cleared: intervals.icu ignores a null gear id.
+`;
+
+const inputSchema = z.object({
+  id: intervalsActivityIdInput("The intervals.icu activity id to update."),
   name: z.string().optional().describe("New activity title."),
   description: z
     .string()
     .optional()
     .describe("Description text to set or add to the activity."),
   descriptionMode: z
-    .enum(["append", "replace"])
+    .enum(["replace", "append"])
     .optional()
     .describe(
-      "How to apply `description`. 'append' (default) preserves the existing description and adds the new text below it; 'replace' overwrites it. Use 'append' when adding workout notes, 'replace' when rewriting.",
+      "How to apply `description`. 'replace' (default) overwrites the existing description; 'append' adds a blank line then the new text below it.",
     ),
-  sportType: SportTypeSchema.optional().describe(
-    "Strava sport type, e.g. 'Run', 'TrailRun', 'Ride'. The full set is published in this schema's enum.",
-  ),
-  gearId: z.string().optional().describe("Gear id to assign, e.g. 'g123456'."),
-  commute: z.boolean().optional().describe("Mark the activity as a commute."),
-  trainer: z
-    .boolean()
+  gearId: z
+    .string()
     .optional()
-    .describe("Mark the activity as a trainer/indoor activity."),
-  hideFromHome: z
-    .boolean()
+    .describe("Gear id to assign, e.g. 'g123456', from list-gear."),
+  rpe: z
+    .number()
+    .int()
+    .min(1)
+    .max(10)
     .optional()
-    .describe("Hide the activity from followers' home feeds."),
+    .describe("Session RPE, 1 (easiest) to 10 (hardest). Maps to icu_rpe."),
+  feel: z
+    .number()
+    .int()
+    .min(1)
+    .max(5)
+    .optional()
+    .describe(
+      "How the activity felt, 1 to 5 on intervals.icu's scale: 1 is the strongest feeling, 5 the weakest (to be confirmed by a live check).",
+    ),
 });
 
-type UpdateActivityInput = z.infer<typeof UpdateActivityInputSchema>;
+type UpdateActivityInput = z.infer<typeof inputSchema>;
+
+function toFields(activity: IntervalsActivity): CurrentActivityFields {
+  return {
+    name: activity.name ?? null,
+    description: activity.description ?? null,
+    gearId: activity.gear?.id ?? null,
+    rpe: activity.icu_rpe ?? null,
+    feel: activity.feel ?? null,
+  };
+}
+
+function formatChangeValue(value: string | number | null): string {
+  return value === null ? "nothing" : `"${value}"`;
+}
 
 export const updateActivityTool = {
-  name: "update-activity",
-  description:
-    "Updates an activity's title, description, sport type, gear, or flags (commute/trainer/hidden). " +
-    "Description defaults to append (adds to existing notes); pass descriptionMode 'replace' to overwrite. " +
-    "Requires the activity:write scope. Assign gear by passing a Strava gear id.",
-  inputSchema: UpdateActivityInputSchema,
+  name,
+  description,
+  inputSchema,
   annotations: WRITE_DESTRUCTIVE,
   outputSchema: ActivityWriteOutputSchema,
-  execute: async (input: UpdateActivityInput, token: string) => {
+  execute: async (input: UpdateActivityInput, apiKey: string) => {
     const {
-      activityId,
-      name,
-      description,
+      id,
+      name: newName,
+      description: newDescription,
       descriptionMode,
-      sportType,
       gearId,
-      commute,
-      trainer,
-      hideFromHome,
+      rpe,
+      feel,
     } = input;
 
     const hasMutation =
-      name !== undefined ||
-      description !== undefined ||
-      sportType !== undefined ||
+      newName !== undefined ||
+      newDescription !== undefined ||
       gearId !== undefined ||
-      commute !== undefined ||
-      trainer !== undefined ||
-      hideFromHome !== undefined;
+      rpe !== undefined ||
+      feel !== undefined;
 
     if (!hasMutation) {
       return {
         content: [
           {
             type: "text" as const,
-            text: "❌ Nothing to update: provide at least one of name, description, sportType, gearId, commute, trainer, or hideFromHome.",
+            text: "❌ Nothing to update: provide at least one of name, description, gearId, rpe, or feel.",
           },
         ],
         isError: true,
@@ -90,80 +134,122 @@ export const updateActivityTool = {
     }
 
     try {
-      // Resolve the description (append composition needs the current value).
-      let resolvedDescription: string | undefined;
-      let appliedMode: string | undefined;
-      if (description !== undefined) {
-        const mode = descriptionMode ?? "append";
-        appliedMode = mode;
-        if (mode === "append") {
-          // Read fresh: appending onto a stale cached description would drop
-          // edits made since the cache was populated.
-          const current = await fetchActivityById(token, activityId, {
-            skipCache: true,
-          });
-          resolvedDescription = composeDescription(
-            current.description,
-            description,
-            "append",
-          );
-        } else {
-          resolvedDescription = description;
+      let gearWarning: string | undefined;
+      let gearName: string | null | undefined;
+
+      if (gearId !== undefined) {
+        const gearList = await listGear(apiKey);
+        const match = findGear(gearId, gearList);
+        if (!match) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `❌ Unknown gear id "${gearId}" for activity ${id}. Available gear: ${describeGearOptions(gearList)}.`,
+              },
+            ],
+            isError: true,
+          };
+        }
+        gearName = match.name ?? null;
+        if (isGearRetired(match.retired)) {
+          gearWarning = `Gear ${match.id} (${gearName ?? "unnamed"}) is retired.`;
         }
       }
 
-      const updates: UpdateActivityParams = {
-        name,
-        description: resolvedDescription,
-        sportType,
-        gearId,
-        commute,
-        trainer,
-        hideFromHome,
-      };
+      // Fresh read: a cached description would be stale to append onto, and
+      // a cached gear/rpe/feel would make the "skip unchanged fields" patch
+      // wrong.
+      const before = await fetchActivity(apiKey, id, { skipCache: true });
+      const beforeFields = toFields(before);
 
-      const updated = await putActivity(token, activityId, updates);
+      const resolvedDescription =
+        newDescription !== undefined
+          ? composeDescription(
+              before.description,
+              newDescription,
+              descriptionMode ?? "replace",
+            )
+          : undefined;
 
-      const changed: string[] = [];
-      if (name !== undefined) changed.push(`name to "${updated.name}"`);
-      if (description !== undefined)
-        changed.push(`description (${appliedMode})`);
-      if (sportType !== undefined)
-        changed.push(`sport type to ${updated.sport_type}`);
-      if (gearId !== undefined)
-        changed.push(`gear to ${updated.gear?.name ?? gearId}`);
-      if (commute !== undefined) changed.push(`commute=${commute}`);
-      if (trainer !== undefined) changed.push(`trainer=${trainer}`);
-      if (hideFromHome !== undefined)
-        changed.push(`hideFromHome=${hideFromHome}`);
-
-      const structured = toActivityWriteOutput(updated);
-      warnOnSchemaDrift(
-        "update-activity",
-        ActivityWriteOutputSchema,
-        structured,
+      const patch = buildActivityPatch(
+        {
+          name: newName,
+          description: resolvedDescription,
+          gearId,
+          rpe,
+          feel,
+        },
+        beforeFields,
       );
+
+      if (Object.keys(patch).length === 0) {
+        const structured = toActivityWriteOutput(
+          before,
+          [],
+          gearWarning ? [gearWarning] : [],
+          gearName,
+        );
+        warnOnSchemaDrift(name, ActivityWriteOutputSchema, structured);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `No change: activity ${id} already matches the requested values.`,
+            },
+          ],
+          structuredContent: structured,
+        };
+      }
+
+      await putActivity(apiKey, id, patch);
+
+      // Fresh re-read: confirms what intervals.icu actually stored, rather
+      // than trusting the PUT response or the pre-write read.
+      const after = await fetchActivity(apiKey, id, { skipCache: true });
+      const afterFields = toFields(after);
+
+      const {
+        changes,
+        warnings,
+      }: {
+        changes: ActivityWriteChange[];
+        warnings: string[];
+      } = diffActivityWrite(patch, beforeFields, afterFields);
+      if (gearWarning) warnings.unshift(gearWarning);
+
+      const structured = toActivityWriteOutput(
+        after,
+        changes,
+        warnings,
+        gearName,
+      );
+      warnOnSchemaDrift(name, ActivityWriteOutputSchema, structured);
+
+      const summary = changes
+        .map((c) => `${c.field} to ${formatChangeValue(c.after)}`)
+        .join(", ");
+      const warningText =
+        warnings.length > 0 ? ` Warning: ${warnings.join(" ")}` : "";
 
       return {
         content: [
           {
             type: "text" as const,
-            text: `Updated activity ${activityId} ("${updated.name}"): ${changed.join(", ")}.`,
+            text: `Updated activity ${id} ("${after.name ?? id}"): ${summary}.${warningText}`,
           },
         ],
         structuredContent: structured,
       };
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const hint =
-        message.includes("401") || message.includes("Authorization")
-          ? " This may mean the activity:write scope is missing; re-authorize the app."
-          : "";
       return {
         content: [
           {
             type: "text" as const,
-            text: `❌ Failed to update activity ${activityId}: ${message}.${hint}`,
+            text: toolErrorText(error, {
+              context: `update activity ${id}`,
+              notFound: `Activity ${id} was not found.`,
+            }),
           },
         ],
         isError: true,

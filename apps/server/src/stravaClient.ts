@@ -5,10 +5,6 @@ import {
   RateLimitError,
   stravaApi,
 } from "./fetchClient";
-import {
-  buildUpdateActivityBody,
-  type UpdateActivityParams,
-} from "./utils/activityWrite";
 
 /**
  * Retired transitional client, pending the Phase 1/2 intervals.icu port.
@@ -798,61 +794,6 @@ export async function getActivityLaps(
     return await handleApiError<StravaLap[]>(
       error,
       `getActivityLaps(${activityId})`,
-    );
-  }
-}
-
-/**
- * Updates an activity's mutable fields (name, description, sport type, gear,
- * and flags). Only provided fields are sent. Requires the activity:write scope.
- *
- * @param accessToken - The Strava API access token.
- * @param activityId - The ID of the activity to update.
- * @param updates - The mutable fields to apply. `description` must already be
- *   resolved (append composition happens in the tool layer).
- * @returns The updated detailed activity.
- */
-export async function updateActivity(
-  accessToken: string,
-  activityId: number | string,
-  updates: UpdateActivityParams,
-): Promise<StravaDetailedActivity> {
-  if (!accessToken) {
-    throw new Error("Strava access token is required.");
-  }
-  if (!activityId) {
-    throw new Error("Activity ID is required to update an activity.");
-  }
-
-  const body = buildUpdateActivityBody(updates);
-
-  try {
-    const response = await stravaApi.put<unknown>(
-      `/activities/${activityId}`,
-      body,
-      {
-        headers: { "Content-Type": "application/json" },
-      },
-    );
-
-    const validationResult = ExtendedDetailedActivitySchema.safeParse(
-      response.data,
-    );
-
-    if (!validationResult.success) {
-      console.error(
-        `Strava API validation failed (updateActivity: ${activityId}):`,
-        validationResult.error,
-      );
-      throw new Error(
-        `Invalid data format received from Strava API: ${validationResult.error.message}`,
-      );
-    }
-    return validationResult.data;
-  } catch (error) {
-    return await handleApiError<StravaDetailedActivity>(
-      error,
-      `updateActivity for ID ${activityId}`,
     );
   }
 }

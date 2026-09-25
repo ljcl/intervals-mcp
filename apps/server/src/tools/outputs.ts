@@ -453,48 +453,68 @@ export const ActivityZonesOutputSchema = z.object({
 
 /** Minimal slice of a written activity the mapper reads. */
 interface WrittenActivityLike {
-  id: string | number;
-  name: string;
-  sport_type?: string | null;
-  type?: string | null;
-  start_date_local?: string | null;
-  distance?: number | null;
-  elapsed_time?: number | null;
+  id: string;
+  name?: string | null;
   description?: string | null;
-  gear_id?: string | null;
-  commute?: boolean | null;
-  trainer?: boolean | null;
+  gear?: { id?: string | null; name?: string | null } | null;
+  icu_rpe?: number | null;
+  feel?: number | null;
 }
 
-/** Both write tools return the activity Strava echoed back, in one shape. */
-export function toActivityWriteOutput(activity: WrittenActivityLike) {
+/** One field update-activity changed, echoing the pre-write and post-write
+ * values (the post-write value comes from a fresh re-read). */
+const ActivityWriteChangeSchema = z.object({
+  field: z.string(),
+  before: z.union([z.string(), z.number(), z.null()]),
+  after: z.union([z.string(), z.number(), z.null()]),
+});
+
+/**
+ * update-activity's structured output: the activity as freshly re-read after
+ * the write, the fields that actually changed, and any warnings (e.g. a
+ * field whose re-read value does not match what was sent).
+ *
+ * `gearName` is passed separately because the activity payload never carries
+ * the assigned gear's name (`gear.name` is always `null`; see
+ * docs/api-notes.md). update-activity resolves it from `list-gear` when
+ * `gearId` was part of the request.
+ */
+export function toActivityWriteOutput(
+  activity: WrittenActivityLike,
+  changes: {
+    field: string;
+    before: string | number | null;
+    after: string | number | null;
+  }[],
+  warnings: string[],
+  gearName?: string | null,
+) {
   return {
     activity_id: activity.id,
-    name: activity.name,
-    sport_type: activity.sport_type ?? activity.type ?? null,
-    start_date_local: activity.start_date_local ?? null,
-    distance_m: activity.distance ?? null,
-    elapsed_time_s: activity.elapsed_time ?? null,
+    name: activity.name ?? null,
     description: activity.description ?? null,
-    gear_id: activity.gear_id ?? null,
-    commute: activity.commute ?? null,
-    trainer: activity.trainer ?? null,
-    url: `https://www.strava.com/activities/${activity.id}`,
+    gear_id: activity.gear?.id ?? null,
+    gear_name:
+      gearName !== undefined ? gearName : (activity.gear?.name ?? null),
+    rpe: activity.icu_rpe ?? null,
+    feel: activity.feel ?? null,
+    changes,
+    warnings,
+    url: `https://intervals.icu/activities/${activity.id}`,
   };
 }
 
 export const ActivityWriteOutputSchema = z.object({
-  activity_id: z.union([z.string(), z.number()]),
-  name: z.string(),
-  sport_type: z.string().nullable(),
-  start_date_local: z.string().nullable(),
-  distance_m: z.number().nullable(),
-  elapsed_time_s: z.number().int().nullable(),
+  activity_id: z.string(),
+  name: z.string().nullable(),
   description: z.string().nullable(),
   gear_id: z.string().nullable(),
-  commute: z.boolean().nullable(),
-  trainer: z.boolean().nullable(),
-  url: z.string().describe("Strava web URL for the activity"),
+  gear_name: z.string().nullable(),
+  rpe: z.number().nullable(),
+  feel: z.number().nullable(),
+  changes: z.array(ActivityWriteChangeSchema),
+  warnings: z.array(z.string()),
+  url: z.string().describe("intervals.icu web URL for the activity"),
 });
 
 // ---------- get-split-analysis ----------

@@ -9,12 +9,11 @@ identity, so renames or schema reshapes re-prompt every user. See
 [architecture.md](architecture.md#tool-metadata) before changing either.
 
 > **Status.** Tools are being ported from Strava to intervals.icu (Phases 1
-> through 3). Sixteen of the eighteen tools below are ported and verified
-> against a real account; `get-fitness-trend` and `get-training-load` are
-> ported but not yet live-verified (planned for a later task). Still
-> Strava-backed, and failing with a "not yet ported" error until a later
-> phase: `update-activity` and the remaining Phase 4 `view-*`/`get-*-data`
-> app tools (see [Activity tools](#activity-tools) and
+> through 3). Sixteen of the nineteen tools below are ported and verified
+> against a real account; `get-fitness-trend`, `get-training-load`, and
+> `update-activity` are ported but not yet live-verified (planned for a
+> later task). Still Strava-backed, and failing with a "not yet ported"
+> error until Phase 4: the remaining `view-*`/`get-*-data` app tools (see
 > [Visualization tools](#visualization-tools)).
 
 ## intervals.icu tools
@@ -42,6 +41,7 @@ Strava port.
 | `get-athlete-stats` | Run totals (this week, last 4 weeks, this month, YTD) aggregated from list-activities data |
 | `get-fitness-trend` | Fitness/fatigue/form (CTL/ATL/TSB), whole-body from intervals.icu wellness or run-only computed locally, with rest/planned-load projection and a solved taper to a target form on a target date |
 | `get-training-load` | Weekly running volume and injury-risk warnings, weekly intervals.icu training load and the types it covers, plus current CTL/ATL/TSB |
+| `update-activity` | Update an activity's name, description, gear, RPE, or feel, echoing before/after values (write tool) |
 
 `list-activities` defaults to the last 28 days (today back to 27 days
 earlier) in the server's configured time zone, sorted newest first. Filter
@@ -326,13 +326,22 @@ helper `get-athlete-stats` uses). Time is reported both ways: `time_s`
 (seconds, matching `units.time_s`) and `time_hours` (matching
 `units.time_hours`), per week and in `totals`.
 
-## Activity tools
-
-Still Strava-backed; not yet ported to intervals.icu (Phase 3+).
-
-| Tool | Description |
-| ---- | ----------- |
-| `update-activity` | Update an activity's description, title, sport type, gear, or flags |
+`update-activity` changes an activity's name, description, gear, RPE
+(`icu_rpe`), or feel. It always does a fresh read first (bypassing the
+cache), writes only the fields that differ from the current value in a
+single PUT, never retried even on a 5xx, then does a fresh re-read and
+reports `changes: [{ field, before, after }]` for exactly the fields that
+were sent. `descriptionMode` defaults to `replace` (overwrites); `append`
+keeps the existing text and adds the new text below it, separated by a
+blank line. `gearId` is validated against `list-gear`: an unknown id fails
+and lists the available gear ids and names; a retired gear id is accepted
+with a warning. Gear can be switched but not cleared; intervals.icu ignores
+a null gear id (docs/api-notes.md). `feel` is 1 to 5 on intervals.icu's
+scale, 1 the strongest feeling and 5 the weakest (to be confirmed by a live
+check). A request with nothing left to change after diffing against the
+current activity reports "no change" and sends no PUT. Any field whose
+re-read value does not match what was sent (e.g. gear not applied) adds a
+warning rather than failing the call.
 
 ## Visualization tools
 
@@ -371,7 +380,7 @@ Reusable multi-step workflows a host can offer as slash commands or starters.
 
 In Claude Desktop and Claude Code these appear in the prompt picker once the
 server is connected. `annotate-last-run` uses a write tool (`update-activity`),
-so it needs the `activity:write` scope.
+so a client needs to grant it before the prompt can write the note.
 
 ## Tool permissions
 
