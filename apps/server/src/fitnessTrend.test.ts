@@ -12,6 +12,7 @@ import {
   type FitnessTrendLoadDay,
   FRESH_TSB,
   MAX_TAPER_DAILY_LOAD,
+  projectFromWellness,
   RAMP_RISK_PER_WEEK,
   RECENT_LOAD_DAYS,
   recentDailyLoad,
@@ -659,5 +660,112 @@ describe("computeFlags", () => {
 
   it("returns nothing for an empty series", () => {
     expect(computeFlags([])).toEqual([]);
+  });
+});
+
+describe("projectFromWellness", () => {
+  const ASOF = "2026-08-17";
+  const ENDDATE = "2026-08-19"; // 2 unsynced days past asOfDate
+  const SEED = { ctl: 60, atl: 40 };
+  const series: FitnessTrendDay[] = [
+    {
+      date: ASOF,
+      load: 80,
+      ctl: SEED.ctl,
+      atl: SEED.atl,
+      tsb: SEED.ctl - SEED.atl,
+    },
+  ];
+
+  it("gives an empty projection when projectDays is 0, even with unsynced days", () => {
+    const result = projectFromWellness(
+      { series, seed: SEED, asOfDate: ASOF, endDate: ENDDATE },
+      { projectDays: 0 },
+    );
+    expect(result.projection).toEqual([]);
+    expect(result.tsbPositiveDate).toBeNull();
+    expect(result.taper).toBeNull();
+    expect(result.unsyncedDays).toBe(2);
+  });
+
+  it("returns null for everything when there is no seed", () => {
+    const result = projectFromWellness(
+      { series: [], seed: null, asOfDate: null, endDate: ENDDATE },
+      { projectDays: 14 },
+    );
+    expect(result).toEqual({
+      projection: [],
+      tsbPositiveDate: null,
+      taper: null,
+      unsyncedDays: 0,
+      warnings: [],
+    });
+  });
+
+  it("anchors a taper at endDate, not asOfDate, rolling unsynced days forward as rest", () => {
+    const targetDate = addDays(ENDDATE, 21);
+    const result = projectFromWellness(
+      { series, seed: SEED, asOfDate: ASOF, endDate: ENDDATE },
+      { projectDays: 0, taper: { targetDate, targetTsb: 10 } },
+    );
+    expect(result.taper).not.toBeNull();
+    // Anchored at ENDDATE: the plan should run exactly 21 days, not 23 (which
+    // anchoring at ASOF, 2 days earlier, would have produced).
+    expect(result.taper!.days).toHaveLength(21);
+    expect(result.taper!.days[0]!.date).toBe(addDays(ENDDATE, 1));
+
+    const direct = solveTaperPlan(
+      SEED,
+      ASOF,
+      { targetDate: addDays(ASOF, 23), targetTsb: 10 },
+      recentDailyLoad(series, RECENT_LOAD_DAYS),
+    );
+    // A taper solved directly from ASOF over 23 days (2 unsynced + 21
+    // requested) lands on the same target date and should reach the same
+    // achieved TSB as the anchored-at-ENDDATE solve, since 2 rest days
+    // change CTL/ATL identically whether folded into the taper solve itself
+    // or rolled forward first.
+    expect(result.taper!.achieved_tsb).toBeCloseTo(direct.achieved_tsb, 5);
+  });
+
+  it("warns that plannedLoads is dropped when a taper is requested", () => {
+    const targetDate = addDays(ENDDATE, 21);
+    const result = projectFromWellness(
+      { series, seed: SEED, asOfDate: ASOF, endDate: ENDDATE },
+      {
+        projectDays: 0,
+        plannedLoads: [{ date: addDays(ENDDATE, 3), load: 50 }],
+        taper: { targetDate, targetTsb: 10 },
+      },
+    );
+    expect(result.warnings).toContainEqual(
+      expect.stringContaining("plannedLoads"),
+    );
+  });
+
+  it("does not warn about plannedLoads when no taper is requested", () => {
+    const result = projectFromWellness(
+      { series, seed: SEED, asOfDate: ASOF, endDate: ENDDATE },
+      {
+        projectDays: 10,
+        plannedLoads: [{ date: addDays(ENDDATE, 3), load: 50 }],
+      },
+    );
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("tsbPositiveDate never lands before endDate + 1", () => {
+    const result = projectFromWellness(
+      {
+        series,
+        seed: { ctl: 20, atl: 80 },
+        asOfDate: ENDDATE,
+        endDate: ENDDATE,
+      },
+      { projectDays: 30 },
+    );
+    if (result.tsbPositiveDate !== null) {
+      expect(result.tsbPositiveDate > ENDDATE).toBe(true);
+    }
   });
 });

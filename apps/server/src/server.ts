@@ -22,15 +22,10 @@ import { RateLimitError } from "./fetchClient";
 import {
   buildRunOnlyFitnessTrend,
   computeFlags,
-  daysBetween,
   type FitnessTrendResult,
-  projectLoads,
-  RECENT_LOAD_DAYS,
+  projectFromWellness,
   RUN_ONLY_RUNWAY_DAYS,
   RUN_TYPES,
-  recentDailyLoad,
-  solveTaperPlan,
-  type TaperPlan,
   trendBands,
 } from "./fitnessTrend";
 import {
@@ -997,33 +992,16 @@ async function loadFitnessTrendAppData(
   });
   const current = series.length > 0 ? series[series.length - 1]! : null;
 
-  let projection: FitnessTrendResult["projection"] = [];
-  let tsbPositiveDate: string | null = null;
-  let taper: TaperPlan | null = null;
-  if (seed && asOfDate) {
-    const firstProjectedDate = addDays(asOfDate, 1);
-    if (targetDate) {
-      taper = solveTaperPlan(
-        seed,
-        asOfDate,
-        { targetDate, targetTsb },
-        recentDailyLoad(series, RECENT_LOAD_DAYS),
-      );
-    } else {
-      // The projection always ends at endDate + projectDays, regardless of
-      // how far as_of trails endDate (see getFitnessTrend.ts): the unsynced
-      // days in between are projected as rest, same as `projectDays` days
-      // meaning "N days past today", not "N days past as_of".
-      const totalProjectDays = daysBetween(asOfDate, endDate) + projectDays;
-      const projected = projectLoads(
-        seed,
-        firstProjectedDate,
-        Array.from({ length: totalProjectDays }, () => 0),
-      );
-      projection = projected.days;
-      tsbPositiveDate = projected.tsbPositiveDate;
-    }
-  }
+  const projected = projectFromWellness(
+    { series, seed, asOfDate, endDate },
+    {
+      projectDays,
+      taper: targetDate ? { targetDate, targetTsb } : undefined,
+    },
+  );
+  const projection = projected.projection;
+  const tsbPositiveDate = projected.tsbPositiveDate;
+  const taper = projected.taper;
 
   const trend: FitnessTrendResult = {
     days: series,

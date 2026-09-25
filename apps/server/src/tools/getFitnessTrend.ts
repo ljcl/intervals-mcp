@@ -6,13 +6,9 @@ import {
   daysBetween,
   type FitnessTrendDay,
   type PlannedLoad,
-  projectLoads,
-  RECENT_LOAD_DAYS,
+  projectFromWellness,
   RUN_ONLY_RUNWAY_DAYS,
   RUN_TYPES,
-  recentDailyLoad,
-  resolvePlannedLoads,
-  solveTaperPlan,
   type TaperPlan,
   type TaperWeek,
   trendBands,
@@ -341,53 +337,21 @@ export const getFitnessTrendTool = {
         // wellness that has not synced yet, not a zero-load day. Always the
         // trailing slice of `gapDates` below, so it is folded into that one
         // warning rather than reported a second time.
-        const unsyncedDays =
-          seed && asOfDate ? daysBetween(asOfDate, endDate) : 0;
+        const projected = projectFromWellness(
+          { series, seed, asOfDate, endDate },
+          {
+            projectDays: resolvedProjectDays,
+            plannedLoads: typedPlannedLoads,
+            taper: targetDate ? { targetDate, targetTsb } : undefined,
+          },
+        );
+        projection = projected.projection;
+        tsbPositiveDate = projected.tsbPositiveDate;
+        taper = projected.taper;
+        warnings.push(...projected.warnings);
+        const unsyncedDays = projected.unsyncedDays;
 
-        if (seed && asOfDate) {
-          const firstProjectedDate = addDays(asOfDate, 1);
-          if (targetDate) {
-            taper = solveTaperPlan(
-              seed,
-              asOfDate,
-              { targetDate, targetTsb },
-              recentDailyLoad(series, RECENT_LOAD_DAYS),
-            );
-            projection = [];
-            tsbPositiveDate = null;
-          } else if (resolvedProjectDays > 0) {
-            // The projection always ends at endDate + resolvedProjectDays,
-            // regardless of how far as_of trails endDate: the unsynced days
-            // in between (as_of+1..endDate) are projected as rest, then the
-            // actual projectDays continue past endDate; an explicit
-            // projectDays always means "N days past today", not "N days
-            // past as_of".
-            const totalProjectDays = unsyncedDays + resolvedProjectDays;
-            const futurePlannedLoads = typedPlannedLoads?.filter(
-              (p) => p.date > endDate,
-            );
-            const loads = resolvePlannedLoads(
-              firstProjectedDate,
-              totalProjectDays,
-              futurePlannedLoads,
-            );
-            const projected = projectLoads(seed, firstProjectedDate, loads);
-            projection = projected.days;
-            tsbPositiveDate = projected.tsbPositiveDate;
-            taper = null;
-          } else {
-            // No projection or planned loads were asked for: leave the
-            // trailing unsynced days as the gap they are, rather than
-            // silently filling them with an assumed-rest projection nothing
-            // requested and the text output would then hide.
-            projection = [];
-            tsbPositiveDate = null;
-            taper = null;
-          }
-        } else {
-          projection = [];
-          tsbPositiveDate = null;
-          taper = null;
+        if (!seed || !asOfDate) {
           if (targetDate || resolvedProjectDays > 0) {
             warnings.push(
               "No wellness CTL/ATL is available in the window, so there is nothing to project or solve a taper from.",

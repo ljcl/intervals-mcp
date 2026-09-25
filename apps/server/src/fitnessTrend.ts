@@ -469,6 +469,132 @@ export function solveTaperPlan(
   };
 }
 
+/** Read-then-solve series from `loadWellnessFitnessSeries`, whole-body only. */
+export interface ProjectFromWellnessInput {
+  series: FitnessTrendDay[];
+  /** Raw (unrounded) CTL/ATL to roll forward from; null when there is no usable data. */
+  seed: { ctl: number; atl: number } | null;
+  /** Date `seed` came from, the most recent day with a recorded CTL/ATL. */
+  asOfDate: string | null;
+  /** Today, in the caller's configured time zone. */
+  endDate: string;
+}
+
+export interface ProjectFromWellnessOptions {
+  /** Days to project past `endDate`; 0 (or a `taper` request) means no projection. */
+  projectDays: number;
+  plannedLoads?: PlannedLoads;
+  taper?: TaperRequest;
+}
+
+export interface ProjectFromWellnessResult {
+  projection: FitnessTrendDay[];
+  tsbPositiveDate: string | null;
+  taper: TaperPlan | null;
+  /** Days between `asOfDate` and `endDate` not yet synced, rolled forward as rest. */
+  unsyncedDays: number;
+  /** e.g. plannedLoads dropped because a taper was solved instead. */
+  warnings: string[];
+}
+
+/**
+ * Whole-body projection/taper, shared by `get-fitness-trend`'s whole-body
+ * path and the fitness-trend MCP App's data handler (see AGENTS.md's
+ * "derived numbers have exactly one home") so the two surfaces cannot drift
+ * the way they used to: a `projectDays: 0` request now always yields an
+ * empty projection in both (previously the app kept rolling any unsynced
+ * days forward as a "catch-up" projection even when none was asked for,
+ * which could also surface a `tsbPositiveDate` that had already passed), and
+ * a taper is always solved from `endDate` ("today"), never from `asOfDate`,
+ * with any unsynced days between the two rolled forward as rest first, the
+ * same catch-up rest days the projection uses, so the taper's day count
+ * does not shrink just because wellness has not synced yet.
+ */
+export function projectFromWellness(
+  input: ProjectFromWellnessInput,
+  options: ProjectFromWellnessOptions,
+): ProjectFromWellnessResult {
+  const { series, seed, asOfDate, endDate } = input;
+  const { projectDays, plannedLoads, taper } = options;
+  const warnings: string[] = [];
+
+  if (!seed || !asOfDate) {
+    return {
+      projection: [],
+      tsbPositiveDate: null,
+      taper: null,
+      unsyncedDays: 0,
+      warnings,
+    };
+  }
+
+  const unsyncedDays = daysBetween(asOfDate, endDate);
+  const firstProjectedDate = addDays(asOfDate, 1);
+
+  if (taper) {
+    if (plannedLoads && plannedLoads.length > 0) {
+      warnings.push(
+        "plannedLoads is ignored: a targetDate taper plan is solved instead of a projection.",
+      );
+    }
+    // Roll any unsynced days forward as rest so the solve is anchored at
+    // `endDate` ("today"), matching the projection below, rather than at
+    // whatever day wellness last synced.
+    const todaySeed =
+      unsyncedDays > 0
+        ? projectLoads(
+            seed,
+            firstProjectedDate,
+            new Array(unsyncedDays).fill(0),
+          ).days.at(-1)!
+        : seed;
+    return {
+      projection: [],
+      tsbPositiveDate: null,
+      taper: solveTaperPlan(
+        { ctl: todaySeed.ctl, atl: todaySeed.atl },
+        endDate,
+        taper,
+        recentDailyLoad(series, RECENT_LOAD_DAYS),
+      ),
+      unsyncedDays,
+      warnings,
+    };
+  }
+
+  if (projectDays <= 0) {
+    return {
+      projection: [],
+      tsbPositiveDate: null,
+      taper: null,
+      unsyncedDays,
+      warnings,
+    };
+  }
+
+  // The projection always ends at endDate + projectDays, regardless of how
+  // far as_of trails endDate: the unsynced days in between are projected as
+  // rest, then the actual projectDays continue past endDate. An explicit
+  // projectDays always means "N days past today", not "N days past as_of".
+  const totalProjectDays = unsyncedDays + projectDays;
+  const futurePlannedLoads = (
+    plannedLoads as PlannedLoad[] | undefined
+  )?.filter((p) => p.date > endDate);
+  const loads = resolvePlannedLoads(
+    firstProjectedDate,
+    totalProjectDays,
+    futurePlannedLoads,
+  );
+  const projected = projectLoads(seed, firstProjectedDate, loads);
+  return {
+    projection: projected.days,
+    tsbPositiveDate: projected.tsbPositiveDate,
+    taper: null,
+    unsyncedDays,
+    warnings,
+  };
+}
+
 const signedRound1 = (value: number) => {
   const rounded = round1(value);
   return `${rounded >= 0 ? "+" : ""}${rounded}`;

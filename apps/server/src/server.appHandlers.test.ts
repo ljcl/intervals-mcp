@@ -554,6 +554,104 @@ describe("fitness trend handlers", () => {
     expect(mockedWellness).not.toHaveBeenCalled();
     expect(mockedIntervalsList).not.toHaveBeenCalled();
   });
+
+  it("get-fitness-trend and get-fitness-trend-data agree on current, projection, and taper (#projectFromWellness)", async () => {
+    const targetDate = inDays(21);
+
+    mockedWellness.mockResolvedValueOnce(wellnessSeries(TODAY, 91, 21, 80));
+    mockedIntervalsList.mockResolvedValueOnce([]);
+    const appResult = await dispatchToolCall("get-fitness-trend-data", {
+      projectDays: 14,
+    });
+    const appData = JSON.parse(appResult.content[0]?.text ?? "");
+
+    mockedWellness.mockResolvedValueOnce(wellnessSeries(TODAY, 91, 21, 80));
+    mockedIntervalsList.mockResolvedValueOnce([]);
+    const textResult = await dispatchToolCall("get-fitness-trend", {
+      projectDays: 14,
+    });
+    const textData = textResult.structuredContent as {
+      current: { date: string; ctl: number; atl: number; tsb: number };
+      projection: { date: string; ctl: number; atl: number; tsb: number }[];
+    };
+
+    expect(textData.current?.ctl).toBeCloseTo(appData.current.ctl, 5);
+    expect(textData.current?.atl).toBeCloseTo(appData.current.atl, 5);
+    expect(textData.current?.tsb).toBeCloseTo(appData.current.tsb, 5);
+    expect(textData.projection).toHaveLength(appData.projection.length);
+    expect(textData.projection.at(-1)?.tsb).toBeCloseTo(
+      appData.projection.at(-1)!.tsb,
+      5,
+    );
+
+    mockedWellness.mockResolvedValueOnce(wellnessSeries(TODAY, 91, 21, 80));
+    mockedIntervalsList.mockResolvedValueOnce([]);
+    const appTaperResult = await dispatchToolCall("get-fitness-trend-data", {
+      targetDate,
+      targetTsb: 12,
+    });
+    const appTaper = JSON.parse(appTaperResult.content[0]?.text ?? "").taper;
+
+    mockedWellness.mockResolvedValueOnce(wellnessSeries(TODAY, 91, 21, 80));
+    mockedIntervalsList.mockResolvedValueOnce([]);
+    const textTaperResult = await dispatchToolCall("get-fitness-trend", {
+      targetDate,
+      targetTsb: 12,
+    });
+    const textTaper = (
+      textTaperResult.structuredContent as {
+        taper: { target_date: string; achieved_tsb: number };
+      }
+    ).taper;
+
+    expect(textTaper.target_date).toBe(appTaper.targetDate);
+    expect(textTaper.achieved_tsb).toBeCloseTo(appTaper.achievedTsb, 5);
+  });
+
+  it("projectDays: 0 gives an empty projection in both, even with unsynced wellness days (#catch-up bug)", async () => {
+    // Drop the trailing 2 synced days so asOfDate trails endDate (TODAY) by
+    // 2 unsynced days, the shape that used to make the app keep rolling a
+    // "catch-up" projection forward even when projectDays: 0 asked for none.
+    const gapped = wellnessSeries(TODAY, 91, 21, 80).slice(0, -2);
+
+    mockedWellness.mockResolvedValueOnce(gapped);
+    mockedIntervalsList.mockResolvedValueOnce([]);
+    const appResult = await dispatchToolCall("get-fitness-trend-data", {
+      projectDays: 0,
+    });
+    const appData = JSON.parse(appResult.content[0]?.text ?? "");
+    expect(appData.projection).toEqual([]);
+    expect(appData.tsbPositiveDate).toBeNull();
+
+    mockedWellness.mockResolvedValueOnce(gapped);
+    mockedIntervalsList.mockResolvedValueOnce([]);
+    const textResult = await dispatchToolCall("get-fitness-trend", {
+      projectDays: 0,
+    });
+    const textData = textResult.structuredContent as {
+      projection: unknown[];
+      tsb_positive_date: string | null;
+    };
+    expect(textData.projection).toEqual([]);
+    expect(textData.tsb_positive_date).toBeNull();
+  });
+
+  it("tsbPositiveDate is never in the past", async () => {
+    // A fully-synced series (asOfDate === TODAY) with heavy recent load, so
+    // TSB is well negative today; the projection should only ever cross
+    // positive on a date after TODAY.
+    mockedWellness.mockResolvedValueOnce(wellnessSeries(TODAY, 91, 21, 200));
+    mockedIntervalsList.mockResolvedValueOnce([]);
+
+    const result = await dispatchToolCall("get-fitness-trend-data", {
+      projectDays: 60,
+    });
+    const data = JSON.parse(result.content[0]?.text ?? "");
+
+    if (data.tsbPositiveDate !== null) {
+      expect(data.tsbPositiveDate > TODAY).toBe(true);
+    }
+  });
 });
 
 describe("route map handlers", () => {
