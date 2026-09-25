@@ -6,12 +6,11 @@ import {
   computeFlags,
   DEEP_FATIGUE_DAYS,
   DEEP_FATIGUE_TSB,
-  dailyLoads,
-  daysBetween,
-  type FitnessTrendActivity,
   type FitnessTrendDay,
+  type FitnessTrendLoadDay,
   FRESH_TSB,
   MAX_TAPER_DAILY_LOAD,
+  projectFromWellness,
   RAMP_RISK_PER_WEEK,
   RECENT_LOAD_DAYS,
   recentDailyLoad,
@@ -20,54 +19,59 @@ import {
   taperWeekWeights,
   trendBands,
 } from "./fitnessTrend";
+import { addDays } from "./utils/localDate";
 
-function activity(
-  date: string,
-  sufferScore: number | null | undefined,
-): FitnessTrendActivity {
-  return {
-    start_date: `${date}T20:00:00Z`,
-    start_date_local: `${date}T06:00:00`,
-    suffer_score: sufferScore,
-  };
+type LoadOverride = number | [ctlLoad: number, atlLoad: number];
+
+/**
+ * Build `count` consecutive days ending on `endDate`, defaulting to zero
+ * load, with `overrides` setting specific dates (a single number feeds both
+ * series; a `[ctlLoad, atlLoad]` tuple splits them).
+ */
+function window(
+  endDate: string,
+  count: number,
+  overrides: Record<string, LoadOverride> = {},
+): FitnessTrendLoadDay[] {
+  const start = addDays(endDate, -(count - 1));
+  return Array.from({ length: count }, (_, i) => {
+    const date = addDays(start, i);
+    const override = overrides[date];
+    const [ctlLoad, atlLoad] = Array.isArray(override)
+      ? override
+      : [override ?? 0, override ?? 0];
+    return { date, ctlLoad, atlLoad };
+  });
 }
 
-describe("dailyLoads", () => {
-  it("sums multiple activities on the same local day", () => {
-    const loads = dailyLoads([
-      activity("2026-07-01", 40),
-      activity("2026-07-01", 25),
-      activity("2026-07-02", 10),
-    ]);
-    expect(loads.get("2026-07-01")).toBe(65);
-    expect(loads.get("2026-07-02")).toBe(10);
-  });
+/** `load` on every one of `count` consecutive days ending on `endDate`. */
+function constantWindow(
+  endDate: string,
+  count: number,
+  load: number,
+): FitnessTrendLoadDay[] {
+  const start = addDays(endDate, -(count - 1));
+  return Array.from({ length: count }, (_, i) => ({
+    date: addDays(start, i),
+    ctlLoad: load,
+    atlLoad: load,
+  }));
+}
 
-  it("uses the local date, not the UTC date", () => {
-    // start_date is late UTC on the 1st but start_date_local is the 2nd.
-    const loads = dailyLoads([
-      {
-        start_date: "2026-07-01T22:00:00Z",
-        start_date_local: "2026-07-02T08:00:00",
-        suffer_score: 30,
-      },
-    ]);
-    expect(loads.get("2026-07-02")).toBe(30);
-    expect(loads.has("2026-07-01")).toBe(false);
-  });
-
-  it("treats a missing suffer_score as zero load", () => {
-    const loads = dailyLoads([
-      activity("2026-07-01", null),
-      activity("2026-07-01", undefined),
-    ]);
-    expect(loads.get("2026-07-01")).toBe(0);
-  });
-});
+/** `load` on each of `count` consecutive days starting `startDate`. */
+function rangeLoads(
+  startDate: string,
+  count: number,
+  load: number,
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (let i = 0; i < count; i++) out[addDays(startDate, i)] = load;
+  return out;
+}
 
 describe("buildFitnessTrend", () => {
-  it("returns an all-zero series with no activities", () => {
-    const trend = buildFitnessTrend([], { endDate: "2026-07-10", days: 5 });
+  it("returns an all-zero series with an all-zero input", () => {
+    const trend = buildFitnessTrend({ days: window("2026-07-10", 5) });
     expect(trend.days).toHaveLength(5);
     expect(trend.days[0]!.date).toBe("2026-07-06");
     expect(trend.days[4]!.date).toBe("2026-07-10");
@@ -78,16 +82,17 @@ describe("buildFitnessTrend", () => {
     expect(trend.flags).toEqual([]);
   });
 
+  it("returns an empty result for an empty input", () => {
+    const trend = buildFitnessTrend({ days: [] });
+    expect(trend.days).toEqual([]);
+    expect(trend.current).toBeNull();
+    expect(trend.projection).toEqual([]);
+    expect(trend.taper).toBeNull();
+  });
+
   it("converges CTL and ATL toward a constant daily load", () => {
-    const activities: FitnessTrendActivity[] = [];
-    for (let i = 0; i < 300; i++) {
-      const d = new Date(Date.UTC(2025, 8, 1));
-      d.setUTCDate(d.getUTCDate() + i);
-      activities.push(activity(d.toISOString().split("T")[0]!, 50));
-    }
-    const trend = buildFitnessTrend(activities, {
-      endDate: "2026-06-27",
-      days: 300,
+    const trend = buildFitnessTrend({
+      days: constantWindow("2026-06-27", 300, 50),
     });
     const current = trend.current!;
     expect(current.ctl).toBeCloseTo(50, 0);
@@ -96,9 +101,8 @@ describe("buildFitnessTrend", () => {
   });
 
   it("responds faster in ATL than CTL after a big day", () => {
-    const trend = buildFitnessTrend([activity("2026-07-09", 100)], {
-      endDate: "2026-07-10",
-      days: 30,
+    const trend = buildFitnessTrend({
+      days: window("2026-07-10", 30, { "2026-07-09": 100 }),
     });
     const bigDay = trend.days.find((d) => d.date === "2026-07-09")!;
     // First responses: load * (1 − e^(−1/tc)).
@@ -115,9 +119,8 @@ describe("buildFitnessTrend", () => {
   });
 
   it("decays both curves through rest days", () => {
-    const trend = buildFitnessTrend([activity("2026-07-01", 80)], {
-      endDate: "2026-07-10",
-      days: 20,
+    const trend = buildFitnessTrend({
+      days: window("2026-07-10", 20, { "2026-07-01": 80 }),
     });
     const loaded = trend.days.find((d) => d.date === "2026-07-01")!;
     const later = trend.days.find((d) => d.date === "2026-07-08")!;
@@ -129,16 +132,10 @@ describe("buildFitnessTrend", () => {
 
   it("projects zero-load decay and finds the TSB-positive date", () => {
     // Heavy recent week on top of little background: negative TSB now.
-    const activities: FitnessTrendActivity[] = [];
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(Date.UTC(2026, 6, 4 + i));
-      activities.push(activity(d.toISOString().split("T")[0]!, 120));
-    }
-    const trend = buildFitnessTrend(activities, {
-      endDate: "2026-07-10",
-      days: 60,
-      projectDays: 21,
-    });
+    const trend = buildFitnessTrend(
+      { days: window("2026-07-10", 60, rangeLoads("2026-07-04", 7, 120)) },
+      { projectDays: 21 },
+    );
     expect(trend.current!.tsb).toBeLessThan(0);
     expect(trend.projection).toHaveLength(21);
     expect(trend.projection[0]!.date).toBe("2026-07-11");
@@ -154,50 +151,154 @@ describe("buildFitnessTrend", () => {
   });
 
   it("returns null tsbPositiveDate when the projection stays negative", () => {
-    const activities: FitnessTrendActivity[] = [];
-    for (let i = 0; i < 5; i++) {
-      const d = new Date(Date.UTC(2026, 6, 6 + i));
-      activities.push(activity(d.toISOString().split("T")[0]!, 200));
-    }
-    const trend = buildFitnessTrend(activities, {
-      endDate: "2026-07-10",
-      days: 30,
-      projectDays: 2,
-    });
+    const trend = buildFitnessTrend(
+      { days: window("2026-07-10", 30, rangeLoads("2026-07-06", 5, 200)) },
+      { projectDays: 2 },
+    );
     expect(trend.current!.tsb).toBeLessThan(0);
     expect(trend.tsbPositiveDate).toBeNull();
   });
 });
 
+describe("exact reproduction of the 42/7 recurrence", () => {
+  const CTL_DECAY = Math.exp(-1 / CTL_TIME_CONSTANT_DAYS);
+  const ATL_DECAY = Math.exp(-1 / ATL_TIME_CONSTANT_DAYS);
+  const round1 = (value: number) => Math.round(value * 10) / 10;
+
+  /**
+   * Independent reference implementation of `x_t = x_{t-1}·exp(-1/N) +
+   * load_t·(1 - exp(-1/N))`, rounded the same way the module rounds its
+   * displayed series, so the module's output should match it exactly.
+   */
+  function reference(
+    seed: { ctl: number; atl: number },
+    days: { ctlLoad: number; atlLoad: number }[],
+  ): { ctl: number; atl: number }[] {
+    let ctl = seed.ctl;
+    let atl = seed.atl;
+    return days.map(({ ctlLoad, atlLoad }) => {
+      ctl = ctl * CTL_DECAY + ctlLoad * (1 - CTL_DECAY);
+      atl = atl * ATL_DECAY + atlLoad * (1 - ATL_DECAY);
+      return { ctl: round1(ctl), atl: round1(atl) };
+    });
+  }
+
+  /** Deterministic pseudo-random loads in [0, 120), seeded for repeatability. */
+  function syntheticLoads(count: number, seed: number): number[] {
+    let s = seed;
+    return Array.from({ length: count }, () => {
+      s = (s * 1103515245 + 12345) & 0x7fffffff;
+      return round1((s / 0x7fffffff) * 120);
+    });
+  }
+
+  it("matches a synthetic generator from a seed to floating-point precision", () => {
+    const loads = syntheticLoads(150, 42);
+    const days: FitnessTrendLoadDay[] = loads.map((load, i) => ({
+      date: addDays("2026-01-01", i),
+      ctlLoad: load,
+      atlLoad: load,
+    }));
+    const seed = { ctl: 31.4, atl: 22.7 };
+    const expected = reference(seed, days);
+
+    const trend = buildFitnessTrend({ days, seed });
+
+    expect(trend.days).toHaveLength(days.length);
+    trend.days.forEach((day, i) => {
+      expect(day.ctl).toBeCloseTo(expected[i]!.ctl, 9);
+      expect(day.atl).toBeCloseTo(expected[i]!.atl, 9);
+    });
+  });
+
+  it("matches literal, hand-computed values from a zero seed (not just the reference() helper)", () => {
+    // Independent of `reference()` above (same formula, different code): a
+    // formula bug both shared would not be caught by comparing against it.
+    // These numbers are computed by hand from the closed form
+    // `x_1 = load * (1 - e^(-1/N))`, `x_2 = x_1 * e^(-1/N)` (day 2 rests):
+    //   CTL_DECAY = e^(-1/42) = 0.97647...; ATL_DECAY = e^(-1/7) = 0.86688...
+    //   day 1: ctl = 100 * (1 - 0.97647) = 2.3528 -> 2.4
+    //          atl = 100 * (1 - 0.86688) = 13.3122 -> 13.3
+    //   day 2: ctl = 2.3528 * 0.97647 = 2.2975 -> 2.3
+    //          atl = 13.3122 * 0.86688 = 11.5401 -> 11.5
+    const trend = buildFitnessTrend({
+      days: [
+        { date: "2026-03-01", ctlLoad: 100, atlLoad: 100 },
+        { date: "2026-03-02", ctlLoad: 0, atlLoad: 0 },
+      ],
+    });
+
+    expect(trend.days[0]).toMatchObject({ ctl: 2.4, atl: 13.3 });
+    expect(trend.days[1]).toMatchObject({ ctl: 2.3, atl: 11.5, tsb: -9.2 });
+  });
+
+  it("reproduces separate CTL/ATL series when atlLoad carries extra strength load", () => {
+    const enduranceLoads = syntheticLoads(120, 7);
+    const strengthLoads = syntheticLoads(120, 99).map(
+      (v, i) => (i % 3 === 0 ? v : 0), // strength only every third day
+    );
+    const days: FitnessTrendLoadDay[] = enduranceLoads.map((load, i) => ({
+      date: addDays("2026-02-01", i),
+      ctlLoad: load, // fitness ignores strength
+      atlLoad: load + strengthLoads[i]!, // fatigue counts it
+    }));
+    // Seeded with ATL below CTL (the reverse of a naive "ATL runs hotter"
+    // assumption), so a strength day's ATL ending up above CTL cannot be the
+    // seed doing the work: only the extra atlLoad-only strength load can
+    // close and cross that 15-point gap.
+    const seed = { ctl: 55, atl: 40 };
+    const expected = reference(seed, days);
+
+    const trend = buildFitnessTrend({ days, seed });
+
+    trend.days.forEach((day, i) => {
+      expect(day.ctl).toBeCloseTo(expected[i]!.ctl, 9);
+      expect(day.atl).toBeCloseTo(expected[i]!.atl, 9);
+    });
+    // The variant is a real test: strength load actually moved ATL above
+    // what CTL alone would give on a strength day.
+    const strengthDay = trend.days[3]!;
+    expect(strengthDay.atl).toBeGreaterThan(strengthDay.ctl);
+    expect(strengthLoads[3]).toBeGreaterThan(0);
+  });
+
+  it("seeds the recurrence instead of assuming zero", () => {
+    const flat = constantWindow("2026-03-10", 10, 0);
+    const trend = buildFitnessTrend({
+      days: flat,
+      seed: { ctl: 60, atl: 75 },
+    });
+    // Zero load every day: both curves purely decay from the seed.
+    expect(trend.days[0]!.ctl).toBeCloseTo(round1(60 * CTL_DECAY), 9);
+    expect(trend.days[0]!.atl).toBeCloseTo(round1(75 * ATL_DECAY), 9);
+    expect(trend.days[9]!.ctl).toBeLessThan(trend.days[0]!.ctl);
+  });
+});
+
 describe("planned-load projection", () => {
   /** Five hard days a week for `weeks` weeks, ending on 2026-06-28. */
-  function block(weeks: number): FitnessTrendActivity[] {
-    const acts: FitnessTrendActivity[] = [];
-    for (let i = 0; i < weeks * 7; i++) {
+  function block(weeks: number): FitnessTrendLoadDay[] {
+    return Array.from({ length: weeks * 7 }, (_, i) => {
       const d = new Date(Date.UTC(2026, 5, 28));
-      d.setUTCDate(d.getUTCDate() - i);
-      if (d.getUTCDay() === 0 || d.getUTCDay() === 6) continue;
-      acts.push(activity(d.toISOString().split("T")[0]!, 60));
-    }
-    return acts;
+      d.setUTCDate(d.getUTCDate() - (weeks * 7 - 1 - i));
+      const date = d.toISOString().split("T")[0]!;
+      const isWeekend = d.getUTCDay() === 0 || d.getUTCDay() === 6;
+      const load = isWeekend ? 0 : 60;
+      return { date, ctlLoad: load, atlLoad: load };
+    });
   }
 
   it("keeps the zero-load rest projection as the default", () => {
-    const trend = buildFitnessTrend(block(12), {
-      endDate: "2026-06-28",
-      days: 84,
-      projectDays: 5,
-    });
+    const trend = buildFitnessTrend({ days: block(12) }, { projectDays: 5 });
     expect(trend.projection.map((d) => d.load)).toEqual([0, 0, 0, 0, 0]);
     expect(trend.taper).toBeNull();
   });
 
   it("projects consecutive planned loads and defaults projectDays to their length", () => {
-    const trend = buildFitnessTrend(block(12), {
-      endDate: "2026-06-28",
-      days: 84,
-      plannedLoads: [70, 0, 70],
-    });
+    const trend = buildFitnessTrend(
+      { days: block(12) },
+      { plannedLoads: [70, 0, 70] },
+    );
     expect(trend.projection).toHaveLength(3);
     expect(trend.projection.map((d) => [d.date, d.load])).toEqual([
       ["2026-06-29", 70],
@@ -206,34 +307,29 @@ describe("planned-load projection", () => {
     ]);
     // Loading past the window keeps fatigue up, so TSB sits below the
     // equivalent rest projection.
-    const rest = buildFitnessTrend(block(12), {
-      endDate: "2026-06-28",
-      days: 84,
-      projectDays: 3,
-    });
+    const rest = buildFitnessTrend({ days: block(12) }, { projectDays: 3 });
     expect(trend.projection[2]!.tsb).toBeLessThan(rest.projection[2]!.tsb);
   });
 
   it("rests the days a dated plan does not name", () => {
-    const trend = buildFitnessTrend(block(12), {
-      endDate: "2026-06-28",
-      days: 84,
-      projectDays: 4,
-      plannedLoads: [
-        { date: "2026-06-30", load: 90 },
-        { date: "2026-07-02", load: 45 },
-      ],
-    });
+    const trend = buildFitnessTrend(
+      { days: block(12) },
+      {
+        projectDays: 4,
+        plannedLoads: [
+          { date: "2026-06-30", load: 90 },
+          { date: "2026-07-02", load: 45 },
+        ],
+      },
+    );
     expect(trend.projection.map((d) => d.load)).toEqual([0, 90, 0, 45]);
   });
 
   it("ignores planned days past the projection window", () => {
-    const trend = buildFitnessTrend(block(12), {
-      endDate: "2026-06-28",
-      days: 84,
-      projectDays: 1,
-      plannedLoads: [50, 50, 50],
-    });
+    const trend = buildFitnessTrend(
+      { days: block(12) },
+      { projectDays: 1, plannedLoads: [50, 50, 50] },
+    );
     expect(trend.projection.map((d) => d.load)).toEqual([50]);
   });
 });
@@ -400,16 +496,12 @@ describe("solveTaperPlan", () => {
   });
 
   it("comes through buildFitnessTrend with the recorded window as its start", () => {
-    const acts = Array.from({ length: 40 }, (_, i) => {
-      const d = new Date(Date.UTC(2026, 4, 20));
-      d.setUTCDate(d.getUTCDate() + i);
-      return activity(d.toISOString().split("T")[0]!, 55);
-    });
-    const trend = buildFitnessTrend(acts, {
-      endDate: "2026-06-28",
-      days: 90,
-      taper: { targetDate: "2026-07-12", targetTsb: 8 },
-    });
+    const trend = buildFitnessTrend(
+      {
+        days: window("2026-06-28", 90, rangeLoads("2026-05-20", 40, 55)),
+      },
+      { taper: { targetDate: "2026-07-12", targetTsb: 8 } },
+    );
     expect(trend.taper).not.toBeNull();
     expect(trend.taper!.achieved_tsb).toBeCloseTo(8, 1);
     expect(trend.taper!.days[0]!.date).toBe("2026-06-29");
@@ -418,19 +510,6 @@ describe("solveTaperPlan", () => {
     const first = trend.taper!.days[0]!;
     expect(Math.abs(first.ctl - current.ctl)).toBeLessThan(10);
     expect(trend.taper!.recent_daily_load).toBeGreaterThan(0);
-  });
-});
-
-describe("daysBetween", () => {
-  it("counts whole days in both directions", () => {
-    expect(daysBetween("2026-06-28", "2026-07-05")).toBe(7);
-    expect(daysBetween("2026-07-05", "2026-06-28")).toBe(-7);
-    expect(daysBetween("2026-06-28", "2026-06-28")).toBe(0);
-  });
-
-  it("is unaffected by a DST boundary", () => {
-    // Southern-hemisphere DST end, a UTC-safe arithmetic check.
-    expect(daysBetween("2026-04-01", "2026-04-30")).toBe(29);
   });
 });
 
@@ -468,6 +547,42 @@ describe("trendBands", () => {
     expect(trendBands(series)).toEqual([]);
   });
 
+  it("breaks a run at a date gap instead of bridging it", () => {
+    const series = [
+      day("2026-07-01", DEEP_FATIGUE_TSB - 2),
+      day("2026-07-02", DEEP_FATIGUE_TSB - 2),
+      day("2026-07-03", DEEP_FATIGUE_TSB - 2),
+      // 2026-07-04 is missing: a gap, not a rest day.
+      day("2026-07-05", DEEP_FATIGUE_TSB - 2),
+      day("2026-07-06", DEEP_FATIGUE_TSB - 2),
+      day("2026-07-07", DEEP_FATIGUE_TSB - 2),
+    ];
+    // Six days at or below the threshold would meet DEEP_FATIGUE_DAYS (5) as
+    // one run bridged across the gap; split by the gap, each side is only
+    // 3 days and neither qualifies on its own.
+    expect(trendBands(series)).toEqual([]);
+  });
+
+  it("looks up the CTL ramp's prior day by date, not by array index, across a gap", () => {
+    const series = [
+      day("2026-06-20", -5, 10),
+      // 2026-06-21 through 2026-07-14 missing: a gap of several weeks.
+      day("2026-07-15", -5, 20),
+      day("2026-07-16", -5, 30),
+      day("2026-07-17", -5, 40),
+      day("2026-07-18", -5, 50),
+      day("2026-07-19", -5, 60),
+      day("2026-07-20", -5, 70),
+      day("2026-07-21", -5, 80),
+    ];
+    // Array index 7 ("2026-07-21") minus 7 lands on index 0 ("2026-06-20"),
+    // a month earlier, not 7 calendar days back (2026-07-14, itself missing);
+    // an index-based lookback would misread this as a 70-point ramp.
+    expect(trendBands(series).filter((b) => b.kind === "steep-ramp")).toEqual(
+      [],
+    );
+  });
+
   it("bands each fresh stretch separately", () => {
     const series = [
       day("2026-07-01", FRESH_TSB + 1),
@@ -503,12 +618,9 @@ describe("trendBands", () => {
   });
 
   it("comes back from buildFitnessTrend alongside the flags", () => {
-    const acts = Array.from({ length: 21 }, (_, i) => {
-      const d = new Date(Date.UTC(2026, 6, 1));
-      d.setUTCDate(d.getUTCDate() + i);
-      return activity(d.toISOString().split("T")[0]!, 150);
+    const trend = buildFitnessTrend({
+      days: window("2026-07-21", 60, rangeLoads("2026-07-01", 21, 150)),
     });
-    const trend = buildFitnessTrend(acts, { endDate: "2026-07-21", days: 60 });
     expect(trend.bands.length).toBeGreaterThan(0);
     // Every flag is a band reason; bands may carry extra, older stretches.
     for (const flag of trend.flags) {
@@ -559,5 +671,137 @@ describe("computeFlags", () => {
 
   it("returns nothing for an empty series", () => {
     expect(computeFlags([])).toEqual([]);
+  });
+});
+
+describe("projectFromWellness", () => {
+  const ASOF = "2026-08-17";
+  const ENDDATE = "2026-08-19"; // 2 unsynced days past asOfDate
+  const SEED = { ctl: 60, atl: 40 };
+  const series: FitnessTrendDay[] = [
+    {
+      date: ASOF,
+      load: 80,
+      ctl: SEED.ctl,
+      atl: SEED.atl,
+      tsb: SEED.ctl - SEED.atl,
+    },
+  ];
+
+  it("gives an empty projection when projectDays is 0, even with unsynced days", () => {
+    const result = projectFromWellness(
+      { series, seed: SEED, asOfDate: ASOF, endDate: ENDDATE },
+      { projectDays: 0 },
+    );
+    expect(result.projection).toEqual([]);
+    expect(result.tsbPositiveDate).toBeNull();
+    expect(result.taper).toBeNull();
+    expect(result.unsyncedDays).toBe(2);
+  });
+
+  it("returns null for everything when there is no seed", () => {
+    const result = projectFromWellness(
+      { series: [], seed: null, asOfDate: null, endDate: ENDDATE },
+      { projectDays: 14 },
+    );
+    expect(result).toEqual({
+      projection: [],
+      tsbPositiveDate: null,
+      taper: null,
+      unsyncedDays: 0,
+      warnings: [],
+    });
+  });
+
+  it("anchors a taper at endDate, not asOfDate, rolling unsynced days forward as rest", () => {
+    const targetDate = addDays(ENDDATE, 21);
+    const result = projectFromWellness(
+      { series, seed: SEED, asOfDate: ASOF, endDate: ENDDATE },
+      { projectDays: 0, taper: { targetDate, targetTsb: 10 } },
+    );
+    expect(result.taper).not.toBeNull();
+    // Anchored at ENDDATE: the plan should run exactly 21 days, not 23 (which
+    // anchoring at ASOF, 2 days earlier, would have produced).
+    expect(result.taper!.days).toHaveLength(21);
+    expect(result.taper!.days[0]!.date).toBe(addDays(ENDDATE, 1));
+
+    const direct = solveTaperPlan(
+      SEED,
+      ASOF,
+      { targetDate: addDays(ASOF, 23), targetTsb: 10 },
+      recentDailyLoad(series, RECENT_LOAD_DAYS),
+    );
+    // A taper solved directly from ASOF over 23 days (2 unsynced + 21
+    // requested) lands on the same target date and should reach the same
+    // achieved TSB as the anchored-at-ENDDATE solve, since 2 rest days
+    // change CTL/ATL identically whether folded into the taper solve itself
+    // or rolled forward first.
+    expect(result.taper!.achieved_tsb).toBeCloseTo(direct.achieved_tsb, 5);
+  });
+
+  it("warns that plannedLoads is dropped when a taper is requested", () => {
+    const targetDate = addDays(ENDDATE, 21);
+    const result = projectFromWellness(
+      { series, seed: SEED, asOfDate: ASOF, endDate: ENDDATE },
+      {
+        projectDays: 0,
+        plannedLoads: [{ date: addDays(ENDDATE, 3), load: 50 }],
+        taper: { targetDate, targetTsb: 10 },
+      },
+    );
+    expect(result.warnings).toContainEqual(
+      expect.stringContaining("plannedLoads"),
+    );
+  });
+
+  it("does not warn about plannedLoads when no taper is requested", () => {
+    const result = projectFromWellness(
+      { series, seed: SEED, asOfDate: ASOF, endDate: ENDDATE },
+      {
+        projectDays: 10,
+        plannedLoads: [{ date: addDays(ENDDATE, 3), load: 50 }],
+      },
+    );
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("tsbPositiveDate never lands before endDate + 1 (no lag)", () => {
+    const result = projectFromWellness(
+      {
+        series,
+        seed: { ctl: 20, atl: 80 },
+        asOfDate: ENDDATE,
+        endDate: ENDDATE,
+      },
+      { projectDays: 30 },
+    );
+    // No catch-up days at all (asOfDate === endDate), so a crossing is
+    // necessarily in the future: this is the always-safe baseline case.
+    expect(result.tsbPositiveDate).not.toBeNull();
+    expect(result.tsbPositiveDate! > ENDDATE).toBe(true);
+  });
+
+  it("reports endDate itself, not a past catch-up date, when a lagging series is already positive", () => {
+    // ASOF is 2 days behind ENDDATE. Seeded deeply TSB-positive (+40), so
+    // TSB stays positive through every catch-up day AND today: the old bug
+    // would have reported the first catch-up day (ASOF + 1, a past date, two
+    // days before ENDDATE) as "returns positive on".
+    const result = projectFromWellness(
+      { series, seed: { ctl: 50, atl: 10 }, asOfDate: ASOF, endDate: ENDDATE },
+      { projectDays: 7 },
+    );
+    expect(result.unsyncedDays).toBe(2);
+    expect(result.tsbPositiveDate).toBe(ENDDATE);
+  });
+
+  it("reports a genuine future date when TSB is negative through the catch-up and crosses later", () => {
+    // Seeded deeply negative; even after 2 catch-up rest days plus several
+    // projected rest days, TSB should still cross well after ENDDATE.
+    const result = projectFromWellness(
+      { series, seed: { ctl: 10, atl: 90 }, asOfDate: ASOF, endDate: ENDDATE },
+      { projectDays: 30 },
+    );
+    expect(result.tsbPositiveDate).not.toBeNull();
+    expect(result.tsbPositiveDate! > ENDDATE).toBe(true);
   });
 });

@@ -1,14 +1,7 @@
 import { describe, expect, it } from "vitest";
 import * as fixtures from "./__fixtures__";
 import { parseJsonWithLargeInts } from "./fetchClient";
-import {
-  ActivityStatsSchema,
-  ActivityZoneSchema,
-  AthleteGearSchema,
-  DetailedActivitySchema,
-  DetailedAthleteSchema,
-  SummarySegmentSchema,
-} from "./stravaClient";
+import { DetailedActivitySchema, SummarySegmentSchema } from "./stravaClient";
 
 describe("DetailedActivitySchema", () => {
   it("parses a basic run activity", () => {
@@ -32,13 +25,6 @@ describe("DetailedActivitySchema", () => {
 
   it("parses ride activity with power data", () => {
     const result = DetailedActivitySchema.safeParse(fixtures.rideActivity);
-    expect(result.success).toBe(true);
-  });
-
-  it("parses activity with best efforts", () => {
-    const result = DetailedActivitySchema.safeParse(
-      fixtures.activityWithBestEfforts,
-    );
     expect(result.success).toBe(true);
   });
 
@@ -90,76 +76,6 @@ describe("DetailedActivitySchema", () => {
         String(fixtures.basicRunActivity.athlete.id),
       );
     }
-  });
-});
-
-describe("ActivityStatsSchema", () => {
-  it("parses complete activity stats", () => {
-    const result = ActivityStatsSchema.safeParse(fixtures.activityStats);
-    expect(result.success).toBe(true);
-  });
-
-  it("parses activity stats with null optionals", () => {
-    const result = ActivityStatsSchema.safeParse(
-      fixtures.activityStatsWithNulls,
-    );
-    expect(result.success).toBe(true);
-  });
-});
-
-describe("ActivityZoneSchema", () => {
-  it("parses heart rate and power zone entries", () => {
-    for (const zone of fixtures.activityZones) {
-      expect(ActivityZoneSchema.safeParse(zone).success).toBe(true);
-    }
-  });
-
-  it("accepts the final 'and above' bucket (max: -1)", () => {
-    const result = ActivityZoneSchema.safeParse(fixtures.activityZones[0]);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      const last = result.data.distribution_buckets.at(-1);
-      expect(last?.max).toBe(-1);
-    }
-  });
-});
-
-describe("DetailedAthleteSchema", () => {
-  it("parses detailed athlete", () => {
-    const result = DetailedAthleteSchema.safeParse(fixtures.detailedAthlete);
-    expect(result.success).toBe(true);
-  });
-
-  it("parses athlete with null fields", () => {
-    const result = DetailedAthleteSchema.safeParse(
-      fixtures.athleteWithNullFields,
-    );
-    expect(result.success).toBe(true);
-  });
-
-  it("parses athlete with gear arrays", () => {
-    const result = DetailedAthleteSchema.safeParse(fixtures.detailedAthlete);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.shoes?.length).toBe(2);
-      expect(result.data.bikes?.length).toBe(1);
-    }
-  });
-});
-
-describe("AthleteGearSchema", () => {
-  it("parses a shoe gear entry", () => {
-    const result = AthleteGearSchema.safeParse(
-      fixtures.detailedAthlete.shoes[0],
-    );
-    expect(result.success).toBe(true);
-  });
-
-  it("parses a retired gear entry with null nickname", () => {
-    const result = AthleteGearSchema.safeParse(
-      fixtures.detailedAthlete.shoes[1],
-    );
-    expect(result.success).toBe(true);
   });
 });
 

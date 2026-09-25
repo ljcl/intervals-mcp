@@ -6,10 +6,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { handledNotFound, handledRateLimit } from "./__fixtures__";
 import {
-  getActivityById,
-  getAllActivities,
-  getAthleteStats,
-} from "./stravaClient";
+  getAthletePaceCurves,
+  getActivity as getIntervalsActivity,
+  getWellness as getIntervalsWellness,
+  type IntervalsAthletePaceCurves,
+  listActivities as listIntervalsActivities,
+} from "./intervalsClient";
+import { getActivityById, getAllActivities } from "./stravaClient";
 
 vi.mock("./stravaClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./stravaClient")>();
@@ -17,7 +20,17 @@ vi.mock("./stravaClient", async (importOriginal) => {
     ...actual,
     getAllActivities: vi.fn(),
     getActivityById: vi.fn(),
-    getAthleteStats: vi.fn(),
+  };
+});
+
+vi.mock("./intervalsClient", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./intervalsClient")>();
+  return {
+    ...actual,
+    getActivity: vi.fn(),
+    getAthletePaceCurves: vi.fn(),
+    listActivities: vi.fn(),
+    getWellness: vi.fn(),
   };
 });
 
@@ -33,8 +46,16 @@ const { getIntervalsApiKey, MissingApiKeyError } = await import("./config");
 const mockedToken = vi.mocked(getIntervalsApiKey);
 
 const mockedList = vi.mocked(getAllActivities);
+const mockedIntervalsList = vi.mocked(listIntervalsActivities);
+const mockedIntervalsWellness = vi.mocked(getIntervalsWellness);
 const mockedById = vi.mocked(getActivityById);
-const mockedStats = vi.mocked(getAthleteStats);
+const mockedIntervalsActivity = vi.mocked(getIntervalsActivity);
+const mockedAthleteCurves = vi.mocked(getAthletePaceCurves);
+
+const emptyPaceCurves: IntervalsAthletePaceCurves = {
+  list: [{ id: "1y", distance: [], values: [], activity_id: [] }],
+  activities: {},
+};
 
 describe("dispatchToolCall input validation", () => {
   beforeEach(() => {
@@ -42,45 +63,46 @@ describe("dispatchToolCall input validation", () => {
     mockedToken.mockReturnValue("test-token");
     mockedList.mockReset();
     mockedById.mockReset();
-    mockedStats.mockReset();
+    mockedIntervalsActivity.mockReset();
+    mockedAthleteCurves.mockReset();
   });
 
   it("applies zod defaults when optional args are omitted (get-best-efforts)", async () => {
-    mockedList.mockResolvedValueOnce([]);
+    mockedAthleteCurves.mockResolvedValueOnce(emptyPaceCurves);
 
     const result = await dispatchToolCall("get-best-efforts", undefined);
 
     expect(result.isError).toBeUndefined();
-    // Defaults applied: maxActivities 100, so perPage is min(100, 200) = 100
-    // — previously Math.min(undefined, 200) produced per_page=NaN.
-    expect(mockedList).toHaveBeenCalledWith("test-token", {
-      perPage: 100,
-      maxItems: 100,
-      countActivity: expect.any(Function),
-      onProgress: expect.any(Function),
+    // Defaults applied: window "1y", topN 1. Previously an unset
+    // maxActivities produced per_page=NaN against the old Strava client.
+    expect(mockedAthleteCurves).toHaveBeenCalledWith("test-token", {
+      type: "Run",
+      curves: ["1y"],
     });
   });
 
-  it("applies zod defaults for get-training-load (no NaN after timestamp)", async () => {
-    mockedList.mockResolvedValueOnce([]);
+  it("applies zod defaults for get-training-load (a real date window, not NaN)", async () => {
+    mockedIntervalsList.mockResolvedValueOnce([]);
+    mockedIntervalsWellness.mockResolvedValueOnce([]);
 
     const result = await dispatchToolCall("get-training-load", {});
 
     expect(result.isError).toBeUndefined();
-    const params = mockedList.mock.calls[0]?.[1];
-    expect(Number.isFinite(params?.after)).toBe(true);
+    const params = mockedIntervalsList.mock.calls[0]?.[1];
+    expect(params?.oldest).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(params?.newest).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
-  it("rejects args above the documented bounds without calling Strava", async () => {
+  it("rejects args above the documented bounds without calling intervals.icu", async () => {
     const result = await dispatchToolCall("get-best-efforts", {
-      maxActivities: 500,
+      topN: 6,
     });
 
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain(
       "Invalid arguments for get-best-efforts",
     );
-    expect(mockedList).not.toHaveBeenCalled();
+    expect(mockedAthleteCurves).not.toHaveBeenCalled();
   });
 
   it("rejects wrongly-typed args without calling Strava", async () => {
@@ -143,12 +165,16 @@ describe("dispatchToolCall input validation", () => {
   it("advertises every id argument as a digit string, never a number", async () => {
     // A number branch in the advertised schema is what invited the lossy
     // call above; ids must stay string-only across every tool. intervals.icu
-    // activity ids (get-activity, get-activity-streams) are the exception to
-    // the digits-only pattern: they accept an optional "i" prefix, as
-    // list-activities returns them (intervalsActivityIdInput, tools/_ids.ts).
-    const { TOOLS } = await import("./server");
+    // activity ids (get-activity, get-activity-streams, get-activity-laps,
+    // get-running-summary, get-running-dynamics, get-activity-zones, view-activity-zones,
+    // get-activity-zones-data, get-hill-analysis, get-split-analysis,
+    // get-aerobic-analysis, get-interval-analysis, update-activity) are the
+    // exception to the digits-only pattern: they accept an optional "i"
+    // prefix, as list-activities returns them (intervalsActivityIdInput,
+    // tools/_ids.ts).
+    const { TOOL_DEFS } = await import("./server");
     const idSchemas = (
-      TOOLS as Array<{
+      TOOL_DEFS as Array<{
         name: string;
         inputSchema?: { properties?: Record<string, Record<string, unknown>> };
       }>
@@ -161,7 +187,19 @@ describe("dispatchToolCall input validation", () => {
     expect(idSchemas.length).toBeGreaterThan(6);
     for (const { field, schema } of idSchemas) {
       const expectedPattern =
-        field === "get-activity.id" || field === "get-activity-streams.id"
+        field === "get-activity.id" ||
+        field === "get-activity-streams.id" ||
+        field === "get-activity-laps.id" ||
+        field === "get-running-summary.id" ||
+        field === "get-running-dynamics.id" ||
+        field === "get-activity-zones.id" ||
+        field === "view-activity-zones.activity_id" ||
+        field === "get-activity-zones-data.activity_id" ||
+        field === "get-hill-analysis.id" ||
+        field === "get-split-analysis.id" ||
+        field === "get-aerobic-analysis.id" ||
+        field === "get-interval-analysis.id" ||
+        field === "update-activity.id"
           ? "^i?\\d+$"
           : "^\\d+$";
       expect(`${field}: ${schema.type}`).toBe(`${field}: string`);
@@ -182,7 +220,8 @@ describe("dispatchToolCall input validation", () => {
   });
 
   it("applies the days default for get-training-load-data", async () => {
-    mockedList.mockResolvedValueOnce([]);
+    mockedIntervalsList.mockResolvedValueOnce([]);
+    mockedIntervalsWellness.mockResolvedValueOnce([]);
 
     const result = await dispatchToolCall("get-training-load-data", {});
 
@@ -190,11 +229,16 @@ describe("dispatchToolCall input validation", () => {
     const text = result.content[0]?.text ?? "";
     expect(JSON.parse(text)).toEqual({
       days: 84,
-      totals: { runs: 0, distanceKm: 0, timeHours: 0, elevationM: 0 },
+      activityTypesIncluded: [],
+      runOnly: false,
+      current: null,
+      source: "intervals.icu",
+      totals: { runs: 0, distanceKm: 0, timeHours: 0, elevationM: 0, load: 0 },
       weeks: [],
     });
-    const params = mockedList.mock.calls[0]?.[1];
-    expect(Number.isFinite(params?.after)).toBe(true);
+    const params = mockedIntervalsList.mock.calls[0]?.[1];
+    expect(params?.oldest).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(params?.newest).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
   it("rejects days above the documented bound for view-training-load", async () => {
@@ -224,16 +268,15 @@ describe("dispatchToolCall input validation", () => {
       id: "1",
       name: "Run A",
       type: "Run",
-      sport_type: "Run",
-      start_date_local: "2026-06-01T07:00:00Z",
+      start_date_local: "2026-06-01T07:00:00",
       distance: 5000,
       moving_time: 1500,
     };
-    mockedById.mockResolvedValueOnce(
+    mockedIntervalsActivity.mockResolvedValueOnce(
       // biome-ignore lint/suspicious/noExplicitAny: minimal fixture
       activity as any,
     );
-    mockedById.mockResolvedValueOnce(
+    mockedIntervalsActivity.mockResolvedValueOnce(
       // biome-ignore lint/suspicious/noExplicitAny: minimal fixture
       { ...activity, id: "2", name: "Run B" } as any,
     );
@@ -273,7 +316,9 @@ describe("dispatchToolCall input validation", () => {
   // dispatcher's final catch is the only place their failures get the typed
   // 404/429 treatment and the ❌ prefix the text tools give themselves.
   it("renders a thrown RateLimitError with the rate-limit window", async () => {
-    mockedList.mockRejectedValueOnce(handledRateLimit("getAllActivities"));
+    mockedIntervalsList.mockRejectedValueOnce(
+      handledRateLimit("listActivities"),
+    );
 
     const result = await dispatchToolCall("get-training-load-data", {});
 
@@ -287,7 +332,7 @@ describe("dispatchToolCall input validation", () => {
   });
 
   it("maps a thrown 404 to a not-found line", async () => {
-    mockedById.mockRejectedValue(handledNotFound("getActivityById"));
+    mockedIntervalsActivity.mockRejectedValue(handledNotFound("getActivity"));
 
     const result = await dispatchToolCall("get-compare-activities-data", {
       activity_id_1: "1",
@@ -299,7 +344,7 @@ describe("dispatchToolCall input validation", () => {
   });
 
   it("reports other thrown failures with the tool name and message", async () => {
-    mockedList.mockRejectedValueOnce(new Error("boom"));
+    mockedIntervalsList.mockRejectedValueOnce(new Error("boom"));
 
     const result = await dispatchToolCall("get-training-load-data", {});
 

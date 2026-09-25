@@ -5,6 +5,8 @@ import {
   gapFactor,
   HillAnalysisError,
   type HillStreams,
+  interpolateNulls,
+  normalizeHillStreams,
 } from "./hillAnalysis";
 
 /**
@@ -98,24 +100,98 @@ describe("gapFactor", () => {
 describe("computeGrades", () => {
   it("prefers the grade_smooth stream", () => {
     const streams = buildStreams([flat(100)]);
-    expect(computeGrades(streams)).toBe(streams.grade_smooth);
+    const result = computeGrades(normalizeHillStreams(streams));
+    expect(result.source).toBe("grade_smooth");
+    expect(result.grades).toEqual(streams.grade_smooth);
   });
 
   it("derives grade from altitude over a window when grade_smooth is absent", () => {
     const streams = buildStreams([flat(200), climb(400), flat(200)]);
     streams.grade_smooth = undefined;
-    const grades = computeGrades(streams);
+    const result = computeGrades(normalizeHillStreams(streams));
+    expect(result.source).toBe("computed");
     // Mid-climb samples should read near the true 6%.
     const mid = Math.floor(streams.time.length / 2);
-    expect(grades[mid]).toBeCloseTo(6, 0);
-    expect(grades[5]).toBeCloseTo(0, 1);
+    expect(result.grades[mid]).toBeCloseTo(6, 0);
+    expect(result.grades[5]).toBeCloseTo(0, 1);
   });
 
   it("throws without grade or altitude", () => {
     const streams = buildStreams([flat(100)]);
     streams.grade_smooth = undefined;
     streams.altitude = undefined;
-    expect(() => computeGrades(streams)).toThrow(HillAnalysisError);
+    expect(() => computeGrades(normalizeHillStreams(streams))).toThrow(
+      HillAnalysisError,
+    );
+  });
+
+  it("falls back to computed when grade_smooth is entirely null", () => {
+    const streams = buildStreams([flat(200), climb(400), flat(200)]);
+    streams.grade_smooth = streams.grade_smooth!.map(() => null);
+    const result = computeGrades(normalizeHillStreams(streams));
+    expect(result.source).toBe("computed");
+  });
+
+  it("keeps grade_smooth as the source and interpolates across a partial null run", () => {
+    const streams = buildStreams([flat(200), climb(400), flat(200)]);
+    const grade = streams.grade_smooth as (number | null)[];
+    // Blank out a short mid-climb stretch; the values on either side are
+    // both real recorded samples, not the whole stream going dark.
+    const start = Math.floor(grade.length / 2) - 2;
+    for (let i = start; i < start + 4; i++) grade[i] = null;
+
+    const result = computeGrades(normalizeHillStreams(streams));
+
+    expect(result.source).toBe("grade_smooth");
+    // The interpolated gap sits close to the surrounding climb grade, not 0.
+    expect(result.grades[start + 1]).toBeCloseTo(6, 0);
+    expect(result.grades.every((g) => g != null && Number.isFinite(g))).toBe(
+      true,
+    );
+  });
+});
+
+describe("interpolateNulls", () => {
+  it("straight-lines a null run bounded by known samples", () => {
+    expect(interpolateNulls([0, null, null, 3])).toEqual([0, 1, 2, 3]);
+  });
+
+  it("holds the nearest known value flat across a leading or trailing gap", () => {
+    expect(interpolateNulls([null, null, 5, 6])).toEqual([5, 5, 5, 6]);
+    expect(interpolateNulls([5, 6, null, null])).toEqual([5, 6, 6, 6]);
+  });
+
+  it("passes fully-populated arrays through unchanged", () => {
+    expect(interpolateNulls([1, 2, 3])).toEqual([1, 2, 3]);
+  });
+});
+
+describe("normalizeHillStreams", () => {
+  it("interpolates null distance and altitude samples rather than zeroing them", () => {
+    const streams = buildStreams([flat(1000), climb(500), flat(1000)]);
+    const withGaps: HillStreams = {
+      ...streams,
+      distance: streams.distance.map((d, i) => (i % 50 === 1 ? null : d)),
+      altitude: streams.altitude!.map((a, i) => (i % 70 === 2 ? null : a)),
+      grade_smooth: undefined,
+    };
+    const normalized = normalizeHillStreams(withGaps);
+    expect(
+      normalized.distance.some((d) => d === 0 && streams.distance[0] !== 0),
+    ).toBe(false);
+    // Distance stays non-decreasing after interpolation.
+    for (let i = 1; i < normalized.distance.length; i++) {
+      expect(normalized.distance[i]).toBeGreaterThanOrEqual(
+        normalized.distance[i - 1]!,
+      );
+    }
+  });
+
+  it("drops an entirely-null grade_smooth stream back to computed", () => {
+    const streams = buildStreams([flat(200)]);
+    streams.grade_smooth = streams.grade_smooth!.map(() => null);
+    const normalized = normalizeHillStreams(streams);
+    expect(normalized.grade_smooth).toBeUndefined();
   });
 });
 
@@ -124,7 +200,32 @@ describe("computeHillAnalysis", () => {
     const analysis = computeHillAnalysis(buildStreams([flat(5000)]));
     expect(analysis.climbs).toHaveLength(0);
     expect(analysis.drift).toBeNull();
+    expect(analysis.gradeSource).toBe("grade_smooth");
     expect(analysis.warnings.join(" ")).toContain("flat activity");
+  });
+
+  it("reports a computed grade source when grade_smooth is absent", () => {
+    const streams = buildStreams([flat(1000), climb(500), flat(1000)]);
+    streams.grade_smooth = undefined;
+    const analysis = computeHillAnalysis(streams);
+    expect(analysis.gradeSource).toBe("computed");
+  });
+
+  it("excludes null heart rate and cadence samples from a climb's average rather than treating them as zero", () => {
+    const streams = buildStreams([flat(1000), climb(500), flat(1000)]);
+    const climbStart = streams.grade_smooth!.indexOf(6);
+    // Null out half the climb's HR and cadence samples.
+    const withGaps: HillStreams = {
+      ...streams,
+      heartrate: streams.heartrate!.map((hr, i) =>
+        i >= climbStart && i % 2 === 0 ? null : hr,
+      ),
+    };
+    const analysis = computeHillAnalysis(withGaps);
+    expect(analysis.climbs).toHaveLength(1);
+    // The surviving samples are all 155 bpm, so the average must hold there,
+    // not be dragged toward zero by the null samples.
+    expect(analysis.climbs[0]!.avgHr).toBe(155);
   });
 
   it("detects a single sustained climb with sane metrics", () => {

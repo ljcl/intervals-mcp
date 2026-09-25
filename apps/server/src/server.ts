@@ -12,14 +12,28 @@ import {
   type ToolAnnotations,
 } from "@modelcontextprotocol/server";
 import { z } from "zod";
-import { type ActivityZonesData, mapActivityZones } from "./activityZones";
-import { getIntervalsApiKey } from "./config";
+import {
+  type ActivityZonesData,
+  hrZoneMismatchWarning,
+  mapIntervalsZones,
+} from "./activityZones";
+import { getIntervalsApiKey, getTimeZone } from "./config";
 import { RateLimitError } from "./fetchClient";
-import { buildFitnessTrend } from "./fitnessTrend";
+import {
+  computeFlags,
+  type FitnessTrendResult,
+  projectFromWellness,
+  trendBands,
+} from "./fitnessTrend";
 import {
   type FitnessTrendAppData,
   mapFitnessTrendApp,
 } from "./fitnessTrendApp";
+import { loadWellnessFitnessSeries } from "./fitnessTrendWellness";
+import {
+  getActivity as getIntervalsActivity,
+  listActivities as listActivitiesFn,
+} from "./intervalsClient";
 import {
   cumulativeDistances,
   indexAtDistance,
@@ -39,7 +53,6 @@ import {
   getActivityById,
   getActivityLaps,
   getActivityStreams,
-  getActivityZones,
   getAllActivities as getAllActivitiesFn,
   StreamsUnavailableError,
 } from "./stravaClient";
@@ -50,12 +63,15 @@ import {
 } from "./telemetry";
 import { READ_ONLY } from "./tools/_annotations";
 import { toolErrorText } from "./tools/_errors";
-import { stravaIdInput, stravaIdJsonSchemaOverride } from "./tools/_ids";
+import {
+  intervalsActivityIdInput,
+  stravaIdInput,
+  stravaIdJsonSchemaOverride,
+} from "./tools/_ids";
 import {
   buildComparison,
   compareActivitiesTool,
 } from "./tools/compareActivities";
-import { exportActivityGpx } from "./tools/exportActivityGpx";
 import { getActivityTool } from "./tools/getActivity";
 import { getActivityLapsTool } from "./tools/getActivityLaps";
 import { getActivityStreamsTool } from "./tools/getActivityStreams";
@@ -67,6 +83,7 @@ import { getFitnessTrendTool } from "./tools/getFitnessTrend";
 import { getHillAnalysisTool } from "./tools/getHillAnalysis";
 import { getIntervalAnalysisTool } from "./tools/getIntervalAnalysis";
 import { getRacePredictionTool } from "./tools/getRacePrediction";
+import { getRunningDynamicsTool } from "./tools/getRunningDynamics";
 import { getRunningSummaryTool } from "./tools/getRunningSummary";
 import { getSplitAnalysisTool } from "./tools/getSplitAnalysis";
 import { getTrainingLoadTool } from "./tools/getTrainingLoad";
@@ -74,7 +91,12 @@ import { getWellnessTool } from "./tools/getWellness";
 import { listActivitiesTool } from "./tools/listActivities";
 import { listGearTool } from "./tools/listGear";
 import { updateActivityTool } from "./tools/updateActivity";
-import { buildTrainingLoadData } from "./trainingLoad";
+import {
+  buildTrainingLoadData,
+  type TrainingLoadAppData,
+} from "./trainingLoad";
+import { loadTrainingLoadInputs } from "./trainingLoadInputs";
+import { addDays, dateInputSchema, todayLocal } from "./utils/localDate";
 import { SERVER_VERSION } from "./version";
 
 const EMPTY_SCHEMA = { type: "object", properties: {}, required: [] } as const;
@@ -169,7 +191,9 @@ const fitnessTrendInput = z.object({
     .max(365)
     .default(90)
     .describe(
-      "Days to look back (default 90; CTL needs ~90 days of runway, max 365)",
+      "Days to look back (default 90, a useful CTL/ATL/TSB trend window; max 365). " +
+        "Whole-body CTL/ATL is read straight from intervals.icu wellness, not " +
+        "recomputed locally, so this window does not need extra runway.",
     ),
   projectDays: z
     .number()
@@ -180,11 +204,7 @@ const fitnessTrendInput = z.object({
     .describe(
       "Days to project past today assuming rest (default 14; ignored when targetDate is set)",
     ),
-  targetDate: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, {
-      error: "Invalid target date. Use YYYY-MM-DD.",
-    })
+  targetDate: dateInputSchema
     .optional()
     .describe(
       "Race or peak date (YYYY-MM-DD) to chart a solved taper toward. Omit for a rest projection.",
@@ -196,6 +216,22 @@ const fitnessTrendInput = z.object({
     .default(10)
     .describe(
       "Form (TSB) to arrive at on targetDate (default +10; +5 to +15 is the usual race window)",
+    ),
+});
+
+/**
+ * Training-load args, shared by the view and data tools. Volume/warnings are
+ * always run-based; `runOnly` scopes load and current CTL/ATL/TSB the same
+ * way `get-training-load`'s input does.
+ */
+const trainingLoadInput = z.object({
+  days: daysInput,
+  runOnly: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Sum load and compute CTL/ATL/TSB from Run/TrailRun/VirtualRun training " +
+        "load only, instead of whole-body. Weekly volume/warnings are always run-based.",
     ),
 });
 
@@ -216,27 +252,27 @@ const APP_TOOL_INPUT_SCHEMAS: Record<string, z.ZodType> = {
     activity_id: stravaIdInput("The Strava activity ID."),
     waypoints: waypointsInput,
   }),
-  "view-training-load": z.object({ days: daysInput }),
-  "get-training-load-data": z.object({ days: daysInput }),
+  "view-training-load": trainingLoadInput,
+  "get-training-load-data": trainingLoadInput,
   "view-fitness-trend": fitnessTrendInput,
   "get-fitness-trend-data": fitnessTrendInput,
   "view-activity-zones": z.object({
-    activity_id: stravaIdInput("The Strava activity ID."),
+    activity_id: intervalsActivityIdInput("The intervals.icu activity id."),
   }),
   "get-activity-zones-data": z.object({
-    activity_id: stravaIdInput("The Strava activity ID."),
+    activity_id: intervalsActivityIdInput("The intervals.icu activity id."),
   }),
   "view-compare-activities": z.object({
-    activity_id_1: stravaIdInput(
+    activity_id_1: intervalsActivityIdInput(
       "First activity ID (baseline/older activity).",
     ),
-    activity_id_2: stravaIdInput(
+    activity_id_2: intervalsActivityIdInput(
       "Second activity ID (comparison/newer activity).",
     ),
   }),
   "get-compare-activities-data": z.object({
-    activity_id_1: stravaIdInput("First activity ID (baseline)."),
-    activity_id_2: stravaIdInput("Second activity ID (comparison)."),
+    activity_id_1: intervalsActivityIdInput("First activity ID (baseline)."),
+    activity_id_2: intervalsActivityIdInput("Second activity ID (comparison)."),
   }),
 };
 
@@ -336,14 +372,19 @@ interface ToolDef {
   _meta?: Record<string, unknown>;
 }
 
-/** All existing Strava tools */
-const STRAVA_TOOLS = [
+/**
+ * Every tool implementation, all intervals.icu-backed (via
+ * intervalsClient.ts). The transitional stravaClient.ts is called only by
+ * this file's Phase 4 app data handlers (activity-chart, cadence-trends,
+ * route-map), not by any tool.
+ */
+const TOOLS = [
   getAthleteStatsTool,
   updateActivityTool,
-  exportActivityGpx,
   getActivityZonesTool,
   getActivityLapsTool,
   getRunningSummaryTool,
+  getRunningDynamicsTool,
   getAerobicAnalysisTool,
   getHillAnalysisTool,
   getSplitAnalysisTool,
@@ -360,9 +401,9 @@ const STRAVA_TOOLS = [
   getWellnessTool,
 ] as const;
 
-/** Convert existing tool definitions to low-level TOOLS array */
+/** Converts every tool implementation to the low-level TOOL_DEFS array. */
 function buildToolDefs(): ToolDef[] {
-  const defs: ToolDef[] = STRAVA_TOOLS.map((tool) => {
+  const defs: ToolDef[] = TOOLS.map((tool) => {
     const t = tool as {
       name: string;
       description: string;
@@ -530,7 +571,7 @@ function buildToolDefs(): ToolDef[] {
   defs.push({
     name: "view-activity-zones",
     description:
-      "Open an interactive time-in-zone chart for one activity: bars for the time spent in each heart rate and power zone, with percentages and an easy/moderate/hard split. " +
+      "Open an interactive time-in-zone chart for one activity: bars for the time spent in each heart rate zone, with percentages and an easy/moderate/hard split. " +
       "Prefer this over the text-only get-activity-zones when the user wants to see how a workout's effort was distributed. Takes the activity id.",
     inputSchema: toInputSchema(APP_TOOL_INPUT_SCHEMAS["view-activity-zones"]!),
     annotations: READ_ONLY,
@@ -542,7 +583,7 @@ function buildToolDefs(): ToolDef[] {
   defs.push({
     name: "get-activity-zones-data",
     description:
-      "Internal data feed for the activity-zones UI: returns per-zone time distributions (bucket bounds, seconds, percentages) for the activity's heart rate and power zones as JSON. " +
+      "Internal data feed for the activity-zones UI: returns per-zone time distributions (bucket bounds, seconds, percentages) for the activity's heart rate zones as JSON. " +
       "The view-activity-zones app calls this; not intended for direct model use.",
     inputSchema: toInputSchema(
       APP_TOOL_INPUT_SCHEMAS["get-activity-zones-data"]!,
@@ -590,10 +631,10 @@ function buildToolDefs(): ToolDef[] {
   return defs;
 }
 
-export const TOOLS = buildToolDefs();
+export const TOOL_DEFS = buildToolDefs();
 
 /**
- * Map of tool name → execute function for existing Strava tools.
+ * Map of tool name to execute function, across every tool.
  *
  * The third argument is the call's progress reporter. It is always
  * supplied — {@link NO_PROGRESS} when the caller asked for none — so a handler
@@ -613,7 +654,7 @@ const TOOL_EXECUTORS = new Map<
   }>
 >();
 
-for (const tool of STRAVA_TOOLS) {
+for (const tool of TOOLS) {
   TOOL_EXECUTORS.set(
     tool.name,
     tool.execute as (
@@ -629,7 +670,7 @@ for (const tool of STRAVA_TOOLS) {
 
 /** Tool name → zod input schema, enforced at dispatch time. */
 const TOOL_INPUT_SCHEMAS = new Map<string, z.ZodType>();
-for (const tool of STRAVA_TOOLS) {
+for (const tool of TOOLS) {
   const schema = (tool as { inputSchema?: z.ZodType }).inputSchema;
   if (schema) TOOL_INPUT_SCHEMAS.set(tool.name, schema);
 }
@@ -709,14 +750,17 @@ async function handleGetActivityStreamsRaw(
 const RUNNING_TYPES = new Set(["Run", "VirtualRun", "TrailRun"]);
 
 /**
- * Quantum for history-window bounds. The three listing-driven apps
- * are each a `view-` tool plus a `get-…-data` tool running the same
- * `getAllActivities` scan seconds apart, and the response cache keys on the
- * full URL — so an `after` recomputed from a raw `Date.now()` per call gave
- * the pair two distinct URLs and two full pagination sweeps. Flooring the
- * bounds to the minute makes the pair build one URL, which the
- * `/athlete/activities` TTL in `stravaCacheTtl` then serves as one scan.
- * The cost is that "last N days" can start up to a minute early.
+ * Quantum for history-window bounds. The remaining Strava-backed listing
+ * apps (cadence-trends, training-load) are each a `view-` tool plus a
+ * `get-…-data` tool running the same `getAllActivities` scan seconds apart,
+ * and the response cache keys on the full URL, so an `after` recomputed
+ * from a raw `Date.now()` per call gave the pair two distinct URLs and two
+ * full pagination sweeps. Flooring the bounds to the minute makes the pair
+ * build one URL, which the `/athlete/activities` TTL in `stravaCacheTtl`
+ * then serves as one scan. The cost is that "last N days" can start up to a
+ * minute early. The fitness-trend app pair shares a window the same way but
+ * without this quantum: `todayLocal` already returns the same calendar date
+ * for calls seconds apart.
  */
 const WINDOW_QUANTUM_SECONDS = 60;
 
@@ -724,15 +768,6 @@ const WINDOW_QUANTUM_SECONDS = 60;
 function quantizedEpochAfter(msAgo: number): number {
   const seconds = Math.floor((Date.now() - msAgo) / 1000);
   return seconds - (seconds % WINDOW_QUANTUM_SECONDS);
-}
-
-/**
- * Epoch seconds for an upper bound covering "now": the next minute boundary,
- * so the key is stable across a pair while still including an activity
- * finished moments ago.
- */
-function quantizedEpochBefore(): number {
-  return quantizedEpochAfter(0) + WINDOW_QUANTUM_SECONDS;
 }
 
 async function handleGetCadenceTrendData(
@@ -806,19 +841,31 @@ async function handleViewCadenceTrends(
   return { content: [{ type: "text", text: lines.join("\n") }] };
 }
 
-/** Fetch the window of running activities the training-load feed aggregates. */
-async function loadTrainingLoadRuns(
-  token: string,
-  days: number,
+/**
+ * Shared fetch + aggregate for the training-load view and data tools:
+ * `loadTrainingLoadInputs` (`trainingLoadInputs.ts`) fetches and classifies
+ * the run/load activities and current CTL/ATL/TSB, the same inputs
+ * `get-training-load` builds through, so the two surfaces can never
+ * disagree; `buildTrainingLoadData` then aggregates them into the weekly
+ * timeline.
+ */
+async function loadTrainingLoadAppData(
+  apiKey: string,
+  args: Record<string, unknown>,
   progress: ReportProgress,
-) {
-  const after = quantizedEpochAfter(days * 24 * 60 * 60 * 1000);
-  const allActivities = await getAllActivitiesFn(token, {
-    perPage: 200,
-    after,
-    onProgress: listingProgress(progress),
+): Promise<TrainingLoadAppData> {
+  const days = Number(args.days) || 84;
+  const runOnly = Boolean(args.runOnly);
+
+  const { runs, loadActivities, current, source } =
+    await loadTrainingLoadInputs(apiKey, { days, runOnly }, progress);
+
+  return buildTrainingLoadData(runs, days, {
+    loadActivities,
+    runOnly,
+    current,
+    source,
   });
-  return allActivities.filter((a) => a.type && RUNNING_TYPES.has(a.type));
 }
 
 async function handleGetTrainingLoadData(
@@ -826,9 +873,7 @@ async function handleGetTrainingLoadData(
   token: string,
   progress: ReportProgress,
 ): Promise<ToolCallResult> {
-  const days = Number(args.days) || 84;
-  const runs = await loadTrainingLoadRuns(token, days, progress);
-  const result = buildTrainingLoadData(runs, days);
+  const result = await loadTrainingLoadAppData(token, args, progress);
   return { content: [{ type: "text", text: JSON.stringify(result) }] };
 }
 
@@ -837,15 +882,14 @@ async function handleViewTrainingLoad(
   token: string,
   progress: ReportProgress,
 ): Promise<ToolCallResult> {
-  const days = Number(args.days) || 84;
-  const runs = await loadTrainingLoadRuns(token, days, progress);
-  const data = buildTrainingLoadData(runs, days);
+  const data = await loadTrainingLoadAppData(token, args, progress);
   const warningWeeks = data.weeks.filter((w) => w.warning).length;
 
   const lines = [
-    `Training Load (last ${days} days)`,
+    `Training Load (last ${data.days} days, CTL/ATL source: ${data.source})`,
     `Runs: ${data.totals.runs}`,
     `Distance: ${data.totals.distanceKm} km`,
+    `Load: ${data.totals.load}`,
     `Warning weeks: ${warningWeeks}`,
     "",
     "[Interactive training load chart rendered above]",
@@ -854,13 +898,16 @@ async function handleViewTrainingLoad(
 }
 
 /**
- * Shared fetch + solve for the fitness-trend view and data tools.
- * Cross-sport by design: relative effort is heart-rate based, so whole-body
- * load is what TSB should reflect — unlike the running-only training-load
- * feed above.
+ * Shared fetch + solve for the fitness-trend view and data tools. Whole-body
+ * only (matching the text tool's default): CTL/ATL are read straight off
+ * intervals.icu's own wellness record via `loadWellnessFitnessSeries`, the
+ * one home this and the text tool's whole-body path both build the series
+ * through, never recomputed. Projection/taper are seeded from the most
+ * recent day with a recorded CTL/ATL, which can trail `days` when wellness
+ * has not synced yet.
  */
 async function loadFitnessTrendAppData(
-  token: string,
+  apiKey: string,
   args: Record<string, unknown>,
   progress: ReportProgress,
 ): Promise<FitnessTrendAppData> {
@@ -870,24 +917,47 @@ async function loadFitnessTrendAppData(
     typeof args.targetDate === "string" ? args.targetDate : undefined;
   const targetTsb = Number(args.targetTsb ?? 10);
 
-  const end = new Date();
-  const activities = await getAllActivitiesFn(token, {
-    after: quantizedEpochAfter(days * 24 * 60 * 60 * 1000),
-    before: quantizedEpochBefore(),
-    onProgress: listingProgress(progress),
-  });
+  const tz = getTimeZone();
+  const endDate = todayLocal(tz);
+  const windowStart = addDays(endDate, -(days - 1));
 
-  const trend = buildFitnessTrend(activities, {
-    endDate: end.toISOString().split("T")[0]!,
-    days,
-    projectDays,
-    taper: targetDate ? { targetDate, targetTsb } : undefined,
+  const { series, seed, asOfDate } = await loadWellnessFitnessSeries(apiKey, {
+    oldest: windowStart,
+    newest: endDate,
+  });
+  const current = series.length > 0 ? series[series.length - 1]! : null;
+
+  const projected = projectFromWellness(
+    { series, seed, asOfDate, endDate },
+    {
+      projectDays,
+      taper: targetDate ? { targetDate, targetTsb } : undefined,
+    },
+  );
+  const projection = projected.projection;
+  const tsbPositiveDate = projected.tsbPositiveDate;
+  const taper = projected.taper;
+
+  const trend: FitnessTrendResult = {
+    days: series,
+    current,
+    projection,
+    tsbPositiveDate,
+    taper,
+    bands: trendBands(series),
+    flags: computeFlags(series),
+  };
+
+  progress("Listing activities for the window…", { important: true });
+  const activities = await listActivitiesFn(apiKey, {
+    oldest: windowStart,
+    newest: endDate,
   });
 
   return mapFitnessTrendApp(trend, {
     days,
     activitiesIncluded: activities.length,
-    activitiesMissingLoad: activities.filter((a) => a.suffer_score == null)
+    activitiesMissingLoad: activities.filter((a) => a.icu_training_load == null)
       .length,
   });
 }
@@ -922,9 +992,11 @@ async function handleViewFitnessTrend(
         .map((week) => `week ${week.week} ${week.dailyLoad}/day`)
         .join(
           ", ",
-        )} — lands TSB ${taper.achievedTsb >= 0 ? "+" : ""}${taper.achievedTsb}`,
+        )}; lands TSB ${taper.achievedTsb >= 0 ? "+" : ""}${taper.achievedTsb}`,
     );
     if (!taper.feasible && taper.note) lines.push(`Warning: ${taper.note}`);
+  } else if (data.tsbPositiveDate === todayLocal(getTimeZone())) {
+    lines.push(`Form is already positive today (${data.tsbPositiveDate})`);
   } else if (data.tsbPositiveDate) {
     lines.push(
       `Resting from here, form turns positive on ${data.tsbPositiveDate}`,
@@ -940,19 +1012,17 @@ async function handleViewFitnessTrend(
 
 /** Shared fetch + mapping for the activity-zones view and data tools. */
 async function loadActivityZonesData(
-  token: string,
+  apiKey: string,
   activityId: string,
 ): Promise<ActivityZonesData> {
-  const [activity, zones] = await Promise.all([
-    getActivityById(token, activityId),
-    getActivityZones(token, activityId),
-  ]);
+  const activity = await getIntervalsActivity(apiKey, activityId);
   return {
-    activityId: String(activity.id),
-    name: activity.name,
+    activityId: activity.id,
+    name: activity.name ?? activity.type ?? "Workout",
     date: activity.start_date_local,
-    type: activity.sport_type ?? activity.type ?? "Workout",
-    zoneSets: mapActivityZones(zones),
+    type: activity.type ?? "Workout",
+    zoneSets: mapIntervalsZones(activity),
+    hrZoneWarning: hrZoneMismatchWarning(activity),
   };
 }
 
@@ -972,12 +1042,15 @@ async function handleViewActivityZones(
   const lines = [`Activity Zones: ${data.name} (${data.date})`];
   if (data.zoneSets.length === 0) {
     lines.push(
-      "No zone data recorded — the activity had neither a heart rate nor a power sensor.",
+      "No zone data recorded: the activity has no recorded heart rate zone bounds.",
     );
+    if (data.hrZoneWarning) lines.push(data.hrZoneWarning);
   } else {
     for (const set of data.zoneSets) {
       const top = dominantBucket(set);
-      const label = set.type === "heartrate" ? "Heart rate" : "Power";
+      // Power zones are dropped for now (see docs/api-notes.md); heart
+      // rate is the only zone type mapIntervalsZones still emits.
+      const label = set.type === "heartrate" ? "Heart rate" : set.type;
       lines.push(
         `${label}: mostly Z${top.zone} (${top.pct}% of ${Math.round(set.totalSeconds / 60)} min)`,
       );
@@ -1321,18 +1394,18 @@ async function handleViewRouteMap(
 }
 
 /**
- * Fetch both detailed activities and run the same aggregate comparison the
- * compare-activities text tool uses. getActivityById is TTL-cached in
- * fetchClient, so the view + data-tool pair costs one Strava fetch per
- * activity, not two.
+ * Fetch both intervals.icu activities and run the same aggregate comparison
+ * the compare-activities text tool uses. getIntervalsActivity is TTL-cached
+ * in fetchClient, so the view + data-tool pair costs one fetch per activity,
+ * not two.
  */
 async function loadCompareActivitiesData(
   args: Record<string, unknown>,
   token: string,
 ): Promise<ReturnType<typeof buildComparison>> {
   const [activity1, activity2] = await Promise.all([
-    getActivityById(token, String(args.activity_id_1)),
-    getActivityById(token, String(args.activity_id_2)),
+    getIntervalsActivity(token, String(args.activity_id_1)),
+    getIntervalsActivity(token, String(args.activity_id_2)),
   ]);
   return buildComparison(activity1, activity2);
 }
@@ -1351,13 +1424,12 @@ async function handleViewCompareActivities(
 ): Promise<ToolCallResult> {
   const data = await loadCompareActivitiesData(args, token);
   const lines = [
-    `Activity 1: ${data.activity_1.name} (${data.activity_1.date}) — ${data.activity_1.distance_km} km in ${data.activity_1.time_formatted}`,
-    `Activity 2: ${data.activity_2.name} (${data.activity_2.date}) — ${data.activity_2.distance_km} km in ${data.activity_2.time_formatted}`,
+    `Activity 1: ${data.activity_1.name} (${data.activity_1.date}), ${data.activity_1.distance_km} km in ${data.activity_1.moving_time}`,
+    `Activity 2: ${data.activity_2.name} (${data.activity_2.date}), ${data.activity_2.distance_km} km in ${data.activity_2.moving_time}`,
   ];
-  if (data.differences.pace) {
-    const s = data.differences.pace.seconds_per_km;
+  if (data.differences.pace_delta_min_per_km != null) {
     lines.push(
-      `Pace delta: ${s > 0 ? "+" : ""}${s} sec/km (${data.differences.pace.interpretation})`,
+      `Pace delta: ${data.differences.pace_delta_min_per_km} /km (${data.differences.pace_delta_interpretation})`,
     );
   }
   if (data.differences.avg_hr != null) {
@@ -1562,7 +1634,7 @@ export function createServer(): Server {
   // structurally; the wire shape these serialize to is what the integration
   // suite asserts, so the casts below are confined to this seam.
   server.setRequestHandler("tools/list", async () => ({
-    tools: TOOLS as unknown as ListToolsResult["tools"],
+    tools: TOOL_DEFS as unknown as ListToolsResult["tools"],
   }));
 
   server.setRequestHandler("prompts/list", async () => ({
@@ -1605,7 +1677,7 @@ export function createServer(): Server {
     // table's sake; every emitted block is a spec text block.
     return server.projectCallToolResult(
       result as unknown as CallToolResult,
-      TOOLS.find((tool) => tool.name === name)?.outputSchema,
+      TOOL_DEFS.find((tool) => tool.name === name)?.outputSchema,
     );
   });
 

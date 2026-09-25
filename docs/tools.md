@@ -8,10 +8,16 @@ Tool names and schemas are a published contract: grants are stored per tool
 identity, so renames or schema reshapes re-prompt every user. See
 [architecture.md](architecture.md#tool-metadata) before changing either.
 
-> **Status.** Tools are being ported from Strava to intervals.icu (Phases 1
-> and 2). The five tools below are ported and verified against a real
-> account; until a remaining tool is ported, it fails with a "not yet
-> ported" error.
+> **Status.** All twenty tools below are ported from Strava to intervals.icu
+> and verified against a real account (Phases 1 through 3 complete;
+> `get-fitness-trend`, `get-training-load`, and `get-running-dynamics` are
+> exercised by `scripts/live-check.ts`; `update-activity`'s write path was
+> verified once, separately, with explicit user approval, see
+> docs/api-notes.md). Still Strava-backed, and failing with a "not yet
+> ported" error until Phase 4: the `activity-chart`, `cadence-trends`, and
+> `route-map` app data handlers (see
+> [Visualization tools](#visualization-tools)); every other app tool below
+> already talks to intervals.icu.
 
 ## intervals.icu tools
 
@@ -25,6 +31,21 @@ Strava port.
 | `get-activity-streams` | Time-series streams for one activity, downsampled to a bounded number of points, including running dynamics |
 | `list-gear` | The athlete's gear (shoes) with mileage and retirement status |
 | `get-wellness` | Daily wellness (HRV, resting HR, sleep, weight, CTL/ATL/TSB) for a date or range |
+| `get-activity-laps` | Laps of an activity, derived from its intervals, with sport-aware pace/speed, GAP, HR, power, cadence |
+| `get-running-summary` | get-activity's detail fields for a run plus cadence, HR zone, and running-dynamics assessments, and a lap breakdown |
+| `get-running-dynamics` | Ground contact time, vertical oscillation/ratio, step length, stride, and cadence for a run, with VO/GCT target assessments and a per-WORK-interval breakdown |
+| `get-activity-zones` | Time spent in each HR and power zone for an activity, from the activity's own recorded zone bounds |
+| `compare-activities` | Compare two activities side-by-side: pace, HR, cadence, load, and running dynamics, plus activity2-activity1 differences and an efficiency verdict |
+| `get-hill-analysis` | Climb/descent detection with GAP and early-vs-late climb effort drift |
+| `get-split-analysis` | Even km splits with a two-halves pacing verdict stated on the clock and grade-adjusted |
+| `get-aerobic-analysis` | Aerobic decoupling and efficiency factor, preferring intervals.icu's own values and computing from streams otherwise |
+| `get-interval-analysis` | Interval detection with urban-stop-aware rest classification and rep fade |
+| `get-best-efforts` | Best times at standard running distances, from intervals.icu's pace curves |
+| `get-race-prediction` | Predicted race times from intervals.icu pace-curve points (Riegel) alongside intervals.icu's own critical-speed model, with confidence, source point, and km goal-pace splits |
+| `get-athlete-stats` | Run totals (this week, last 4 weeks, this month, YTD) aggregated from list-activities data |
+| `get-fitness-trend` | Fitness/fatigue/form (CTL/ATL/TSB), whole-body from intervals.icu wellness or run-only computed locally, with rest/planned-load projection and a solved taper to a target form on a target date |
+| `get-training-load` | Weekly running volume and injury-risk warnings, weekly intervals.icu training load and the types it covers, plus current CTL/ATL/TSB |
+| `update-activity` | Update an activity's name, description, gear, RPE, or feel, echoing before/after values (write tool) |
 
 `list-activities` defaults to the last 28 days (today back to 27 days
 earlier) in the server's configured time zone, sorted newest first. Filter
@@ -43,10 +64,12 @@ interval breakdown (`includeIntervals`, default true), gear id, and
 description, all with units. Gear name is included too when the activity
 payload happens to carry one; intervals.icu does not populate it there
 today, so this is currently always id-only. HR zone boundaries come from
-the athlete's Run sport settings group (`types` Run, VirtualRun, TrailRun);
-`hr_zones` is an empty array for any other activity type, including Walk or
-Hike, or when that settings group isn't configured, rather than failing the
-call. `pace_min_per_km` and `gap_min_per_km` (grade-adjusted pace, derived
+the activity's own recorded `icu_hr_zones` when present (any activity
+type), the same source `get-activity-zones` reads; otherwise they fall back
+to the athlete's Run sport settings group (`types` Run, VirtualRun,
+TrailRun) when that group covers the activity's type. `hr_zones` is an
+empty array when neither source is usable, rather than failing the call.
+`pace_min_per_km` and `gap_min_per_km` (grade-adjusted pace, derived
 from the activity's `gap` field, which intervals.icu reports in m/s, the
 same unit as `average_speed`) are set for Run/TrailRun/VirtualRun only: a
 Walk or Hike gets a cadence but no pace. The text response truncates
@@ -90,35 +113,267 @@ the response's `hrv_note` says so explicitly (and every text line labels it
 "HRV SDNN", never bare "HRV"), since `hrv_rmssd_ms` reads null for those
 athletes and should not be compared against rMSSD norms.
 
-## Activity tools
+`get-activity-laps` takes the `id` from `list-activities` and returns laps
+derived from the activity's intervals (`icu_intervals`, fetched via
+`getActivity(..., { intervals: true })`): intervals.icu has no separate lap
+list, and `icu_intervals` usually mirrors the device's own laps (typically
+one WORK interval per lap, sometimes with a short RECOVERY inserted between
+them), for any sport. Runs report `pace_min_per_km` and grade-adjusted
+`gap_min_per_km` (`gap_source: "intervals.icu"`, from the lap's own `gap`
+field, not the locally-modelled GAP hill/split analysis compute); other
+distance sports report `speed_kmh`. Cadence is spm
+(doubled from strides) for Run/TrailRun/VirtualRun/Walk/Hike, rpm otherwise,
+with the unit named in `units.cadence`. The response also carries
+`device_lap_count` (`icu_lap_count`) and `intervals_edited`
+(`icu_intervals_edited`); the text flags it when intervals were edited or
+the interval count differs from the device's lap count. An activity with no
+intervals returns a valid payload with `lap_count: 0`.
 
-| Tool | Description |
-| ---- | ----------- |
-| `update-activity` | Update an activity's description, title, sport type, gear, or flags |
-| `get-activity-zones` | Time spent in each HR and power zone for an activity |
-| `get-activity-laps` | Laps of an activity with sport-aware pace/speed, HR, power, cadence |
-| `export-activity-gpx` | Export an activity's recorded track as GPX built from its streams, inline or to a file |
-| `get-running-summary` | Running-focused summary with HR zones and lap analysis |
-| `get-aerobic-analysis` | Aerobic decoupling, efficiency factor, and intensity factor from HR + power/speed streams |
-| `get-hill-analysis` | Climb/descent detection with GAP and early-vs-late climb effort drift |
-| `get-split-analysis` | Even km/mile splits with a two-halves pacing verdict stated on the clock and grade-adjusted |
-| `get-interval-analysis` | Interval detection with urban-stop-aware rest classification and rep fade |
-| `get-training-load` | Training load summary with trend analysis |
-| `get-fitness-trend` | Fitness/fatigue/form (CTL/ATL/TSB) from relative effort, with rest projection and a solved taper to a target form on a target date |
-| `compare-activities` | Compare two running activities side-by-side |
-| `get-best-efforts` | Personal best efforts across all running activities, optionally scoped to a date window |
-| `get-race-prediction` | Predicted race times from recorded best efforts (Riegel), with confidence, source effort, and km/mile goal-pace splits |
+`get-running-summary` takes the `id` from `list-activities` and is a thin
+wrapper over `get-activity`'s mapper: every field `get-activity` returns,
+plus a `cadence_assessment` (from `average_cadence_spm`), an `hr_zone_summary`
+(time and percent per zone), a `dynamics_assessment` (vertical oscillation
+and ground contact time against the 100 mm / 200-260 ms targets, only when
+`running_dynamics` is present), and `laps` (from the same interval mapper as
+`get-activity-laps`). No power fields. `hr_zone_summary` prefers the
+activity's own recorded `icu_hr_zones` as zone bounds, falling back to the
+Run sport settings group only when its `types` names this activity's type;
+it is `null` (with `hr_zone_note` explaining why) when no bounds match the
+recorded zone time count. Only Run, TrailRun, and VirtualRun are accepted;
+any other type is rejected with a message naming the type and pointing to
+`get-activity`. The text response caps the lap list at 20 lines;
+`structuredContent.laps` always has the full list.
 
-## Athlete tools
+`get-running-dynamics` takes the `id` from `list-activities` plus an
+optional `includeIntervals` (default `true`) and returns one activity's
+running dynamics: activity averages (`stance_time_ms`,
+`vertical_oscillation_mm`, `vertical_ratio_pct`, `step_length_mm`,
+`stride_m`, `cadence_spm`), `assessments` for vertical oscillation and
+ground contact time against the shared 100 mm / 200-260 ms targets
+(`status`: `within`/`high`/`low`, plus a human `message` and `target`
+string), and `intervals`, one row per WORK interval (`lap_index`, `label`,
+`distance_km`, `pace_min_per_km`, and the same dynamics with statuses).
+Vertical ratio is reported as a value only, no status. Unlike
+`get-running-summary`, a non-step-cadence activity type or one whose device
+recorded no dynamics is not an error: `has_dynamics: false` with an
+explanatory `message` and empty `intervals`. The text response caps the
+interval list at 20 lines; `structuredContent.intervals` always has the
+full list. One `get-activity(..., { intervals: true })` call; no streams.
 
-| Tool | Description |
-| ---- | ----------- |
-| `get-athlete-stats` | Activity statistics (recent, YTD, all-time) |
+`get-activity-zones` and the `view-activity-zones`/`get-activity-zones-data`
+MCP App share one mapper (`mapIntervalsZones`): heart rate from the
+activity's own `icu_hr_zones` (upper bounds, zone 1's lower bound is always
+0) and `icu_hr_zone_times`, power from `icu_power_zones` and `icu_zone_times`
+only when both are present. Unlike get-activity's `hr_zones`, there is no
+sport-settings fallback here; pace zones are out of scope (Phase 4). Heart
+rate is omitted, with a warning in the text, when the activity recorded
+bounds and zone times with different zone counts. An activity with no zone
+data returns a valid empty payload, not an error.
+
+`compare-activities` and the `view-compare-activities`/`get-compare-activities-data`
+MCP App's summary half share one `buildComparison(a, b)`, so text and app
+output can never drift. Each side reports the same fields `get-activity`
+does for one activity: `pace_min_per_km`/`gap_min_per_km` as `m:ss` strings
+(`gap_source: "intervals.icu"`), training load (`icu_training_load`),
+decoupling, efficiency factor, and running-dynamics averages when the
+device recorded them. Differences are derived from each activity's raw
+distance/time/HR/cadence, never from the rounded or formatted per-side
+fields; the pace delta renders as `pace_delta_min_per_km` (signed `m:ss`)
+plus `pace_delta_sec_per_km` (the underlying signed seconds) and
+`pace_delta_interpretation`. A non-running activity on either
+side degrades to a warning rather than failing the call. The app's stream
+overlay (`get-activity-streams-raw`) is still Strava-backed, pending Phase 4.
+
+`get-hill-analysis` and `get-split-analysis` both read their streams through
+the shared intervals.icu stream adapter (`distance`, `altitude`,
+`grade_smooth`, `heartrate`, `velocity_smooth`, `cadence`, plus a derived
+`moving` flag) and share one grade/GAP implementation
+(`gapFactor`/`computeGrades` in `hillAnalysis.ts`): grade prefers
+intervals.icu's `grade_smooth` stream, falling back to an altitude-window
+derivation when it is absent or entirely null, and `grade_source` in the
+response names which was used. A null sample in `distance`/`altitude`/grade
+is interpolated between its known neighbours (held flat across a leading or
+trailing gap) rather than treated as zero; a null HR/cadence/velocity sample
+is simply excluded from whatever average it would have fed. Pace is a bare
+`m:ss` string in `pace_min_per_km`/`gap_pace_min_per_km`, the `/km` suffix
+added only in the text output; splits are kilometres only. GAP here is
+locally modelled from grade (`gap_source: "model"`), distinct from
+get-activity/compare-activities/get-activity-laps/get-running-summary's
+`gap_source: "intervals.icu"` (their own recorded `gap` field). An activity
+with no recorded
+streams at all (e.g. Pilates, or a manual entry) fails with a message naming
+the activity rather than an empty analysis.
+
+`get-hill-analysis` detects sustained climbs and descents (grade ≥ 2% for
+≥ 200 m, tolerant of brief dips) and reports per segment: length, average
+grade, elevation change, moving and grade-adjusted pace, HR, cadence, and
+power. The headline is early-vs-late climb drift: HR per unit of
+grade-adjusted speed compared between climbs in the first and second half of
+the activity, or GAP pace alone without HR, positive meaning the same
+climbing cost more late in the run.
+
+`get-split-analysis` bins the streams into fixed 1 km splits (device laps
+are ignored) and states a two-halves verdict twice: once on the clock, once
+grade-adjusted, cut at the exact midpoint of recorded distance rather than
+by grouping splits. `terrain_pct` names how many percentage points of the
+raw change the terrain accounts for, so a hilly back half is not misread as
+fade and a course that flattens out does not hide real fade.
+
+`get-aerobic-analysis` prefers the activity's own `decoupling` and
+`icu_efficiency_factor` fields when intervals.icu has already computed them
+(`decoupling_source`/`efficiency_factor_source: "intervals.icu"`), and in
+that case skips the stream fetch entirely unless `includeBreakdown: true` is
+passed. Otherwise both are computed from streams
+(`source: "computed"`) using the shared intervals.icu stream adapter. The
+`basis` input picks the output stream: `pace` (default) reads
+`velocity_smooth`, `power` reads `watts`; pace figures render as a bare
+`m:ss` string in `avg_pace_min_per_km`/`normalized_pace_min_per_km`, never
+miles. On the power basis a recording device name starting
+with `Watch` (an Apple Watch) adds a warning that the power stream is
+Apple's own estimate, not a power meter reading. Warm-up exclusion defaults
+to the activity's `icu_warmup_time`, then the athlete's Run sport-settings
+`warmup_time`, then 5 minutes; intensity factor's threshold power defaults to
+the athlete's Run sport-settings `ftp`, then the activity's `icu_ftp`.
+
+`get-interval-analysis` classifies every stopped segment (from the derived
+`moving` stream) before trusting it as interval structure: under 60 s with no
+fast effort before it is a traffic light (excluded), up to 3 min after a fast
+effort is genuine recovery, over 5 min is a café/regroup stop (excluded),
+anything else is unclassified and lowers confidence. When the activity
+carries clean structured intervals.icu laps (`icu_intervals`, WORK/RECOVERY)
+those are preferred over stream reconstruction; they also catch
+jog-recovery sessions, which never stop moving, and fall back to streams
+when the laps' speeds are not tightly clustered (rain, sweat, a
+non-effort-based auto-lap split). Work reps are reconstructed between
+recoveries, merging straight through traffic lights, and reported with
+per-rep pace (`pace_min_per_km`, bare `m:ss`), HR, cadence, and power; fade compares the last rep
+against the first. An HR-distribution tiebreaker ("was this a workout at
+all") reports the share of moving time at ≥ 88% of the activity's own max HR.
+
+`get-best-efforts` reports best times at standard distances (400m, 1km, 5km,
+10km, half marathon, marathon by default, or a subset via `distances`) from
+intervals.icu's pace curves rather than scanning activities. `window` picks
+`all`, `1y` (default), `90d`, or a custom `YYYY-MM-DD..YYYY-MM-DD` range,
+mapped to the matching pace-curve id. `topN` (1-5, default 1) picks how many
+distinct activities to report per distance: the default makes one call to the
+athlete's own pace curve, whose `activities` map already carries the name,
+date, and race flag; above 1 fetches per-activity pace curves for the window
+to rank the top N distinct activities per distance locally (intervals.icu
+returns no rank), then resolves the name and race flag for each winning
+activity with one bounded-concurrency `getActivity` call per unique id (at
+most 30, distances x topN), never a `list-activities` sweep over the whole
+window. Pace renders as a bare `m:ss` string in `pace_min_per_km`, never
+miles. Because
+the pace curve is built from the recorded time stream (a moving-time style
+curve), `time_seconds`/`time_formatted` are not elapsed time; the response's
+`note` says so. Each requested distance is matched to the nearest point on
+intervals.icu's curve, but only within tolerance (2% of the target or 50m,
+whichever is larger): a distance with no point that close, whether the
+window's curve is empty or its nearest point is simply too far away (a short
+window's only 5K is never reported as its marathon time), comes back as an
+empty list, named in `missing`, with a matching warning, rather than failing
+the whole call or mislabelling an unrelated distance.
+
+`get-race-prediction` predicts race times from intervals.icu's `all` and `90d`
+pace curves rather than scanning activities: each curve's distance-grid points
+become prediction inputs (the `all` curve giving the fastest ever at a
+distance, `90d` the fastest of the last 90 days), combined with Riegel's
+equivalent-performance formula and weighted by recency and extrapolation
+distance, the same consensus/confidence math as before. Alongside each Riegel
+estimate it reports intervals.icu's own critical-speed model fit to the same
+pace curve (`time = (distance - dPrime) / criticalSpeed`), stated as valid for
+roughly 3 to 60 minute efforts; a prediction outside that window, a marathon
+for instance, is still returned and flagged rather than hidden. `raceDistance`
+(optional) adds a km split table (even and negative-split) for that race, and
+`goalTime` paces it to a goal instead of the prediction. Output is km only, no
+mile paces or splits. Pace is a flat `pace_sec_per_km`/`pace_min_per_km` pair
+(bare `m:ss`), matching every other tool, wherever a prediction, the goal
+target, or a split row reports one; `units.distance` is `"m"`, matching the
+`distance_m` fields the response actually carries.
+
+`get-fitness-trend` computes the classic CTL/ATL/TSB performance-management
+chart two ways. Whole-body (default) reads CTL/ATL straight off
+intervals.icu's own daily wellness record (`source: "intervals.icu"`),
+never recomputed locally, so a custom CTL/ATL time constant configured on the
+account is honoured automatically; a day with no recorded CTL/ATL is a gap,
+not a zero-load day, and is left out of the series with a warning rather than
+corrupting the numbers around it. The window ends at today in the server's
+configured time zone, but `as_of` names the most recent date CTL/ATL is
+actually known for, which projection and a solved taper are seeded from, and
+which can trail today when wellness has not synced yet. `runOnly: true`
+computes CTL/ATL locally from the daily sum of `icu_training_load` across
+Run/TrailRun/VirtualRun activities only (`source: "computed"`), since
+intervals.icu has no per-sport CTL/ATL: it fetches a `days + 150` day runway
+and zero-seeds the recurrence so the 42-day average has settled by the
+requested window, then trims the displayed series back to it. Both paths
+report `activity_types_included` (whole-body: the distinct types with
+nonzero load in the window; run-only: the three run types), and whole-body
+notes that some types (e.g. strength) may count toward fatigue (ATL) only,
+per this athlete's intervals.icu settings. `projectDays` (default 0, or when
+`plannedLoads` is given and this is omitted, the days out to its latest date,
+capped at 60) projects TSB forward assuming rest, or `plannedLoads`
+(`[{ date: YYYY-MM-DD, load }]`, dates after today; unlisted dates in the
+projection count as rest; an entry on or before today, or beyond the
+projection, is ignored and named in a warning) projects with a specific plan
+instead. `targetDate`/`targetTsb` solve a load taper landing on a target
+form, unchanged from before. The `view-fitness-trend`/`get-fitness-trend-data`
+MCP App pair (below) shares this whole-body path (`loadWellnessFitnessSeries`,
+the one home both surfaces build the read series through).
+
+`get-training-load` reports weekly running volume (distance, time,
+elevation, run count) and the same injury-risk warnings as before
+(`computeWeekWarnings` in `trainingLoad.ts`, shared with the app feed below),
+always from Run/TrailRun/VirtualRun activities regardless of `runOnly`. It
+also reports weekly `load` (the sum of `icu_training_load` over the included
+types) and `load_by_type`, plus the athlete's current CTL/ATL/TSB.
+Whole-body (default) sums load across every activity type in the window and
+reads CTL/ATL/TSB straight off intervals.icu's own wellness record (`source:
+"intervals.icu"`, today or the most recent day with a recorded value; see
+`get-fitness-trend` above for why that can trail today).
+`runOnly: true` sums load over Run/TrailRun/VirtualRun only and computes
+CTL/ATL/TSB locally the same way `get-fitness-trend`'s run-only path does,
+through the shared `buildRunOnlyFitnessTrend` helper in `fitnessTrend.ts` and
+its `days + 150` day zero-seeded runway, so the two tools can never disagree
+(`source: "computed"`). `activity_types_included` names which types `load`
+covers either way. The weekly timeline (`aggregateWeeks` in `trainingLoad.ts`,
+also shared with the app feed below) spans the union of weeks with a run and
+weeks with load: a strength-only week, or a whole-body window with no runs at
+all, still gets a row, with run fields zeroed rather than the week being
+dropped, so weekly and total load can never differ between this tool and the
+app feed for the same activities. Weeks start Monday on each activity's own
+local calendar date (`start_date_local`, as intervals.icu reports it, never
+re-interpreted through the server's time zone) via `startOfWeekMonday` in
+`utils/localDate.ts`, the same helper `get-athlete-stats` uses. Time is
+reported both ways: `time_s` (seconds, matching `units.time`) and
+`time_hours` (matching `units.time_hours`), per week and in `totals`.
+
+`update-activity` changes an activity's name, description, gear, RPE
+(`icu_rpe`), or feel. It always does a fresh read first (bypassing the
+cache), writes only the fields that differ from the current value in a
+single PUT, never retried even on a 5xx, then does a fresh re-read and
+reports `changes: [{ field, before, after }]` for exactly the fields that
+were sent. `descriptionMode` defaults to `replace` (overwrites); `append`
+keeps the existing text and adds the new text below it, separated by a
+blank line. `gearId` is validated against `list-gear`: an unknown id fails
+and lists the available gear ids and names; a retired gear id is accepted
+with a warning. Gear can be switched but not cleared; intervals.icu ignores
+a null gear id (docs/api-notes.md). Name, description, and RPE writes were
+live-verified 2026-09-25 (docs/api-notes.md); `feel` is 1 to 5 on
+intervals.icu's scale, 1 the strongest feeling and 5 the weakest, but that
+scale was not exercised by the write check and remains an assumption. A
+request with nothing left to change after diffing against the
+current activity reports "no change" and sends no PUT. Any field whose
+re-read value does not match what was sent (e.g. gear not applied) adds a
+warning rather than failing the call.
 
 ## Visualization tools
 
 Each `view-*` MCP App has an app-only `get-*-data` companion that fetches what
-the UI renders.
+the UI renders. `view-compare-activities`/`get-compare-activities-data`,
+`view-activity-zones`/`get-activity-zones-data`,
+`view-fitness-trend`/`get-fitness-trend-data`, and
+`view-training-load`/`get-training-load-data` are ported to intervals.icu;
+the rest are still Strava-backed, pending Phase 4.
 
 | Tool | Description |
 | ---- | ----------- |
@@ -129,10 +384,10 @@ the UI renders.
 | `view-route-map` | Interactive map of an activity's GPS track, fit to bounds with start/finish markers; optional distance-anchored waypoints (MCP App) |
 | `get-route-map-data` | Decoded `[lat, lng]` coordinates plus index-aligned metric streams for the route map UI (app-only) |
 | `view-training-load` | Weekly running-volume bars with a rolling trend line and injury-risk warning weeks (MCP App) |
-| `get-training-load-data` | Per-week volume, trend value, and warning flags for the training-load UI (app-only) |
+| `get-training-load-data` | Per-week volume, trend value, warning flags, weekly load, and current CTL/ATL/TSB for the training-load UI (app-only) |
 | `view-compare-activities` | Interactive overlay of two activities' streams on a shared distance/time axis with a delta summary (MCP App) |
 | `get-compare-activities-data` | Aggregate comparison (summaries, activity2−activity1 differences, efficiency) for the compare-activities UI (app-only) |
-| `view-activity-zones` | Time-in-zone bar chart for one activity's HR and power zones with an easy/moderate/hard split (MCP App) |
+| `view-activity-zones` | Time-in-zone bar chart for one activity's HR zones with an easy/moderate/hard split (power zones dropped for now; see docs/api-notes.md) (MCP App) |
 | `get-activity-zones-data` | Per-zone time distributions (bucket bounds, seconds, percentages) for the activity-zones UI (app-only) |
 | `view-fitness-trend` | CTL/ATL/TSB over time with shaded fatigue/freshness/ramp bands and a dashed taper plan or rest projection past today (MCP App) |
 | `get-fitness-trend-data` | Per-day CTL/ATL/TSB, the projection, the solved taper, and the dated warning bands for the fitness-trend UI (app-only) |
@@ -143,24 +398,23 @@ Reusable multi-step workflows a host can offer as slash commands or starters.
 
 | Prompt | Arguments | What it does |
 | ------ | --------- | ------------ |
-| `weekly-review` | `weeks` (optional, default 4) | Reviews recent training — load trend, key workouts, cadence patterns — ending with focus points for next week |
-| `annotate-last-run` | `activity_id` (optional, defaults to the most recent run) | Analyses a run and appends a short coaching note to its Strava description. Confirms before writing |
+| `weekly-review` | `weeks` (optional, default 4) | Reviews recent training (load trend, key workouts, cadence patterns), ending with focus points for next week |
+| `annotate-last-run` | `activity_id` (optional, defaults to the most recent run) | Analyses a run and appends a short coaching note to its activity description. Confirms before writing |
 
 In Claude Desktop and Claude Code these appear in the prompt picker once the
 server is connected. `annotate-last-run` uses a write tool (`update-activity`),
-so it needs the `activity:write` scope.
+so a client needs to grant it before the prompt can write the note.
 
 ## Tool permissions
 
 Every tool declares MCP annotations so a host can tell reads from writes. The
-32 read tools set `readOnlyHint: true` and `destructiveHint: false`, which is
-the combination clients use to offer a durable "always allow". Two tools are
-writes and are expected to keep asking:
+33 read tools set `readOnlyHint: true` and `destructiveHint: false`, which is
+the combination clients use to offer a durable "always allow". One tool is a
+write and is expected to keep asking:
 
 | Tool | Why it asks |
 | ---- | ----------- |
 | `update-activity` | Overwrites an existing activity's fields |
-| `export-activity-gpx` | Returns the document in the response, or writes a file into `ROUTE_EXPORT_PATH` |
 
 No tool sets `anthropic/requiresUserInteraction`, so nothing opts out of
 "always allow" on purpose.

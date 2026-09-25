@@ -4,19 +4,26 @@
  * the Strava client mocked. The missing-key table pins the regression where
  * those early returns lacked `isError: true` and surfaced as ordinary content.
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { handledRateLimit } from "./__fixtures__";
 import { HttpError, RateLimitError, stravaApi } from "./fetchClient";
+import { ATL_TIME_CONSTANT_DAYS, CTL_TIME_CONSTANT_DAYS } from "./fitnessTrend";
+import {
+  getActivity as getIntervalsActivityFn,
+  getWellness as getWellnessFn,
+  type IntervalsActivity,
+  type IntervalsWellness,
+  listActivities as listActivitiesFn,
+} from "./intervalsClient";
 import {
   getActivityById,
   getActivityLaps,
-  getActivityZones,
   getAllActivities,
-  type StravaActivityZone,
   type StravaDetailedActivity,
   type StravaLap,
   type StravaSummaryActivity,
 } from "./stravaClient";
+import { addDays } from "./utils/localDate";
 
 vi.mock("./stravaClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./stravaClient")>();
@@ -24,8 +31,17 @@ vi.mock("./stravaClient", async (importOriginal) => {
     ...actual,
     getActivityById: vi.fn(),
     getActivityLaps: vi.fn(),
-    getActivityZones: vi.fn(),
     getAllActivities: vi.fn(),
+  };
+});
+
+vi.mock("./intervalsClient", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./intervalsClient")>();
+  return {
+    ...actual,
+    getActivity: vi.fn(),
+    getWellness: vi.fn(),
+    listActivities: vi.fn(),
   };
 });
 
@@ -41,7 +57,11 @@ vi.mock("./fetchClient", async (importOriginal) => {
 // key source is mocked here rather than the env var each handler used to read.
 vi.mock("./config", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./config")>();
-  return { ...actual, getIntervalsApiKey: vi.fn() };
+  return {
+    ...actual,
+    getIntervalsApiKey: vi.fn(),
+    getTimeZone: vi.fn(() => "UTC"),
+  };
 });
 
 // Import after the mocks so server.ts's modules see the mocked client.
@@ -51,7 +71,9 @@ const mockedToken = vi.mocked(getIntervalsApiKey);
 
 const mockedById = vi.mocked(getActivityById);
 const mockedLaps = vi.mocked(getActivityLaps);
-const mockedZones = vi.mocked(getActivityZones);
+const mockedIntervalsActivity = vi.mocked(getIntervalsActivityFn);
+const mockedWellness = vi.mocked(getWellnessFn);
+const mockedIntervalsList = vi.mocked(listActivitiesFn);
 const mockedList = vi.mocked(getAllActivities);
 const mockedApiGet = vi.mocked(stravaApi.get);
 
@@ -299,22 +321,26 @@ describe("cadence trends handlers", () => {
   });
 
   it("the fitness-trend pair shares both window bounds (#329)", async () => {
+    // The two calls of one app open land seconds apart. Unlike the epoch
+    // `after`/`before` the other apps quantize, fitness-trend windows on
+    // calendar dates (`todayLocal`), which are already the same for calls
+    // seconds apart on the same day, so no quantum is needed.
     vi.useFakeTimers();
     try {
       vi.setSystemTime(new Date("2026-08-19T10:00:05Z"));
-      mockedList.mockResolvedValue([]);
+      mockedWellness.mockResolvedValue([]);
+      mockedIntervalsList.mockResolvedValue([]);
 
       await dispatchToolCall("view-fitness-trend", {});
       vi.setSystemTime(new Date("2026-08-19T10:00:35Z"));
       await dispatchToolCall("get-fitness-trend-data", {});
 
-      const [viewCall, dataCall] = mockedList.mock.calls.slice(-2);
-      expect(viewCall?.[1]?.after).toBe(dataCall?.[1]?.after);
-      expect(viewCall?.[1]?.before).toBe(dataCall?.[1]?.before);
-      // `before` still covers "now": the next minute boundary, not the last.
-      expect(viewCall?.[1]?.before).toBeGreaterThan(
-        new Date("2026-08-19T10:00:05Z").getTime() / 1000,
-      );
+      const [viewWellnessCall, dataWellnessCall] =
+        mockedWellness.mock.calls.slice(-2);
+      expect(viewWellnessCall?.[1]).toEqual(dataWellnessCall?.[1]);
+      const [viewListCall, dataListCall] =
+        mockedIntervalsList.mock.calls.slice(-2);
+      expect(viewListCall?.[1]).toEqual(dataListCall?.[1]);
     } finally {
       vi.useRealTimers();
     }
@@ -322,20 +348,51 @@ describe("cadence trends handlers", () => {
 });
 
 describe("training load handlers", () => {
+  const TL_TODAY = "2026-06-01";
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(`${TL_TODAY}T12:00:00Z`));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function intervalsRun(
+    overrides: Partial<IntervalsActivity> = {},
+  ): IntervalsActivity {
+    return {
+      id: "1",
+      name: "Easy Run",
+      type: "Run",
+      start_date_local: `${TL_TODAY}T07:00:00`,
+      distance: 8000,
+      moving_time: 2400,
+      total_elevation_gain: 60,
+      icu_training_load: 50,
+      ...overrides,
+    } as IntervalsActivity;
+  }
+
   it("view-training-load summarises totals and warning weeks", async () => {
-    mockedList.mockResolvedValueOnce([summaryRun()]);
+    mockedIntervalsList.mockResolvedValueOnce([intervalsRun()]);
+    mockedWellness.mockResolvedValueOnce([]);
 
     const result = await dispatchToolCall("view-training-load", {});
 
     expect(result.isError).toBeUndefined();
     const text = result.content[0]?.text ?? "";
-    expect(text).toContain("Training Load (last 84 days)");
+    expect(text).toContain(
+      "Training Load (last 84 days, CTL/ATL source: intervals.icu)",
+    );
     expect(text).toContain("Runs: 1");
     expect(text).toContain("Distance: 8 km");
   });
 
-  it("get-training-load-data returns the weekly aggregation", async () => {
-    mockedList.mockResolvedValueOnce([summaryRun()]);
+  it("get-training-load-data returns the weekly aggregation, whole-body by default", async () => {
+    mockedIntervalsList.mockResolvedValueOnce([intervalsRun()]);
+    mockedWellness.mockResolvedValueOnce([]);
 
     const result = await dispatchToolCall("get-training-load-data", {
       days: 84,
@@ -344,36 +401,147 @@ describe("training load handlers", () => {
     expect(result.isError).toBeUndefined();
     const parsed = JSON.parse(result.content[0]?.text ?? "");
     expect(parsed.days).toBe(84);
+    expect(parsed.runOnly).toBe(false);
+    expect(parsed.source).toBe("intervals.icu");
     expect(parsed.totals.runs).toBe(1);
+    expect(parsed.totals.load).toBe(50);
     expect(parsed.weeks.length).toBeGreaterThan(0);
+  });
+
+  it("get-training-load-data computes run-only load/current in one listActivities call", async () => {
+    mockedIntervalsList.mockResolvedValueOnce([intervalsRun()]);
+
+    const result = await dispatchToolCall("get-training-load-data", {
+      days: 84,
+      runOnly: true,
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect(mockedIntervalsList).toHaveBeenCalledTimes(1);
+    expect(mockedWellness).not.toHaveBeenCalled();
+    const parsed = JSON.parse(result.content[0]?.text ?? "");
+    expect(parsed.runOnly).toBe(true);
+    expect(parsed.source).toBe("computed");
+    expect(parsed.activityTypesIncluded).toEqual([
+      "Run",
+      "TrailRun",
+      "VirtualRun",
+    ]);
+  });
+
+  it("get-training-load and get-training-load-data agree on current and activityTypesIncluded (#loadTrainingLoadInputs)", async () => {
+    const activities = [
+      intervalsRun(),
+      intervalsRun({
+        id: "2",
+        type: "WeightTraining",
+        icu_training_load: 20,
+        distance: 0,
+      }),
+    ];
+    const wellness = [
+      {
+        id: TL_TODAY,
+        ctl: 45,
+        atl: 39,
+        ctlLoad: 0,
+        atlLoad: 0,
+      } as IntervalsWellness,
+    ];
+
+    mockedIntervalsList.mockResolvedValueOnce(activities);
+    mockedWellness.mockResolvedValueOnce(wellness);
+    const appResult = await dispatchToolCall("get-training-load-data", {
+      days: 84,
+    });
+    const appData = JSON.parse(appResult.content[0]?.text ?? "");
+
+    mockedIntervalsList.mockResolvedValueOnce(activities);
+    mockedWellness.mockResolvedValueOnce(wellness);
+    const textResult = await dispatchToolCall("get-training-load", {
+      days: 84,
+    });
+    const textData = textResult.structuredContent as {
+      current: { ctl: number; atl: number; tsb: number } | null;
+      activity_types_included: string[];
+    };
+
+    expect(textData.current).toEqual(appData.current);
+    expect(textData.activity_types_included).toEqual(
+      appData.activityTypesIncluded,
+    );
   });
 });
 
 describe("fitness trend handlers", () => {
-  /** `count` consecutive daily runs ending yesterday, each with load 80. */
-  function recentBlock(count: number): StravaSummaryActivity[] {
-    return Array.from({ length: count }, (_, i) => {
-      const date = new Date(Date.now() - (i + 1) * 24 * 60 * 60 * 1000)
-        .toISOString()
-        .split("T")[0]!;
-      return summaryRun({
-        id: `load-${i}`,
-        start_date: `${date}T07:00:00Z`,
-        start_date_local: `${date}T07:00:00`,
-        suffer_score: 80,
-      });
+  const TODAY = "2026-08-19";
+  const CTL_DECAY = Math.exp(-1 / CTL_TIME_CONSTANT_DAYS);
+  const ATL_DECAY = Math.exp(-1 / ATL_TIME_CONSTANT_DAYS);
+
+  /**
+   * A synthetic wellness series with a realistic CTL/ATL shape (built via
+   * the same recurrence the app handler used to recompute, purely so the
+   * numbers look plausible; the app handler now reads `ctl`/`atl` straight
+   * off each row rather than recomputing them): `days` rows ending at
+   * `endDate`, load `recentLoad` for the most recent `activeDays` of them,
+   * else zero.
+   */
+  function wellnessSeries(
+    endDate: string,
+    days: number,
+    activeDays: number,
+    recentLoad: number,
+  ): IntervalsWellness[] {
+    const start = addDays(endDate, -(days - 1));
+    let ctl = 0;
+    let atl = 0;
+    return Array.from({ length: days }, (_, i) => {
+      const date = addDays(start, i);
+      const load = days - 1 - i < activeDays ? recentLoad : 0;
+      ctl = load * (1 - CTL_DECAY) + ctl * CTL_DECAY;
+      atl = load * (1 - ATL_DECAY) + atl * ATL_DECAY;
+      return { id: date, ctl, atl, ctlLoad: load, atlLoad: load };
     });
   }
 
-  /** YYYY-MM-DD `days` from today, for taper target dates. */
-  function inDays(days: number): string {
-    return new Date(Date.now() + days * 24 * 60 * 60 * 1000)
-      .toISOString()
-      .split("T")[0]!;
+  /**
+   * `days` rows of a deeply TSB-positive (ctl=50, atl=10) wellness series,
+   * but stopping `lagDays` short of `endDate`, the asOfDate-trails-endDate
+   * shape a sync lag produces. TSB stays positive well past `lagDays` of
+   * rest (see fitnessTrend.test.ts's own hand-verified simulation), so the
+   * only question this exercises is whether the reported crossing date is
+   * the lagging asOfDate (a past date, the old bug) or `endDate` itself.
+   */
+  function laggingPositiveWellnessSeries(
+    endDate: string,
+    days: number,
+    lagDays: number,
+  ): IntervalsWellness[] {
+    const asOf = addDays(endDate, -lagDays);
+    const start = addDays(asOf, -(days - 1));
+    return Array.from({ length: days }, (_, i) => {
+      const date = addDays(start, i);
+      return { id: date, ctl: 50, atl: 10, ctlLoad: 0, atlLoad: 0 };
+    });
   }
 
+  /** YYYY-MM-DD `days` from TODAY, for taper target dates. */
+  function inDays(days: number): string {
+    return addDays(TODAY, days);
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(`${TODAY}T12:00:00Z`));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("get-fitness-trend-data returns the series, projection, and bands", async () => {
-    mockedList.mockResolvedValueOnce(recentBlock(21));
+    mockedWellness.mockResolvedValueOnce(wellnessSeries(TODAY, 91, 21, 80));
+    mockedIntervalsList.mockResolvedValueOnce([]);
 
     const result = await dispatchToolCall("get-fitness-trend-data", {});
 
@@ -385,12 +553,12 @@ describe("fitness trend handlers", () => {
     expect(parsed.projection).toHaveLength(14);
     expect(parsed.taper).toBeNull();
     expect(parsed.current.ctl).toBeGreaterThan(0);
-    expect(parsed.activitiesIncluded).toBe(21);
     expect(Array.isArray(parsed.bands)).toBe(true);
   });
 
   it("get-fitness-trend-data solves a taper in camelCase for the app", async () => {
-    mockedList.mockResolvedValueOnce(recentBlock(21));
+    mockedWellness.mockResolvedValueOnce(wellnessSeries(TODAY, 91, 21, 80));
+    mockedIntervalsList.mockResolvedValueOnce([]);
     const targetDate = inDays(21);
 
     const result = await dispatchToolCall("get-fitness-trend-data", {
@@ -409,7 +577,8 @@ describe("fitness trend handlers", () => {
   });
 
   it("view-fitness-trend prints the same headline numbers as the chart", async () => {
-    mockedList.mockResolvedValueOnce(recentBlock(21));
+    mockedWellness.mockResolvedValueOnce(wellnessSeries(TODAY, 91, 21, 80));
+    mockedIntervalsList.mockResolvedValueOnce([]);
     const targetDate = inDays(14);
 
     const result = await dispatchToolCall("view-fitness-trend", {
@@ -426,7 +595,8 @@ describe("fitness trend handlers", () => {
   });
 
   it("view-fitness-trend reports the fresh date when only resting", async () => {
-    mockedList.mockResolvedValueOnce(recentBlock(10));
+    mockedWellness.mockResolvedValueOnce(wellnessSeries(TODAY, 91, 10, 80));
+    mockedIntervalsList.mockResolvedValueOnce([]);
 
     const result = await dispatchToolCall("view-fitness-trend", {});
 
@@ -435,14 +605,164 @@ describe("fitness trend handlers", () => {
     expect(text).not.toContain("Taper to");
   });
 
+  it("view-fitness-trend reports today, not a past catch-up date, when already positive", async () => {
+    mockedWellness.mockResolvedValueOnce(
+      laggingPositiveWellnessSeries(TODAY, 91, 2),
+    );
+    mockedIntervalsList.mockResolvedValueOnce([]);
+
+    const result = await dispatchToolCall("view-fitness-trend", {});
+
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain(`Form is already positive today (${TODAY})`);
+    expect(text).not.toContain(`form turns positive on ${addDays(TODAY, -1)}`);
+  });
+
   it("rejects a malformed target date via the input schema", async () => {
     const result = await dispatchToolCall("get-fitness-trend-data", {
       targetDate: "next Sunday",
     });
 
     expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toContain("Invalid target date");
-    expect(mockedList).not.toHaveBeenCalled();
+    expect(result.content[0]?.text).toContain("YYYY-MM-DD");
+    expect(mockedWellness).not.toHaveBeenCalled();
+    expect(mockedIntervalsList).not.toHaveBeenCalled();
+  });
+
+  it("rejects a target date that is not a real calendar date via the shared dateInputSchema", async () => {
+    const result = await dispatchToolCall("get-fitness-trend-data", {
+      targetDate: "2026-02-30",
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("real calendar date");
+    expect(mockedWellness).not.toHaveBeenCalled();
+    expect(mockedIntervalsList).not.toHaveBeenCalled();
+  });
+
+  it("rejects a plannedLoads entry that is not a real calendar date via the shared dateInputSchema", async () => {
+    const result = await dispatchToolCall("get-fitness-trend", {
+      plannedLoads: [{ date: "2026-02-30", load: 40 }],
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("real calendar date");
+    expect(mockedWellness).not.toHaveBeenCalled();
+    expect(mockedIntervalsList).not.toHaveBeenCalled();
+  });
+
+  it("get-fitness-trend and get-fitness-trend-data agree on current, projection, and taper (#projectFromWellness)", async () => {
+    const targetDate = inDays(21);
+
+    mockedWellness.mockResolvedValueOnce(wellnessSeries(TODAY, 91, 21, 80));
+    mockedIntervalsList.mockResolvedValueOnce([]);
+    const appResult = await dispatchToolCall("get-fitness-trend-data", {
+      projectDays: 14,
+    });
+    const appData = JSON.parse(appResult.content[0]?.text ?? "");
+
+    mockedWellness.mockResolvedValueOnce(wellnessSeries(TODAY, 91, 21, 80));
+    mockedIntervalsList.mockResolvedValueOnce([]);
+    const textResult = await dispatchToolCall("get-fitness-trend", {
+      projectDays: 14,
+    });
+    const textData = textResult.structuredContent as {
+      current: { date: string; ctl: number; atl: number; tsb: number };
+      projection: { date: string; ctl: number; atl: number; tsb: number }[];
+    };
+
+    expect(textData.current?.ctl).toBeCloseTo(appData.current.ctl, 5);
+    expect(textData.current?.atl).toBeCloseTo(appData.current.atl, 5);
+    expect(textData.current?.tsb).toBeCloseTo(appData.current.tsb, 5);
+    expect(textData.projection).toHaveLength(appData.projection.length);
+    expect(textData.projection.at(-1)?.tsb).toBeCloseTo(
+      appData.projection.at(-1)!.tsb,
+      5,
+    );
+
+    mockedWellness.mockResolvedValueOnce(wellnessSeries(TODAY, 91, 21, 80));
+    mockedIntervalsList.mockResolvedValueOnce([]);
+    const appTaperResult = await dispatchToolCall("get-fitness-trend-data", {
+      targetDate,
+      targetTsb: 12,
+    });
+    const appTaper = JSON.parse(appTaperResult.content[0]?.text ?? "").taper;
+
+    mockedWellness.mockResolvedValueOnce(wellnessSeries(TODAY, 91, 21, 80));
+    mockedIntervalsList.mockResolvedValueOnce([]);
+    const textTaperResult = await dispatchToolCall("get-fitness-trend", {
+      targetDate,
+      targetTsb: 12,
+    });
+    const textTaper = (
+      textTaperResult.structuredContent as {
+        taper: { target_date: string; achieved_tsb: number };
+      }
+    ).taper;
+
+    expect(textTaper.target_date).toBe(appTaper.targetDate);
+    expect(textTaper.achieved_tsb).toBeCloseTo(appTaper.achievedTsb, 5);
+  });
+
+  it("projectDays: 0 gives an empty projection in both, even with unsynced wellness days (#catch-up bug)", async () => {
+    // Drop the trailing 2 synced days so asOfDate trails endDate (TODAY) by
+    // 2 unsynced days, the shape that used to make the app keep rolling a
+    // "catch-up" projection forward even when projectDays: 0 asked for none.
+    const gapped = wellnessSeries(TODAY, 91, 21, 80).slice(0, -2);
+
+    mockedWellness.mockResolvedValueOnce(gapped);
+    mockedIntervalsList.mockResolvedValueOnce([]);
+    const appResult = await dispatchToolCall("get-fitness-trend-data", {
+      projectDays: 0,
+    });
+    const appData = JSON.parse(appResult.content[0]?.text ?? "");
+    expect(appData.projection).toEqual([]);
+    expect(appData.tsbPositiveDate).toBeNull();
+
+    mockedWellness.mockResolvedValueOnce(gapped);
+    mockedIntervalsList.mockResolvedValueOnce([]);
+    const textResult = await dispatchToolCall("get-fitness-trend", {
+      projectDays: 0,
+    });
+    const textData = textResult.structuredContent as {
+      projection: unknown[];
+      tsb_positive_date: string | null;
+    };
+    expect(textData.projection).toEqual([]);
+    expect(textData.tsb_positive_date).toBeNull();
+  });
+
+  it("tsbPositiveDate is never in the past (fully synced, no crossing)", async () => {
+    // A fully-synced series (asOfDate === TODAY) with heavy recent load, so
+    // TSB is well negative today; the projection should only ever cross
+    // positive on a date after TODAY.
+    mockedWellness.mockResolvedValueOnce(wellnessSeries(TODAY, 91, 21, 200));
+    mockedIntervalsList.mockResolvedValueOnce([]);
+
+    const result = await dispatchToolCall("get-fitness-trend-data", {
+      projectDays: 60,
+    });
+    const data = JSON.parse(result.content[0]?.text ?? "");
+
+    expect(data.tsbPositiveDate).not.toBeNull();
+    expect(data.tsbPositiveDate > TODAY).toBe(true);
+  });
+
+  it("reports TODAY, not a past catch-up date, when a lagging series is already positive", async () => {
+    // asOfDate trails TODAY by 2 days; TSB is deeply positive throughout the
+    // catch-up. The old bug reported the first catch-up day (asOf + 1, two
+    // days before TODAY) as "returns positive on".
+    mockedWellness.mockResolvedValueOnce(
+      laggingPositiveWellnessSeries(TODAY, 91, 2),
+    );
+    mockedIntervalsList.mockResolvedValueOnce([]);
+
+    const result = await dispatchToolCall("get-fitness-trend-data", {
+      projectDays: 7,
+    });
+    const data = JSON.parse(result.content[0]?.text ?? "");
+
+    expect(data.tsbPositiveDate).toBe(TODAY);
   });
 });
 
@@ -652,15 +972,41 @@ describe("route map handlers", () => {
 });
 
 describe("compare activities handlers", () => {
+  function compareActivity(
+    overrides: Partial<IntervalsActivity> = {},
+  ): IntervalsActivity {
+    return {
+      id: "i1",
+      name: "Morning Run",
+      type: "Run",
+      start_date_local: "2026-06-01T07:00:00",
+      distance: 10000,
+      moving_time: 3200,
+      average_heartrate: 150,
+      max_heartrate: 172,
+      average_cadence: 84,
+      total_elevation_gain: 80,
+      icu_training_load: 60,
+      ...overrides,
+    } as unknown as IntervalsActivity;
+  }
+
   it("view-compare-activities reports both sides and the pace delta", async () => {
-    mockedById.mockResolvedValueOnce(detailedActivity({ id: "1" }));
-    mockedById.mockResolvedValueOnce(
-      detailedActivity({ id: "2", name: "Race Day", average_speed: 3.7 }),
+    mockedIntervalsActivity.mockResolvedValueOnce(
+      compareActivity({ id: "i1" }),
+    );
+    mockedIntervalsActivity.mockResolvedValueOnce(
+      compareActivity({
+        id: "i2",
+        name: "Race Day",
+        moving_time: 3000,
+        average_heartrate: 160,
+      }),
     );
 
     const result = await dispatchToolCall("view-compare-activities", {
-      activity_id_1: "1",
-      activity_id_2: "2",
+      activity_id_1: "i1",
+      activity_id_2: "i2",
     });
 
     expect(result.isError).toBeUndefined();
@@ -671,11 +1017,13 @@ describe("compare activities handlers", () => {
   });
 
   it("propagates a fetch failure as isError", async () => {
-    mockedById.mockRejectedValue(new Error("Record Not Found"));
+    mockedIntervalsActivity.mockRejectedValueOnce(
+      new Error("Record Not Found"),
+    );
 
     const result = await dispatchToolCall("get-compare-activities-data", {
-      activity_id_1: "1",
-      activity_id_2: "2",
+      activity_id_1: "i1",
+      activity_id_2: "i2",
     });
 
     expect(result.isError).toBe(true);
@@ -683,21 +1031,22 @@ describe("compare activities handlers", () => {
 });
 
 describe("activity zones handlers", () => {
-  const hrZones = [
-    {
-      type: "heartrate",
-      sensor_based: true,
-      distribution_buckets: [
-        { min: 0, max: 130, time: 600 },
-        { min: 130, max: 155, time: 1800 },
-        { min: 155, max: -1, time: 600 },
-      ],
-    },
-  ] as unknown as StravaActivityZone[];
+  function intervalsActivity(
+    overrides: Partial<IntervalsActivity> = {},
+  ): IntervalsActivity {
+    return {
+      id: "123",
+      name: "Morning Run",
+      type: "Run",
+      start_date_local: "2026-06-01T07:00:00",
+      icu_hr_zones: [130, 155, 190],
+      icu_hr_zone_times: [600, 1800, 600],
+      ...overrides,
+    } as unknown as IntervalsActivity;
+  }
 
   it("get-activity-zones-data returns the mapped zone payload", async () => {
-    mockedById.mockResolvedValueOnce(detailedActivity());
-    mockedZones.mockResolvedValueOnce(hrZones);
+    mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
 
     const result = await dispatchToolCall("get-activity-zones-data", {
       activity_id: "123",
@@ -717,13 +1066,12 @@ describe("activity zones handlers", () => {
       seconds: 1800,
       pct: 60,
     });
-    // Strava's -1 open-ended top bucket becomes null.
-    expect(parsed.zoneSets[0].buckets[2].max).toBeNull();
+    // The top bucket keeps its real recorded bound, not an open-ended sentinel.
+    expect(parsed.zoneSets[0].buckets[2].max).toBe(190);
   });
 
   it("view-activity-zones summarises the dominant zone for the model", async () => {
-    mockedById.mockResolvedValueOnce(detailedActivity());
-    mockedZones.mockResolvedValueOnce(hrZones);
+    mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
 
     const result = await dispatchToolCall("view-activity-zones", {
       activity_id: "123",
@@ -739,8 +1087,9 @@ describe("activity zones handlers", () => {
   });
 
   it("view-activity-zones handles an activity with no zone data", async () => {
-    mockedById.mockResolvedValueOnce(detailedActivity());
-    mockedZones.mockResolvedValueOnce([]);
+    mockedIntervalsActivity.mockResolvedValueOnce(
+      intervalsActivity({ icu_hr_zones: null, icu_hr_zone_times: null }),
+    );
 
     const result = await dispatchToolCall("view-activity-zones", {
       activity_id: "123",
@@ -750,9 +1099,26 @@ describe("activity zones handlers", () => {
     expect(result.content[0]?.text).toContain("No zone data recorded");
   });
 
+  it("view-activity-zones warns when HR bounds and zone times counts don't match", async () => {
+    mockedIntervalsActivity.mockResolvedValueOnce(
+      intervalsActivity({
+        icu_hr_zones: [130, 155, 190],
+        icu_hr_zone_times: [600, 1800],
+      }),
+    );
+
+    const result = await dispatchToolCall("view-activity-zones", {
+      activity_id: "123",
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0]?.text).toContain("Heart rate zones omitted");
+  });
+
   it("propagates a zones fetch failure as isError", async () => {
-    mockedById.mockResolvedValueOnce(detailedActivity());
-    mockedZones.mockRejectedValueOnce(new Error("Record Not Found"));
+    mockedIntervalsActivity.mockRejectedValueOnce(
+      new Error("Record Not Found"),
+    );
 
     const result = await dispatchToolCall("get-activity-zones-data", {
       activity_id: "123",

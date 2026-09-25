@@ -14,7 +14,6 @@ rate limits, and endpoint security. For the code behind these see
 | `MCP_AUTH_TOKEN` | No | Shared secret; when set, `/mcp` and the detailed half of `/health` require `Authorization: Bearer <token>` (or `?token=` for `/health`) |
 | `PORT` | No | Server port (default: `3000`) |
 | `PUBLIC_URL` | No | Public URL, used only to warn when `/mcp` is exposed without `MCP_AUTH_TOKEN` |
-| `ROUTE_EXPORT_PATH` | No | Absolute path for saving exported GPX files. Unset, the export tools return the document inline instead |
 
 ## intervals.icu API key
 
@@ -107,8 +106,7 @@ request.
 
 The image is distroless and runs as non-root **UID 65534**. There is no
 persistent state to mount: credentials come from `INTERVALS_API_KEY` on every
-start. `docker-compose.yml` mounts a named `exports` volume at `/app/exports`
-for `ROUTE_EXPORT_PATH`, which is optional.
+start.
 
 ### Verifying a pulled image
 

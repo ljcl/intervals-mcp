@@ -1,18 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { buildFitnessTrend, type FitnessTrendActivity } from "./fitnessTrend";
+import { buildFitnessTrend, type FitnessTrendLoadDay } from "./fitnessTrend";
 import { mapFitnessTrendApp } from "./fitnessTrendApp";
+import { addDays } from "./utils/localDate";
 
-/** Three weeks of daily load ending 2026-06-28. */
-function block(): FitnessTrendActivity[] {
-  return Array.from({ length: 21 }, (_, i) => {
-    const d = new Date(Date.UTC(2026, 5, 28));
-    d.setUTCDate(d.getUTCDate() - i);
-    const date = d.toISOString().split("T")[0]!;
-    return {
-      start_date: `${date}T07:00:00Z`,
-      start_date_local: `${date}T07:00:00`,
-      suffer_score: 120,
-    };
+/** 90 days ending 2026-06-28, load 120 for the last three weeks, else zero. */
+function block(): FitnessTrendLoadDay[] {
+  const start = addDays("2026-06-28", -89);
+  const activeFrom = addDays("2026-06-28", -20);
+  return Array.from({ length: 90 }, (_, i) => {
+    const date = addDays(start, i);
+    const load = date >= activeFrom ? 120 : 0;
+    return { date, ctlLoad: load, atlLoad: load };
   });
 }
 
@@ -20,11 +18,7 @@ const META = { days: 90, activitiesIncluded: 21, activitiesMissingLoad: 2 };
 
 describe("mapFitnessTrendApp", () => {
   it("carries the series, projection, and meta through unchanged", () => {
-    const trend = buildFitnessTrend(block(), {
-      endDate: "2026-06-28",
-      days: 90,
-      projectDays: 14,
-    });
+    const trend = buildFitnessTrend({ days: block() }, { projectDays: 14 });
 
     const data = mapFitnessTrendApp(trend, META);
 
@@ -37,13 +31,26 @@ describe("mapFitnessTrendApp", () => {
     expect(data.activitiesIncluded).toBe(21);
     expect(data.activitiesMissingLoad).toBe(2);
     expect(data.taper).toBeNull();
+    expect(data.asOf).toBe(trend.current!.date);
+    expect(data.source).toBe("intervals.icu");
+  });
+
+  it("carries a null asOf when there is no current day", () => {
+    const trend = buildFitnessTrend({ days: [] }, { projectDays: 14 });
+
+    const data = mapFitnessTrendApp(trend, {
+      days: 90,
+      activitiesIncluded: 0,
+      activitiesMissingLoad: 0,
+    });
+
+    expect(data.current).toBeNull();
+    expect(data.asOf).toBeNull();
+    expect(data.source).toBe("intervals.icu");
   });
 
   it("renames the band fields to camelCase without losing any", () => {
-    const trend = buildFitnessTrend(block(), {
-      endDate: "2026-06-28",
-      days: 90,
-    });
+    const trend = buildFitnessTrend({ days: block() });
 
     const data = mapFitnessTrendApp(trend, META);
 
@@ -62,11 +69,10 @@ describe("mapFitnessTrendApp", () => {
   });
 
   it("renames the taper plan and its weeks", () => {
-    const trend = buildFitnessTrend(block(), {
-      endDate: "2026-06-28",
-      days: 90,
-      taper: { targetDate: "2026-07-19", targetTsb: 10 },
-    });
+    const trend = buildFitnessTrend(
+      { days: block() },
+      { taper: { targetDate: "2026-07-19", targetTsb: 10 } },
+    );
 
     const taper = mapFitnessTrendApp(trend, META).taper!;
     const source = trend.taper!;
@@ -92,12 +98,10 @@ describe("mapFitnessTrendApp", () => {
   });
 
   it("leaves no snake_case key in the payload the app parses", () => {
-    const trend = buildFitnessTrend(block(), {
-      endDate: "2026-06-28",
-      days: 90,
-      projectDays: 7,
-      taper: { targetDate: "2026-07-12", targetTsb: 5 },
-    });
+    const trend = buildFitnessTrend(
+      { days: block() },
+      { projectDays: 7, taper: { targetDate: "2026-07-12", targetTsb: 5 } },
+    );
 
     const json = JSON.stringify(mapFitnessTrendApp(trend, META));
     for (const key of json.match(/"[a-z_]+":/g) ?? []) {

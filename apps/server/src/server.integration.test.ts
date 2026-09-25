@@ -14,13 +14,19 @@
  * progress plumbing — rather than being amended three times on the way.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { getActivity } from "./intervalsClient";
 import { type ProtocolEra } from "./mcpTestClient";
-import { getActivityById, getActivityLaps } from "./stravaClient";
+import { getActivityById } from "./stravaClient";
 import { INTERVALS_ID_HINT, STRAVA_ID_HINT } from "./tools/_ids";
 
 vi.mock("./stravaClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./stravaClient")>();
-  return { ...actual, getActivityLaps: vi.fn(), getActivityById: vi.fn() };
+  return { ...actual, getActivityById: vi.fn() };
+});
+
+vi.mock("./intervalsClient", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./intervalsClient")>();
+  return { ...actual, getActivity: vi.fn() };
 });
 
 // Dispatch resolves the key before any handler runs (#240), so without this
@@ -31,9 +37,9 @@ vi.mock("./config", async (importOriginal) => {
 });
 
 const { connectTestClient } = await import("./mcpTestClient");
-const { TOOLS } = await import("./server");
+const { TOOL_DEFS } = await import("./server");
 
-const mockedLaps = vi.mocked(getActivityLaps);
+const mockedIntervalsActivity = vi.mocked(getActivity);
 const mockedActivity = vi.mocked(getActivityById);
 
 beforeEach(() => {
@@ -184,7 +190,7 @@ describe.each(ERAS)("tools/list (%s era)", (era) => {
     const { result } = await client.send("tools/list");
     const tools = result?.tools as Array<Record<string, unknown>>;
 
-    expect(tools).toHaveLength(TOOLS.length);
+    expect(tools).toHaveLength(TOOL_DEFS.length);
   });
 
   it("gives every tool a well-formed object inputSchema", async () => {
@@ -274,12 +280,13 @@ describe.each(ERAS)("tools/list (%s era)", (era) => {
 
 describe.each(ERAS)("tools/call (%s era)", (era) => {
   it("round-trips a tool's content through the transport", async () => {
-    mockedActivity.mockResolvedValueOnce({
+    mockedIntervalsActivity.mockResolvedValueOnce({
       id: "229781",
       name: "Hawk Hill",
       type: "Run",
+      start_date_local: "2026-09-20T09:00:00",
+      icu_intervals: [],
     } as never);
-    mockedLaps.mockResolvedValueOnce([] as never);
 
     const client = await connectTestClient("integration-test", era);
     const { result, error } = await client.send("tools/call", {
@@ -294,12 +301,13 @@ describe.each(ERAS)("tools/call (%s era)", (era) => {
   });
 
   it("delivers structuredContent alongside the text", async () => {
-    mockedActivity.mockResolvedValueOnce({
+    mockedIntervalsActivity.mockResolvedValueOnce({
       id: "229781",
       name: "Hawk Hill",
       type: "Run",
+      start_date_local: "2026-09-20T09:00:00",
+      icu_intervals: [],
     } as never);
-    mockedLaps.mockResolvedValueOnce([] as never);
 
     const client = await connectTestClient("integration-test", era);
     const { result } = await client.send("tools/call", {
@@ -337,7 +345,7 @@ describe.each(ERAS)("tools/call (%s era)", (era) => {
     // The session survives it: a bad call must not poison the transport.
     const after = await client.send("tools/list");
     expect((after.result?.tools as unknown[] | undefined)?.length).toBe(
-      TOOLS.length,
+      TOOL_DEFS.length,
     );
   });
 

@@ -1,37 +1,40 @@
 import { z } from "zod";
+import { getActivity } from "../intervalsClient";
+import {
+  IntervalsStreamsUnavailableError,
+  loadIntervalsStreams,
+} from "../intervalsStreams";
+import { NO_PROGRESS, type ReportProgress } from "../progress";
 import {
   computeSplitAnalysis,
-  SPLIT_UNIT_METRES,
   type Split,
   SplitAnalysisError,
   type SplitStreams,
-  type SplitUnit,
 } from "../splitAnalysis";
 import {
-  getActivityById,
-  getActivityStreams,
-  StreamsUnavailableError,
-} from "../stravaClient";
-import { isRunningActivity } from "../utils/running";
+  cadenceSpm,
+  formatPaceSeconds,
+  isStepCadenceActivity,
+} from "../utils/running";
 import { READ_ONLY } from "./_annotations";
-import { stravaIdInput } from "./_ids";
+import { toolErrorText } from "./_errors";
+import { intervalsActivityIdInput } from "./_ids";
 import { SplitAnalysisOutputSchema, warnOnSchemaDrift } from "./outputs";
 
 const name = "get-split-analysis";
 
 const description = `
-Breaks one activity into even distance splits and says whether it was positive-, negative-, or evenly split — corrected for terrain.
+Breaks one intervals.icu activity into even 1 km splits and says whether it was positive-, negative-, or evenly split, corrected for terrain.
 
 Device laps are whatever the athlete pressed the button for; this tool ignores
-them and bins the streams into fixed 1 km (or 1 mile) splits, reporting per
-split:
-- Moving pace and grade-adjusted (GAP, flat-equivalent) pace
+them and bins the streams into fixed 1 km splits, reporting per split:
+- Moving pace and grade-adjusted (GAP, flat-equivalent) pace, both per km
 - Elevation change and average grade
 - Average HR, cadence, and power where recorded
 
 The headline is the two-halves verdict, stated twice: once on the clock and
 once grade-adjusted. A hilly back half slows raw pace with no fade at all, and
-a course that flattens out hides real fade — so the verdict names which of the
+a course that flattens out hides real fade, so the verdict names which of the
 two happened, and reports how many percentage points of the raw change the
 terrain accounts for.
 
@@ -41,74 +44,42 @@ Use Cases:
 - Find the split where a workout came apart, rather than the lap where it was noticed
 
 Parameters:
-- activityId (required): The Strava activity to analyse
-- unit (optional): "km" (default) or "mile"
+- id (required): the intervals.icu activity id, exactly as returned by list-activities (e.g. "i189807578")
 
 Notes:
 - Halves are cut at the exact midpoint of recorded distance, not by grouping
   splits, so an odd split count cannot skew the comparison
-- Stopped time is excluded from pace via the moving stream; a trailing partial
-  split is marked and left out of fastest/slowest
-- Without an elevation or grade stream the terrain correction is unavailable and
+- Stopped time is excluded from pace via the derived moving stream; a
+  trailing partial split is marked and left out of fastest/slowest
+- Grade prefers intervals.icu's smoothed grade stream; when neither that nor
+  an altitude stream is available the terrain correction is unavailable and
   the response says so rather than implying an uncorrected verdict is corrected
+- An activity with no recorded GPS/data streams (e.g. a manual entry or a
+  non-GPS session) returns an error rather than an empty analysis
 `;
 
 const inputSchema = z.object({
-  activityId: stravaIdInput("The Strava activity to analyse."),
-  unit: z
-    .enum(["km", "mile"])
-    .default("km")
-    .describe("Split length: 'km' (default) or 'mile'."),
+  id: intervalsActivityIdInput("The intervals.icu activity id."),
 });
 
 type GetSplitAnalysisInput = z.infer<typeof inputSchema>;
 
 const STREAM_TYPES = [
-  "time",
   "distance",
   "altitude",
   "grade_smooth",
   "heartrate",
   "velocity_smooth",
-  "watts",
   "cadence",
-  "moving",
+  "watts",
 ] as const;
 
-async function fetchStreams(
-  token: string,
-  activityId: number | string,
-): Promise<Partial<SplitStreams>> {
-  let streams: Awaited<ReturnType<typeof getActivityStreams>>;
-  try {
-    streams = await getActivityStreams(token, activityId, STREAM_TYPES);
-  } catch (error) {
-    // Only a genuinely sample-less activity degrades to the no-streams message
-    // below; auth and rate-limit failures propagate so the user is told what to
-    // fix instead of being told their GPS run is a manual entry.
-    if (error instanceof StreamsUnavailableError) return {};
-    throw error;
-  }
+/** Bare `m:ss`, no unit suffix; the structured field name (`*_min_per_km`)
+ * carries the unit, `formatPaceSeconds` is the one home for the rendering. */
+const paceMinPerKm = (secPerKm: number | null) =>
+  secPerKm == null ? null : formatPaceSeconds(secPerKm);
 
-  const result: Partial<SplitStreams> = {};
-  for (const [type, data] of streams) {
-    if (type === "moving") {
-      result.moving = data as boolean[];
-    } else if ((STREAM_TYPES as readonly string[]).includes(type)) {
-      result[type as Exclude<keyof SplitStreams, "moving">] = data as number[];
-    }
-  }
-  return result;
-}
-
-const formatPace = (secPerUnit: number | null, unit: SplitUnit) => {
-  if (secPerUnit == null) return null;
-  const minutes = Math.floor(secPerUnit / 60);
-  const seconds = Math.round(secPerUnit % 60);
-  return `${minutes}:${seconds.toString().padStart(2, "0")} /${unit}`;
-};
-
-function splitOut(split: Split, unit: SplitUnit, isRun: boolean) {
+function splitOut(split: Split, type: string) {
   return {
     split: split.index,
     start_m: split.startM,
@@ -117,27 +88,23 @@ function splitOut(split: Split, unit: SplitUnit, isRun: boolean) {
     partial: split.partial,
     moving_time_s: split.movingTimeS,
     elapsed_time_s: split.elapsedTimeS,
-    pace_sec_per_unit: split.paceSecPerUnit,
-    pace_formatted: formatPace(split.paceSecPerUnit, unit),
-    gap_pace_sec_per_unit: split.gapPaceSecPerUnit,
-    gap_pace_formatted: formatPace(split.gapPaceSecPerUnit, unit),
+    pace_sec_per_km: split.paceSecPerKm,
+    pace_min_per_km: paceMinPerKm(split.paceSecPerKm),
+    gap_pace_sec_per_km: split.gapPaceSecPerKm,
+    gap_pace_min_per_km: paceMinPerKm(split.gapPaceSecPerKm),
     elevation_change_m: split.elevationChangeM,
     avg_grade_pct: split.avgGradePct,
     avg_hr: split.avgHr,
-    // Strava records run cadence per leg; display convention is doubled spm.
-    avg_cadence:
-      split.avgCadence != null
-        ? Math.round(split.avgCadence * (isRun ? 2 : 1))
-        : null,
+    avg_cadence: cadenceSpm(split.avgCadence, type),
     avg_watts: split.avgWatts,
   };
 }
 
-function splitLine(s: ReturnType<typeof splitOut>, unit: SplitUnit): string {
+function splitLine(s: ReturnType<typeof splitOut>): string {
   const parts = [
-    s.pace_formatted ?? "no pace",
-    s.gap_pace_formatted && s.gap_pace_formatted !== s.pace_formatted
-      ? `GAP ${s.gap_pace_formatted}`
+    s.pace_min_per_km ? `${s.pace_min_per_km} /km` : "no pace",
+    s.gap_pace_min_per_km && s.gap_pace_min_per_km !== s.pace_min_per_km
+      ? `GAP ${s.gap_pace_min_per_km} /km`
       : null,
     s.elevation_change_m != null
       ? `${s.elevation_change_m >= 0 ? "+" : ""}${s.elevation_change_m} m`
@@ -148,7 +115,7 @@ function splitLine(s: ReturnType<typeof splitOut>, unit: SplitUnit): string {
   // "3." for a full split, "0.62 km (partial)" for the trailing remainder,
   // whose pace is extrapolated and should not read like the others.
   const label = s.partial
-    ? `${(s.distance_m / SPLIT_UNIT_METRES[unit]).toFixed(2)} ${unit} (partial)`
+    ? `${(s.distance_m / 1000).toFixed(2)} km (partial)`
     : `${s.split}.`;
   return `  ${label.padEnd(4)} ${parts.join(", ")}`;
 }
@@ -160,58 +127,78 @@ export const getSplitAnalysisTool = {
   annotations: READ_ONLY,
   outputSchema: SplitAnalysisOutputSchema,
   execute: async (
-    { activityId, unit }: GetSplitAnalysisInput,
-    token: string,
+    { id }: GetSplitAnalysisInput,
+    apiKey: string,
+    progress: ReportProgress = NO_PROGRESS,
   ) => {
     try {
-      const [activity, streams] = await Promise.all([
-        getActivityById(token, activityId),
-        fetchStreams(token, activityId),
-      ]);
+      progress(`Fetching activity ${id}`);
+      const activity = await getActivity(apiKey, id);
+      const type = activity.type ?? "Workout";
+      const displayName = activity.name ?? type;
 
-      if (!streams.time || !streams.distance) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `❌ No data streams are available for "${activity.name}" — manual activities have no recorded samples to split.`,
-            },
-          ],
-          isError: true,
-        };
+      progress(`Fetching streams for "${displayName}"`);
+      let streams: Awaited<ReturnType<typeof loadIntervalsStreams>>;
+      try {
+        streams = await loadIntervalsStreams(apiKey, id, [...STREAM_TYPES]);
+      } catch (error) {
+        if (error instanceof IntervalsStreamsUnavailableError) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `❌ No data streams are recorded for "${displayName}" (activity ${id}): this looks like an activity with no GPS streams (e.g. Pilates, or a manual entry), so split analysis has nothing to work with.`,
+              },
+            ],
+            isError: true,
+          };
+        }
+        throw error;
       }
 
-      const analysis = computeSplitAnalysis(streams as SplitStreams, { unit });
-      const isRun = isRunningActivity(
-        activity.sport_type || activity.type || "",
-      );
+      progress("Computing split analysis", { important: true });
+      const splitStreams: SplitStreams = {
+        time: streams.time,
+        distance: streams.distance ?? [],
+        altitude: streams.altitude,
+        grade_smooth: streams.grade_smooth,
+        heartrate: streams.heartrate,
+        velocity_smooth: streams.velocity_smooth,
+        cadence: streams.cadence,
+        watts: streams.watts,
+        moving: streams.moving,
+      };
+      const analysis = computeSplitAnalysis(splitStreams);
 
       const structured = {
-        activity_id: activityId,
-        name: activity.name,
+        activity_id: id,
+        name: displayName,
         date: activity.start_date_local,
-        type: activity.sport_type || activity.type || "Unknown",
-        unit: analysis.unit,
+        type,
+        grade_source: analysis.gradeSource,
+        // GAP throughout this response is locally modelled from grade
+        // (hillAnalysis.ts's gapFactor, imported by splitAnalysis.ts), not
+        // intervals.icu's own gap field (see get-activity/compare-activities/
+        // get-activity-laps' gap_source: "intervals.icu").
+        gap_source: "model" as const,
         verdict: analysis.verdict
           ? {
               shape: analysis.verdict.shape,
               gap_shape: analysis.verdict.gapShape,
-              first_half_pace_sec_per_unit:
-                analysis.verdict.firstHalfPaceSecPerUnit,
-              second_half_pace_sec_per_unit:
-                analysis.verdict.secondHalfPaceSecPerUnit,
-              first_half_pace_formatted: formatPace(
-                analysis.verdict.firstHalfPaceSecPerUnit,
-                unit,
+              first_half_pace_sec_per_km:
+                analysis.verdict.firstHalfPaceSecPerKm,
+              second_half_pace_sec_per_km:
+                analysis.verdict.secondHalfPaceSecPerKm,
+              first_half_pace_min_per_km: paceMinPerKm(
+                analysis.verdict.firstHalfPaceSecPerKm,
               ),
-              second_half_pace_formatted: formatPace(
-                analysis.verdict.secondHalfPaceSecPerUnit,
-                unit,
+              second_half_pace_min_per_km: paceMinPerKm(
+                analysis.verdict.secondHalfPaceSecPerKm,
               ),
-              first_half_gap_pace_sec_per_unit:
-                analysis.verdict.firstHalfGapPaceSecPerUnit,
-              second_half_gap_pace_sec_per_unit:
-                analysis.verdict.secondHalfGapPaceSecPerUnit,
+              first_half_gap_pace_sec_per_km:
+                analysis.verdict.firstHalfGapPaceSecPerKm,
+              second_half_gap_pace_sec_per_km:
+                analysis.verdict.secondHalfGapPaceSecPerKm,
               delta_pct: analysis.verdict.deltaPct,
               gap_delta_pct: analysis.verdict.gapDeltaPct,
               terrain_pct: analysis.verdict.terrainPct,
@@ -222,7 +209,7 @@ export const getSplitAnalysisTool = {
               interpretation: analysis.verdict.interpretation,
             }
           : null,
-        splits: analysis.splits.map((split) => splitOut(split, unit, isRun)),
+        splits: analysis.splits.map((split) => splitOut(split, type)),
         fastest_split: analysis.fastestSplitIndex,
         slowest_split: analysis.slowestSplitIndex,
         totals: {
@@ -230,23 +217,31 @@ export const getSplitAnalysisTool = {
           moving_time_s: analysis.totals.movingTimeS,
           elapsed_time_s: analysis.totals.elapsedTimeS,
           elevation_gain_m: analysis.totals.elevationGainM,
-          avg_pace_sec_per_unit: analysis.totals.avgPaceSecPerUnit,
-          avg_pace_formatted: formatPace(
-            analysis.totals.avgPaceSecPerUnit,
-            unit,
-          ),
-          avg_gap_pace_sec_per_unit: analysis.totals.avgGapPaceSecPerUnit,
+          avg_pace_sec_per_km: analysis.totals.avgPaceSecPerKm,
+          avg_pace_min_per_km: paceMinPerKm(analysis.totals.avgPaceSecPerKm),
+          avg_gap_pace_sec_per_km: analysis.totals.avgGapPaceSecPerKm,
+        },
+        units: {
+          distance: "km" as const,
+          elevation: "m" as const,
+          pace: "min/km" as const,
+          time: "s" as const,
+          grade: "%" as const,
+          hr: "bpm" as const,
+          cadence: isStepCadenceActivity(type)
+            ? ("spm" as const)
+            : ("rpm" as const),
+          power: "W" as const,
         },
         warnings: analysis.warnings,
       };
       warnOnSchemaDrift(name, SplitAnalysisOutputSchema, structured);
 
-      const distanceLabel = (
-        analysis.totals.distanceM / SPLIT_UNIT_METRES[unit]
-      ).toFixed(2);
+      const distanceLabel = (analysis.totals.distanceM / 1000).toFixed(2);
       const lines = [
-        `Split Analysis: ${activity.name} (${activity.start_date_local})`,
-        `${distanceLabel} ${unit}, ${analysis.splits.length} splits, average ${structured.totals.avg_pace_formatted ?? "—"}`,
+        `Split Analysis: ${structured.name} (${structured.date})`,
+        `Grade source: ${structured.grade_source}`,
+        `${distanceLabel} km, ${analysis.splits.length} splits, average ${structured.totals.avg_pace_min_per_km ? `${structured.totals.avg_pace_min_per_km} min/km` : "n/a"}`,
         "",
       ];
 
@@ -255,7 +250,7 @@ export const getSplitAnalysisTool = {
         const sign = (value: number) => (value >= 0 ? "+" : "");
         lines.push(
           `Verdict: ${verdict.shape} split on the clock, ${verdict.gap_shape} grade-adjusted`,
-          `  First half ${verdict.first_half_pace_formatted} → second half ${verdict.second_half_pace_formatted} (${sign(verdict.delta_pct)}${verdict.delta_pct}%)`,
+          `  First half ${verdict.first_half_pace_min_per_km} min/km, second half ${verdict.second_half_pace_min_per_km} min/km (${sign(verdict.delta_pct)}${verdict.delta_pct}%)`,
         );
         if (verdict.gap_delta_pct != null) {
           lines.push(
@@ -265,9 +260,9 @@ export const getSplitAnalysisTool = {
         lines.push(`  ${verdict.interpretation}`, "");
       }
 
-      lines.push(`Splits (${unit}):`);
+      lines.push(`Splits (km):`);
       for (const split of structured.splits) {
-        lines.push(splitLine(split, unit));
+        lines.push(splitLine(split));
       }
       if (structured.fastest_split != null) {
         lines.push(
@@ -292,13 +287,14 @@ export const getSplitAnalysisTool = {
           isError: true,
         };
       }
-      const message = error instanceof Error ? error.message : String(error);
-      console.error(`Error in ${name}:`, message);
       return {
         content: [
           {
             type: "text" as const,
-            text: `❌ Failed to compute split analysis: ${message}`,
+            text: toolErrorText(error, {
+              context: `compute split analysis for activity ${id}`,
+              notFound: `Activity ${id} was not found.`,
+            }),
           },
         ],
         isError: true,

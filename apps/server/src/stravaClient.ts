@@ -5,10 +5,6 @@ import {
   RateLimitError,
   stravaApi,
 } from "./fetchClient";
-import {
-  buildUpdateActivityBody,
-  type UpdateActivityParams,
-} from "./utils/activityWrite";
 
 /**
  * Retired transitional client, pending the Phase 1/2 intervals.icu port.
@@ -113,71 +109,6 @@ const BaseAthleteSchema = z.object({
   resource_state: z.number().int(),
 });
 
-// --- Athlete Gear (summary) Schema ---
-// Gear as it appears in the shoes/bikes arrays on the detailed athlete profile.
-const AthleteGearSchema = z.object({
-  id: z.string(),
-  resource_state: z.number().int().optional(),
-  primary: z.boolean(),
-  name: z.string(),
-  nickname: z.string().nullable().optional(),
-  retired: z.boolean().optional(),
-  distance: z.number(),
-});
-
-const DetailedAthleteSchema = BaseAthleteSchema.extend({
-  username: z.string().nullable(),
-  firstname: z.string(),
-  lastname: z.string(),
-  city: z.string().nullable(),
-  state: z.string().nullable(),
-  country: z.string().nullable(),
-  sex: z.enum(["M", "F"]).nullable(),
-  premium: z.boolean(),
-  summit: z.boolean(),
-  created_at: z.string().datetime(),
-  updated_at: z.string().datetime(),
-  profile_medium: z.string().url(),
-  profile: z.string().url(),
-  weight: z.number().nullable(),
-  measurement_preference: z.enum(["feet", "meters"]).optional().nullable(),
-  /** Functional threshold power in watts; the IF denominator when set. */
-  ftp: z.number().nullable().optional(),
-  // Add other fields as needed (e.g., follower_count, friend_count, clubs)
-  shoes: z.array(AthleteGearSchema).optional(),
-  bikes: z.array(AthleteGearSchema).optional(),
-});
-
-// Type alias for the inferred athlete type
-export type StravaAthlete = z.infer<typeof DetailedAthleteSchema>;
-
-// --- Stats Schemas ---
-// Schema for individual activity totals (like runs, rides, swims)
-const ActivityTotalSchema = z.object({
-  count: z.number().int(),
-  distance: z.number(), // In meters
-  moving_time: z.number().int(), // In seconds
-  elapsed_time: z.number().int(), // In seconds
-  elevation_gain: z.number(), // In meters
-  achievement_count: z.number().int().optional().nullable(), // Optional based on Strava docs examples
-});
-
-// Schema for the overall athlete stats response
-const ActivityStatsSchema = z.object({
-  biggest_ride_distance: z.number().optional().nullable(),
-  biggest_climb_elevation_gain: z.number().optional().nullable(),
-  recent_ride_totals: ActivityTotalSchema,
-  recent_run_totals: ActivityTotalSchema,
-  recent_swim_totals: ActivityTotalSchema,
-  ytd_ride_totals: ActivityTotalSchema,
-  ytd_run_totals: ActivityTotalSchema,
-  ytd_swim_totals: ActivityTotalSchema,
-  all_ride_totals: ActivityTotalSchema,
-  all_run_totals: ActivityTotalSchema,
-  all_swim_totals: ActivityTotalSchema,
-});
-export type StravaStats = z.infer<typeof ActivityStatsSchema>;
-
 // --- Gear Schema ---
 const SummaryGearSchema = z
   .object({
@@ -270,7 +201,6 @@ const DetailedActivitySchema = z.object({
   // photos: // Add PhotosSummary schema if needed
   gear: SummaryGearSchema,
   device_name: z.string().optional().nullable(),
-  // Note: best_efforts is added below after DetailedSegmentEffortSchema is defined
   // segment_efforts: // Add DetailedSegmentEffort schema if needed
   // splits_metric: // Add Split schema if needed
   // splits_standard: // Add Split schema if needed
@@ -310,35 +240,8 @@ const DetailedSegmentEffortSchema = z.object({
   hidden: z.boolean().optional().nullable(),
 });
 
-// --- Best Effort Schema ---
-// Best efforts are different from segment efforts - they represent time-based achievements
-// (e.g., best 400m, 1/2 mile, 1k, etc.) and don't have a segment field (or it's null)
-const BestEffortSchema = z.object({
-  id: StravaIdSchema,
-  activity: MetaActivitySchema.optional(),
-  athlete: BaseAthleteSchema.optional(),
-  segment: SummarySegmentSchema.nullish(), // Best efforts don't have segments, but API may return null
-  name: z.string(), // e.g., "400m", "1/2 mile", "1k"
-  elapsed_time: z.number().int(), // seconds
-  moving_time: z.number().int(), // seconds
-  start_date: z.string().datetime(),
-  start_date_local: z.string().datetime(),
-  distance: z.number(), // meters
-  start_index: z.number().int().optional().nullable(),
-  end_index: z.number().int().optional().nullable(),
-  average_cadence: z.number().optional().nullable(),
-  device_watts: z.boolean().optional().nullable(),
-  average_watts: z.number().optional().nullable(),
-  average_heartrate: z.number().optional().nullable(),
-  max_heartrate: z.number().optional().nullable(),
-  kom_rank: z.number().int().optional().nullable(), // 1-10, null if not in top 10
-  pr_rank: z.number().int().optional().nullable(), // 1, 2, 3, or null
-  hidden: z.boolean().optional().nullable(),
-});
-
-// Extend DetailedActivitySchema to include best_efforts and segment_efforts now that the schemas are defined
+// Extend DetailedActivitySchema to include segment_efforts now that the schema is defined
 const ExtendedDetailedActivitySchema = DetailedActivitySchema.extend({
-  best_efforts: z.array(BestEffortSchema).optional(),
   segment_efforts: z.array(DetailedSegmentEffortSchema).optional(),
 });
 export type StravaDetailedActivity = z.infer<
@@ -347,9 +250,6 @@ export type StravaDetailedActivity = z.infer<
 
 // --- Schema Exports for Testing ---
 export {
-  ActivityStatsSchema,
-  AthleteGearSchema,
-  DetailedAthleteSchema,
   ExtendedDetailedActivitySchema as DetailedActivitySchema,
   SummarySegmentSchema,
 };
@@ -564,94 +464,6 @@ export async function getAllActivities(
     return await handleApiError<StravaSummaryActivity[]>(
       error,
       "getAllActivities",
-    );
-  }
-}
-
-/**
- * Fetches profile information for the authenticated athlete.
- *
- * @param accessToken - The Strava API access token.
- * @returns A promise that resolves to the detailed athlete profile.
- * @throws Throws an error if the API request fails or the response format is unexpected.
- */
-export async function getAuthenticatedAthlete(
-  accessToken: string,
-): Promise<StravaAthlete> {
-  if (!accessToken) {
-    throw new Error("Strava access token is required.");
-  }
-
-  try {
-    const response = await stravaApi.get<unknown>("/athlete");
-
-    // Validate the response data against the Zod schema
-    const validationResult = DetailedAthleteSchema.safeParse(response.data);
-
-    if (!validationResult.success) {
-      // Log the raw response data on validation failure for debugging
-      console.error(
-        "Strava API raw response data (getAuthenticatedAthlete):",
-        JSON.stringify(response.data, null, 2),
-      );
-      console.error(
-        "Strava API response validation failed (getAuthenticatedAthlete):",
-        validationResult.error,
-      );
-      throw new Error(
-        `Invalid data format received from Strava API: ${validationResult.error.message}`,
-      );
-    }
-    // Type assertion is safe here due to successful validation
-    return validationResult.data;
-  } catch (error) {
-    return await handleApiError<StravaAthlete>(
-      error,
-      "getAuthenticatedAthlete",
-    );
-  }
-}
-
-/**
- * Fetches activity statistics for a specific athlete.
- *
- * @param accessToken - The Strava API access token.
- * @param athleteId - The ID of the athlete whose stats are being requested.
- * @returns A promise that resolves to the athlete's activity statistics.
- * @throws Throws an error if the API request fails or the response format is unexpected.
- */
-export async function getAthleteStats(
-  accessToken: string,
-  athleteId: number | string,
-): Promise<StravaStats> {
-  if (!accessToken) {
-    throw new Error("Strava access token is required.");
-  }
-  if (!athleteId) {
-    throw new Error("Athlete ID is required to fetch stats.");
-  }
-
-  try {
-    const response = await stravaApi.get<unknown>(
-      `/athletes/${athleteId}/stats`,
-    );
-
-    const validationResult = ActivityStatsSchema.safeParse(response.data);
-
-    if (!validationResult.success) {
-      console.error(
-        "Strava API response validation failed (getAthleteStats):",
-        validationResult.error,
-      );
-      throw new Error(
-        `Invalid data format received from Strava API: ${validationResult.error.message}`,
-      );
-    }
-    return validationResult.data;
-  } catch (error) {
-    return await handleApiError<StravaStats>(
-      error,
-      `getAthleteStats for ID ${athleteId}`,
     );
   }
 }
@@ -918,202 +730,6 @@ export async function getActivityLaps(
     return await handleApiError<StravaLap[]>(
       error,
       `getActivityLaps(${activityId})`,
-    );
-  }
-}
-
-// --- Zone Schemas ---
-const DistributionBucketSchema = z.object({
-  max: z.number(),
-  min: z.number(),
-  time: z.number().int(), // Time in seconds spent in this bucket
-});
-
-const ZoneSchema = z.object({
-  min: z.number(),
-  max: z.number().optional(), // Max might be absent for the last zone
-});
-
-const HeartRateZoneSchema = z.object({
-  custom_zones: z.boolean(),
-  zones: z.array(ZoneSchema),
-  distribution_buckets: z.array(DistributionBucketSchema).optional(), // Optional based on sample
-  resource_state: z.number().int().optional(), // Optional based on sample
-  sensor_based: z.boolean().optional(), // Optional based on sample
-  points: z.number().int().optional(), // Optional based on sample
-  type: z.literal("heartrate").optional(), // Optional based on sample
-});
-
-const PowerZoneSchema = z.object({
-  zones: z.array(ZoneSchema),
-  distribution_buckets: z.array(DistributionBucketSchema).optional(), // Optional based on sample
-  resource_state: z.number().int().optional(), // Optional based on sample
-  sensor_based: z.boolean().optional(), // Optional based on sample
-  points: z.number().int().optional(), // Optional based on sample
-  type: z.literal("power").optional(), // Optional based on sample
-});
-
-// Combined Zones Response Schema
-const AthleteZonesSchema = z.object({
-  heart_rate: HeartRateZoneSchema.optional(), // Heart rate zones might not be set
-  power: PowerZoneSchema.optional(), // Power zones might not be set
-});
-
-export type StravaAthleteZones = z.infer<typeof AthleteZonesSchema>;
-
-/**
- * Retrieves the heart rate and power zones for the authenticated athlete.
- * @param accessToken The Strava API access token.
- * @returns A promise resolving to the athlete's zone data.
- */
-export async function getAthleteZones(
-  accessToken: string,
-): Promise<StravaAthleteZones> {
-  if (!accessToken) {
-    throw new Error("Strava access token is required.");
-  }
-
-  try {
-    const response = await stravaApi.get<unknown>("/athlete/zones");
-
-    const validationResult = AthleteZonesSchema.safeParse(response.data);
-
-    if (!validationResult.success) {
-      console.error(
-        "Strava API validation failed (getAthleteZones):",
-        validationResult.error,
-      );
-      throw new Error(
-        `Invalid data format received from Strava API: ${validationResult.error.message}`,
-      );
-    }
-
-    return validationResult.data;
-  } catch (error) {
-    // Note: This endpoint requires profile:read_all scope
-    // Handle potential 403 Forbidden if scope is missing, or 402 if it becomes sub-only?
-    return await handleApiError<StravaAthleteZones>(error, "getAthleteZones");
-  }
-}
-
-// --- Activity Zones Schema ---
-// GET /activities/{id}/zones returns an array of zone objects (heartrate /
-// power), each carrying `distribution_buckets` describing how long was spent in
-// each zone band (the final bucket uses max: -1 for "and above").
-// Based on https://developers.strava.com/docs/reference/#api-models-ActivityZone
-export const ActivityZoneSchema = z
-  .object({
-    type: z.enum(["heartrate", "power"]).optional(),
-    score: z.number().optional().nullable(),
-    sensor_based: z.boolean().optional().nullable(),
-    points: z.number().int().optional().nullable(),
-    custom_zones: z.boolean().optional().nullable(),
-    max: z.number().optional().nullable(),
-    resource_state: z.number().int().optional(),
-    distribution_buckets: z.array(DistributionBucketSchema),
-  })
-  .passthrough();
-
-export type StravaActivityZone = z.infer<typeof ActivityZoneSchema>;
-const StravaActivityZonesResponseSchema = z.array(ActivityZoneSchema);
-
-/**
- * Retrieves the time-in-zone distribution for a specific activity.
- *
- * `GET /activities/{id}/zones` returns one entry per zone type the activity
- * recorded (heart rate and/or power), each with `distribution_buckets`
- * describing how long was spent in each zone band. Private activities require
- * the `activity:read_all` scope.
- *
- * @param accessToken - The Strava API access token.
- * @param activityId - The ID of the activity.
- * @returns A promise resolving to an array of activity zone objects.
- */
-export async function getActivityZones(
-  accessToken: string,
-  activityId: number | string,
-): Promise<StravaActivityZone[]> {
-  if (!accessToken) {
-    throw new Error("Strava access token is required.");
-  }
-
-  try {
-    const response = await stravaApi.get(`/activities/${activityId}/zones`);
-
-    const validationResult = StravaActivityZonesResponseSchema.safeParse(
-      response.data,
-    );
-
-    if (!validationResult.success) {
-      console.error(
-        `Strava API validation failed (getActivityZones: ${activityId}):`,
-        validationResult.error,
-      );
-      throw new Error(
-        `Invalid data format received from Strava API: ${validationResult.error.message}`,
-      );
-    }
-
-    return validationResult.data;
-  } catch (error) {
-    return await handleApiError<StravaActivityZone[]>(
-      error,
-      `getActivityZones(${activityId})`,
-    );
-  }
-}
-
-/**
- * Updates an activity's mutable fields (name, description, sport type, gear,
- * and flags). Only provided fields are sent. Requires the activity:write scope.
- *
- * @param accessToken - The Strava API access token.
- * @param activityId - The ID of the activity to update.
- * @param updates - The mutable fields to apply. `description` must already be
- *   resolved (append composition happens in the tool layer).
- * @returns The updated detailed activity.
- */
-export async function updateActivity(
-  accessToken: string,
-  activityId: number | string,
-  updates: UpdateActivityParams,
-): Promise<StravaDetailedActivity> {
-  if (!accessToken) {
-    throw new Error("Strava access token is required.");
-  }
-  if (!activityId) {
-    throw new Error("Activity ID is required to update an activity.");
-  }
-
-  const body = buildUpdateActivityBody(updates);
-
-  try {
-    const response = await stravaApi.put<unknown>(
-      `/activities/${activityId}`,
-      body,
-      {
-        headers: { "Content-Type": "application/json" },
-      },
-    );
-
-    const validationResult = ExtendedDetailedActivitySchema.safeParse(
-      response.data,
-    );
-
-    if (!validationResult.success) {
-      console.error(
-        `Strava API validation failed (updateActivity: ${activityId}):`,
-        validationResult.error,
-      );
-      throw new Error(
-        `Invalid data format received from Strava API: ${validationResult.error.message}`,
-      );
-    }
-    return validationResult.data;
-  } catch (error) {
-    return await handleApiError<StravaDetailedActivity>(
-      error,
-      `updateActivity for ID ${activityId}`,
     );
   }
 }

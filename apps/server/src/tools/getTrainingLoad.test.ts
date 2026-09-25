@@ -1,45 +1,80 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getAllActivities, type StravaSummaryActivity } from "../stravaClient";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { RUN_TYPES } from "../fitnessTrend";
+import {
+  getWellness,
+  type IntervalsActivity,
+  type IntervalsWellness,
+  listActivities,
+} from "../intervalsClient";
+import { buildTrainingLoadData } from "../trainingLoad";
+import { addDays } from "../utils/localDate";
 import { getTrainingLoadTool } from "./getTrainingLoad";
 import { TrainingLoadOutputSchema } from "./outputs";
 
-vi.mock("../stravaClient", () => ({
-  getAllActivities: vi.fn(),
-}));
+vi.mock("../intervalsClient", async () => {
+  const actual =
+    await vi.importActual<typeof import("../intervalsClient")>(
+      "../intervalsClient",
+    );
+  return { ...actual, getWellness: vi.fn(), listActivities: vi.fn() };
+});
+vi.mock("../config", async () => {
+  const actual = await vi.importActual<typeof import("../config")>("../config");
+  return { ...actual, getTimeZone: vi.fn(() => "UTC") };
+});
 
-const mockedList = vi.mocked(getAllActivities);
+const mockedWellness = vi.mocked(getWellness);
+const mockedListActivities = vi.mocked(listActivities);
 
-const DEFAULT_INPUT = {
-  days: 28,
-  activityTypes: ["Run", "TrailRun", "VirtualRun"],
-};
+const TODAY = "2026-06-28";
+const DEFAULT_INPUT = { days: 28, runOnly: false };
 
 function run(
   daysAgo: number,
-  overrides: Record<string, unknown> = {},
-): StravaSummaryActivity {
-  const date = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000);
+  overrides: Partial<IntervalsActivity> = {},
+): IntervalsActivity {
+  const date = addDays(TODAY, -daysAgo);
   return {
     id: `run-${daysAgo}`,
     name: `Run ${daysAgo}d ago`,
     type: "Run",
-    sport_type: "Run",
-    start_date: date.toISOString(),
-    start_date_local: date.toISOString(),
+    start_date_local: `${date}T07:00:00`,
     distance: 10000,
     moving_time: 3600,
     total_elevation_gain: 100,
+    icu_training_load: 60,
     ...overrides,
-  } as unknown as StravaSummaryActivity;
+  } as IntervalsActivity;
+}
+
+function wellnessRow(
+  date: string,
+  values: { ctl: number; atl: number; ctlLoad?: number; atlLoad?: number },
+): IntervalsWellness {
+  return {
+    id: date,
+    ctl: values.ctl,
+    atl: values.atl,
+    ctlLoad: values.ctlLoad ?? 0,
+    atlLoad: values.atlLoad ?? 0,
+  } as IntervalsWellness;
 }
 
 describe("get-training-load execute", () => {
   beforeEach(() => {
-    mockedList.mockReset();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(`${TODAY}T12:00:00Z`));
+    mockedWellness.mockReset();
+    mockedListActivities.mockReset();
   });
 
-  it("aggregates runs into weekly totals and structured output", async () => {
-    mockedList.mockResolvedValueOnce([run(2), run(9), run(9.5)]);
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("aggregates runs into weekly totals and structured output (whole-body)", async () => {
+    mockedListActivities.mockResolvedValueOnce([run(2), run(9), run(9.5)]);
+    mockedWellness.mockResolvedValueOnce([]);
 
     const result = await getTrainingLoadTool.execute(
       DEFAULT_INPUT,
@@ -49,12 +84,19 @@ describe("get-training-load execute", () => {
     expect(result.isError).toBeUndefined();
     const structured = result.structuredContent as {
       period: { days: number };
-      totals: { runs: number; distance_km: number };
+      totals: { runs: number; distance_km: number; load: number };
       weekly_breakdown: unknown[];
+      run_only: boolean;
+      source: string;
+      current: unknown;
     };
     expect(structured.period.days).toBe(28);
     expect(structured.totals.runs).toBe(3);
     expect(structured.totals.distance_km).toBe(30);
+    expect(structured.totals.load).toBe(180);
+    expect(structured.run_only).toBe(false);
+    expect(structured.source).toBe("intervals.icu");
+    expect(structured.current).toBeNull();
     expect(structured.weekly_breakdown.length).toBeGreaterThanOrEqual(1);
     expect(TrainingLoadOutputSchema.safeParse(structured).success).toBe(true);
     const text = result.content[0]?.text ?? "";
@@ -62,10 +104,121 @@ describe("get-training-load execute", () => {
     expect(text).toContain("Runs: 3");
   });
 
-  it("filters out non-matching activity types", async () => {
-    mockedList.mockResolvedValueOnce([
+  it("filters weekly volume/warnings to run types but sums load over every type (whole-body)", async () => {
+    mockedListActivities.mockResolvedValueOnce([
       run(2),
-      run(3, { id: "ride", type: "Ride", sport_type: "Ride" }),
+      run(3, {
+        id: "ride",
+        type: "Ride",
+        icu_training_load: 40,
+        distance: 20000,
+      }),
+    ]);
+    mockedWellness.mockResolvedValueOnce([]);
+
+    const result = await getTrainingLoadTool.execute(
+      DEFAULT_INPUT,
+      "test-token",
+    );
+
+    const structured = result.structuredContent as {
+      totals: { runs: number; load: number };
+      activity_types_included: string[];
+    };
+    expect(structured.totals.runs).toBe(1);
+    expect(structured.totals.load).toBe(100);
+    expect(structured.activity_types_included.sort()).toEqual(["Ride", "Run"]);
+  });
+
+  it("averages/numWeeks/trend are run-based: a load-only week outside the run span does not dilute them", async () => {
+    const runs = [run(2), run(9)];
+
+    mockedListActivities.mockResolvedValueOnce(runs);
+    mockedWellness.mockResolvedValueOnce([]);
+    const baseline = await getTrainingLoadTool.execute(
+      DEFAULT_INPUT,
+      "test-token",
+    );
+    const baselineStructured = baseline.structuredContent as {
+      averages: { runs_per_week: number; distance_km_per_week: number };
+      trend: string;
+      weekly_breakdown: unknown[];
+    };
+
+    // Same two runs, plus a load-only activity three weeks before the
+    // earliest run week: aggregateWeeks fills the gap weeks in between
+    // (see AGENTS.md's "derived numbers have exactly one home"), so the
+    // weekly timeline grows, but the run-based averages/trend must not.
+    mockedListActivities.mockResolvedValueOnce([
+      ...runs,
+      run(23, {
+        id: "ride",
+        type: "Ride",
+        icu_training_load: 40,
+        distance: 20000,
+      }),
+    ]);
+    mockedWellness.mockResolvedValueOnce([]);
+    const withRide = await getTrainingLoadTool.execute(
+      DEFAULT_INPUT,
+      "test-token",
+    );
+    const withRideStructured = withRide.structuredContent as {
+      averages: { runs_per_week: number; distance_km_per_week: number };
+      trend: string;
+      weekly_breakdown: unknown[];
+    };
+
+    expect(withRideStructured.weekly_breakdown.length).toBeGreaterThan(
+      baselineStructured.weekly_breakdown.length,
+    );
+    expect(withRideStructured.averages).toEqual(baselineStructured.averages);
+    expect(withRideStructured.trend).toBe(baselineStructured.trend);
+  });
+
+  it("keeps empty weeks inside the run span (runOnly): averages and trend see the gap", async () => {
+    // 5 runs (10 km each) over a 7-week span, with weeks at daysAgo 16-22 and
+    // 30-36 (the two middle-ish weeks) left empty on purpose.
+    mockedListActivities.mockResolvedValueOnce([
+      run(2), // week of 2026-06-22 (newest)
+      run(9), // week of 2026-06-15
+      // week of 2026-06-08: empty
+      run(23), // week of 2026-06-01
+      // week of 2026-05-25: empty
+      run(37), // week of 2026-05-18
+      run(44), // week of 2026-05-11 (oldest)
+    ]);
+
+    const result = await getTrainingLoadTool.execute(
+      { days: 49, runOnly: true },
+      "test-token",
+    );
+
+    const structured = result.structuredContent as {
+      averages: { runs_per_week: number };
+      trend: string;
+      weekly_breakdown: Array<{ week_starting: string; runs: number }>;
+    };
+
+    // The run span is 7 calendar weeks (2026-05-11 through 2026-06-22); 5 of
+    // them had a run, so numWeeks is 7, not 5.
+    expect(structured.weekly_breakdown).toHaveLength(7);
+    expect(
+      structured.weekly_breakdown.filter((w) => w.runs === 0),
+    ).toHaveLength(2);
+    expect(structured.averages.runs_per_week).toBeCloseTo(5 / 7, 1);
+
+    // Recent 2 weeks (both real runs, 20 km) vs previous 2 weeks (one empty
+    // + one real run, 10 km): a real 100% increase the gap should not hide.
+    // Dropping the empty weeks (the old behaviour) would instead compare two
+    // 10 km fortnights and report "stable".
+    expect(structured.trend).toBe("increasing significantly");
+  });
+
+  it("reads whole-body current CTL/ATL/TSB from wellness (last available day)", async () => {
+    mockedListActivities.mockResolvedValueOnce([run(2)]);
+    mockedWellness.mockResolvedValueOnce([
+      wellnessRow(addDays(TODAY, -1), { ctl: 40, atl: 35 }),
     ]);
 
     const result = await getTrainingLoadTool.execute(
@@ -74,13 +227,68 @@ describe("get-training-load execute", () => {
     );
 
     const structured = result.structuredContent as {
-      totals: { runs: number };
+      current: { date: string; ctl: number; atl: number; tsb: number } | null;
+      source: string;
     };
-    expect(structured.totals.runs).toBe(1);
+    expect(structured.current).toEqual({
+      date: addDays(TODAY, -1),
+      ctl: 40,
+      atl: 35,
+      tsb: 5,
+    });
+    expect(structured.source).toBe("intervals.icu");
+  });
+
+  it("computes run-only load/current locally over the runway, labeled computed", async () => {
+    // One listActivities call covers the runway; recent runs give the
+    // recurrence something non-zero to land on.
+    const runs = Array.from({ length: 10 }, (_, i) =>
+      run(i, { icu_training_load: 50 }),
+    );
+    mockedListActivities.mockResolvedValueOnce([
+      ...runs,
+      run(3, {
+        id: "ride",
+        type: "Ride",
+        icu_training_load: 999,
+        distance: 20000,
+      }),
+    ]);
+
+    const result = await getTrainingLoadTool.execute(
+      { days: 28, runOnly: true },
+      "test-token",
+    );
+
+    expect(mockedListActivities).toHaveBeenCalledTimes(1);
+    expect(mockedWellness).not.toHaveBeenCalled();
+
+    const structured = result.structuredContent as {
+      run_only: boolean;
+      source: string;
+      totals: { load: number };
+      current: { ctl: number; atl: number; tsb: number } | null;
+      activity_types_included: string[];
+    };
+    expect(structured.run_only).toBe(true);
+    expect(structured.source).toBe("computed");
+    expect(structured.activity_types_included).toEqual([
+      "Run",
+      "TrailRun",
+      "VirtualRun",
+    ]);
+    // The Ride's 999 load must not appear in a run-only total.
+    expect(structured.totals.load).toBe(500);
+    expect(structured.current).not.toBeNull();
+    expect(structured.current!.ctl).toBeGreaterThan(0);
+
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain("computed locally");
   });
 
   it("reports insufficient data for a short history", async () => {
-    mockedList.mockResolvedValueOnce([run(2)]);
+    mockedListActivities.mockResolvedValueOnce([run(2)]);
+    mockedWellness.mockResolvedValueOnce([]);
 
     const result = await getTrainingLoadTool.execute(
       DEFAULT_INPUT,
@@ -91,8 +299,88 @@ describe("get-training-load execute", () => {
     expect(structured.trend).toBe("insufficient data");
   });
 
+  it("always notes that volume/warnings are run-based only", async () => {
+    mockedListActivities.mockResolvedValueOnce([run(2)]);
+    mockedWellness.mockResolvedValueOnce([]);
+
+    const result = await getTrainingLoadTool.execute(
+      DEFAULT_INPUT,
+      "test-token",
+    );
+
+    const structured = result.structuredContent as { warnings: string[] };
+    expect(
+      structured.warnings.some((w) => w.includes("Run/TrailRun/VirtualRun")),
+    ).toBe(true);
+  });
+
+  it("reports load for a window with no runs at all (whole-body)", async () => {
+    mockedListActivities.mockResolvedValueOnce([
+      run(2, {
+        id: "strength",
+        type: "WeightTraining",
+        icu_training_load: 30,
+        distance: 0,
+      }),
+    ]);
+    mockedWellness.mockResolvedValueOnce([]);
+
+    const result = await getTrainingLoadTool.execute(
+      DEFAULT_INPUT,
+      "test-token",
+    );
+
+    const structured = result.structuredContent as {
+      totals: { runs: number; load: number };
+      weekly_breakdown: unknown[];
+    };
+    expect(structured.totals.runs).toBe(0);
+    expect(structured.totals.load).toBe(30);
+    expect(structured.weekly_breakdown.length).toBe(1);
+  });
+
+  it("produces the same weekly load as the training-load app feed for the same activities", async () => {
+    const activities = [
+      run(2),
+      run(9, {
+        id: "strength",
+        type: "WeightTraining",
+        icu_training_load: 25,
+        distance: 0,
+      }),
+    ];
+    mockedListActivities.mockResolvedValueOnce(activities);
+    mockedWellness.mockResolvedValueOnce([]);
+
+    const result = await getTrainingLoadTool.execute(
+      DEFAULT_INPUT,
+      "test-token",
+    );
+    const structured = result.structuredContent as {
+      weekly_breakdown: Array<{ week_starting: string; load: number }>;
+      totals: { load: number };
+    };
+
+    const runActivities = activities.filter((a) =>
+      RUN_TYPES.includes(a.type ?? ""),
+    );
+    const appData = buildTrainingLoadData(runActivities, 28, {
+      loadActivities: activities,
+      runOnly: false,
+    });
+
+    const textLoadByWeek = Object.fromEntries(
+      structured.weekly_breakdown.map((w) => [w.week_starting, w.load]),
+    );
+    const appLoadByWeek = Object.fromEntries(
+      appData.weeks.map((w) => [w.weekStarting, w.load]),
+    );
+    expect(textLoadByWeek).toEqual(appLoadByWeek);
+    expect(structured.totals.load).toBe(appData.totals.load);
+  });
+
   it("returns isError when the fetch fails", async () => {
-    mockedList.mockRejectedValueOnce(new Error("Rate limited"));
+    mockedListActivities.mockRejectedValueOnce(new Error("Rate limited"));
 
     const result = await getTrainingLoadTool.execute(
       DEFAULT_INPUT,

@@ -80,15 +80,15 @@ export class RateLimitError extends HttpError {
 }
 
 /**
- * Thrown by the retired `stravaClient.ts` for every call it makes: that
- * client sends no `Authorization` header on purpose (see its module comment),
- * so every request answers 401. That 401 means "this tool has not been
- * ported to intervals.icu yet", a completely different situation from
+ * Thrown by the retired Strava client for every call it makes: that
+ * client sends no `Authorization` header on purpose (see its own module
+ * comment), so every request answers 401. That 401 means "this tool has not
+ * been ported to intervals.icu yet", a completely different situation from
  * intervals.icu itself rejecting an API key, and needs its own type so
  * `toolErrorText` (`tools/_errors.ts`) can tell the two apart by type rather
- * than by re-parsing the message. Lives here, not in `stravaClient.ts`, so
- * `tools/_errors.ts` never has to import from `stravaClient.ts`: tool tests
- * mock that module with bare factories, which would leave a class imported
+ * than by re-parsing the message. Lives here, not in the Strava client
+ * module, so `tools/_errors.ts` never has to import from it: tool tests mock
+ * that module with bare factories, which would leave a class imported
  * from there `undefined`.
  */
 export class NotPortedError extends HttpError {
@@ -483,6 +483,18 @@ export class FetchClient {
   /** Clears the entire response cache (no-op when caching is disabled). */
   clearResponseCache(): void {
     this.responseCache?.clear();
+  }
+
+  /**
+   * Invalidates every cached read on the same branch as `path` (descendants
+   * and ancestors, same rule as {@link invalidateWritten}), for a branch a
+   * write's own request URL doesn't itself touch, e.g. `updateActivity`
+   * dropping the athlete's activities list and gear list alongside the
+   * written activity's own cache entry, which the write already invalidates
+   * automatically.
+   */
+  invalidatePath(path: string): void {
+    this.invalidateWritten(path);
   }
 
   /**
@@ -884,6 +896,11 @@ export function intervalsCacheTtl(path: string): number | null {
   // sub-path (`/wellness/2026-09-24`) or an extension (`wellness.json`)
   // both count; these update through the day.
   if (/^\/athlete\/[^/]+\/wellness/.test(path)) return 5 * MINUTE_MS;
+  // Pace curves (athlete-level and per-activity): recomputed from an
+  // athlete's history, which changes at most a few times a day.
+  if (/^\/athlete\/[^/]+\/pace-curves\.json$/.test(path)) return 10 * MINUTE_MS;
+  if (/^\/athlete\/[^/]+\/activity-pace-curves\.json$/.test(path))
+    return 10 * MINUTE_MS;
   return null;
 }
 

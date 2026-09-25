@@ -1,127 +1,14 @@
-import { z } from "zod";
-
-/**
- * Strava's SportType values, the vocabulary both write tools accept.
- *
- * Mirrors the SportType model in Strava's API reference. It is pinned here
- * rather than fetched because there is no machine-readable feed for it — which
- * means an upstream addition is a local rejection until this list is updated,
- * so the failure mode is a user unable to log a sport Strava now supports. If
- * that is reported, add the value here; nothing else needs to change, since
- * both the advertised JSON Schema and the runtime check derive from this array.
- */
-export const SPORT_TYPES = [
-  "AlpineSki",
-  "BackcountrySki",
-  "Badminton",
-  "Canoeing",
-  "Crossfit",
-  "EBikeRide",
-  "Elliptical",
-  "EMountainBikeRide",
-  "Golf",
-  "GravelRide",
-  "Handcycle",
-  "HighIntensityIntervalTraining",
-  "Hike",
-  "IceSkate",
-  "InlineSkate",
-  "Kayaking",
-  "Kitesurf",
-  "MountainBikeRide",
-  "NordicSki",
-  "Pickleball",
-  "Pilates",
-  "Racquetball",
-  "Ride",
-  "RockClimbing",
-  "RollerSki",
-  "Rowing",
-  "Run",
-  "Sail",
-  "Skateboard",
-  "Snowboard",
-  "Snowshoe",
-  "Soccer",
-  "Squash",
-  "StairStepper",
-  "StandUpPaddling",
-  "Surfing",
-  "Swim",
-  "TableTennis",
-  "Tennis",
-  "TrailRun",
-  "Velomobile",
-  "VirtualRide",
-  "VirtualRow",
-  "VirtualRun",
-  "Walk",
-  "WeightTraining",
-  "Wheelchair",
-  "Windsurf",
-  "Workout",
-  "Yoga",
-] as const;
-
-export type SportType = (typeof SPORT_TYPES)[number];
-
-/** Length of the longest case-insensitive common prefix. */
-function prefixScore(a: string, b: string): number {
-  const x = a.toLowerCase();
-  const y = b.toLowerCase();
-  let i = 0;
-  while (i < x.length && i < y.length && x[i] === y[i]) i++;
-  return i;
-}
-
-/**
- * Sport types a rejected value probably meant. A bare "not one of 50 values"
- * error is technically complete and practically useless; "Weightlifting" →
- * WeightTraining is the correction the caller can act on. Case-only misses
- * ("run") rank first because they are the most common.
- */
-export function suggestSportTypes(input: string, limit = 3): SportType[] {
-  if (!input) return [];
-  return SPORT_TYPES.map((type) => ({ type, score: prefixScore(input, type) }))
-    .filter((candidate) => candidate.score >= 3)
-    .sort((a, b) => b.score - a.score || a.type.localeCompare(b.type))
-    .slice(0, limit)
-    .map((candidate) => candidate.type);
-}
-
-/**
- * The shared input schema for both write tools. `toInputSchema` publishes the
- * enum, so a host advertises every valid value and the model picks one without
- * a failed round-trip to Strava.
- */
-export const SportTypeSchema = z.enum(SPORT_TYPES, {
-  error: (issue) => {
-    const received = typeof issue.input === "string" ? issue.input : "";
-    const suggestions = suggestSportTypes(received);
-    const lead = received
-      ? `"${received}" is not a Strava sport type.`
-      : "A Strava sport type is required.";
-    const hint =
-      suggestions.length > 0 ? ` Did you mean ${suggestions.join(", ")}?` : "";
-    return `${lead}${hint} Valid values: ${SPORT_TYPES.join(", ")}.`;
-  },
-});
+import {
+  type IntervalsActivityUpdate,
+  type IntervalsGear,
+} from "../intervalsClient";
 
 export type DescriptionMode = "append" | "replace";
 
-export interface UpdateActivityParams {
-  name?: string;
-  description?: string;
-  sportType?: SportType;
-  gearId?: string;
-  commute?: boolean;
-  trainer?: boolean;
-  hideFromHome?: boolean;
-}
-
 /**
- * Resolves the final description string to send to Strava.
- * Append preserves any existing description, separated by a blank line.
+ * Resolves the final description string to send to intervals.icu.
+ * Replace overwrites; append preserves any existing description, separated
+ * by a blank line.
  */
 export function composeDescription(
   existing: string | null | undefined,
@@ -138,20 +25,168 @@ export function composeDescription(
 }
 
 /**
- * Builds the UpdatableActivity PUT body, including only provided fields
- * and mapping camelCase params to Strava's snake_case keys.
+ * True when intervals.icu's `retired` field represents an actual
+ * retirement. The OpenAPI spec types it as a string (a retirement date), but
+ * a boolean is accepted defensively too (see `IntervalsGearSchema`);
+ * `null`/`undefined`/empty string mean active.
  */
-export function buildUpdateActivityBody(
-  updates: UpdateActivityParams,
-): Record<string, unknown> {
-  const body: Record<string, unknown> = {};
-  if (updates.name !== undefined) body.name = updates.name;
-  if (updates.description !== undefined) body.description = updates.description;
-  if (updates.sportType !== undefined) body.sport_type = updates.sportType;
-  if (updates.gearId !== undefined) body.gear_id = updates.gearId;
-  if (updates.commute !== undefined) body.commute = updates.commute;
-  if (updates.trainer !== undefined) body.trainer = updates.trainer;
-  if (updates.hideFromHome !== undefined)
-    body.hide_from_home = updates.hideFromHome;
-  return body;
+export function isGearRetired(
+  retired: string | boolean | null | undefined,
+): boolean {
+  if (typeof retired === "boolean") return retired;
+  return typeof retired === "string" && retired.trim() !== "";
+}
+
+/** Finds one gear entry by id in the athlete's gear list. */
+export function findGear(
+  gearId: string,
+  gear: readonly IntervalsGear[],
+): IntervalsGear | undefined {
+  return gear.find((g) => g.id === gearId);
+}
+
+/**
+ * Renders the athlete's gear as "id (name)" pairs for an unknown-gearId
+ * error, so the caller can pick a valid one without a second round trip.
+ */
+export function describeGearOptions(gear: readonly IntervalsGear[]): string {
+  if (gear.length === 0) return "no gear is on file";
+  return gear
+    .map((g) => {
+      const label = g.name ?? "unnamed";
+      return isGearRetired(g.retired)
+        ? `${g.id} (${label}, retired)`
+        : `${g.id} (${label})`;
+    })
+    .join(", ");
+}
+
+/** `null` and `""` both mean "no description"; treating them as equal keeps
+ * an explicit clear (`description: ""` in replace mode) from being sent as a
+ * no-op change when the activity already has no description. */
+function normalizeDescription(value: string | null | undefined): string {
+  return value ?? "";
+}
+
+/** The activity fields update-activity reads, writes, and echoes. */
+export interface CurrentActivityFields {
+  name: string | null;
+  description: string | null;
+  gearId: string | null;
+  rpe: number | null;
+  feel: number | null;
+}
+
+/** The fields a caller asked to change, already resolved (description has
+ * already gone through `composeDescription`). */
+export interface RequestedActivityFields {
+  name?: string;
+  description?: string;
+  gearId?: string;
+  rpe?: number;
+  feel?: number;
+}
+
+/**
+ * Builds the PUT patch, keeping only fields whose requested value differs
+ * from `current`; a value that already matches is left out, so the write
+ * never re-sends an unchanged field.
+ */
+export function buildActivityPatch(
+  requested: RequestedActivityFields,
+  current: CurrentActivityFields,
+): IntervalsActivityUpdate {
+  const patch: IntervalsActivityUpdate = {};
+  if (requested.name !== undefined && requested.name !== current.name) {
+    patch.name = requested.name;
+  }
+  if (
+    requested.description !== undefined &&
+    normalizeDescription(requested.description) !==
+      normalizeDescription(current.description)
+  ) {
+    patch.description = requested.description;
+  }
+  if (requested.gearId !== undefined && requested.gearId !== current.gearId) {
+    patch.gear = { id: requested.gearId };
+  }
+  if (requested.rpe !== undefined && requested.rpe !== current.rpe) {
+    patch.icu_rpe = requested.rpe;
+  }
+  if (requested.feel !== undefined && requested.feel !== current.feel) {
+    patch.feel = requested.feel;
+  }
+  return patch;
+}
+
+export interface ActivityWriteChange {
+  field: string;
+  before: string | number | null;
+  after: string | number | null;
+}
+
+/**
+ * Diffs the fresh re-read against the pre-write read for exactly the fields
+ * in `patch`, and warns for any field whose re-read value does not match
+ * what was sent (e.g. gear not applied; see docs/api-notes.md).
+ */
+export function diffActivityWrite(
+  patch: IntervalsActivityUpdate,
+  before: CurrentActivityFields,
+  after: CurrentActivityFields,
+): { changes: ActivityWriteChange[]; warnings: string[] } {
+  const changes: ActivityWriteChange[] = [];
+  const warnings: string[] = [];
+
+  if (patch.name !== undefined) {
+    changes.push({ field: "name", before: before.name, after: after.name });
+    if (after.name !== patch.name) {
+      warnings.push(
+        `name was not applied: sent "${patch.name}", activity now shows ${after.name === null ? "nothing" : `"${after.name}"`}.`,
+      );
+    }
+  }
+  if (patch.description !== undefined) {
+    changes.push({
+      field: "description",
+      before: before.description,
+      after: after.description,
+    });
+    if (
+      normalizeDescription(after.description) !==
+      normalizeDescription(patch.description)
+    ) {
+      warnings.push("description was not applied as sent.");
+    }
+  }
+  if (patch.gear !== undefined) {
+    changes.push({
+      field: "gear",
+      before: before.gearId,
+      after: after.gearId,
+    });
+    if (after.gearId !== patch.gear.id) {
+      warnings.push(
+        `gear was not applied: sent "${patch.gear.id}", activity now shows ${after.gearId === null ? "no gear" : `"${after.gearId}"`}.`,
+      );
+    }
+  }
+  if (patch.icu_rpe !== undefined) {
+    changes.push({ field: "rpe", before: before.rpe, after: after.rpe });
+    if (after.rpe !== patch.icu_rpe) {
+      warnings.push(
+        `rpe was not applied: sent ${patch.icu_rpe}, activity now shows ${after.rpe === null ? "nothing" : after.rpe}.`,
+      );
+    }
+  }
+  if (patch.feel !== undefined) {
+    changes.push({ field: "feel", before: before.feel, after: after.feel });
+    if (after.feel !== patch.feel) {
+      warnings.push(
+        `feel was not applied: sent ${patch.feel}, activity now shows ${after.feel === null ? "nothing" : after.feel}.`,
+      );
+    }
+  }
+
+  return { changes, warnings };
 }

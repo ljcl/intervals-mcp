@@ -1,28 +1,30 @@
 import { describe, expect, it } from "vitest";
-import { mapActivityZones } from "./activityZones";
-import { type StravaActivityZone } from "./stravaClient";
+import { hrZoneMismatchWarning, mapIntervalsZones } from "./activityZones";
+import { type IntervalsActivity } from "./intervalsClient";
 
-function hrZone(times: number[]): StravaActivityZone {
-  const bounds = [0, 120, 145, 160, 175, -1];
+function activity(
+  overrides: Partial<IntervalsActivity> = {},
+): IntervalsActivity {
   return {
-    type: "heartrate",
-    sensor_based: true,
-    distribution_buckets: times.map((time, i) => ({
-      min: bounds[i]!,
-      max: i === times.length - 1 ? -1 : bounds[i + 1]!,
-      time,
-    })),
-  } as unknown as StravaActivityZone;
+    id: "i1",
+    start_date_local: "2026-07-10T06:12:00",
+    ...overrides,
+  } as IntervalsActivity;
 }
 
-describe("mapActivityZones", () => {
-  it("maps buckets with percentages and the open-ended top zone", () => {
-    const sets = mapActivityZones([hrZone([600, 1800, 900, 500, 200])]);
+describe("mapIntervalsZones", () => {
+  it("maps HR bounds/times with a real, non-open-ended top zone", () => {
+    const sets = mapIntervalsZones(
+      activity({
+        icu_hr_zones: [120, 145, 160, 175, 197],
+        icu_hr_zone_times: [600, 1800, 900, 500, 200],
+      }),
+    );
     expect(sets).toHaveLength(1);
     const set = sets[0]!;
     expect(set.type).toBe("heartrate");
     expect(set.unit).toBe("bpm");
-    expect(set.sensorBased).toBe(true);
+    expect(set.sensorBased).toBeNull();
     expect(set.totalSeconds).toBe(4000);
     expect(set.buckets).toHaveLength(5);
     expect(set.buckets[0]).toEqual({
@@ -32,45 +34,94 @@ describe("mapActivityZones", () => {
       seconds: 600,
       pct: 15,
     });
-    expect(set.buckets[1]!.pct).toBe(45);
-    // Strava's -1 sentinel becomes null ("and above").
-    expect(set.buckets[4]!.max).toBeNull();
-    // Percentages account for all time.
-    const pctSum = set.buckets.reduce((sum, b) => sum + b.pct, 0);
-    expect(pctSum).toBeCloseTo(100, 0);
+    // The top zone keeps its real upper bound, unlike Strava's -1 sentinel.
+    expect(set.buckets[4]).toEqual({
+      zone: 5,
+      min: 175,
+      max: 197,
+      seconds: 200,
+      pct: 5,
+    });
   });
 
-  it("keeps heart rate and power as separate sets with their units", () => {
-    const power = {
-      type: "power",
-      sensor_based: true,
-      distribution_buckets: [
-        { min: 0, max: 200, time: 1000 },
-        { min: 200, max: -1, time: 500 },
-      ],
-    } as unknown as StravaActivityZone;
-    const sets = mapActivityZones([hrZone([100, 100, 100, 100, 100]), power]);
-    expect(sets.map((s) => s.type)).toEqual(["heartrate", "power"]);
-    expect(sets[1]!.unit).toBe("W");
-    expect(sets[1]!.buckets[1]!.pct).toBeCloseTo(33.3, 1);
+  it("drops power zones even when icu_power_zones + icu_zone_times are both present (see docs/api-notes.md)", () => {
+    const sets = mapIntervalsZones(
+      activity({
+        icu_power_zones: [200, 400],
+        icu_zone_times: [
+          { id: "z1", secs: 1000 },
+          { id: "z2", secs: 500 },
+        ],
+      }),
+    );
+    expect(sets).toEqual([]);
   });
 
-  it("drops sets without buckets, with zero time, or of unknown type", () => {
-    const empty = {
-      type: "heartrate",
-      distribution_buckets: [],
-    } as unknown as StravaActivityZone;
-    const zeroTime = hrZone([0, 0, 0, 0, 0]);
-    const unknown = {
-      type: "pace",
-      distribution_buckets: [{ min: 0, max: 1, time: 100 }],
-    } as unknown as StravaActivityZone;
-    expect(mapActivityZones([empty, zeroTime, unknown])).toEqual([]);
+  it("reports HR only when both HR and power data are present", () => {
+    const sets = mapIntervalsZones(
+      activity({
+        icu_hr_zones: [120, 197],
+        icu_hr_zone_times: [100, 100],
+        icu_power_zones: [200, 400],
+        icu_zone_times: [
+          { id: "z1", secs: 100 },
+          { id: "z2", secs: 100 },
+        ],
+      }),
+    );
+    expect(sets.map((s) => s.type)).toEqual(["heartrate"]);
   });
 
-  it("defaults sensorBased to null when Strava omits it", () => {
-    const zone = hrZone([100, 0, 0, 0, 0]);
-    (zone as { sensor_based?: boolean }).sensor_based = undefined;
-    expect(mapActivityZones([zone])[0]!.sensorBased).toBeNull();
+  it("omits HR when bounds and times counts don't match", () => {
+    const sets = mapIntervalsZones(
+      activity({
+        icu_hr_zones: [120, 145, 197],
+        icu_hr_zone_times: [100, 100],
+      }),
+    );
+    expect(sets).toEqual([]);
+  });
+
+  it("omits HR when nothing was recorded", () => {
+    expect(
+      mapIntervalsZones(
+        activity({
+          icu_hr_zones: [120, 197],
+          icu_hr_zone_times: [0, 0],
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it("returns an empty array when the activity has no zone data at all", () => {
+    expect(mapIntervalsZones(activity())).toEqual([]);
+  });
+});
+
+describe("hrZoneMismatchWarning", () => {
+  it("is null when HR bounds and times match", () => {
+    expect(
+      hrZoneMismatchWarning(
+        activity({
+          icu_hr_zones: [120, 197],
+          icu_hr_zone_times: [100, 100],
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("is null when the activity has no HR zone data", () => {
+    expect(hrZoneMismatchWarning(activity())).toBeNull();
+  });
+
+  it("names both counts when bounds and times disagree", () => {
+    const warning = hrZoneMismatchWarning(
+      activity({
+        icu_hr_zones: [120, 145, 197],
+        icu_hr_zone_times: [100, 100],
+      }),
+    );
+    expect(warning).toContain("3 zones");
+    expect(warning).toContain("2 zones");
   });
 });

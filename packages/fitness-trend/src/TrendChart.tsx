@@ -98,8 +98,8 @@ export function TrendChart({
   if (!hasRecordedLoad(data)) {
     return (
       <EmptyState>
-        No relative effort recorded in this window — CTL and ATL need heart-rate
-        data to build from.
+        No training load recorded in this window. CTL and ATL have nothing to
+        build from yet.
       </EmptyState>
     );
   }

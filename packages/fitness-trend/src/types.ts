@@ -2,7 +2,7 @@
 export interface TrendDay {
   /** ISO date, YYYY-MM-DD. */
   date: string;
-  /** Relative effort recorded (or planned) that day. */
+  /** Training load recorded (or planned) that day; intervals.icu units, unitless. */
   load: number;
   /** Chronic training load — "fitness". */
   ctl: number;

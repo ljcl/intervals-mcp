@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { buildZoneSet, mapIntervalsZones } from "../activityZones";
 import { formatDuration, round, STRAVA_STUB_NOTE } from "../formatters";
 import {
   getActivity as getActivityClient,
@@ -9,11 +10,13 @@ import {
 } from "../intervalsClient";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
 import {
-  cadenceSpm,
+  activityCadenceSpm,
+  buildRunningDynamics,
+  gapPace,
   isPaceActivity,
   isStepCadenceActivity,
-  metersPerSecToPace,
   paceFromDistanceTime,
+  type RunningDynamicsAvg,
 } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
 import { toolErrorText } from "./_errors";
@@ -38,10 +41,11 @@ Parameters:
 Notes:
 - An activity synced from Strava (source STRAVA) is a stub: intervals.icu has
   no detail for it through this API
-- HR zones come from the athlete's Run sport settings group (types Run,
-  VirtualRun, TrailRun); hr_zones is an empty array for any other activity
-  type, including Walk/Hike, or if that settings group isn't configured,
-  rather than failing the call
+- HR zones come from the activity's own recorded zone bounds when present
+  (any activity type); otherwise falls back to the athlete's Run sport
+  settings group (types Run, VirtualRun, TrailRun) when that group covers
+  the activity's type. hr_zones is an empty array when neither source is
+  usable, rather than failing the call
 - The text response truncates description to 200 characters with a "..."
   marker; structuredContent.description is always the full text
 `;
@@ -76,14 +80,6 @@ interface HrZoneEntry {
   seconds: number;
 }
 
-interface RunningDynamics {
-  stance_time_ms: number | null;
-  vertical_oscillation_mm: number | null;
-  vertical_ratio_pct: number | null;
-  step_length_mm: number | null;
-  stride_m: number | null;
-}
-
 interface ActivityIntervalEntry {
   type: string | null;
   label: string | null;
@@ -112,6 +108,10 @@ export interface ActivityDetail {
   elapsed_time_s: number | null;
   pace_min_per_km: string | null;
   gap_min_per_km: string | null;
+  /** GAP here always comes from intervals.icu's own recorded `gap` field,
+   * distinct from get-hill-analysis/get-split-analysis's locally-modelled
+   * GAP (their `gap_source: "model"`). */
+  gap_source: "intervals.icu";
   average_hr: number | null;
   max_hr: number | null;
   average_cadence_spm: number | null;
@@ -123,7 +123,7 @@ export interface ActivityDetail {
   feel: number | null;
   hr_zones: HrZoneEntry[];
   pace_zone_seconds: number[] | null;
-  running_dynamics: RunningDynamics | null;
+  running_dynamics: RunningDynamicsAvg | null;
   intervals: ActivityIntervalEntry[] | null;
   gear_id: string | null;
   /**
@@ -147,97 +147,57 @@ export interface ActivityDetail {
 }
 
 /**
- * `average_cadence_spm` is `null` for anything but a step-cadence type: the
- * field is always in steps/min, and a non-step-cadence type's raw rate would
- * otherwise be mislabelled as one (a swim's `average_cadence` is a stroke
- * rate, not steps/min). Rounds to a whole step. Wraps the shared
- * `cadenceSpm` (`utils/running.ts`), which itself only decides raw vs.
- * doubled by type; the null-for-non-step-cadence-types gate is specific to
- * this field's fixed "spm" unit, so it stays here rather than in the shared
- * helper (get-activity-streams' cadence stream wants the raw, un-nulled rate
- * for a non-step-cadence type instead).
- */
-function activityCadenceSpm(
-  rawCadence: number | null | undefined,
-  type: string,
-): number | null {
-  if (!isStepCadenceActivity(type)) return null;
-  const spm = cadenceSpm(rawCadence, type);
-  return spm == null ? null : Math.round(spm);
-}
-
-/**
- * `gap` on an activity/interval is in m/s, the same unit as `average_speed`.
- * This is undocumented (IntervalsActivity does not type `average_speed`, so
- * it is not directly cross-checked at runtime), but confirmed against the
- * fixture: the activity's `gap` (3.478) sits in the same range as its
- * `average_speed` (3.384), and each interval's `gap` tracks its
- * `average_speed` up or down with the interval's grade, the signature of a
- * grade-adjusted speed, not a pace-per-metre value. Converted with the same
- * `metersPerSecToPace` used for on-the-clock pace.
- */
-function gapPace(
-  gapMps: number | null | undefined,
-  type: string,
-): string | null {
-  if (!isPaceActivity(type) || gapMps == null) return null;
-  return metersPerSecToPace(gapMps)?.minPerKm ?? null;
-}
-
-/**
- * `sportSettings` only applies to this activity's `hr_zones` when its
- * `types` list actually names the activity's type: `get-activity` always
- * fetches the *Run* sport settings group (`types` on this athlete is
- * `["Run","VirtualRun","TrailRun"]`), but a Walk or Hike is a different
- * settings group with its own zone bounds and zone count (this tool does not
- * fetch that group), and a non-step-cadence type's zone count need not even
- * match (7 zones for WeightTraining on this athlete, not the Run group's 5).
- * Applying the Run group's bounds to any activity type it doesn't cover
- * would mislabel the athlete's own recorded zone times under the wrong
- * boundaries. `hr_zones` degrades to `[]` whenever the settings group's
- * `types` doesn't name this activity's type, the same degrade as settings
- * being entirely unavailable.
+ * Prefers the activity's own recorded `icu_hr_zones` (via `mapIntervalsZones`,
+ * the same source the activity-zones app and `get-activity-zones` read) over
+ * the athlete's current sport settings: the activity's own zones are the
+ * correct settings group for any activity type, including Walk/Hike, and
+ * survive an athlete later editing their zone bounds. `sportSettings` (the
+ * *Run* group; `types` on this athlete is `["Run","VirtualRun","TrailRun"]`)
+ * is used only as a fallback, and only when the activity carries no HR zone
+ * bounds of its own, since a Walk or Hike is a different settings group with
+ * its own zone bounds and zone count (this tool does not fetch that group),
+ * and a non-step-cadence type's zone count need not even match (7 zones for
+ * WeightTraining on this athlete, not the Run group's 5). `hr_zones`
+ * degrades to `[]` when neither source is usable, rather than mislabelling
+ * the athlete's own recorded zone times under the wrong boundaries.
  */
 function buildHrZones(
+  activity: IntervalsActivity,
   sportSettings: IntervalsSportSettings | null,
   type: string,
-  hrZoneTimes: number[] | null | undefined,
 ): HrZoneEntry[] {
+  const hrSet = mapIntervalsZones(activity).find(
+    (set) => set.type === "heartrate",
+  );
+  if (hrSet) {
+    return hrSet.buckets.map((bucket) => ({
+      zone: bucket.zone,
+      min_bpm: bucket.min,
+      max_bpm: bucket.max,
+      seconds: bucket.seconds,
+    }));
+  }
+
+  // Only fall back to sport settings when the activity has no HR zone
+  // bounds of its own; a bounds/times count mismatch is a data problem
+  // sport settings can't safely paper over either.
+  if (activity.icu_hr_zones && activity.icu_hr_zones.length > 0) return [];
   if (!sportSettings?.types?.includes(type)) return [];
 
-  const hrZoneBounds = sportSettings.hr_zones;
-  if (!hrZoneBounds || hrZoneBounds.length === 0) return [];
-  if (!hrZoneTimes || hrZoneTimes.length === 0) return [];
+  const fallback = buildZoneSet(
+    "heartrate",
+    "bpm",
+    sportSettings.hr_zones,
+    activity.icu_hr_zone_times,
+  );
+  if (!fallback) return [];
 
-  return hrZoneBounds.map((maxBpm, i) => ({
-    zone: i + 1,
-    min_bpm: i === 0 ? 0 : (hrZoneBounds[i - 1] ?? null),
-    max_bpm: maxBpm,
-    seconds: hrZoneTimes[i] ?? 0,
+  return fallback.buckets.map((bucket) => ({
+    zone: bucket.zone,
+    min_bpm: bucket.min,
+    max_bpm: bucket.max,
+    seconds: bucket.seconds,
   }));
-}
-
-function buildRunningDynamics(
-  a: IntervalsActivity,
-  type: string,
-): RunningDynamics | null {
-  if (!isStepCadenceActivity(type) || a.average_stance_time == null)
-    return null;
-  return {
-    stance_time_ms:
-      a.average_stance_time == null ? null : round(a.average_stance_time),
-    vertical_oscillation_mm:
-      a.average_vertical_oscillation == null
-        ? null
-        : round(a.average_vertical_oscillation),
-    vertical_ratio_pct:
-      a.average_vertical_ratio == null
-        ? null
-        : round(a.average_vertical_ratio, 1),
-    step_length_mm:
-      a.average_step_length == null ? null : round(a.average_step_length),
-    stride_m: a.average_stride == null ? null : round(a.average_stride, 2),
-  };
 }
 
 function mapInterval(
@@ -314,6 +274,7 @@ export function mapActivityDetail(
       ? paceFromDistanceTime(activity.distance, activity.moving_time)
       : null,
     gap_min_per_km: gapPace(activity.gap, type),
+    gap_source: "intervals.icu",
     average_hr: activity.average_heartrate ?? null,
     max_hr: activity.max_heartrate ?? null,
     average_cadence_spm: activityCadenceSpm(activity.average_cadence, type),
@@ -339,7 +300,7 @@ export function mapActivityDetail(
         : round(activity.icu_efficiency_factor, 2),
     rpe: activity.icu_rpe ?? null,
     feel: activity.feel ?? null,
-    hr_zones: buildHrZones(sportSettings, type, activity.icu_hr_zone_times),
+    hr_zones: buildHrZones(activity, sportSettings, type),
     pace_zone_seconds: activity.pace_zone_times ?? null,
     running_dynamics: buildRunningDynamics(activity, type),
     intervals,
@@ -359,7 +320,10 @@ export function mapActivityDetail(
   };
 }
 
-function formatMetricsLine(d: ActivityDetail): string {
+/** Exported for reuse by get-running-summary, which composes its own text response from the same building blocks. */
+export function formatMetricsLine(
+  d: Omit<ActivityDetail, "intervals">,
+): string {
   const parts: string[] = [];
   if (d.distance_km != null) parts.push(`${d.distance_km.toFixed(2)} km`);
   parts.push(d.moving_time);
@@ -376,7 +340,10 @@ function formatMetricsLine(d: ActivityDetail): string {
   return parts.join(", ");
 }
 
-function formatLoadLine(d: ActivityDetail): string | null {
+/** Exported for reuse by get-running-summary. */
+export function formatLoadLine(
+  d: Omit<ActivityDetail, "intervals">,
+): string | null {
   const parts: string[] = [];
   if (d.load.training_load != null)
     parts.push(`load ${Math.round(d.load.training_load)}`);
@@ -421,15 +388,18 @@ function formatZonesLine(d: ActivityDetail): string | null {
   return `HR zones: ${zones}`;
 }
 
-function formatGearLine(d: ActivityDetail): string | null {
+/** Exported for reuse by get-running-summary. */
+export function formatGearLine(
+  d: Omit<ActivityDetail, "intervals">,
+): string | null {
   if (!d.gear_id) return null;
   return d.gear_name
     ? `Gear: ${d.gear_name} [${d.gear_id}]`
     : `Gear: ${d.gear_id}`;
 }
 
-/** Truncates `text` to `DESCRIPTION_MAX_CHARS`, appending `ELLIPSIS` when it was cut. */
-function truncateDescription(text: string): string {
+/** Truncates `text` to `DESCRIPTION_MAX_CHARS`, appending `ELLIPSIS` when it was cut. Exported for reuse by get-running-summary. */
+export function truncateDescription(text: string): string {
   if (text.length <= DESCRIPTION_MAX_CHARS) return text;
   return `${text.slice(0, DESCRIPTION_MAX_CHARS)}${ELLIPSIS}`;
 }

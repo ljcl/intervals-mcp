@@ -22,7 +22,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { TOOLS } from "./server";
+import { TOOL_DEFS } from "./server";
 
 const LOCK_PATH = new URL("../tool-surface.lock.json", import.meta.url);
 
@@ -57,7 +57,7 @@ function stableStringify(value: unknown): string {
     .join(",")}}`;
 }
 
-function fingerprint(tool: (typeof TOOLS)[number]): string {
+function fingerprint(tool: (typeof TOOL_DEFS)[number]): string {
   return createHash("sha256")
     .update(
       stableStringify({
@@ -76,7 +76,9 @@ function fingerprint(tool: (typeof TOOLS)[number]): string {
 
 function currentSurface(): Record<string, string> {
   const surface: Record<string, string> = {};
-  for (const tool of [...TOOLS].sort((a, b) => a.name.localeCompare(b.name))) {
+  for (const tool of [...TOOL_DEFS].sort((a, b) =>
+    a.name.localeCompare(b.name),
+  )) {
     surface[tool.name] = fingerprint(tool);
   }
   return surface;
@@ -133,7 +135,7 @@ describe("tool surface lock", () => {
   });
 
   it("fingerprints ignore description but track schema and annotations", () => {
-    const tool = TOOLS[0]!;
+    const tool = TOOL_DEFS[0]!;
     const base = fingerprint(tool);
 
     expect(fingerprint({ ...tool, description: "reworded" })).toBe(base);
@@ -147,7 +149,7 @@ describe("tool surface lock", () => {
   });
 
   it("fingerprints are order-independent within a schema", () => {
-    const tool = TOOLS[0]!;
+    const tool = TOOL_DEFS[0]!;
 
     // Same schema content, keys built in the opposite order.
     const forward = fingerprint({
@@ -165,7 +167,7 @@ describe("tool surface lock", () => {
   it("locks every advertised tool", () => {
     if (process.env.UPDATE_TOOL_SURFACE_LOCK) return;
     expect(Object.keys(readLock().tools).sort()).toEqual(
-      TOOLS.map((t) => t.name).sort(),
+      TOOL_DEFS.map((t) => t.name).sort(),
     );
   });
 });

@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { buildUpdateActivityBody, composeDescription } from "./activityWrite";
+import { type IntervalsGear } from "../intervalsClient";
+import {
+  buildActivityPatch,
+  composeDescription,
+  describeGearOptions,
+  diffActivityWrite,
+  findGear,
+  isGearRetired,
+} from "./activityWrite";
 
 describe("composeDescription", () => {
   it("replaces when mode is replace", () => {
@@ -21,35 +29,125 @@ describe("composeDescription", () => {
   });
 });
 
-describe("buildUpdateActivityBody", () => {
-  it("maps provided fields to snake_case", () => {
-    const body = buildUpdateActivityBody({
-      name: "Run",
-      description: "desc",
-      sportType: "TrailRun" as const,
-      gearId: "g1",
-      commute: true,
-      trainer: false,
-      hideFromHome: true,
-    });
-    expect(body).toEqual({
-      name: "Run",
-      description: "desc",
-      sport_type: "TrailRun",
-      gear_id: "g1",
-      commute: true,
-      trainer: false,
-      hide_from_home: true,
-    });
+describe("isGearRetired", () => {
+  it("is false for null", () => {
+    expect(isGearRetired(null)).toBe(false);
+  });
+  it("is false for an empty string", () => {
+    expect(isGearRetired("")).toBe(false);
+  });
+  it("is true for a retirement date string", () => {
+    expect(isGearRetired("2026-01-01")).toBe(true);
+  });
+  it("passes booleans through", () => {
+    expect(isGearRetired(true)).toBe(true);
+    expect(isGearRetired(false)).toBe(false);
+  });
+});
+
+const gearList: IntervalsGear[] = [
+  { id: "g1", name: "Pegasus", retired: null },
+  { id: "g2", name: "Old Trainers", retired: "2026-01-01" },
+];
+
+describe("findGear", () => {
+  it("finds a matching id", () => {
+    expect(findGear("g2", gearList)?.name).toBe("Old Trainers");
+  });
+  it("returns undefined for an unknown id", () => {
+    expect(findGear("g99", gearList)).toBeUndefined();
+  });
+});
+
+describe("describeGearOptions", () => {
+  it("lists ids and names, marking retired gear", () => {
+    expect(describeGearOptions(gearList)).toBe(
+      "g1 (Pegasus), g2 (Old Trainers, retired)",
+    );
+  });
+  it("reports when there is no gear on file", () => {
+    expect(describeGearOptions([])).toBe("no gear is on file");
+  });
+});
+
+const current = {
+  name: "Morning Run",
+  description: "Existing notes",
+  gearId: "g1",
+  rpe: 5,
+  feel: 3,
+};
+
+describe("buildActivityPatch", () => {
+  it("includes only fields that differ from current", () => {
+    expect(
+      buildActivityPatch({ name: "Morning Run", rpe: 7 }, current),
+    ).toEqual({ icu_rpe: 7 });
   });
 
-  it("omits fields that are undefined", () => {
-    expect(buildUpdateActivityBody({ name: "Run" })).toEqual({ name: "Run" });
+  it("is empty when nothing differs", () => {
+    expect(
+      buildActivityPatch(
+        { name: "Morning Run", gearId: "g1", rpe: 5, feel: 3 },
+        current,
+      ),
+    ).toEqual({});
   });
 
-  it("keeps explicit false values", () => {
-    expect(buildUpdateActivityBody({ commute: false })).toEqual({
-      commute: false,
+  it("maps every field to its intervals.icu key", () => {
+    expect(
+      buildActivityPatch(
+        {
+          name: "New name",
+          description: "New notes",
+          gearId: "g2",
+          rpe: 8,
+          feel: 2,
+        },
+        current,
+      ),
+    ).toEqual({
+      name: "New name",
+      description: "New notes",
+      gear: { id: "g2" },
+      icu_rpe: 8,
+      feel: 2,
     });
+  });
+});
+
+describe("diffActivityWrite", () => {
+  it("echoes before/after only for patched fields", () => {
+    const { changes, warnings } = diffActivityWrite({ icu_rpe: 7 }, current, {
+      ...current,
+      rpe: 7,
+    });
+    expect(changes).toEqual([{ field: "rpe", before: 5, after: 7 }]);
+    expect(warnings).toEqual([]);
+  });
+
+  it("warns when the re-read value does not match what was sent", () => {
+    const { changes, warnings } = diffActivityWrite(
+      { gear: { id: "g2" } },
+      current,
+      { ...current, gearId: "g1" },
+    );
+    expect(changes).toEqual([{ field: "gear", before: "g1", after: "g1" }]);
+    expect(warnings).toEqual([
+      'gear was not applied: sent "g2", activity now shows "g1".',
+    ]);
+  });
+
+  it("reports multiple changed fields", () => {
+    const { changes, warnings } = diffActivityWrite(
+      { name: "New name", feel: 1 },
+      current,
+      { ...current, name: "New name", feel: 1 },
+    );
+    expect(changes).toEqual([
+      { field: "name", before: "Morning Run", after: "New name" },
+      { field: "feel", before: 3, after: 1 },
+    ]);
+    expect(warnings).toEqual([]);
   });
 });

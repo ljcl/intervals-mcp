@@ -112,12 +112,12 @@ export const BandKindsToggleIndependently = meta.story({
   },
 });
 
-/** Activities with no heart rate: nothing for CTL or ATL to build from. */
+/** No training load, CTL, or ATL recorded anywhere in the window. */
 export const NoRecordedLoad = meta.story({
   args: { app: null, data: mockNoLoadData },
   play: async ({ canvas }) => {
     await expect(
-      canvas.getByText(/No relative effort recorded in this window/),
+      canvas.getByText(/No training load recorded in this window/),
     ).toBeVisible();
   },
 });

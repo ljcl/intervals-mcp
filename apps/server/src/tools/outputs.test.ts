@@ -1,45 +1,29 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { type StravaStats } from "../stravaClient";
 import {
   AthleteStatsOutputSchema,
   BestEffortsOutputSchema,
-  buildAthleteStatsOutput,
   CompareActivitiesOutputSchema,
   RunningSummaryOutputSchema,
   TrainingLoadOutputSchema,
 } from "./outputs";
 
-describe("buildAthleteStatsOutput", () => {
-  it("flattens totals to schema-valid shape", () => {
-    const stats = {
-      recent_run_totals: {
-        count: 4,
-        distance: 40000,
-        moving_time: 12000,
-        elevation_gain: 300,
-      },
-      biggest_ride_distance: 80000,
-    } as unknown as StravaStats;
-
-    const out = buildAthleteStatsOutput(stats);
-    expect(out.recent_run_totals).toEqual({
-      count: 4,
-      distance_m: 40000,
-      moving_time_s: 12000,
-      elevation_gain_m: 300,
-    });
-    expect(out.ytd_run_totals).toBeNull();
-    expect(out.biggest_ride_distance_m).toBe(80000);
-    expect(AthleteStatsOutputSchema.safeParse(out).success).toBe(true);
-  });
-});
-
 describe("schemas align with the real tool rawObjects", () => {
   it("TrainingLoadOutputSchema matches the training-load result object", () => {
     const result = {
       period: { days: 28, start_date: "2026-05-09", end_date: "2026-06-06" },
-      totals: { runs: 8, distance_km: 64.2, time_hours: 6.1, elevation_m: 420 },
+      run_only: false,
+      source: "intervals.icu",
+      current: { date: "2026-06-06", ctl: 42.1, atl: 38.4, tsb: 3.7 },
+      activity_types_included: ["Run", "WeightTraining"],
+      totals: {
+        runs: 8,
+        distance_km: 64.2,
+        time_s: 21960,
+        time_hours: 6.1,
+        elevation_m: 420,
+        load: 540,
+      },
       averages: {
         runs_per_week: 2,
         distance_km_per_week: 16.05,
@@ -51,9 +35,12 @@ describe("schemas align with the real tool rawObjects", () => {
           week_starting: "2026-05-11",
           runs: 3,
           distance_km: 24.1,
+          time_s: 7920,
           time_hours: 2.2,
           time_formatted: "2h 12m",
           elevation_m: 150,
+          load: 210,
+          load_by_type: { Run: 180, WeightTraining: 30 },
           activities: [
             {
               id: "123",
@@ -67,38 +54,106 @@ describe("schemas align with the real tool rawObjects", () => {
       warnings: [
         "Week of 2026-05-11: Volume increased 35% - consider injury risk",
       ],
+      units: {
+        load: "intervals.icu training load",
+        distance: "km",
+        time: "s",
+        time_hours: "h",
+        elevation: "m",
+      },
     };
     expect(TrainingLoadOutputSchema.safeParse(result).success).toBe(true);
   });
 
   it("RunningSummaryOutputSchema matches the running-summary object", () => {
     const summary = {
-      activity_id: 123456,
+      id: "i123456",
       name: "Tempo Run",
-      date: "2026-05-11T06:00:00Z",
       type: "Run",
-      distance: { meters: 10000, km: 10, miles: 6.21 },
-      time: {
-        moving_seconds: 3000,
-        moving_formatted: "50m 0s",
-        elapsed_seconds: 3100,
-        elapsed_formatted: "51m 40s",
+      date: "2026-05-11",
+      start_local: "2026-05-11T06:00:00",
+      source: "OAUTH_CLIENT",
+      is_strava_stub: false,
+      device: "Watch7,5",
+      distance_km: 10,
+      moving_time_s: 3000,
+      moving_time: "50:00",
+      elapsed_time_s: 3100,
+      pace_min_per_km: "5:00",
+      gap_min_per_km: "4:55",
+      gap_source: "intervals.icu",
+      average_hr: 150,
+      max_hr: 172,
+      average_cadence_spm: 176,
+      elevation_gain_m: 120,
+      load: {
+        training_load: 60,
+        hr_load: 60,
+        pace_load: null,
+        trimp: 100,
+        intensity: 90,
       },
-      pace: {
-        min_per_km: "5:00",
-        min_per_mile: "8:03",
-        display: "5:00 /km",
+      decoupling_pct: 2.1,
+      efficiency_factor: 1.5,
+      rpe: 5,
+      feel: 4,
+      hr_zones: [{ zone: 1, min_bpm: 0, max_bpm: 142, seconds: 60 }],
+      pace_zone_seconds: null,
+      running_dynamics: {
+        stance_time_ms: 233,
+        vertical_oscillation_mm: 90,
+        vertical_ratio_pct: 7.2,
+        step_length_mm: 1200,
+        stride_m: 1.2,
       },
-      elevation: { gain_m: 120, gain_ft: 394 },
-      cadence: { average_spm: 176, assessment: "good" },
-      heart_rate: {
-        average: 150,
-        max: 172,
-        zones: { zones: { zone_1: { formatted: "1m", percentage: 2 } } },
+      intervals: null,
+      gear_id: "g1",
+      gear_name: "Pegasus",
+      weather_temp_c: 15,
+      description: "Tempo run",
+      units: {
+        distance: "km",
+        pace: "min/km",
+        time: "s",
+        hr: "bpm",
+        elevation: "m",
+        cadence: "spm",
+        temp: "C",
       },
-      power: { average_watts: 280, max_watts: 350 },
-      laps: [{ lap: 1, distance_km: 1, time: "5:00" }],
-      gear: "Pegasus",
+      cadence_assessment: "good",
+      hr_zone_summary: {
+        source: "activity",
+        total_seconds: 60,
+        zones: [
+          { zone: 1, min_bpm: 0, max_bpm: 142, seconds: 60, percent: 100 },
+        ],
+      },
+      hr_zone_note: null,
+      dynamics_assessment: {
+        vertical_oscillation: "good - under the 100 mm target",
+        ground_contact_time: "good - within the 200-260 ms target range",
+      },
+      laps: [
+        {
+          lap_index: 1,
+          type: "WORK",
+          label: null,
+          distance_km: 1,
+          moving_time_s: 300,
+          moving_time: "5:00",
+          elapsed_time_s: 300,
+          pace_min_per_km: "5:00",
+          gap_min_per_km: "4:55",
+          gap_source: "intervals.icu",
+          speed_kmh: null,
+          average_hr: 150,
+          max_hr: 160,
+          average_cadence: 176,
+          average_watts: null,
+          elevation_gain_m: 10,
+          average_gradient_pct: 1.2,
+        },
+      ],
     };
     expect(RunningSummaryOutputSchema.safeParse(summary).success).toBe(true);
   });
@@ -110,19 +165,42 @@ describe("schemas align with the real tool rawObjects", () => {
       date: "2026-05-01",
       type: "Run",
       distance_km: 10,
-      time_formatted: "50m 0s",
-      pace: { min_per_km: "5:00", min_per_mile: "8:03", raw_min_per_km: 5 },
-      avg_hr: 150,
+      moving_time: "50:00",
+      moving_time_s: 3000,
+      pace_min_per_km: "5:00",
+      gap_min_per_km: "4:58",
+      gap_source: "intervals.icu",
+      average_hr: 150,
       max_hr: 172,
       cadence_spm: 176,
       elevation_gain_m: 100,
+      load: 60,
+      decoupling_pct: 3.5,
+      efficiency_factor: 1.3,
+      running_dynamics: {
+        stance_time_ms: 230,
+        vertical_oscillation_mm: 100,
+        vertical_ratio_pct: 8.5,
+        step_length_mm: 1200,
+        stride_m: 1.2,
+      },
     };
     const result = {
+      units: {
+        distance: "km",
+        pace: "min/km",
+        time: "s",
+        hr: "bpm",
+        elevation: "m",
+        cadence: "spm",
+      },
       activity_1: side,
       activity_2: { ...side, id: "222", name: "Run B" },
       differences: {
         distance_km: 0,
-        pace: { seconds_per_km: -10, interpretation: "faster" },
+        pace_delta_sec_per_km: -10,
+        pace_delta_min_per_km: "-0:10",
+        pace_delta_interpretation: "faster",
         avg_hr: -2,
         cadence_spm: 1,
         elevation_gain_m: 5,
@@ -141,26 +219,26 @@ describe("schemas align with the real tool rawObjects", () => {
 
   it("BestEffortsOutputSchema matches the best-efforts response object", () => {
     const response = {
+      window: { id: "1y", oldest: "2025-09-25", newest: "2026-09-25" },
+      top_n: 1,
+      units: { time: "s", pace: "min/km" },
+      note: "Best times come from the recorded time stream (a moving-time style curve), not elapsed time.",
       best_efforts: {
-        "5K": [
+        "5km": [
           {
-            activity_id: "123",
-            activity_name: "5K Race",
+            rank: 1,
+            time_seconds: 1080,
+            time_formatted: "18m 0s",
+            pace_min_per_km: "3:36",
             date: "2026-05-01",
-            elapsed_time_seconds: 1080,
-            elapsed_time_formatted: "18m 0s",
-            moving_time_seconds: 1075,
-            moving_time_formatted: "17m 55s",
-            pace: { min_per_km: "3:36", min_per_mile: "5:48" },
-            pr_rank: 1,
+            activity_id: "i123",
+            activity_name: "5K Race",
+            race: true,
           },
         ],
       },
-      activities_analyzed: 42,
-      activities_with_efforts: 30,
-      activities_skipped: 0,
+      missing: [],
       warnings: [],
-      note: "Times use elapsed time (includes stops), matching Strava's Best Efforts behavior",
     };
     expect(BestEffortsOutputSchema.safeParse(response).success).toBe(true);
   });

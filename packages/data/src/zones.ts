@@ -11,7 +11,8 @@ export interface ZoneBucket {
   zone: number;
   /** Lower bound in the set's unit (bpm or W). */
   min: number;
-  /** Upper bound, or null for the open-ended top zone (Strava sends -1). */
+  /** Upper bound; intervals.icu always sends a real number, even for the
+   * top zone, so this is never null in practice today. */
   max: number | null;
   seconds: number;
   /** Share of the set's total time, 0–100 with one decimal. */
