@@ -35,6 +35,8 @@ function paceRange(runs: RunSummary[]): { min: number; max: number } {
   let min = Infinity;
   let max = -Infinity;
   for (const run of runs) {
+    // A null pace (no recorded speed) is not a data point on this axis.
+    if (run.averagePace == null) continue;
     if (run.averagePace < min) min = run.averagePace;
     if (run.averagePace > max) max = run.averagePace;
   }

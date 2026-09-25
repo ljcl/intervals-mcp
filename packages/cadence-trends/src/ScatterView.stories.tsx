@@ -10,7 +10,7 @@ const meta = preview.meta({ component: ScatterView });
 
 /** Plot order: runs with both cadence and pace, in the order given. */
 const plotted = mockRuns.filter(
-  (a) => a.averageCadence > 0 && a.averagePace > 0,
+  (a) => a.averageCadence > 0 && a.averagePace != null && a.averagePace > 0,
 );
 
 /** Every clickable run mark, in plot order. */

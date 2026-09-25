@@ -71,6 +71,17 @@ describe("buildScatterA11y", () => {
     );
     expect(buildScatterA11y(runs, null).desc).not.toContain("trend line");
   });
+
+  it("skips a null pace in the pace range instead of narrating a fake 0 min/km", () => {
+    const withNullPace = [
+      ...runs,
+      run({ id: "3", averageCadence: 172, averagePace: null }),
+    ];
+    const { desc } = buildScatterA11y(withNullPace, null);
+    // Range stays bounded by the real values; a null would otherwise widen
+    // it toward 0.
+    expect(desc).toContain("pace between 4'30\" and 6'06\" min/km.");
+  });
 });
 
 describe("buildZonesA11y", () => {

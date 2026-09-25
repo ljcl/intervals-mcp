@@ -72,4 +72,36 @@ describe("buildCadenceContextSummary", () => {
       }),
     ).not.toContain("excluded");
   });
+
+  it("mentions runs excluded from pace-based views for missing pace", () => {
+    const text = buildCadenceContextSummary({
+      weeks: 6,
+      activeView: "scatter",
+      selectedRuns: [],
+      noPaceCount: 2,
+    });
+    expect(text).toBe(
+      "Cadence trends, last 6 weeks. View: cadence vs pace scatter. No runs selected for comparison. 2 runs with no recorded pace excluded from pace-based views.",
+    );
+  });
+
+  it("uses the singular form for one no-pace run and omits it entirely for zero", () => {
+    expect(
+      buildCadenceContextSummary({
+        weeks: 6,
+        activeView: "trend",
+        selectedRuns: [],
+        noPaceCount: 1,
+      }),
+    ).toContain("1 run with no recorded pace excluded from pace-based views.");
+
+    expect(
+      buildCadenceContextSummary({
+        weeks: 6,
+        activeView: "trend",
+        selectedRuns: [],
+        noPaceCount: 0,
+      }),
+    ).not.toContain("no recorded pace");
+  });
 });

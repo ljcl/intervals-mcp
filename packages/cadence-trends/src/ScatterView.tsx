@@ -41,7 +41,11 @@ export function ScatterView({
   };
 
   const runs = useMemo(
-    () => activities.filter((a) => a.averageCadence > 0 && a.averagePace > 0),
+    () =>
+      activities.filter(
+        (a): a is RunSummary & { averagePace: number } =>
+          a.averageCadence > 0 && a.averagePace != null && a.averagePace > 0,
+      ),
     [activities],
   );
 

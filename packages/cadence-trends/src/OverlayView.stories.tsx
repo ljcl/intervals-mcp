@@ -3,6 +3,7 @@ import { MobileCardShell } from "@intervals-mcp/ui";
 import { expect, fn, waitFor } from "storybook/test";
 import {
   allFailedStreams,
+  gappyStreams,
   mockStreams,
   partiallyFailedStreams,
   partiallyLoadedStreams,
@@ -155,6 +156,31 @@ export const AllRunsFailed = meta.story({
 
     await userEvent.click(canvas.getByRole("button", { name: "Try again" }));
     await expect(args.retryStream).toHaveBeenCalledTimes(2);
+  },
+});
+
+/**
+ * A run with a mid-run cadence/pace dropout: the line for that run breaks
+ * across the gap instead of bridging it or dipping to a fake zero, while
+ * the intact run keeps drawing normally.
+ */
+export const WithGaps = meta.story({
+  args: {
+    selectedRunIds: bothRuns,
+    streams: gappyStreams,
+    requestStream: noop,
+    retryStream: noop,
+  },
+  play: async ({ canvasElement }) => {
+    // The gappy run renders as two disjoint path segments (before/after the
+    // gap) plus one whole path for the intact run: more curves than a plain
+    // two-run overlay, proving the line actually breaks rather than
+    // bridging or flattening to zero.
+    await waitFor(() =>
+      expect(
+        canvasElement.querySelectorAll("path.recharts-line-curve").length,
+      ).toBeGreaterThan(2),
+    );
   },
 });
 

@@ -19,7 +19,11 @@ export interface RunSummary {
   distance: number;
   duration: number;
   averageCadence: number;
-  averagePace: number;
+  /** `null` when the device recorded no speed: never a fabricated 0 min/km
+   * (which would read as impossibly fast). The run still counts toward
+   * cadence-based views; pace-based views exclude it, mirroring how
+   * cadence-less runs are excluded from `activities` entirely. */
+  averagePace: number | null;
   type: string;
 }
 
@@ -31,6 +35,11 @@ export interface CadenceTrendData {
    * of `activities` (see {@link buildCadenceTrendData}) rather than counted
    * toward it. */
   excludedNoCadence: number;
+  /** Runs included in `activities` (they have cadence) but with no recorded
+   * speed, so `averagePace` is `null` there: counted here the same way
+   * `excludedNoCadence` counts the cadence-less runs, so pace-based views
+   * can say how many of the plotted runs they're leaving out. */
+  noPaceCount: number;
 }
 
 /**
@@ -52,6 +61,7 @@ export function buildCadenceTrendData(
 
   const summaries: RunSummary[] = [];
   let excludedNoCadence = 0;
+  let noPaceCount = 0;
 
   for (const a of runs) {
     const type = a.type ?? "Run";
@@ -61,7 +71,12 @@ export function buildCadenceTrendData(
       continue;
     }
     const avgSpeed = a.average_speed ?? 0;
-    const avgPace = avgSpeed > 0 ? 1000 / avgSpeed / 60 : 0;
+    let averagePace: number | null = null;
+    if (avgSpeed > 0) {
+      averagePace = Math.round((1000 / avgSpeed / 60) * 100) / 100;
+    } else {
+      noPaceCount += 1;
+    }
     summaries.push({
       id: a.id,
       name: a.name ?? type,
@@ -69,10 +84,15 @@ export function buildCadenceTrendData(
       distance: Math.round(((a.distance ?? 0) / 1000) * 100) / 100,
       duration: a.moving_time ?? 0,
       averageCadence,
-      averagePace: Math.round(avgPace * 100) / 100,
+      averagePace,
       type,
     });
   }
 
-  return { weeks: options.weeks, activities: summaries, excludedNoCadence };
+  return {
+    weeks: options.weeks,
+    activities: summaries,
+    excludedNoCadence,
+    noPaceCount,
+  };
 }

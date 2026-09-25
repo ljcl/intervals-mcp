@@ -89,6 +89,34 @@ describe("buildCadenceTrendData", () => {
 
     // 1000 / 3.33 / 60 ≈ 5.005
     expect(result.activities[0]?.averagePace).toBeCloseTo(5.01, 2);
+    expect(result.noPaceCount).toBe(0);
+  });
+
+  it("gives a run with no recorded speed a null pace instead of 0 min/km, but keeps it (it still has cadence)", () => {
+    const result = buildCadenceTrendData([activity({ average_speed: null })], {
+      weeks: 4,
+    });
+
+    expect(result.activities).toHaveLength(1);
+    expect(result.activities[0]?.averagePace).toBeNull();
+    expect(result.noPaceCount).toBe(1);
+  });
+
+  it("counts multiple no-pace runs and leaves pace-bearing runs untouched", () => {
+    const result = buildCadenceTrendData(
+      [
+        activity({ id: "i1", average_speed: 3.33 }),
+        activity({ id: "i2", average_speed: null }),
+        activity({ id: "i3", average_speed: 0 }),
+      ],
+      { weeks: 4 },
+    );
+
+    expect(result.activities).toHaveLength(3);
+    expect(result.activities[0]?.averagePace).not.toBeNull();
+    expect(result.activities[1]?.averagePace).toBeNull();
+    expect(result.activities[2]?.averagePace).toBeNull();
+    expect(result.noPaceCount).toBe(2);
   });
 
   it("carries the intervals id through as a string", () => {

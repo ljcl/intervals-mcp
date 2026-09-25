@@ -800,6 +800,9 @@ async function handleViewCadenceTrends(
     ...(data.excludedNoCadence > 0
       ? [`Excluded (no cadence recorded): ${data.excludedNoCadence}`]
       : []),
+    ...(data.noPaceCount > 0
+      ? [`No pace recorded (cadence only): ${data.noPaceCount}`]
+      : []),
     "",
     "[Interactive cadence trends chart rendered above]",
   ];

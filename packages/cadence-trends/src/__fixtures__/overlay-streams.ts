@@ -27,6 +27,31 @@ function generateOverlayPoints(
   return points;
 }
 
+/**
+ * Same shape as `generateOverlayPoints`, but a stretch in the middle has no
+ * cadence/pace reading (a lost GPS/footpod segment): those points stay real
+ * gaps (`cadence`/`pace` left undefined) rather than fabricated zeros, so
+ * the overlay line must visibly break instead of bridging them.
+ */
+function generateOverlayPointsWithGap(
+  distanceKm: number,
+  baseCadence: number,
+  basePace: number,
+  count: number,
+  gapStartFrac: number,
+  gapEndFrac: number,
+): OverlayPoint[] {
+  return generateOverlayPoints(distanceKm, baseCadence, basePace, count).map(
+    (p, i) => {
+      const frac = i / (count - 1);
+      if (frac >= gapStartFrac && frac <= gapEndFrac) {
+        return { distance: p.distance, time: p.time };
+      }
+      return p;
+    },
+  );
+}
+
 const run10003 = mockRuns.find((r) => r.id === "i10003")!;
 const run10013 = mockRuns.find((r) => r.id === "i10013")!;
 
@@ -67,6 +92,22 @@ export const partiallyFailedStreams = new Map<string, RunStreamState>([
       error: "Error: stream fetch failed",
     },
   ],
+]);
+
+/**
+ * One run has a mid-run gap in cadence/pace (both null there), the other is
+ * whole: the overlay line for the gappy run must break, not interpolate or
+ * dip to zero, while the intact run keeps drawing normally.
+ */
+export const gappyStreams = new Map<string, RunStreamState>([
+  [
+    "i10003",
+    loaded(
+      run10003,
+      generateOverlayPointsWithGap(run10003.distance, 172, 4.5, 50, 0.35, 0.55),
+    ),
+  ],
+  ["i10013", mockStreams.get("i10013")!],
 ]);
 
 /** Every selected run failed, so there is nothing to draw at all. */

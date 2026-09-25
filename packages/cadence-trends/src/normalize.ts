@@ -101,6 +101,7 @@ export function computeZoneStats(activities: RunSummary[]): Array<{
   return PACE_ZONES.map((zone) => {
     const inZone = activities.filter(
       (a) =>
+        a.averagePace != null &&
         a.averagePace >= zone.minPace &&
         a.averagePace < zone.maxPace &&
         a.averageCadence > 0,
@@ -158,11 +159,13 @@ export function toOverlayPoints(data: OverlayStreamData): OverlayPoint[] {
       distance: (distArr[i] ?? 0) / 1000,
       time: (timeArr[i] ?? 0) / 60,
     };
-    if (cadenceArr[i] !== undefined) {
-      point.cadence = running ? cadenceArr[i]! * 2 : cadenceArr[i];
+    if (cadenceArr[i] != null) {
+      point.cadence = running ? cadenceArr[i]! * 2 : cadenceArr[i]!;
     }
-    if (velocityArr[i] !== undefined) {
+    if (velocityArr[i] != null) {
       const mps = velocityArr[i]!;
+      // null speed is a gap, not pace 15: only a non-null zero speed (stopped)
+      // clamps to the slow end of the scale.
       point.pace = mps > 0 ? Math.min(1000 / mps / 60, 15) : 15;
     }
     points.push(point);
@@ -171,6 +174,32 @@ export function toOverlayPoints(data: OverlayStreamData): OverlayPoint[] {
 }
 
 export type OverlayXMode = "distance" | "time";
+
+/**
+ * Split a run's points into contiguous segments of defined cadence, breaking
+ * at each null/missing reading. A gap between segments stays a gap: the
+ * grid never interpolates across it.
+ */
+function cadenceSegments(
+  points: OverlayPoint[],
+  xMode: OverlayXMode,
+): Array<Array<{ x: number; y: number }>> {
+  const segments: Array<Array<{ x: number; y: number }>> = [];
+  let current: Array<{ x: number; y: number }> = [];
+  for (const p of points) {
+    if (p.cadence !== undefined) {
+      current.push({
+        x: xMode === "distance" ? p.distance : p.time,
+        y: p.cadence,
+      });
+    } else if (current.length > 0) {
+      segments.push(current);
+      current = [];
+    }
+  }
+  if (current.length > 0) segments.push(current);
+  return segments;
+}
 
 /**
  * Resample each run's cadence onto a shared x grid via linear interpolation,
@@ -186,25 +215,24 @@ export function resampleOverlayRuns(
 ): Array<Record<string, number | undefined>> {
   const series = runs.map((run) => ({
     key: `cadence_${run.id}`,
-    samples: run.points
-      .filter((p) => p.cadence !== undefined)
-      .map((p) => ({
-        x: xMode === "distance" ? p.distance : p.time,
-        y: p.cadence!,
-      })),
+    segments: cadenceSegments(run.points, xMode),
   }));
 
   const maxX = Math.max(
     0,
     ...series.map((s) =>
-      s.samples.length > 0 ? s.samples[s.samples.length - 1]!.x : 0,
+      s.segments.length > 0
+        ? s.segments[s.segments.length - 1]![
+            s.segments[s.segments.length - 1]!.length - 1
+          ]!.x
+        : 0,
     ),
   );
   if (maxX <= 0 || gridSize < 1) return [];
 
-  // One ascending cursor per series: the grid ascends too, so interpolation
-  // over the whole grid stays O(points + grid) instead of O(points * grid).
-  const cursors = series.map(() => 0);
+  // One ascending {segment, point} cursor per series: the grid ascends too,
+  // so this stays O(points + grid) instead of O(points * grid).
+  const cursors = series.map(() => ({ seg: 0, pt: 0 }));
   const rows: Array<Record<string, number | undefined>> = [];
 
   for (let g = 0; g <= gridSize; g += 1) {
@@ -212,14 +240,27 @@ export function resampleOverlayRuns(
     const row: Record<string, number | undefined> = { x };
 
     series.forEach((s, si) => {
-      const pts = s.samples;
-      if (pts.length === 0) return;
-      // Outside this run's extent: leave undefined so the line terminates.
+      const segs = s.segments;
+      if (segs.length === 0) return;
+      const cursor = cursors[si]!;
+
+      // Advance to the segment that could contain x (or the last one).
+      while (
+        cursor.seg < segs.length - 1 &&
+        x > segs[cursor.seg]![segs[cursor.seg]!.length - 1]!.x
+      ) {
+        cursor.seg += 1;
+        cursor.pt = 0;
+      }
+
+      const pts = segs[cursor.seg]!;
+      // Outside every segment (before the first, or inside a gap between
+      // segments): leave undefined so the line breaks or hasn't started.
       if (x < pts[0]!.x || x > pts[pts.length - 1]!.x) return;
 
-      let i = cursors[si]!;
+      let i = cursor.pt;
       while (i < pts.length - 1 && pts[i + 1]!.x < x) i += 1;
-      cursors[si] = i;
+      cursor.pt = i;
 
       const a = pts[i]!;
       const b = pts[Math.min(i + 1, pts.length - 1)]!;

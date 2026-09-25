@@ -9,7 +9,10 @@ export interface RunSummary {
   distance: number;
   duration: number;
   averageCadence: number;
-  averagePace: number;
+  /** `null` when the device recorded no speed: never a fabricated 0 min/km.
+   * The run still counts toward cadence-based views; pace-based views
+   * (pace zones, scatter, a11y pace ranges) exclude it. */
+  averagePace: number | null;
   type: string;
 }
 
@@ -21,6 +24,10 @@ export interface CadenceTrendData {
    * of `activities` rather than plotted at a fabricated 0 spm. Optional so
    * an older feed shape still parses. */
   excludedNoCadence?: number;
+  /** Runs in `activities` with no recorded speed (`averagePace: null`),
+   * excluded from pace-based views only. Optional so an older feed shape
+   * still parses. */
+  noPaceCount?: number;
 }
 
 /** Stream data for a single run used in overlay view (reuses activity-chart shape) */
@@ -31,8 +38,8 @@ export interface OverlayStreamData {
   streams: {
     time?: number[];
     distance?: number[];
-    cadence?: number[];
-    velocity_smooth?: number[];
+    cadence?: (number | null)[];
+    velocity_smooth?: (number | null)[];
   };
 }
 

@@ -133,8 +133,15 @@ export function App({ app, data, mode = "desktop" }: AppProps) {
         activeView,
         selectedRuns,
         excludedNoCadence: data.excludedNoCadence,
+        noPaceCount: data.noPaceCount,
       }),
-    [data.weeks, activeView, selectedRuns, data.excludedNoCadence],
+    [
+      data.weeks,
+      activeView,
+      selectedRuns,
+      data.excludedNoCadence,
+      data.noPaceCount,
+    ],
   );
 
   return (
