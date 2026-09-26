@@ -71,6 +71,19 @@ export function buildZonesSubtitle(
     .join(" · ");
 }
 
+/**
+ * The no-data line. When the server dropped heart rate zones for a known
+ * reason, `hrZoneWarning` gives it in the words the text tools print.
+ * Otherwise the app knows no reason, so the line gives none. A "no sensor"
+ * claim would often be false: power zones are always dropped for now.
+ */
+export function buildEmptyMessage(
+  data: Pick<ActivityZonesData, "hrZoneWarning">,
+): string {
+  const message = "No zone data to show for this activity.";
+  return data.hrZoneWarning ? `${message} ${data.hrZoneWarning}` : message;
+}
+
 /** SummaryBar stats for the active zone set. */
 export function buildSummaryStats(set: ZoneSet): SummaryStat[] {
   const split = intensitySplit(set);

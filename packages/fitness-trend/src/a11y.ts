@@ -4,8 +4,8 @@ import { type FitnessTrendData, type TrendBand } from "./types";
 
 /**
  * Narration spells the year out: "14 Sep 2025". Dates are date-only ISO
- * strings, which parse as UTC midnight; `formatShortDate` reads them in UTC
- * so the narrated day never shifts by the viewer's (or CI's) timezone.
+ * strings and `formatShortDate` reads the day as written, so the narrated
+ * day never shifts by the viewer's (or CI's) timezone.
  */
 const fullDate = (iso: string) => formatShortDate(iso, "full");
 

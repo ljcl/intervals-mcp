@@ -45,9 +45,13 @@ const MONTHS = [
 export type ShortDateYear = "none" | "short" | "full";
 
 /**
- * "5 Jan", "5 Jan 25", or "5 Jan 2026". Month names are hardcoded and the
- * date parts read in UTC, so labels — and the tests asserting them — never
- * depend on the runtime locale or timezone.
+ * "5 Jan", "5 Jan 25", or "5 Jan 2026". Reads the leading `YYYY-MM-DD` as
+ * written and ignores any time or offset after it, so the label is the day
+ * the string names. It never builds a `Date`. `new Date` reads a date-time
+ * with no offset (intervals.icu's `start_date_local`) as the viewer's local
+ * time, so the day could shift with the viewer's time zone. Month names are
+ * hardcoded, so labels, and the tests that assert them, do not depend on
+ * the runtime locale either.
  *
  * Chart axis labels want no year until the range crosses one ("short");
  * screen-reader narration always spells it out ("full").
@@ -56,10 +60,10 @@ export function formatShortDate(
   iso: string,
   year: ShortDateYear = "none",
 ): string {
-  const date = new Date(iso);
-  const day = `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]}`;
+  const fullYear = iso.slice(0, 4);
+  const month = MONTHS[Number(iso.slice(5, 7)) - 1];
+  const day = `${Number(iso.slice(8, 10))} ${month}`;
   if (year === "none") return day;
-  const fullYear = String(date.getUTCFullYear());
   return `${day} ${year === "short" ? fullYear.slice(2) : fullYear}`;
 }
 

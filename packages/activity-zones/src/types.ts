@@ -8,8 +8,13 @@ export type { ZoneBucket, ZoneSet } from "@intervals-mcp/data";
 export interface ActivityZonesData {
   activityId: string;
   name: string;
-  /** Local start date, ISO. */
+  /** Local start date-time with no offset (`start_date_local`), ISO. */
   date: string;
   type: string;
   zoneSets: ZoneSet[];
+  /**
+   * Why heart rate zones were dropped, when the server knows: the same
+   * string the text tools print. Null otherwise.
+   */
+  hrZoneWarning: string | null;
 }

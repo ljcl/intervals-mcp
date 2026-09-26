@@ -1,6 +1,13 @@
-import { describe, expect, it } from "vitest";
-import { hrZoneSet, mockZonesData, powerZoneSet } from "./__fixtures__/zones";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  emptyZonesData,
+  hrZoneMismatchData,
+  hrZoneSet,
+  mockZonesData,
+  powerZoneSet,
+} from "./__fixtures__/zones";
+import {
+  buildEmptyMessage,
   buildSummaryStats,
   buildZoneRows,
   buildZonesSubtitle,
@@ -75,6 +82,47 @@ describe("buildZonesSubtitle", () => {
   it("names the power set when power is active", () => {
     expect(buildZonesSubtitle(mockZonesData, powerZoneSet)).toBe(
       "Run · 10 Jul · Power zones",
+    );
+  });
+
+  describe("in a time zone other than UTC", () => {
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    // The date is start_date_local, with no offset, so the day must not
+    // move with the viewer's time zone.
+    it.each([
+      // A morning run in Sydney (UTC+10): 06:12 on 10 Jul is 9 Jul in UTC.
+      ["Australia/Sydney", mockZonesData],
+      // An evening run in Los Angeles (UTC-7): 19:30 is 11 Jul in UTC.
+      [
+        "America/Los_Angeles",
+        { ...mockZonesData, date: "2026-07-10T19:30:00" },
+      ],
+    ])("shows the activity's local day in %s", (tz, data) => {
+      vi.stubEnv("TZ", tz);
+      // Proves the zone applies: parsed as a Date, the day moves.
+      expect(new Date(data.date).getUTCDate()).not.toBe(10);
+      expect(buildZonesSubtitle(data, hrZoneSet)).toBe(
+        "Run · 10 Jul · Heart rate zones",
+      );
+    });
+  });
+});
+
+describe("buildEmptyMessage", () => {
+  it("gives the server's own reason when heart rate zones were dropped", () => {
+    expect(buildEmptyMessage(hrZoneMismatchData)).toBe(
+      `No zone data to show for this activity. ${hrZoneMismatchData.hrZoneWarning}`,
+    );
+  });
+
+  it("claims no reason the payload does not carry", () => {
+    // Power zones are always dropped for now, so a missing sensor is not
+    // something the app can know.
+    expect(buildEmptyMessage(emptyZonesData)).toBe(
+      "No zone data to show for this activity.",
     );
   });
 });

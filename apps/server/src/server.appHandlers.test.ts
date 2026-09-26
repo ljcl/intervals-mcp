@@ -1246,6 +1246,28 @@ describe("activity zones handlers", () => {
     expect(result.content[0]?.text).toContain("Heart rate zones omitted");
   });
 
+  it("get-activity-zones-data carries the reason the text tool prints", async () => {
+    // The app's empty state shows hrZoneWarning as its reason, so it must be
+    // the line get-activity-zones prints for the same activity.
+    const mismatched = intervalsActivity({
+      icu_hr_zones: [130, 155, 190],
+      icu_hr_zone_times: [600, 1800],
+    });
+    mockedIntervalsActivity
+      .mockResolvedValueOnce(mismatched)
+      .mockResolvedValueOnce(mismatched);
+
+    const data = await dispatchToolCall("get-activity-zones-data", {
+      activity_id: "123",
+    });
+    const text = await dispatchToolCall("get-activity-zones", { id: "123" });
+
+    const parsed = JSON.parse(data.content[0]?.text ?? "");
+    expect(parsed.zoneSets).toEqual([]);
+    expect(parsed.hrZoneWarning).toContain("Heart rate zones omitted");
+    expect(text.content[0]?.text).toContain(parsed.hrZoneWarning);
+  });
+
   it("propagates a zones fetch failure as isError", async () => {
     mockedIntervalsActivity.mockRejectedValueOnce(
       new Error("Record Not Found"),
