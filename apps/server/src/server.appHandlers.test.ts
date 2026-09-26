@@ -519,13 +519,84 @@ describe("training load handlers", () => {
     ).warnings.filter((w) => /injury risk|Unusually high/.test(w));
 
     expect(textWarnings).toEqual([
-      "Week of 2026-05-25: Unusually high volume (45 km vs 19 km average)",
+      "Week of 2026-05-25: Unusually high volume (45 km vs 19 km average up to that week)",
     ]);
     expect(
       appData.weeks.flatMap((w) =>
         w.warningReasons.map((r) => `Week of ${w.weekStarting}: ${r}`),
       ),
     ).toEqual(textWarnings);
+  });
+
+  it("get-training-load and get-training-load-data both count a layoff that is still going on", async () => {
+    // A Wednesday: 2 weeks of 50 km, then 2 complete weeks and this week so
+    // far with no runs.
+    vi.setSystemTime(new Date("2026-06-03T12:00:00Z"));
+    const activities = [
+      intervalsRun({
+        id: "1",
+        start_date_local: "2026-05-05T07:00:00",
+        distance: 50000,
+      }),
+      intervalsRun({
+        id: "2",
+        start_date_local: "2026-05-12T07:00:00",
+        distance: 50000,
+      }),
+    ];
+
+    mockedIntervalsList.mockResolvedValueOnce(activities);
+    mockedWellness.mockResolvedValueOnce([]);
+    const appResult = await dispatchToolCall("get-training-load-data", {
+      days: 28,
+    });
+    const appData = JSON.parse(appResult.content[0]?.text ?? "") as {
+      weeks: Array<{
+        weekStarting: string;
+        distanceKm: number;
+        inProgress: boolean;
+        warning: boolean;
+      }>;
+    };
+
+    mockedIntervalsList.mockResolvedValueOnce(activities);
+    mockedWellness.mockResolvedValueOnce([]);
+    const textResult = await dispatchToolCall("get-training-load", {
+      days: 28,
+    });
+    const textData = textResult.structuredContent as {
+      trend: string;
+      averages: { distance_km_per_week: number };
+      warnings: string[];
+      weekly_breakdown: Array<{ week_starting: string; distance_km: number }>;
+    };
+
+    const weeks = [
+      ["2026-05-04", 50],
+      ["2026-05-11", 50],
+      ["2026-05-18", 0],
+      ["2026-05-25", 0],
+      ["2026-06-01", 0],
+    ];
+    expect(
+      textData.weekly_breakdown.map((w) => [w.week_starting, w.distance_km]),
+    ).toEqual(weeks);
+    expect(appData.weeks.map((w) => [w.weekStarting, w.distanceKm])).toEqual(
+      weeks,
+    );
+    expect(appData.weeks.map((w) => w.inProgress)).toEqual([
+      false,
+      false,
+      false,
+      false,
+      true,
+    ]);
+    expect(textData.trend).toBe("decreasing significantly");
+    expect(textData.averages.distance_km_per_week).toBe(25);
+    expect(
+      textData.warnings.filter((w) => /injury risk|Unusually high/.test(w)),
+    ).toEqual([]);
+    expect(appData.weeks.some((w) => w.warning)).toBe(false);
   });
 });
 

@@ -1,7 +1,7 @@
 import preview from "@intervals-mcp/design-system/preview";
 import { MobileCardShell } from "@intervals-mcp/ui";
 import { expect } from "storybook/test";
-import { mockWeeks } from "./__fixtures__/weeks";
+import { layoffWeeks, mockWeeks } from "./__fixtures__/weeks";
 import { LoadChart } from "./LoadChart";
 
 const meta = preview.meta({ component: LoadChart });
@@ -23,6 +23,19 @@ export const TrendHidden = meta.story({
 
 export const WarningsHidden = meta.story({
   args: { weeks: mockWeeks, showTrend: true, showWarnings: false },
+});
+
+/**
+ * A layoff that is still going on: the bars and the trend line run on to
+ * the current week instead of stopping at the last run.
+ */
+export const Layoff = meta.story({
+  args: { weeks: layoffWeeks, showTrend: true, showWarnings: true },
+  play: async ({ canvas }) => {
+    // `preserveEnd` always draws the last tick: the current week, not the
+    // last week with a run.
+    await expect(canvas.getByText("29 Jun")).toBeInTheDocument();
+  },
 });
 
 export const Empty = meta.story({

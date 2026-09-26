@@ -136,7 +136,8 @@ description is kept. (This is also the `annotate-last-run` prompt.)
   add the current week so far: `days: 28` is the last 4 complete weeks plus
   this week. The current week is marked in progress: averages and the trend
   leave it out, and it gets a warning only for the volume it already has.
-  Do not read a short current week as a drop in volume.
+  Do not read a short current week as a drop in volume. Weeks with no runs
+  count as zero weeks, a layoff that is still going on included.
 - **Gaps in charts are missing data, not zero.** Streams with no recorded
   sample (a dropped HR strap, a watch that doesn't record running dynamics
   continuously) show as a break in the line, not a dip to zero. This applies

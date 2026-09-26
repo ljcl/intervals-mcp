@@ -573,8 +573,52 @@ describe("get-training-load weeks (#43)", () => {
       w.warningReasons.map((reason) => `Week of ${w.weekStarting}: ${reason}`),
     );
     expect(textWarnings).toEqual([
-      "Week of 2026-06-22: Unusually high volume (45 km vs 19 km average)",
+      "Week of 2026-06-22: Unusually high volume (45 km vs 19 km average up to that week)",
     ]);
     expect(appWarnings).toEqual(textWarnings);
+  });
+
+  it("counts a layoff that is still going on: 2 weeks of 50 km, then 2 empty weeks", async () => {
+    // 2026-07-01 is a Wednesday with no run yet this week. Before, the
+    // weeks after the last run were left out: 50 km/week over 2 weeks and
+    // "limited data", while the athlete had not run for 2 weeks.
+    const activities = [runOn("2026-06-02", 50), runOn("2026-06-09", 50)];
+    serve(activities);
+
+    const { structured, text } = await callOn("2026-07-01", 28);
+    const appData = buildTrainingLoadData(
+      activities,
+      trainingLoadWindow(28, "2026-07-01"),
+      { loadActivities: activities, runOnly: false },
+    );
+
+    // Text tool: the trend and the averages count all 4 complete weeks.
+    expect(structured.weekly_breakdown.map((w) => w.distance_km)).toEqual([
+      50, 50, 0, 0, 0,
+    ]);
+    expect(structured.trend).toBe("decreasing significantly");
+    expect(structured.averages.distance_km_per_week).toBe(25);
+    expect(structured.averages.runs_per_week).toBe(0.5);
+    expect(text).toContain("Weekly Averages (4 complete weeks)");
+    expect(text).toContain(
+      "Trend: decreasing significantly (weeks of 2026-06-15 and 2026-06-22 vs 2026-06-01 and 2026-06-08)",
+    );
+    // No "unusually high" warning on the 50 km weeks from the lower
+    // average the layoff brings.
+    expect(injuryWarnings(structured.warnings)).toEqual([]);
+
+    // App feed: the same weeks, a trend line that falls with the layoff, and
+    // the same (no) warnings.
+    expect(appData.weeks.map((w) => [w.weekStarting, w.distanceKm])).toEqual(
+      structured.weekly_breakdown.map((w) => [w.week_starting, w.distance_km]),
+    );
+    expect(appData.weeks.map((w) => w.trendKm)).toEqual([
+      50,
+      33.33,
+      16.67,
+      0,
+      null,
+    ]);
+    expect(appData.weeks.some((w) => w.warning)).toBe(false);
   });
 });

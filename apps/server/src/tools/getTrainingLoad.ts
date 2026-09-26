@@ -37,9 +37,10 @@ Notes:
   the current week so far is added: days 28 gives 4 complete weeks plus this
   week. Averages and the trend use complete weeks only; the trend compares
   the last 2 with the 2 before.
+- Weeks with no runs count as zero weeks, a layoff still going on included.
 - A warning fires on a week-over-week rise over 30%, or a week over 150% of
-  the average and over 30 km. The current week is flagged only on the volume
-  it already has.
+  the average up to it and over 30 km. The current week is flagged only on
+  the volume it already has.
 `;
 
 const inputSchema = z.object({
@@ -100,10 +101,14 @@ export const getTrainingLoadTool = {
       } = await loadTrainingLoadInputs(apiKey, { days, runOnly }, progress);
 
       // The one shared weekly timeline (trainingLoad.ts's aggregateWeeks):
-      // the union of run weeks and load weeks, so this tool and the
-      // training-load MCP App feed can never report different weekly or
-      // total load for the same activities.
-      const buckets = aggregateWeeks(runActivities, loadActivities);
+      // from the first week with a run or load to the current week, so this
+      // tool and the training-load MCP App feed can never report different
+      // weekly or total load for the same activities.
+      const buckets = aggregateWeeks(
+        runActivities,
+        loadActivities,
+        lookback.currentWeekStart,
+      );
 
       // Individual run activities per week, for the `activities` list this
       // text tool carries that the app feed does not.

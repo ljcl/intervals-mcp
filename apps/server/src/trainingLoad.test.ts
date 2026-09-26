@@ -11,6 +11,7 @@ import {
   typesWithLoad,
   volumeTrend,
   type WeekBucket,
+  weekDistanceKm,
 } from "./trainingLoad";
 import { addDays } from "./utils/localDate";
 
@@ -128,8 +129,40 @@ describe("computeWeekWarnings", () => {
     const high = warnings.find((w) => w.reason.startsWith("Unusually"));
     expect(high).toEqual({
       week_starting: "2026-06-15",
-      reason: "Unusually high volume (62 km vs 31 km average)",
+      reason: "Unusually high volume (62 km vs 31 km average up to that week)",
     });
+  });
+
+  it("never flags a week because of a layoff after it", () => {
+    // Over all four weeks the average is 25 km, so a whole-period average
+    // would call both 50 km weeks unusually high. Up to each of them it is
+    // 50 km.
+    expect(
+      computeWeekWarnings([
+        week("2026-06-01", 50),
+        week("2026-06-08", 50),
+        week("2026-06-15", 0),
+        week("2026-06-22", 0),
+      ]),
+    ).toEqual([]);
+  });
+
+  it("flags a return to full volume after a layoff, not the week before the layoff", () => {
+    expect(
+      computeWeekWarnings([
+        week("2026-06-01", 40),
+        week("2026-06-08", 0),
+        week("2026-06-15", 0),
+        week("2026-06-22", 0),
+        week("2026-06-29", 42),
+      ]),
+    ).toEqual([
+      {
+        week_starting: "2026-06-29",
+        reason:
+          "Unusually high volume (42 km vs 16 km average up to that week)",
+      },
+    ]);
   });
 
   it("can flag the same week under both rules", () => {
@@ -180,28 +213,18 @@ describe("computeWeekWarnings", () => {
     });
   });
 
-  it("leaves the week in progress out of the unusually-high average", () => {
-    // Over all four weeks the average is 23 km and 38 km is over 150% of it;
-    // over the three complete weeks it is 30.7 km, and 38 km is not.
-    expect(
-      computeWeekWarnings([
-        week("2026-06-01", 24),
-        week("2026-06-08", 30),
-        week("2026-06-15", 38),
-        inProgress("2026-06-22", 0),
-      ]),
-    ).toEqual([]);
-  });
-
   it("flags unusually high volume so far in the week in progress", () => {
     const warnings = computeWeekWarnings([
       week("2026-06-01", 20),
       week("2026-06-08", 20),
       inProgress("2026-06-15", 45),
     ]);
+    // The average is over the 2 complete weeks only: counting the week in
+    // progress would make it 28 km.
     expect(warnings).toContainEqual({
       week_starting: "2026-06-15",
-      reason: "Unusually high volume so far (45 km vs 20 km average)",
+      reason:
+        "Unusually high volume so far (45 km vs 20 km average up to that week)",
     });
   });
 });
@@ -240,12 +263,32 @@ describe("selectRunWeeks", () => {
     expect(warnings).toEqual([
       {
         week_starting: "2026-06-22",
-        reason: "Unusually high volume (45 km vs 19 km average)",
+        reason:
+          "Unusually high volume (45 km vs 19 km average up to that week)",
       },
     ]);
   });
 
-  it("trims load-only weeks outside the runs and leaves the week in progress out of complete", () => {
+  it("keeps zero-run weeks after the last run, a layoff still going on", () => {
+    // 2 weeks of 50 km, then 2 complete weeks with no runs; the week in
+    // progress has none yet either.
+    const { span, complete, warnings } = selectRunWeeks(
+      [
+        bucket("2026-06-01", 50),
+        bucket("2026-06-08", 50),
+        bucket("2026-06-15", 0),
+        bucket("2026-06-22", 0),
+        bucket("2026-06-29", 0),
+      ],
+      "2026-06-29",
+    );
+    expect(span).toHaveLength(5);
+    expect(complete.map(weekDistanceKm)).toEqual([50, 50, 0, 0]);
+    expect(volumeTrend(complete).label).toBe("decreasing significantly");
+    expect(warnings).toEqual([]);
+  });
+
+  it("trims load-only weeks before the first run and leaves the week in progress out of complete", () => {
     const loadOnly = { ...bucket("2026-06-01", 0), load: 40 };
     const { span, complete } = selectRunWeeks(
       [
@@ -310,6 +353,13 @@ describe("volumeTrend", () => {
   it("gives no verdict when the earlier 2 weeks have no volume", () => {
     expect(volumeTrend(weeks(0, 0, 20, 20)).label).toBe("insufficient data");
   });
+
+  it("says so when a layoff covers all of the last 4 complete weeks", () => {
+    expect(volumeTrend(weeks(50, 50, 0, 0, 0, 0))).toEqual({
+      label: "no running volume in the last 4 complete weeks",
+      weeks: [],
+    });
+  });
 });
 
 describe("rollingTrend", () => {
@@ -361,12 +411,19 @@ describe("buildTrainingLoadData", () => {
   });
 
   it("aggregates runs into Monday-start weeks with totals", () => {
-    // Both in the week of Mon 2026-06-08.
+    // Both in the week of Mon 2026-06-08. The timeline runs on to the
+    // current week, which has no run yet.
     const data = buildTrainingLoadData(
       [run("2026-06-09", 10), run("2026-06-11", 5)],
       until("2026-06-15"),
     );
-    expect(data.weeks).toHaveLength(1);
+    expect(data.weeks).toHaveLength(2);
+    expect(data.weeks[1]).toMatchObject({
+      weekStarting: "2026-06-15",
+      runs: 0,
+      distanceKm: 0,
+      inProgress: true,
+    });
     expect(data.weeks[0]).toMatchObject({
       weekStarting: "2026-06-08",
       runs: 2,
@@ -438,6 +495,7 @@ describe("buildTrainingLoadData", () => {
       "2026-06-01",
       "2026-06-08",
       "2026-06-15",
+      "2026-06-22",
     ]);
     expect(data.weeks[1]).toMatchObject({ runs: 0, distanceKm: 0 });
   });
@@ -448,7 +506,35 @@ describe("buildTrainingLoadData", () => {
       until("2026-06-22"),
     );
     // Middle (zero) week averages its neighbours: (30 + 0 + 30) / 3 = 20.
-    expect(data.weeks.map((w) => w.trendKm)).toEqual([15, 20, 15]);
+    // The current week, empty so far, gets no trend point.
+    expect(data.weeks.map((w) => w.trendKm)).toEqual([15, 20, 15, null]);
+  });
+
+  it("runs the timeline on through a layoff that is still going on", () => {
+    // 2 weeks of 50 km, then 2 complete weeks with no runs, called on a
+    // Wednesday with no run yet this week.
+    const data = buildTrainingLoadData(
+      [run("2026-06-02", 50), run("2026-06-09", 50)],
+      until("2026-07-01"),
+    );
+    expect(
+      data.weeks.map((w) => [w.weekStarting, w.distanceKm, w.inProgress]),
+    ).toEqual([
+      ["2026-06-01", 50, false],
+      ["2026-06-08", 50, false],
+      ["2026-06-15", 0, false],
+      ["2026-06-22", 0, false],
+      ["2026-06-29", 0, true],
+    ]);
+    // The line falls with the layoff instead of ending at the last run.
+    expect(data.weeks.map((w) => w.trendKm)).toEqual([
+      50,
+      33.33,
+      16.67,
+      0,
+      null,
+    ]);
+    expect(data.weeks.some((w) => w.warning)).toBe(false);
   });
 
   it("marks the week in progress, and ends the trend line on the last complete week", () => {
@@ -481,7 +567,7 @@ describe("buildTrainingLoadData", () => {
     );
     expect(data.weeks[2]!.warningReasons).toEqual([
       "Volume so far is already 125% above the previous week - consider injury risk",
-      "Unusually high volume so far (45 km vs 20 km average)",
+      "Unusually high volume so far (45 km vs 20 km average up to that week)",
     ]);
   });
 
@@ -502,18 +588,21 @@ describe("buildTrainingLoadData", () => {
     // 40 km, three empty weeks, 42 km. The app used to drop the empty weeks
     // (average 41 km, no warning) while the text tool kept them (average
     // 16.4 km). Both now read the same weeks from selectRunWeeks: a return
-    // to full volume after a 3-week layoff is flagged.
+    // to full volume after a 3-week layoff is flagged, and the 40 km week
+    // before the layoff is not.
     const runs = [run("2026-06-01", 40), run("2026-06-29", 42)];
     const lookback = until("2026-07-06", 42);
     const data = buildTrainingLoadData(runs, lookback);
 
-    expect(data.weeks).toHaveLength(5);
-    const lastWeek = data.weeks[data.weeks.length - 1]!;
-    expect(lastWeek.warningReasons).toEqual([
-      "Unusually high volume (42 km vs 16 km average)",
+    // 5 complete weeks, then the current week with no run yet.
+    expect(data.weeks).toHaveLength(6);
+    const returnWeek = data.weeks.find((w) => w.weekStarting === "2026-06-29")!;
+    expect(returnWeek.warningReasons).toEqual([
+      "Unusually high volume (42 km vs 16 km average up to that week)",
     ]);
+    expect(data.weeks[0]!.warning).toBe(false);
     const shared = selectRunWeeks(
-      aggregateWeeks(runs, runs),
+      aggregateWeeks(runs, runs, lookback.currentWeekStart),
       lookback.currentWeekStart,
     ).warnings;
     expect(
@@ -560,7 +649,8 @@ describe("buildTrainingLoadData", () => {
         run("2026-06-01", 0, { type: "WeightTraining", icu_training_load: 30 }),
       ],
     });
-    expect(data.weeks).toHaveLength(1);
+    // The strength week, then the current week, empty so far.
+    expect(data.weeks).toHaveLength(2);
     expect(data.weeks[0]).toMatchObject({
       weekStarting: "2026-06-01",
       runs: 0,
@@ -588,7 +678,53 @@ describe("aggregateWeeks", () => {
   });
 
   it("returns nothing for no activities on either side", () => {
-    expect(aggregateWeeks([], [])).toEqual([]);
+    // Weeks before the first activity may be missing data, so with no
+    // activity at all there is no timeline, not a row of empty weeks.
+    expect(aggregateWeeks([], [], "2026-06-22")).toEqual([]);
+  });
+
+  it("runs on to the current week with empty weeks after the last activity", () => {
+    const buckets = aggregateWeeks(
+      [run("2026-06-02", 50), run("2026-06-09", 50)],
+      [],
+      "2026-06-29",
+    );
+    expect(buckets.map((b) => [b.weekStarting, b.runs])).toEqual([
+      ["2026-06-01", 1],
+      ["2026-06-08", 1],
+      ["2026-06-15", 0],
+      ["2026-06-22", 0],
+      ["2026-06-29", 0],
+    ]);
+  });
+
+  it("gives the run rules the same weeks whether or not a load-only week follows the last run (runOnly)", () => {
+    const runs = [run("2026-06-02", 50), run("2026-06-09", 50)];
+    const ride = run("2026-06-16", 0, { type: "Ride", icu_training_load: 60 });
+    const runOnly = selectRunWeeks(
+      aggregateWeeks(runs, runs, "2026-06-22"),
+      "2026-06-22",
+    );
+    const wholeBody = selectRunWeeks(
+      aggregateWeeks(runs, [...runs, ride], "2026-06-22"),
+      "2026-06-22",
+    );
+    const starts = (weeks: WeekBucket[]) => weeks.map((b) => b.weekStarting);
+
+    expect(starts(runOnly.span)).toEqual([
+      "2026-06-01",
+      "2026-06-08",
+      "2026-06-15",
+      "2026-06-22",
+    ]);
+    expect(starts(wholeBody.span)).toEqual(starts(runOnly.span));
+    expect(starts(wholeBody.complete)).toEqual(starts(runOnly.complete));
+    expect(wholeBody.warnings).toEqual(runOnly.warnings);
+  });
+
+  it("still reaches an activity dated after the current week (a time-zone mismatch)", () => {
+    const buckets = aggregateWeeks([run("2026-06-30", 8)], [], "2026-06-22");
+    expect(buckets.map((b) => b.weekStarting)).toEqual(["2026-06-29"]);
   });
 
   it("unions run weeks and load-only weeks, extending the timeline past the run range", () => {
@@ -598,6 +734,7 @@ describe("aggregateWeeks", () => {
         run("2026-06-08", 0, { type: "Run", icu_training_load: 50 }),
         run("2026-06-22", 0, { type: "WeightTraining", icu_training_load: 20 }),
       ],
+      "2026-06-22",
     );
     expect(buckets.map((b) => b.weekStarting)).toEqual([
       "2026-06-08",
@@ -619,8 +756,8 @@ describe("aggregateWeeks", () => {
       run("2026-06-08", 0, { type: "Run", icu_training_load: 60 }),
       run("2026-06-08", 0, { type: "WeightTraining", icu_training_load: 15 }),
     ];
-    const a = aggregateWeeks(runs, loadActivities);
-    const b = aggregateWeeks(runs, loadActivities);
+    const a = aggregateWeeks(runs, loadActivities, "2026-06-15");
+    const b = aggregateWeeks(runs, loadActivities, "2026-06-15");
     expect(a).toEqual(b);
     expect(a.reduce((sum, w) => sum + w.load, 0)).toBe(130);
   });

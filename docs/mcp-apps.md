@@ -334,12 +334,13 @@ max 365).
   `apps/server/src/trainingLoad.ts` (`buildTrainingLoadData`): Monday-start
   weekly buckets over a whole-week window (`days` rounded up to whole weeks,
   plus the current week so far; `startDate`/`endDate` in the payload), gap
-  weeks zero-filled so the timeline stays continuous, a centered
-  rolling-average trend over complete weeks, per-week warning flags with
-  reasons. The weeks the warnings read (`selectRunWeeks`) and the rules
-  (`computeWeekWarnings`: >30% week-over-week spike, >150%-of-average high
-  week) are shared with the `get-training-load` text tool, so chart and prose
-  cannot drift (#43).
+  weeks zero-filled so the timeline stays continuous and runs on to the
+  current week (a layoff that is still going on shows as empty weeks), a
+  centered rolling-average trend over complete weeks, per-week warning flags
+  with reasons. The weeks the warnings read (`selectRunWeeks`) and the rules
+  (`computeWeekWarnings`: >30% week-over-week spike, a high week over 150% of
+  the average up to it) are shared with the `get-training-load` text tool, so
+  chart and prose cannot drift (#43).
 - The current week carries `inProgress: true` and `trendKm: null`: it draws
   as a light dashed bar with a "This week so far" legend key, the trend line
   ends at the last complete week, and the tooltip, narration and model

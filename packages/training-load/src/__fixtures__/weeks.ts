@@ -144,6 +144,35 @@ export const mockWeeks: WeekSummary[] = [
   },
 ];
 
+const layoffWeek = (
+  weekStarting: string,
+  distanceKm: number,
+  trendKm: number | null,
+): WeekSummary => ({
+  weekStarting,
+  runs: distanceKm > 0 ? 5 : 0,
+  distanceKm,
+  timeHours: distanceKm / 10,
+  elevationM: distanceKm * 8,
+  trendKm,
+  inProgress: trendKm === null,
+  warning: false,
+  warningReasons: [],
+});
+
+/**
+ * Two 50 km weeks, then a layoff that is still going on: two empty complete
+ * weeks and the current week with no run yet. The server runs the timeline
+ * on to the current week, so the bars and the trend line show the layoff.
+ */
+export const layoffWeeks: WeekSummary[] = [
+  layoffWeek("2026-06-01", 50, 50),
+  layoffWeek("2026-06-08", 50, 33.33),
+  layoffWeek("2026-06-15", 0, 16.67),
+  layoffWeek("2026-06-22", 0, 0),
+  layoffWeek("2026-06-29", 0, null),
+];
+
 /** Full data payload matching the mock weeks, for App-level stories. */
 export const mockTrainingLoadData: TrainingLoadData = {
   // 12 complete weeks plus Monday to Wednesday of the current one.
