@@ -3,11 +3,11 @@
  * Pure functions over recorded best efforts, unit-tested next to
  * `fitnessTrend.ts`.
  *
- * The model is Riegel's: `T2 = T1 × (D2/D1)^1.06`. Every recorded best effort
+ * The model is Riegel's: `T2 = T1 × (D2/D1)^1.06`. One best effort per run
  * is extrapolated to the target distance, then combined into one consensus
- * time weighted by how recent the effort is and how far it has to be
- * extrapolated — a 10K from last month says far more about half-marathon
- * fitness than a 1-mile PR from two years ago.
+ * time weighted by how recent the effort is, how far it has to be
+ * extrapolated, and whether it was a race — a 10K from last month says far
+ * more about half-marathon fitness than a 1-mile PR from two years ago.
  *
  * Riegel is an extrapolation, not a measurement, so the honest part of the
  * output is the spread and the confidence gate: the caller is told which
@@ -41,6 +41,15 @@ const MIN_RECENCY_WEIGHT = 0.05;
  * others.
  */
 const EXTRAPOLATION_SCALE = 1.0;
+
+/**
+ * Weight multiplier for an activity intervals.icu marks as a race. A race is
+ * a maximal effort; a training run's best segment usually is not, so it
+ * predicts slower than the athlete can race. Doubling is the same boost as
+ * being one recency half-life newer: a recent race leads, and training runs
+ * still count.
+ */
+export const RACE_WEIGHT = 2;
 
 /** An effort in the last this-many days counts as a current-form sample. */
 export const RECENT_WINDOW_DAYS = 90;
@@ -79,6 +88,15 @@ export interface SourceEffort {
   date: string;
   activityId: string;
   activityName: string;
+  /** True when intervals.icu marks the activity as a race. */
+  race?: boolean;
+  /**
+   * The longest effort the same activity recorded, metres. Set by
+   * {@link selectSourceEfforts}, which keeps one point per activity: a long
+   * run can be represented by a faster 27 km segment although it went 42 km,
+   * and the confidence grade must measure a stretch against the 42 km.
+   */
+  longestMeters?: number;
 }
 
 /** A source effort extrapolated to one target distance. */
@@ -90,7 +108,9 @@ export interface Contribution {
   ageDays: number;
   recencyWeight: number;
   extrapolationWeight: number;
-  /** recencyWeight × extrapolationWeight. */
+  /** {@link RACE_WEIGHT} for a race, else 1. */
+  raceWeight: number;
+  /** recencyWeight × extrapolationWeight × raceWeight. */
   weight: number;
 }
 
@@ -177,6 +197,14 @@ export function riegelPredict(
 }
 
 /**
+ * An effort's time scaled to a common distance by Riegel's formula, up to a
+ * constant factor: lower is the stronger performance, whatever the distance.
+ */
+function riegelScore(effort: SourceEffort): number {
+  return effort.elapsedSeconds / effort.distanceMeters ** RIEGEL_EXPONENT;
+}
+
+/**
  * Reduce a pile of recorded efforts to the candidates worth predicting from.
  *
  * Per distance this keeps at most two: the fastest effort ever recorded, and
@@ -184,6 +212,13 @@ export function riegelPredict(
  * Keeping both is what stops a two-year-old PR speaking for current fitness
  * on its own while still letting it contribute — the recency weight decides
  * how loudly each one speaks.
+ *
+ * Then one effort per activity: the one with the best Riegel score. A pace
+ * curve holds each run's best time at every distance it covered, so one
+ * marathon-length run holds 40 points. They are sub-segments of one run, not
+ * 40 independent efforts: kept apart, they swamp the consensus and fake the
+ * cross-checks the confidence grade relies on. Each kept effort records the
+ * longest distance its activity covered (`longestMeters`).
  *
  * Efforts under `MIN_SOURCE_DISTANCE_M` are dropped: outside Riegel's range.
  */
@@ -237,7 +272,27 @@ export function selectSourceEfforts(
     }
   }
 
-  return selected.sort((a, b) => a.distanceMeters - b.distanceMeters);
+  const longest = new Map<string, number>();
+  for (const effort of usable) {
+    longest.set(
+      effort.activityId,
+      Math.max(longest.get(effort.activityId) ?? 0, effort.distanceMeters),
+    );
+  }
+  const bestPerActivity = new Map<string, SourceEffort>();
+  for (const effort of selected) {
+    const current = bestPerActivity.get(effort.activityId);
+    if (!current || riegelScore(effort) < riegelScore(current)) {
+      bestPerActivity.set(effort.activityId, effort);
+    }
+  }
+
+  return [...bestPerActivity.values()]
+    .map((effort) => ({
+      ...effort,
+      longestMeters: longest.get(effort.activityId) ?? effort.distanceMeters,
+    }))
+    .sort((a, b) => a.distanceMeters - b.distanceMeters);
 }
 
 /** Weight halving every `RECENCY_HALF_LIFE_DAYS`, floored so nothing vanishes. */
@@ -264,6 +319,10 @@ export function extrapolationWeight(
  * Grade the prediction. Starts optimistic and demotes on each way the
  * estimate can be wrong: extrapolating well past anything actually run,
  * stale evidence, a single source, or sources that disagree with each other.
+ *
+ * Sources are counted by activity, not by contribution: points from one run
+ * are not independent evidence, so they can neither pass the single-source
+ * check nor agree with each other.
  */
 export function gradeConfidence(
   contributions: readonly Contribution[],
@@ -281,8 +340,13 @@ export function gradeConfidence(
     else if (confidence === "high") confidence = "medium";
   };
 
+  const activityCount = new Set(contributions.map((c) => c.source.activityId))
+    .size;
+
   const longestSource = Math.max(
-    ...contributions.map((c) => c.source.distanceMeters),
+    ...contributions.map(
+      (c) => c.source.longestMeters ?? c.source.distanceMeters,
+    ),
   );
   const stretch = targetMeters / longestSource;
   if (stretch > 2) {
@@ -310,14 +374,14 @@ export function gradeConfidence(
     );
   }
 
-  if (contributions.length === 1) {
+  if (activityCount === 1) {
     demoteTo("medium");
     notes.push(
       "Only one usable effort, so there is nothing to cross-check it against.",
     );
   }
 
-  if (contributions.length > 1 && consensusSeconds > 0) {
+  if (activityCount > 1 && consensusSeconds > 0) {
     const times = contributions.map((c) => c.predictedSeconds);
     const rangePct =
       ((Math.max(...times) - Math.min(...times)) / consensusSeconds) * 100;
@@ -369,13 +433,15 @@ export function predictRace(
       source.distanceMeters,
       targetMeters,
     );
+    const race = source.race === true ? RACE_WEIGHT : 1;
     contributions.push({
       source,
       predictedSeconds: Math.round(predictedSeconds),
       ageDays,
       recencyWeight: Math.round(recency * 1000) / 1000,
       extrapolationWeight: Math.round(extrapolation * 1000) / 1000,
-      weight: Math.round(recency * extrapolation * 1000) / 1000,
+      raceWeight: race,
+      weight: Math.round(recency * extrapolation * race * 1000) / 1000,
     });
   }
 
@@ -664,6 +730,7 @@ function sourceEffortsFromCurve(
       date: (activity?.start_date_local ?? "").split("T")[0] ?? "",
       activityId,
       activityName: activity?.name ?? "Unknown activity",
+      race: activity?.race === true,
     });
   }
   return efforts;
@@ -675,8 +742,9 @@ function sourceEffortsFromCurve(
  * distance-grid point on each curve, the `all` curve giving the fastest ever
  * at that distance and the `90d` curve the fastest of the last 90 days.
  * `selectSourceEfforts` then keeps, per distance, the fastest of the two
- * (and both when the outright fastest is itself stale) exactly as it does
- * for any other pile of recorded efforts.
+ * (and both when the outright fastest is itself stale), and then one point
+ * per activity, exactly as it does for any other pile of recorded efforts.
+ * Each entry carries the activity's `race` flag from the `activities` map.
  *
  * Takes the already-found `all`/`90d` list items rather than the whole
  * `curves` payload plus a `curves.list.find` of its own, so a caller that

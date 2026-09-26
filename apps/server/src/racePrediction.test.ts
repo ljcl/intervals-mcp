@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import paceCurvesFixture from "./__fixtures__/intervals/pace-curves.json";
 import { type IntervalsAthletePaceCurves } from "./intervalsClient";
 import {
   buildSplits,
@@ -17,12 +18,15 @@ import {
   parseGoalTime,
   predictRace,
   RACE_DISTANCES,
+  RACE_WEIGHT,
   racePace,
   recencyWeight,
   riegelPredict,
   type SourceEffort,
+  STANDARD_TARGETS,
   selectSourceEfforts,
 } from "./racePrediction";
+import { addDays } from "./utils/localDate";
 
 const REFERENCE = "2026-07-28";
 
@@ -178,14 +182,61 @@ describe("selectSourceEfforts", () => {
   it("buckets near-identical distances together and sorts by distance", () => {
     const selected = selectSourceEfforts(
       [
-        effort({ distanceMeters: 21097.5, elapsedSeconds: 5400, name: "Half" }),
-        effort({ distanceMeters: 5000, elapsedSeconds: 1200, name: "5K" }),
-        effort({ distanceMeters: 5000.4, elapsedSeconds: 1300, name: "5K" }),
+        effort({
+          distanceMeters: 21097.5,
+          elapsedSeconds: 5400,
+          name: "Half",
+          activityId: "half",
+        }),
+        effort({
+          distanceMeters: 5000,
+          elapsedSeconds: 1200,
+          name: "5K",
+          activityId: "5k-fast",
+        }),
+        effort({
+          distanceMeters: 5000.4,
+          elapsedSeconds: 1300,
+          name: "5K",
+          activityId: "5k-slow",
+        }),
       ],
       REFERENCE,
     );
 
     expect(selected.map((s) => s.distanceMeters)).toEqual([5000, 21097.5]);
+  });
+
+  it("keeps one effort per run, its best by Riegel's formula, and how far the run went", () => {
+    // A pace curve holds a long run's best time at every distance it
+    // covered: 40 points from one 42 km run that held 5:10/km to 27 km,
+    // then faded to 6:40/km.
+    const longRun = Array.from({ length: 40 }, (_, i) => {
+      const km = i + 3;
+      const seconds = km <= 27 ? km * 310 : 27 * 310 + (km - 27) * 400;
+      return effort({
+        name: `${km * 1000} m`,
+        distanceMeters: km * 1000,
+        elapsedSeconds: seconds,
+        activityId: "long-run",
+      });
+    });
+
+    const selected = selectSourceEfforts(longRun, REFERENCE);
+
+    expect(selected).toHaveLength(1);
+    // Even pacing makes the longest point the strongest, until the fade.
+    expect(selected[0]?.distanceMeters).toBe(27000);
+    expect(selected[0]?.longestMeters).toBe(42000);
+  });
+
+  it("keeps a race flag on the effort it selects", () => {
+    const selected = selectSourceEfforts(
+      [effort({ activityId: "race", race: true })],
+      REFERENCE,
+    );
+
+    expect(selected[0]?.race).toBe(true);
   });
 });
 
@@ -280,6 +331,62 @@ describe("predictRace", () => {
     expect(prediction.predictedSeconds).toBe(2400);
     expect(prediction.paceSecPerKm).toBe(240);
   });
+
+  it("weights a race RACE_WEIGHT times an otherwise identical training run", () => {
+    const prediction = predictRace(
+      [
+        effort({ activityId: "training" }),
+        effort({ activityId: "race", race: true }),
+      ],
+      21097.5,
+      "Half Marathon",
+      REFERENCE,
+    )!;
+
+    const [race, training] = prediction.contributions;
+    expect(race?.source.activityId).toBe("race");
+    expect(race?.raceWeight).toBe(RACE_WEIGHT);
+    expect(training?.raceWeight).toBe(1);
+    expect(race!.weight).toBeCloseTo(training!.weight * RACE_WEIGHT, 2);
+  });
+
+  it("lets a recent 10K race outweigh a long training run's segments", () => {
+    // What the pace curve holds for these two runs: the race owns every
+    // point up to 10 km, the slower long run every point from 11 to 30 km,
+    // 21 km included.
+    const points = (
+      activityId: string,
+      fromKm: number,
+      toKm: number,
+      secPerKm: number,
+      over: Partial<SourceEffort>,
+    ) =>
+      Array.from({ length: toKm - fromKm + 1 }, (_, i) =>
+        effort({
+          name: `${(fromKm + i) * 1000} m`,
+          distanceMeters: (fromKm + i) * 1000,
+          elapsedSeconds: (fromKm + i) * secPerKm,
+          activityId,
+          ...over,
+        }),
+      );
+    const efforts = [
+      ...points("race-10k", 2, 10, 250, { date: "2026-07-14", race: true }),
+      ...points("long-run", 11, 30, 330, { date: "2026-07-21" }),
+    ];
+
+    const prediction = predictRace(
+      selectSourceEfforts(efforts, REFERENCE),
+      21097.5,
+      "Half Marathon",
+      REFERENCE,
+    )!;
+
+    // Counted point by point, as 2.0.0 did, the long run's 21 km split led
+    // and its 20 points outvoted the race. As one run, it does not.
+    expect(prediction.contributions).toHaveLength(2);
+    expect(prediction.primary.source.activityId).toBe("race-10k");
+  });
 });
 
 describe("gradeConfidence", () => {
@@ -289,6 +396,7 @@ describe("gradeConfidence", () => {
     ageDays: 10,
     recencyWeight: 0.9,
     extrapolationWeight: 0.5,
+    raceWeight: 1,
     weight: 0.45,
     ...over,
   });
@@ -345,13 +453,51 @@ describe("gradeConfidence", () => {
     const graded = gradeConfidence(
       [
         contribution({ predictedSeconds: 4500 }),
-        contribution({ predictedSeconds: 6500 }),
+        contribution({
+          predictedSeconds: 6500,
+          source: effort({ activityId: "2" }),
+        }),
       ],
       10000,
       5400,
     );
     expect(graded.confidence).toBe("low");
     expect(graded.notes.join(" ")).toContain("disagree");
+  });
+
+  it("counts sources by run, so 40 points from one run cannot grade high", () => {
+    // Recent, at the target distance, and in close agreement: every rule
+    // but the single-source one would pass.
+    const oneRun = Array.from({ length: 40 }, (_, i) =>
+      contribution({
+        predictedSeconds: 5400 + i,
+        source: effort({ distanceMeters: 8000 + i * 100 }),
+      }),
+    );
+
+    const graded = gradeConfidence(oneRun, 10000, 5420);
+
+    expect(graded.confidence).toBe("medium");
+    expect(graded.notes.join(" ")).toContain("Only one usable effort");
+    expect(graded.notes.join(" ")).not.toContain("agree");
+  });
+
+  it("measures a stretch against how far the run went, not the point chosen for it", () => {
+    const segment = (longestMeters?: number) =>
+      contribution({
+        source: effort({ distanceMeters: 27000, longestMeters }),
+      });
+    const other = contribution({ source: effort({ activityId: "2" }) });
+
+    const coveredTheDistance = gradeConfidence(
+      [segment(42195), other],
+      42195,
+      5400,
+    );
+    const didNot = gradeConfidence([segment(), other], 42195, 5400);
+
+    expect(coveredTheDistance.notes.join(" ")).not.toContain("beyond");
+    expect(didNot.notes.join(" ")).toContain("beyond your longest");
   });
 
   it("never promotes back up after a demotion", () => {
@@ -539,6 +685,123 @@ describe("paceCurveSourceEfforts", () => {
   it("returns nothing for a missing all/90d curve", () => {
     const efforts = paceCurveSourceEfforts({}, undefined, undefined);
     expect(efforts).toEqual([]);
+  });
+
+  it("carries each activity's race flag, false when it is not set", () => {
+    const base = curves();
+    const efforts = effortsFor({
+      ...base,
+      activities: {
+        ...base.activities,
+        i2: { ...base.activities.i2!, race: true },
+      },
+    });
+
+    expect(efforts.find((e) => e.activityId === "i2")?.race).toBe(true);
+    expect(efforts.find((e) => e.activityId === "i3")?.race).toBe(false);
+  });
+});
+
+/**
+ * Regression pins against 2.0.0, which counted every pace-curve point as its
+ * own effort. One point per run must not move a prediction far when the runs
+ * behind the curve are independent efforts.
+ */
+describe("predictions against 2.0.0", () => {
+  const LIVE_CHECK_DATE = "2026-09-26";
+
+  const predictAll = (curves: IntervalsAthletePaceCurves) => {
+    const sources = selectSourceEfforts(
+      paceCurveSourceEfforts(
+        curves.activities,
+        curves.list.find((c) => c.id === "all"),
+        curves.list.find((c) => c.id === "90d"),
+      ),
+      LIVE_CHECK_DATE,
+    );
+    return Object.fromEntries(
+      STANDARD_TARGETS.map((label) => [
+        label,
+        predictRace(sources, RACE_DISTANCES[label], label, LIVE_CHECK_DATE)!,
+      ]),
+    );
+  };
+
+  const expectWithin = (
+    predictions: ReturnType<typeof predictAll>,
+    before: Record<string, number>,
+    tolerance: number,
+  ) => {
+    for (const [label, seconds] of Object.entries(before)) {
+      const after = predictions[label]!.predictedSeconds;
+      expect(Math.abs(after - seconds) / seconds).toBeLessThan(tolerance);
+    }
+  };
+
+  it("stays within 2% on the one-year fixture, now from 6 runs instead of 107 points", () => {
+    const curves = paceCurvesFixture as unknown as IntervalsAthletePaceCurves;
+    const predictions = predictAll(curves);
+
+    expect(predictions.Marathon!.contributions).toHaveLength(6);
+    expectWithin(
+      predictions,
+      { "5K": 1379, "10K": 2903, "Half Marathon": 6481, Marathon: 13557 },
+      0.02,
+    );
+  });
+
+  it("stays within 3% on an account of independent races", () => {
+    // Four even-paced races on the fixture's distance grid: each curve point
+    // belongs to the fastest race that covered it, as intervals.icu builds it.
+    const races = [
+      { id: "i5k", km: 5.02, secPerKm: 240, daysAgo: 30 },
+      { id: "i10k", km: 10.03, secPerKm: 250, daysAgo: 60 },
+      { id: "ihalf", km: 21.15, secPerKm: 5520 / 21.0975, daysAgo: 100 },
+      { id: "imar", km: 42.3, secPerKm: 12000 / 42.195, daysAgo: 160 },
+    ];
+    const grid = paceCurvesFixture.list[0]!.distance;
+    const curve = (id: string, pool: typeof races) => {
+      const owners = grid.map((meters) =>
+        pool
+          .filter((race) => race.km * 1000 >= meters)
+          .sort((a, b) => a.secPerKm - b.secPerKm)
+          .at(0),
+      );
+      return {
+        id,
+        distance: grid,
+        values: owners.map((race, i) =>
+          race ? Math.round((grid[i]! / 1000) * race.secPerKm) : null,
+        ),
+        activity_id: owners.map((race) => race?.id ?? null),
+      };
+    };
+    const curves = {
+      list: [
+        curve("all", races),
+        curve(
+          "90d",
+          races.filter((race) => race.daysAgo <= 90),
+        ),
+      ],
+      activities: Object.fromEntries(
+        races.map((race) => [
+          race.id,
+          {
+            id: race.id,
+            name: race.id,
+            start_date_local: `${addDays(LIVE_CHECK_DATE, -race.daysAgo)}T08:00:00`,
+            race: true,
+          },
+        ]),
+      ),
+    } as unknown as IntervalsAthletePaceCurves;
+
+    expectWithin(
+      predictAll(curves),
+      { "5K": 1236, "10K": 2575, "Half Marathon": 5713, Marathon: 11982 },
+      0.03,
+    );
   });
 });
 

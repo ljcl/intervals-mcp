@@ -17,6 +17,7 @@ import {
   parseGoalTime,
   predictRace,
   RACE_DISTANCES,
+  RACE_WEIGHT,
   type RaceDistanceName,
   racePace,
   type SourceEffort,
@@ -37,8 +38,8 @@ Predicts race times from intervals.icu's pace curves and builds a goal-pace spli
 
 Uses Riegel's equivalent-performance formula (T2 = T1 x (D2/D1)^1.06) over pace-curve
 points (the fastest ever, and the fastest of the last 90 days, at each recorded
-distance), combined into one estimate per distance weighted by how recent each
-point is and how far it has to be extrapolated.
+distance), one point per run, combined into one estimate per distance weighted by
+recency and extrapolation distance, with races counted ${RACE_WEIGHT}x.
 
 Alongside each Riegel estimate, reports intervals.icu's own critical-speed model
 fit to the same pace curve: time = (distance - dPrime) / criticalSpeed. That model
@@ -110,6 +111,9 @@ function paceFields(
   };
 }
 
+/** " (race)" after a race's label in the text, else nothing. */
+const raceTag = (source: SourceEffort) => (source.race ? " (race)" : "");
+
 const serializeSource = (source: SourceEffort) => ({
   name: source.name,
   distance_m: Math.round(source.distanceMeters * 10) / 10,
@@ -125,6 +129,13 @@ const UNITS = {
   pace: "min/km" as const,
   time: "s" as const,
 };
+
+/**
+ * Contributions listed per prediction, heaviest first. The consensus,
+ * spread and grade still use every source; each listed contribution repeats
+ * its whole source, so listing all of them made one response 150 KB.
+ */
+const MAX_LISTED_CONTRIBUTIONS = 5;
 
 /** The critical-speed prediction for one target distance, or `null` when no
  * model is available or the target does not exceed the model's `dPrime`. */
@@ -258,8 +269,7 @@ export const getRacePredictionTool = {
         )
         .filter((p) => p !== null);
 
-      const method =
-        "Riegel T2 = T1 x (D2/D1)^1.06 over intervals.icu pace-curve points (fastest ever and fastest of the last 90 days per distance), weighted by recency (90-day half-life) and extrapolation distance. Assumes training appropriate to the distance. The critical-speed prediction is intervals.icu's own model: time = (distance - dPrime) / criticalSpeed, stated as valid for roughly 3 to 60 minute efforts.";
+      const method = `Riegel T2 = T1 x (D2/D1)^1.06 over intervals.icu pace-curve points (fastest ever and fastest of the last 90 days per distance), one point per run (its best by Riegel's formula), weighted by recency (90-day half-life) and extrapolation distance, with races counted ${RACE_WEIGHT}x. Each prediction lists its ${MAX_LISTED_CONTRIBUTIONS} heaviest contributions. Assumes training appropriate to the distance. The critical-speed prediction is intervals.icu's own model: time = (distance - dPrime) / criticalSpeed, stated as valid for roughly 3 to 60 minute efforts.`;
 
       const criticalSpeedModelField = csModel
         ? {
@@ -376,13 +386,15 @@ export const getRacePredictionTool = {
                 range_pct: p.spread.rangePct,
               }
             : null,
-          contributions: p.contributions.map((c) => ({
-            source: serializeSource(c.source),
-            predicted_seconds: c.predictedSeconds,
-            predicted_formatted: formatRaceTime(c.predictedSeconds),
-            age_days: c.ageDays,
-            weight: c.weight,
-          })),
+          contributions: p.contributions
+            .slice(0, MAX_LISTED_CONTRIBUTIONS)
+            .map((c) => ({
+              source: serializeSource(c.source),
+              predicted_seconds: c.predictedSeconds,
+              predicted_formatted: formatRaceTime(c.predictedSeconds),
+              age_days: c.ageDays,
+              weight: c.weight,
+            })),
           critical_speed: criticalSpeedPrediction(csModel, p.distanceMeters),
         })),
         target,
@@ -395,14 +407,14 @@ export const getRacePredictionTool = {
 
       // ---- text ----
       let output = "Race prediction\n";
-      output += `${sources.length} pace-curve point${sources.length === 1 ? "" : "s"} used as inputs\n`;
+      output += `${sources.length} run${sources.length === 1 ? "" : "s"} used as inputs, one pace-curve point from each\n`;
       output += "\nEquivalent performances\n";
       for (const p of predictions) {
         const pace = racePace(p.predictedSeconds, p.distanceMeters);
         output += `  ${p.label.padEnd(14, " ")} ${formatRaceTime(p.predictedSeconds)}`;
         if (pace) output += `  (${pace.minPerKm} /km)`;
         output += ` [${p.confidence}]\n`;
-        output += `     from ${p.primary.source.name} in ${formatDuration(p.primary.source.elapsedSeconds)} on ${p.primary.source.date}`;
+        output += `     from ${p.primary.source.name}${raceTag(p.primary.source)} in ${formatDuration(p.primary.source.elapsedSeconds)} on ${p.primary.source.date}`;
         if (p.spread && p.spread.rangeSeconds > 0) {
           output += `; sources range ${formatRaceTime(p.spread.fastestSeconds)}-${formatRaceTime(p.spread.slowestSeconds)}`;
         }
@@ -454,9 +466,26 @@ export const getRacePredictionTool = {
           "\nPass raceDistance to get a km split table (and goalTime to pace it to your own target).\n";
       }
 
-      output += "\nInputs (pace-curve points used)\n";
-      for (const source of sources) {
-        output += `  ${source.name}: ${formatDuration(source.elapsedSeconds)} on ${source.date} - ${source.activityName}\n`;
+      // The runs behind the listed contributions, not every input: one per
+      // line, so an account with many runs would otherwise grow the text
+      // without changing what drives any prediction.
+      const listedRuns = new Set(
+        predictions.flatMap((p) =>
+          p.contributions
+            .slice(0, MAX_LISTED_CONTRIBUTIONS)
+            .map((c) => c.source.activityId),
+        ),
+      );
+      const listedSources = sources.filter((source) =>
+        listedRuns.has(source.activityId),
+      );
+      output += "\nInputs (one pace-curve point per run)\n";
+      for (const source of listedSources) {
+        output += `  ${source.name}${raceTag(source)}: ${formatDuration(source.elapsedSeconds)} on ${source.date} - ${source.activityName}\n`;
+      }
+      const unlisted = sources.length - listedSources.length;
+      if (unlisted > 0) {
+        output += `  ${unlisted} more run${unlisted === 1 ? "" : "s"} with smaller weights\n`;
       }
 
       for (const warning of warnings) {

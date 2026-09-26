@@ -84,6 +84,14 @@ at `apps/server/src/__fixtures__/intervals/`.
 | `GET /activity/{id}/time-at-hr` | 200 | `{max_bpm, min_bpm, secs[], cumulative_secs[]}` |
 | `GET /activity/{id}/streams.json` | 200 | `moving` is never returned (silently omitted, not an error); `grade_smooth` (%) and `fixed_altitude` (m) are present; `gap` is not a valid stream type (422 "Invalid stream type") |
 
+- `pace-curves.json` gives each grid distance to the run that is fastest there, so one long run
+  owns a long stretch of the grid. In the 2026-09-25 probe (`pace-curves.json` fixture), the 91
+  points of 1,500 m and up on each of `all` and `90d` came from 6 runs, and one 42.8 km run held
+  35 of them on `all` and 43 on `90d`. The points are sub-segments, not independent efforts,
+  which is why `get-race-prediction` keeps one per run. The `activities{}` map carries `name`,
+  `distance`, `moving_time`, `start_date_local`, `training_load`, `icu_weight` and a `race`
+  boolean per activity. Every activity on this account has `race: false`, so a `true` value has
+  not been observed yet.
 - `decoupling` and `icu_efficiency_factor` are null on every activity since 2024-01-01 for this
   account, so the analysis tools' unit convention for both (`decoupling_pct` as a percent;
   `efficiency_factor` as pace/power per heartbeat) is an assumption carried over from the
