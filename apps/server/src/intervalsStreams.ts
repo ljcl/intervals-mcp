@@ -5,7 +5,9 @@
  * derives `moving`, which intervals.icu never returns: the stream is
  * silently omitted rather than erroring (research note 2026-09-24). Every
  * other stream keeps `null` samples as `null`; callers decide how to treat
- * gaps. See AGENTS.md's stream-read invariant.
+ * gaps. A heart-rate dropout arrives as 0, not `null`, so it becomes `null`
+ * here, once, for every caller (see {@link heartrateSample}). See AGENTS.md's
+ * stream-read invariant.
  */
 import {
   getActivityStreams,
@@ -140,6 +142,17 @@ const OPTIONAL_STREAM_TYPES: OptionalStreamType[] = [
 ];
 
 /**
+ * intervals.icu sends 0, not `null`, for a heart-rate sample where the
+ * sensor lost contact (docs/api-notes.md, verified 2026-09-26). No real
+ * heart rate is 0 or below, so such a sample becomes `null`: a gap, like any
+ * other missing sample. `watts` and `cadence` keep their zeros, because 0 W
+ * while coasting and 0 cadence while stopped are real values.
+ */
+function heartrateSample(value: number | null): number | null {
+  return value !== null && value <= 0 ? null : value;
+}
+
+/**
  * Fetches and reshapes an activity's data streams via `getActivityStreams`
  * (`intervalsClient.ts`), calling it exactly once. Requests `time` even when
  * the caller omits it, since `moving` and every downstream index depend on
@@ -149,7 +162,9 @@ const OPTIONAL_STREAM_TYPES: OptionalStreamType[] = [
  * in every other array, so the returned `time` is always non-null numbers;
  * every other stream keeps `null` samples as `null` for callers to decide
  * how to treat. (Dropping rather than throwing on a null time sample: one
- * bad sample should not discard an otherwise-usable activity.)
+ * bad sample should not discard an otherwise-usable activity.) A heart-rate
+ * sample of 0 or below is a dropout and comes back `null` too
+ * ({@link heartrateSample}).
  *
  * @throws {IntervalsStreamsUnavailableError} on a genuine 404, an empty
  * response, a response with no `time` stream, or a `time` stream that is
@@ -202,7 +217,8 @@ export async function loadIntervalsStreams(
     if (!types.includes(type)) continue;
     const stream = byType.get(type);
     if (!stream) continue;
-    result[type] = keepIndices.map((index) => stream.data[index] ?? null);
+    const values = keepIndices.map((index) => stream.data[index] ?? null);
+    result[type] = type === "heartrate" ? values.map(heartrateSample) : values;
   }
 
   if (types.includes("latlng")) {

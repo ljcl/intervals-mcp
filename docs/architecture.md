@@ -161,6 +161,18 @@ Only a genuine 404 or an empty result throws
 message names what was missing. Catching anything broader misreports other
 failures (auth, rate limits) as absences.
 
+**A heart-rate dropout becomes `null` here, once, for every caller.**
+intervals.icu sends 0, not `null`, for a heart-rate sample where the sensor
+lost contact (docs/api-notes.md). `loadIntervalsStreams` maps every
+`heartrate` sample of 0 or below to `null`. A downsampled bucket then
+averages only real samples, a bucket with only dropouts is `null`, and the
+apps draw a gap. `watts` and `cadence` keep their zeros: 0 W while coasting
+and 0 cadence while stopped are real values. The run-power rule (0 W while
+moving is a dropout) stays in the analysis modules that read power. The
+`hr <= 0` guards in the analysis modules are now defensive only.
+`get-activity-streams` once read the client directly and reported the zeros
+as 0 bpm (#46).
+
 ## Analysis math: one home per definition
 
 **Grade-adjusted pace has one definition.** `hillAnalysis.ts`'s `gapFactor`

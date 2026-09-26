@@ -2,10 +2,14 @@ import { z } from "zod";
 import { round } from "../formatters";
 import {
   getActivity as getActivityClient,
-  getActivityStreams as getActivityStreamsClient,
   type IntervalsActivity,
-  type IntervalsStream,
 } from "../intervalsClient";
+import {
+  type IntervalsStreams,
+  IntervalsStreamsUnavailableError,
+  type IntervalsStreamType,
+  loadIntervalsStreams,
+} from "../intervalsStreams";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
 import { downsampleColumns, lastValuePerBucket } from "../streamDownsample";
 import { cadenceSpm, isStepCadenceActivity } from "../utils/running";
@@ -57,6 +61,8 @@ maxPoints with many types makes a very large response.
 Notes:
 - Each downsampled point is its bucket's mean, except time, distance and
   latlng, which take the bucket's last sample.
+- A missing sample is null. A heart-rate dropout (the sensor lost contact)
+  is null too, never 0 bpm, and a bucket mean skips it.
 - time is always fetched but only returned when requested.
 - A requested type the activity lacks is listed in missing, not an error.
 - Cadence is steps per minute (spm) for Run, TrailRun, VirtualRun, Walk and
@@ -134,24 +140,23 @@ export interface ActivityStreamsResult {
 }
 
 /**
- * Downsamples `rawStreams` to at most `maxPoints` points per requested
- * stream, and shapes the result into the tool's compact column format. Pure:
- * no I/O. Exported for direct testing.
+ * Downsamples `loaded` (the streams as `loadIntervalsStreams` returns them,
+ * so a heart-rate dropout is already `null`) to at most `maxPoints` points
+ * per requested stream, and shapes the result into the tool's compact
+ * column format. Pure: no I/O. Exported for direct testing.
  */
 export function buildActivityStreamsResult(
   activity: IntervalsActivity,
-  rawStreams: IntervalsStream[],
+  loaded: IntervalsStreams,
   requestedTypes: StreamType[],
   maxPoints: number,
 ): ActivityStreamsResult {
   const type = activity.type ?? "Workout";
   const cadenceUnit = isStepCadenceActivity(type) ? "spm" : "rpm";
 
-  const streamByType = new Map(rawStreams.map((s) => [s.type, s]));
-  const timeStream = streamByType.get("time");
-  const originalPoints = timeStream?.data.length ?? 0;
+  const originalPoints = loaded.length;
 
-  const missing = requestedTypes.filter((t) => !streamByType.has(t));
+  const missing = requestedTypes.filter((t) => loaded[t] === undefined);
 
   // Scalar columns (everything but latlng, which isn't a single numeric
   // array) for downsampleColumns. `time` is always included internally, even
@@ -160,10 +165,10 @@ export function buildActivityStreamsResult(
   const columns: Record<string, (number | null)[]> = {};
   for (const t of requestedTypes) {
     if (t === "latlng") continue;
-    const stream = streamByType.get(t);
-    if (stream) columns[t] = stream.data;
+    const values = loaded[t];
+    if (values) columns[t] = values;
   }
-  if (!("time" in columns) && timeStream) columns.time = timeStream.data;
+  if (!("time" in columns)) columns.time = loaded.time;
 
   const downsampled = downsampleColumns(columns, maxPoints);
   const returnedPoints =
@@ -174,10 +179,16 @@ export function buildActivityStreamsResult(
 
   for (const t of requestedTypes) {
     if (t === "latlng") {
-      const stream = streamByType.get("latlng");
-      if (!stream?.data2) continue;
-      const lat = lastValuePerBucket(stream.data, maxPoints);
-      const lng = lastValuePerBucket(stream.data2, maxPoints);
+      const pairs = loaded.latlng;
+      if (!pairs) continue;
+      const lat = lastValuePerBucket(
+        pairs.map((pair) => pair?.[0] ?? null),
+        maxPoints,
+      );
+      const lng = lastValuePerBucket(
+        pairs.map((pair) => pair?.[1] ?? null),
+        maxPoints,
+      );
       streams.latlng = lat.map((la, i): StreamValue => {
         const lo = lng[i] ?? null;
         if (la == null || lo == null) return null;
@@ -345,29 +356,31 @@ export const getActivityStreamsTool = {
       progress(`Fetching activity ${id}`);
       const activity = await getActivityClient(apiKey, id);
 
-      const typesToFetch = Array.from(new Set<string>([...types, "time"]));
-      progress(`Fetching streams for activity ${id}`);
-      const rawStreams = await getActivityStreamsClient(
-        apiKey,
-        id,
-        typesToFetch,
+      const typesToFetch = Array.from(
+        new Set<IntervalsStreamType>([...types, "time"]),
       );
-
-      if (rawStreams.length === 0) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `❌ Activity ${id} has no data streams.`,
-            },
-          ],
-          isError: true,
-        };
+      progress(`Fetching streams for activity ${id}`);
+      let streams: IntervalsStreams;
+      try {
+        streams = await loadIntervalsStreams(apiKey, id, typesToFetch);
+      } catch (error) {
+        if (error instanceof IntervalsStreamsUnavailableError) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `❌ Activity ${id} has no data streams.`,
+              },
+            ],
+            isError: true,
+          };
+        }
+        throw error;
       }
 
       const result = buildActivityStreamsResult(
         activity,
-        rawStreams,
+        streams,
         types,
         maxPoints,
       );
