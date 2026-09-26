@@ -11,28 +11,20 @@ import { ActivityZonesOutputSchema, warnOnSchemaDrift } from "./outputs";
 const name = "get-activity-zones";
 
 const description = `
-Retrieves the time-in-zone distribution for a specific intervals.icu
-activity: how long it spent in each heart rate zone, using the activity's
-own recorded zone bounds (not the athlete's current sport settings). Use it
-after list-activities to see how one workout's effort was distributed
-across HR zones, or to compare effort distribution between activities.
+Returns one intervals.icu activity's heart rate time in zone: time and
+percent in each zone, from the activity's own recorded zone bounds (not
+today's sport settings).
 
-Use Cases:
-- See how a workout was distributed across HR zones
-- Quantify time spent in each training zone for a single activity
-- Compare effort distribution between activities
-
-Parameters:
-- id (required): the intervals.icu activity id, exactly as returned by list-activities (e.g. "i189807578")
+get-activity and get-running-summary already include HR zone time. Use this
+tool when zones are all you need, or to compare zone distribution between
+activities; use view-activity-zones to show it as a chart.
 
 Notes:
-- Not all activities have zone data (e.g. no HR sensor, or the activity
-  carries no recorded zone bounds); those return a message and an empty
-  zone_sets list, not an error
-- Power and pace zones are not covered by this tool (see docs/api-notes.md
-  for why power zones are dropped for now)
-- If HR zone bounds and zone times were recorded with different zone
-  counts, heart rate is omitted and the text response says so
+- Power and pace zones are not covered.
+- An activity with no zone data (no HR sensor, no recorded bounds) returns an
+  empty zone_sets list and a message, not an error.
+- If the zone bounds and zone times have different zone counts, heart rate is
+  left out and the text says so.
 `;
 
 const inputSchema = z.object({

@@ -24,35 +24,23 @@ import { HillAnalysisOutputSchema, warnOnSchemaDrift } from "./outputs";
 const name = "get-hill-analysis";
 
 const description = `
-Analyses climbing and descending performance within one intervals.icu activity from its elevation, grade, and pace streams.
+Finds the sustained climbs (at least 2% for at least 200 m) and descents in
+one activity, with each segment's length, grade, gain, moving and
+grade-adjusted pace, HR, cadence and power. The headline is early-versus-late
+climb drift: HR per unit of grade-adjusted speed on climbs in the first half
+against the second half. Positive drift means the same climbing cost more
+late in the run.
 
-This tool detects sustained climbs (grade ≥ 2% for ≥ 200 m, dip-tolerant) and descents, and reports per segment:
-- Start km, length, average grade, elevation gain
-- Moving pace and grade-adjusted (GAP, flat-equivalent) pace, both per km
-- Average HR, cadence, and power where recorded
-
-The headline output is early-vs-late climb drift: climb effort is normalised
-as HR per unit of grade-adjusted speed, then climbs starting in the first
-half of the run are compared with climbs in the second half. Positive drift =
-the same climbing cost more late in the run (late-race hill fatigue).
-Without HR the drift falls back to grade-adjusted pace alone.
-
-Use Cases:
-- "Did I fade on the climbs in the back third of my long run?"
-- Check descent handling (pace and cadence on downhills) for eccentric-load management
-- Compare hilly-course readiness across key long runs
-
-Parameters:
-- id (required): the intervals.icu activity id, exactly as returned by list-activities (e.g. "i189807578")
+For per-km pacing on a hilly course, use get-split-analysis; for whole-run
+aerobic durability, get-aerobic-analysis.
 
 Notes:
-- Grade prefers intervals.icu's smoothed grade stream; when that is absent it
-  is derived from altitude over a ~30 m window instead. grade_source in the
-  response says which
-- Works without power (HR + GAP) and without HR (GAP-pace drift only)
-- Stopped time is excluded from segment pace via the derived moving stream
-- An activity with no recorded GPS/data streams (e.g. a manual entry or a
-  non-GPS session) returns an error rather than an empty analysis
+- Grade comes from intervals.icu's smoothed grade stream, else from altitude
+  over about 30 m; grade_source says which.
+- Works without power, and without HR (the drift then uses grade-adjusted
+  pace only).
+- Stopped time is excluded from segment pace.
+- An activity with no recorded streams (a manual entry) returns an error.
 `;
 
 const inputSchema = z.object({

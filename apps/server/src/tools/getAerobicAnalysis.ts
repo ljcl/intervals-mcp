@@ -21,32 +21,27 @@ import { AerobicAnalysisOutputSchema, warnOnSchemaDrift } from "./outputs";
 const name = "get-aerobic-analysis";
 
 const description = `
-Computes aerobic decoupling and efficiency metrics for one intervals.icu activity, preferring intervals.icu's own computed values and falling back to computing them from streams.
+Measures aerobic durability and efficiency for one activity: aerobic
+decoupling (the drift in output per heartbeat from the first to the second
+half of the moving time), the efficiency factor (metres per minute per beat
+on the pace basis, watts per beat on the power basis) and, on the power
+basis, the intensity factor. Use it for long steady runs: "did my aerobic
+system hold up?" or "was this easy run actually easy?".
 
-Metrics:
-- Aerobic decoupling: % drift of the output:HR ratio between the first and second half of the MOVING portion of the activity. Positive = the second half cost more heartbeats per unit of output (aerobic fatigue); negative = warmed into the effort.
-- Efficiency factor (EF): normalized output per heartbeat (m/min per beat on the pace basis, W/beat on the power basis).
-- Intensity factor (IF): normalized power / threshold power, power basis only.
-
-Interpretation bands: <+5% excellent, +5-10% moderate, >+10% over capacity for the duration, negative = gradual warm-up or negative split.
-
-Use Cases:
-- Judge long-run durability ("did the aerobic system hold up in the back half?")
-- Compare the same steady route over time as fitness changes
-- Sanity-check whether an easy run was actually easy
-
-Parameters:
-- id (required): the intervals.icu activity id, exactly as returned by list-activities (e.g. "i189807578")
-- basis (optional, default "pace"): "pace" analyses the speed:HR ratio from velocity_smooth; "power" analyses the power:HR ratio from the watts stream
-- excludeWarmupMinutes (optional): moving minutes dropped from the start before splitting halves. Defaults to the activity's icu_warmup_time, then the athlete's Run sport-settings warmup_time, then 300 s (5 min)
-- thresholdPower (optional, power basis only): threshold power in watts for the intensity factor. Defaults to the athlete's Run sport-settings ftp, then the activity's icu_ftp
-- includeBreakdown (optional, default false): when intervals.icu already reports both decoupling and efficiency factor for the activity, streams are not fetched and no half-by-half breakdown is computed unless this is set to true
+To compare two runs' efficiency, use compare-activities; for pacing drift
+over km splits, get-split-analysis.
 
 Notes:
-- decoupling_pct and efficiency_factor each carry their own source: "intervals.icu" when the activity already has that field, "computed" from streams otherwise
-- On the power basis, when the recording device looks like an Apple Watch, a warning notes that the power stream is Apple's own estimate, not a power meter reading
-- Stopped time (traffic lights, café stops) is excluded via the derived moving stream before halves are split
-- Works for any endurance activity with HR data, not just runs
+- Decoupling under +5% is excellent, +5 to +10% moderate, over +10% beyond
+  current capacity for the duration; negative means the second half was
+  more efficient.
+- decoupling_pct and efficiency_factor each carry a source: intervals.icu's
+  own value when the activity has one, else computed from streams.
+- Stopped time (traffic lights, café stops) is excluded before the halves
+  are split.
+- On the power basis, an Apple Watch power stream is Apple's estimate, not a
+  power meter reading; the response warns.
+- Works for any endurance activity with heart rate.
 `;
 
 const inputSchema = z.object({

@@ -20,24 +20,17 @@ import { ActivityListOutputSchema, warnOnSchemaDrift } from "./outputs";
 const name = "list-activities";
 
 const description = `
-Lists intervals.icu activities in a local date range; start here to find activity ids for the other tools.
+Lists intervals.icu activities in a local date range, newest first. Start
+here: each entry carries the activity id that every per-activity tool needs,
+plus distance, time, pace (runs only), heart rate and training load.
 
-Returns a compact, date-bounded activity list with units, sorted newest
-first. Each entry carries the id the other tools need, plus distance, time,
-pace (runs only), heart rate, and training load.
-
-Parameters:
-- oldest (optional): inclusive lower bound (YYYY-MM-DD). Defaults to newest minus 27 days
-- newest (optional): inclusive upper bound (YYYY-MM-DD). Defaults to today
-- type (optional): exact intervals.icu activity type, case-insensitive (e.g. "Run", "WeightTraining")
-- nameContains (optional): case-insensitive substring match against the activity name
-- limit (optional): max activities to return, 1 to 200 (default 30)
+For run totals (this week, month, year) use get-athlete-stats instead of
+adding up this list; for weekly volume trends, get-training-load.
 
 Notes:
-- The date range cannot exceed 366 days
+- Defaults to the last 28 days, ending today. A range cannot exceed 366 days.
 - An activity synced from Strava (source STRAVA) is a stub: intervals.icu has
-  no detail for it through this API, only the summary fields this tool
-  already returns
+  no more detail for it through this API.
 `;
 
 const inputSchema = z.object({

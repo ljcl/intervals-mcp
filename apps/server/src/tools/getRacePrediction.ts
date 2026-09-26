@@ -34,40 +34,24 @@ import { RacePredictionOutputSchema, warnOnSchemaDrift } from "./outputs";
 const name = "get-race-prediction";
 
 const description = `
-Predicts race times from intervals.icu's pace curves and builds a goal-pace split table.
+Predicts race times at 5K, 10K, half marathon and marathon (plus the race
+you name) from intervals.icu's pace curves, and builds even and
+negative-split km tables for that race, paced to the prediction or to your
+goal time. Use it for "what could I run?" or "is my goal realistic, and what
+are my splits?".
 
-Uses Riegel's equivalent-performance formula (T2 = T1 x (D2/D1)^1.06) over pace-curve
-points (the fastest ever, and the fastest of the last 90 days, at each recorded
-distance), one point per run, combined into one estimate per distance weighted by
-recency and extrapolation distance, with races counted ${RACE_WEIGHT}x.
-
-Alongside each Riegel estimate, reports intervals.icu's own critical-speed model
-fit to the same pace curve: time = (distance - dPrime) / criticalSpeed. That model
-is stated as valid for roughly 3 to 60 minutes of racing; a prediction outside
-that range (a marathon, for instance) is still shown, flagged as outside the
-model's validity rather than hidden.
-
-Use Cases:
-- "I am racing a half in six weeks, what should I target, and what is my km split?"
-- Sanity-check a goal time against what your training actually supports
-- See which pace-curve point is driving a prediction, and how the two models compare
-
-Parameters:
-- raceDistance (optional): the race you are planning ("5K", "10K", "15K", "10 mile",
-  "Half Marathon", "Marathon", "50K"). Supply it to get the split table; omit it
-  for the equivalent-performance table alone
-- goalTime (optional): pace the splits to your own goal instead of the prediction
-  ("1:45:00", "45:30", "1h45m"). Requires raceDistance
+For recorded best times, use get-best-efforts.
 
 Notes:
-- Riegel is an extrapolation, not a measurement. Every prediction carries a
-  confidence grade, the pace-curve point that drives it, and the spread across sources
-- Pace-curve points under 1500 m are excluded from Riegel's inputs, outside the
-  range the formula fits
-- The critical-speed model comes from the athlete's "90d" pace curve (current
-  fitness), falling back to the "all" curve when "90d" carries no fit
-- It assumes appropriate training for the distance; it cannot know whether you
-  have done the long runs a marathon needs
+- Riegel's formula (T2 = T1 x (D2/D1)^1.06) over one pace-curve point per
+  run, weighted by recency and extrapolation distance, with races counted
+  ${RACE_WEIGHT}x. Points under 1500 m are not used.
+- Each prediction carries a confidence grade, the effort that drives it and
+  the spread across runs. It is an extrapolation, and assumes training
+  suited to the distance.
+- intervals.icu's own critical-speed model is shown alongside, from the 90d
+  curve (else all). It is stated as valid for about 3 to 60 minutes;
+  predictions outside that are flagged, not hidden.
 `;
 
 /** ISO date-time-agnostic goal time input, still free text so runners can

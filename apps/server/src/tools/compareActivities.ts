@@ -21,28 +21,23 @@ import { CompareActivitiesOutputSchema, warnOnSchemaDrift } from "./outputs";
 const name = "compare-activities";
 
 const description = `
-Compares two intervals.icu running activities side-by-side: per-side metrics, calculated differences, and an efficiency comparison. Use it to compare the same route on different days, track fitness progress over time, or compare race efforts.
+Compares two running activities side by side: pace, HR, cadence, load and
+running dynamics for each, the differences (activity 2 minus activity 1), and
+an efficiency factor per run (metres per minute per heartbeat, higher is
+better, grade-adjusted when both runs have GAP). Use it for the same route on
+two days, progress over time, or two races.
 
-This tool provides:
-- Key metrics for both activities (pace, HR, cadence, load, running dynamics)
-- Calculated differences (pace, heart rate, cadence, elevation)
-- Efficiency factor for each run: metres per minute per heartbeat (higher is better), from grade-adjusted pace when both runs have it
-
-Use Cases:
-- Compare the same route on different days
-- Track fitness progress over time
-- Analyze performance in different conditions
-- Compare race efforts
-
-Parameters:
-- activityId1 (required): First activity ID (typically the baseline/older activity)
-- activityId2 (required): Second activity ID (typically the comparison/newer activity)
+To see where in the runs the difference happened, use
+view-compare-activities. For one run's aerobic durability, use
+get-aerobic-analysis.
 
 Notes:
-- Both activities should be running activities for meaningful comparison
-- Efficiency analysis requires heart rate data in both activities
-- Positive differences mean activity 2 is higher/longer
-- Negative pace difference means activity 2 is faster
+- Pass the older or baseline run as activityId1. A positive difference means
+  activity 2 is higher or longer; a negative pace difference means it was
+  faster.
+- The efficiency comparison needs heart rate in both runs. A change beyond
+  3% reads as improved or declined.
+- A non-running activity on either side gives a warning, not an error.
 `;
 
 const inputSchema = z.object({

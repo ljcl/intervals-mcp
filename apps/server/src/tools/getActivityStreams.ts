@@ -43,29 +43,24 @@ const DEFAULT_TYPES: StreamType[] = [
 ];
 
 const description = `
-Returns time-series streams for one activity, downsampled to at most maxPoints, including running dynamics (GCT, vertical oscillation, vertical ratio, step length).
+Returns time-series streams for one activity (heart rate, speed, cadence,
+altitude, GPS track, power and running dynamics), downsampled to at most
+maxPoints per stream, as index-aligned arrays with a unit per type. The text
+repeats the data as a CSV block.
 
-Each requested type comes back as one array, index-aligned across types,
-plus a unit per type. Large activities are downsampled to bound the response:
-each bucket reports the mean of its non-null samples, except time, distance,
-and latlng, which take the bucket's last sample. The text response repeats
-the returned columns as a CSV block (header row of type_unit column names,
-one row per point; latlng as two columns, lat and lng) after the summary
-lines, so the data is readable even when only the text is available.
-
-Parameters:
-- id (required): the intervals.icu activity id, exactly as returned by list-activities (e.g. "i189807578")
-- types (optional): stream types to return. Default: ${DEFAULT_TYPES.join(", ")}
-- maxPoints (optional): cap on points per stream after downsampling, 10 to 2000. Default 120
+Use it only when you need the raw series: the analysis tools already turn
+streams into answers (get-split-analysis for km splits, get-hill-analysis for
+climbs, get-interval-analysis for reps, get-aerobic-analysis for decoupling),
+and view-activity-chart shows them. Ask only for the types you need: a high
+maxPoints with many types makes a very large response.
 
 Notes:
-- time is always fetched (it sizes the downsample buckets) even when not
-  requested, but only appears in the response when requested
-- a requested type the activity's streams don't include comes back in
-  \`missing\`, not as an error
-- cadence is doubled to steps/min (unit spm) for step-cadence activity types
-  (Run, TrailRun, VirtualRun, Walk, Hike), matching get-activity's
-  convention; other sport types keep the raw rate, reported in rpm
+- Each downsampled point is its bucket's mean, except time, distance and
+  latlng, which take the bucket's last sample.
+- time is always fetched but only returned when requested.
+- A requested type the activity lacks is listed in missing, not an error.
+- Cadence is steps per minute (spm) for Run, TrailRun, VirtualRun, Walk and
+  Hike, rpm otherwise.
 `;
 
 const inputSchema = z.object({

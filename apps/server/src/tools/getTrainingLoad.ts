@@ -17,42 +17,24 @@ import { TrainingLoadOutputSchema, warnOnSchemaDrift } from "./outputs";
 const name = "get-training-load";
 
 const description = `
-Retrieves training load summary for a specified time period, from intervals.icu.
+Returns weekly running volume (distance, time, elevation, run count) with a
+trend and injury-risk warnings for sudden increases, weekly intervals.icu
+training load, and current CTL/ATL/TSB. Use it for "how is my training
+volume trending?" or "am I ramping up too fast?".
 
-This tool aggregates activities to provide:
-- Weekly run volume (distance, time, elevation, run count), always Run/TrailRun/VirtualRun
-- Injury-risk warnings for sudden volume increases
-- Weekly intervals.icu training load (sum of icu_training_load), and the
-  activity types it was summed over
-- Current CTL (fitness) / ATL (fatigue) / TSB (form)
-
-Load and current CTL/ATL/TSB can be computed two ways:
-- Whole-body (default): load sums every activity type; CTL/ATL/TSB are read
-  straight off intervals.icu's own daily wellness record (today or the most
-  recent day with a recorded value)
-- Run-only (runOnly: true): load sums Run/TrailRun/VirtualRun only; CTL/ATL/TSB
-  are computed locally from that same run load, zero-seeded well before the
-  window so the 42-day CTL average has settled. Labeled "computed" and will
-  not exactly match intervals.icu's own (whole-body) fitness page
-
-Weekly volume and injury-risk warnings are always run-based (Run, TrailRun,
-VirtualRun), regardless of runOnly.
-
-Use Cases:
-- Monitor weekly training volume and load together
-- Track training consistency over time
-- Identify potential overtraining risks
-- Check current fitness/fatigue/form alongside recent volume
-
-Parameters:
-- days (optional): Number of days to analyze (default: 28, i.e., 4 weeks)
-- runOnly (optional, default false): sum load and compute CTL/ATL/TSB from
-  Run/TrailRun/VirtualRun training load only, instead of whole-body
+For the day-by-day CTL/ATL/TSB trend, a projection or a taper plan, use
+get-fitness-trend. For plain totals (this week, month, year to date), use
+get-athlete-stats; to show weekly volume as a chart, view-training-load.
 
 Notes:
-- Trend is calculated by comparing recent 2 weeks vs previous 2 weeks
-- Warnings are generated for >30% week-over-week volume increases
-- Weeks start Monday in the athlete's configured time zone
+- Weekly volume and warnings always count runs only (Run, TrailRun,
+  VirtualRun).
+- Training load and CTL/ATL/TSB are whole-body by default, read from
+  intervals.icu. runOnly sums run load only and computes CTL/ATL/TSB locally,
+  labelled "computed"; it will not match intervals.icu's fitness page.
+- The trend compares the last 2 weeks with the 2 before; a warning fires on a
+  week-over-week volume rise over 30%. Weeks start on Monday in the athlete's
+  time zone.
 `;
 
 const inputSchema = z.object({

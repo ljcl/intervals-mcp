@@ -22,36 +22,23 @@ import { IntervalAnalysisOutputSchema, warnOnSchemaDrift } from "./outputs";
 const name = "get-interval-analysis";
 
 const description = `
-Detects and analyses interval structure in one intervals.icu activity, with urban-stop-aware rest classification.
+Decides whether one activity was an interval session and analyses its reps:
+pace, HR, cadence and power per rep, fade across reps, and a verdict with a
+confidence and a reasoning trail. Use it for "how did my intervals go?" or
+"was this a workout at all?".
 
-Naive rest-based interval detection false-positives on urban runs: traffic-light
-stops read as recovery intervals. This tool classifies every stopped segment
-(from the derived moving stream) before trusting it:
-- Stop under 60 s with no fast effort before it: traffic light, excluded
-- Stop up to 3 min after a fast effort: genuine interval recovery
-- Stop over 5 min: café/regroup/kit stop, noted but excluded
-- Anything else: unclassified, excluded (lowers confidence)
-
-Work reps are reconstructed between recoveries (easy running is merged straight
-through traffic lights) and reported with per-rep pace, HR, cadence, and power.
-When the activity carries clean structured intervals.icu laps (icu_intervals)
-those are preferred; they also catch jog-recovery sessions, which never stop
-moving. Corrupted auto-laps (rain/sweat) fail a consistency check and fall
-back to streams.
-
-The response includes:
-- A verdict (interval session or not) with confidence and a reasoning audit
-  trail ("6 rests detected: 4 traffic lights, ...")
-- Fade detection across reps (e.g. "rep 5 was 3% slower at 4 bpm higher HR than rep 1")
-- An HR-distribution tiebreaker for "was this a workout at all"
-
-Parameters:
-- id (required): the intervals.icu activity id, exactly as returned by list-activities (e.g. "i189807578")
+For laps exactly as recorded, use get-activity-laps; for continuous pacing,
+get-split-analysis.
 
 Notes:
-- Stream-based detection only sees boundaries where you actually stopped;
-  jog-recovery workouts need laps (intervals.icu's own WORK/RECOVERY split)
-- Classification thresholds are documented above and deliberately conservative
+- Clean intervals.icu laps (icu_intervals) are preferred, and they also catch
+  jog-recovery sessions. Laps that fail a consistency check (corrupted
+  auto-laps) fall back to the streams.
+- In the streams, stops are classified before they count: under 60 s with no
+  fast effort before it is a traffic light (ignored), up to 3 min after a
+  fast effort is a recovery, over 5 min is a long stop (ignored).
+- Stream-based detection only sees rests where you stopped, so a
+  jog-recovery workout needs laps.
 `;
 
 const inputSchema = z.object({

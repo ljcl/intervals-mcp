@@ -34,6 +34,16 @@ const { TOOL_DEFS } = await import("./server");
 
 const mockedIntervalsActivity = vi.mocked(getActivity);
 
+/**
+ * Claude Code cuts a tool description at 2,048 characters, so the end of a
+ * longer one never reaches the model (#39). The cap leaves headroom below it.
+ */
+const MAX_TOOL_DESCRIPTION_CHARS = 1800;
+
+/** A tool name as a description mentions one, e.g. "use get-fitness-trend". */
+const TOOL_NAME_MENTION =
+  /\b(?:get|list|view|compare|update)-[a-z]+(?:-[a-z]+)*\b/g;
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.spyOn(console, "error").mockImplementation(() => {});
@@ -140,6 +150,35 @@ describe("tools/list", () => {
     const tools = result?.tools as Array<Record<string, unknown>>;
 
     expect(tools).toHaveLength(TOOL_DEFS.length);
+  });
+
+  it("keeps every description whole in Claude Code and pointing at real tools", async () => {
+    const client = await connectTestClient();
+    const { result } = await client.send("tools/list");
+    const tools = result?.tools as Array<{ name: string; description: string }>;
+    const names = new Set(tools.map((tool) => tool.name));
+
+    for (const { name, description } of tools) {
+      expect(description, `${name} description is trimmed`).toBe(
+        description.trim(),
+      );
+      expect(
+        description.length,
+        `${name} description length`,
+      ).toBeLessThanOrEqual(MAX_TOOL_DESCRIPTION_CHARS);
+      // Each field's .describe() text already reaches the host in the
+      // inputSchema; repeating it here only spends the cap.
+      expect(description, `${name} repeats its inputs`).not.toMatch(
+        /^Parameters:/m,
+      );
+      // Routing advice ("use get-fitness-trend instead") must name a tool
+      // that exists, or it sends the model to an unknown-tool error.
+      for (const mentioned of description.match(TOOL_NAME_MENTION) ?? []) {
+        expect(names.has(mentioned), `${name} mentions ${mentioned}`).toBe(
+          true,
+        );
+      }
+    }
   });
 
   it("gives every tool a well-formed object inputSchema", async () => {

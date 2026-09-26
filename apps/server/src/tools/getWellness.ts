@@ -17,22 +17,19 @@ const HRV_NOTE =
   "Apple Watch reports HRV as SDNN (hrv_sdnn_ms); rMSSD (hrv_rmssd_ms) is usually null for this athlete. Do not compare SDNN values with rMSSD norms.";
 
 const description = `
-Returns daily wellness from intervals.icu (HRV, resting HR, sleep, weight, CTL/ATL/TSB) for a date or range; use to explain how a run felt.
+Returns daily wellness from intervals.icu for a day or a date range: HRV
+(SDNN and rMSSD where reported), resting HR, sleep, weight, CTL/ATL/TSB, and
+the subjective scores the athlete or a device logged (readiness, soreness,
+fatigue, stress, mood, motivation, SpO2, respiration, comments). Use it to
+explain how a run felt or to check recovery.
 
-Each day carries HRV (both SDNN and rMSSD, where reported), resting HR,
-sleep, weight, training load (CTL/ATL/TSB), and the subjective fields the
-athlete or a device logged (readiness, soreness, fatigue, stress, mood,
-motivation, SpO2, respiration, comments).
-
-Parameters:
-- date (optional): a single day (YYYY-MM-DD). Cannot be combined with oldest/newest
-- oldest (optional): inclusive lower bound (YYYY-MM-DD). Defaults to newest
-- newest (optional): inclusive upper bound (YYYY-MM-DD). Defaults to today
+For form trends, a projection or a taper, use get-fitness-trend; this tool
+reports each day's recorded values only.
 
 Notes:
-- With none of date/oldest/newest supplied, returns today only
-- The date range cannot exceed 90 days
-- Apple Watch reports HRV as SDNN, not rMSSD; see hrv_note in the response
+- With no date, oldest or newest, it returns today only. A range cannot
+  exceed 90 days.
+- Apple Watch reports HRV as SDNN, not rMSSD; see hrv_note in the response.
 `;
 
 const inputSchema = z.object({

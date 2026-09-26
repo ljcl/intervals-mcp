@@ -34,26 +34,23 @@ import { RunningSummaryOutputSchema, warnOnSchemaDrift } from "./outputs";
 const name = "get-running-summary";
 
 const description = `
-Returns a run-focused summary of one intervals.icu activity: get-activity's detail fields plus cadence, HR zone, and dynamics assessments and a lap breakdown.
+Returns a run-focused summary of one intervals.icu activity: get-activity's
+detail plus a cadence assessment, HR zone time and percent, ground contact
+time and vertical oscillation assessments, and the lap table. The best single
+call for "how was my run?".
 
-A thin wrapper over get-activity's mapper (one activity fetch, plus the
-athlete's Run sport settings) with running-specific additions: a cadence
-assessment, an HR zone time/percent summary, ground contact time and
-vertical oscillation assessments, and laps (from the interval breakdown, the
-same source as get-activity-laps). No power fields.
-
-Parameters:
-- id (required): the intervals.icu activity id, exactly as returned by list-activities (e.g. "i189807578")
+It already includes the laps and HR zone time, so skip get-activity-laps and
+get-activity-zones. Use get-running-dynamics for per-interval dynamics, the
+analysis tools (get-split-analysis, get-hill-analysis, get-interval-analysis,
+get-aerobic-analysis) for deeper questions, and get-activity for other
+sports.
 
 Notes:
-- Only Run, TrailRun and VirtualRun are accepted; any other type returns an
-  error naming the type and pointing to get-activity
-- The HR zone summary prefers the activity's own recorded icu_hr_zones as
-  zone bounds, falling back to the Run sport settings group when its types
-  include this activity's type; it is omitted (with a note) when no bounds
-  match the recorded zone time count
-- The text response caps the lap list at 20 lines; structuredContent.laps
-  always has the full list
+- Accepts Run, TrailRun and VirtualRun only; other types return an error
+  that points to get-activity.
+- HR zones use the activity's own bounds, else the Run sport settings; the
+  zone summary is left out, with a note, when neither matches.
+- The text lists at most 20 laps; structuredContent.laps has all of them.
 `;
 
 const inputSchema = z.object({
