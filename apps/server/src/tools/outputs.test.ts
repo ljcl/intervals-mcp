@@ -206,11 +206,11 @@ describe("schemas align with the real tool rawObjects", () => {
         elevation_gain_m: 5,
       },
       efficiency: {
-        activity_1: 3.333,
-        activity_2: 3.27,
-        change_percent: -1.9,
-        interpretation: "improved",
-        note: "Lower efficiency number = better fitness",
+        activity_1: 1.333,
+        activity_2: 1.358,
+        change_percent: 1.9,
+        interpretation: "unchanged",
+        note: "Efficiency factor in metres per minute per heartbeat. Higher is better.",
       },
       warnings: ["Activity 1 (Run A) is not a running activity (Ride)"],
     };

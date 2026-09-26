@@ -4,6 +4,7 @@ import {
   computeAerobicAnalysis,
   interpretDecoupling,
   MIN_MOVING_SECONDS,
+  speedEfficiencyFactor,
 } from "./aerobicAnalysis";
 
 /** 1 Hz streams of `seconds` samples from per-second value functions. */
@@ -164,6 +165,21 @@ describe("computeAerobicAnalysis", () => {
     expect(() =>
       computeAerobicAnalysis(streams, { excludeWarmupSeconds: 3600 }),
     ).toThrow(/No usable moving samples/i);
+  });
+});
+
+describe("speedEfficiencyFactor", () => {
+  it("is metres per minute per beat", () => {
+    // 5:00/km is 200 m/min; at 150 bpm that is 1.333 m per beat.
+    expect(speedEfficiencyFactor(1000 / 300, 150)).toBeCloseTo(4 / 3, 6);
+  });
+
+  it("scores the same speed per beat equally, whatever the pace", () => {
+    // 6:00/km at 125 bpm covers as much ground per beat as 5:00/km at 150.
+    expect(speedEfficiencyFactor(1000 / 360, 125)).toBeCloseTo(
+      speedEfficiencyFactor(1000 / 300, 150),
+      9,
+    );
   });
 });
 

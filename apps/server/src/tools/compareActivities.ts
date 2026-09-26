@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { speedEfficiencyFactor } from "../aerobicAnalysis";
 import { formatDuration, round } from "../formatters";
 import { getActivity, type IntervalsActivity } from "../intervalsClient";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
@@ -20,12 +21,12 @@ import { CompareActivitiesOutputSchema, warnOnSchemaDrift } from "./outputs";
 const name = "compare-activities";
 
 const description = `
-Compares two intervals.icu running activities side-by-side: per-side metrics, calculated differences, and a pace/HR efficiency analysis. Use it to compare the same route on different days, track fitness progress over time, or compare race efforts.
+Compares two intervals.icu running activities side-by-side: per-side metrics, calculated differences, and an efficiency comparison. Use it to compare the same route on different days, track fitness progress over time, or compare race efforts.
 
 This tool provides:
 - Key metrics for both activities (pace, HR, cadence, load, running dynamics)
 - Calculated differences (pace, heart rate, cadence, elevation)
-- Efficiency analysis comparing pace relative to heart rate
+- Efficiency factor for each run: metres per minute per heartbeat (higher is better), from grade-adjusted pace when both runs have it
 
 Use Cases:
 - Compare the same route on different days
@@ -132,8 +133,8 @@ export type ComparisonResult = z.infer<typeof CompareActivitiesOutputSchema>;
 
 /**
  * Pure aggregate comparison of two intervals.icu activities: per-side
- * summaries, activity2 − activity1 differences, and the pace/HR efficiency
- * analysis. Differences are derived from each activity's raw distance (m)
+ * summaries, activity2 − activity1 differences, and the efficiency-factor
+ * comparison. Differences are derived from each activity's raw distance (m)
  * and moving time (s)/heart rate/cadence/elevation, never from the rounded
  * or formatted per-side fields, so a pace delta reflects the true difference
  * rather than compounding two independent roundings.
@@ -197,17 +198,33 @@ export function buildComparison(
     summary2.elevation_gain_m - summary1.elevation_gain_m,
   );
 
-  // Efficiency: pace-relative-to-HR (lower is better), independent of
-  // intervals.icu's own icu_efficiency_factor field carried on each side.
+  // Efficiency factor, the same speedEfficiencyFactor get-aerobic-analysis
+  // reports: metres per minute per beat, higher is better. Grade-adjusted
+  // speed (intervals.icu's gap) only when both runs have it, so a hillier
+  // route does not read as lost fitness and both sides share one basis.
+  // Independent of intervals.icu's own icu_efficiency_factor on each side.
   let efficiency: ComparisonResult["efficiency"] = null;
+  const hr1 = summary1.average_hr;
+  const hr2 = summary2.average_hr;
   if (
     paceSec1 != null &&
     paceSec2 != null &&
-    summary1.average_hr != null &&
-    summary2.average_hr != null
+    hr1 != null &&
+    hr1 > 0 &&
+    hr2 != null &&
+    hr2 > 0
   ) {
-    const eff1 = (paceSec1 / 60 / summary1.average_hr) * 100;
-    const eff2 = (paceSec2 / 60 / summary2.average_hr) * 100;
+    const gap1 = activity1.gap ?? 0;
+    const gap2 = activity2.gap ?? 0;
+    const gradeAdjusted = gap1 > 0 && gap2 > 0;
+    const eff1 = speedEfficiencyFactor(
+      gradeAdjusted ? gap1 : 1000 / paceSec1,
+      hr1,
+    );
+    const eff2 = speedEfficiencyFactor(
+      gradeAdjusted ? gap2 : 1000 / paceSec2,
+      hr2,
+    );
     const changePercent = Math.round(((eff2 - eff1) / eff1) * 1000) / 10;
 
     efficiency = {
@@ -215,12 +232,14 @@ export function buildComparison(
       activity_2: Math.round(eff2 * 1000) / 1000,
       change_percent: changePercent,
       interpretation:
-        changePercent < -3
+        changePercent > 3
           ? "improved"
-          : changePercent > 3
+          : changePercent < -3
             ? "declined"
             : "unchanged",
-      note: "Lower efficiency number = faster pace at same heart rate = better fitness",
+      note: gradeAdjusted
+        ? "Efficiency factor in metres per minute per heartbeat, from grade-adjusted pace (intervals.icu gap) on both runs. Higher is better. Same unit as the pace-basis efficiency factor of get-aerobic-analysis."
+        : "Efficiency factor in metres per minute per heartbeat, from moving pace, because at least one run has no grade-adjusted pace. Hills count against the hillier run. Higher is better. Same unit as the pace-basis efficiency factor of get-aerobic-analysis.",
     };
   }
 
@@ -329,8 +348,8 @@ export const compareActivitiesTool = {
 
       if (efficiency) {
         lines.push("Efficiency Analysis:");
-        lines.push(`  Activity 1: ${efficiency.activity_1}`);
-        lines.push(`  Activity 2: ${efficiency.activity_2}`);
+        lines.push(`  Activity 1: ${efficiency.activity_1} m/min per beat`);
+        lines.push(`  Activity 2: ${efficiency.activity_2} m/min per beat`);
         lines.push(
           `  Change: ${efficiency.change_percent > 0 ? "+" : ""}${efficiency.change_percent}% (${efficiency.interpretation})`,
         );
