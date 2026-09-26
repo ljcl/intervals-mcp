@@ -176,6 +176,7 @@ function plannedLoadWarnings(
 
 export const getFitnessTrendTool = {
   name,
+  title: "Fitness trend",
   description,
   inputSchema,
   annotations: READ_ONLY,

@@ -31,6 +31,7 @@ import {
   mapFitnessTrendApp,
 } from "./fitnessTrendApp";
 import { activityDisplayName } from "./formatters";
+import { serverInstructions } from "./instructions";
 import {
   getActivity as getIntervalsActivity,
   listActivities as listActivitiesFn,
@@ -298,6 +299,8 @@ interface AppResource {
   uri: string;
   /** Human-readable resource name shown by hosts. */
   name: string;
+  /** Display title; the same as the view tool that opens the app. */
+  title: string;
   /** Bundled single-file HTML, resolved at startup. */
   htmlPath: string;
   /** Extra `_meta.ui` fields beyond the shared prefersBorder (e.g. csp). */
@@ -317,27 +320,32 @@ const APP_RESOURCES: AppResource[] = [
   {
     uri: "ui://activity-chart/app.html",
     name: "Activity Chart",
+    title: "Activity chart",
     htmlPath: appHtmlRequire.resolve("@intervals-mcp/activity-chart/app.html"),
   },
   {
     uri: "ui://cadence-trends/app.html",
     name: "Cadence Trends",
+    title: "Cadence trends chart",
     htmlPath: appHtmlRequire.resolve("@intervals-mcp/cadence-trends/app.html"),
   },
   {
     uri: "ui://route-map/app.html",
     name: "Route Map",
+    title: "Route map",
     htmlPath: appHtmlRequire.resolve("@intervals-mcp/route-map/app.html"),
     ui: { csp: ROUTE_MAP_CSP },
   },
   {
     uri: "ui://training-load/app.html",
     name: "Training Load",
+    title: "Training load chart",
     htmlPath: appHtmlRequire.resolve("@intervals-mcp/training-load/app.html"),
   },
   {
     uri: "ui://compare-activities/app.html",
     name: "Compare Activities",
+    title: "Activity comparison chart",
     htmlPath: appHtmlRequire.resolve(
       "@intervals-mcp/compare-activities/app.html",
     ),
@@ -345,11 +353,13 @@ const APP_RESOURCES: AppResource[] = [
   {
     uri: "ui://activity-zones/app.html",
     name: "Activity Zones",
+    title: "Heart-rate zones chart",
     htmlPath: appHtmlRequire.resolve("@intervals-mcp/activity-zones/app.html"),
   },
   {
     uri: "ui://fitness-trend/app.html",
     name: "Fitness Trend",
+    title: "Fitness trend chart",
     htmlPath: appHtmlRequire.resolve("@intervals-mcp/fitness-trend/app.html"),
   },
 ];
@@ -366,6 +376,12 @@ function appResourceMeta(resource: AppResource): Record<string, unknown> {
 
 interface ToolDef {
   name: string;
+  /**
+   * Display name for hosts that show one instead of the tool id. Like the
+   * description, it is outside tool-surface.lock.json, so rewording it does
+   * not drop any grant. Never set `annotations.title`: that is inside it.
+   */
+  title: string;
   description: string;
   inputSchema: Record<string, unknown>;
   outputSchema?: Record<string, unknown>;
@@ -407,6 +423,7 @@ function buildToolDefs(): ToolDef[] {
   const defs: ToolDef[] = TOOLS.map((tool) => {
     const t = tool as {
       name: string;
+      title: string;
       description: string;
       inputSchema?: z.ZodType;
       outputSchema?: z.ZodType;
@@ -414,6 +431,7 @@ function buildToolDefs(): ToolDef[] {
     };
     const def: ToolDef = {
       name: t.name,
+      title: t.title,
       // The tool files keep descriptions in template literals that open and
       // close on a newline; the host should get the text alone.
       description: t.description.trim(),
@@ -427,6 +445,7 @@ function buildToolDefs(): ToolDef[] {
   // Add MCP App tools
   defs.push({
     name: "view-activity-chart",
+    title: "Activity chart",
     description:
       "Open an interactive chart of one activity with selectable heart rate, power, pace, altitude, cadence, and grade overlays. " +
       "Prefer this over a text summary when the user wants to see or explore how metrics change over the course of an activity. Takes the activity id.",
@@ -439,6 +458,7 @@ function buildToolDefs(): ToolDef[] {
 
   defs.push({
     name: "get-activity-streams-raw",
+    title: "Activity chart data",
     description:
       "Internal data feed for the activity chart UI: returns per-sample arrays (time, distance, heartrate, watts, velocity_smooth, altitude, cadence, grade_smooth, and running dynamics stance_time/vertical_oscillation/vertical_ratio/step_length), downsampled to about 1,000 points, plus interval bands (type, label, start/end index) as JSON for one activity. " +
       "The view-activity-chart app calls this; not intended for direct model use.",
@@ -456,6 +476,7 @@ function buildToolDefs(): ToolDef[] {
 
   defs.push({
     name: "view-cadence-trends",
+    title: "Cadence trends chart",
     description:
       "Open an interactive cadence dashboard across recent runs: trend timeline, cadence-versus-pace scatter, pace-zone breakdown, and per-run overlay comparison. " +
       "Prefer this over text when the user wants to explore cadence patterns over time. Takes a number of weeks of history.",
@@ -468,6 +489,7 @@ function buildToolDefs(): ToolDef[] {
 
   defs.push({
     name: "get-cadence-trend-data",
+    title: "Cadence trends chart data",
     description:
       "Internal data feed for the cadence-trends UI: returns per-run summary cadence and pace for recent running activities as JSON. " +
       "The view-cadence-trends app calls this; not intended for direct model use.",
@@ -485,6 +507,7 @@ function buildToolDefs(): ToolDef[] {
 
   defs.push({
     name: "view-route-map",
+    title: "Route map",
     description:
       "Open an interactive map of one activity's GPS track, fit to bounds with start and finish markers and a distance/elevation summary. " +
       "Prefer this over a text summary when the user wants to see where an activity went. Takes the activity id. " +
@@ -498,6 +521,7 @@ function buildToolDefs(): ToolDef[] {
 
   defs.push({
     name: "get-route-map-data",
+    title: "Route map data",
     description:
       "Internal data feed for the route-map UI: returns [lat, lng] coordinates from the activity's recorded GPS track plus start/end points, distance, elevation gain, and (for activities with GPS streams) index-aligned metric streams (time, distance, altitude, heartrate, watts, velocity_smooth, grade_smooth) " +
       "and annotation anchors (WORK-interval end markers, caller-supplied distance-anchored waypoints) for one activity as JSON. " +
@@ -514,6 +538,7 @@ function buildToolDefs(): ToolDef[] {
 
   defs.push({
     name: "view-training-load",
+    title: "Training load chart",
     description:
       "Open an interactive training-load chart: weekly running volume bars with a rolling trend line, and injury-risk warning weeks highlighted with their reason on hover. " +
       "Prefer this over text when the user wants to see how their training volume is trending. Takes a number of days of history.",
@@ -526,6 +551,7 @@ function buildToolDefs(): ToolDef[] {
 
   defs.push({
     name: "get-training-load-data",
+    title: "Training load chart data",
     description:
       "Internal data feed for the training-load UI: returns per-week running volume (distance, runs, time, elevation), a rolling trend value, and injury-risk warning flags with reasons as JSON. " +
       "The view-training-load app calls this; not intended for direct model use.",
@@ -543,6 +569,7 @@ function buildToolDefs(): ToolDef[] {
 
   defs.push({
     name: "view-fitness-trend",
+    title: "Fitness trend chart",
     description:
       "Open an interactive fitness/fatigue/form chart (the performance-management chart): fitness (CTL) and fatigue (ATL) over the lookback window with form (TSB) on its own axis, deep-fatigue, freshness, and steep-ramp periods shaded, and a dashed continuation past today. " +
       "Pass targetDate to chart a solved taper landing on targetTsb on that day, week by week; omit it for a rest projection. " +
@@ -556,6 +583,7 @@ function buildToolDefs(): ToolDef[] {
 
   defs.push({
     name: "get-fitness-trend-data",
+    title: "Fitness trend chart data",
     description:
       "Internal data feed for the fitness-trend UI: returns the per-day CTL/ATL/TSB series, the forward projection, any solved taper plan (weekly loads and the days they produce), and the dated deep-fatigue / freshness / steep-ramp bands as JSON. " +
       "The view-fitness-trend app calls this; not intended for direct model use.",
@@ -573,6 +601,7 @@ function buildToolDefs(): ToolDef[] {
 
   defs.push({
     name: "view-activity-zones",
+    title: "Heart-rate zones chart",
     description:
       "Open an interactive time-in-zone chart for one activity: bars for the time spent in each heart rate zone, with percentages and an easy/moderate/hard split. " +
       "Prefer this over the text-only get-activity-zones when the user wants to see how a workout's effort was distributed. Takes the activity id.",
@@ -585,6 +614,7 @@ function buildToolDefs(): ToolDef[] {
 
   defs.push({
     name: "get-activity-zones-data",
+    title: "Heart-rate zones chart data",
     description:
       "Internal data feed for the activity-zones UI: returns per-zone time distributions (bucket bounds, seconds, percentages) for the activity's heart rate zones as JSON. " +
       "The view-activity-zones app calls this; not intended for direct model use.",
@@ -602,6 +632,7 @@ function buildToolDefs(): ToolDef[] {
 
   defs.push({
     name: "view-compare-activities",
+    title: "Activity comparison chart",
     description:
       "Open an interactive side-by-side overlay of two activities: their pace, heart rate, power, cadence, or altitude streams aligned on a shared distance or time axis, with an aggregate delta summary. " +
       "Prefer this over the text-only compare-activities when the user wants to see WHERE in the activities the difference happened. Takes both activity ids.",
@@ -616,6 +647,7 @@ function buildToolDefs(): ToolDef[] {
 
   defs.push({
     name: "get-compare-activities-data",
+    title: "Activity comparison chart data",
     description:
       "Internal data feed for the compare-activities UI: returns the aggregate comparison (per-activity summaries, activity2−activity1 differences, efficiency analysis) as JSON. " +
       "The view-compare-activities app calls this alongside get-activity-streams-raw; not intended for direct model use.",
@@ -1326,8 +1358,15 @@ const STATIC_SURFACE_TTL_MS = 60 * 60 * 1000;
 
 export function createServer(): Server {
   const server = new Server(
-    { name: "Intervals Extra", version: SERVER_VERSION },
     {
+      name: "Intervals Extra",
+      title: "Intervals Extra (intervals.icu)",
+      version: SERVER_VERSION,
+    },
+    {
+      // Built here rather than as a constant: the text names the configured
+      // time zone, which is read at serve time like every other tool's.
+      instructions: serverInstructions(getTimeZone()),
       capabilities: {
         tools: {},
         resources: {},
@@ -1404,6 +1443,7 @@ export function createServer(): Server {
     resources: APP_RESOURCES.map((resource) => ({
       uri: resource.uri,
       name: resource.name,
+      title: resource.title,
       mimeType: MCP_APP_MIME_TYPE,
       _meta: appResourceMeta(resource),
     })) as unknown as ListResourcesResult["resources"],

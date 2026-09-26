@@ -209,6 +209,7 @@ export function formatWellnessText(response: WellnessResponse): string {
 
 export const getWellnessTool = {
   name,
+  title: "Wellness",
   description,
   inputSchema,
   annotations: READ_ONLY,

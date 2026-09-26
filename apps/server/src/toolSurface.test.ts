@@ -14,7 +14,8 @@
  *
  * `description` is deliberately outside the fingerprint. It is model-facing
  * prose that gets reworded often and carries no permission meaning; hashing it
- * would make the lock churn until people regenerated it without reading.
+ * would make the lock churn until people regenerated it without reading. The
+ * top-level display `title` stays outside for the same reason.
  *
  * Regenerate after an intended change:
  *   cd apps/server && UPDATE_TOOL_SURFACE_LOCK=1 bunx vitest run src/toolSurface.test.ts
@@ -134,11 +135,12 @@ describe("tool surface lock", () => {
     ).toEqual([]);
   });
 
-  it("fingerprints ignore description but track schema and annotations", () => {
+  it("fingerprints ignore description and title but track schema and annotations", () => {
     const tool = TOOL_DEFS[0]!;
     const base = fingerprint(tool);
 
     expect(fingerprint({ ...tool, description: "reworded" })).toBe(base);
+    expect(fingerprint({ ...tool, title: "Renamed" })).toBe(base);
     expect(
       fingerprint({ ...tool, annotations: { readOnlyHint: false } }),
     ).not.toBe(base);

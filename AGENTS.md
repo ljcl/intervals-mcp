@@ -107,11 +107,17 @@ breaking them has shipped bugs — do not work around them locally.
   outputSchema + _meta`; `toolSurface.test.ts` fails on drift. Regenerate
   deliberately (`UPDATE_TOOL_SURFACE_LOCK=1 bunx vitest run
   src/toolSurface.test.ts`) and say so in the PR — users pay a round of
-  re-prompting.
+  re-prompting. The top-level `title` and `description` are outside it;
+  never set `annotations.title`, which is inside it.
 - **Tool descriptions stay under 1,800 characters** (Claude Code cuts at
   2,048): what and when, which sibling to use instead, then only behaviour
   the schema does not show. No "Parameters:" section; the field `.describe()`
   texts carry the inputs. Shape and rules: docs/tools.md.
+- **Server instructions have one home: `serverInstructions`
+  (`instructions.ts`).** Sent in `server/discover` to every chat, so they
+  stay under 1,800 characters and name only tools that exist; the
+  integration test checks both. Every tool, prompt and app resource has a
+  display `title`, and so does `serverInfo`.
 - **Protocol-surface tests go over the wire**
   (`server.integration.test.ts` via `mcpTestClient.ts`): capabilities, object inputSchemas (no `$ref`), string
   ids, `structuredContent`, `isError` not JSON-RPC errors, app resources,

@@ -437,6 +437,7 @@ export function formatBestEffortsText(
 
 export const getBestEffortsTool = {
   name,
+  title: "Best efforts",
   description,
   inputSchema,
   annotations: READ_ONLY,

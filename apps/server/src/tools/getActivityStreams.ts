@@ -332,6 +332,7 @@ export function formatActivityStreamsText(
 
 export const getActivityStreamsTool = {
   name,
+  title: "Activity streams",
   description,
   inputSchema,
   annotations: READ_ONLY,

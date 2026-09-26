@@ -163,6 +163,7 @@ function resolveAppliedGearName(
 
 export const updateActivityTool = {
   name,
+  title: "Update activity",
   description,
   inputSchema,
   annotations: WRITE_DESTRUCTIVE,

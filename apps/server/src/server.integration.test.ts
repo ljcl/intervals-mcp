@@ -14,6 +14,7 @@
  * progress plumbing — rather than being amended three times on the way.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { getTimeZone } from "./config";
 import { getActivity } from "./intervalsClient";
 import { INTERVALS_ID_HINT } from "./tools/_ids";
 
@@ -40,6 +41,12 @@ const mockedIntervalsActivity = vi.mocked(getActivity);
  */
 const MAX_TOOL_DESCRIPTION_CHARS = 1800;
 
+/**
+ * The server instructions reach the model at the start of every chat, so they
+ * get the same budget as one tool description (#38).
+ */
+const MAX_INSTRUCTIONS_CHARS = 1800;
+
 /** A tool name as a description mentions one, e.g. "use get-fitness-trend". */
 const TOOL_NAME_MENTION =
   /\b(?:get|list|view|compare|update)-[a-z]+(?:-[a-z]+)*\b/g;
@@ -60,6 +67,37 @@ describe("server/discover", () => {
       prompts: expect.any(Object),
       logging: expect.any(Object),
     });
+  });
+
+  it("names the server with a display title", async () => {
+    const { discover } = await connectTestClient("discover-title-test");
+    const meta = discover._meta as Record<string, unknown> | undefined;
+
+    expect(meta?.["io.modelcontextprotocol/serverInfo"]).toMatchObject({
+      name: "Intervals Extra",
+      title: expect.stringMatching(/\S/),
+      version: expect.any(String),
+    });
+  });
+
+  it("sends instructions that fit the budget and route only to real tools", async () => {
+    const client = await connectTestClient("discover-instructions-test");
+    const { result } = await client.send("tools/list");
+    const tools = result?.tools as Array<{ name: string }>;
+    const names = new Set(tools.map((tool) => tool.name));
+    const instructions = client.discover.instructions;
+
+    expect(typeof instructions).toBe("string");
+    const text = instructions as string;
+    expect(text.length).toBeLessThanOrEqual(MAX_INSTRUCTIONS_CHARS);
+    expect(text).toContain(getTimeZone());
+    // A renamed or removed tool must not leave the orientation sending every
+    // chat to an unknown-tool error.
+    const mentioned = text.match(TOOL_NAME_MENTION) ?? [];
+    expect(mentioned.length).toBeGreaterThan(0);
+    for (const name of mentioned) {
+      expect(names.has(name), `instructions mention ${name}`).toBe(true);
+    }
   });
 });
 
@@ -179,6 +217,20 @@ describe("tools/list", () => {
         );
       }
     }
+  });
+
+  it("gives every tool its own display title", async () => {
+    const client = await connectTestClient();
+    const { result } = await client.send("tools/list");
+    const tools = result?.tools as Array<{ name: string; title?: unknown }>;
+
+    // A host that shows titles shows them in place of the tool ids, so each
+    // must be there and must tell the tools apart.
+    for (const { name, title } of tools) {
+      expect(title, `${name} title`).toEqual(expect.stringMatching(/\S/));
+    }
+    const titles = tools.map((tool) => tool.title);
+    expect(new Set(titles).size).toBe(titles.length);
   });
 
   it("gives every tool a well-formed object inputSchema", async () => {
@@ -362,7 +414,7 @@ const ROUTE_MAP_URI = "ui://route-map/app.html";
 const TILE_ORIGIN = "https://tiles.openfreemap.org";
 
 describe("resources/list", () => {
-  it("lists every MCP App resource with its ui:// uri", async () => {
+  it("lists every MCP App resource with its ui:// uri and a title", async () => {
     const client = await connectTestClient();
     const { result } = await client.send("resources/list");
     const resources = result?.resources as Array<Record<string, unknown>>;
@@ -371,6 +423,7 @@ describe("resources/list", () => {
     for (const resource of resources) {
       expect(String(resource.uri)).toMatch(/^ui:\/\//);
       expect(resource.mimeType).toBe("text/html;profile=mcp-app");
+      expect(resource.title).toEqual(expect.stringMatching(/\S/));
     }
   });
 
@@ -469,7 +522,7 @@ describe("resources/read", () => {
 });
 
 describe("prompts", () => {
-  it("lists prompts with names and descriptions", async () => {
+  it("lists prompts with names, titles and descriptions", async () => {
     const client = await connectTestClient();
     const { result } = await client.send("prompts/list");
     const prompts = result?.prompts as Array<Record<string, unknown>>;
@@ -477,6 +530,7 @@ describe("prompts", () => {
     expect(prompts.length).toBeGreaterThan(0);
     for (const prompt of prompts) {
       expect(typeof prompt.name).toBe("string");
+      expect(prompt.title).toEqual(expect.stringMatching(/\S/));
       expect(typeof prompt.description).toBe("string");
     }
   });

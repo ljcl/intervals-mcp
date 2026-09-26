@@ -146,6 +146,7 @@ export function formatGearListText(
 
 export const listGearTool = {
   name,
+  title: "List gear",
   description,
   inputSchema,
   annotations: READ_ONLY,

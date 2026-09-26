@@ -130,6 +130,7 @@ export function formatAthleteStatsText(response: AthleteStatsOutput): string {
 
 export const getAthleteStatsTool = {
   name,
+  title: "Running totals",
   description,
   inputSchema: GetAthleteStatsInputSchema,
   outputSchema: AthleteStatsOutputSchema,

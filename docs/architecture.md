@@ -339,6 +339,19 @@ cd apps/server && UPDATE_TOOL_SURFACE_LOCK=1 bunx vitest run src/toolSurface.tes
 Say so in the PR when you regenerate — users pay with one round of
 re-prompting.
 
+**Titles and instructions.** Every tool, prompt and app resource has a
+display `title`, and so does `serverInfo`. A host that shows titles then
+shows "Running summary" instead of `get-running-summary`. Titles are outside
+the lock, like descriptions. `annotations.title` is inside it, so the server
+never sets it. `serverInstructions` (`instructions.ts`) builds the short
+orientation that `server/discover` sends to every chat: where ids come from,
+which tool to call first for one run, how to route fitness questions, the
+whole-body versus run-only rule, units and the configured time zone, and how
+to use `update-activity` safely. `createServer` builds it so that it can name
+the time zone. docs/Intervals_MCP_Server.md stays the long form. The
+integration suite checks the 1,800-character cap and that every tool the
+text names exists.
+
 ## Protocol-surface testing
 
 Protocol-surface tests go over the wire. `mcpTestClient.ts`
@@ -352,11 +365,11 @@ reads capabilities from `server/discover`, and parses bare JSON or SSE
 well-formed object `inputSchema` per tool (no `$ref`: a host cannot resolve
 one against a document it never gets), every id advertised as a string,
 `structuredContent` alongside the text, `isError` rather than a JSON-RPC
-error for a rejected argument, the app resources and their `_meta.ui`, and
-the prompts — and pins the result envelope (`resultType`, cache fields,
-per-response `serverInfo`). `mcpEndpoint.test.ts` pins the rejection of
-2025-era traffic, including a claim-less `tools/call` with a spoofed
-`Mcp-Name`.
+error for a rejected argument, the app resources and their `_meta.ui`, the
+prompts, the server instructions, and the display titles — and pins the
+result envelope (`resultType`, cache fields, per-response `serverInfo`).
+`mcpEndpoint.test.ts` pins the rejection of 2025-era traffic, including a
+claim-less `tools/call` with a spoofed `Mcp-Name`.
 Asserting against the in-memory `TOOL_DEFS` table proves nothing: an annotation or
 schema that does not serialize cannot influence a host. The bootstrap was
 copied into three suites before the shared client existed; add to the client

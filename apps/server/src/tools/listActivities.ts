@@ -155,6 +155,7 @@ export function formatActivityListText(response: ActivityListResponse): string {
 
 export const listActivitiesTool = {
   name,
+  title: "List activities",
   description,
   inputSchema,
   annotations: READ_ONLY,

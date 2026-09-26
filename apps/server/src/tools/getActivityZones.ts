@@ -55,6 +55,7 @@ export function formatActivityZones(zoneSets: ZoneSet[]): string {
 
 export const getActivityZonesTool = {
   name,
+  title: "Time in heart-rate zones",
   description,
   inputSchema,
   annotations: READ_ONLY,

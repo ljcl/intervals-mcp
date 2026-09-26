@@ -185,6 +185,7 @@ function renderSplitTable(plan: SplitPlan): string {
 
 export const getRacePredictionTool = {
   name,
+  title: "Race prediction",
   description,
   inputSchema,
   annotations: READ_ONLY,

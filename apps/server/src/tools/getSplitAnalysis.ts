@@ -106,6 +106,7 @@ function splitLine(s: ReturnType<typeof splitOut>): string {
 
 export const getSplitAnalysisTool = {
   name,
+  title: "Split analysis",
   description,
   inputSchema,
   annotations: READ_ONLY,
