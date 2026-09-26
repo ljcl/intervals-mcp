@@ -19,7 +19,7 @@ export default defineConfig({
         autoUpdate: (newThreshold: number) => Math.floor(newThreshold - 5),
         statements: 87,
         branches: 86,
-        functions: 76,
+        functions: 77,
         lines: 87,
       },
       // The presentational components are covered by the story render-path

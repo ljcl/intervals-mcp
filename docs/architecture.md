@@ -231,8 +231,9 @@ for.
   `important: true` bypasses it for phase changes and rate-limit aborts.
 - Counts from a bounded pool are completion-ordered, not index-ordered.
 - Sends are fire-and-forget; every failure is swallowed.
-- Client side, `useServerToolData` sets `resetTimeoutOnProgress` (so a live
-  sweep is not killed by the host's default timeout) and exposes the latest
+- Client side, `useServerToolData` and `useServerToolFetcher` (per key) share
+  `progressCallOptions`. It sets `resetTimeoutOnProgress` (so a live sweep is
+  not killed by the host's default timeout), and each hook exposes the latest
   message for `LoadingState` to render.
 
 ## API key access

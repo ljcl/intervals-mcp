@@ -1,7 +1,7 @@
 import { type App } from "@modelcontextprotocol/ext-apps";
 import { useCallback, useMemo, useRef, useSyncExternalStore } from "react";
 import { type KeyedFetchState, KeyedFetchStore } from "./keyedFetchStore";
-import { parseTextContent } from "./serverToolResult";
+import { parseTextContent, progressCallOptions } from "./serverToolResult";
 
 export interface ServerToolFetcher<T> {
   /** Per-key state; a key absent from the map has never been requested. */
@@ -21,6 +21,11 @@ export interface ServerToolFetcher<T> {
  *
  * `buildArgs` maps a key to that call's arguments and is read through a ref,
  * so an inline arrow does not tear down the store on every render.
+ *
+ * Progress: each call passes the same options as `useServerToolData`. A slow
+ * call that sends progress is not killed by the host's request timeout, and
+ * the latest message lands on that key's `progress` for `LoadingState` to
+ * show.
  */
 export function useServerToolFetcher<T>(
   app: App | null,
@@ -32,12 +37,12 @@ export function useServerToolFetcher<T>(
 
   const store = useMemo(
     () =>
-      new KeyedFetchStore<T>(async (key) => {
+      new KeyedFetchStore<T>(async (key, onProgress) => {
         if (!app) throw new Error(`Not connected to the host`);
-        const result = await app.callServerTool({
-          name: toolName,
-          arguments: buildArgsRef.current(key),
-        });
+        const result = await app.callServerTool(
+          { name: toolName, arguments: buildArgsRef.current(key) },
+          progressCallOptions(onProgress),
+        );
         const parsed = parseTextContent<T>(result, toolName);
         if (!parsed.ok) throw new Error(parsed.error);
         return parsed.data;

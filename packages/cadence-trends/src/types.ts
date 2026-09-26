@@ -62,6 +62,8 @@ export interface RunStreamState {
   points: OverlayPoint[] | null;
   loading: boolean;
   error: string | null;
+  /** Latest progress message from the server while loading, else null. */
+  progress: string | null;
 }
 
 /** Pace zone definition */

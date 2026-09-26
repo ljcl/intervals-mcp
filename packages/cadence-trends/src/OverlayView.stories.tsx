@@ -7,6 +7,7 @@ import {
   mockStreams,
   partiallyFailedStreams,
   partiallyLoadedStreams,
+  progressStreams,
 } from "./__fixtures__/overlay-streams";
 import { OverlayView } from "./OverlayView";
 
@@ -108,6 +109,24 @@ export const LoadingFirstRun = meta.story({
   play: async ({ canvas, canvasElement }) => {
     await expect(canvas.getByRole("status")).toBeInTheDocument();
     expect(canvasElement.querySelector(".recharts-surface")).toBeNull();
+  },
+});
+
+/**
+ * Nothing drawn yet, and a run's fetch has sent progress (#55). The skeleton
+ * shows that line, the same way the app's first load does.
+ */
+export const LoadingWithProgress = meta.story({
+  args: {
+    selectedRunIds: bothRuns,
+    streams: progressStreams,
+    requestStream: noop,
+    retryStream: noop,
+  },
+  play: async ({ canvas }) => {
+    await expect(canvas.getByRole("status")).toHaveTextContent(
+      "Reading streams for Intervals 5x1k",
+    );
   },
 });
 

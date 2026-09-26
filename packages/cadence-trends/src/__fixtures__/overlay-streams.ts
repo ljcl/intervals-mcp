@@ -60,6 +60,7 @@ const loaded = (run: RunSummary, points: OverlayPoint[]): RunStreamState => ({
   points,
   loading: false,
   error: null,
+  progress: null,
 });
 
 /** Both runs loaded: Tempo Intervals (10003) and Intervals 5x1k (10013). */
@@ -77,7 +78,31 @@ export const mockStreams = new Map<string, RunStreamState>([
 /** One run drawn, the second still in flight. */
 export const partiallyLoadedStreams = new Map<string, RunStreamState>([
   ["i10003", mockStreams.get("i10003")!],
-  ["i10013", { run: run10013, points: null, loading: true, error: null }],
+  [
+    "i10013",
+    { run: run10013, points: null, loading: true, error: null, progress: null },
+  ],
+]);
+
+/**
+ * Nothing drawn yet: both runs are in flight, and only the second has sent a
+ * progress message.
+ */
+export const progressStreams = new Map<string, RunStreamState>([
+  [
+    "i10003",
+    { run: run10003, points: null, loading: true, error: null, progress: null },
+  ],
+  [
+    "i10013",
+    {
+      run: run10013,
+      points: null,
+      loading: true,
+      error: null,
+      progress: "Reading streams for Intervals 5x1k",
+    },
+  ],
 ]);
 
 /** One run drawn, the second failed — it must say so, not just vanish. */
@@ -90,6 +115,7 @@ export const partiallyFailedStreams = new Map<string, RunStreamState>([
       points: null,
       loading: false,
       error: "Error: stream fetch failed",
+      progress: null,
     },
   ],
 ]);
@@ -119,6 +145,7 @@ export const allFailedStreams = new Map<string, RunStreamState>([
       points: null,
       loading: false,
       error: "Error: stream fetch failed",
+      progress: null,
     },
   ],
   ["i10013", partiallyFailedStreams.get("i10013")!],

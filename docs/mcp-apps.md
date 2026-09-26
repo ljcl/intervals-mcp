@@ -30,6 +30,13 @@ Every app's `main.tsx` is the same four-branch state machine, so it lives in
   directly testable: a key is fetched at most once, and only an explicit
   `retry` re-fires a failed one. Do not reintroduce a "cached or in flight"
   guard — a failure satisfies neither, so the effect refetches forever.
+  Both hooks pass the same call options (`progressCallOptions`). The host
+  restarts its request timeout on each progress notification, and the latest
+  message is kept for `LoadingState` to show. The keyed fetcher keeps one
+  message per key, on the entry's `progress`. Pick what to render from a
+  key's own `loading` and `error`. Do not treat "no data yet" as loading: a
+  failed key has no data either, so its error and retry stay hidden behind a
+  skeleton.
 - **Every app opens with a `CardHeader`.** In a host transcript the card is
   otherwise detached from the tool call that produced it. Subtitles are built
   by a unit-tested helper next to the app's other pure normalizers
@@ -202,7 +209,9 @@ altitude overlays; cadence and grade where recorded).
 Four views: Trend timeline, Scatter plot, Pace Zones, Overlay comparison.
 Calls `get-cadence-trend-data` on mount and `get-activity-streams-raw` for
 per-second overlays on demand through the shared `useServerToolFetcher` (one
-keyed fetch per selected run, each with its own loading/error/retry).
+keyed fetch per selected run, each with its own loading/error/retry). The
+overlay's loading state shows the progress line of the first selected run
+that is still loading.
 
 Overlay run selection has two entry points sharing `toggleRunSelection` (capped
 at 4): clicking Trend/Scatter dots, and `RunSelectList.tsx` — a Base UI
@@ -395,4 +404,6 @@ weeks take them. Calls `get-fitness-trend-data` on mount with `days`,
   scope. The scope not shown at mount is fetched on demand through the shared
   keyed `useServerToolFetcher` store and cached, so flipping back never
   re-fetches; `sourceLabel` notes when a scope's numbers are computed locally
-  rather than read from intervals.icu.
+  rather than read from intervals.icu. While that fetch runs, the skeleton
+  shows its progress line. If it fails, `ErrorState` shows the error and a
+  retry that calls the tool again.

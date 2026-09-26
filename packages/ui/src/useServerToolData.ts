@@ -1,6 +1,6 @@
 import { type App } from "@modelcontextprotocol/ext-apps";
 import { useCallback, useEffect, useState } from "react";
-import { parseTextContent } from "./serverToolResult";
+import { parseTextContent, progressCallOptions } from "./serverToolResult";
 
 export interface ServerToolData<T> {
   data: T | null;
@@ -56,12 +56,7 @@ export function useServerToolData<T>(
           name: toolName,
           arguments: JSON.parse(argsKey) as Record<string, unknown>,
         },
-        {
-          resetTimeoutOnProgress: true,
-          onprogress: ({ message }) => {
-            if (message) setProgress(message);
-          },
-        },
+        progressCallOptions(setProgress),
       );
       const parsed = parseTextContent<T>(result, toolName);
       if (!parsed.ok) {
