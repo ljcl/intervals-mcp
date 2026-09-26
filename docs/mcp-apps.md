@@ -14,6 +14,13 @@ Every app's `main.tsx` is the same four-branch state machine, so it lives in
   once `app` and `toolArgs` are non-null and the content component never
   re-checks them. Each pre-content state renders inside the same `AppShell` as
   the loaded app, so the card chrome is stable from first paint.
+- **Host context updates are partial.** A `hostcontextchanged` notification
+  carries only the fields that changed. The SDK merges it into
+  `getHostContext()` before any listener runs. `useHostRoot` listens with
+  `addEventListener` and reads that merged context each time. Do not store
+  the notification itself as the context. Each field that it omits then
+  becomes undefined: the fullscreen toggle disappears and the safe-area
+  padding goes (#54).
 - **An app with a required id declares `missingArgsMessage`.** `parseToolInput`
   returning `null` then means "the host spoke and the input is unusable" — an
   `ErrorState` naming the missing id, not an endless skeleton. Omit the message
@@ -97,6 +104,10 @@ MCP Apps own their outer chrome, not the host:
 4. Fullscreen: `AppShell` owns the enter/exit toggle; it renders only when the
    app passes its connected `app` AND the host advertises `fullscreen` in
    `availableDisplayModes` — no dead button on hosts without the capability.
+   After a request, the toggle shows the mode that `requestDisplayMode`
+   returned. Some hosts grant a request and do not send new context, so this
+   echo keeps the toggle correct. The next mode that the host reports
+   replaces the echo.
 5. Width constraint keeps children from forcing the card wider than the iframe:
    `boxSizing: "border-box"`, `width: calc(100% - ${outerMargin * 2}px)`,
    `overflow: hidden`. Without it a too-wide footer forces horizontal scroll
