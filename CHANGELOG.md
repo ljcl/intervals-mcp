@@ -1,5 +1,26 @@
 # Changelog
 
+## [2.1.0](https://github.com/ljcl/intervals-mcp/compare/v2.0.0...v2.1.0) (2026-09-26)
+
+
+### Features
+
+* send server instructions and display titles to every host ([#96](https://github.com/ljcl/intervals-mcp/issues/96)) ([d7c54fc](https://github.com/ljcl/intervals-mcp/commit/d7c54fcf1d645863bada8b98deb636d77e82f824))
+
+
+### Bug Fixes
+
+* activity-zones app shows the local day and why zones are missing ([#102](https://github.com/ljcl/intervals-mcp/issues/102)) ([d6bd178](https://github.com/ljcl/intervals-mcp/commit/d6bd178b827ced388f1c3758911a6704a07dec54))
+* adding a note no longer silently erases an activity's description ([#98](https://github.com/ljcl/intervals-mcp/issues/98)) ([ab5a873](https://github.com/ljcl/intervals-mcp/commit/ab5a8730250a068d470c8cab4d7d41129cb2c2ec))
+* clearer feel, dynamics, time, HR and error text in tool output ([#104](https://github.com/ljcl/intervals-mcp/issues/104)) ([a5ba837](https://github.com/ljcl/intervals-mcp/commit/a5ba8377d4e7b300ed83f48413e9ee45de9ff8ad))
+* compare-activities efficiency is speed per heartbeat, not pace divided by heart rate ([#94](https://github.com/ljcl/intervals-mcp/issues/94)) ([7655601](https://github.com/ljcl/intervals-mcp/commit/765560132a250600341de86dcff1ed06cb57fa72))
+* fitness trend shows an error and retry when a scope fails to load ([#103](https://github.com/ljcl/intervals-mcp/issues/103)) ([92ad8cc](https://github.com/ljcl/intervals-mcp/commit/92ad8cc2022e31f4c8a8efd1138fa63bf9b40401))
+* fullscreen exit button and mobile layout survive host updates ([#100](https://github.com/ljcl/intervals-mcp/issues/100)) ([401b6b6](https://github.com/ljcl/intervals-mcp/commit/401b6b601776750e96c0231bdb94b4d24d487dd3))
+* get-race-prediction counts each run once, not each pace-curve point ([#92](https://github.com/ljcl/intervals-mcp/issues/92)) ([6d87905](https://github.com/ljcl/intervals-mcp/commit/6d879057cff48a1a8de587951a79f69ad6fd0ee4))
+* get-wellness shows rMSSD HRV and no longer assumes an Apple Watch ([#97](https://github.com/ljcl/intervals-mcp/issues/97)) ([6c96e79](https://github.com/ljcl/intervals-mcp/commit/6c96e7920d4b86d42ad1bbad55822560f4079674))
+* heart-rate dropouts show as gaps, not 0 bpm, in streams and charts ([#101](https://github.com/ljcl/intervals-mcp/issues/101)) ([09ed5a3](https://github.com/ljcl/intervals-mcp/commit/09ed5a3aa1770bad42a8b1450a290019b45f6edc))
+* tool descriptions fit Claude Code's limit and name the tool to use instead ([#95](https://github.com/ljcl/intervals-mcp/issues/95)) ([7d03e91](https://github.com/ljcl/intervals-mcp/commit/7d03e911cf2a1b017d9a5a1df6bcdd9f2cb12234))
+
 ## [2.0.0](https://github.com/ljcl/intervals-mcp/compare/v1.0.1...v2.0.0) (2026-09-26)
 
 
