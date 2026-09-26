@@ -10,7 +10,11 @@ import { type useApp } from "@modelcontextprotocol/ext-apps/react";
 import { useMemo, useState } from "react";
 import styles from "./App.module.css";
 import { buildZonesContextSummary } from "./contextSummary";
-import { buildSummaryStats, buildZonesSubtitle } from "./normalize";
+import {
+  buildEmptyMessage,
+  buildSummaryStats,
+  buildZonesSubtitle,
+} from "./normalize";
 import { type ActivityZonesData } from "./types";
 import { ZoneChart } from "./ZoneChart";
 
@@ -41,10 +45,7 @@ export function App({ app, data, mode = "desktop" }: AppProps) {
     return (
       <div className={styles.container} data-compact={isMobile || undefined}>
         <CardHeader title={data.name} subtitle={data.type} compact={isMobile} />
-        <EmptyState>
-          No zone data recorded — this activity had neither a heart rate nor a
-          power sensor.
-        </EmptyState>
+        <EmptyState>{buildEmptyMessage(data)}</EmptyState>
       </div>
     );
   }

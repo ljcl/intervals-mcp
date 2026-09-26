@@ -2,9 +2,9 @@ import { formatPace, formatShortDate } from "@intervals-mcp/data";
 import { type RunSummary } from "./types";
 
 /**
- * Narration spells the year out: "14 Sep 2025". intervals.icu dates are UTC
- * ISO strings and `formatShortDate` reads them in UTC, so the narrated day
- * never shifts by the viewer's (or CI's) timezone.
+ * Narration spells the year out: "14 Sep 2025". Run dates are local
+ * calendar dates and `formatShortDate` reads the day as written, so the
+ * narrated day never shifts by the viewer's (or CI's) timezone.
  */
 const fullDate = (iso: string) => formatShortDate(iso, "full");
 

@@ -218,8 +218,9 @@ activity's own `icu_hr_zones` (upper bounds, zone 1's lower bound is always
 only when both are present. Unlike get-activity's `hr_zones`, there is no
 sport-settings fallback here; pace zones are out of scope (Phase 4). Heart
 rate is omitted, with a warning in the text, when the activity recorded
-bounds and zone times with different zone counts. An activity with no zone
-data returns a valid empty payload, not an error.
+bounds and zone times with different zone counts. The app payload carries
+the same warning as `hrZoneWarning`, and the app's empty state shows it. An
+activity with no zone data returns a valid empty payload, not an error.
 
 `compare-activities` and the `view-compare-activities`/`get-compare-activities-data`
 MCP App's summary half share one `buildComparison(a, b)`, so text and app

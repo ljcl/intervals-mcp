@@ -35,9 +35,11 @@ export const powerZoneSet: ZoneSet = {
 export const mockZonesData: ActivityZonesData = {
   activityId: "1234567890",
   name: "Threshold Intervals",
-  date: "2026-07-10T06:12:00Z",
+  // intervals.icu's start_date_local: the athlete's local time, no offset.
+  date: "2026-07-10T06:12:00",
   type: "Run",
   zoneSets: [hrZoneSet, powerZoneSet],
+  hrZoneWarning: null,
 };
 
 export const hrOnlyData: ActivityZonesData = {
@@ -51,4 +53,15 @@ export const emptyZonesData: ActivityZonesData = {
   name: "Manual Yoga Entry",
   type: "Yoga",
   zoneSets: [],
+};
+
+// A run with a working HR strap whose heart rate zones the server dropped:
+// the recorded bounds and zone times disagree. The warning is the string
+// hrZoneMismatchWarning (apps/server/src/activityZones.ts) sends.
+export const hrZoneMismatchData: ActivityZonesData = {
+  ...mockZonesData,
+  name: "Tempo Run",
+  zoneSets: [],
+  hrZoneWarning:
+    "Heart rate zones omitted: recorded bounds (5 zones) do not match the recorded zone times (6 zones).",
 };

@@ -4,6 +4,7 @@ import { expect, waitFor } from "storybook/test";
 import {
   emptyZonesData,
   hrOnlyData,
+  hrZoneMismatchData,
   hrZoneSet,
   mockZonesData,
 } from "./__fixtures__/zones";
@@ -49,8 +50,48 @@ export const HeartRateOnly = meta.story({
   args: { app: null, data: hrOnlyData },
 });
 
+/**
+ * No zone set to chart and no reason from the server. The card says so and
+ * claims nothing about sensors, since the app cannot know about them.
+ */
 export const NoZoneData = meta.story({
   args: { app: null, data: emptyZonesData },
+  play: async ({ canvas }) => {
+    await expect(
+      canvas.getByText("No zone data to show for this activity."),
+    ).toBeVisible();
+    await expect(canvas.queryByText(/sensor/i)).toBeNull();
+  },
+});
+
+/**
+ * Heart rate zones dropped because the recorded bounds and zone times
+ * disagree. The card gives the server's own reason, the same line the text
+ * tools print, not a guess about a missing sensor.
+ */
+export const HeartRateZonesOmitted = meta.story({
+  args: { app: null, data: hrZoneMismatchData },
+  play: async ({ canvas }) => {
+    await expect(
+      canvas.getByText(hrZoneMismatchData.hrZoneWarning!, { exact: false }),
+    ).toBeVisible();
+    await expect(canvas.queryByText(/sensor/i)).toBeNull();
+  },
+});
+
+export const HeartRateZonesOmittedMobile = meta.story({
+  args: { app: null, data: hrZoneMismatchData, mode: "mobile" },
+  globals: {
+    viewport: { value: "claudeIosCard" },
+  },
+  parameters: { layout: "fullscreen" },
+  decorators: [
+    (StoryFn) => (
+      <MobileCardShell>
+        <StoryFn />
+      </MobileCardShell>
+    ),
+  ],
 });
 
 export const Dark = meta.story({

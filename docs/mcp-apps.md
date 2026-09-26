@@ -359,6 +359,13 @@ One activity's time-in-zone distribution (#34). Calls
   sets carry a footnote.
 - Pure logic in `src/normalize.ts` (`buildZoneRows`, `intensitySplit` — zones
   1–2 easy / 3 moderate / 4+ hard, `buildSummaryStats`).
+- The subtitle date is `start_date_local`, a local date-time with no offset.
+  `formatShortDate` reads its leading `YYYY-MM-DD` as written, so the day
+  does not move with the viewer's time zone.
+- With no zone set to chart, `EmptyState` shows `buildEmptyMessage`: the
+  payload's `hrZoneWarning` when the server dropped heart rate zones for a
+  known reason (the same line the text tools print), else a neutral line
+  that names no cause.
 
 ### Fitness Trend
 

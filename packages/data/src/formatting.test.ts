@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   formatClock,
   formatDistance,
@@ -60,11 +60,35 @@ describe("formatShortDate", () => {
     expect(formatShortDate("2025-09-14T07:12:00Z", "full")).toBe("14 Sep 2025");
   });
 
-  it("reads the date in UTC so the label never shifts by timezone", () => {
-    // 23:30Z is the next day in UTC+11 and the previous day in UTC-5.
+  it("reads the day the string names, whatever its offset", () => {
+    // 23:30Z is already 1 Feb in UTC+11, and 08:00+11:00 is still 31 Jan
+    // in UTC. The label keeps the day as written.
     expect(formatShortDate("2026-01-31T23:30:00Z")).toBe("31 Jan");
-    // Date-only ISO strings parse as UTC midnight.
+    expect(formatShortDate("2026-02-01T08:00:00+11:00")).toBe("1 Feb");
     expect(formatShortDate("2026-01-05")).toBe("5 Jan");
+  });
+
+  describe("in a time zone other than UTC", () => {
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    // intervals.icu's start_date_local has no offset. `new Date` reads such
+    // a string as local time, so its UTC day moves with the runtime zone.
+    it.each([
+      // 06:12 in Sydney (UTC+10) is 9 Jul in UTC.
+      ["Australia/Sydney", "2026-07-10T06:12:00"],
+      // 19:30 in Los Angeles (UTC-7) is 11 Jul in UTC.
+      ["America/Los_Angeles", "2026-07-10T19:30:00"],
+    ])(
+      "keeps the local day of a date-time with no offset in %s",
+      (tz, local) => {
+        vi.stubEnv("TZ", tz);
+        // Proves the zone applies: parsed as a Date, the day moves.
+        expect(new Date(local).getUTCDate()).not.toBe(10);
+        expect(formatShortDate(local)).toBe("10 Jul");
+      },
+    );
   });
 });
 
