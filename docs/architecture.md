@@ -210,10 +210,12 @@ describes: the snapshot read and the serialize are both guarded, because a
 logging fault turning a successful call into an error is worse than a missing
 log line. The rolling counters back the authed half of `/health`.
 
-The advertised `logging` capability has no `logging/setLevel` (the
-2026-07-28 revision removed it). The dispatcher's records reach only callers
-whose request carries the `io.modelcontextprotocol/logLevel` envelope key — which is also that revision's MUST-NOT-emit-unrequested gate —
-and `ctx.mcpReq.log` applies their threshold.
+The records stay with the operator: the stderr line and the `/health`
+counters. The server does not advertise the `logging` capability, because
+the 2026-07-28 revision deprecates it (SEP-2577), and a record holds nothing
+the caller does not already know (#72). A request that carries the
+`io.modelcontextprotocol/logLevel` envelope key gets its normal response and
+no `notifications/message`.
 
 ## Progress notifications
 

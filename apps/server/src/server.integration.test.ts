@@ -10,8 +10,8 @@
  *
  * So these drive real requests through the endpoint and assert the JSON that comes back. The
  * suite is deliberately the last piece of epic #284, so it asserts the
- * finished surface — the output schemas, the `logging` capability, and the
- * progress plumbing — rather than being amended three times on the way.
+ * finished surface — the output schemas and the progress plumbing — rather
+ * than being amended three times on the way.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getActivity } from "./intervalsClient";
@@ -58,8 +58,9 @@ describe("server/discover", () => {
       tools: expect.any(Object),
       resources: expect.any(Object),
       prompts: expect.any(Object),
-      logging: expect.any(Object),
     });
+    // Deprecated in this revision (SEP-2577), so not advertised (#72).
+    expect(discover.capabilities).not.toHaveProperty("logging");
   });
 });
 
