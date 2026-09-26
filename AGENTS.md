@@ -128,7 +128,10 @@ breaking them has shipped bugs — do not work around them locally.
   from `fetchClient.ts` only (tool tests mock the client module with bare
   factories, so an import from there would be `undefined` under those
   mocks). Catch blocks and the dispatcher's final catch call it for the
-  text and write the `{ content, isError: true }` literal themselves. Tests
+  text and write the `{ content, isError: true }` literal themselves. A
+  text with no error to translate (the dispatcher's unknown-tool,
+  invalid-arguments and missing-key texts) gets the prefix from
+  `prefixedErrorText` in the same file. Tests
   reject with the `__fixtures__/errors.ts` shapes (`handledRateLimit`,
   `handledNotFound`, `handledSubscriptionRequired`), never a plain
   `Error("404 Not Found")`.

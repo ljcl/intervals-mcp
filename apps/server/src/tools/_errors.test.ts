@@ -6,7 +6,7 @@ import {
 } from "../__fixtures__";
 import { HttpError } from "../fetchClient";
 import { IntervalsApiError } from "../intervalsClient";
-import { toolErrorText } from "./_errors";
+import { prefixedErrorText, toolErrorText } from "./_errors";
 
 describe("toolErrorText", () => {
   beforeEach(() => {
@@ -153,6 +153,14 @@ describe("toolErrorText", () => {
     );
     expect(console.error).toHaveBeenCalledWith(
       expect.stringContaining("Bad Gateway"),
+    );
+  });
+});
+
+describe("prefixedErrorText", () => {
+  it("puts the same prefix in front of a plain message", () => {
+    expect(prefixedErrorText("Unknown tool: not-a-tool")).toBe(
+      "❌ Unknown tool: not-a-tool",
     );
   });
 });

@@ -556,4 +556,19 @@ describe("prompts", () => {
     expect(messages[0]?.content.type).toBe("text");
     expect(messages[0]?.content.text.length).toBeGreaterThan(0);
   });
+
+  it("answers an unknown prompt with Invalid Params (-32602), not Internal Error", async () => {
+    const client = await connectTestClient();
+
+    const { result, error } = await client.send("prompts/get", {
+      name: "no-such-prompt",
+      arguments: {},
+    });
+
+    // The same code resources/read gives an unknown uri: the request was
+    // wrong, not the server.
+    expect(result).toBeUndefined();
+    expect(error?.code).toBe(-32602);
+    expect(error?.message).toBe("Unknown prompt: no-such-prompt");
+  });
 });

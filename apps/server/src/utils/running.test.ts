@@ -302,7 +302,7 @@ describe("assessRunningDynamics", () => {
     expect(rd.vertical_oscillation).toEqual({
       status: "high",
       target: "under 100 mm",
-      message: "high - above the 100 mm target",
+      message: "high - at or above the 100 mm target",
     });
   });
 
@@ -351,6 +351,14 @@ describe("assessRunningDynamics", () => {
       expect(
         assessRunningDynamics(100, null).vertical_oscillation?.status,
       ).toBe("high");
+    });
+
+    it("says 'at or above' for exactly 100 mm, never 'above' a value it equals", () => {
+      expect(assessRunningDynamics(100, null).vertical_oscillation).toEqual({
+        status: "high",
+        target: "under 100 mm",
+        message: "high - at or above the 100 mm target",
+      });
     });
 
     it("treats a ground contact time of exactly 200 ms as within (the range's lower bound is inclusive)", () => {

@@ -32,6 +32,18 @@ export function activityDisplayName(activity: {
 }
 
 /**
+ * A feel value with intervals.icu's scale, so a bare "feel 1" is not read as
+ * the worst. On intervals.icu 1 is "Strong", the strongest feeling, and 5 is
+ * the weakest (docs/api-notes.md). Only the two ends are verified, so the
+ * text names the scale, not a label for each value. The one home for this
+ * text: get-activity and get-running-summary both print it through
+ * `formatLoadLine`.
+ */
+export function formatFeel(feel: number): string {
+  return `feel ${feel} (1 strongest to 5 weakest)`;
+}
+
+/**
  * Format duration in seconds to HH:MM:SS or MM:SS string.
  */
 export function formatDuration(seconds: number | null | undefined): string {

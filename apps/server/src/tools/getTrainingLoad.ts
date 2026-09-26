@@ -275,7 +275,10 @@ export const getTrainingLoadTool = {
       output += `Totals\n`;
       output += `  Runs: ${result.totals.runs}\n`;
       output += `  Distance: ${result.totals.distance_km} km\n`;
-      output += `  Time: ${Math.floor(result.totals.time_hours)}h ${Math.round((result.totals.time_hours % 1) * 60)}m\n`;
+      // From the seconds total, in the same h:mm:ss form as the weekly lines.
+      // Minutes split out of the rounded hours carried the rounding error
+      // (#76).
+      output += `  Time: ${formatDuration(result.totals.time_s)}\n`;
       output += `  Elevation: ${result.totals.elevation_m} m\n`;
       output += `  Load: ${result.totals.load} (${activityTypesIncluded.join(", ") || "none"})\n\n`;
 

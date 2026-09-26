@@ -68,7 +68,7 @@ descriptions.
 | `get-wellness` | Daily wellness (HRV, resting HR, sleep, weight, CTL/ATL/TSB) for a date or range |
 | `get-activity-laps` | Laps of an activity, derived from its intervals, with sport-aware pace/speed, GAP, HR, power, cadence |
 | `get-running-summary` | get-activity's detail fields for a run plus cadence, HR zone, and running-dynamics assessments, and a lap breakdown |
-| `get-running-dynamics` | Ground contact time, vertical oscillation/ratio, step length, stride, and cadence for a run, with VO/GCT target assessments and a per-WORK-interval breakdown |
+| `get-running-dynamics` | Ground contact time, vertical oscillation/ratio, step length, and cadence for a run, with VO/GCT target assessments and a per-WORK-interval breakdown |
 | `get-activity-zones` | Time spent in each HR and power zone for an activity, from the activity's own recorded zone bounds |
 | `compare-activities` | Compare two activities side-by-side: pace, HR, cadence, load, and running dynamics, plus activity2-activity1 differences and an efficiency verdict |
 | `get-hill-analysis` | Climb/descent detection with GAP and early-vs-late climb effort drift |
@@ -109,7 +109,11 @@ from the activity's `gap` field, which intervals.icu reports in m/s, the
 same unit as `average_speed`) are set for Run/TrailRun/VirtualRun only: a
 Walk or Hike gets a cadence but no pace. The text response truncates
 `description` to 200 characters with a "..." marker;
-`structuredContent.description` is always the full text.
+`structuredContent.description` is always the full text. The text prints
+`feel` with its scale, for example "feel 2 (1 strongest to 5 weakest)": on
+intervals.icu 1 is the strongest feeling, so a bare 1 is easy to read as the
+worst. It prints step length but not `stride_m`, which is the same per-step
+distance (see `get-running-dynamics` below).
 
 `get-activity-streams` returns selected streams (`types`, default time,
 distance, heartrate, cadence, velocity_smooth, altitude; also available:
@@ -192,7 +196,12 @@ ground contact time against the shared 100 mm / 200-260 ms targets
 (`status`: `within`/`high`/`low`, plus a human `message` and `target`
 string), and `intervals`, one row per WORK interval (`lap_index`, `label`,
 `distance_km`, `pace_min_per_km`, and the same dynamics with statuses).
-Vertical ratio is reported as a value only, no status. Unlike
+Vertical ratio is reported as a value only, no status. A vertical
+oscillation of exactly 100 mm is `high`, "at or above the 100 mm target".
+`stride_m` is intervals.icu's distance per step, from pace and cadence, not
+a two-step stride; it measures the same thing as `step_length_mm`
+(docs/api-notes.md). So the text prints step length only, and
+`structuredContent` keeps both. Unlike
 `get-running-summary`, a non-step-cadence activity type or one whose device
 recorded no dynamics is not an error: `has_dynamics: false` with an
 explanatory `message` and empty `intervals`. The text response caps the
@@ -438,8 +447,9 @@ and lists the available gear ids and names; a retired gear id is accepted
 with a warning. Gear can be switched but not cleared; intervals.icu ignores
 a null gear id (docs/api-notes.md). Name, description, and RPE writes were
 live-verified 2026-09-25 (docs/api-notes.md); `feel` is 1 to 5 on
-intervals.icu's scale, 1 the strongest feeling and 5 the weakest, but that
-scale was not exercised by the write check and remains an assumption. A
+intervals.icu's scale, 1 the strongest feeling and 5 the weakest. The write
+check did not exercise `feel`, but its scale was verified separately in the
+intervals.icu web UI (docs/api-notes.md). A
 request with nothing left to change after diffing against the
 current activity reports "no change" and sends no PUT. Any field whose
 re-read value does not match what was sent (e.g. gear not applied) adds a

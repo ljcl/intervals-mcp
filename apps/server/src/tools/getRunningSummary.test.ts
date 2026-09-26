@@ -71,7 +71,7 @@ describe("mapRunningSummary", () => {
     expect(summary.cadence_assessment).toBe("moderate - room for improvement");
     expect(summary.dynamics_assessment).toEqual({
       // average_vertical_oscillation 108.36414 -> 108mm, at/above the 100mm target.
-      vertical_oscillation: "high - above the 100 mm target",
+      vertical_oscillation: "high - at or above the 100 mm target",
       // average_stance_time 233.21266 -> 233ms, within 200-260ms.
       ground_contact_time: "good - within the 200-260 ms target range",
     });
@@ -146,7 +146,7 @@ describe("mapRunningSummary", () => {
     expect(summary.laps).toHaveLength(18);
     expect(summary.cadence_assessment).toBe("moderate - room for improvement");
     expect(summary.dynamics_assessment).toEqual({
-      vertical_oscillation: "high - above the 100 mm target",
+      vertical_oscillation: "high - at or above the 100 mm target",
       ground_contact_time: "good - within the 200-260 ms target range",
     });
     expect(summary.hr_zone_summary?.zones.map((z) => z.percent)).toEqual([
@@ -188,6 +188,18 @@ describe("formatRunningSummaryText", () => {
     expect(text).toContain("(16 more)");
     expect(text).not.toContain("🏃");
     expect(text).not.toContain("Strava");
+  });
+
+  it("prints feel with intervals.icu's scale, so 1 does not read as the worst", () => {
+    const summary = mapRunningSummary(
+      { ...runActivityWithIntervals, feel: 1 },
+      sportSettingsRun,
+    );
+    const loadLine = formatRunningSummaryText(summary)
+      .split("\n")
+      .find((l) => l.startsWith("Load:"));
+
+    expect(loadLine).toMatch(/, feel 1 \(1 strongest to 5 weakest\)$/);
   });
 
   it("renders an open-ended top zone bound as N+ rather than N-null", () => {

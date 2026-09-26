@@ -289,6 +289,9 @@ function assessVerticalOscillation(
   voMm: number | null,
 ): DynamicsMetricAssessment | null {
   if (voMm == null) return null;
+  // The target is strictly under 100 mm, so exactly 100 is high, and the
+  // message says "at or above", not "above". Callers pass the rounded value
+  // they print, so the status and the printed number agree.
   return voMm < 100
     ? {
         status: "within",
@@ -298,7 +301,7 @@ function assessVerticalOscillation(
     : {
         status: "high",
         target: VO_TARGET,
-        message: "high - above the 100 mm target",
+        message: "high - at or above the 100 mm target",
       };
 }
 
@@ -348,6 +351,13 @@ export interface RunningDynamicsAvg {
   vertical_oscillation_mm: number | null;
   vertical_ratio_pct: number | null;
   step_length_mm: number | null;
+  /**
+   * intervals.icu's `average_stride`: distance per step, not per two-step
+   * stride. intervals.icu derives it from speed and step cadence, so it
+   * measures the same thing as `step_length_mm`, the device's own value
+   * (docs/api-notes.md). The output schema keeps it; the text responses
+   * print step length only, so the two do not read as two measures.
+   */
   stride_m: number | null;
 }
 

@@ -104,6 +104,25 @@ describe("get-training-load execute", () => {
     expect(text).toContain("Runs: 3");
   });
 
+  it("prints total time from the seconds total, in the weekly lines' h:mm:ss form", async () => {
+    // One 1:00:17 run in each of four weeks. Each week rounds to 1.00 h, so
+    // minutes split out of the rounded hours printed "4h 0m" for 4:01:08.
+    mockedListActivities.mockResolvedValueOnce(
+      [0, 7, 14, 21].map((daysAgo) => run(daysAgo, { moving_time: 3617 })),
+    );
+    mockedWellness.mockResolvedValueOnce([]);
+
+    const result = await getTrainingLoadTool.execute(
+      DEFAULT_INPUT,
+      "test-token",
+    );
+
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain("  Time: 4:01:08\n");
+    expect(text).toContain("1 runs, 10 km, 1:00:17, load 60");
+    expect(text).not.toMatch(/\d+h \d+m/);
+  });
+
   it("filters weekly volume/warnings to run types but sums load over every type (whole-body)", async () => {
     mockedListActivities.mockResolvedValueOnce([
       run(2),

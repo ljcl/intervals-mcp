@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { buildZoneSet, mapIntervalsZones } from "../activityZones";
-import { formatDuration, round, STRAVA_STUB_NOTE } from "../formatters";
+import {
+  formatDuration,
+  formatFeel,
+  round,
+  STRAVA_STUB_NOTE,
+} from "../formatters";
 import {
   getActivity as getActivityClient,
   getSportSettings,
@@ -351,7 +356,7 @@ export function formatLoadLine(
   if (d.decoupling_pct != null) parts.push(`decoupling ${d.decoupling_pct}%`);
   if (d.efficiency_factor != null) parts.push(`EF ${d.efficiency_factor}`);
   if (d.rpe != null) parts.push(`RPE ${d.rpe}`);
-  if (d.feel != null) parts.push(`feel ${d.feel}`);
+  if (d.feel != null) parts.push(formatFeel(d.feel));
   if (parts.length === 0) return null;
   return `Load: ${parts.join(", ")}`;
 }
@@ -365,8 +370,9 @@ function formatDynamicsLine(d: ActivityDetail): string | null {
     parts.push(`VO ${dyn.vertical_oscillation_mm} mm`);
   if (dyn.vertical_ratio_pct != null)
     parts.push(`VR ${dyn.vertical_ratio_pct}%`);
+  // No "stride": stride_m is distance per step too (see RunningDynamicsAvg),
+  // so printing both reads as two different measures.
   if (dyn.step_length_mm != null) parts.push(`step ${dyn.step_length_mm} mm`);
-  if (dyn.stride_m != null) parts.push(`stride ${dyn.stride_m} m`);
   if (parts.length === 0) return null;
   return `Dynamics: ${parts.join(", ")}`;
 }
