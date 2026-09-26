@@ -177,6 +177,15 @@ cannot skew the verdict. With no elevation stream, grades are all zero and GAP
 collapses onto raw pace: the response warns rather than presenting an
 uncorrected verdict as corrected.
 
+**Running efficiency has one definition.** `speedEfficiencyFactor` in
+`aerobicAnalysis.ts`: metres per minute per heartbeat, so higher is better
+and a slower pace at a proportionally lower heart rate scores the same.
+`get-aerobic-analysis` applies it to stream averages, `compare-activities`
+to each run's grade-adjusted speed (or moving speed, on both sides, when
+either run has no `gap`). `compare-activities` once divided pace by heart
+rate instead, where a slower pace and a lower heart rate add up rather than
+cancel, and called an unchanged runner "declined" (#42).
+
 **Taper solving.** `fitnessTrend.ts` owns every CTL/ATL/TSB number, including
 the forward-looking ones — `plannedLoads` projects a prescribed load instead of
 rest, and `solveTaperPlan` finds the weekly load taper that lands on a target

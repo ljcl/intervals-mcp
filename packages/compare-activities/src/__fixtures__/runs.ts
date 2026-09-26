@@ -151,12 +151,15 @@ export const compareData: CompareData = {
     cadence_spm: 6,
     elevation_gain_m: -2,
   },
+  // What the server's buildComparison gives for these two sides: both carry
+  // grade-adjusted pace, so 5:14 at 156 bpm and 4:58 at 164 bpm cover about
+  // the same ground per beat. Faster, but not more efficient.
   efficiency: {
-    activity_1: 3.372,
-    activity_2: 3.055,
-    change_percent: -9.4,
-    interpretation: "improved",
-    note: "Lower efficiency number = faster pace at same heart rate = better fitness",
+    activity_1: 1.225,
+    activity_2: 1.228,
+    change_percent: 0.2,
+    interpretation: "unchanged",
+    note: "Efficiency factor in metres per minute per heartbeat, from grade-adjusted pace (intervals.icu gap) on both runs. Higher is better. Same unit as the pace-basis efficiency factor of get-aerobic-analysis.",
   },
 };
 

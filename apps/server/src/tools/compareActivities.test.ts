@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { handledNotFound, handledRateLimit } from "../__fixtures__";
+import { speedEfficiencyFactor } from "../aerobicAnalysis";
 import { getActivity, type IntervalsActivity } from "../intervalsClient";
 import { buildComparison, compareActivitiesTool } from "./compareActivities";
 import { CompareActivitiesOutputSchema } from "./outputs";
@@ -73,10 +74,12 @@ describe("buildComparison", () => {
   it("computes the efficiency analysis when pace and HR exist on both sides", () => {
     const result = buildComparison(fakeActivity({}), faster);
 
-    expect(result.efficiency).not.toBeNull();
-    // Faster pace at only slightly higher HR, so efficiency improved.
-    expect(result.efficiency?.change_percent).toBeLessThan(-3);
-    expect(result.efficiency?.interpretation).toBe("improved");
+    // 6.7% faster at 6.7% higher HR: both runs cover 1.25 m/min per beat,
+    // so the second run was harder, not more efficient.
+    expect(result.efficiency?.activity_1).toBe(1.25);
+    expect(result.efficiency?.activity_2).toBe(1.25);
+    expect(result.efficiency?.change_percent).toBeCloseTo(0, 5);
+    expect(result.efficiency?.interpretation).toBe("unchanged");
   });
 
   it("skips pace, HR, and efficiency when the data is missing", () => {
@@ -137,6 +140,93 @@ describe("buildComparison", () => {
   });
 });
 
+describe("buildComparison efficiency factor", () => {
+  /** A 10 km run at `secPerKm` pace and `hr` average heart rate. */
+  const run = (
+    secPerKm: number,
+    hr: number,
+    over: Partial<IntervalsActivity> = {},
+  ) =>
+    fakeActivity({
+      distance: 10000,
+      moving_time: secPerKm * 10,
+      average_heartrate: hr,
+      ...over,
+    });
+
+  it("calls the same speed per beat unchanged, however pace and heart rate split it", () => {
+    // #42's worked example: 5:00/km at 150 and 6:00/km at 125 both cover
+    // 1.333 m/min per beat (750 beats per km). Pace divided by heart rate
+    // called this "+44%, declined".
+    const result = buildComparison(run(300, 150), run(360, 125));
+
+    expect(result.efficiency?.activity_1).toBe(1.333);
+    expect(result.efficiency?.activity_2).toBe(1.333);
+    expect(result.efficiency?.change_percent).toBeCloseTo(0, 5);
+    expect(result.efficiency?.interpretation).toBe("unchanged");
+  });
+
+  it("calls a faster pace at the same heart rate improved, as a positive change", () => {
+    const result = buildComparison(run(330, 150), run(300, 150));
+
+    expect(result.efficiency).toMatchObject({
+      activity_1: 1.212,
+      activity_2: 1.333,
+      change_percent: 10,
+      interpretation: "improved",
+    });
+  });
+
+  it("calls the same pace at a higher heart rate declined", () => {
+    const result = buildComparison(run(300, 150), run(300, 165));
+
+    expect(result.efficiency?.change_percent).toBe(-9.1);
+    expect(result.efficiency?.interpretation).toBe("declined");
+  });
+
+  it("uses get-aerobic-analysis's efficiency factor, not a copy of it", () => {
+    const result = buildComparison(run(300, 150), run(330, 140));
+
+    expect(result.efficiency?.activity_2).toBeCloseTo(
+      speedEfficiencyFactor(10000 / 3300, 140),
+      3,
+    );
+  });
+
+  it("uses grade-adjusted speed when both runs have it, and says so", () => {
+    // The hilly run is 30 s/km slower on the clock, but the same 5:00/km
+    // grade-adjusted, at the same heart rate: the same fitness.
+    const flat = run(300, 150, { gap: 10 / 3 });
+    const hilly = run(330, 150, { gap: 10 / 3 });
+
+    const result = buildComparison(flat, hilly);
+
+    expect(result.efficiency?.change_percent).toBeCloseTo(0, 5);
+    expect(result.efficiency?.interpretation).toBe("unchanged");
+    expect(result.efficiency?.note).toContain(
+      "grade-adjusted pace (intervals.icu gap) on both runs",
+    );
+  });
+
+  it("uses moving speed on both sides when one run has no gap, and says so", () => {
+    const flat = run(300, 150);
+    const hilly = run(330, 150, { gap: 10 / 3 });
+
+    const result = buildComparison(flat, hilly);
+
+    // One basis for both sides: the hills now count against the hilly run.
+    expect(result.efficiency?.change_percent).toBe(-9.1);
+    expect(result.efficiency?.interpretation).toBe("declined");
+    expect(result.efficiency?.note).toContain("from moving pace");
+  });
+
+  it("omits efficiency rather than dividing by a zero heart rate", () => {
+    const result = buildComparison(run(300, 0), run(300, 150));
+
+    expect(result.efficiency).toBeNull();
+  });
+});
+
 describe("compare-activities execute", () => {
   beforeEach(() => {
     mockedGetActivity.mockReset();
@@ -163,8 +253,14 @@ describe("compare-activities execute", () => {
     expect(text).toContain("faster");
     const structured = result.structuredContent as {
       differences: { avg_hr: number };
+      efficiency: { activity_1: number; interpretation: string };
     };
     expect(structured.differences.avg_hr).toBe(10);
+    // The app's tile reads the same efficiency object the text prints.
+    expect(text).toContain(
+      `Activity 1: ${structured.efficiency.activity_1} m/min per beat`,
+    );
+    expect(text).toContain(`(${structured.efficiency.interpretation})`);
   });
 
   it("maps a 404 to a not-found message", async () => {

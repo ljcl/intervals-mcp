@@ -100,6 +100,20 @@ export const MIN_MOVING_SECONDS = 600;
 /** Coggan normalized power rolling-window length. */
 const NP_WINDOW_SECONDS = 30;
 
+/**
+ * Running efficiency factor: metres per minute per heartbeat, so higher is
+ * better (more ground covered for each beat). The one home for the speed
+ * basis convention, shared by {@link computeAerobicAnalysis} and
+ * `compare-activities`: a slower pace at a proportionally lower heart rate
+ * scores the same, which pace divided by heart rate did not.
+ */
+export function speedEfficiencyFactor(
+  metersPerSecond: number,
+  heartrateBpm: number,
+): number {
+  return (metersPerSecond * 60) / heartrateBpm;
+}
+
 /** Interpretation bands for the decoupling headline. */
 export function interpretDecoupling(pct: number): string {
   if (pct < 0) {
@@ -279,11 +293,10 @@ export function computeAerobicAnalysis(
   const whole = summarizeHalf(analysed);
   const normalizedOutput =
     basis === "power" ? normalizedPower(analysed) : whole.avgOutput;
-  // Running EF is conventionally metres-per-MINUTE per beat.
   const efficiencyFactor =
     basis === "power"
       ? normalizedOutput / whole.avgHeartrate
-      : (normalizedOutput * 60) / whole.avgHeartrate;
+      : speedEfficiencyFactor(normalizedOutput, whole.avgHeartrate);
 
   const thresholdPower = options.thresholdPower ?? null;
   const intensityFactor =

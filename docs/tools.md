@@ -175,8 +175,17 @@ device recorded them. Differences are derived from each activity's raw
 distance/time/HR/cadence, never from the rounded or formatted per-side
 fields; the pace delta renders as `pace_delta_min_per_km` (signed `m:ss`)
 plus `pace_delta_sec_per_km` (the underlying signed seconds) and
-`pace_delta_interpretation`. A non-running activity on either
-side degrades to a warning rather than failing the call. The app's stream
+`pace_delta_interpretation`. The `efficiency` block is the running efficiency
+factor, metres per minute per heartbeat (higher is better), from the same
+`speedEfficiencyFactor` (`aerobicAnalysis.ts`) that `get-aerobic-analysis`
+reports on the pace basis. It uses grade-adjusted speed (intervals.icu's
+`gap`) when both runs have it and moving speed on both sides otherwise, and
+`note` names which. A change beyond ±3% reads `improved` or `declined`. It
+was pace divided by heart rate before #42, which added a slower pace and a
+lower heart rate together instead of cancelling them. The block is
+independent of each side's `efficiency_factor` (intervals.icu's own field).
+A non-running activity on either side degrades to a warning rather than
+failing the call. The app's stream
 overlay (`get-activity-streams-raw`) is intervals.icu-backed (see the
 activity-chart entry below).
 
