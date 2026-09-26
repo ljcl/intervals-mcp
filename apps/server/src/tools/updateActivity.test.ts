@@ -163,7 +163,114 @@ describe("updateActivityTool.execute", () => {
     });
   });
 
-  it("replaces the description by default", async () => {
+  it("refuses a description with no descriptionMode that would drop the existing text, with no gear read and no PUT", async () => {
+    mockedGetActivity.mockResolvedValueOnce(
+      activity({ description: "Race notes: 10k PB, windy" }),
+    );
+    // Everything an overwrite would need, so only the guard can stop it.
+    mockedListGear.mockResolvedValueOnce(gearList);
+    mockedPut.mockResolvedValueOnce(
+      activity({ description: "Felt strong", gear: { id: "g1", name: null } }),
+    );
+    mockedGetActivity.mockResolvedValueOnce(
+      activity({ description: "Felt strong", gear: { id: "g1", name: null } }),
+    );
+
+    const result = await updateActivityTool.execute(
+      { id: "555", description: "Felt strong", gearId: "g1" } as never,
+      "test-token",
+    );
+
+    expect(result.isError).toBe(true);
+    const text = result.content[0]?.text ?? "";
+    expect(text.startsWith("❌")).toBe(true);
+    expect(text).toContain("Activity 555 was not updated");
+    expect(text).toContain('25 chars ("Race notes: 10k PB, windy")');
+    expect(text).toContain('"append"');
+    expect(text).toContain('"replace"');
+    expect(mockedGetActivity).toHaveBeenCalledTimes(1);
+    expect(mockedListGear).not.toHaveBeenCalled();
+    expect(mockedPut).not.toHaveBeenCalled();
+  });
+
+  it("caps the refusal's preview of a long existing description at 120 characters", async () => {
+    const existing = "y".repeat(300);
+    mockedGetActivity.mockResolvedValueOnce(
+      activity({ description: existing }),
+    );
+
+    const result = await updateActivityTool.execute(
+      { id: "555", description: "Felt strong" } as never,
+      "test-token",
+    );
+
+    expect(result.isError).toBe(true);
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain(`300 chars ("${"y".repeat(120)}...")`);
+    expect(text).not.toContain("y".repeat(121));
+    expect(mockedPut).not.toHaveBeenCalled();
+  });
+
+  it("refuses an empty description with no descriptionMode when the activity has one, so a clear needs replace", async () => {
+    mockedGetActivity.mockResolvedValueOnce(
+      activity({ description: "Existing notes" }),
+    );
+    mockedPut.mockResolvedValueOnce(activity({ description: null }));
+    mockedGetActivity.mockResolvedValueOnce(activity({ description: null }));
+
+    const result = await updateActivityTool.execute(
+      { id: "555", description: "" } as never,
+      "test-token",
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain('14 chars ("Existing notes")');
+    expect(mockedPut).not.toHaveBeenCalled();
+  });
+
+  it("writes a description with no descriptionMode when the existing one is whitespace-only", async () => {
+    mockedGetActivity.mockResolvedValueOnce(activity({ description: "  \n" }));
+    mockedPut.mockResolvedValueOnce(activity({ description: "Felt strong" }));
+    mockedGetActivity.mockResolvedValueOnce(
+      activity({ description: "Felt strong" }),
+    );
+
+    const result = await updateActivityTool.execute(
+      { id: "555", description: "Felt strong" } as never,
+      "test-token",
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(mockedPut).toHaveBeenCalledWith("test-token", "555", {
+      description: "Felt strong",
+    });
+    expect(result.content[0]?.text).not.toContain("Removed");
+  });
+
+  it("writes a description with no descriptionMode when it already contains the existing text", async () => {
+    mockedGetActivity.mockResolvedValueOnce(
+      activity({ description: "Existing notes\n" }),
+    );
+    mockedPut.mockResolvedValueOnce(
+      activity({ description: "Existing notes\n\nFelt strong" }),
+    );
+    mockedGetActivity.mockResolvedValueOnce(
+      activity({ description: "Existing notes\n\nFelt strong" }),
+    );
+
+    const result = await updateActivityTool.execute(
+      { id: "555", description: "Existing notes\n\nFelt strong" } as never,
+      "test-token",
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(mockedPut).toHaveBeenCalledWith("test-token", "555", {
+      description: "Existing notes\n\nFelt strong",
+    });
+    expect(result.content[0]?.text).not.toContain("Removed");
+  });
+
+  it("replaces the description when descriptionMode is replace, and the text reply quotes the removed text", async () => {
     mockedGetActivity.mockResolvedValueOnce(
       activity({ description: "Existing notes" }),
     );
@@ -173,7 +280,11 @@ describe("updateActivityTool.execute", () => {
     );
 
     const result = await updateActivityTool.execute(
-      { id: "555", description: "New text" } as never,
+      {
+        id: "555",
+        description: "New text",
+        descriptionMode: "replace",
+      } as never,
       "test-token",
     );
 
@@ -181,6 +292,71 @@ describe("updateActivityTool.execute", () => {
       description: "New text",
     });
     expect(result.isError).toBeUndefined();
+    expect(result.content[0]?.text).toContain(
+      'description to 8 chars ("New text"). Removed the previous description: 14 chars ("Existing notes").',
+    );
+    // structuredContent still carries the full before value.
+    const structured = ActivityWriteOutputSchema.parse(
+      result.structuredContent,
+    );
+    expect(structured.changes).toEqual([
+      { field: "description", before: "Existing notes", after: "New text" },
+    ]);
+  });
+
+  it("caps the removed text in the reply at 120 characters", async () => {
+    const existing = "z".repeat(200);
+    mockedGetActivity.mockResolvedValueOnce(
+      activity({ description: existing }),
+    );
+    mockedPut.mockResolvedValueOnce(activity({ description: "New text" }));
+    mockedGetActivity.mockResolvedValueOnce(
+      activity({ description: "New text" }),
+    );
+
+    const result = await updateActivityTool.execute(
+      {
+        id: "555",
+        description: "New text",
+        descriptionMode: "replace",
+      } as never,
+      "test-token",
+    );
+
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain(
+      `Removed the previous description: 200 chars ("${"z".repeat(120)}...").`,
+    );
+    expect(text).not.toContain("z".repeat(121));
+    const structured = ActivityWriteOutputSchema.parse(
+      result.structuredContent,
+    );
+    expect(structured.changes[0]?.before).toBe(existing);
+  });
+
+  it("does not report removed text when the re-read still shows the existing description", async () => {
+    mockedGetActivity.mockResolvedValueOnce(
+      activity({ description: "Existing notes" }),
+    );
+    mockedPut.mockResolvedValueOnce(
+      activity({ description: "Existing notes" }),
+    );
+    mockedGetActivity.mockResolvedValueOnce(
+      activity({ description: "Existing notes" }),
+    );
+
+    const result = await updateActivityTool.execute(
+      {
+        id: "555",
+        description: "New text",
+        descriptionMode: "replace",
+      } as never,
+      "test-token",
+    );
+
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain("description was not applied as sent");
+    expect(text).not.toContain("Removed");
   });
 
   it("appends to the existing description when descriptionMode is append", async () => {
@@ -194,7 +370,7 @@ describe("updateActivityTool.execute", () => {
       activity({ description: "Existing notes\n\nNew line" }),
     );
 
-    await updateActivityTool.execute(
+    const result = await updateActivityTool.execute(
       {
         id: "555",
         description: "New line",
@@ -206,6 +382,8 @@ describe("updateActivityTool.execute", () => {
     expect(mockedPut).toHaveBeenCalledWith("test-token", "555", {
       description: "Existing notes\n\nNew line",
     });
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0]?.text).not.toContain("Removed");
   });
 
   it("clears the description with an explicit empty string in replace mode", async () => {
@@ -216,7 +394,7 @@ describe("updateActivityTool.execute", () => {
     mockedGetActivity.mockResolvedValueOnce(activity({ description: null }));
 
     const result = await updateActivityTool.execute(
-      { id: "555", description: "" } as never,
+      { id: "555", description: "", descriptionMode: "replace" } as never,
       "test-token",
     );
 
@@ -224,6 +402,9 @@ describe("updateActivityTool.execute", () => {
       description: "",
     });
     expect(result.isError).toBeUndefined();
+    expect(result.content[0]?.text).toContain(
+      'description to nothing. Removed the previous description: 14 chars ("Existing notes").',
+    );
   });
 
   it("treats null and empty-string description as equal, sending no PUT", async () => {

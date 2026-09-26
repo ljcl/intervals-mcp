@@ -13,6 +13,7 @@ import {
   composeDescription,
   describeGearOptions,
   diffActivityWrite,
+  discardedDescription,
   findGear,
   isGearRetired,
 } from "../utils/activityWrite";
@@ -35,6 +36,8 @@ stays.
 
 Notes:
 - Give at least one of name, description, gearId, rpe or feel.
+- With no descriptionMode, a call that would overwrite an existing
+  description fails and writes nothing.
 - It reads the activity fresh, sends only the fields that differ in one PUT
   (never retried), then re-reads and echoes before and after values.
 - gearId is checked against the current gear list: an unknown id fails and
@@ -129,21 +132,24 @@ function formatChangeValue(value: string | number | null): string {
 }
 
 /**
- * The description's full text is already in `structuredContent.changes`; the
- * text response shows only its length and a short preview so a long note
- * does not dominate the summary line.
+ * Shows a description as its length and a short preview, so a long note
+ * does not dominate a one-line reply. The full text of a written change is
+ * already in `structuredContent.changes`.
  */
+function formatDescriptionPreview(text: string): string {
+  const preview =
+    text.length > DESCRIPTION_PREVIEW_CHARS
+      ? `${text.slice(0, DESCRIPTION_PREVIEW_CHARS)}...`
+      : text;
+  return `${text.length} chars ("${preview}")`;
+}
+
 function formatChangeSummary(change: ActivityWriteChange): string {
   if (change.field !== "description") {
     return `${change.field} to ${formatChangeValue(change.after)}`;
   }
   if (change.after === null) return "description to nothing";
-  const text = String(change.after);
-  const preview =
-    text.length > DESCRIPTION_PREVIEW_CHARS
-      ? `${text.slice(0, DESCRIPTION_PREVIEW_CHARS)}...`
-      : text;
-  return `description to ${text.length} chars ("${preview}")`;
+  return `description to ${formatDescriptionPreview(String(change.after))}`;
 }
 
 /**
@@ -209,6 +215,25 @@ export const updateActivityTool = {
       // reported as not-found rather than as an unknown-gear error.
       const before = await fetchActivity(apiKey, id, { skipCache: true });
       const beforeFields = toFields(before);
+
+      // With no descriptionMode, never drop text already on the activity
+      // (race notes, a coach's comment, a plan's workout summary). Checked
+      // before the gear read, so a refused call sends no further request.
+      const unconfirmedLoss =
+        newDescription !== undefined && descriptionMode === undefined
+          ? discardedDescription(beforeFields.description, newDescription)
+          : null;
+      if (unconfirmedLoss !== null) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `❌ Activity ${id} was not updated. It already has a description that the new text would overwrite: ${formatDescriptionPreview(unconfirmedLoss)}. Set descriptionMode to "append" to keep it and add the new text below, or to "replace" to overwrite it.`,
+            },
+          ],
+          isError: true,
+        };
+      }
 
       let gearWarning: string | undefined;
       let gearName: string | null | undefined;
@@ -328,6 +353,20 @@ export const updateActivityTool = {
       warnOnSchemaDrift(name, ActivityWriteOutputSchema, structured);
 
       const summary = changes.map(formatChangeSummary).join(", ");
+      // Some hosts drop structuredContent, and with it changes[].before, so
+      // text an explicit replace dropped is quoted here too. Compared with
+      // the re-read, so a replace that did not apply claims no loss.
+      const removed =
+        patch.description !== undefined
+          ? discardedDescription(
+              beforeFields.description,
+              afterFields.description,
+            )
+          : null;
+      const removedText =
+        removed !== null
+          ? ` Removed the previous description: ${formatDescriptionPreview(removed)}.`
+          : "";
       const warningText =
         warnings.length > 0 ? ` Warning: ${warnings.join(" ")}` : "";
 
@@ -335,7 +374,7 @@ export const updateActivityTool = {
         content: [
           {
             type: "text" as const,
-            text: `Updated activity ${id} ("${after.name ?? id}"): ${summary}.${warningText}`,
+            text: `Updated activity ${id} ("${after.name ?? id}"): ${summary}.${removedText}${warningText}`,
           },
         ],
         structuredContent: structured,

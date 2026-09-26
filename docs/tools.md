@@ -427,9 +427,17 @@ reported both ways: `time_s` (seconds, matching `units.time`) and
 cache), writes only the fields that differ from the current value in a
 single PUT, never retried even on a 5xx, then does a fresh re-read and
 reports `changes: [{ field, before, after }]` for exactly the fields that
-were sent. `descriptionMode` defaults to `replace` (overwrites); `append`
-keeps the existing text and adds the new text below it, separated by a
-blank line. `gearId` is validated against `list-gear`: an unknown id fails
+were sent. `descriptionMode` is `replace` (overwrites) or `append` (keeps
+the existing text and adds the new text below it, separated by a blank
+line). With no mode it replaces, but only when no existing text is lost:
+the activity has no description (or only whitespace), or the new text
+already contains it (compared trimmed). Otherwise the call fails before
+the gear check and sends no PUT. The error gives the existing
+description's length and first 120 characters, and asks for `append` or
+`replace`. When an explicit `replace` drops existing text, the text reply
+also quotes the removed text (length and first 120 characters), because
+some hosts drop `structuredContent`, where `changes[].before` has it in
+full. `gearId` is validated against `list-gear`: an unknown id fails
 and lists the available gear ids and names; a retired gear id is accepted
 with a warning. Gear can be switched but not cleared; intervals.icu ignores
 a null gear id (docs/api-notes.md). Name, description, and RPE writes were

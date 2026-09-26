@@ -284,19 +284,27 @@ not have to handle "absent" as a third case.
 input schema (`superRefine`, `tools/updateActivity.ts`) rejects a `name`
 that is empty or whitespace-only, and rejects `descriptionMode` without
 `description`; `append` mode additionally rejects an empty or
-whitespace-only `description` (`replace` mode's default, an empty string, is
-the explicit way to clear a description instead; `null` and `""` are
+whitespace-only `description` (an empty string in `replace` mode is the
+explicit way to clear a description instead; `null` and `""` are
 treated as equal when diffing, so clearing an already-empty description
 sends no PUT). `gearId` is checked against a `skipCache: true` `list-gear`
 read, so gear added moments earlier is accepted; an unknown id fails and
 lists the available gear ids and names, while a retired id is accepted with
 a warning. The activity itself is also read fresh (`skipCache: true`)
 before gear validation, so a missing activity reports not-found rather than
-an unrelated gear error. `utils/activityWrite.ts` holds the pure, unit-tested
-pieces this depends on: `buildActivityPatch` (keeps only fields that differ
-from the current value), `diffActivityWrite` (before/after echoes plus a
-warning when a fresh re-read does not match what was sent), and
-`composeDescription` (replace/append).
+an unrelated gear error. Between those two reads, a `description` with no
+`descriptionMode` is refused, with no further request, when it would drop
+existing text: the activity's description is not blank, and the new text
+does not contain it (compared trimmed). The error previews that text and
+asks for `append` or `replace`. An explicit `replace` still writes, and its
+text reply quotes the text it removed, because some hosts drop
+`structuredContent` and with it `changes[].before` (#49).
+`utils/activityWrite.ts` holds the pure, unit-tested pieces this depends
+on: `buildActivityPatch` (keeps only fields that differ from the current
+value), `diffActivityWrite` (before/after echoes plus a warning when a
+fresh re-read does not match what was sent), `composeDescription`
+(replace/append), and `discardedDescription` (the existing text a write
+would drop, shared by that refusal and the reply).
 
 **A write that may have landed is never silently treated as failed.**
 `update-activity` (`tools/updateActivity.ts`) can tell a definite rejection

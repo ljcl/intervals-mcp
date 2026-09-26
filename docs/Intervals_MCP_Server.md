@@ -139,6 +139,12 @@ description is kept. (This is also the `annotate-last-run` prompt.)
 - **Gear cannot be cleared, only changed.** `update-activity` can switch an
   activity's gear to a different item, but setting it to "none" does
   nothing: intervals.icu silently ignores a null gear id.
+- **A description needs a mode when one already exists.** If the activity
+  already has a description, and the new text does not already contain it,
+  an `update-activity` call with no `descriptionMode` writes nothing. The
+  error shows the existing text's length and first 120 characters. Resend
+  with `append` to keep it and add below, or `replace` to overwrite it.
+  After a `replace` that drops text, the reply quotes what was removed.
 - **`update-activity` write semantics.** It reads the activity fresh, sends
   only the fields that actually changed, and reports exactly what changed
   with before/after values. If the write times out or something fails
