@@ -19,19 +19,17 @@ import {
 const name = "get-athlete-stats";
 
 const description = `
-Run totals for the athlete: this week, the last 4 weeks, this month, and
-year-to-date, aggregated from intervals.icu activities (Run, TrailRun,
-VirtualRun). No inputs. Use it for a quick "how much have I been running"
-check, or to answer weekly/monthly volume and pace questions without
-aggregating list-activities results by hand.
+Returns run totals for this week, the last 4 weeks, this month and year to
+date: run count, distance, moving time, elevation gain, training load and
+average pace. No inputs. Use it for "how much have I been running?" instead
+of adding up list-activities.
 
-Each bucket reports run count, distance, moving time, elevation gain,
-training load, and average pace computed from total distance / total moving
-time.
+For weekly volume trends and injury-risk warnings, use get-training-load.
 
 Notes:
-- The week starts Monday in the server's configured time zone
-- "This month" is the local calendar month; YTD is from 1 January local
+- Counts Run, TrailRun and VirtualRun only.
+- Weeks start on Monday in the server's time zone; the month and year are
+  local calendar periods.
 `;
 
 const GetAthleteStatsInputSchema = z.object({});

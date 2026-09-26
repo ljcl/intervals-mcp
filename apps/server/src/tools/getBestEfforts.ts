@@ -22,17 +22,20 @@ const TIME_BASIS_NOTE =
   "Best times come from the recorded time stream (a moving-time style curve from intervals.icu's pace curves), not elapsed time.";
 
 const description = `
-Best efforts at standard running distances, from intervals.icu's pace curves. Use it to answer "what's my fastest 5K/10K/etc" or to check a personal best against a recent race, without scanning activities by hand.
+Returns best times at standard running distances (400 m to marathon by
+default) from intervals.icu's pace curves, over all time, the last year, the
+last 90 days or a custom range. Use it for "what is my fastest 5K?" or to
+check a personal best against a recent race.
 
-Parameters:
-- distances (optional): which distances to report (default: 400m, 1km, 5km, 10km, half marathon, marathon)
-- window (optional): "all", "1y", "90d", or a custom "YYYY-MM-DD..YYYY-MM-DD" range (default: 1y)
-- topN (optional): top N distinct activities per distance, 1-5 (default 1); above 1 also fetches per-activity pace curves for the window plus one name lookup per winning activity (at most 30)
+For predicted race times or goal pacing, use get-race-prediction.
 
 Notes:
-- ${TIME_BASIS_NOTE}
-- Ranks are computed locally from the pace curve data; intervals.icu does not return a rank
-- A distance with no curve point within 2% (or 50m, whichever is larger) of the target is omitted and listed in "missing", rather than reporting the nearest unrelated distance (e.g. a short window's only 5K would never be reported as its marathon time)
+- Times come from the recorded time stream (moving-time style), not elapsed
+  time. Ranks are computed here; intervals.icu does not return them.
+- A distance with no curve point within 2% (or 50 m) of it is listed in
+  missing, not replaced by a nearby distance.
+- topN above 1 costs extra requests: per-activity pace curves, plus a name
+  lookup for each winning activity.
 `;
 
 /** Standard distances, in metres. `half marathon`/`marathon` are matched

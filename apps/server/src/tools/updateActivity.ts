@@ -28,28 +28,21 @@ import {
 const name = "update-activity";
 
 const description = `
-Updates an intervals.icu activity's name, description, gear, RPE, or feel.
+Updates one intervals.icu activity's name, description, gear, RPE or feel.
+It is the only tool that writes: confirm the change with the athlete first.
+To add a note, use descriptionMode "append" so the existing description
+stays.
 
-Reads the activity fresh, writes only the fields that actually differ from
-the current value in a single PUT (never retried, even on a 5xx), then
-re-reads fresh and echoes before/after values for every field that changed.
-
-Parameters:
-- id (required): the intervals.icu activity id, exactly as returned by list-activities
-- name (optional): new title; must not be empty or whitespace-only
-- description (optional): text to set; descriptionMode controls how. In replace mode (the default), an empty string is the explicit way to clear the description. In append mode, an empty or whitespace-only value is rejected
-- descriptionMode (optional): "replace" (default) overwrites the existing description; "append" keeps it and adds the new text below it, separated by a blank line. Requires description to also be set
-- gearId (optional): gear id to assign, validated fresh against list-gear; an unknown id fails and lists the available gear ids and names; a retired gear id is accepted with a warning
-- rpe (optional): session RPE, integer 1 to 10, maps to icu_rpe
-- feel (optional): integer 1 to 5; on intervals.icu's scale 1 is the strongest feeling ("Strong") and 5 the weakest
-
-At least one of name, description, gearId, rpe, or feel is required.
-Gear can be switched but not cleared: intervals.icu ignores a null gear id.
-
-If the write itself times out, or anything fails after it was sent (the
-confirming re-read, for instance), the activity may already have been
-updated: the response says so and asks to check with get-activity before
-sending the same update again, rather than retrying blindly.
+Notes:
+- Give at least one of name, description, gearId, rpe or feel.
+- It reads the activity fresh, sends only the fields that differ in one PUT
+  (never retried), then re-reads and echoes before and after values.
+- gearId is checked against the current gear list: an unknown id fails and
+  lists the valid ones, a retired id is accepted with a warning. Gear can be
+  switched but not cleared.
+- If the write times out, or anything fails after it was sent, the activity
+  may already be updated. The response says so: check with get-activity
+  before sending the same update again.
 `;
 
 const inputSchema = z

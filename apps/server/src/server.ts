@@ -414,7 +414,9 @@ function buildToolDefs(): ToolDef[] {
     };
     const def: ToolDef = {
       name: t.name,
-      description: t.description,
+      // The tool files keep descriptions in template literals that open and
+      // close on a newline; the host should get the text alone.
+      description: t.description.trim(),
       inputSchema: t.inputSchema ? toInputSchema(t.inputSchema) : EMPTY_SCHEMA,
     };
     if (t.annotations) def.annotations = t.annotations;

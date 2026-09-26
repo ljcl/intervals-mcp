@@ -30,29 +30,22 @@ const name = "get-running-dynamics";
 const MAX_INTERVAL_LINES = 20;
 
 const description = `
-Returns one intervals.icu activity's running dynamics (ground contact time, vertical oscillation, vertical ratio, step length, stride, cadence): activity averages with VO/GCT target assessments, plus a per-WORK-interval breakdown.
+Returns one activity's running dynamics: ground contact time (GCT), vertical
+oscillation (VO), vertical ratio, step length, stride and cadence. It gives
+activity averages with a within/high/low status against common targets (VO
+under 100 mm, GCT 200 to 260 ms), plus a row per WORK interval.
 
-A thin wrapper over get-activity's mapper (one activity fetch, with
-icu_intervals) that surfaces the same running-dynamics fields as
-get-activity/get-running-summary but adds a per-interval view and explicit
-status codes ("within"/"high"/"low") for the two metrics with a common
-target: VO under 100 mm, GCT 200-260 ms. Vertical ratio is reported as a
-value only (no status computed; under ~8% is commonly cited as efficient,
-e.g. Garmin's vertical-ratio colour gauge).
-
-Parameters:
-- id (required): the intervals.icu activity id, exactly as returned by list-activities (e.g. "i189807578")
-- includeIntervals (optional, default true): include the per-WORK-interval rows; set false for just the activity averages
+get-activity and get-running-summary already show the activity averages. Use
+this tool for the per-interval rows and the status, for example to see
+whether form held up across repeats.
 
 Notes:
-- Any activity type is accepted; a non-step-cadence type (not Run,
-  TrailRun, VirtualRun, Walk or Hike) or one whose device recorded no
-  dynamics returns has_dynamics: false with an explanatory message, not an
-  error
-- Per-interval rows cover WORK intervals only, in icu_intervals order; the
-  text response caps the list at 20 lines, structuredContent.intervals
-  always has the full list
-- One API call (get-activity with intervals: true); no streams
+- Vertical ratio is a value only, with no status (under about 8% is commonly
+  called efficient).
+- Accepts any activity type. A type without step cadence (not Run, TrailRun,
+  VirtualRun, Walk or Hike), or a device that recorded no dynamics, returns
+  has_dynamics: false with a message, not an error.
+- The text lists at most 20 intervals; structuredContent.intervals has all.
 `;
 
 const inputSchema = z.object({

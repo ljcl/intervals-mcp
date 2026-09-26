@@ -26,28 +26,23 @@ import { ActivityDetailOutputSchema, warnOnSchemaDrift } from "./outputs";
 const name = "get-activity";
 
 const description = `
-Returns one intervals.icu activity in detail (metrics, load, HR zones, running dynamics, intervals); use after list-activities.
+Returns one intervals.icu activity in detail: core metrics, training load, HR
+time in zone, running-dynamics averages, each WORK/RECOVERY interval (pace,
+HR, cadence, dynamics), gear id and description. Works for any sport; use it
+after list-activities.
 
-Returns core metrics, training load, HR zone time-in-zone, running dynamics
-(for Run/TrailRun/VirtualRun/Walk/Hike activities with device support), the
-WORK/RECOVERY interval breakdown, gear id (and name when the activity
-payload carries one), and the description (truncated in the text response,
-full in structured content), all with units.
-
-Parameters:
-- id (required): the intervals.icu activity id, exactly as returned by list-activities (e.g. "i189807578")
-- includeIntervals (optional): include the interval breakdown; default true
+For a run, prefer get-running-summary: the same detail plus cadence, HR zone
+and dynamics assessments and a lap table, in one call. Use get-activity-laps
+for lap GAP, power or elevation, and the analysis tools (get-split-analysis,
+get-hill-analysis, get-interval-analysis, get-aerobic-analysis) for deeper
+questions.
 
 Notes:
-- An activity synced from Strava (source STRAVA) is a stub: intervals.icu has
-  no detail for it through this API
-- HR zones come from the activity's own recorded zone bounds when present
-  (any activity type); otherwise falls back to the athlete's Run sport
-  settings group (types Run, VirtualRun, TrailRun) when that group covers
-  the activity's type. hr_zones is an empty array when neither source is
-  usable, rather than failing the call
-- The text response truncates description to 200 characters with a "..."
-  marker; structuredContent.description is always the full text
+- HR zones use the activity's own recorded bounds, else the Run sport
+  settings when they cover this type; hr_zones is empty when neither applies.
+- The text cuts the description at 200 characters; structuredContent has it
+  in full.
+- An activity synced from Strava (source STRAVA) is a stub with no detail.
 `;
 
 const inputSchema = z.object({

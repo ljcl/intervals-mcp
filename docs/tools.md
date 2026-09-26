@@ -17,6 +17,30 @@ identity, so renames or schema reshapes re-prompt every user. See
 > streams and activity data through the same adapter; the retired Strava
 > client has been deleted from the codebase (see AGENTS.md).
 
+## Writing tool descriptions
+
+A tool's `description` is what a model reads to choose the tool, so every
+description has the same three parts:
+
+1. What the tool does and when to use it, with an example request where it
+   helps ("how was my run?").
+2. When not to use it, and which tool to use instead. Tools that overlap
+   name each other: `get-running-summary` says it already includes the laps
+   and HR zone time, so `get-activity-laps` and `get-activity-zones` are
+   skipped.
+3. Only behaviour the schema does not show: defaults that depend on other
+   data, errors, gaps, caveats.
+
+Never add a "Parameters:" section. Each field's `.describe()` text already
+reaches the host in the input schema, and those texts are part of
+`tool-surface.lock.json`, so they cannot be reworded casually. Leave out
+developer notes, repo paths and dated examples. Keep a description under
+1,800 characters (about 1,200 is typical): Claude Code cuts it at 2,048, and
+the model never sees the rest (#39). `server.integration.test.ts` checks the
+cap over `tools/list`, rejects a "Parameters:" section, and checks that every
+tool a description names exists. `buildToolDefs` trims the text, so the
+template literals in the tool files can open and close on a newline.
+
 ## intervals.icu tools
 
 | Tool | Description |

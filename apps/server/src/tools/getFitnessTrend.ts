@@ -20,65 +20,32 @@ import { FitnessTrendOutputSchema, warnOnSchemaDrift } from "./outputs";
 const name = "get-fitness-trend";
 
 const description = `
-Computes the fitness/fatigue/form trend (CTL, ATL, TSB) from intervals.icu.
+Returns fitness (CTL, a 42-day load average), fatigue (ATL, 7-day) and form
+(TSB, CTL minus ATL: negative is carrying fatigue, positive is fresh) day by
+day, and can project them forward or solve a taper. Use it for "am I fresh
+for Saturday?", "when does my form turn positive?", taper planning, or
+whether a block is digging too deep.
 
-Two ways to compute it:
-- Whole-body (default): reads CTL/ATL straight from intervals.icu's own daily
-  wellness record, the same numbers the intervals.icu fitness page shows,
-  never recomputed locally (a custom CTL/ATL time constant configured on the
-  account is honoured automatically this way). Training load per day is
-  whatever intervals.icu itself counted across all logged activity types
-  (pace/HR/power load blended per its sport settings). Some activity types
-  may count toward fatigue (ATL) only, not fitness (CTL), depending on this
-  athlete's intervals.icu settings; see the response note. A day with no
-  recorded CTL/ATL is a gap, not a zero-load day, and is reported as such.
-- Run-only (runOnly: true): intervals.icu has no per-sport CTL/ATL, so this is
-  computed locally from the daily sum of icu_training_load across
-  Run/TrailRun/VirtualRun activities, zero-seeded well before the requested
-  window so the 42-day CTL average has settled. Labeled "computed" and will
-  not exactly match the whole-body numbers or intervals.icu's own fitness page.
-
-- CTL ("fitness"): 42-day exponentially weighted average of daily load
-- ATL ("fatigue"): 7-day exponentially weighted average of daily load
-- TSB ("form"): CTL − ATL. Negative = carrying fatigue, positive = fresh
-
-Use Cases:
-- "When does my form (TSB) return positive, and does it align with my next quality day?"
-- Judge whether a training block is digging too deep (sustained very negative TSB)
-- Compare whole-body fitness/fatigue against a running-only view of the same window
-- Plan a taper: "my race is on 2026-09-13, what should the next three weeks
-  look like so I arrive at TSB +10 instead of overcooked or detrained?"
-  (pass targetDate, and targetTsb if you want something other than +10)
-- Project forward with a specific plan instead of assuming rest (plannedLoads)
-
-Parameters:
-- days (optional): lookback window to display (default 90, max 365)
-- runOnly (optional, default false): compute CTL/ATL/TSB from running load
-  only instead of intervals.icu's whole-body wellness CTL/ATL
-- projectDays (optional, max 60): also project TSB forward, answering "when
-  do I return to fresh if I rest?" (default: 0, or when plannedLoads is given
-  and this is omitted, the number of days out to its latest date, capped at 60)
-- plannedLoads (optional): future training load to project with instead of
-  assuming rest. Array of { date: YYYY-MM-DD, load }, dates after today;
-  any date inside the projection window that is not listed counts as rest
-  (zero load); an entry on or before today, or beyond the projection, is
-  ignored and named in a warning
-- targetDate (optional, YYYY-MM-DD): solve a load taper landing on targetTsb
-  on this date. Returns a week-by-week load plan (each week stepped down
-  toward the date, compared to what the athlete has recently been averaging)
-  plus the daily CTL/ATL/TSB it produces. Reduced load, not rest
-- targetTsb (optional, default 10): form to arrive at on targetDate. +5 to +15
-  is the usual race window; higher means fresher but more fitness shed
+get-wellness and get-training-load also report CTL/ATL/TSB, but only as
+recorded values, with no projection or taper. Use view-fitness-trend to show
+this as a chart.
 
 Notes:
-- A taper that even complete rest cannot reach in time is reported as such,
-  with the form rest would actually land on; the tool does not invent a plan
-- The taper plan is prescriptive load, not recorded load: it says how much
-  training load to spend, not which sessions to spend it in
-- Each value is stamped with the local calendar date it was computed for;
-  as_of names the most recent date CTL/ATL is actually known for, which for
-  the whole-body path can be a day or more behind today if wellness has not
-  synced yet
+- By default CTL/ATL come straight from intervals.icu's daily wellness
+  record, matching its fitness page, and cover every activity type (some
+  may count toward fatigue only, per the athlete's settings; the response
+  notes this). A day with no record is a gap, not a zero-load day.
+- runOnly computes CTL/ATL locally from Run, TrailRun and VirtualRun load
+  only. It is labelled "computed" and will not match the whole-body numbers.
+- targetDate returns a week-by-week training-load plan (reduced load, not
+  rest) that lands on targetTsb, plus the daily CTL/ATL/TSB it produces. It
+  says how much load to spend, not which sessions. If even complete rest
+  cannot reach the target in time, the response says so and gives the form
+  rest would reach instead of inventing a plan.
+- Projections assume rest unless plannedLoads is given. plannedLoads entries
+  on or before today, or past the projection, are ignored with a warning.
+- as_of is the latest date CTL/ATL is known for; on the default path it can
+  lag today until wellness syncs.
 `;
 
 const plannedLoadEntrySchema = z.object({

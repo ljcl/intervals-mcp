@@ -13,18 +13,14 @@ import { GearListOutputSchema, warnOnSchemaDrift } from "./outputs";
 const name = "list-gear";
 
 const description = `
-Lists the athlete's intervals.icu gear (shoes) with mileage and retirement status.
-
-Returns each item's total distance and activity count, plus any usage
-reminders, so a caller can see which pair of shoes is racking up mileage
-without opening the intervals.icu Gear page.
-
-Parameters:
-- includeRetired (optional): include retired gear. Default false
+Lists the athlete's intervals.icu gear (shoes) with total distance, activity
+count, retirement status and any usage reminders. Use it to see which shoes
+are racking up mileage, or to find a gear id for update-activity.
 
 Notes:
-- distance_km includes any starting distance entered in the UI when the item
-  was added, not just distance logged through activities
+- Retired gear is left out unless includeRetired is true.
+- distance_km includes any starting distance entered when the item was added,
+  not only distance from activities.
 `;
 
 const inputSchema = z.object({

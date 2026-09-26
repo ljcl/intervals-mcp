@@ -24,38 +24,22 @@ import { SplitAnalysisOutputSchema, warnOnSchemaDrift } from "./outputs";
 const name = "get-split-analysis";
 
 const description = `
-Breaks one intervals.icu activity into even 1 km splits and says whether it was positive-, negative-, or evenly split, corrected for terrain.
+Breaks one run into even 1 km splits (moving pace, grade-adjusted pace,
+elevation, grade, HR, cadence, power) and gives a two-halves pacing verdict
+twice, on the clock and grade-adjusted, with how many percentage points of
+the change the terrain explains. Use it for "did I fade?" and pacing
+discipline.
 
-Device laps are whatever the athlete pressed the button for; this tool ignores
-them and bins the streams into fixed 1 km splits, reporting per split:
-- Moving pace and grade-adjusted (GAP, flat-equivalent) pace, both per km
-- Elevation change and average grade
-- Average HR, cadence, and power where recorded
-
-The headline is the two-halves verdict, stated twice: once on the clock and
-once grade-adjusted. A hilly back half slows raw pace with no fade at all, and
-a course that flattens out hides real fade, so the verdict names which of the
-two happened, and reports how many percentage points of the raw change the
-terrain accounts for.
-
-Use Cases:
-- "Did I positive-split the long run, and how much of the slowdown was the hills?"
-- Check race pacing discipline against a target even split
-- Find the split where a workout came apart, rather than the lap where it was noticed
-
-Parameters:
-- id (required): the intervals.icu activity id, exactly as returned by list-activities (e.g. "i189807578")
+It ignores device laps: use get-activity-laps for those and
+get-interval-analysis for workout reps. For climbs, use get-hill-analysis.
 
 Notes:
-- Halves are cut at the exact midpoint of recorded distance, not by grouping
-  splits, so an odd split count cannot skew the comparison
-- Stopped time is excluded from pace via the derived moving stream; a
-  trailing partial split is marked and left out of fastest/slowest
-- Grade prefers intervals.icu's smoothed grade stream; when neither that nor
-  an altitude stream is available the terrain correction is unavailable and
-  the response says so rather than implying an uncorrected verdict is corrected
-- An activity with no recorded GPS/data streams (e.g. a manual entry or a
-  non-GPS session) returns an error rather than an empty analysis
+- Halves are cut at the exact midpoint of recorded distance.
+- Stopped time is excluded from pace. A trailing partial split is marked and
+  left out of fastest and slowest.
+- Grade comes from intervals.icu's smoothed grade, else altitude. With
+  neither, the terrain correction is unavailable and the response says so.
+- An activity with no recorded streams (a manual entry) returns an error.
 `;
 
 const inputSchema = z.object({

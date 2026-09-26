@@ -15,25 +15,24 @@ import { ActivityLapsOutputSchema, warnOnSchemaDrift } from "./outputs";
 const name = "get-activity-laps";
 
 const description = `
-Returns one intervals.icu activity's laps, derived from its interval breakdown; use after list-activities or get-activity.
+Returns one intervals.icu activity's laps: distance, time, pace and
+grade-adjusted pace (runs) or speed (other sports), HR, cadence, power,
+elevation gain and gradient for each lap. Works for any sport.
 
-intervals.icu has no separate lap list: its intervals (icu_intervals) are
-what this tool reports as laps, and usually mirror the device's own laps,
-typically one WORK interval per lap, sometimes with a short RECOVERY
-inserted between them. Works for any sport. Runs report pace (min/km) and
-grade-adjusted pace (GAP); other distance sports report speed (km/h).
-Cadence is spm (doubled from strides) for Run/TrailRun/VirtualRun/Walk/Hike,
-rpm otherwise.
-
-Parameters:
-- id (required): the intervals.icu activity id, exactly as returned by list-activities (e.g. "i189807578")
+For a run, get-running-summary already includes this lap table with the rest
+of the summary, and get-activity lists the same intervals with pace and HR.
+To judge a workout's reps, use get-interval-analysis; for even 1 km splits,
+get-split-analysis.
 
 Notes:
-- The interval count can differ from the device's recorded lap count
-  (device_lap_count, from icu_lap_count) when intervals.icu edited or split
-  laps (intervals_edited, from icu_intervals_edited); both are in the
-  response, and the text flags it when either applies
-- An activity with no intervals returns a valid payload with lap_count: 0
+- intervals.icu has no separate lap list: these are its intervals
+  (icu_intervals), which usually match the device laps, sometimes with a
+  short RECOVERY between them.
+- The count can differ from the device lap count (device_lap_count) when laps
+  were edited in intervals.icu; the text says so.
+- Cadence is steps per minute for Run, TrailRun, VirtualRun, Walk and Hike,
+  rpm otherwise.
+- An activity with no intervals gives a valid payload with lap_count: 0.
 `;
 
 const inputSchema = z.object({
