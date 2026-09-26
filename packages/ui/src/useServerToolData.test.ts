@@ -1,4 +1,5 @@
 import { type App } from "@modelcontextprotocol/ext-apps";
+import { act } from "react";
 import { describe, expect, it } from "vitest";
 import { renderHook } from "./renderHook";
 import { useServerToolData } from "./useServerToolData";
@@ -31,8 +32,13 @@ function fakeApp(
 
 const textResult = (text: string) => ({ content: [{ type: "text", text }] });
 
-/** Let queued microtasks and the hook's state updates settle. */
-const flush = () => new Promise((r) => setTimeout(r, 0));
+/**
+ * Let queued microtasks and the hook's state updates settle. It waits inside
+ * `act`, so React commits those updates before the test reads the hook. A
+ * bare timer tick raced React's own scheduler, and on a slow CI runner the
+ * tick won and the test read stale state.
+ */
+const flush = () => act(() => new Promise<void>((r) => setTimeout(r, 0)));
 
 describe("useServerToolData", () => {
   it("starts loading and resolves with the parsed payload", async () => {
