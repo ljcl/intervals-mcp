@@ -5,6 +5,7 @@ import {
   composeDescription,
   describeGearOptions,
   diffActivityWrite,
+  discardedDescription,
   findGear,
   isGearRetired,
 } from "./activityWrite";
@@ -26,6 +27,32 @@ describe("composeDescription", () => {
 
   it("returns incoming alone when existing is whitespace only", () => {
     expect(composeDescription("   ", "new", "append")).toBe("new");
+  });
+});
+
+describe("discardedDescription", () => {
+  it("returns the existing text when the new text does not contain it", () => {
+    expect(discardedDescription("old notes", "new")).toBe("old notes");
+  });
+
+  it("returns the existing text when the new value clears it", () => {
+    expect(discardedDescription("old notes", "")).toBe("old notes");
+    expect(discardedDescription("old notes", null)).toBe("old notes");
+  });
+
+  it("returns null when there is no existing text to lose", () => {
+    expect(discardedDescription(null, "new")).toBeNull();
+    expect(discardedDescription(undefined, "new")).toBeNull();
+    expect(discardedDescription("", "new")).toBeNull();
+  });
+
+  it("treats a whitespace-only existing description as empty", () => {
+    expect(discardedDescription("  \n ", "new")).toBeNull();
+  });
+
+  it("returns null when the new text already contains the existing text, compared trimmed", () => {
+    expect(discardedDescription("old notes\n", "old notes\n\nnew")).toBeNull();
+    expect(discardedDescription("old notes", "old notes")).toBeNull();
   });
 });
 

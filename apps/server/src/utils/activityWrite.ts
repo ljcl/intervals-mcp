@@ -25,6 +25,19 @@ export function composeDescription(
 }
 
 /**
+ * The existing description text that writing `next` would lose, or `null`
+ * when nothing is lost: the existing text is empty or whitespace-only, or
+ * `next` already contains it (compared trimmed).
+ */
+export function discardedDescription(
+  existing: string | null | undefined,
+  next: string | null | undefined,
+): string | null {
+  if (!existing || existing.trim() === "") return null;
+  return (next ?? "").includes(existing.trim()) ? null : existing;
+}
+
+/**
  * True when intervals.icu's `retired` field represents an actual
  * retirement. The OpenAPI spec types it as a string (a retirement date), but
  * a boolean is accepted defensively too (see `IntervalsGearSchema`);
