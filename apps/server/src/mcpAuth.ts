@@ -79,7 +79,7 @@ export function warnIfMcpUnprotected(): void {
   if (!process.env.MCP_AUTH_TOKEN && process.env.PUBLIC_URL) {
     console.error(
       "WARNING: PUBLIC_URL is set but MCP_AUTH_TOKEN is not. /mcp is " +
-        "unauthenticated — anyone who discovers the URL can read your " +
+        "unauthenticated, so anyone who discovers the URL can read your " +
         "intervals.icu data and modify activities. Set MCP_AUTH_TOKEN and " +
         'add an "Authorization: Bearer <token>" header to your MCP client ' +
         "config.",
