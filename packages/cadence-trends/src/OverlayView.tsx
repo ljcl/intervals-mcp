@@ -173,6 +173,11 @@ export function OverlayView({
     const state = streams.get(id);
     return state == null || state.loading;
   });
+  // The latest progress line of the first selected run that is still loading.
+  const progress =
+    [...selectedRunIds]
+      .map((id) => streams.get(id))
+      .find((state) => state?.loading && state.progress)?.progress ?? null;
 
   if (selectedRunIds.size === 0) {
     return (
@@ -193,7 +198,7 @@ export function OverlayView({
   // Nothing to draw yet — replace the chart rather than framing empty axes.
   if (runs.length === 0 && isLoading) {
     return (
-      <LoadingState label="Loading stream data">
+      <LoadingState label="Loading stream data" progress={progress}>
         <Skeleton variant="chart" />
       </LoadingState>
     );
@@ -205,7 +210,7 @@ export function OverlayView({
   return (
     <div>
       {isLoading && (
-        <LoadingState label="Loading stream data">
+        <LoadingState label="Loading stream data" progress={progress}>
           {/* Visible echo of the status label; the region announces once. */}
           <div className={styles.loading} aria-hidden="true">
             Loading stream data...

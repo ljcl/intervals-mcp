@@ -88,7 +88,11 @@ export function App({
   const otherEntry = fetcher.entries.get(otherScope);
   const data: FitnessTrendData | null =
     scope === initialScope ? initialData : (otherEntry?.data ?? null);
-  const otherLoading = scope === otherScope && !otherEntry?.data;
+  // Read the entry's own state. "No data yet" is not loading: a failed fetch
+  // has no data either, and reading it as loading kept the skeleton up
+  // forever. No entry at all means the request effect has not run yet.
+  const otherLoading =
+    scope === otherScope && (!otherEntry || otherEntry.loading);
   const otherError = scope === otherScope ? (otherEntry?.error ?? null) : null;
   const retryOther = useCallback(
     () => fetcher.retry(otherScope),
@@ -151,7 +155,10 @@ export function App({
         <span className={styles.sourceNote}>{data.warnings.join(" ")}</span>
       )}
       {otherLoading ? (
-        <LoadingState label="Loading fitness trend">
+        <LoadingState
+          label="Loading fitness trend"
+          progress={otherEntry?.progress}
+        >
           <Skeleton variant="bar" />
           <Skeleton variant="chart" />
         </LoadingState>

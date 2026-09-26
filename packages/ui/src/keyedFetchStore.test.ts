@@ -1,18 +1,25 @@
 import { describe, expect, it, vi } from "vitest";
 import { KeyedFetchStore } from "./keyedFetchStore";
 
-/** A fetcher whose per-key promises resolve or reject on command. */
+/**
+ * A fetcher whose per-key promises resolve, reject, or report progress on
+ * command.
+ */
 function deferredFetcher() {
   const pending = new Map<
     string,
-    { resolve: (value: string) => void; reject: (err: Error) => void }
+    {
+      resolve: (value: string) => void;
+      reject: (err: Error) => void;
+      onProgress: (message: string) => void;
+    }
   >();
   const calls: string[] = [];
 
-  const fetcher = (key: string) =>
+  const fetcher = (key: string, onProgress: (message: string) => void) =>
     new Promise<string>((resolve, reject) => {
       calls.push(key);
-      pending.set(key, { resolve, reject });
+      pending.set(key, { resolve, reject, onProgress });
     });
 
   return {
@@ -21,6 +28,8 @@ function deferredFetcher() {
     resolve: (key: string, value: string) => pending.get(key)?.resolve(value),
     reject: (key: string, message: string) =>
       pending.get(key)?.reject(new Error(message)),
+    progress: (key: string, message: string) =>
+      pending.get(key)?.onProgress(message),
   };
 }
 
@@ -37,6 +46,7 @@ describe("KeyedFetchStore", () => {
       data: null,
       loading: true,
       error: null,
+      progress: null,
     });
 
     resolve("42", "payload");
@@ -46,6 +56,7 @@ describe("KeyedFetchStore", () => {
       data: "payload",
       loading: false,
       error: null,
+      progress: null,
     });
     expect(calls).toEqual(["42"]);
   });
@@ -85,6 +96,7 @@ describe("KeyedFetchStore", () => {
       data: null,
       loading: false,
       error: "Error: network down",
+      progress: null,
     });
 
     // The unbounded-refetch bug: the failure itself changed the state that
@@ -134,6 +146,61 @@ describe("KeyedFetchStore", () => {
 
     expect(store.getSnapshot().get("1")?.data).toBe("one");
     expect(store.getSnapshot().get("2")?.error).toBe("Error: gone");
+  });
+
+  it("records a progress message against its own key only (#55)", () => {
+    const { fetcher, progress } = deferredFetcher();
+    const store = new KeyedFetchStore(fetcher);
+
+    store.request("1");
+    store.request("2");
+    progress("1", "Listed 200 activities");
+
+    expect(store.getSnapshot().get("1")).toEqual({
+      data: null,
+      loading: true,
+      error: null,
+      progress: "Listed 200 activities",
+    });
+    expect(store.getSnapshot().get("2")?.progress).toBeNull();
+  });
+
+  it("drops the progress line when a fetch fails, and a retry starts from none", async () => {
+    const { fetcher, progress, reject } = deferredFetcher();
+    const store = new KeyedFetchStore(fetcher);
+
+    store.request("42");
+    progress("42", "Listed 200 activities");
+    reject("42", "Request timed out");
+    await flush();
+    expect(store.getSnapshot().get("42")?.progress).toBeNull();
+
+    // The retry has reported nothing yet, so the failed attempt's last line
+    // would describe work that is not happening.
+    store.retry("42");
+    expect(store.getSnapshot().get("42")?.loading).toBe(true);
+    expect(store.getSnapshot().get("42")?.progress).toBeNull();
+  });
+
+  it("ignores a progress message that lands after the fetch settled", async () => {
+    const { fetcher, progress, resolve } = deferredFetcher();
+    const store = new KeyedFetchStore(fetcher);
+
+    store.request("42");
+    resolve("42", "payload");
+    await flush();
+    const settled = store.getSnapshot();
+
+    progress("42", "Listed 200 activities");
+
+    // A late message must not turn a loaded key back into a loading one.
+    expect(store.getSnapshot()).toBe(settled);
+    expect(settled.get("42")).toEqual({
+      data: "payload",
+      loading: false,
+      error: null,
+      progress: null,
+    });
   });
 
   it("notifies subscribers and hands out a fresh snapshot each change", async () => {

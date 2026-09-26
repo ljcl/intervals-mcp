@@ -3,10 +3,21 @@ export interface KeyedFetchState<T> {
   data: T | null;
   loading: boolean;
   error: string | null;
+  /**
+   * Latest progress message for this key's fetch, or null when none has
+   * arrived. Only ever set while `loading`.
+   */
+  progress: string | null;
 }
 
-/** Loads one key's payload, rejecting on any failure. */
-export type KeyedFetch<T> = (key: string) => Promise<T>;
+/**
+ * Loads one key's payload, rejecting on any failure. `onProgress` records a
+ * progress message against that key.
+ */
+export type KeyedFetch<T> = (
+  key: string,
+  onProgress: (message: string) => void,
+) => Promise<T>;
 
 /**
  * The keyed fetch state machine behind `useServerToolFetcher`, deliberately
@@ -51,12 +62,23 @@ export class KeyedFetchStore<T> {
   };
 
   private async run(key: string): Promise<void> {
-    this.set(key, { data: null, loading: true, error: null });
+    // A retry starts from no progress rather than the stale message of the
+    // attempt that failed.
+    this.set(key, { data: null, loading: true, error: null, progress: null });
     try {
-      const data = await this.fetcher(key);
-      this.set(key, { data, loading: false, error: null });
+      const data = await this.fetcher(key, (progress) => {
+        const entry = this.entries.get(key);
+        // A late message must not touch a key that has already settled.
+        if (entry?.loading) this.set(key, { ...entry, progress });
+      });
+      this.set(key, { data, loading: false, error: null, progress: null });
     } catch (err) {
-      this.set(key, { data: null, loading: false, error: String(err) });
+      this.set(key, {
+        data: null,
+        loading: false,
+        error: String(err),
+        progress: null,
+      });
     }
   }
 

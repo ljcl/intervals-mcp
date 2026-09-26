@@ -34,6 +34,42 @@ const toggleApp = {
   getHostCapabilities: () => undefined,
 } as unknown as ReturnType<typeof useApp>["app"];
 
+type CallServerTool = NonNullable<
+  ReturnType<typeof useApp>["app"]
+>["callServerTool"];
+
+/**
+ * `toggleApp`, except its first call rejects the way a host timeout does.
+ * The story resets it before each run, so the switch always fails first and
+ * only the retry gets through.
+ */
+let flakyCalls = 0;
+const flakyApp = {
+  callServerTool: async (...call: Parameters<CallServerTool>) => {
+    flakyCalls += 1;
+    if (flakyCalls === 1) {
+      throw new Error("MCP error -32001: Request timed out");
+    }
+    return toggleApp!.callServerTool(...call);
+  },
+  getHostCapabilities: () => undefined,
+} as unknown as ReturnType<typeof useApp>["app"];
+
+/**
+ * A fake host app whose call is still running: the server has sent one
+ * progress message and no answer yet.
+ */
+const slowApp = {
+  callServerTool: (
+    _params: Parameters<CallServerTool>[0],
+    options?: Parameters<CallServerTool>[1],
+  ) => {
+    options?.onprogress?.({ progress: 1, message: "Listed 200 activities" });
+    return new Promise(() => {});
+  },
+  getHostCapabilities: () => undefined,
+} as unknown as ReturnType<typeof useApp>["app"];
+
 /**
  * Ninety days of build ending deep in fatigue, with a three-week taper solved
  * to land on form +12 on race day — the dashed continuation and the plan list
@@ -117,6 +153,73 @@ export const Switching = meta.story({
       expect(canvas.getByText(/From intervals.icu/)).toBeVisible(),
     );
     await expect(canvas.getByText(/Plan to/)).toBeVisible();
+  },
+});
+
+/**
+ * The other scope fails to load (#55). The card shows the error and a retry
+ * instead of an endless skeleton, and the retry calls the tool again.
+ */
+export const SwitchingFails = meta.story({
+  args: {
+    app: flakyApp,
+    data: mockFitnessTrendData,
+    baseArgs: mockBaseArgs,
+    initialRunOnly: false,
+  },
+  beforeEach: () => {
+    flakyCalls = 0;
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("button", { name: "Runs only" }));
+
+    await waitFor(() =>
+      expect(canvas.getByRole("alert")).toHaveTextContent(/Request timed out/),
+    );
+    await expect(canvas.queryByRole("status")).toBeNull();
+
+    await userEvent.click(canvas.getByRole("button", { name: "Try again" }));
+    await waitFor(() =>
+      expect(canvas.getByText(/Computed locally/)).toBeVisible(),
+    );
+    await expect(flakyCalls).toBe(2);
+  },
+});
+
+export const SwitchingFailsMobile = SwitchingFails.extend({
+  args: { mode: "mobile" },
+  globals: {
+    viewport: { value: "claudeIosCard" },
+  },
+  parameters: { layout: "fullscreen" },
+  decorators: [
+    (StoryFn) => (
+      <MobileCardShell>
+        <StoryFn />
+      </MobileCardShell>
+    ),
+  ],
+});
+
+/**
+ * The other scope is slow to load. The skeleton shows the server's latest
+ * progress line, so the wait says what is happening.
+ */
+export const SwitchingSlow = meta.story({
+  args: {
+    app: slowApp,
+    data: mockFitnessTrendData,
+    baseArgs: mockBaseArgs,
+    initialRunOnly: false,
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("button", { name: "Runs only" }));
+
+    await waitFor(() =>
+      expect(canvas.getByRole("status")).toHaveTextContent(
+        "Listed 200 activities",
+      ),
+    );
   },
 });
 

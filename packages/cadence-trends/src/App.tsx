@@ -106,6 +106,7 @@ export function App({ app, data, mode = "desktop" }: AppProps) {
           : null,
         loading: entry.loading,
         error: entry.error,
+        progress: entry.progress,
       });
     }
     return map;

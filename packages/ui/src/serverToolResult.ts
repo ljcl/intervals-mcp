@@ -1,6 +1,7 @@
 import { type App } from "@modelcontextprotocol/ext-apps";
 
 type ServerToolResult = Awaited<ReturnType<App["callServerTool"]>>;
+type ServerToolCallOptions = NonNullable<Parameters<App["callServerTool"]>[1]>;
 
 /** Either the app-data payload, or the message to put in front of the user. */
 export type ParsedToolResult<T> =
@@ -39,4 +40,23 @@ export function parseTextContent<T>(
     }
   }
   return { ok: false, error: `Failed to parse ${toolName} response` };
+}
+
+/**
+ * The call options every app-data tool call passes. Shared by
+ * `useServerToolData` and `useServerToolFetcher`, so a slow call gets the
+ * same treatment in both. `resetTimeoutOnProgress` restarts the host's
+ * request timeout on every progress notification, and each notification's
+ * message goes to `onMessage`. A notification without a message only resets
+ * the timeout. It must not blank the line the user is reading.
+ */
+export function progressCallOptions(
+  onMessage: (message: string) => void,
+): ServerToolCallOptions {
+  return {
+    resetTimeoutOnProgress: true,
+    onprogress: ({ message }) => {
+      if (message) onMessage(message);
+    },
+  };
 }
