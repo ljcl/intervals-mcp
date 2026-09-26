@@ -101,6 +101,7 @@ function halfOut(half: AerobicAnalysis["firstHalf"], basis: "pace" | "power") {
 
 export const getAerobicAnalysisTool = {
   name,
+  title: "Aerobic analysis",
   description,
   inputSchema,
   annotations: READ_ONLY,

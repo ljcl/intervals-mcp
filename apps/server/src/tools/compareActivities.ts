@@ -265,6 +265,7 @@ export function buildComparison(
 
 export const compareActivitiesTool = {
   name,
+  title: "Compare two activities",
   description,
   inputSchema,
   annotations: READ_ONLY,

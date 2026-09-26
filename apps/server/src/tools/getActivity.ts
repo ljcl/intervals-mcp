@@ -451,6 +451,7 @@ export function formatActivityDetailText(d: ActivityDetail): string {
 
 export const getActivityTool = {
   name,
+  title: "Activity details",
   description,
   inputSchema,
   annotations: READ_ONLY,

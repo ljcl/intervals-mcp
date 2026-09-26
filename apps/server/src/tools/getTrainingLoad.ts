@@ -84,6 +84,7 @@ const localDay = (isoDateTime: string) => isoDateTime.split("T")[0]!;
 
 export const getTrainingLoadTool = {
   name,
+  title: "Training load",
   description,
   inputSchema,
   annotations: READ_ONLY,

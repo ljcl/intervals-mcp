@@ -6,6 +6,11 @@ can do, how to read its output, and where the sharp edges are. Full
 per-tool schemas and parameters live in [docs/tools.md](tools.md); this file
 is a map of that catalog by purpose, not a replacement for it.
 
+The server also sends a short version of this guide to every chat as its MCP
+instructions: the routing, the id format, units and time zone, and the
+`update-activity` rules. So a chat starts oriented without this file. This
+file stays the long form, for the full detail on each area.
+
 ## Overview
 
 intervals-mcp connects Claude to an athlete's intervals.icu account: activity

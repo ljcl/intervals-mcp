@@ -89,6 +89,7 @@ function toIntervalLap(
 
 export const getIntervalAnalysisTool = {
   name,
+  title: "Interval analysis",
   description,
   inputSchema,
   annotations: READ_ONLY,

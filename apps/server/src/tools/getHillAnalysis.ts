@@ -98,6 +98,7 @@ function segmentLine(s: ReturnType<typeof segmentOut>): string {
 
 export const getHillAnalysisTool = {
   name,
+  title: "Hill analysis",
   description,
   inputSchema,
   annotations: READ_ONLY,

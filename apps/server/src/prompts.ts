@@ -16,6 +16,8 @@ export interface PromptArgumentDefinition {
 
 interface PromptDefinition {
   name: string;
+  /** Display name for hosts that show one in the prompt picker. */
+  title: string;
   description: string;
   arguments: PromptArgumentDefinition[];
   /** Builds the user-message text from the (string) arguments. */
@@ -25,6 +27,7 @@ interface PromptDefinition {
 const PROMPTS: PromptDefinition[] = [
   {
     name: "weekly-review",
+    title: "Weekly training review",
     description:
       "Review recent training: load trend, key workouts, and cadence patterns, ending with focus points for next week.",
     arguments: [
@@ -51,6 +54,7 @@ const PROMPTS: PromptDefinition[] = [
   },
   {
     name: "annotate-last-run",
+    title: "Annotate my last run",
     description:
       "Analyse the most recent run and append a short coaching note to its activity description (confirms before writing).",
     arguments: [
@@ -80,10 +84,11 @@ const PROMPTS: PromptDefinition[] = [
   },
 ];
 
-/** ListPrompts payload: names, descriptions, and argument declarations. */
+/** ListPrompts payload: name, title, description and arguments of each. */
 export function listPrompts() {
-  return PROMPTS.map(({ name, description, arguments: args }) => ({
+  return PROMPTS.map(({ name, title, description, arguments: args }) => ({
     name,
+    title,
     description,
     arguments: args,
   }));

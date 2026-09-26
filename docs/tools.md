@@ -41,6 +41,22 @@ cap over `tools/list`, rejects a "Parameters:" section, and checks that every
 tool a description names exists. `buildToolDefs` trims the text, so the
 template literals in the tool files can open and close on a newline.
 
+## Server instructions and titles
+
+The server sends a short orientation as its MCP `instructions` in
+`server/discover`, so every chat starts with the rules: where ids come from,
+which tool to call first, how to route fitness questions, the whole-body
+versus run-only rule, units and time zone, and how to use `update-activity`
+safely. The text lives in `apps/server/src/instructions.ts`. Keep it under
+1,800 characters. When you rename, add or remove a tool, check the routing
+there too: `server.integration.test.ts` fails if the text names a tool that
+does not exist.
+
+Every tool, prompt and app resource also has a display `title` (for example
+"Running summary" for `get-running-summary`) for hosts that show titles
+instead of ids. Titles are outside `tool-surface.lock.json`, like
+descriptions.
+
 ## intervals.icu tools
 
 | Tool | Description |

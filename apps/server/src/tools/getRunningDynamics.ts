@@ -352,6 +352,7 @@ export function formatRunningDynamicsText(d: RunningDynamicsResponse): string {
 
 export const getRunningDynamicsTool = {
   name,
+  title: "Running dynamics",
   description,
   inputSchema,
   annotations: READ_ONLY,

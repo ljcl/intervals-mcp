@@ -313,6 +313,7 @@ export function formatRunningSummaryText(d: RunningSummary): string {
 
 export const getRunningSummaryTool = {
   name,
+  title: "Running summary",
   description,
   inputSchema,
   annotations: READ_ONLY,

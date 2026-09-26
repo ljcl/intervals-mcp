@@ -98,6 +98,7 @@ export function formatActivityLapsText(response: ActivityLapsResponse): string {
 
 export const getActivityLapsTool = {
   name,
+  title: "Activity laps",
   description,
   inputSchema,
   annotations: READ_ONLY,
