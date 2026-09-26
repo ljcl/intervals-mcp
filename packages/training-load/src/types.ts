@@ -6,8 +6,13 @@ export interface WeekSummary {
   distanceKm: number;
   timeHours: number;
   elevationM: number;
-  /** Rolling-average volume for the trend line, in km. */
-  trendKm: number;
+  /**
+   * Rolling-average volume for the trend line, in km, over complete weeks.
+   * Null for the week in progress, so the line ends at the last complete week.
+   */
+  trendKm: number | null;
+  /** The current week: its volume is only the days so far. */
+  inProgress?: boolean;
   warning: boolean;
   warningReasons: string[];
   /** Sum of icu_training_load over the included types this week. */
@@ -26,7 +31,11 @@ export interface TrainingLoadCurrent {
 
 /** Response from the get-training-load-data tool. */
 export interface TrainingLoadData {
+  /** Calendar days read: whole weeks plus the current week so far. */
   days: number;
+  /** First day read (a Monday) and the last (today), YYYY-MM-DD. */
+  startDate?: string;
+  endDate?: string;
   totals: {
     runs: number;
     distanceKm: number;

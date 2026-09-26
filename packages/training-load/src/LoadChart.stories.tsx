@@ -11,9 +11,9 @@ export const Default = meta.story({
   play: async ({ canvas }) => {
     // Axis ticks come from the shared UTC formatter, the same one behind the
     // header subtitle and the narration. `toLocaleDateString` rendered "Jun
-    // 15" beside a "15 Jun" header in an en-US host. `preserveEnd` always
+    // 22" beside a "22 Jun" header in an en-US host. `preserveEnd` always
     // draws the last tick, so this one is reliably on screen.
-    await expect(canvas.getByText("15 Jun")).toBeInTheDocument();
+    await expect(canvas.getByText("22 Jun")).toBeInTheDocument();
   },
 });
 

@@ -11,9 +11,18 @@ export function buildTrainingLoadContextSummary(
   if (!data.days) return null;
 
   const parts = [
-    `Training load, last ${data.days} day${data.days === 1 ? "" : "s"}.`,
+    data.startDate && data.endDate
+      ? `Training load from ${data.startDate} to ${data.endDate}.`
+      : `Training load, last ${data.days} day${data.days === 1 ? "" : "s"}.`,
     `${data.totals.runs} run${data.totals.runs === 1 ? "" : "s"}, ${data.totals.distanceKm} km over ${data.weeks.length} week${data.weeks.length === 1 ? "" : "s"}.`,
   ];
+
+  const inProgress = data.weeks.find((w) => w.inProgress);
+  if (inProgress) {
+    parts.push(
+      `The week of ${inProgress.weekStarting} is still in progress, so its volume is only the days so far.`,
+    );
+  }
 
   const warningWeeks = countWarningWeeks(data.weeks);
   if (warningWeeks > 0) {

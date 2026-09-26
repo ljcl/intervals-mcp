@@ -65,8 +65,10 @@ breaking them has shipped bugs — do not work around them locally.
   `intervalLaps.ts` (shared by `get-activity-laps` and `get-running-summary`).
   Running efficiency factor (m/min per beat): `speedEfficiencyFactor` in
   `aerobicAnalysis.ts` (shared by `get-aerobic-analysis` and
-  `compare-activities`). Text tool and app reading different copies is the
-  failure mode these prevent.
+  `compare-activities`). Training-load weeks, warnings and trend:
+  `trainingLoadWindow`/`selectRunWeeks` in `trainingLoad.ts` (shared by
+  `get-training-load` and its app feed). Text tool and app reading different
+  copies is the failure mode these prevent.
 - **Telemetry:** `dispatchToolCall` emits one JSON line per call; timer starts
   before token resolution (not-connected calls count); a returned `isError`
   counts as an error; `recordToolCall` can never fail the call it describes.

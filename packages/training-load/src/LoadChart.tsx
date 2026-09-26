@@ -117,17 +117,23 @@ export function LoadChart({
           />
           <RechartsTooltip content={<LoadTooltip />} />
           <Bar dataKey="distanceKm" radius={[4, 4, 0, 0]}>
-            {chartData.map((entry) => (
-              <Cell
-                key={entry.weekStarting}
-                fill={
-                  showWarnings && entry.warning
-                    ? "var(--chart-heartrate)"
-                    : "var(--chart-pace)"
-                }
-                fillOpacity={0.85}
-              />
-            ))}
+            {chartData.map((entry) => {
+              const fill =
+                showWarnings && entry.warning
+                  ? "var(--chart-heartrate)"
+                  : "var(--chart-pace)";
+              // The week in progress holds only the days so far: a light,
+              // dashed bar, so it does not read as a drop in volume.
+              return (
+                <Cell
+                  key={entry.weekStarting}
+                  fill={fill}
+                  fillOpacity={entry.inProgress ? 0.35 : 0.85}
+                  stroke={entry.inProgress ? fill : undefined}
+                  strokeDasharray={entry.inProgress ? "3 2" : undefined}
+                />
+              );
+            })}
           </Bar>
           {showTrend && (
             <Line

@@ -12,6 +12,7 @@ import {
   type IntervalsAthletePaceCurves,
   listActivities as listIntervalsActivities,
 } from "./intervalsClient";
+import { trainingLoadWindow } from "./trainingLoad";
 
 vi.mock("./intervalsClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./intervalsClient")>();
@@ -194,8 +195,14 @@ describe("dispatchToolCall input validation", () => {
 
     expect(result.isError).toBeUndefined();
     const text = result.content[0]?.text ?? "";
-    expect(JSON.parse(text)).toEqual({
-      days: 84,
+    const parsed = JSON.parse(text);
+    // The default 84 days is 12 complete weeks plus this week so far, so
+    // the day count depends on today's weekday.
+    const lookback = trainingLoadWindow(84, parsed.endDate);
+    expect(parsed).toEqual({
+      days: lookback.spanDays,
+      startDate: lookback.startDate,
+      endDate: lookback.endDate,
       activityTypesIncluded: [],
       runOnly: false,
       current: null,
@@ -204,8 +211,8 @@ describe("dispatchToolCall input validation", () => {
       weeks: [],
     });
     const params = mockedIntervalsList.mock.calls[0]?.[1];
-    expect(params?.oldest).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    expect(params?.newest).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(params?.oldest).toBe(lookback.startDate);
+    expect(params?.newest).toBe(lookback.endDate);
   });
 
   it("rejects days above the documented bound for view-training-load", async () => {

@@ -332,11 +332,18 @@ max 365).
 
 - Server-side aggregation is pure and unit-tested in
   `apps/server/src/trainingLoad.ts` (`buildTrainingLoadData`): Monday-start
-  weekly buckets, gap weeks zero-filled so the timeline stays continuous, a
-  centered rolling-average trend, per-week warning flags with reasons. The
-  warning rules (`computeWeekWarnings`: >30% week-over-week spike,
-  >150%-of-average high week) are shared with the `get-training-load` text
-  tool so chart and prose cannot drift.
+  weekly buckets over a whole-week window (`days` rounded up to whole weeks,
+  plus the current week so far; `startDate`/`endDate` in the payload), gap
+  weeks zero-filled so the timeline stays continuous, a centered
+  rolling-average trend over complete weeks, per-week warning flags with
+  reasons. The weeks the warnings read (`selectRunWeeks`) and the rules
+  (`computeWeekWarnings`: >30% week-over-week spike, >150%-of-average high
+  week) are shared with the `get-training-load` text tool, so chart and prose
+  cannot drift (#43).
+- The current week carries `inProgress: true` and `trendKm: null`: it draws
+  as a light dashed bar with a "This week so far" legend key, the trend line
+  ends at the last complete week, and the tooltip, narration and model
+  context all say the week is in progress.
 - `ComposedChart`: weekly distance bars (warning weeks recoloured in the
   danger hue) plus trend `Line`; the shared scrub tooltip lists distance, runs,
   time, elevation, warnings. Footer `Legend` toggles trend line and warning

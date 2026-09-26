@@ -49,6 +49,16 @@ describe("buildLoadA11y", () => {
     );
   });
 
+  it("says the last week is still in progress", () => {
+    const a11y = buildLoadA11y([
+      week("2026-06-01", 20),
+      week("2026-06-08", 6, { inProgress: true, trendKm: null }),
+    ]);
+    expect(a11y.desc).toContain(
+      "The week of 8 Jun 2026 is still in progress, so its distance is only the days so far.",
+    );
+  });
+
   it("drops the trend clause when the trend line is hidden (#328)", () => {
     const a11y = buildLoadA11y(
       [week("2026-06-01", 20), week("2026-06-08", 30)],

@@ -1,15 +1,16 @@
 import { z } from "zod";
-import { getTimeZone } from "../config";
 import { RUN_ONLY_RUNWAY_DAYS } from "../fitnessTrend";
 import { formatDuration } from "../formatters";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
 import {
   aggregateWeeks,
-  computeWeekWarnings,
   getWeekStart,
+  selectRunWeeks,
+  volumeTrend,
+  weekDistanceKm,
+  weekInProgress,
 } from "../trainingLoad";
 import { loadTrainingLoadInputs } from "../trainingLoadInputs";
-import { addDays, todayLocal } from "../utils/localDate";
 import { READ_ONLY } from "./_annotations";
 import { toolErrorText } from "./_errors";
 import { TrainingLoadOutputSchema, warnOnSchemaDrift } from "./outputs";
@@ -32,9 +33,13 @@ Notes:
 - Training load and CTL/ATL/TSB are whole-body by default, read from
   intervals.icu. runOnly sums run load only and computes CTL/ATL/TSB locally,
   labelled "computed"; it will not match intervals.icu's fitness page.
-- The trend compares the last 2 weeks with the 2 before; a warning fires on a
-  week-over-week volume rise over 30%. Weeks start on Monday in the athlete's
-  time zone.
+- days is rounded up to whole weeks (Monday start, athlete's time zone), and
+  the current week so far is added: days 28 gives 4 complete weeks plus this
+  week. Averages and the trend use complete weeks only; the trend compares
+  the last 2 with the 2 before.
+- A warning fires on a week-over-week rise over 30%, or a week over 150% of
+  the average and over 30 km. The current week is flagged only on the volume
+  it already has.
 `;
 
 const inputSchema = z.object({
@@ -68,19 +73,9 @@ interface ActivitySummary {
   distance_km: number;
 }
 
-/**
- * Prose warnings from the shared per-week rules, so this tool and the
- * training-load MCP App feed (`get-training-load-data`) stay consistent.
- */
-function generateWarnings(
-  weeklyBreakdown: Array<{ week_starting: string; distance_km: number }>,
-): string[] {
-  return computeWeekWarnings(weeklyBreakdown).map(
-    (w) => `Week of ${w.week_starting}: ${w.reason}`,
-  );
-}
-
 const localDay = (isoDateTime: string) => isoDateTime.split("T")[0]!;
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 export const getTrainingLoadTool = {
   name,
@@ -95,11 +90,8 @@ export const getTrainingLoadTool = {
     progress: ReportProgress = NO_PROGRESS,
   ) => {
     try {
-      const tz = getTimeZone();
-      const endDate = todayLocal(tz);
-      const windowStart = addDays(endDate, -(days - 1));
-
       const {
+        lookback,
         runs: runActivities,
         loadActivities,
         current,
@@ -131,7 +123,7 @@ export const getTrainingLoadTool = {
       const sortedWeeks = buckets.map((bucket) => ({
         week_starting: bucket.weekStarting,
         runs: bucket.runs,
-        distance_km: Math.round(bucket.distanceM / 10) / 100,
+        distance_km: weekDistanceKm(bucket),
         time_s: Math.round(bucket.timeS),
         time_hours: Math.round((bucket.timeS / 3600) * 100) / 100,
         time_formatted: formatDuration(bucket.timeS),
@@ -166,52 +158,44 @@ export const getTrainingLoadTool = {
       );
       const totalLoad = sortedWeeks.reduce((sum, w) => sum + w.load, 0);
 
-      // Weekly averages, the trend verdict, and injury-risk warnings are
-      // run-based (volume is run-based), computed over the run span: every
-      // week from the first run week to the last run week inclusive,
-      // matching the old runOnly behaviour. Empty (zero-run) weeks inside
-      // that span are kept, not dropped: a layoff or a missed week is a
-      // real gap the trend/warnings should see, and dropping it would also
-      // silently compare non-adjacent weeks as if they were consecutive.
-      // Only load-only weeks *outside* the span (e.g. a bike-only week
-      // before the first run or after the last, which whole-body's shared
-      // timeline also includes) are excluded, so they cannot dilute the
-      // run averages or shift the trend comparison only for runOnly: false.
-      const firstRunIndex = sortedWeeks.findIndex((w) => w.runs > 0);
-      const lastRunIndex = sortedWeeks.findLastIndex((w) => w.runs > 0);
-      const runWeeks =
-        firstRunIndex === -1
-          ? []
-          : sortedWeeks.slice(firstRunIndex, lastRunIndex + 1);
-      const numWeeks = runWeeks.length || 1;
+      // Averages, the trend verdict and the injury-risk warnings are
+      // run-based, over the weeks selectRunWeeks picks: the same call the
+      // app feed makes, so the two surfaces can never disagree (#43).
+      // Averages and the trend read complete weeks only. With no complete
+      // week yet, the averages fall back to the week in progress.
+      const runWeeks = selectRunWeeks(buckets, lookback.currentWeekStart);
+      const averageWeeks =
+        runWeeks.complete.length > 0 ? runWeeks.complete : runWeeks.span;
+      const numWeeks = averageWeeks.length || 1;
+      const averaged = new Set(averageWeeks.map((b) => b.weekStarting));
+      const averageRows = sortedWeeks.filter((w) =>
+        averaged.has(w.week_starting),
+      );
+      const sumOf = (pick: (w: (typeof sortedWeeks)[number]) => number) =>
+        averageRows.reduce((sum, w) => sum + pick(w), 0);
 
-      // Calculate trend (compare last 2 run weeks to previous 2 run weeks).
-      let trend = "insufficient data";
-      if (runWeeks.length >= 4) {
-        const recentDistance =
-          runWeeks[runWeeks.length - 1]!.distance_km +
-          runWeeks[runWeeks.length - 2]!.distance_km;
-        const previousDistance =
-          runWeeks[runWeeks.length - 3]!.distance_km +
-          runWeeks[runWeeks.length - 4]!.distance_km;
+      const trend = volumeTrend(runWeeks.complete);
+      const [earlier1, earlier2, recent1, recent2] = trend.weeks;
+      const trendBasis =
+        trend.weeks.length === 4
+          ? ` (weeks of ${recent1} and ${recent2} vs ${earlier1} and ${earlier2})`
+          : "";
 
-        if (previousDistance > 0) {
-          const change =
-            ((recentDistance - previousDistance) / previousDistance) * 100;
-          if (change > 15) trend = "increasing significantly";
-          else if (change > 5) trend = "increasing";
-          else if (change < -15) trend = "decreasing significantly";
-          else if (change < -5) trend = "decreasing";
-          else trend = "stable";
-        }
-      } else if (runWeeks.length >= 2) {
-        trend = "limited data - need 4+ weeks for trend";
+      const warnings = runWeeks.warnings.map(
+        (w) => `Week of ${w.week_starting}: ${w.reason}`,
+      );
+      const inProgressWeek = sortedWeeks.find((w) =>
+        weekInProgress(w.week_starting, lookback.currentWeekStart),
+      );
+      if (inProgressWeek) {
+        warnings.push(
+          `Week of ${inProgressWeek.week_starting} is in progress ` +
+            `(${lookback.currentWeekDays} of 7 days)` +
+            (runWeeks.complete.length > 0
+              ? ": averages and the trend leave it out."
+              : "."),
+        );
       }
-
-      // Generate warnings, always run-based, over the same run-span weeks
-      // (gaps kept) as the averages/trend above, so the week-over-week
-      // comparison never treats two non-adjacent weeks as consecutive.
-      const warnings = generateWarnings(runWeeks);
       warnings.push(
         "Weekly volume and injury-risk warnings are computed from " +
           "Run/TrailRun/VirtualRun activities only.",
@@ -219,8 +203,8 @@ export const getTrainingLoadTool = {
       if (runOnly) {
         warnings.push(
           `Run-only CTL/ATL is computed locally from Run/TrailRun/VirtualRun ` +
-            `training load, zero-seeded ${RUN_ONLY_RUNWAY_DAYS} days before ` +
-            `the window so the 42-day CTL average has settled; it will not ` +
+            `training load, zero-seeded ${days + RUN_ONLY_RUNWAY_DAYS} days ` +
+            `back so the 42-day CTL average has settled; it will not ` +
             `exactly match intervals.icu's own (whole-body) fitness page.`,
         );
       } else {
@@ -232,10 +216,12 @@ export const getTrainingLoadTool = {
       }
 
       const result = {
+        // The window read, whole weeks plus this week so far: `days` is its
+        // length, so it can be longer than the requested days.
         period: {
-          days,
-          start_date: windowStart,
-          end_date: endDate,
+          days: lookback.spanDays,
+          start_date: lookback.startDate,
+          end_date: lookback.endDate,
         },
         run_only: runOnly,
         source,
@@ -250,13 +236,14 @@ export const getTrainingLoadTool = {
           load: totalLoad,
         },
         averages: {
-          runs_per_week: Math.round((totalRuns / numWeeks) * 10) / 10,
+          runs_per_week:
+            Math.round((sumOf((w) => w.runs) / numWeeks) * 10) / 10,
           distance_km_per_week:
-            Math.round((totalDistanceKm / numWeeks) * 100) / 100,
+            Math.round((sumOf((w) => w.distance_km) / numWeeks) * 100) / 100,
           time_hours_per_week:
-            Math.round((totalTimeHours / numWeeks) * 100) / 100,
+            Math.round((sumOf((w) => w.time_hours) / numWeeks) * 100) / 100,
         },
-        trend,
+        trend: trend.label,
         weekly_breakdown: sortedWeeks,
         warnings,
         units: {
@@ -270,7 +257,7 @@ export const getTrainingLoadTool = {
 
       // Format as readable text
       let output = `Training Load Summary\n`;
-      output += `${result.period.start_date} to ${result.period.end_date} (${days} days, CTL/ATL source: ${source})\n\n`;
+      output += `${result.period.start_date} to ${result.period.end_date} (${plural(lookback.completeWeeks, "complete week")} and this week so far, CTL/ATL source: ${source})\n\n`;
 
       output += `Totals\n`;
       output += `  Runs: ${result.totals.runs}\n`;
@@ -289,12 +276,18 @@ export const getTrainingLoadTool = {
         output += `  Form (TSB): ${current.tsb >= 0 ? "+" : ""}${current.tsb}\n\n`;
       }
 
-      output += `Weekly Averages\n`;
+      const averagedOver =
+        runWeeks.complete.length > 0
+          ? plural(runWeeks.complete.length, "complete week")
+          : runWeeks.span.length > 0
+            ? "this week so far"
+            : "no runs";
+      output += `Weekly Averages (${averagedOver})\n`;
       output += `  Runs/week: ${result.averages.runs_per_week}\n`;
       output += `  Distance/week: ${result.averages.distance_km_per_week} km\n`;
       output += `  Time/week: ${result.averages.time_hours_per_week} hours\n\n`;
 
-      output += `Trend: ${result.trend}\n\n`;
+      output += `Trend: ${result.trend}${trendBasis}\n\n`;
 
       if (result.warnings.length > 0) {
         output += `Warnings\n`;
@@ -306,7 +299,11 @@ export const getTrainingLoadTool = {
 
       output += `Weekly Breakdown\n`;
       for (const week of result.weekly_breakdown) {
-        output += `  Week of ${week.week_starting}: ${week.runs} runs, ${week.distance_km} km, ${week.time_formatted}, load ${week.load}\n`;
+        const label =
+          week === inProgressWeek
+            ? ` (in progress, ${lookback.currentWeekDays} of 7 days)`
+            : "";
+        output += `  Week of ${week.week_starting}${label}: ${week.runs} runs, ${week.distance_km} km, ${week.time_formatted}, load ${week.load}\n`;
       }
 
       warnOnSchemaDrift(name, TrainingLoadOutputSchema, result);

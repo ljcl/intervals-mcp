@@ -861,10 +861,10 @@ async function loadTrainingLoadAppData(
   const days = Number(args.days) || 84;
   const runOnly = Boolean(args.runOnly);
 
-  const { runs, loadActivities, current, source } =
+  const { lookback, runs, loadActivities, current, source } =
     await loadTrainingLoadInputs(apiKey, { days, runOnly }, progress);
 
-  return buildTrainingLoadData(runs, days, {
+  return buildTrainingLoadData(runs, lookback, {
     loadActivities,
     runOnly,
     current,
@@ -888,13 +888,17 @@ async function handleViewTrainingLoad(
 ): Promise<ToolCallResult> {
   const data = await loadTrainingLoadAppData(token, args, progress);
   const warningWeeks = data.weeks.filter((w) => w.warning).length;
+  const inProgress = data.weeks.find((w) => w.inProgress);
 
   const lines = [
-    `Training Load (last ${data.days} days, CTL/ATL source: ${data.source})`,
+    `Training Load (${data.startDate} to ${data.endDate}, CTL/ATL source: ${data.source})`,
     `Runs: ${data.totals.runs}`,
     `Distance: ${data.totals.distanceKm} km`,
     `Load: ${data.totals.load}`,
     `Warning weeks: ${warningWeeks}`,
+    ...(inProgress
+      ? [`Week of ${inProgress.weekStarting} is in progress (partial).`]
+      : []),
     "",
     "[Interactive training load chart rendered above]",
   ];
