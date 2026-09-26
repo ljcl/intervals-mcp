@@ -17,6 +17,7 @@ this file holds only the invariants that apply to every change.
 | [docs/development.md](docs/development.md) | Turborepo, coverage gates, Storybook gates, Docker image build |
 | [docs/releasing.md](docs/releasing.md) | Shipping — PR titles are Conventional Commits; release automation does the rest |
 | [docs/project.md](docs/project.md) | Filing/triaging issues, editing the project board |
+| [docs/Intervals_MCP_Server.md](docs/Intervals_MCP_Server.md) | Capability reference to upload as project knowledge in a Claude project using this server |
 
 ## Architecture invariants
 

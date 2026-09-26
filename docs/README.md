@@ -15,3 +15,4 @@ connection.
 | [development.md](development.md) | Monorepo mechanics: Turborepo, boundaries, coverage ratchets, Storybook gates, Docker image build |
 | [releasing.md](releasing.md) | Shipping: Conventional Commit titles, release-please, image and registry publishing |
 | [project.md](project.md) | Filing or triaging issues, editing the project board |
+| [Intervals_MCP_Server.md](Intervals_MCP_Server.md) | Setting up a Claude project that uses this server; upload as project knowledge |

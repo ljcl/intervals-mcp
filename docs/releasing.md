@@ -25,13 +25,21 @@ until the first 1.0.0 release:
 
 ## Pre-1.0
 
-Release-please release PRs stay unmerged while tools are still being ported
-(Phases 1 through 3); the package is not ready to ship. The first release is
-cut as `1.0.0` once Phase 3 lands, using the doc's existing escape hatch: land
-an empty commit on `main` with a `Release-As: 1.0.0` footer
+The Strava to intervals.icu migration is done and `0.2.0` already shipped it
+(see `CHANGELOG.md`); every tool talks to intervals.icu directly. The package
+is ready for its first stable release.
+
+Cut `1.0.0` the same way as any forced version: land an empty commit on
+`main` with a `Release-As: 1.0.0` footer
 (`git commit --allow-empty -m "chore: force release" -m "Release-As: 1.0.0"`).
 This is a controller ruling, not a config change; `release-as` is not added
-to `release-please-config.json`.
+to `release-please-config.json`. It retargets the open release-please PR to
+`1.0.0`; merging that PR ships it through the normal path above.
+
+After `1.0.0`, normal semver applies: `fix:` bumps patch, `feat:` bumps minor,
+`feat!:`/a `BREAKING CHANGE:` footer bumps major. `bump-minor-pre-major` in
+`release-please-config.json` stops mattering once the major version is
+nonzero, so it does not need to change.
 
 ## What release-please does
 

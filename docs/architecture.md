@@ -95,10 +95,13 @@ per-tool. Path patterns and current TTLs (`fetchClient.ts`):
 
 Everything else is left uncached.
 
-- Handlers floor `after`/`before` window bounds to the minute
-  (`quantizedEpochAfter`/`quantizedEpochBefore` in `server.ts`) so a pair's two
-  calls build one URL. Without quantization a raw `Date.now()` per call keys
-  every scan uniquely and the TTL never hits.
+- Date-range reads (`list-activities`, `get-wellness`) key on calendar-day
+  `oldest`/`newest` bounds (`YYYY-MM-DD`), not an epoch timestamp, so no
+  quantization step is needed: two calls resolving the same default window
+  (e.g. `todayLocal(tz)`) build the same query string and hit the same cache
+  entry for free. An epoch-based bound would key every call uniquely and the
+  TTL would never hit; a calendar-day string already has coarse enough
+  granularity that it doesn't.
 - Cache key is the full URL (query included, so distinct stream resolutions and
   date windows stay separate); TTL and invalidation match the query-stripped
   path.
