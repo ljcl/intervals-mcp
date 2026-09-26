@@ -6,6 +6,7 @@ import {
   type IntervalsWellness,
   listActivities,
 } from "./intervalsClient";
+import { trainingLoadWindow } from "./trainingLoad";
 import { loadTrainingLoadInputs } from "./trainingLoadInputs";
 import { addDays } from "./utils/localDate";
 
@@ -96,9 +97,14 @@ describe("loadTrainingLoadInputs", () => {
     expect(result.loadActivities).toHaveLength(3);
     expect(result.activityTypesIncluded).toEqual(["Ride", "Run"]);
 
+    // TODAY is a Wednesday: 4 complete weeks from Monday 2026-07-20, plus
+    // this week so far, instead of a window that starts mid-week.
+    expect(result.lookback).toEqual(trainingLoadWindow(28, TODAY));
     const [, options] = mockedList.mock.calls[0]!;
-    expect(options.oldest).toBe(addDays(TODAY, -27));
+    expect(options.oldest).toBe("2026-07-20");
     expect(options.newest).toBe(TODAY);
+    const [, wellnessOptions] = mockedWellness.mock.calls[0]!;
+    expect(wellnessOptions).toEqual({ oldest: "2026-07-20", newest: TODAY });
   });
 
   it("run-only: fetches a runway, computes CTL/ATL locally, and labels it computed", async () => {
@@ -128,6 +134,24 @@ describe("loadTrainingLoadInputs", () => {
     const [, options] = mockedList.mock.calls[0]!;
     expect(options.oldest).toBe(addDays(TODAY, -(runwayDays - 1)));
     expect(options.newest).toBe(TODAY);
+  });
+
+  it("run-only: keeps runs from the whole first week of the window", async () => {
+    // A 28-day count back from TODAY starts on Thursday 2026-07-23; the
+    // window starts on Monday 2026-07-20, so the Tuesday run is inside it
+    // and the first week is complete. The run before it is runway only.
+    mockedList.mockResolvedValueOnce([
+      activity("2026-07-21", { id: "first-week" }),
+      activity("2026-07-19", { id: "runway" }),
+    ]);
+
+    const result = await loadTrainingLoadInputs(
+      "key",
+      { days: 28, runOnly: true },
+      () => {},
+    );
+
+    expect(result.runs.map((a) => a.id)).toEqual(["first-week"]);
   });
 
   it("returns a null current when there is no wellness data in the window", async () => {

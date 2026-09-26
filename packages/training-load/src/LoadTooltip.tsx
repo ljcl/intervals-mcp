@@ -9,7 +9,8 @@ interface WeekTooltipPayloadItem {
     distanceKm?: number;
     timeHours?: number;
     elevationM?: number;
-    trendKm?: number;
+    trendKm?: number | null;
+    inProgress?: boolean;
     warning?: boolean;
     warningReasons?: string[];
   };
@@ -25,8 +26,12 @@ export function LoadTooltip({ active, payload }: LoadTooltipProps) {
   const week = payload[0]?.payload;
   if (!week) return null;
 
+  const heading = week.weekLabel
+    ? `Week of ${week.weekLabel}${week.inProgress ? " (in progress)" : ""}`
+    : "";
+
   return (
-    <Tooltip timestamp={week.weekLabel ? `Week of ${week.weekLabel}` : ""}>
+    <Tooltip timestamp={heading}>
       {week.distanceKm !== undefined && (
         <TooltipEntry
           color={week.warning ? "var(--chart-heartrate)" : "var(--chart-pace)"}
@@ -35,7 +40,7 @@ export function LoadTooltip({ active, payload }: LoadTooltipProps) {
           unit="km"
         />
       )}
-      {week.trendKm !== undefined && (
+      {week.trendKm != null && (
         <TooltipEntry
           color="var(--chart-cadence)"
           label="Trend"

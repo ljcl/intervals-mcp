@@ -131,6 +131,12 @@ description is kept. (This is also the `annotate-last-run` prompt.)
   only Run/TrailRun/VirtualRun. The two scopes can report materially
   different numbers for the same athlete and answer different questions;
   don't mix them in one comparison without saying which scope each number is.
+- **Training-load weeks are whole weeks.** `get-training-load` and
+  `view-training-load` round `days` up to whole Monday-to-Sunday weeks and
+  add the current week so far: `days: 28` is the last 4 complete weeks plus
+  this week. The current week is marked in progress: averages and the trend
+  leave it out, and it gets a warning only for the volume it already has.
+  Do not read a short current week as a drop in volume.
 - **Gaps in charts are missing data, not zero.** Streams with no recorded
   sample (a dropped HR strap, a watch that doesn't record running dynamics
   continuously) show as a break in the line, not a dip to zero. This applies

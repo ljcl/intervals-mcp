@@ -6,8 +6,8 @@ import {
   type IntervalsWellness,
   listActivities,
 } from "../intervalsClient";
-import { buildTrainingLoadData } from "../trainingLoad";
-import { addDays } from "../utils/localDate";
+import { buildTrainingLoadData, trainingLoadWindow } from "../trainingLoad";
+import { addDays, daysBetween, startOfWeekMonday } from "../utils/localDate";
 import { getTrainingLoadTool } from "./getTrainingLoad";
 import { TrainingLoadOutputSchema } from "./outputs";
 
@@ -83,14 +83,19 @@ describe("get-training-load execute", () => {
 
     expect(result.isError).toBeUndefined();
     const structured = result.structuredContent as {
-      period: { days: number };
+      period: { days: number; start_date: string; end_date: string };
       totals: { runs: number; distance_km: number; load: number };
       weekly_breakdown: unknown[];
       run_only: boolean;
       source: string;
       current: unknown;
     };
-    expect(structured.period.days).toBe(28);
+    // TODAY is a Sunday: 4 complete weeks plus all 7 days of this week.
+    expect(structured.period).toEqual({
+      days: 35,
+      start_date: "2026-05-25",
+      end_date: TODAY,
+    });
     expect(structured.totals.runs).toBe(3);
     expect(structured.totals.distance_km).toBe(30);
     expect(structured.totals.load).toBe(180);
@@ -196,12 +201,13 @@ describe("get-training-load execute", () => {
   });
 
   it("keeps empty weeks inside the run span (runOnly): averages and trend see the gap", async () => {
-    // 5 runs (10 km each) over a 7-week span, with weeks at daysAgo 16-22 and
-    // 30-36 (the two middle-ish weeks) left empty on purpose.
+    // One 10 km run a week over 6 complete weeks, with the week of
+    // 2026-05-25 left empty on purpose, plus a run in this week (TODAY is a
+    // Sunday, so the week of 2026-06-22 is still in progress).
     mockedListActivities.mockResolvedValueOnce([
-      run(2), // week of 2026-06-22 (newest)
+      run(2), // week of 2026-06-22 (in progress)
       run(9), // week of 2026-06-15
-      // week of 2026-06-08: empty
+      run(16), // week of 2026-06-08
       run(23), // week of 2026-06-01
       // week of 2026-05-25: empty
       run(37), // week of 2026-05-18
@@ -214,24 +220,27 @@ describe("get-training-load execute", () => {
     );
 
     const structured = result.structuredContent as {
-      averages: { runs_per_week: number };
+      averages: { runs_per_week: number; distance_km_per_week: number };
       trend: string;
       weekly_breakdown: Array<{ week_starting: string; runs: number }>;
     };
 
-    // The run span is 7 calendar weeks (2026-05-11 through 2026-06-22); 5 of
-    // them had a run, so numWeeks is 7, not 5.
     expect(structured.weekly_breakdown).toHaveLength(7);
     expect(
       structured.weekly_breakdown.filter((w) => w.runs === 0),
-    ).toHaveLength(2);
-    expect(structured.averages.runs_per_week).toBeCloseTo(5 / 7, 1);
+    ).toHaveLength(1);
+    // Averaged over the 6 complete weeks of the run span, the empty one
+    // included: 5 runs, 50 km. The week in progress is left out.
+    expect(structured.averages.runs_per_week).toBe(0.8);
+    expect(structured.averages.distance_km_per_week).toBe(8.33);
 
-    // Recent 2 weeks (both real runs, 20 km) vs previous 2 weeks (one empty
-    // + one real run, 10 km): a real 100% increase the gap should not hide.
-    // Dropping the empty weeks (the old behaviour) would instead compare two
-    // 10 km fortnights and report "stable".
+    // The last 2 complete weeks (20 km) against the 2 before (the empty week
+    // and one run, 10 km): a real 100% increase. Dropping the empty week
+    // would compare two 20 km fortnights and report "stable".
     expect(structured.trend).toBe("increasing significantly");
+    expect(result.content[0]?.text).toContain(
+      "Trend: increasing significantly (weeks of 2026-06-08 and 2026-06-15 vs 2026-05-25 and 2026-06-01)",
+    );
   });
 
   it("reads whole-body current CTL/ATL/TSB from wellness (last available day)", async () => {
@@ -383,10 +392,11 @@ describe("get-training-load execute", () => {
     const runActivities = activities.filter((a) =>
       RUN_TYPES.includes(a.type ?? ""),
     );
-    const appData = buildTrainingLoadData(runActivities, 28, {
-      loadActivities: activities,
-      runOnly: false,
-    });
+    const appData = buildTrainingLoadData(
+      runActivities,
+      trainingLoadWindow(28, TODAY),
+      { loadActivities: activities, runOnly: false },
+    );
 
     const textLoadByWeek = Object.fromEntries(
       structured.weekly_breakdown.map((w) => [w.week_starting, w.load]),
@@ -408,5 +418,163 @@ describe("get-training-load execute", () => {
 
     expect(result.isError).toBe(true);
     expect(result.content?.[0]?.text).toContain("Rate limited");
+  });
+});
+
+function runOn(date: string, km: number): IntervalsActivity {
+  return {
+    id: `run-${date}`,
+    name: "Run",
+    type: "Run",
+    start_date_local: `${date}T07:00:00`,
+    distance: km * 1000,
+    moving_time: km * 330,
+    total_elevation_gain: 0,
+    icu_training_load: km * 6,
+  } as IntervalsActivity;
+}
+
+/**
+ * The issue's steady runner: 60 km every week, 8 km Monday to Thursday and
+ * Saturday, 20 km Sunday, Friday off.
+ */
+function steadyRuns(from: string, to: string): IntervalsActivity[] {
+  const kmByDay = [8, 8, 8, 8, 0, 8, 20]; // Monday first
+  const runs: IntervalsActivity[] = [];
+  for (let date = from; date <= to; date = addDays(date, 1)) {
+    const km = kmByDay[daysBetween(startOfWeekMonday(date), date)]!;
+    if (km > 0) runs.push(runOn(date, km));
+  }
+  return runs;
+}
+
+describe("get-training-load weeks (#43)", () => {
+  interface Structured {
+    period: { days: number; start_date: string; end_date: string };
+    averages: { runs_per_week: number; distance_km_per_week: number };
+    trend: string;
+    warnings: string[];
+    weekly_breakdown: Array<{ week_starting: string; distance_km: number }>;
+  }
+
+  /** Serves only the activities inside the requested range, as intervals.icu does. */
+  function serve(activities: IntervalsActivity[]) {
+    mockedListActivities.mockImplementation(async (_key, { oldest, newest }) =>
+      activities.filter((a) => {
+        const date = a.start_date_local.split("T")[0]!;
+        return date >= oldest && date <= newest;
+      }),
+    );
+    mockedWellness.mockResolvedValue([]);
+  }
+
+  async function callOn(today: string, days: number) {
+    vi.setSystemTime(new Date(`${today}T12:00:00Z`));
+    const result = await getTrainingLoadTool.execute(
+      { days, runOnly: false },
+      "test-token",
+    );
+    return {
+      structured: result.structuredContent as Structured,
+      text: result.content[0]?.text ?? "",
+    };
+  }
+
+  const injuryWarnings = (warnings: string[]) =>
+    warnings.filter((w) => /injury risk|Unusually high/.test(w));
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mockedWellness.mockReset();
+    mockedListActivities.mockReset();
+    serve(steadyRuns("2026-07-01", "2026-10-31"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("reads a steady runner as steady on a Saturday: no warnings, stable, 60 km/week", async () => {
+    // Before the fix the window started on Sunday 2026-08-30, so the first
+    // week held 1 day (20 km): "Volume increased 200%", a "decreasing
+    // significantly" trend against the unfinished current week, and an
+    // average of 48 km over 5 buckets.
+    const { structured, text } = await callOn("2026-09-26", 28);
+
+    expect(structured.period).toEqual({
+      days: 34,
+      start_date: "2026-08-24",
+      end_date: "2026-09-26",
+    });
+    expect(structured.weekly_breakdown.map((w) => w.distance_km)).toEqual([
+      60, 60, 60, 60, 40,
+    ]);
+    expect(injuryWarnings(structured.warnings)).toEqual([]);
+    expect(structured.trend).toBe("stable");
+    expect(structured.averages.distance_km_per_week).toBe(60);
+    expect(structured.averages.runs_per_week).toBe(6);
+    expect(structured.warnings).toContain(
+      "Week of 2026-09-21 is in progress (6 of 7 days): averages and the trend leave it out.",
+    );
+    expect(text).toContain(
+      "2026-08-24 to 2026-09-26 (4 complete weeks and this week so far",
+    );
+    expect(text).toContain("Weekly Averages (4 complete weeks)");
+    expect(text).toContain(
+      "Week of 2026-09-21 (in progress, 6 of 7 days): 5 runs, 40 km",
+    );
+  });
+
+  it("reads a steady runner as steady on a Tuesday", async () => {
+    // Before the fix: buckets of 44, 60, 60, 60 and 16 km, a "+36%" warning
+    // and a "decreasing significantly" trend.
+    const { structured } = await callOn("2026-09-29", 28);
+
+    expect(structured.weekly_breakdown.map((w) => w.distance_km)).toEqual([
+      60, 60, 60, 60, 16,
+    ]);
+    expect(injuryWarnings(structured.warnings)).toEqual([]);
+    expect(structured.trend).toBe("stable");
+    expect(structured.averages.distance_km_per_week).toBe(60);
+  });
+
+  it("averages a 56-day window over 8 complete weeks, not 9 buckets", async () => {
+    const { structured, text } = await callOn("2026-09-26", 56);
+
+    expect(structured.period.start_date).toBe("2026-07-27");
+    expect(structured.weekly_breakdown).toHaveLength(9);
+    expect(structured.averages.distance_km_per_week).toBe(60);
+    expect(text).toContain("Weekly Averages (8 complete weeks)");
+  });
+
+  it("gives every weekday the same verdict for the same training", async () => {
+    for (let i = 0; i < 7; i += 1) {
+      const { structured } = await callOn(addDays("2026-09-21", i), 28);
+      expect(injuryWarnings(structured.warnings)).toEqual([]);
+      expect(structured.trend).toBe("stable");
+      expect(structured.averages.distance_km_per_week).toBe(60);
+    }
+  });
+
+  it("gives the same warnings as the app feed for the 30, 0, 0, 45 km weeks", async () => {
+    // 2026-06-29 is a Monday with no run yet, so all four weeks are complete.
+    const activities = [runOn("2026-06-03", 30), runOn("2026-06-24", 45)];
+    serve(activities);
+
+    const { structured } = await callOn("2026-06-29", 28);
+    const appData = buildTrainingLoadData(
+      activities,
+      trainingLoadWindow(28, "2026-06-29"),
+      { loadActivities: activities, runOnly: false },
+    );
+
+    const textWarnings = injuryWarnings(structured.warnings);
+    const appWarnings = appData.weeks.flatMap((w) =>
+      w.warningReasons.map((reason) => `Week of ${w.weekStarting}: ${reason}`),
+    );
+    expect(textWarnings).toEqual([
+      "Week of 2026-06-22: Unusually high volume (45 km vs 19 km average)",
+    ]);
+    expect(appWarnings).toEqual(textWarnings);
   });
 });

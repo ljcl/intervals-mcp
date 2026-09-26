@@ -33,6 +33,22 @@ describe("buildTrainingLoadContextSummary", () => {
     );
   });
 
+  it("names the window's dates and the week in progress", () => {
+    const summary = buildTrainingLoadContextSummary({
+      ...data([
+        week("2026-06-01"),
+        week("2026-06-08", { distanceKm: 12, inProgress: true, trendKm: null }),
+      ]),
+      startDate: "2026-03-16",
+      endDate: "2026-06-10",
+    });
+    expect(summary).toBe(
+      "Training load from 2026-03-16 to 2026-06-10. 12 runs, 120 km over 2 weeks. " +
+        "The week of 2026-06-08 is still in progress, so its volume is only the days so far. " +
+        "No injury-risk warnings.",
+    );
+  });
+
   it("names the flagged weeks", () => {
     const summary = buildTrainingLoadContextSummary(
       data([

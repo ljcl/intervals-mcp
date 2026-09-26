@@ -413,8 +413,8 @@ way as the text tool's and the two can never disagree. The app's payload adds
 series/projection/taper it already carried.
 
 `get-training-load` reports weekly running volume (distance, time,
-elevation, run count) and the same injury-risk warnings as before
-(`computeWeekWarnings` in `trainingLoad.ts`, shared with the app feed below),
+elevation, run count) and injury-risk warnings (`computeWeekWarnings` in
+`trainingLoad.ts`, shared with the app feed below),
 always from Run/TrailRun/VirtualRun activities regardless of `runOnly`. It
 also reports weekly `load` (the sum of `icu_training_load` over the included
 types) and `load_by_type`, plus the athlete's current CTL/ATL/TSB.
@@ -438,6 +438,27 @@ re-interpreted through the server's time zone) via `startOfWeekMonday` in
 `utils/localDate.ts`, the same helper `get-athlete-stats` uses. Time is
 reported both ways: `time_s` (seconds, matching `units.time`) and
 `time_hours` (matching `units.time_hours`), per week and in `totals`.
+
+The window is whole weeks (`trainingLoadWindow` in `trainingLoad.ts`, shared
+with the app feed): `days` rounded up to Monday-to-Sunday weeks in the
+athlete's time zone, plus the current week so far. So `days: 28` reads 4
+complete weeks and this week on every weekday, Sunday included. `period`
+reports that window, and `period.days` is its length, which can be up to 13
+days more than the requested `days`. Only the current week can be partial:
+the text marks it "in progress, N of 7 days" and adds a line to `warnings`
+(#43). Averages, the trend and the warnings read the weeks `selectRunWeeks`
+picks, the one call this tool and the app feed both make, so their warnings
+cannot differ: every week from the first to the last week with a run, with
+zero-run weeks kept (a layoff is a real gap) and load-only weeks outside that
+span left out. Averages and the trend use its complete weeks only; with no
+complete week yet, the averages are this week so far. The trend compares the
+distance of the last 2 complete weeks with the 2 before, and the text names
+the four weeks. A warning fires on a rise of over 30% on the week before, or
+on a week over 150% of the complete-week average and over 30 km. The week in
+progress is never the baseline for a rise or part of that average, and it is
+flagged only on the volume it already has ("so far" in the reason). The
+run-only runway still counts `days + 150` days back from today, so `current`
+matches `get-fitness-trend`'s run-only value.
 
 `update-activity` changes an activity's name, description, gear, RPE
 (`icu_rpe`), or feel. It always does a fresh read first (bypassing the

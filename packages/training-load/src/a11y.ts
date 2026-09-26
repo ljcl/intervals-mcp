@@ -55,6 +55,11 @@ export function buildLoadA11y(
     `${weeks.length} week${weeks.length === 1 ? "" : "s"} of running volume from ${fullDate(first.weekStarting)} to ${fullDate(last.weekStarting)}.`,
     `Weekly distance ranges from ${min} to ${max} km${visibility.showTrend ? "; a line shows the 3-week rolling average" : ""}.`,
   ];
+  if (last.inProgress) {
+    parts.push(
+      `The week of ${fullDate(last.weekStarting)} is still in progress, so its distance is only the days so far.`,
+    );
+  }
 
   if (visibility.showWarnings) {
     const flagged = weeks.filter((week) => week.warning);

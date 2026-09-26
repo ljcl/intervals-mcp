@@ -1,11 +1,11 @@
 /**
  * Shared fetch + classify for `get-training-load` and the training-load MCP
- * App: activities for the window (run-only or whole-body), current CTL/ATL/
- * TSB, and the activity types load was summed over. The one home
- * `get-training-load` and `get-training-load-data` build these inputs
- * through, so the two surfaces can never disagree on runway, the run
- * filter, or how `current` was read (see AGENTS.md's "derived numbers have
- * exactly one home").
+ * App: the whole-week window, activities for it (run-only or whole-body),
+ * current CTL/ATL/TSB, and the activity types load was summed over. The one
+ * home `get-training-load` and `get-training-load-data` build these inputs
+ * through, so the two surfaces can never disagree on the window, runway, the
+ * run filter, or how `current` was read (see AGENTS.md's "derived numbers
+ * have exactly one home").
  */
 import { getTimeZone } from "./config";
 import {
@@ -16,11 +16,17 @@ import {
 import { loadWellnessFitnessSeries } from "./fitnessTrendWellness";
 import { type IntervalsActivity, listActivities } from "./intervalsClient";
 import { NO_PROGRESS, type ReportProgress } from "./progress";
-import { typesWithLoad } from "./trainingLoad";
+import {
+  type TrainingLoadWindow,
+  trainingLoadWindow,
+  typesWithLoad,
+} from "./trainingLoad";
 import { addDays, todayLocal } from "./utils/localDate";
 
 export interface TrainingLoadInputs {
-  /** Run activities (Run/TrailRun/VirtualRun) inside `days`, for volume/warnings. */
+  /** The whole-week window read, from `trainingLoadWindow`. */
+  lookback: TrainingLoadWindow;
+  /** Run activities (Run/TrailRun/VirtualRun) inside `lookback`, for volume/warnings. */
   runs: IntervalsActivity[];
   /**
    * Activities `icu_training_load` is summed over: the same runs (run-only)
@@ -35,10 +41,11 @@ export interface TrainingLoadInputs {
 }
 
 /**
- * Fetches and classifies training-load inputs for `days` back from today.
- * Run-only fetches a runway before the window (`RUN_ONLY_RUNWAY_DAYS`) so
- * `buildRunOnlyFitnessTrend`'s local CTL/ATL has settled by the window
- * start, the same runway `get-fitness-trend`'s run-only path uses.
+ * Fetches and classifies training-load inputs for `days` back from today,
+ * rounded up to whole weeks plus the current week so far
+ * (`trainingLoadWindow`). Run-only fetches a runway before the window
+ * (`RUN_ONLY_RUNWAY_DAYS`) so `buildRunOnlyFitnessTrend`'s local CTL/ATL has
+ * settled, the same runway `get-fitness-trend`'s run-only path uses.
  * Whole-body reads CTL/ATL straight off intervals.icu wellness via
  * `loadWellnessFitnessSeries` instead.
  */
@@ -49,10 +56,14 @@ export async function loadTrainingLoadInputs(
 ): Promise<TrainingLoadInputs> {
   const { days, runOnly } = options;
   const tz = getTimeZone();
-  const endDate = todayLocal(tz);
-  const windowStart = addDays(endDate, -(days - 1));
+  const lookback = trainingLoadWindow(days, todayLocal(tz));
+  const { startDate: windowStart, endDate } = lookback;
 
   if (runOnly) {
+    // Counted back from today by the requested days, as get-fitness-trend
+    // counts it, so `current` matches that tool's run-only value. The
+    // window's first Monday is at most 13 days further back than `days`
+    // reaches, so at least 137 runway days still come before it.
     const runwayDays = days + RUN_ONLY_RUNWAY_DAYS;
     const runwayStart = addDays(endDate, -(runwayDays - 1));
 
@@ -86,6 +97,7 @@ export async function loadTrainingLoadInputs(
       : null;
 
     return {
+      lookback,
       runs: windowRuns,
       loadActivities: windowRuns,
       current,
@@ -114,6 +126,7 @@ export async function loadTrainingLoadInputs(
     : null;
 
   return {
+    lookback,
     runs,
     loadActivities: activities,
     current,

@@ -2,8 +2,8 @@ import { type TrainingLoadData, type WeekSummary } from "../types";
 
 /**
  * 12 weeks of build with one skipped week, a >30% spike week, and an
- * unusually-high peak week — exercises the trend line, the zero-fill row,
- * and both warning rules.
+ * unusually-high peak week, then the current week in progress: exercises
+ * the trend line, the zero-fill row, both warning rules, and the partial bar.
  */
 export const mockWeeks: WeekSummary[] = [
   {
@@ -129,11 +129,27 @@ export const mockWeeks: WeekSummary[] = [
     warning: false,
     warningReasons: [],
   },
+  {
+    // The current week, Monday to Wednesday so far: a partial bar with no
+    // trend point, as the server sends it.
+    weekStarting: "2026-06-22",
+    runs: 2,
+    distanceKm: 14.6,
+    timeHours: 1.45,
+    elevationM: 110,
+    trendKm: null,
+    inProgress: true,
+    warning: false,
+    warningReasons: [],
+  },
 ];
 
 /** Full data payload matching the mock weeks, for App-level stories. */
 export const mockTrainingLoadData: TrainingLoadData = {
-  days: 84,
+  // 12 complete weeks plus Monday to Wednesday of the current one.
+  days: 87,
+  startDate: "2026-03-30",
+  endDate: "2026-06-24",
   totals: {
     runs: mockWeeks.reduce((sum, w) => sum + w.runs, 0),
     distanceKm:

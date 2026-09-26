@@ -201,6 +201,19 @@ either run has no `gap`). `compare-activities` once divided pace by heart
 rate instead, where a slower pace and a lower heart rate add up rather than
 cancel, and called an unchanged runner "declined" (#42).
 
+**Training-load weeks have one definition.** `trainingLoad.ts` owns the
+window (`trainingLoadWindow`: `days` rounded up to whole Monday-to-Sunday
+weeks, plus the current week so far), the weeks the run-based rules read
+(`selectRunWeeks`: first to last week with a run, zero-run weeks kept, the
+week in progress apart), and the rules themselves (`computeWeekWarnings`,
+`volumeTrend`). `get-training-load` and the training-load app feed both call
+them. A window that started mid-week gave a steady runner a 1-day first week,
+then a "200% increase" on the next full week, and a trend that compared the
+unfinished current week with full ones. The app also dropped the zero-run
+weeks that the text tool kept, so the two gave different warnings for the
+same weeks (#43). Only the current week can be partial now, and no rule uses
+it as a baseline or in an average.
+
 **Taper solving.** `fitnessTrend.ts` owns every CTL/ATL/TSB number, including
 the forward-looking ones — `plannedLoads` projects a prescribed load instead of
 rest, and `solveTaperPlan` finds the weekly load taper that lands on a target

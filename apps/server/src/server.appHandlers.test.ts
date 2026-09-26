@@ -380,11 +380,13 @@ describe("training load handlers", () => {
 
     expect(result.isError).toBeUndefined();
     const text = result.content[0]?.text ?? "";
+    // TL_TODAY is a Monday: 12 complete weeks plus today.
     expect(text).toContain(
-      "Training Load (last 84 days, CTL/ATL source: intervals.icu)",
+      "Training Load (2026-03-09 to 2026-06-01, CTL/ATL source: intervals.icu)",
     );
     expect(text).toContain("Runs: 1");
     expect(text).toContain("Distance: 8 km");
+    expect(text).toContain("Week of 2026-06-01 is in progress (partial).");
   });
 
   it("get-training-load-data returns the weekly aggregation, whole-body by default", async () => {
@@ -397,12 +399,20 @@ describe("training load handlers", () => {
 
     expect(result.isError).toBeUndefined();
     const parsed = JSON.parse(result.content[0]?.text ?? "");
-    expect(parsed.days).toBe(84);
+    expect(parsed.days).toBe(85);
+    expect(parsed.startDate).toBe("2026-03-09");
+    expect(parsed.endDate).toBe(TL_TODAY);
     expect(parsed.runOnly).toBe(false);
     expect(parsed.source).toBe("intervals.icu");
     expect(parsed.totals.runs).toBe(1);
     expect(parsed.totals.load).toBe(50);
-    expect(parsed.weeks.length).toBeGreaterThan(0);
+    expect(parsed.weeks).toEqual([
+      expect.objectContaining({
+        weekStarting: TL_TODAY,
+        inProgress: true,
+        trendKm: null,
+      }),
+    ]);
   });
 
   it("get-training-load-data computes run-only load/current in one listActivities call", async () => {
@@ -472,6 +482,50 @@ describe("training load handlers", () => {
     expect(textData.activity_types_included).toEqual(
       appData.activityTypesIncluded,
     );
+  });
+
+  it("get-training-load and get-training-load-data give the same warnings for 30, 0, 0, 45 km weeks (#43)", async () => {
+    // The app used to drop the two empty weeks and warn "Volume increased
+    // 50%"; the text tool kept them and warned "Unusually high volume".
+    const activities = [
+      intervalsRun({
+        id: "1",
+        start_date_local: "2026-05-06T07:00:00",
+        distance: 30000,
+      }),
+      intervalsRun({
+        id: "2",
+        start_date_local: "2026-05-27T07:00:00",
+        distance: 45000,
+      }),
+    ];
+
+    mockedIntervalsList.mockResolvedValueOnce(activities);
+    mockedWellness.mockResolvedValueOnce([]);
+    const appResult = await dispatchToolCall("get-training-load-data", {
+      days: 28,
+    });
+    const appData = JSON.parse(appResult.content[0]?.text ?? "") as {
+      weeks: Array<{ weekStarting: string; warningReasons: string[] }>;
+    };
+
+    mockedIntervalsList.mockResolvedValueOnce(activities);
+    mockedWellness.mockResolvedValueOnce([]);
+    const textResult = await dispatchToolCall("get-training-load", {
+      days: 28,
+    });
+    const textWarnings = (
+      textResult.structuredContent as { warnings: string[] }
+    ).warnings.filter((w) => /injury risk|Unusually high/.test(w));
+
+    expect(textWarnings).toEqual([
+      "Week of 2026-05-25: Unusually high volume (45 km vs 19 km average)",
+    ]);
+    expect(
+      appData.weeks.flatMap((w) =>
+        w.warningReasons.map((r) => `Week of ${w.weekStarting}: ${r}`),
+      ),
+    ).toEqual(textWarnings);
   });
 });
 

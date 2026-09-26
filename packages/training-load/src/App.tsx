@@ -31,6 +31,7 @@ export function App({ app, data, mode = "desktop" }: AppProps) {
 
   const totalsStats = useMemo(() => buildTotalsStats(data.totals), [data]);
   const warningWeeks = useMemo(() => countWarningWeeks(data.weeks), [data]);
+  const hasWeekInProgress = data.weeks.some((w) => w.inProgress);
 
   useModelContextSync(
     app ?? undefined,
@@ -66,6 +67,15 @@ export function App({ app, data, mode = "desktop" }: AppProps) {
               label="Weekly distance"
               static
             />
+            {/* The light bar is the current week, so a short bar reads as
+             * "not over yet" rather than a drop in volume. */}
+            {hasWeekInProgress && (
+              <LegendItem
+                color="color-mix(in srgb, var(--chart-pace) 35%, transparent)"
+                label="This week so far"
+                static
+              />
+            )}
             <LegendItem
               color="var(--chart-cadence)"
               label="Trend"
