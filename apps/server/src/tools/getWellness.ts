@@ -13,13 +13,10 @@ import { WellnessOutputSchema, warnOnSchemaDrift } from "./outputs";
 
 const name = "get-wellness";
 
-const HRV_NOTE =
-  "Apple Watch reports HRV as SDNN (hrv_sdnn_ms); rMSSD (hrv_rmssd_ms) is usually null for this athlete. Do not compare SDNN values with rMSSD norms.";
-
 const description = `
 Returns daily wellness from intervals.icu for a day or a date range: HRV
-(SDNN and rMSSD where reported), resting HR, sleep, weight, CTL/ATL/TSB, and
-the subjective scores the athlete or a device logged (readiness, soreness,
+(rMSSD, SDNN or both), resting HR, sleep, weight, CTL/ATL/TSB, and the
+subjective scores the athlete or a device logged (readiness, soreness,
 fatigue, stress, mood, motivation, SpO2, respiration, comments). Use it to
 explain how a run felt or to check recovery.
 
@@ -29,7 +26,9 @@ reports each day's recorded values only.
 Notes:
 - With no date, oldest or newest, it returns today only. A range cannot
   exceed 90 days.
-- Apple Watch reports HRV as SDNN, not rMSSD; see hrv_note in the response.
+- The HRV measure depends on the athlete's device. rMSSD and SDNN are
+  different measures, so compare each only with its own norms. hrv_note in
+  the response says which ones the days have.
 `;
 
 const inputSchema = z.object({
@@ -77,6 +76,7 @@ export interface WellnessDayEntry {
 export function mapWellnessDay(w: IntervalsWellness): WellnessDayEntry {
   const ctl = w.ctl ?? null;
   const atl = w.atl ?? null;
+  // tsb comes from the unrounded ctl and atl, as get-fitness-trend does.
   const tsb = ctl != null && atl != null ? round(ctl - atl, 1) : null;
 
   return {
@@ -87,10 +87,10 @@ export function mapWellnessDay(w: IntervalsWellness): WellnessDayEntry {
     sleep_hours: w.sleepSecs != null ? round(w.sleepSecs / 3600, 1) : null,
     sleep_score: w.sleepScore ?? null,
     weight_kg: w.weight ?? null,
-    ctl,
-    atl,
+    ctl: ctl != null ? round(ctl, 1) : null,
+    atl: atl != null ? round(atl, 1) : null,
     tsb,
-    ramp_rate: w.rampRate ?? null,
+    ramp_rate: w.rampRate != null ? round(w.rampRate, 1) : null,
     readiness: w.readiness ?? null,
     soreness: w.soreness ?? null,
     fatigue: w.fatigue ?? null,
@@ -128,10 +128,28 @@ function numbers(values: (number | null)[]): number[] {
   return values.filter((v): v is number => v != null);
 }
 
+/**
+ * Builds hrv_note from the HRV measures the days carry. Which measure is set
+ * depends on the device (docs/api-notes.md), so the note never names one.
+ */
+function buildHrvNote(days: WellnessDayEntry[]): string {
+  const hasRmssd = days.some((d) => d.hrv_rmssd_ms != null);
+  const hasSdnn = days.some((d) => d.hrv_sdnn_ms != null);
+  if (hasRmssd && hasSdnn)
+    return "HRV has both rMSSD (hrv_rmssd_ms) and SDNN (hrv_sdnn_ms). They are different measures, so compare each only with its own norms.";
+  if (hasRmssd)
+    return "HRV is rMSSD (hrv_rmssd_ms). SDNN (hrv_sdnn_ms) is null.";
+  if (hasSdnn)
+    return "HRV is SDNN (hrv_sdnn_ms), not rMSSD (hrv_rmssd_ms is null). Do not compare SDNN values with rMSSD norms.";
+  return "No HRV recorded.";
+}
+
 function formatWellnessDayBlock(d: WellnessDayEntry): string {
   const lines = [`Wellness ${d.date}`];
 
   const core: string[] = [];
+  if (d.hrv_rmssd_ms != null)
+    core.push(`HRV rMSSD ${d.hrv_rmssd_ms.toFixed(1)} ms`);
   if (d.hrv_sdnn_ms != null)
     core.push(`HRV SDNN ${d.hrv_sdnn_ms.toFixed(1)} ms`);
   if (d.resting_hr != null) core.push(`resting HR ${d.resting_hr}`);
@@ -165,6 +183,8 @@ function formatWellnessDayBlock(d: WellnessDayEntry): string {
 
 function formatWellnessLine(d: WellnessDayEntry): string {
   const parts: string[] = [];
+  if (d.hrv_rmssd_ms != null)
+    parts.push(`HRV rMSSD ${d.hrv_rmssd_ms.toFixed(1)}`);
   if (d.hrv_sdnn_ms != null) parts.push(`HRV SDNN ${d.hrv_sdnn_ms.toFixed(1)}`);
   if (d.resting_hr != null) parts.push(`RHR ${d.resting_hr}`);
   if (d.sleep_hours != null) parts.push(`sleep ${d.sleep_hours.toFixed(1)}h`);
@@ -176,12 +196,15 @@ function formatWellnessLine(d: WellnessDayEntry): string {
 }
 
 function formatWellnessAverages(days: WellnessDayEntry[]): string {
-  const hrv = average(numbers(days.map((d) => d.hrv_sdnn_ms)));
+  // rMSSD and SDNN are different measures, so each gets its own average.
+  const rmssd = average(numbers(days.map((d) => d.hrv_rmssd_ms)));
+  const sdnn = average(numbers(days.map((d) => d.hrv_sdnn_ms)));
   const rhr = average(numbers(days.map((d) => d.resting_hr)));
   const sleep = average(numbers(days.map((d) => d.sleep_hours)));
 
   const parts: string[] = [];
-  if (hrv != null) parts.push(`HRV SDNN ${hrv.toFixed(1)} ms`);
+  if (rmssd != null) parts.push(`HRV rMSSD ${rmssd.toFixed(1)} ms`);
+  if (sdnn != null) parts.push(`HRV SDNN ${sdnn.toFixed(1)} ms`);
   if (rhr != null) parts.push(`resting HR ${rhr.toFixed(1)}`);
   if (sleep != null) parts.push(`sleep ${sleep.toFixed(1)} h`);
 
@@ -262,7 +285,7 @@ export const getWellnessTool = {
           spo2: "%",
           respiration: "breaths/min",
         },
-        hrv_note: HRV_NOTE,
+        hrv_note: buildHrvNote(days),
         days,
       };
 

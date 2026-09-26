@@ -135,18 +135,22 @@ reminders. Retired gear is excluded by default (`includeRetired`, default
 false). An account with no gear returns `count: 0` and a message pointing to
 the intervals.icu Gear page.
 
-`get-wellness` returns daily wellness: HRV (both `hrv_sdnn_ms` and
-`hrv_rmssd_ms`), resting HR, sleep, weight, training load (`ctl`, `atl`,
-`tsb` = ctl minus atl), and the subjective/device fields (readiness,
-soreness, fatigue, stress, mood, motivation, `spo2` (%), `respiration`
+`get-wellness` returns daily wellness: HRV (both `hrv_rmssd_ms` and
+`hrv_sdnn_ms`), resting HR, sleep, weight, training load (`ctl`, `atl`,
+`ramp_rate`, and `tsb` = ctl minus atl from the unrounded values, each
+rounded to 0.1), and the subjective/device fields (readiness, soreness,
+fatigue, stress, mood, motivation, `spo2` (%), `respiration`
 (breaths/min), comments); `units` names all of these, including `spo2` and
 `respiration`. Takes either a single `date` or an `oldest`/`newest` range
 (max 90 calendar days inclusive); supplying `date` together with a range is
 a validation error. With nothing supplied it defaults to today in the
-server's configured time zone. Apple Watch reports HRV as SDNN, not rMSSD:
-the response's `hrv_note` says so explicitly (and every text line labels it
-"HRV SDNN", never bare "HRV"), since `hrv_rmssd_ms` reads null for those
-athletes and should not be compared against rMSSD norms.
+server's configured time zone. The HRV measure depends on the athlete's
+device (docs/api-notes.md). The text prints each HRV value that is present
+with its label ("HRV rMSSD", "HRV SDNN", never bare "HRV"). A range's
+averages keep the two measures apart. `hrv_note` comes from the data and
+never names a device. When SDNN is the only measure, it says that the
+values are SDNN, not rMSSD, so rMSSD norms do not apply. Otherwise it names
+the measures present, or says that the days have no HRV.
 
 `get-activity-laps` takes the `id` from `list-activities` and returns laps
 derived from the activity's intervals (`icu_intervals`, fetched via
