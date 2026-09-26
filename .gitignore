@@ -17,6 +17,8 @@ coverage-stories/
 
 # Git worktrees
 .worktrees/
+# Claude Code worktrees (EnterWorktree, isolated subagents)
+.claude/worktrees/
 
 # Environment variables
 .env

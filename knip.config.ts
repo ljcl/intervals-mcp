@@ -9,8 +9,13 @@ export default {
         config: ["vitest.stories.config.ts"],
       },
       // Re-runnable fixture capture script, invoked directly with `bun`
-      // rather than through a package.json script.
-      entry: ["scripts/capture-intervals-fixtures.ts", "scripts/live-check.ts"],
+      // rather than through a package.json script. The Claude Code format
+      // hook is run by .claude/settings.json, which knip does not read.
+      entry: [
+        "scripts/capture-intervals-fixtures.ts",
+        "scripts/live-check.ts",
+        ".claude/hooks/format-edited-file.ts",
+      ],
     },
     "apps/server": {
       project: ["src/**/*.ts"],
