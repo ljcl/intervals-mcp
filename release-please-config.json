@@ -5,10 +5,11 @@
   "bootstrap-sha": "0fe731d108ae514b94331c9cb126e365ff177c10",
   "exclude-paths": ["docs", ".agents", ".claude"],
   "pull-request-header": ":robot: Release PR. Merging it pushes the version tag, which publishes the ghcr.io Docker image and the MCP registry entry.",
-  "pull-request-footer": "Squash-merge with the title above unchanged — the title becomes the release commit. To ship a different version, do not edit this PR; land an empty commit on main with a `Release-As: x.y.z` footer and this PR will retarget.",
+  "pull-request-footer": "Squash-merge with the title above unchanged: the title becomes the release commit. To ship a different version, do not edit this PR; set `release-as` on the package in release-please-config.json (see docs/releasing.md), and this PR will retarget.",
   "packages": {
     ".": {
       "bump-minor-pre-major": true,
+      "release-as": "1.0.0",
       "extra-files": [
         { "type": "json", "path": "server.json", "jsonpath": "$.version" }
       ]
