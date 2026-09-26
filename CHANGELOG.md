@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/ljcl/intervals-mcp/compare/v1.0.0...v1.0.1) (2026-09-26)
+
+
+### Bug Fixes
+
+* feel scale in update-activity is verified, not assumed ([#34](https://github.com/ljcl/intervals-mcp/issues/34)) ([4f8ba0e](https://github.com/ljcl/intervals-mcp/commit/4f8ba0e2c5cd0417eeab7d8f03756ca85f1e8d9d))
+
 ## [1.0.0](https://github.com/ljcl/intervals-mcp/compare/v0.2.0...v1.0.0) (2026-09-26)
 
 
