@@ -5,7 +5,6 @@ import {
   type CallToolResult,
   type ListResourcesResult,
   type ListToolsResult,
-  LOG_LEVEL_META_KEY,
   type ReadResourceResult,
   ResourceNotFoundError,
   Server,
@@ -50,11 +49,7 @@ import {
 } from "./progress";
 import { getPrompt, listPrompts } from "./prompts";
 import { buildRouteMapData, type RouteMapData } from "./routeMapData";
-import {
-  recordToolCall,
-  type ToolCallRecord,
-  type ToolOutcome,
-} from "./telemetry";
+import { recordToolCall, type ToolOutcome } from "./telemetry";
 import { READ_ONLY } from "./tools/_annotations";
 import { prefixedErrorText, toolErrorText } from "./tools/_errors";
 import { idJsonSchemaOverride, intervalsActivityIdInput } from "./tools/_ids";
@@ -1233,12 +1228,6 @@ const APP_TOOL_HANDLERS: Record<
 /** Per-call hooks the transport layer supplies to {@link dispatchToolCall}. */
 export interface DispatchOptions {
   /**
-   * Per-call sink for the same record stderr gets, so a caller that asked
-   * for logs receives them. Per-call rather than module-level because serving
-   * is stateless: every request builds its own server.
-   */
-  onRecord?: (record: ToolCallRecord) => void;
-  /**
    * Progress reporter for this call, already bound to the caller's
    * `progressToken`. Defaults to {@link NO_PROGRESS}, so a handler calls it
    * unconditionally and a caller that asked for nothing pays nothing.
@@ -1260,7 +1249,7 @@ export interface DispatchOptions {
 export async function dispatchToolCall(
   name: string,
   rawArgs: Record<string, unknown> | undefined,
-  { onRecord, progress = NO_PROGRESS }: DispatchOptions = {},
+  { progress = NO_PROGRESS }: DispatchOptions = {},
 ): Promise<ToolCallResult> {
   // The timer starts here, before token resolution, so a not-connected call is
   // recorded too — it is a real call that cost the caller a round trip, and it
@@ -1271,13 +1260,12 @@ export async function dispatchToolCall(
     result: ToolCallResult,
     errorClass?: string,
   ): ToolCallResult => {
-    const record = recordToolCall({
+    recordToolCall({
       tool: name,
       duration_ms: Math.round(performance.now() - startedAt),
       outcome,
       ...(errorClass ? { error_class: errorClass } : {}),
     });
-    onRecord?.(record);
     return result;
   };
 
@@ -1378,11 +1366,9 @@ export function createServer(): Server {
         tools: {},
         resources: {},
         prompts: {},
-        // Advertised so a caller can receive the per-call records the
-        // dispatcher already emits to stderr. The 2026-07-28 revision has no
-        // logging/setLevel: a caller asks per request via the logLevel
-        // envelope key (see the tools/call handler below).
-        logging: {},
+        // No `logging`: the 2026-07-28 revision deprecates it (SEP-2577), and
+        // the per-call record it carried is the operator's stderr line, with
+        // nothing in it the caller does not already know (#72).
       },
       cacheHints: {
         "tools/list": { ttlMs: STATIC_SURFACE_TTL_MS },
@@ -1413,20 +1399,6 @@ export function createServer(): Server {
   server.setRequestHandler("tools/call", async (request, ctx) => {
     const { name, arguments: args } = request.params;
     const result = await dispatchToolCall(name, args, {
-      onRecord: (record) => {
-        // There is no stored log level: serving is stateless and the
-        // revision has no logging/setLevel. The level rides on the
-        // per-request logLevel envelope key instead, which is also the spec's
-        // MUST-NOT-emit-unrequested gate. So records go only to callers whose
-        // request asked, and `ctx.mcpReq.log` applies their threshold.
-        const envelope = ctx.mcpReq.envelope as
-          | Record<string, unknown>
-          | undefined;
-        if (envelope?.[LOG_LEVEL_META_KEY] === undefined) return;
-        const level = record.outcome === "ok" ? "info" : "error";
-        // Never let a logging failure fail the tool call it describes.
-        void ctx.mcpReq.log(level, record, "tool-call").catch(() => {});
-      },
       // `ctx.mcpReq.notify` is already scoped to this request, which is what
       // lets the transport put the notification on the same SSE stream the
       // response will arrive on.

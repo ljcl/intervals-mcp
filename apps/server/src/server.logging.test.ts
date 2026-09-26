@@ -1,7 +1,7 @@
 /**
- * The advertised `logging` capability and the per-call telemetry behind it
- * (#241), asserted over the real transport rather than against the in-memory
- * server object — a capability that does not serialize is not advertised.
+ * The per-call telemetry (#241), and the `logging` capability it no longer
+ * feeds (#72). The capability checks go over the real transport rather than
+ * against the in-memory server object: what a host sees is what serializes.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -15,20 +15,19 @@ const { connectTestClient } = await import("./mcpTestClient");
 const { resetToolCallStats, toolCallStats } = await import("./telemetry");
 
 describe("logging capability", () => {
-  it("is advertised by server/discover", async () => {
+  it("is not advertised by server/discover", async () => {
     const { discover } = await connectTestClient("logging-test");
 
     const capabilities = discover.capabilities as Record<string, unknown>;
-    expect(capabilities).toHaveProperty("logging");
-    // The pre-existing three are untouched.
+    // The 2026-07-28 revision deprecates it (SEP-2577).
+    expect(capabilities).not.toHaveProperty("logging");
+    // The other three are untouched.
     expect(capabilities).toHaveProperty("tools");
     expect(capabilities).toHaveProperty("resources");
     expect(capabilities).toHaveProperty("prompts");
   });
-});
 
-describe("per-request log level (2026-07-28)", () => {
-  it("delivers the tool-call record when the request asks via logLevel", async () => {
+  it("sends no log notification, even when a request asks via logLevel", async () => {
     const client = await connectTestClient("logging-test");
 
     const body = await client.sendRaw("tools/call", {
@@ -37,22 +36,8 @@ describe("per-request log level (2026-07-28)", () => {
       _meta: { "io.modelcontextprotocol/logLevel": "debug" },
     });
 
-    // The dispatcher's record reaches the caller on the same response
-    // stream, exactly as the sessionful logging/setLevel sink used to.
-    expect(body).toContain("notifications/message");
-    expect(body).toContain("tool_call");
-  });
-
-  it("stays silent when the request does not ask", async () => {
-    const client = await connectTestClient("logging-test");
-
-    const body = await client.sendRaw("tools/call", {
-      name: "no-such-tool",
-      arguments: {},
-    });
-
-    // The spec's MUST: no notifications/message for a request that did not
-    // carry the logLevel envelope key.
+    // The call still gets its answer; the record stays in the stderr line.
+    expect(body).toContain("Unknown tool");
     expect(body).not.toContain("notifications/message");
   });
 });
@@ -84,21 +69,15 @@ describe("dispatch telemetry", () => {
     expect(stats.errors).toBe(1);
   });
 
-  it("hands the same record to the session sink it writes to stderr", async () => {
-    const records: unknown[] = [];
+  it("writes one JSON line per call to stderr", async () => {
+    await dispatchToolCall("no-such-tool", {});
 
-    await dispatchToolCall(
-      "no-such-tool",
-      {},
-      {
-        onRecord: (record) => {
-          records.push(record);
-        },
-      },
-    );
-
-    expect(records).toHaveLength(1);
-    expect(records[0]).toMatchObject({
+    const lines = vi
+      .mocked(console.error)
+      .mock.calls.map(([line]) => String(line))
+      .filter((line) => line.startsWith("{"));
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0]!)).toMatchObject({
       event: "tool_call",
       tool: "no-such-tool",
       outcome: "error",
