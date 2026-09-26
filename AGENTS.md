@@ -53,6 +53,9 @@ breaking them has shipped bugs — do not work around them locally.
 - **Intervals stream reads go through `loadIntervalsStreams` in
   `intervalsStreams.ts`**; only a genuine 404 or empty result throws
   `IntervalsStreamsUnavailableError`, the one error a caller may degrade on.
+  It maps a `heartrate` sample of 0 or below (a sensor dropout, which
+  intervals.icu sends as 0) to `null`, once, for every caller; `watts` and
+  `cadence` zeros stay 0.
 - **Derived numbers have exactly one home.** GAP: `hillAnalysis.ts`
   (`gapFactor`, `computeGrades`); `splitAnalysis.ts` imports, never
   re-derives. CTL/ATL/TSB and any projection/taper math: `fitnessTrend.ts`.
