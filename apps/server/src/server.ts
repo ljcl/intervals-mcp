@@ -161,7 +161,7 @@ const waypointsInput = z
   .max(50)
   .optional()
   .describe(
-    "Optional distance-anchored waypoints to pin along the track — e.g. fueling points or climb warnings from a race plan. " +
+    "Optional distance-anchored waypoints to pin along the track, e.g. fueling points or climb warnings from a race plan. " +
       "Rendered as a toggleable marker layer on the map and elevation profile. Waypoints beyond the end of the track are dropped with a warning.",
   );
 
@@ -486,7 +486,7 @@ function buildToolDefs(): ToolDef[] {
     description:
       "Open an interactive map of one activity's GPS track, fit to bounds with start and finish markers and a distance/elevation summary. " +
       "Prefer this over a text summary when the user wants to see where an activity went. Takes the activity id. " +
-      "Optionally pin distance-anchored waypoints (fueling points, climb warnings, …) along the track via the waypoints array — useful when discussing a race plan or course guide.",
+      "Optionally pin distance-anchored waypoints (fueling points, climb warnings, …) along the track via the waypoints array, useful when discussing a race plan or course guide.",
     inputSchema: toInputSchema(APP_TOOL_INPUT_SCHEMAS["view-route-map"]!),
     annotations: READ_ONLY,
     _meta: {

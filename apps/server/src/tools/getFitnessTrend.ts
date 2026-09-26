@@ -151,11 +151,13 @@ function formatDay(day: FitnessTrendDay): string {
 /** One line per planned week: what to spend, and how that compares to recent. */
 function formatTaperWeek(week: TaperWeek): string {
   const span =
-    week.days === 1 ? week.start_date : `${week.start_date} → ${week.end_date}`;
+    week.days === 1
+      ? week.start_date
+      : `${week.start_date} to ${week.end_date}`;
   const recent =
     week.pct_of_recent === null
       ? ""
-      : ` — ${week.pct_of_recent}% of recent weekly load`;
+      : `, ${week.pct_of_recent}% of recent weekly load`;
   return `  Week ${week.week} (${span}): ${week.daily_load}/day, ${week.week_load} total${recent}`;
 }
 

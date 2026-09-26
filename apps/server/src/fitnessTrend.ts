@@ -393,7 +393,7 @@ export function solveTaperPlan(
       target_tsb: targetTsb,
       achieved_tsb: round1(start.ctl - start.atl),
       feasible: false,
-      note: `${targetDate} is not after ${fromDate} — a taper needs at least one day to work with.`,
+      note: `${targetDate} is not after ${fromDate}: a taper needs at least one day to work with.`,
       weeks: [],
       days: [],
       total_load: 0,
@@ -423,7 +423,7 @@ export function solveTaperPlan(
   if (scale <= 0) {
     scale = 0;
     feasible = false;
-    note = `Even complete rest only reaches TSB ${signedRound1(restTsb)} by ${targetDate}, short of the ${signedRound1(targetTsb)} target — the target date is too soon, or the target too high.`;
+    note = `Even complete rest only reaches TSB ${signedRound1(restTsb)} by ${targetDate}, short of the ${signedRound1(targetTsb)} target: the target date is too soon, or the target too high.`;
   }
 
   const peakWeight = Math.max(...shape);
@@ -682,7 +682,7 @@ export function trendBands(series: FitnessTrendDay[]): TrendBand[] {
         "deep-fatigue",
         start,
         end,
-        `TSB at or below ${DEEP_FATIGUE_TSB} for ${days} consecutive days — deep fatigue; an easy block or rest is overdue.`,
+        `TSB at or below ${DEEP_FATIGUE_TSB} for ${days} consecutive days: deep fatigue; an easy block or rest is overdue.`,
       ),
     );
   }
@@ -693,7 +693,7 @@ export function trendBands(series: FitnessTrendDay[]): TrendBand[] {
         "fresh",
         start,
         end,
-        `TSB at ${series[end]!.tsb} (≥ +${FRESH_TSB}) — fresh and race-ready now, but fitness decays if this holds for long.`,
+        `TSB at ${series[end]!.tsb} (≥ +${FRESH_TSB}): fresh and race-ready now, but fitness decays if this holds for long.`,
       ),
     );
   }
@@ -713,7 +713,7 @@ export function trendBands(series: FitnessTrendDay[]): TrendBand[] {
         "steep-ramp",
         start,
         end,
-        `CTL climbed ${rampAt(end)} in the last 7 days — a steep ramp; sustained rates above ~${RAMP_RISK_PER_WEEK}/week carry injury and illness risk.`,
+        `CTL climbed ${rampAt(end)} in the last 7 days: a steep ramp; sustained rates above ~${RAMP_RISK_PER_WEEK}/week carry injury and illness risk.`,
       ),
     );
   }

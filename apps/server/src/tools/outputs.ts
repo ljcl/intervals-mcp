@@ -255,7 +255,7 @@ const TaperPlanSchema = z.object({
   target_tsb: z.number(),
   achieved_tsb: z
     .number()
-    .describe("TSB the plan lands on — equals target_tsb unless clamped"),
+    .describe("TSB the plan lands on; equals target_tsb unless clamped"),
   feasible: z.boolean().describe("False when the target is out of reach"),
   note: z.string().nullable().describe("Why the plan was clamped, if it was"),
   weeks: z.array(TaperWeekSchema),
