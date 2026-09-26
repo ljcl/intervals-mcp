@@ -99,7 +99,9 @@ was (hilly course, workout, long steady run).
 
 **Race prediction.** `get-race-prediction` alone. Pass `raceDistance` for a
 km split table, or `goalTime` to pace splits to a target instead of a
-prediction.
+prediction. It uses one pace-curve point per run and counts runs marked as
+races in intervals.icu double, so a history of training runs alone usually
+predicts on the slow side.
 
 **Fitness and taper planning.** `get-fitness-trend` with `targetDate` and
 `targetTsb` to solve a taper (or `projectDays`/`plannedLoads` to project

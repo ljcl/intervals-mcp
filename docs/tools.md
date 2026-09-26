@@ -288,10 +288,20 @@ the whole call or mislabelling an unrelated distance.
 
 `get-race-prediction` predicts race times from intervals.icu's `all` and `90d`
 pace curves rather than scanning activities: each curve's distance-grid points
-become prediction inputs (the `all` curve giving the fastest ever at a
-distance, `90d` the fastest of the last 90 days), combined with Riegel's
-equivalent-performance formula and weighted by recency and extrapolation
-distance, the same consensus/confidence math as before. Alongside each Riegel
+(the `all` curve giving the fastest ever at a distance, `90d` the fastest of
+the last 90 days) are reduced to one point per run, the run's best by
+Riegel's formula. A curve holds a run's best time at every distance it
+covered, so without this, one long run counted 40 times, swamped the
+consensus and faked the cross-checks behind a "high" grade (#41). The inputs
+are combined with Riegel's equivalent-performance formula and weighted by
+recency, extrapolation distance, and double for a run intervals.icu marks as
+a race. The confidence grade counts runs, not points, and measures an
+extrapolation against the longest distance a run covered rather than the
+point chosen for it. Each prediction lists its five heaviest contributions
+(the consensus, spread and grade use every run), and the text lists the runs
+behind them plus a count of the rest: for a year of history with a
+half-marathon split table, `structuredContent` went from about 150 KB to
+under 20 KB. Alongside each Riegel
 estimate it reports intervals.icu's own critical-speed model fit to the same
 pace curve (`time = (distance - dPrime) / criticalSpeed`), stated as valid for
 roughly 3 to 60 minute efforts; a prediction outside that window, a marathon

@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import paceCurvesFixture from "../__fixtures__/intervals/pace-curves.json";
 import {
   getAthletePaceCurves,
   type IntervalsAthletePaceCurves,
@@ -407,5 +408,130 @@ describe("getRacePredictionTool.execute", () => {
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toMatch(/^❌/);
     expect(result.content[0]?.text).toContain("network down");
+  });
+
+  it("does not grade high from one long run, however many points it holds", async () => {
+    // 40 grid points, 3 km to 42 km, all from one recent run.
+    const distance = Array.from({ length: 40 }, (_, i) => (i + 3) * 1000);
+    const curve = (id: string) => ({
+      id,
+      distance,
+      values: distance.map((meters) => Math.round(meters * 0.31)),
+      activity_id: distance.map(() => "i1"),
+    });
+    mockedAthleteCurves.mockResolvedValueOnce({
+      list: [curve("all"), curve("90d")],
+      activities: {
+        i1: { id: "i1", name: "Long run", start_date_local: daysAgo(10) },
+      },
+    } as unknown as IntervalsAthletePaceCurves);
+
+    const result = await run();
+
+    expect(payload(result).sources).toHaveLength(1);
+    for (const p of payload(result).predictions) {
+      expect(p.confidence).not.toBe("high");
+      expect(p.confidence_notes.join(" ")).toContain("Only one usable effort");
+    }
+    expect(result.content[0]?.text).toContain("1 run used as inputs");
+  });
+
+  it("tags races in the text and counts the runs it does not list", async () => {
+    // Six recent runs, then a 1500 m point from two years ago that is in
+    // no prediction's heaviest five.
+    const runs = [
+      { id: "i1", meters: 1500, seconds: 300, days: 700 },
+      { id: "i2", meters: 3000, seconds: 690, days: 12 },
+      { id: "i3", meters: 5000, seconds: 1200, days: 20, race: true },
+      { id: "i4", meters: 8000, seconds: 2000, days: 30 },
+      { id: "i5", meters: 10000, seconds: 2550, days: 40 },
+      { id: "i6", meters: 15000, seconds: 3950, days: 50 },
+      { id: "i7", meters: 21097.5, seconds: 5700, days: 60 },
+    ];
+    // One grid for both curves, null where no run in the window reached.
+    const curve = (id: string, maxDays: number) => ({
+      id,
+      distance: runs.map((r) => r.meters),
+      values: runs.map((r) => (r.days <= maxDays ? r.seconds : null)),
+      activity_id: runs.map((r) => (r.days <= maxDays ? r.id : null)),
+    });
+    mockedAthleteCurves.mockResolvedValueOnce({
+      list: [curve("all", Number.POSITIVE_INFINITY), curve("90d", 90)],
+      activities: Object.fromEntries(
+        runs.map((r) => [
+          r.id,
+          {
+            id: r.id,
+            name: `Run ${r.id}`,
+            start_date_local: daysAgo(r.days),
+            race: r.race ?? false,
+          },
+        ]),
+      ),
+    } as unknown as IntervalsAthletePaceCurves);
+
+    const result = await run();
+    const text = result.content[0]?.text ?? "";
+
+    expect(payload(result).sources).toHaveLength(7);
+    for (const p of payload(result).predictions) {
+      expect(p.contributions).toHaveLength(5);
+    }
+    expect(prediction(result, "5K").primary_source.activity_id).toBe("i3");
+    expect(text).toContain("from 5000 m (race) in");
+    expect(text).toContain("5000 m (race): 20:00");
+    expect(text).not.toContain("Run i1");
+    expect(text).toContain("1 more run with smaller weights");
+  });
+
+  describe("on the one-year fixture", () => {
+    // The sanitised live account behind #41: 107 pace-curve points from 6
+    // runs, which made a 150 KB response that Claude Code refused to show.
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-09-26T09:00:00Z"));
+      vi.stubEnv("TZ", "UTC");
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+      vi.unstubAllEnvs();
+    });
+
+    const runFixture = (raceDistance: string) => {
+      mockedAthleteCurves.mockResolvedValueOnce(
+        structuredClone(
+          paceCurvesFixture,
+        ) as unknown as IntervalsAthletePaceCurves,
+      );
+      return run({ raceDistance });
+    };
+
+    it("predicts from one point per run and lists at most five contributions", async () => {
+      const result = await runFixture("Half Marathon");
+
+      const sources = payload(result).sources;
+      expect(sources).toHaveLength(6);
+      expect(new Set(sources.map((s) => s.activity_id)).size).toBe(6);
+      for (const p of payload(result).predictions) {
+        expect(p.contributions.length).toBeLessThanOrEqual(5);
+      }
+      expect(result.content[0]?.text).toContain("6 runs used as inputs");
+    });
+
+    it("keeps the Half Marathon response under 20 KB and the Marathon one under 40 KB", async () => {
+      const size = (result: RunResult) => ({
+        structured: JSON.stringify(result.structuredContent).length,
+        total:
+          JSON.stringify(result.structuredContent).length +
+          (result.content[0]?.text.length ?? 0),
+      });
+
+      // #41's reproduction case, measured the way the issue measured it.
+      expect(size(await runFixture("Half Marathon")).structured).toBeLessThan(
+        20_000,
+      );
+      // The largest call: two 43-row split tables.
+      expect(size(await runFixture("Marathon")).total).toBeLessThan(40_000);
+    });
   });
 });
