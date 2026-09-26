@@ -108,6 +108,13 @@ function extractActivitySummary(activity: IntervalsActivity): ActivitySummary {
   };
 }
 
+/** One side's HR text line: the average, plus the max only when the activity recorded one. */
+function formatHrLine(summary: ActivitySummary): string | null {
+  if (summary.average_hr == null) return null;
+  const max = summary.max_hr == null ? "" : `, ${summary.max_hr} max`;
+  return `  HR: ${summary.average_hr} avg${max}`;
+}
+
 /** Signed `m:ss` string for a pace delta in seconds/km, e.g. `-0:12` or `+0:05`. `0` renders with no sign. */
 function signedPaceDelta(seconds: number): string {
   const sign = seconds < 0 ? "-" : seconds > 0 ? "+" : "";
@@ -306,8 +313,8 @@ export const compareActivitiesTool = {
       lines.push(`  ${summary1.distance_km} km in ${summary1.moving_time}`);
       if (summary1.pace_min_per_km)
         lines.push(`  Pace: ${summary1.pace_min_per_km} /km`);
-      if (summary1.average_hr != null)
-        lines.push(`  HR: ${summary1.average_hr} avg, ${summary1.max_hr} max`);
+      const hrLine1 = formatHrLine(summary1);
+      if (hrLine1) lines.push(hrLine1);
       if (summary1.cadence_spm != null)
         lines.push(`  Cadence: ${summary1.cadence_spm} spm`);
       lines.push(`  Elevation: ${summary1.elevation_gain_m} m`);
@@ -317,8 +324,8 @@ export const compareActivitiesTool = {
       lines.push(`  ${summary2.distance_km} km in ${summary2.moving_time}`);
       if (summary2.pace_min_per_km)
         lines.push(`  Pace: ${summary2.pace_min_per_km} /km`);
-      if (summary2.average_hr != null)
-        lines.push(`  HR: ${summary2.average_hr} avg, ${summary2.max_hr} max`);
+      const hrLine2 = formatHrLine(summary2);
+      if (hrLine2) lines.push(hrLine2);
       if (summary2.cadence_spm != null)
         lines.push(`  Cadence: ${summary2.cadence_spm} spm`);
       lines.push(`  Elevation: ${summary2.elevation_gain_m} m`);

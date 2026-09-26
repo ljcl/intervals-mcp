@@ -86,8 +86,10 @@ describe("dispatchToolCall input validation", () => {
     });
 
     expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toContain(
-      "Invalid arguments for get-best-efforts",
+    // Every isError text on the surface starts with the prefix, the
+    // dispatcher's own included.
+    expect(result.content[0]?.text).toMatch(
+      /^❌ Invalid arguments for get-best-efforts: /,
     );
     expect(mockedAthleteCurves).not.toHaveBeenCalled();
   });
@@ -262,7 +264,7 @@ describe("dispatchToolCall input validation", () => {
     const result = await dispatchToolCall("not-a-tool", {});
 
     expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toContain("Unknown tool: not-a-tool");
+    expect(result.content[0]?.text).toBe("❌ Unknown tool: not-a-tool");
   });
 
   it("returns isError naming INTERVALS_API_KEY when the key cannot be resolved", async () => {
@@ -273,6 +275,9 @@ describe("dispatchToolCall input validation", () => {
     const result = await dispatchToolCall("get-best-efforts", undefined);
 
     expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toBe(
+      `❌ ${new MissingApiKeyError().message}`,
+    );
     expect(result.content[0]?.text).toContain("INTERVALS_API_KEY");
     expect(mockedAthleteCurves).not.toHaveBeenCalled();
   });

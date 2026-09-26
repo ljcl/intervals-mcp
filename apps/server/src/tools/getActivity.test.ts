@@ -319,6 +319,37 @@ describe("formatActivityDetailText", () => {
     expect(text).not.toContain("(");
   });
 
+  it("prints feel with intervals.icu's scale, so 1 does not read as the worst", () => {
+    const detail = mapActivityDetail(
+      { ...runActivityWithIntervals, feel: 1 },
+      sportSettingsRun,
+    );
+    const loadLine = formatActivityDetailText(detail)
+      .split("\n")
+      .find((l) => l.startsWith("Load:"));
+
+    // On intervals.icu 1 is "Strong" and 5 the weakest (docs/api-notes.md).
+    expect(loadLine).toMatch(/, feel 1 \(1 strongest to 5 weakest\)$/);
+    // structuredContent keeps the bare number.
+    expect(detail.feel).toBe(1);
+  });
+
+  it("prints step length but not stride, which is the same per-step distance", () => {
+    const detail = mapActivityDetail(
+      runActivityWithIntervals,
+      sportSettingsRun,
+    );
+    const dynamicsLine = formatActivityDetailText(detail)
+      .split("\n")
+      .find((l) => l.startsWith("Dynamics:"));
+
+    expect(dynamicsLine).toBe(
+      "Dynamics: GCT 233 ms, VO 108 mm, VR 8.8%, step 1226 mm",
+    );
+    // structuredContent keeps stride_m; only the text leaves it out.
+    expect(detail.running_dynamics?.stride_m).toBe(1.22);
+  });
+
   it("stays well under the size bound for the fixture activity", () => {
     const detail = mapActivityDetail(
       runActivityWithIntervals,

@@ -42,7 +42,7 @@ rather than (or alongside) text.
 | ---- | ------- | ---------- |
 | `get-activity-laps` | What were the lap splits? | `id` |
 | `get-running-summary` | One-shot run readout: metrics, HR zones, cadence, dynamics, laps | `id` |
-| `get-running-dynamics` | Ground contact time, vertical oscillation/ratio, step length, stride | `id`, `includeIntervals` |
+| `get-running-dynamics` | Ground contact time, vertical oscillation/ratio, step length | `id`, `includeIntervals` |
 | `get-activity-zones` | Time in each HR zone (power zones are not reported yet) | `id` |
 | `get-activity-streams` | Raw time-series (HR, pace, cadence, power, altitude...) | `id`, `types`, `maxPoints` |
 

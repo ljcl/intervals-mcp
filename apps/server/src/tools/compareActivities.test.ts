@@ -263,6 +263,28 @@ describe("compare-activities execute", () => {
     expect(text).toContain(`(${structured.efficiency.interpretation})`);
   });
 
+  it("leaves max HR out of the HR line when the activity recorded none", async () => {
+    mockedGetActivity.mockResolvedValueOnce(
+      fakeActivity({ max_heartrate: null }),
+    );
+    mockedGetActivity.mockResolvedValueOnce(faster);
+
+    const result = await compareActivitiesTool.execute(
+      {
+        activityId1: "i100",
+        activityId2: "i200",
+      },
+      "test-token",
+    );
+
+    const lines = (result.content[0]?.text ?? "").split("\n");
+    expect(lines.filter((l) => l.startsWith("  HR:"))).toEqual([
+      "  HR: 150 avg",
+      "  HR: 160 avg, 172 max",
+    ]);
+    expect(lines.join("\n")).not.toMatch(/null|undefined/);
+  });
+
   it("maps a 404 to a not-found message", async () => {
     mockedGetActivity.mockRejectedValue(handledNotFound("getActivity"));
 

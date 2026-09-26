@@ -31,9 +31,9 @@ const MAX_INTERVAL_LINES = 20;
 
 const description = `
 Returns one activity's running dynamics: ground contact time (GCT), vertical
-oscillation (VO), vertical ratio, step length, stride and cadence. It gives
-activity averages with a within/high/low status against common targets (VO
-under 100 mm, GCT 200 to 260 ms), plus a row per WORK interval.
+oscillation (VO), vertical ratio, step length and cadence. It gives activity
+averages with a within/high/low status against common targets (VO under
+100 mm, GCT 200 to 260 ms), plus a row per WORK interval.
 
 get-activity and get-running-summary already show the activity averages. Use
 this tool for the per-interval rows and the status, for example to see
@@ -42,6 +42,8 @@ whether form held up across repeats.
 Notes:
 - Vertical ratio is a value only, with no status (under about 8% is commonly
   called efficient).
+- stride_m is distance per step from pace and cadence, not a two-step
+  stride, so the text shows step length only.
 - Accepts any activity type. A type without step cadence (not Run, TrailRun,
   VirtualRun, Walk or Hike), or a device that recorded no dynamics, returns
   has_dynamics: false with a message, not an error.
@@ -297,8 +299,8 @@ function formatIntervalRow(row: RunningDynamicsIntervalRow): string {
   }
   if (row.vertical_ratio_pct != null)
     parts.push(`VR ${row.vertical_ratio_pct}%`);
+  // No "stride": stride_m is distance per step too (see RunningDynamicsAvg).
   if (row.step_length_mm != null) parts.push(`step ${row.step_length_mm} mm`);
-  if (row.stride_m != null) parts.push(`stride ${row.stride_m} m`);
   if (row.cadence_spm != null) parts.push(`cadence ${row.cadence_spm} spm`);
   const label = row.label ?? `lap ${row.lap_index}`;
   return `${row.lap_index}. ${label}: ${parts.join(", ")}`;
@@ -323,9 +325,9 @@ export function formatRunningDynamicsText(d: RunningDynamicsResponse): string {
       parts.push(`VO ${a.vertical_oscillation_mm} mm`);
     if (a.vertical_ratio_pct != null)
       parts.push(`vertical ratio ${a.vertical_ratio_pct}%`);
+    // No "stride": stride_m is distance per step too (see RunningDynamicsAvg).
     if (a.step_length_mm != null)
       parts.push(`step length ${a.step_length_mm} mm`);
-    if (a.stride_m != null) parts.push(`stride ${a.stride_m} m`);
     if (a.cadence_spm != null) parts.push(`cadence ${a.cadence_spm} spm`);
     if (parts.length > 0) lines.push(`Averages: ${parts.join(", ")}`);
   }

@@ -55,6 +55,15 @@ function messageOf(error: unknown): string {
 }
 
 /**
+ * `message` with the prefix, for an `isError` text that has no error to
+ * translate: the dispatcher's own unknown-tool, invalid-arguments and
+ * missing-key texts.
+ */
+export function prefixedErrorText(message: string): string {
+  return `${PREFIX} ${message}`;
+}
+
+/**
  * Builds the `isError` text for a failure that escaped a tool's success
  * path. Never throws: a `null`, `undefined`, or non-`Error` input still
  * yields a prefixed line, because a catch block that itself throws turns a

@@ -61,7 +61,7 @@ describe("mapRunningDynamics", () => {
         value: 108,
         target: "under 100 mm",
         status: "high",
-        message: "high - above the 100 mm target",
+        message: "high - at or above the 100 mm target",
       },
       ground_contact_time: {
         value: 233,
@@ -143,10 +143,26 @@ describe("formatRunningDynamicsText", () => {
     expect(text).toContain("GCT 233 ms");
     expect(text).toContain("VO 108 mm");
     expect(text).toContain(
-      "Assessment: VO high - above the 100 mm target; GCT good - within the 200-260 ms target range",
+      "Assessment: VO high - at or above the 100 mm target; GCT good - within the 200-260 ms target range",
     );
     expect(text).toContain("WORK intervals:");
     expect(text).toContain("1.");
+  });
+
+  it("prints step length but not stride, which is the same per-step distance", () => {
+    const d = mapRunningDynamics(runActivityWithIntervals, true);
+    const lines = formatRunningDynamicsText(d).split("\n");
+
+    expect(lines.find((l) => l.startsWith("Averages:"))).toBe(
+      "Averages: GCT 233 ms, VO 108 mm, vertical ratio 8.8%, step length 1226 mm, cadence 166 spm",
+    );
+    expect(lines.find((l) => l.startsWith("1. "))).toMatch(
+      /, step 1224 mm, cadence 166 spm$/,
+    );
+    expect(lines.join("\n")).not.toContain("stride");
+    // structuredContent keeps stride_m on the averages and on each row.
+    expect(d.averages?.stride_m).toBe(1.22);
+    expect(d.intervals[0]?.stride_m).toBe(1.22);
   });
 
   it("renders the no-dynamics message without a stack trace of empty sections", () => {

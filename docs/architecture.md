@@ -65,7 +65,10 @@ never per-tool.
   `❌ Failed to <context>: <message>`; every `isError` text on the surface
   starts with `❌`. Tool catch blocks and the dispatcher's final catch call it
   for the text and write the `{ content, isError: true }` literal themselves
-  (the helper's own comment explains why it is not the whole result). Never
+  (the helper's own comment explains why it is not the whole result). The
+  dispatcher's own texts (unknown tool, invalid arguments, missing API key)
+  have no error to translate, so they get the prefix from
+  `prefixedErrorText` in the same file. Never
   string-match a message for
   "Record Not Found", "404", or a `SUBSCRIPTION_REQUIRED:` prefix: the typed
   errors survive `handleApiError` precisely so callers can branch on them,

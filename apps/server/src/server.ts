@@ -56,7 +56,7 @@ import {
   type ToolOutcome,
 } from "./telemetry";
 import { READ_ONLY } from "./tools/_annotations";
-import { toolErrorText } from "./tools/_errors";
+import { prefixedErrorText, toolErrorText } from "./tools/_errors";
 import { idJsonSchemaOverride, intervalsActivityIdInput } from "./tools/_ids";
 import {
   buildComparison,
@@ -1285,7 +1285,9 @@ export async function dispatchToolCall(
   if (!handler) {
     return finish("error", {
       isError: true,
-      content: [{ type: "text", text: `Unknown tool: ${name}` }],
+      content: [
+        { type: "text", text: prefixedErrorText(`Unknown tool: ${name}`) },
+      ],
     });
   }
 
@@ -1299,7 +1301,9 @@ export async function dispatchToolCall(
         content: [
           {
             type: "text",
-            text: `Invalid arguments for ${name}: ${z.prettifyError(parsed.error)}`,
+            text: prefixedErrorText(
+              `Invalid arguments for ${name}: ${z.prettifyError(parsed.error)}`,
+            ),
           },
         ],
       });
@@ -1316,7 +1320,10 @@ export async function dispatchToolCall(
     const message = error instanceof Error ? error.message : String(error);
     return finish(
       "not_connected",
-      { isError: true, content: [{ type: "text", text: message }] },
+      {
+        isError: true,
+        content: [{ type: "text", text: prefixedErrorText(message) }],
+      },
       error instanceof Error ? error.constructor.name : undefined,
     );
   }

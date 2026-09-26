@@ -8,6 +8,8 @@
  * from this table.
  */
 
+import { ProtocolError, ProtocolErrorCode } from "@modelcontextprotocol/server";
+
 export interface PromptArgumentDefinition {
   name: string;
   description: string;
@@ -95,23 +97,33 @@ export function listPrompts() {
 }
 
 /**
- * GetPrompt payload. Throws on unknown names and missing required
- * arguments so the SDK surfaces a proper JSON-RPC error.
+ * GetPrompt payload. An unknown name or a missing required argument throws
+ * Invalid Params (-32602), the code `resources/read` uses for an unknown
+ * uri. A plain `Error` reaches the client as a generic Internal Error
+ * (-32603), which reads as a server fault.
+ *
+ * `prompts` defaults to the table above. Tests pass their own, because no
+ * shipped prompt has a required argument yet.
  */
 export function getPrompt(
   name: string,
   args: Record<string, string> = {},
+  prompts: readonly PromptDefinition[] = PROMPTS,
 ): {
   description: string;
   messages: Array<{ role: "user"; content: { type: "text"; text: string } }>;
 } {
-  const prompt = PROMPTS.find((p) => p.name === name);
+  const prompt = prompts.find((p) => p.name === name);
   if (!prompt) {
-    throw new Error(`Unknown prompt: ${name}`);
+    throw new ProtocolError(
+      ProtocolErrorCode.InvalidParams,
+      `Unknown prompt: ${name}`,
+    );
   }
   for (const arg of prompt.arguments) {
     if (arg.required && !args[arg.name]) {
-      throw new Error(
+      throw new ProtocolError(
+        ProtocolErrorCode.InvalidParams,
         `Missing required argument "${arg.name}" for prompt ${name}`,
       );
     }
