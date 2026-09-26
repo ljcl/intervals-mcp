@@ -17,10 +17,10 @@ export default defineConfig({
       // than hand-editing the numbers.
       thresholds: {
         autoUpdate: (newThreshold: number) => Math.floor(newThreshold - 5),
-        statements: 87,
-        branches: 86,
-        functions: 76,
-        lines: 87,
+        statements: 91,
+        branches: 88,
+        functions: 89,
+        lines: 91,
       },
       // The presentational components are covered by the story render-path
       // report, not here; thresholding them twice would just double-count.

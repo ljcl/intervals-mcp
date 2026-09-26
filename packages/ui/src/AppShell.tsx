@@ -169,18 +169,25 @@ export function useHostRoot<TArgs>({
           setArgsError(outcome.message);
         }
       };
-      createdApp.onhostcontextchanged = (ctx) => {
-        setHostCtx(pickHostCtx(ctx));
-      };
       createdApp.onerror = console.error;
     },
   });
 
   useHostStyles(app, app?.getHostContext());
 
+  // A host-context notification carries only the fields that changed. The
+  // SDK merges it into `getHostContext()` before any listener runs, so read
+  // the merged context. Storing the notification itself drops every field
+  // the host did not send again.
   useEffect(() => {
-    const ctx = app?.getHostContext();
-    if (ctx) setHostCtx(pickHostCtx(ctx));
+    if (!app) return;
+    const syncHostCtx = () => {
+      const ctx = app.getHostContext();
+      if (ctx) setHostCtx(pickHostCtx(ctx));
+    };
+    syncHostCtx();
+    app.addEventListener("hostcontextchanged", syncHostCtx);
+    return () => app.removeEventListener("hostcontextchanged", syncHostCtx);
   }, [app]);
 
   const isMobile = useMobileMode(hostCtx);
@@ -245,14 +252,22 @@ interface FullscreenToggleProps {
 }
 
 /**
- * Enter/exit-fullscreen control. The current mode prefers the host
- * context (updated via hostcontextchanged); the local echo of the last
- * `requestDisplayMode` result covers hosts that grant the request without
- * re-sending context.
+ * Enter/exit-fullscreen control. It shows the display mode that the host
+ * reports. After a request, it shows the mode that `requestDisplayMode`
+ * returned instead. This local echo covers hosts that grant a request
+ * without re-sending context. The next mode that the host reports replaces
+ * the echo.
  */
 function FullscreenToggle({ app, hostCtx }: FullscreenToggleProps) {
   const [localMode, setLocalMode] = useState<McpUiDisplayMode | null>(null);
-  const displayMode = hostCtx.displayMode ?? localMode ?? "inline";
+  // Drop the echo when the host reports a new mode. Doing this during render,
+  // not in an effect, keeps a stale echo off the screen.
+  const [lastHostMode, setLastHostMode] = useState(hostCtx.displayMode);
+  if (hostCtx.displayMode !== lastHostMode) {
+    setLastHostMode(hostCtx.displayMode);
+    setLocalMode(null);
+  }
+  const displayMode = localMode ?? hostCtx.displayMode ?? "inline";
   const isFullscreen = displayMode === "fullscreen";
 
   const toggle = async () => {
