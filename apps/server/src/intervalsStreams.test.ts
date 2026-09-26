@@ -6,6 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import streamsFixture from "./__fixtures__/intervals/streams.json";
 import streamsHillyFixture from "./__fixtures__/intervals/streams-hilly.json";
+import streamsHrDropoutFixture from "./__fixtures__/intervals/streams-hr-dropout.json";
 import { HttpError, intervalsApi, RateLimitError } from "./fetchClient";
 import {
   IntervalsStreamsUnavailableError,
@@ -264,6 +265,60 @@ describe("loadIntervalsStreams", () => {
       await expect(
         loadIntervalsStreams("key", "i1", ["time"]),
       ).rejects.toBeInstanceOf(IntervalsStreamsUnavailableError);
+    });
+  });
+
+  describe("heart-rate dropouts", () => {
+    const rawData = (type: string) =>
+      streamsHrDropoutFixture.find((stream) => stream.type === type)?.data;
+
+    it("maps the fixture's 0 bpm dropout to null and keeps the samples around it", async () => {
+      mockedGet.mockResolvedValueOnce({ data: streamsHrDropoutFixture });
+
+      const streams = await loadIntervalsStreams("key", "i2", [
+        "time",
+        "heartrate",
+        "cadence",
+        "watts",
+      ]);
+
+      // The sensor lost contact at samples 26-71 while the runner kept
+      // going, and intervals.icu sends those samples as 0 bpm.
+      expect(rawData("heartrate")?.slice(26, 72)).toEqual(Array(46).fill(0));
+      expect(streams.heartrate).toHaveLength(104);
+      expect(streams.heartrate?.slice(26, 72)).toEqual(Array(46).fill(null));
+      expect(streams.heartrate?.[25]).toBe(138);
+      expect(streams.heartrate?.[72]).toBe(154);
+      expect(streams.heartrate?.some((hr) => hr !== null && hr <= 0)).toBe(
+        false,
+      );
+      // Cadence and power carry on through the dropout, untouched.
+      expect(streams.cadence).toEqual(rawData("cadence"));
+      expect(streams.watts).toEqual(rawData("watts"));
+    });
+
+    it("maps a 0 or negative heart rate to null, but keeps 0 W and 0 cadence", async () => {
+      mockedGet.mockResolvedValueOnce({
+        data: [
+          { type: "time", data: [0, 1, 2, 3, 4, 5] },
+          // Samples 1-2: a stop, where 0 W and 0 cadence are real values.
+          // Samples 3-4: a heart-rate dropout, sent as 0 and as a negative.
+          { type: "heartrate", data: [150, 151, 152, 0, -1, 153] },
+          { type: "watts", data: [240, 0, 0, 245, 250, 248] },
+          { type: "cadence", data: [86, 0, 0, 87, 88, 87] },
+        ],
+      });
+
+      const streams = await loadIntervalsStreams("key", "i1", [
+        "time",
+        "heartrate",
+        "watts",
+        "cadence",
+      ]);
+
+      expect(streams.heartrate).toEqual([150, 151, 152, null, null, 153]);
+      expect(streams.watts).toEqual([240, 0, 0, 245, 250, 248]);
+      expect(streams.cadence).toEqual([86, 0, 0, 87, 88, 87]);
     });
   });
 

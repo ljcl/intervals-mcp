@@ -1,13 +1,19 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { handledNotFound, handledRateLimit } from "../__fixtures__";
 import activityFixture from "../__fixtures__/intervals/activity.json";
+import activityHillyFixture from "../__fixtures__/intervals/activity-hilly.json";
 import streamsFixture from "../__fixtures__/intervals/streams.json";
+import streamsHrDropoutFixture from "../__fixtures__/intervals/streams-hr-dropout.json";
 import {
   getActivity,
   getActivityStreams,
   type IntervalsActivity,
   type IntervalsStream,
 } from "../intervalsClient";
+import {
+  type IntervalsStreams,
+  loadIntervalsStreams,
+} from "../intervalsStreams";
 import {
   buildActivityStreamsResult,
   formatActivityStreamsText,
@@ -27,7 +33,7 @@ const mockedGetActivity = vi.mocked(getActivity);
 const mockedGetActivityStreams = vi.mocked(getActivityStreams);
 
 const runActivity = activityFixture as unknown as IntervalsActivity;
-const streams = streamsFixture as unknown as IntervalsStream[];
+const rawStreams = streamsFixture as unknown as IntervalsStream[];
 
 const ALL_TYPES: StreamType[] = [
   "time",
@@ -43,6 +49,14 @@ const ALL_TYPES: StreamType[] = [
   "vertical_ratio",
   "step_length",
 ];
+
+// The builder takes streams as `loadIntervalsStreams` shapes them, so the
+// fixture goes through the real adapter once, with the client mocked.
+let streams: IntervalsStreams;
+beforeAll(async () => {
+  mockedGetActivityStreams.mockResolvedValueOnce(rawStreams);
+  streams = await loadIntervalsStreams("key", "i189807578", ALL_TYPES);
+});
 
 describe("buildActivityStreamsResult", () => {
   it("downsamples the 600-point fixture to 100 points per column", () => {
@@ -189,10 +203,12 @@ describe("buildActivityStreamsResult", () => {
   });
 
   it("returns null for a latlng point where the bucket's last sample is null", () => {
-    const tiny: IntervalsStream[] = [
-      { type: "time", data: [0, 1] },
-      { type: "latlng", data: [10, null], data2: [20, null] },
-    ];
+    const tiny: IntervalsStreams = {
+      time: [0, 1],
+      latlng: [[10, 20], null],
+      moving: [true, true],
+      length: 2,
+    };
     const result = buildActivityStreamsResult(runActivity, tiny, ["latlng"], 2);
 
     expect(result.streams.latlng).toEqual([[10, 20], null]);
@@ -224,7 +240,11 @@ describe("buildActivityStreamsResult", () => {
   });
 
   it("returns every requested type in missing when the streams response has none of them", () => {
-    const timeOnly: IntervalsStream[] = [{ type: "time", data: [0, 1, 2] }];
+    const timeOnly: IntervalsStreams = {
+      time: [0, 1, 2],
+      moving: [true, true, true],
+      length: 3,
+    };
     const result = buildActivityStreamsResult(
       runActivity,
       timeOnly,
@@ -324,7 +344,11 @@ describe("formatActivityStreamsText", () => {
   });
 
   it("omits the CSV block entirely when every requested type is missing", () => {
-    const timeOnly: IntervalsStream[] = [{ type: "time", data: [0, 1, 2] }];
+    const timeOnly: IntervalsStreams = {
+      time: [0, 1, 2],
+      moving: [true, true, true],
+      length: 3,
+    };
     const result = buildActivityStreamsResult(
       runActivity,
       timeOnly,
@@ -354,7 +378,7 @@ describe("getActivityStreamsTool.execute", () => {
 
   it("fetches the activity then its streams, always including time in the fetch", async () => {
     mockedGetActivity.mockResolvedValueOnce(runActivity);
-    mockedGetActivityStreams.mockResolvedValueOnce(streams);
+    mockedGetActivityStreams.mockResolvedValueOnce(rawStreams);
 
     const result = await getActivityStreamsTool.execute(
       { id: "i189807578", types: ["heartrate"], maxPoints: 100 },
@@ -374,7 +398,7 @@ describe("getActivityStreamsTool.execute", () => {
 
   it("returns structured content matching the fixture at maxPoints 100, watts missing", async () => {
     mockedGetActivity.mockResolvedValueOnce(runActivity);
-    mockedGetActivityStreams.mockResolvedValueOnce(streams);
+    mockedGetActivityStreams.mockResolvedValueOnce(rawStreams);
 
     const result = await getActivityStreamsTool.execute(
       { id: "i189807578", types: ALL_TYPES, maxPoints: 100 },
@@ -432,5 +456,31 @@ describe("getActivityStreamsTool.execute", () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain("rate limit");
+  });
+
+  it("reports a heart-rate dropout as a gap, never as 0 bpm or a diluted mean", async () => {
+    // The sensor lost contact at samples 26-71 while the runner kept going,
+    // and intervals.icu sends those samples as 0 bpm.
+    mockedGetActivity.mockResolvedValueOnce(
+      activityHillyFixture as unknown as IntervalsActivity,
+    );
+    mockedGetActivityStreams.mockResolvedValueOnce(
+      streamsHrDropoutFixture as unknown as IntervalsStream[],
+    );
+
+    const result = await getActivityStreamsTool.execute(
+      { id: "i189757207", types: ["heartrate"], maxPoints: 10 },
+      "key",
+    );
+
+    const heartrate = result.structuredContent?.streams.heartrate;
+    expect(heartrate).toHaveLength(10);
+    expect(heartrate).not.toContain(0);
+    // Buckets 3-6 (samples 31-71) hold only dropout samples: a gap.
+    expect(heartrate?.slice(3, 7)).toEqual([null, null, null, null]);
+    // Bucket 2 (samples 20-30) holds six real samples at 138 bpm and five
+    // dropout samples. Its mean is 138, not the 75 the zeros would give.
+    expect(heartrate?.[2]).toBe(138);
+    expect(result.content[0]?.text).toContain("heartrate: 125-155 bpm");
   });
 });

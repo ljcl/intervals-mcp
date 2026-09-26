@@ -194,6 +194,25 @@ this run (1 WORK, index 0-2075; 1 RECOVERY, index 2075-2374), both carrying
 `icu_lap_count` 1. There is no polyline/map key on the activity payload
 itself.
 
+## Heart-rate dropouts (2026-09-26, live read-only check)
+
+intervals.icu returns 0, not `null`, for a heart-rate sample where the
+sensor lost contact.
+
+- Live check on 2026-09-26: a 42 km run had a heart-rate dropout in the
+  first 5 km. Before the fix (#46), `get-activity-streams` with
+  `maxPoints: 2000` returned 141 buckets at 0 bpm and 12 buckets between 25
+  and 119 bpm. The mixed buckets averaged dropout zeros with real samples.
+- The hilly capture (`streams-hilly.json`) shows the same pattern: 453 of its
+  600 `heartrate` samples are 0, in five stretches, while `cadence`, `watts`
+  and `velocity_smooth` carry on as normal. `streams-hr-dropout.json` is its
+  first 104 samples: real heart rate, a dropout at samples 26-71, then real
+  heart rate again.
+- `loadIntervalsStreams` (`intervalsStreams.ts`) maps every `heartrate`
+  sample of 0 or below to `null`, once, for every caller. `watts` and
+  `cadence` keep their zeros: 0 W while coasting and 0 cadence while stopped
+  are real values.
+
 ## update-activity live write check (2026-09-25, user-approved, one run)
 
 Controller-run, one write to one activity, approved by the user before running: `update-activity`

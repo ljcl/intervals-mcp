@@ -121,7 +121,10 @@ latlng, watts, stance_time, vertical_oscillation, vertical_ratio,
 step_length) as index-aligned arrays with units. Large activities are
 downsampled to `maxPoints` (10-2000, default 120): each bucket reports the
 mean of its non-null samples, except time, distance, and latlng, which take
-the bucket's last sample. `time` is always fetched to size the buckets, but
+the bucket's last sample. A heart-rate dropout, which intervals.icu sends as
+0 bpm, comes from `loadIntervalsStreams` as `null`, so a bucket never
+averages it with real samples, and a bucket of only dropout samples is
+`null`. `time` is always fetched to size the buckets, but
 only returned when requested. cadence is doubled to steps/min (unit `spm`)
 for Run/TrailRun/VirtualRun/Walk/Hike; other sport types keep the raw rate,
 reported in `rpm`. A requested type the activity's streams don't include
@@ -495,7 +498,8 @@ Every `*-data` app-only tool reads intervals.icu streams through
 about 1,000 points for the chart and route-map payloads. The gap-free axes
 (time, distance, and route-map lat/lng) are filled before downsampling so
 every downstream lookup stays valid; every other metric keeps `null` samples
-as `null`, and the chart draws a gap rather than a fabricated zero or spike.
+as `null` (a heart-rate dropout, which intervals.icu sends as 0, is `null`
+too), and the chart draws a gap rather than a fabricated zero or spike.
 This matters most for the running-dynamics overlays (stance time, vertical
 oscillation/ratio, step length), which have interior gaps mid-run, not just
 leading/trailing ones (see docs/api-notes.md). `get-cadence-trend-data`

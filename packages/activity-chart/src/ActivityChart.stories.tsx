@@ -3,6 +3,7 @@ import { MobileCardShell } from "@intervals-mcp/ui";
 import { expect, waitFor } from "storybook/test";
 import { dynamicsRun } from "./__fixtures__/dynamics-run";
 import { gappyRun } from "./__fixtures__/gappy-run";
+import { hrDropoutRun } from "./__fixtures__/hr-dropout-run";
 import { manualEntry, timeOnlyRecording } from "./__fixtures__/manual-entry";
 import { poolSwim } from "./__fixtures__/pool-swim";
 import { tempoRun } from "./__fixtures__/tempo-run";
@@ -152,6 +153,61 @@ export const GappyRunMobile = meta.story({
       </MobileCardShell>
     ),
   ],
+});
+
+/**
+ * A real heart-rate dropout (#46): intervals.icu sends 0 bpm while the sensor
+ * has lost contact, and the server now sends those samples as null. The
+ * heart-rate line breaks into two subpaths around the dropout, where it once
+ * dived to 0, and the narrated range starts at a real reading, not at 0.
+ */
+async function expectHeartRateGap(canvasElement: HTMLElement) {
+  const heartRatePath = () =>
+    canvasElement.querySelector(
+      'path.recharts-line-curve[stroke="var(--chart-heartrate)"]',
+    );
+  // ResponsiveContainer needs a resize tick before the chart mounts.
+  await waitFor(() => expect(heartRatePath()).not.toBeNull());
+  const moveCommands = heartRatePath()?.getAttribute("d")?.match(/M/g) ?? [];
+  expect(moveCommands).toHaveLength(2);
+
+  const descText = canvasElement.querySelector("desc")?.textContent ?? "";
+  expect(descText).toContain("Heart rate ranges from");
+  expect(descText).not.toContain("Heart rate ranges from 0 ");
+}
+
+export const HeartRateDropout = meta.story({
+  args: {
+    data: toChartData(hrDropoutRun),
+    meta: extractMeta(hrDropoutRun),
+    laps: toLapData(hrDropoutRun),
+  },
+  play: async ({ canvasElement }) => {
+    await expectHeartRateGap(canvasElement);
+  },
+});
+
+export const HeartRateDropoutMobile = meta.story({
+  args: {
+    data: toChartData(hrDropoutRun),
+    meta: extractMeta(hrDropoutRun),
+    laps: toLapData(hrDropoutRun),
+    mode: "mobile",
+  },
+  globals: {
+    viewport: { value: "claudeIosCard" },
+  },
+  parameters: { layout: "fullscreen" },
+  decorators: [
+    (StoryFn) => (
+      <MobileCardShell>
+        <StoryFn />
+      </MobileCardShell>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    await expectHeartRateGap(canvasElement);
+  },
 });
 
 export const MobileRun = meta.story({
