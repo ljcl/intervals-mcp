@@ -164,7 +164,7 @@ describe("tool annotations exhaustiveness", () => {
  * Serialization check. The in-memory TOOL_DEFS table having correct annotations
  * proves nothing about what the host receives: SDK result schemas can drop
  * fields they do not model, and an annotation that does not reach the wire
- * cannot influence a permission decision. So this drives a real initialize +
+ * cannot influence a permission decision. So this drives a real
  * tools/list through the transport and reads the JSON that comes back.
  */
 async function listToolsOverTheWire(): Promise<Array<Record<string, unknown>>> {

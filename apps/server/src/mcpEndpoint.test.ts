@@ -1,9 +1,9 @@
 /**
- * Era routing and HTTP behaviour of the dual-era /mcp endpoint (#115): a
- * legacy `initialize` is answered per request with no session to track, a
- * modern enveloped request is served on the 2026-07-28 path, malformed JSON
+ * HTTP behaviour of the 2026-07-28-only /mcp endpoint (#33): an enveloped
+ * request is served, any 2025-era request is rejected with a typed
+ * unsupported-version error naming the served revision, malformed JSON
  * returns a JSON-RPC parse error instead of throwing out of `req.json()`,
- * and 64-bit ids survive the body parse in both eras.
+ * and 64-bit ids survive the body parse.
  */
 import { Server } from "@modelcontextprotocol/server";
 import { describe, expect, it } from "vitest";
@@ -59,33 +59,95 @@ const MODERN_META = {
 } as const;
 
 describe("createMcpEndpoint", () => {
-  it("answers a legacy initialize per request, with no session to carry", async () => {
+  it("rejects a 2025-era initialize, naming the supported revision", async () => {
     const endpoint = makeEndpoint();
 
     const response = await endpoint.handleRequest(post(INITIALIZE_BODY));
 
-    expect(response.status).toBe(200);
-    // The 2026-07-28 revision removed protocol sessions; the stateless
-    // legacy fallback never mints one, which the 2025 spec allows (the
-    // session header was always server-optional).
+    expect(response.status).toBe(400);
     expect(response.headers.get("mcp-session-id")).toBeNull();
-    const parsed = parseResponse(await response.text());
-    expect(parsed?.result?.protocolVersion).toBe("2025-06-18");
+    const body = await response.json();
+    // -32022: UnsupportedProtocolVersion. `data.supported` is what tells an
+    // old client which revision to speak instead.
+    expect(body.error.code).toBe(-32022);
+    expect(body.error.data).toEqual({
+      supported: ["2026-07-28"],
+      requested: "2025-06-18",
+    });
   });
 
-  it("serves a legacy request with no prior handshake — each stands alone", async () => {
+  it("rejects a request with no envelope, even without a prior handshake", async () => {
     const endpoint = makeEndpoint();
 
     const response = await endpoint.handleRequest(
       post({ jsonrpc: "2.0", id: 2, method: "tools/list" }),
     );
 
-    expect(response.status).toBe(200);
-    const parsed = parseResponse(await response.text());
-    expect(parsed?.result?.tools).toEqual([]);
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error.code).toBe(-32022);
+    expect(body.error.data.supported).toEqual(["2026-07-28"]);
   });
 
-  it("accepts a legacy notification with 202", async () => {
+  it("never serves a claim-less tools/call past a spoofed Mcp-Name", async () => {
+    // A proxy rule keyed on Mcp-Name is only sound if every served request
+    // went through the header-vs-body check. A legacy fallback skipped it:
+    // this exact request was answered 200 under `legacy: "stateless"`.
+    let called = false;
+    const endpoint = createMcpEndpoint(() => {
+      const server = new Server(
+        { name: "test", version: "0.0.0" },
+        { capabilities: { tools: {} } },
+      );
+      server.setRequestHandler("tools/call", async () => {
+        called = true;
+        return { content: [] };
+      });
+      return server;
+    });
+
+    const response = await endpoint.handleRequest(
+      post(
+        {
+          jsonrpc: "2.0",
+          id: 2,
+          method: "tools/call",
+          params: { name: "update-activity", arguments: {} },
+        },
+        { "Mcp-Method": "tools/call", "Mcp-Name": "get-wellness" },
+      ),
+    );
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).error.code).toBe(-32022);
+    expect(called).toBe(false);
+  });
+
+  it("rejects an enveloped request whose Mcp-Name disagrees with the body", async () => {
+    const endpoint = makeEndpoint();
+
+    const response = await endpoint.handleRequest(
+      post(
+        {
+          jsonrpc: "2.0",
+          id: 2,
+          method: "tools/call",
+          params: {
+            _meta: MODERN_META,
+            name: "update-activity",
+            arguments: {},
+          },
+        },
+        { "Mcp-Method": "tools/call", "Mcp-Name": "get-wellness" },
+      ),
+    );
+
+    expect(response.status).toBe(400);
+    // -32020: HeaderMismatch.
+    expect((await response.json()).error.code).toBe(-32020);
+  });
+
+  it("acknowledges a 2025-era notification with 202 and drops it", async () => {
     const endpoint = makeEndpoint();
 
     const response = await endpoint.handleRequest(
@@ -95,7 +157,7 @@ describe("createMcpEndpoint", () => {
     expect(response.status).toBe(202);
   });
 
-  it("routes an enveloped request to the modern era", async () => {
+  it("serves an enveloped request on the 2026-07-28 path", async () => {
     const endpoint = makeEndpoint();
 
     const response = await endpoint.handleRequest(
@@ -112,8 +174,7 @@ describe("createMcpEndpoint", () => {
 
     expect(response.status).toBe(200);
     const parsed = parseResponse(await response.text());
-    // resultType is the modern wire's discriminator — proof this request was
-    // not served by the legacy fallback.
+    // resultType is the 2026-07-28 result discriminator.
     expect(parsed?.result?.resultType).toBe("complete");
     expect(parsed?.result?.tools).toEqual([]);
   });
@@ -170,29 +231,22 @@ describe("createMcpEndpoint", () => {
       return server;
     });
 
-    for (const era of ["legacy", "modern"] as const) {
-      received = undefined;
-      const meta =
-        era === "modern" ? `"_meta":${JSON.stringify(MODERN_META)},` : "";
-      const response = await endpoint.handleRequest(
-        post(
-          `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{${meta}"name":"view-route-map","arguments":{"activity_id":3516039180561708486}}}`,
-          era === "modern"
-            ? { "Mcp-Method": "tools/call", "Mcp-Name": "view-route-map" }
-            : {},
-        ),
-      );
-      await response.body?.cancel();
+    const response = await endpoint.handleRequest(
+      post(
+        `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"_meta":${JSON.stringify(MODERN_META)},"name":"view-route-map","arguments":{"activity_id":3516039180561708486}}}`,
+        { "Mcp-Method": "tools/call", "Mcp-Name": "view-route-map" },
+      ),
+    );
+    await response.body?.cancel();
 
-      expect(received, `${era} era`).toBe("3516039180561708486");
-    }
+    expect(received).toBe("3516039180561708486");
   });
 
   it("answers 405 for the 2025 session operations (GET and DELETE)", async () => {
     const endpoint = makeEndpoint();
 
-    // Stateless serving has no session stream to open or session to delete;
-    // the 2025 spec allows a server to answer both with 405.
+    // There is no session stream to open or session to delete: the
+    // 2026-07-28 revision removed both, and 405 tells an old client so.
     for (const method of ["GET", "DELETE"]) {
       const response = await endpoint.handleRequest(
         new Request(MCP_URL, { method }),

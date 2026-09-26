@@ -19,17 +19,17 @@ export interface McpEndpoint {
 }
 
 /**
- * The dual-era /mcp endpoint. `createMcpHandler` serves the 2026-07-28
- * revision per request (stateless, `_meta` envelope, `server/discover`) and
- * falls back to the established stateless idiom for 2025-era clients
- * (`legacy: "stateless"`), so one `createServer` factory backs both eras and
- * they can never drift apart.
+ * The /mcp endpoint. `createMcpHandler` serves the 2026-07-28 revision per
+ * request (stateless, `_meta` envelope, `server/discover`) and nothing else:
+ * `legacy: "reject"` answers any 2025-era request (no envelope claim, e.g. an
+ * `initialize` handshake) with HTTP 400 and `-32022` UnsupportedProtocolVersion,
+ * whose `data.supported` names 2026-07-28. Legacy notifications get 202 and
+ * are dropped; GET/DELETE answer 405.
  *
- * There are no protocol sessions in either era: the 2026-07-28 revision
- * removed them and the `Mcp-Session-Id` header outright, and the legacy
- * fallback answers each old-era request with a fresh instance rather than
- * pinning one to a session (GET/DELETE session operations answer 405, which
- * the 2025 spec allows).
+ * Rejecting the old era also closes a downgrade path: only enveloped requests
+ * go through the SDK's `Mcp-Method`/`Mcp-Name` header-vs-body check (`-32020`),
+ * so a claim-less request served by a legacy fallback could carry any headers
+ * it liked past a proxy rule keyed on them.
  *
  * POST bodies are parsed here with the large-int-preserving reviver and handed
  * to the SDK as `parsedBody`, never re-read from the request: a 64-bit
@@ -40,7 +40,7 @@ export interface McpEndpoint {
  */
 export function createMcpEndpoint(createServer: () => Server): McpEndpoint {
   const handler = createMcpHandler(() => createServer(), {
-    legacy: "stateless",
+    legacy: "reject",
     // Reporting only — the SDK already shaped the response by the time this
     // fires, so a throw here could not change what the client sees.
     onerror: (error) => console.error("MCP handler error:", error),
