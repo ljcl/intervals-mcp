@@ -24,11 +24,12 @@ this file holds only the invariants that apply to every change.
 One line each; full rationale in docs/architecture.md. These exist because
 breaking them has shipped bugs — do not work around them locally.
 
-- **Dual-era serving shares one factory.** `mcpEndpoint.ts` serves the
-  2026-07-28 revision statelessly per request and routes 2025-era clients
-  through the SDK's legacy fallback; one `createServer` backs both legs so the
-  eras cannot drift. No sessions (`Mcp-Session-Id` is gone; GET/DELETE answer
-  405). The endpoint parses every POST body itself with
+- **Only the 2026-07-28 revision is served.** `mcpEndpoint.ts` serves it
+  statelessly per request with `legacy: "reject"`: a 2025-era request gets
+  HTTP 400 `-32022` naming the supported revision. Do not reintroduce a legacy
+  fallback — a claim-less request skips the `Mcp-Method`/`Mcp-Name` header
+  check, so it would bypass any proxy rule keyed on those headers. No sessions
+  (`Mcp-Session-Id` is gone; GET/DELETE answer 405). The endpoint parses every POST body itself with
   `parseJsonWithLargeInts` → SDK `parsedBody`; that seam keeps 64-bit ids
   intact.
 - **Rate limits and retries live in `fetchClient.ts`, never per-tool.**
@@ -105,9 +106,8 @@ breaking them has shipped bugs — do not work around them locally.
   deliberately (`UPDATE_TOOL_SURFACE_LOCK=1 bunx vitest run
   src/toolSurface.test.ts`) and say so in the PR — users pay a round of
   re-prompting.
-- **Protocol-surface tests go over the wire in both eras**
-  (`server.integration.test.ts` under `describe.each(ERAS)` via
-  `mcpTestClient.ts`): capabilities, object inputSchemas (no `$ref`), string
+- **Protocol-surface tests go over the wire**
+  (`server.integration.test.ts` via `mcpTestClient.ts`): capabilities, object inputSchemas (no `$ref`), string
   ids, `structuredContent`, `isError` not JSON-RPC errors, app resources,
   prompts. Extend the shared client, never a new bootstrap copy.
 - **Tool error text has one home: `toolErrorText` (`tools/_errors.ts`).** It

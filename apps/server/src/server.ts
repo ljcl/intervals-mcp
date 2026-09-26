@@ -1331,11 +1331,9 @@ export function createServer(): Server {
         resources: {},
         prompts: {},
         // Advertised so a caller can receive the per-call records the
-        // dispatcher already emits to stderr. Declaring it also makes
-        // the SDK register its built-in logging/setLevel handler, so a legacy
-        // client calling it gets `{}` rather than -32601. Advertising the
-        // capability without a handler is worse than not advertising it at
-        // all, even though stateless serving cannot retain the level it sets.
+        // dispatcher already emits to stderr. The 2026-07-28 revision has no
+        // logging/setLevel: a caller asks per request via the logLevel
+        // envelope key (see the tools/call handler below).
         logging: {},
       },
       cacheHints: {
@@ -1368,8 +1366,8 @@ export function createServer(): Server {
     const { name, arguments: args } = request.params;
     const result = await dispatchToolCall(name, args, {
       onRecord: (record) => {
-        // There is no stored log level: serving is stateless, so a
-        // logging/setLevel choice has nowhere to live. The level rides on the
+        // There is no stored log level: serving is stateless and the
+        // revision has no logging/setLevel. The level rides on the
         // per-request logLevel envelope key instead, which is also the spec's
         // MUST-NOT-emit-unrequested gate. So records go only to callers whose
         // request asked, and `ctx.mcpReq.log` applies their threshold.

@@ -8,14 +8,13 @@
  * to something a host cannot generate against, or a broken app-resource
  * template would all ship green.
  *
- * So these drive a real session and assert the JSON that comes back. The
+ * So these drive real requests through the endpoint and assert the JSON that comes back. The
  * suite is deliberately the last piece of epic #284, so it asserts the
  * finished surface — the output schemas, the `logging` capability, and the
  * progress plumbing — rather than being amended three times on the way.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getActivity } from "./intervalsClient";
-import { type ProtocolEra } from "./mcpTestClient";
 import { INTERVALS_ID_HINT } from "./tools/_ids";
 
 vi.mock("./intervalsClient", async (importOriginal) => {
@@ -40,54 +39,23 @@ beforeEach(() => {
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
-/**
- * Both wire eras the endpoint serves (dual era until clients migrate): the
- * 2025-06-18 `initialize` handshake and the 2026-07-28 per-request envelope.
- * The whole advertised surface runs under each, because a tool, resource, or
- * prompt that only one era serves is exactly the drift dual-era serving must
- * not allow.
- */
-const ERAS = ["legacy", "modern"] as const;
+describe("server/discover", () => {
+  it("advertises the 2026-07-28 revision and every capability the server implements", async () => {
+    const { discover } = await connectTestClient("discover-test");
 
-describe("legacy handshake (initialize)", () => {
-  it("advertises every capability the server implements", async () => {
-    const { handshake } = await connectTestClient();
-
-    expect(handshake.capabilities).toMatchObject({
+    expect(discover.supportedVersions).toEqual(["2026-07-28"]);
+    expect(discover.capabilities).toMatchObject({
       tools: expect.any(Object),
       resources: expect.any(Object),
       prompts: expect.any(Object),
       logging: expect.any(Object),
     });
   });
-
-  it("returns a protocol version and server identity", async () => {
-    const { handshake } = await connectTestClient();
-
-    expect(handshake.protocolVersion).toBeTruthy();
-    expect(handshake.serverInfo).toMatchObject({
-      name: expect.any(String),
-      version: expect.any(String),
-    });
-  });
 });
 
-describe("modern handshake (server/discover)", () => {
-  it("advertises the 2026-07-28 revision and the same capabilities", async () => {
-    const { handshake } = await connectTestClient("discover-test", "modern");
-
-    expect(handshake.supportedVersions).toContain("2026-07-28");
-    expect(handshake.capabilities).toMatchObject({
-      tools: expect.any(Object),
-      resources: expect.any(Object),
-      prompts: expect.any(Object),
-    });
-  });
-});
-
-describe("modern result envelope", () => {
+describe("result envelope", () => {
   it("stamps resultType, cache fields, and server identity on tools/list", async () => {
-    const client = await connectTestClient("envelope-test", "modern");
+    const client = await connectTestClient("envelope-test");
     const { result } = await client.send("tools/list");
 
     // Every 2026-07-28 result is discriminated...
@@ -105,25 +73,14 @@ describe("modern result envelope", () => {
     });
   });
 
-  it("keeps the legacy wire free of the 2026-07-28 result fields", async () => {
-    const client = await connectTestClient("envelope-test", "legacy");
-    const { result } = await client.send("tools/list");
-
-    // The 2025 era predates resultType/ttlMs/cacheScope; leaking them onto
-    // the old wire would hand legacy hosts fields their schemas reject.
-    expect(result?.resultType).toBeUndefined();
-    expect(result?.ttlMs).toBeUndefined();
-    expect(result?.cacheScope).toBeUndefined();
-  });
-
   it("rejects an envelope naming a revision the endpoint does not serve", async () => {
-    const client = await connectTestClient("envelope-test", "modern");
+    const client = await connectTestClient("envelope-test");
 
     const raw = await client.sendRaw("tools/list", {
       _meta: { "io.modelcontextprotocol/protocolVersion": "2099-01-01" },
     });
 
-    // -32022: UnsupportedProtocolVersion, the modern path's typed answer.
+    // -32022: UnsupportedProtocolVersion, the typed answer.
     expect(raw).toContain("-32022");
   });
 });
@@ -154,10 +111,8 @@ interface AdvertisedIdField {
 }
 
 /** Every id argument as a host sees it, flattened across tools/list. */
-async function advertisedIdFields(
-  era: ProtocolEra,
-): Promise<AdvertisedIdField[]> {
-  const client = await connectTestClient("integration-test", era);
+async function advertisedIdFields(): Promise<AdvertisedIdField[]> {
+  const client = await connectTestClient();
   const { result } = await client.send("tools/list");
   const tools = result?.tools as Array<Record<string, unknown>>;
 
@@ -178,9 +133,9 @@ async function advertisedIdFields(
   return fields;
 }
 
-describe.each(ERAS)("tools/list (%s era)", (era) => {
+describe("tools/list", () => {
   it("returns every advertised tool", async () => {
-    const client = await connectTestClient("integration-test", era);
+    const client = await connectTestClient();
     const { result } = await client.send("tools/list");
     const tools = result?.tools as Array<Record<string, unknown>>;
 
@@ -188,7 +143,7 @@ describe.each(ERAS)("tools/list (%s era)", (era) => {
   });
 
   it("gives every tool a well-formed object inputSchema", async () => {
-    const client = await connectTestClient("integration-test", era);
+    const client = await connectTestClient();
     const { result } = await client.send("tools/list");
     const tools = result?.tools as Array<Record<string, unknown>>;
 
@@ -211,7 +166,7 @@ describe.each(ERAS)("tools/list (%s era)", (era) => {
   });
 
   it("keeps every published outputSchema an object schema too", async () => {
-    const client = await connectTestClient("integration-test", era);
+    const client = await connectTestClient();
     const { result } = await client.send("tools/list");
     const tools = result?.tools as Array<Record<string, unknown>>;
 
@@ -228,7 +183,7 @@ describe.each(ERAS)("tools/list (%s era)", (era) => {
   });
 
   it("advertises intervals.icu activity ids as strings, never as numbers", async () => {
-    const ids = await advertisedIdFields(era);
+    const ids = await advertisedIdFields();
 
     // Activity ids already exceed 2^53, so a host that generates a JSON
     // number loses digits before validation can see them.
@@ -246,7 +201,7 @@ describe.each(ERAS)("tools/list (%s era)", (era) => {
   });
 
   it("routes every numeric id through intervalsActivityIdInput", async () => {
-    const ids = await advertisedIdFields(era);
+    const ids = await advertisedIdFields();
 
     // Advertising `type: "string"` is only half the convention:
     // `intervalsActivityIdInput` also accepts a safe-integer number at
@@ -269,7 +224,7 @@ describe.each(ERAS)("tools/list (%s era)", (era) => {
   });
 });
 
-describe.each(ERAS)("tools/call (%s era)", (era) => {
+describe("tools/call", () => {
   it("round-trips a tool's content through the transport", async () => {
     mockedIntervalsActivity.mockResolvedValueOnce({
       id: "229781",
@@ -279,7 +234,7 @@ describe.each(ERAS)("tools/call (%s era)", (era) => {
       icu_intervals: [],
     } as never);
 
-    const client = await connectTestClient("integration-test", era);
+    const client = await connectTestClient();
     const { result, error } = await client.send("tools/call", {
       name: "get-activity-laps",
       arguments: { id: "229781" },
@@ -300,7 +255,7 @@ describe.each(ERAS)("tools/call (%s era)", (era) => {
       icu_intervals: [],
     } as never);
 
-    const client = await connectTestClient("integration-test", era);
+    const client = await connectTestClient();
     const { result } = await client.send("tools/call", {
       name: "get-activity-laps",
       arguments: { id: "229781" },
@@ -312,7 +267,7 @@ describe.each(ERAS)("tools/call (%s era)", (era) => {
   });
 
   it("returns a tool error as isError, not a JSON-RPC error", async () => {
-    const client = await connectTestClient("integration-test", era);
+    const client = await connectTestClient();
     const { result, error } = await client.send("tools/call", {
       name: "get-activity-laps",
       arguments: { id: "not-an-id" },
@@ -325,7 +280,7 @@ describe.each(ERAS)("tools/call (%s era)", (era) => {
   });
 
   it("answers an unknown tool without breaking the session", async () => {
-    const client = await connectTestClient("integration-test", era);
+    const client = await connectTestClient();
 
     const unknown = await client.send("tools/call", {
       name: "no-such-tool",
@@ -349,7 +304,7 @@ describe.each(ERAS)("tools/call (%s era)", (era) => {
       moving_time: 3000,
     } as never);
 
-    const client = await connectTestClient("integration-test", era);
+    const client = await connectTestClient();
     await client.send("tools/call", {
       name: "view-activity-chart",
       arguments: { activity_id: "9007199254740993" },
@@ -367,9 +322,9 @@ describe.each(ERAS)("tools/call (%s era)", (era) => {
 const ROUTE_MAP_URI = "ui://route-map/app.html";
 const TILE_ORIGIN = "https://tiles.openfreemap.org";
 
-describe.each(ERAS)("resources/list (%s era)", (era) => {
+describe("resources/list", () => {
   it("lists every MCP App resource with its ui:// uri", async () => {
-    const client = await connectTestClient("integration-test", era);
+    const client = await connectTestClient();
     const { result } = await client.send("resources/list");
     const resources = result?.resources as Array<Record<string, unknown>>;
 
@@ -381,7 +336,7 @@ describe.each(ERAS)("resources/list (%s era)", (era) => {
   });
 
   it("carries the card-chrome _meta each app depends on", async () => {
-    const client = await connectTestClient("integration-test", era);
+    const client = await connectTestClient();
     const { result } = await client.send("resources/list");
     const resources = result?.resources as Array<Record<string, unknown>>;
 
@@ -395,9 +350,9 @@ describe.each(ERAS)("resources/list (%s era)", (era) => {
   });
 });
 
-describe.each(ERAS)("resources/read (%s era)", (era) => {
+describe("resources/read", () => {
   it("returns the app HTML for a declared resource", async () => {
-    const client = await connectTestClient("integration-test", era);
+    const client = await connectTestClient();
     const list = await client.send("resources/list");
     const resources = list.result?.resources as
       | Array<{ uri: string }>
@@ -418,7 +373,7 @@ describe.each(ERAS)("resources/read (%s era)", (era) => {
   });
 
   it("repeats the _meta on the content response, not only the descriptor", async () => {
-    const client = await connectTestClient("integration-test", era);
+    const client = await connectTestClient();
     const list = await client.send("resources/list");
     const resources = list.result?.resources as
       | Array<{ uri: string }>
@@ -437,7 +392,7 @@ describe.each(ERAS)("resources/read (%s era)", (era) => {
   });
 
   it("carries route-map's tile-origin CSP on the descriptor and the content", async () => {
-    const client = await connectTestClient("integration-test", era);
+    const client = await connectTestClient();
 
     const list = await client.send("resources/list");
     const resources = list.result?.resources as Array<{
@@ -464,7 +419,7 @@ describe.each(ERAS)("resources/read (%s era)", (era) => {
   });
 
   it("rejects a uri the server does not serve", async () => {
-    const client = await connectTestClient("integration-test", era);
+    const client = await connectTestClient();
 
     const { error } = await client.send("resources/read", {
       uri: "ui://no-such-app/app.html",
@@ -474,9 +429,9 @@ describe.each(ERAS)("resources/read (%s era)", (era) => {
   });
 });
 
-describe.each(ERAS)("prompts (%s era)", (era) => {
+describe("prompts", () => {
   it("lists prompts with names and descriptions", async () => {
-    const client = await connectTestClient("integration-test", era);
+    const client = await connectTestClient();
     const { result } = await client.send("prompts/list");
     const prompts = result?.prompts as Array<Record<string, unknown>>;
 
@@ -488,7 +443,7 @@ describe.each(ERAS)("prompts (%s era)", (era) => {
   });
 
   it("renders a prompt's messages through prompts/get", async () => {
-    const client = await connectTestClient("integration-test", era);
+    const client = await connectTestClient();
     const list = await client.send("prompts/list");
     const prompts = list.result?.prompts as Array<{ name: string }> | undefined;
     const first = prompts?.[0];

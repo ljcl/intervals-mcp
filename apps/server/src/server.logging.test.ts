@@ -15,34 +15,21 @@ const { connectTestClient } = await import("./mcpTestClient");
 const { resetToolCallStats, toolCallStats } = await import("./telemetry");
 
 describe("logging capability", () => {
-  it("is advertised in the initialize result", async () => {
-    const { handshake } = await connectTestClient("logging-test");
+  it("is advertised by server/discover", async () => {
+    const { discover } = await connectTestClient("logging-test");
 
-    const capabilities = handshake.capabilities as Record<string, unknown>;
+    const capabilities = discover.capabilities as Record<string, unknown>;
     expect(capabilities).toHaveProperty("logging");
     // The pre-existing three are untouched.
     expect(capabilities).toHaveProperty("tools");
     expect(capabilities).toHaveProperty("resources");
     expect(capabilities).toHaveProperty("prompts");
   });
-
-  it("answers logging/setLevel rather than method-not-found", async () => {
-    const client = await connectTestClient("logging-test");
-
-    const body = await client.sendRaw("logging/setLevel", { level: "info" });
-
-    // Declaring the capability without a handler would answer -32601 here,
-    // which is worse than never advertising it (#241). The SDK's built-in
-    // handler answers it now; stateless legacy serving cannot retain the
-    // level, so the call is compatibility, not configuration.
-    expect(body).not.toContain("-32601");
-    expect(body).not.toContain("Method not found");
-  });
 });
 
 describe("per-request log level (2026-07-28)", () => {
   it("delivers the tool-call record when the request asks via logLevel", async () => {
-    const client = await connectTestClient("logging-test", "modern");
+    const client = await connectTestClient("logging-test");
 
     const body = await client.sendRaw("tools/call", {
       name: "no-such-tool",
@@ -57,7 +44,7 @@ describe("per-request log level (2026-07-28)", () => {
   });
 
   it("stays silent when the request does not ask", async () => {
-    const client = await connectTestClient("logging-test", "modern");
+    const client = await connectTestClient("logging-test");
 
     const body = await client.sendRaw("tools/call", {
       name: "no-such-tool",

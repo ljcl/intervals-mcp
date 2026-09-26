@@ -179,7 +179,7 @@ Add to `.vscode/mcp.json` in your workspace (or run **MCP: Add Server** from the
 
 #### Other clients (generic Streamable HTTP)
 
-Any client that speaks [Streamable HTTP](https://modelcontextprotocol.io/docs/concepts/transports) can connect to the `/mcp` endpoint directly. One URL serves both protocol eras: 2026-07-28 clients send stateless requests carrying the `io.modelcontextprotocol/*` envelope keys (`server/discover` advertises capabilities); 2025-era clients use the ordinary `initialize` handshake. POST JSON-RPC messages with an `Accept: application/json, text/event-stream` header. Protocol details: [docs/architecture.md](docs/architecture.md#runtime-and-transport).
+Any client that speaks [Streamable HTTP](https://modelcontextprotocol.io/docs/concepts/transports) can connect to the `/mcp` endpoint directly. The endpoint serves only the 2026-07-28 revision: clients send stateless requests carrying the `io.modelcontextprotocol/*` envelope keys and the `Mcp-Method`/`Mcp-Name` headers (`server/discover` advertises capabilities). A 2025-era client (one that opens with `initialize`) gets JSON-RPC error `-32022` naming the supported revision. POST JSON-RPC messages with an `Accept: application/json, text/event-stream` header. Protocol details: [docs/architecture.md](docs/architecture.md#runtime-and-transport).
 
 ## Tools
 

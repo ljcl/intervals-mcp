@@ -12,15 +12,22 @@ Related docs: [mcp-apps.md](mcp-apps.md) for the UI packages,
 - Bun (TypeScript). Streamable HTTP on port 3000 (`/mcp`), deployed as a Docker
   container behind an HTTPS tunnel or reverse proxy. Monorepo: Bun workspaces +
   Turborepo (`apps/*`, `packages/*`).
-- **Dual era via one factory.** `apps/server/src/mcpEndpoint.ts` serves the
+- **2026-07-28 only.** `apps/server/src/mcpEndpoint.ts` serves the
   2026-07-28 revision per request — stateless, `_meta` envelope,
   `server/discover`, `Mcp-Method`/`Mcp-Name` headers, `resultType` plus
-  `ttlMs`/`cacheScope` on results — and serves 2025-era clients through the
-  SDK's stateless legacy fallback until they migrate. One `createServer`
-  factory backs both legs so the eras cannot drift.
+  `ttlMs`/`cacheScope` on results — and nothing else. `createMcpHandler` runs
+  with `legacy: "reject"`, so a 2025-era request (no envelope claim, e.g. an
+  `initialize` handshake) gets HTTP 400 and `-32022`
+  UnsupportedProtocolVersion with `data.supported: ["2026-07-28"]`; a 2025-era
+  notification gets 202 and is dropped.
+- Why no legacy fallback: every served request now passes the SDK's
+  header-vs-body check (`-32020` on a mismatch), so a proxy or WAF rule keyed
+  on `Mcp-Method`/`Mcp-Name` is sound. A fallback served claim-less requests
+  without that check, which let a request carry any headers past such a rule.
+  Every request also carries `clientInfo` and gets JSON rather than SSE
+  unless the handler streams progress. See #33.
 - Protocol sessions are gone with the revision that removed them. No
-  `Mcp-Session-Id` is minted (the 2025 spec always made it server-optional);
-  standalone GET/DELETE answer 405.
+  `Mcp-Session-Id` is minted; standalone GET/DELETE answer 405.
 - The endpoint parses every POST body itself with `parseJsonWithLargeInts` and
   hands the SDK a `parsedBody`. That seam keeps 64-bit ids losslessly intact;
   do not bypass it.
@@ -194,12 +201,9 @@ describes: the snapshot read and the serialize are both guarded, because a
 logging fault turning a successful call into an error is worse than a missing
 log line. The rolling counters back the authed half of `/health`.
 
-The advertised `logging` capability is backed by a real `logging/setLevel`
-handler (the v2 SDK registers one whenever the capability is declared;
-declaring without a handler answers `-32601`). Stateless legacy serving has
-nowhere to keep a session level, so the dispatcher's records reach only
-2026-07-28 callers whose request carries the `io.modelcontextprotocol/logLevel`
-envelope key — which is also that revision's MUST-NOT-emit-unrequested gate —
+The advertised `logging` capability has no `logging/setLevel` (the
+2026-07-28 revision removed it). The dispatcher's records reach only callers
+whose request carries the `io.modelcontextprotocol/logLevel` envelope key — which is also that revision's MUST-NOT-emit-unrequested gate —
 and `ctx.mcpReq.log` applies their threshold.
 
 ## Progress notifications
@@ -328,24 +332,22 @@ re-prompting.
 
 ## Protocol-surface testing
 
-Protocol-surface tests go over the wire, in both eras. `mcpTestClient.ts`
-(`connectTestClient(name, era)`) drives a real exchange through
-`createMcpEndpoint(createServer)`: legacy does the `initialize` handshake then
-parses SSE `data:` lines; modern skips the handshake, stamps the
-`io.modelcontextprotocol/*` envelope keys into `params._meta` plus the
-`Mcp-Method`/`Mcp-Name` headers, reads capabilities from `server/discover`, and
-parses bare JSON or SSE (`parseResponse` picks the response out from among
-notifications either way).
+Protocol-surface tests go over the wire. `mcpTestClient.ts`
+(`connectTestClient(name)`) drives a real exchange through
+`createMcpEndpoint(createServer)`: it stamps the `io.modelcontextprotocol/*`
+envelope keys into `params._meta` plus the `Mcp-Method`/`Mcp-Name` headers,
+reads capabilities from `server/discover`, and parses bare JSON or SSE
+(`parseResponse` picks the response out from among notifications either way).
 
-`server.integration.test.ts` runs the whole surface under
-`describe.each(ERAS)` — every capability, a well-formed object `inputSchema`
-per tool (no `$ref`: a host cannot resolve one against a document it never
-gets), every id advertised as a string, `structuredContent` alongside the text,
-`isError` rather than a JSON-RPC error for a rejected argument, the app
-resources and their `_meta.ui`, and the prompts. A tool one era serves and the
-other drops is exactly what dual-era serving must not allow. Era-specific
-describes pin the modern result envelope (`resultType`, cache fields,
-per-response `serverInfo`) and that none of it leaks onto the legacy wire.
+`server.integration.test.ts` runs the whole surface — every capability, a
+well-formed object `inputSchema` per tool (no `$ref`: a host cannot resolve
+one against a document it never gets), every id advertised as a string,
+`structuredContent` alongside the text, `isError` rather than a JSON-RPC
+error for a rejected argument, the app resources and their `_meta.ui`, and
+the prompts — and pins the result envelope (`resultType`, cache fields,
+per-response `serverInfo`). `mcpEndpoint.test.ts` pins the rejection of
+2025-era traffic, including a claim-less `tools/call` with a spoofed
+`Mcp-Name`.
 Asserting against the in-memory `TOOL_DEFS` table proves nothing: an annotation or
 schema that does not serialize cannot influence a host. The bootstrap was
 copied into three suites before the shared client existed; add to the client
@@ -357,13 +359,7 @@ rather than making a fourth copy.
 # Health check
 curl http://localhost:3000/health
 
-# Legacy-era (2025-06-18) handshake — served statelessly, no session id comes back
-curl -X POST http://localhost:3000/mcp \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -d '{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "test", "version": "1.0"}}}'
-
-# Modern-era (2026-07-28) request — no handshake; the envelope rides in params._meta
+# 2026-07-28 request — no handshake; the envelope rides in params._meta
 curl -X POST http://localhost:3000/mcp \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
