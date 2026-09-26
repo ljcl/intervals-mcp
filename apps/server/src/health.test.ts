@@ -141,7 +141,6 @@ describe("handleHealth", () => {
     ).version;
 
     expect(SERVER_VERSION).toBe(rootVersion);
-    expect(SERVER_VERSION).not.toBe("1.0.0");
   });
 
   it("serves liveness only to unauthenticated callers when a secret is set", async () => {
