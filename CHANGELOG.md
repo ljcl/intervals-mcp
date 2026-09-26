@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.0.0](https://github.com/ljcl/intervals-mcp/compare/v1.0.1...v2.0.0) (2026-09-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* serve only the 2026-07-28 stateless MCP revision ([#36](https://github.com/ljcl/intervals-mcp/issues/36))
+
+### Code Refactoring
+
+* serve only the 2026-07-28 stateless MCP revision ([#36](https://github.com/ljcl/intervals-mcp/issues/36)) ([bcd3051](https://github.com/ljcl/intervals-mcp/commit/bcd3051b0316e71d239dc5bbe7c2529420fc8ae2))
+
 ## [1.0.1](https://github.com/ljcl/intervals-mcp/compare/v1.0.0...v1.0.1) (2026-09-26)
 
 
