@@ -20,7 +20,7 @@ export default defineConfig({
         statements: 91,
         branches: 88,
         functions: 89,
-        lines: 91,
+        lines: 92,
       },
       // The presentational components are covered by the story render-path
       // report, not here; thresholding them twice would just double-count.
