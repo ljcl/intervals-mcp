@@ -39,8 +39,8 @@ directly via root `lint`; turbo dispatches it only through `bun run check` or
 inline PR annotations — turbo's task-name prefix breaks that parsing.
 
 `biome.json` sets `linter.rules.nursery.preset: "recommended"`, and **that
-grants no rules** on the pinned Biome (2.5.8) — nursery coverage is zero,
-however the key reads. Verified in-repo: `setTimeout("doSomething()", 100)`
+grants no rules** on the pinned Biome (`@biomejs/biome` in `package.json`).
+Nursery coverage is zero, however the key reads. Verified in-repo: `setTimeout("doSomething()", 100)`
 passes `biome check` silently yet `biome lint --only=lint/nursery/noImpliedEval`
 flags it, and the identical preset mechanism on a stable group does fire. The
 key stays because it starts working if Biome later makes presets grant nursery
@@ -130,7 +130,7 @@ intervals.icu's OpenAPI document. Re-fetch it when the API changes, or
 periodically to catch drift:
 
 ```bash
-curl -s -A "intervals-mcp/0.1.0 (+https://github.com/ljcl/intervals-mcp)" \
+curl -s -A "intervals-mcp/<version> (+https://github.com/ljcl/intervals-mcp)" \
   https://intervals.icu/api/v1/docs | jq . > docs/intervals-openapi.json
 jq -r '.info.title, .info.version, (.paths|keys|length)' docs/intervals-openapi.json
 ```
