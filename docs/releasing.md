@@ -29,12 +29,10 @@ The Strava to intervals.icu migration is done and `0.2.0` already shipped it
 (see `CHANGELOG.md`); every tool talks to intervals.icu directly. The package
 is ready for its first stable release.
 
-Cut `1.0.0` the same way as any forced version: land an empty commit on
-`main` with a `Release-As: 1.0.0` footer
-(`git commit --allow-empty -m "chore: force release" -m "Release-As: 1.0.0"`).
-This is a controller ruling, not a config change; `release-as` is not added
-to `release-please-config.json`. It retargets the open release-please PR to
-`1.0.0`; merging that PR ships it through the normal path above.
+Cut `1.0.0` by forcing the version in config (see "Force a version" below):
+add `"release-as": "1.0.0"` to the `.` package in `release-please-config.json`,
+merge, and the open release PR retargets to `1.0.0`. Merge that PR, then
+remove `release-as` in a follow-up so later releases bump normally.
 
 After `1.0.0`, normal semver applies: `fix:` bumps patch, `feat:` bumps minor,
 `feat!:`/a `BREAKING CHANGE:` footer bumps major. `bump-minor-pre-major` in
@@ -62,11 +60,15 @@ touching excluded and non-excluded paths still counts.
 
 Escapes:
 
-- Force a version: land an empty commit on `main` with a `Release-As` footer
-  (`git commit --allow-empty -m "chore: force release" -m "Release-As: X.Y.Z"`);
-  the release PR retargets on the next run.
+- Force a version: set `"release-as": "X.Y.Z"` on the `.` package in
+  `release-please-config.json` and merge; the release PR retargets on the next
+  run. Remove it once that release ships, or every later release PR stays
+  pinned to X.Y.Z. An empty commit with a `Release-As:` footer does NOT work
+  here: release-please splits commits by path, and a commit that touches no
+  files belongs to no path, so it is dropped before the footer is read
+  (verified 2026-09-26).
 - `release-please.yml` has a `workflow_dispatch` trigger for re-running after a
-  transient failure or a Release-As commit without pushing anything.
+  transient failure without pushing anything.
 - Manual `git tag vX.Y.Z` works as a fallback; both publish workflows trigger on
   `v*` tags regardless of how they were created.
 
