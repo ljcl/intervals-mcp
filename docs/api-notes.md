@@ -193,6 +193,6 @@ write) and, as documented above, cannot be cleared via `PUT /activity/{id}` rega
 was restored to its original value afterward. Also confirmed: setting `description: ""` with
 `descriptionMode: "replace"` clears the description.
 
-`feel` was not exercised by this check (only name, description, and RPE were written), so its
-1-strongest-to-5-weakest scale, as described in `update-activity`'s tool description, remains an
-assumption, not something observed on a write.
+`feel` was not exercised by this write check. Its scale was verified separately (2026-09-26):
+setting Feel to "Strong" in the intervals.icu web UI reads back as `feel: 1`, so 1 is the
+strongest feeling and 5 the weakest, as `update-activity`'s tool description says.
