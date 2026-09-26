@@ -20,9 +20,7 @@ the same data.
 ## Tools by purpose
 
 "Opens a view" means the tool renders an interactive chart in the client
-rather than (or alongside) text; each has a paired `get-*-data`/
-`get-activity-streams-raw` tool the model calls to fetch the same data as
-structured JSON.
+rather than (or alongside) text.
 
 ### Discovery
 
@@ -40,7 +38,7 @@ structured JSON.
 | `get-activity-laps` | What were the lap splits? | `id` |
 | `get-running-summary` | One-shot run readout: metrics, HR zones, cadence, dynamics, laps | `id` |
 | `get-running-dynamics` | Ground contact time, vertical oscillation/ratio, step length, stride | `id`, `includeIntervals` |
-| `get-activity-zones` | Time in each HR/power zone | `id` |
+| `get-activity-zones` | Time in each HR zone (power zones are not reported yet) | `id` |
 | `get-activity-streams` | Raw time-series (HR, pace, cadence, power, altitude...) | `id`, `types`, `maxPoints` |
 
 ### Per-activity analysis
@@ -71,8 +69,10 @@ structured JSON.
 
 ### Visualization (opens a view)
 
-Each pair below is one interactive chart tool plus its data-only companion
-(the model calls the `get-*-data` tool to read the same numbers as text).
+Each view tool has a data companion that the chart itself calls. The data
+tools are app-only: they are hidden from the model's tool list, so for the
+same numbers as text use the matching read tool (e.g. `get-fitness-trend`,
+`get-training-load`).
 
 | View tool | Data tool | Shows |
 | --------- | --------- | ----- |
@@ -81,7 +81,7 @@ Each pair below is one interactive chart tool plus its data-only companion
 | `view-route-map` | `get-route-map-data` | GPS track with start/finish markers and optional waypoints |
 | `view-training-load` | `get-training-load-data` | Weekly volume bars with a trend line and injury-risk weeks |
 | `view-compare-activities` | `get-compare-activities-data` | Two activities' streams overlaid with a delta summary |
-| `view-activity-zones` | `get-activity-zones-data` | Time-in-zone bar chart for HR (and power when recorded) |
+| `view-activity-zones` | `get-activity-zones-data` | Time-in-zone bar chart for HR |
 | `view-fitness-trend` | `get-fitness-trend-data` | CTL/ATL/TSB over time with fatigue/freshness bands and a taper plan; toggles whole-body vs runs-only |
 
 ## Typical workflows
@@ -154,10 +154,10 @@ description is kept. (This is also the `annotate-last-run` prompt.)
 
 - **Pace** is always a bare `m:ss` string per kilometre, in a
   `*_min_per_km` field (`pace_min_per_km`, `gap_min_per_km`,
-  `avg_pace_min_per_km`), never miles. `get-race-prediction` also reports
-  the same value in seconds in a paired `*_sec_per_km` field
-  (`pace_sec_per_km`/`pace_min_per_km`); `compare-activities` does the same
-  for its pace delta (`pace_delta_sec_per_km`/`pace_delta_min_per_km`).
+  `avg_pace_min_per_km`), never miles. Where a tool also needs the number
+  for arithmetic it adds a paired `*_sec_per_km` field in seconds
+  (`get-race-prediction`'s `pace_sec_per_km`, `compare-activities`'
+  `pace_delta_sec_per_km`).
 - **`units` object.** Most tool responses include a `units` object naming
   every field's unit explicitly (distance, HR, cadence spm vs rpm, HRV in
   ms, SpO2 in %, respiration in breaths/min), so a unit is never implied.
