@@ -309,7 +309,8 @@ const appHtmlRequire = createRequire(import.meta.url);
  * are derived from this table, so adding an app means one entry here (plus
  * the Dockerfile runner-stage COPY line). HTML paths resolve once at startup
  * via each package's `./app.html` export — works in dev (workspace symlink)
- * and in the Docker runner (pruned workspace tree with built dist/ copied in).
+ * and in the Docker runner (the bundle resolves through the same symlinks,
+ * copied in with each app's manifest and built dist/).
  */
 const APP_RESOURCES: AppResource[] = [
   {

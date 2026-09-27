@@ -263,19 +263,27 @@ Built via `turbo prune @intervals-mcp/server --docker`; the builder stage uses
 derives the package set from the workspace graph — no edit per package needed
 there.
 
-The distroless **runner** stage `COPY`s each app's `dist/` explicitly, and
-covers **JIT dependencies too**: `@intervals-mcp/data` exports raw TypeScript with
-no build output, so the runner copies `packages/data/src`. That per-package
-COPY list is the image's one manual step — adding an MCP App means adding one
-`COPY --from=builder .../packages/<app>/dist` line there.
+The builder then bundles the server with `bun build --target=bun` into
+`apps/server/dist/index.js` (plus a linked source map, so stack traces name the
+`.ts` files). Every npm dependency and the JIT `@intervals-mcp/data` are
+inlined, so the runner has no `node_modules` install: a production install
+over the pruned workspace used to ship the apps' React, Recharts and maplibre
+and, through `vite-config`'s peers, Vite and Rolldown native binaries (#89).
 
-Missing a COPY is invisible until the container starts: `bun install` still
-writes the workspace symlink and prune still supplies the manifest, so
-resolution walks to a file that is not in the image and the process dies on
-first import. No image build catches it, which is why
-`apps/server/src/dockerRuntime.test.ts` resolves every `@intervals-mcp/*`
-specifier in the server's non-test sources through the target package's
-`exports` map and asserts the file lands inside a runner COPY — in both
+The distroless **runner** stage copies the bundle, the pruned `package.json`
+files (the root one for `version.ts`, each app's `exports` map), the server's
+`node_modules/@intervals-mcp` workspace symlinks, and each app's `dist/`
+explicitly. That per-app COPY list is the image's one manual step — adding an
+MCP App means adding one `COPY --from=builder .../packages/<app>/dist` line
+there.
+
+Missing a COPY is invisible until the container starts: the symlink and the
+manifest are there, so `APP_RESOURCES`' `createRequire(...).resolve()` walks to
+a file that is not in the image and startup fails. No image build catches it,
+which is why `apps/server/src/dockerRuntime.test.ts` resolves every
+runtime-resolved `@intervals-mcp/*` specifier (the `.resolve()` calls; static
+imports are bundled) through the target package's `exports` map and asserts
+the file lands inside a runner COPY — in both
 directions (a stale COPY for a removed app fails too), pinning that destinations
 mirror source paths (bun resolves against `/app` as repo root) and that the
 entry point a specifier resolves to is covered. It models only `--from=builder`
@@ -285,9 +293,10 @@ one to a single file outruns the test.
 Each `docker.yml` build leg (amd64 and arm64) then starts the image before
 anything is published: `scripts/docker-smoke.sh` waits for the image's own
 `HEALTHCHECK` to report healthy, checks `/health` against `package.json`,
-the bearer gate, that `tools/list` matches `tool-surface.lock.json`, that every
-`ui://` app resource returns HTML, that a 2025-era `initialize` gets `-32022`,
-and that `docker stop` exits 0 promptly. A failing leg keeps the merge job from
+that the image carries no `node_modules` install tree, the bearer gate, that
+`tools/list` matches `tool-surface.lock.json`, that every `ui://` app resource
+returns HTML, that a bad-argument `tools/call` comes back as `isError`, that a
+2025-era `initialize` gets `-32022`, and that `docker stop` exits 0 promptly. A failing leg keeps the merge job from
 publishing any tag. Run it locally against any build:
 
 ```bash

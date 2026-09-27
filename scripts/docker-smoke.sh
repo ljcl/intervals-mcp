@@ -58,6 +58,31 @@ if [ "$health" != healthy ]; then
   exit 1
 fi
 pass "healthcheck reports healthy"
+
+# The server runs as one bundle; its only node_modules entries are the
+# @intervals-mcp workspace links it resolves app.html through. Anything else
+# means an install tree (React, Vite, native binaries) is back in the image.
+installed="$(docker run --rm --entrypoint /usr/local/bin/bun "$IMAGE" -e '
+  const { readdirSync } = require("fs");
+  const found = [];
+  const walk = (dir) => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const p = dir + "/" + e.name;
+      if (e.name === "node_modules") {
+        for (const m of readdirSync(p)) found.push(p + "/" + m);
+      } else if (e.isDirectory() && !e.isSymbolicLink()) walk(p);
+    }
+  };
+  walk("/app");
+  console.log(found.filter((p) => p !== "/app/apps/server/node_modules/@intervals-mcp").join("\n"));
+')"
+size="$(docker image inspect -f '{{.Size}}' "$IMAGE" | numfmt --to=iec)"
+if [ -z "$installed" ]; then
+  pass "no node_modules install tree ($size uncompressed)"
+else
+  fail "the image carries installed packages:"
+  echo "$installed" >&2
+fi
 BASE="http://$(docker port "$NAME" 3000/tcp | head -1)"
 
 expected_version="$(jq -r .version package.json)"
@@ -134,6 +159,15 @@ for uri in $uris; do
     fail "resources/read $uri returned no app HTML"
   fi
 done
+
+# A tool call with bad arguments runs the dispatcher and schema validation
+# without reaching intervals.icu, and must come back as an isError result.
+call="$(mcp tools/call '{"name":"get-activity","arguments":{}}')"
+if jq -e '.result.isError == true and (.result.content[0].text | startswith("❌"))' <<<"$call" >/dev/null; then
+  pass "tools/call with bad arguments returns an isError result"
+else
+  fail "tools/call with bad arguments: $call"
+fi
 
 # A 2025-era handshake is rejected with the supported revision.
 init="$(curl -sS -w '\n%{http_code}' -X POST "$BASE/mcp" \

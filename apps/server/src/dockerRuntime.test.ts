@@ -6,20 +6,21 @@
  *
  *     error: Cannot find module '@intervals-mcp/data' from '/app/apps/server/src/server.ts'
  *
- * That is what #341 shipped. It gave the server its first import of
- * `@intervals-mcp/data` — a JIT package with no build step, whose `exports`
- * points straight at raw TypeScript under `src/` — while the runner only ever
- * copied each MCP App's built `dist/`. `bun install` in the prod-deps stage
- * still creates the `node_modules/@intervals-mcp/data` symlink and `turbo prune`
- * still supplies the package.json, so resolution gets all the way to
- * `./src/index.ts` before discovering the file is not in the image.
+ * That is what #341 shipped: a JIT workspace import (`@intervals-mcp/data`,
+ * raw TypeScript under `src/`) that the runner never copied. The server now
+ * runs as one `bun build` bundle (#89), so static imports are inlined at build
+ * time and cannot go missing that way. What still resolves at runtime is each
+ * `createRequire(...).resolve()` call behind APP_RESOURCES: it walks the
+ * workspace symlink and the app's `exports` map to a built `dist/app.html`,
+ * all of which the runner has to copy.
  *
- * `docker compose build` cannot catch that: it asserts the image builds, and
- * the missing file is only resolved at container start. docker.yml's smoke
- * test (scripts/docker-smoke.sh) starts the image, but only in CI. So this
- * guard resolves every `@intervals-mcp/*` specifier the server's runtime
- * sources reference through the target package's own `exports` map, and
- * asserts the file it lands on is inside something the runner copies.
+ * `docker compose build` cannot catch a missing one: it asserts the image
+ * builds, and the file is only resolved at container start. docker.yml's
+ * smoke test (scripts/docker-smoke.sh) starts the image, but only in CI. So
+ * this guard resolves every runtime-resolved `@intervals-mcp/*` specifier
+ * through the target package's own `exports` map, and asserts the file it
+ * lands on is inside something the runner copies. It also pins the runner's
+ * CMD to the file the builder's `bun build` writes.
  *
  * It checks the entry point each specifier resolves to. That is sufficient
  * only because the Dockerfile copies *directories* — a package's entry can
@@ -52,7 +53,9 @@ const ROOT_PACKAGE_JSON_URL = new URL("package.json", REPO_ROOT);
  * there. An exemption without one is just drift with a name.
  */
 const NOT_IMPORT_DERIVED: Record<string, string> = {
-  "apps/server/src": "the entrypoint itself (CMD runs src/index.ts)",
+  "apps/server/dist": "the bundled entrypoint (CMD runs dist/index.js)",
+  "apps/server/node_modules/@intervals-mcp":
+    "the workspace symlinks each app.html specifier resolves through",
 };
 
 function stripComments(source: string): string {
@@ -78,11 +81,10 @@ function runnerStage(): string {
 
 /**
  * Repo-relative paths the runner copies **from the builder**. Only the builder
- * copies count as content: the prod-deps stage is `turbo prune`'s `out/json`
- * (package.json files only) plus `bun install --production`, so it carries
- * manifests and node_modules and never a package's own sources or build
- * output — which is precisely why a missing COPY resolves far enough to look
- * fine and then fails.
+ * copies count as content: the pruner copy is `turbo prune`'s `out/json`
+ * (package.json files only), so it carries manifests and never a package's
+ * own sources or build output — which is precisely why a missing COPY
+ * resolves far enough to look fine and then fails.
  */
 function builderCopies(): string[] {
   const copied: string[] = [];
@@ -126,7 +128,11 @@ function workspaceDirs(): Map<string, string> {
   return dirs;
 }
 
-/** Every `@intervals-mcp/*` specifier the server's non-test sources reference. */
+/**
+ * Every `@intervals-mcp/*` specifier the server's non-test sources resolve at
+ * runtime. Static imports are inlined by the bundle, so only `.resolve()`
+ * calls (the ones behind APP_RESOURCES) reach the image's file tree.
+ */
 function serverSpecifiers(): Map<string, string[]> {
   const specifiers = new Map<string, string[]>();
   const files = readdirSync(SRC_DIR, { recursive: true, encoding: "utf8" })
@@ -136,10 +142,9 @@ function serverSpecifiers(): Map<string, string[]> {
 
   for (const file of files) {
     const source = stripComments(readFileSync(new URL(file, SRC_DIR), "utf8"));
-    // Catches static imports and the `createRequire(...).resolve()` calls
-    // behind APP_RESOURCES alike — both are string literals, and both have to
-    // resolve inside the container.
-    for (const match of source.matchAll(/["'](@intervals-mcp\/[^"']+)["']/g)) {
+    for (const match of source.matchAll(
+      /\.resolve\(\s*["'](@intervals-mcp\/[^"']+)["']/g,
+    )) {
       const specifier = match[1]!;
       const readers = specifiers.get(specifier) ?? [];
       if (!readers.includes(file)) readers.push(file);
@@ -192,8 +197,8 @@ describe("Dockerfile runner stage", () => {
     const specifiers = serverSpecifiers();
 
     // A broken walk or regex finding nothing must not pass vacuously: the
-    // server resolves the seven MCP App bundles plus @intervals-mcp/data.
-    expect(specifiers.size).toBeGreaterThanOrEqual(8);
+    // server resolves the seven MCP App bundles.
+    expect(specifiers.size).toBeGreaterThanOrEqual(7);
     expect(copied.length).toBeGreaterThanOrEqual(3);
 
     const missing = [...specifiers.entries()]
@@ -225,6 +230,19 @@ describe("Dockerfile runner stage", () => {
     );
 
     expect(unused).toEqual([]);
+  });
+
+  it("runs the file the builder bundles", () => {
+    const dockerfile = readFileSync(DOCKERFILE_URL, "utf8");
+    const outdir =
+      /^RUN bun build apps\/server\/src\/index\.ts .*--outdir (\S+)/m.exec(
+        dockerfile,
+      )?.[1];
+    expect(
+      outdir,
+      "no `bun build apps/server/src/index.ts` in the builder",
+    ).toBeDefined();
+    expect(runnerStage()).toContain(`CMD ["run","${outdir}/index.js"]`);
   });
 
   it("keeps the exempt list honest: every exemption is still copied", () => {
