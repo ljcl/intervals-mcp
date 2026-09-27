@@ -103,6 +103,24 @@ describe("toolErrorText", () => {
     );
   });
 
+  it("reports a Cloudflare challenge as a challenge, not a rejected API key", () => {
+    const text = toolErrorText(
+      new HttpError('HTTP 403: HTML error page "Just a moment..."', {
+        status: 403,
+        statusText: "Forbidden",
+        data: "<!DOCTYPE html><html><head><title>Just a moment...</title>",
+        contentType: "text/html; charset=UTF-8",
+        cloudflareChallenge: true,
+      }),
+      { context: "list recent activities" },
+    );
+
+    expect(text).toBe(
+      "❌ Cloudflare, in front of intervals.icu, answered with a challenge (HTTP 403) while trying to list recent activities. The request did not reach intervals.icu, so the API key was not checked. Wait a few minutes, then try again.",
+    );
+    expect(text).not.toContain("INTERVALS_API_KEY");
+  });
+
   it("reports other HTTP statuses with the message", () => {
     const text = toolErrorText(
       new HttpError("intervals.icu API Error in getActivity (500): boom", {

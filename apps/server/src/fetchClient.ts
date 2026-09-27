@@ -1,16 +1,26 @@
 import { TtlLruCache } from "./cache";
 
-export class HttpError extends Error {
-  response: {
-    status: number;
-    statusText: string;
-    data: string;
-  };
+/** What an {@link HttpError} keeps from the failed response. */
+export interface HttpErrorResponse {
+  status: number;
+  statusText: string;
+  /** The raw response body, never shortened. */
+  data: string;
+  /** The response's `Content-Type`, when it sent one. */
+  contentType?: string;
+  /**
+   * True when Cloudflare, in front of intervals.icu, answered with a
+   * challenge page (`cf-mitigated: challenge`) instead of passing the request
+   * on. The API key was never checked, so a caller must not report this 403
+   * as a rejected key.
+   */
+  cloudflareChallenge?: boolean;
+}
 
-  constructor(
-    message: string,
-    response: { status: number; statusText: string; data: string },
-  ) {
+export class HttpError extends Error {
+  response: HttpErrorResponse;
+
+  constructor(message: string, response: HttpErrorResponse) {
     super(message);
     this.name = "HttpError";
     this.response = response;
@@ -69,7 +79,7 @@ export class RateLimitError extends HttpError {
 
   constructor(
     message: string,
-    response: { status: number; statusText: string; data: string },
+    response: HttpErrorResponse,
     rateLimit: RateLimitSnapshot,
     retryAfterSeconds: number | null,
     detail: string = message,
@@ -97,8 +107,62 @@ export class RequestTimeoutError extends Error {
   }
 }
 
-/** HTTP statuses we treat as transient and retry on safe (GET) requests. */
-const TRANSIENT_STATUSES = new Set([500, 502, 503, 504]);
+/**
+ * HTTP statuses we treat as transient and retry on safe (GET) requests.
+ * intervals.icu sits behind Cloudflare, whose 520-524 mean that Cloudflare
+ * could not get an answer from intervals.icu in time (unknown error, origin
+ * down, connection timed out, origin unreachable, response timed out): the
+ * same kind of fault as a 502 or 504.
+ */
+const TRANSIENT_STATUSES = new Set([
+  500, 502, 503, 504, 520, 521, 522, 523, 524,
+]);
+
+/** Longest excerpt of an error body that goes into an error message. */
+const ERROR_BODY_EXCERPT_CHARS = 200;
+
+function oneLineExcerpt(text: string): string {
+  const line = text.replace(/\s+/g, " ").trim();
+  return line.length <= ERROR_BODY_EXCERPT_CHARS
+    ? line
+    : `${line.slice(0, ERROR_BODY_EXCERPT_CHARS).trimEnd()}…`;
+}
+
+/** The text of an HTML page's `<title>`, or "" when it has none. */
+function htmlTitle(html: string): string {
+  const open = html.search(/<title/i);
+  if (open === -1) return "";
+  const start = html.indexOf(">", open) + 1;
+  if (start === 0) return "";
+  const length = html.slice(start).search(/<\/title/i);
+  return length === -1 ? "" : html.slice(start, start + length);
+}
+
+/**
+ * A short, one-line summary of an error response body, for an error message
+ * that a person or a model reads and that the logs print on one line.
+ *
+ * intervals.icu sits behind Cloudflare, so a failure can come back as a full
+ * HTML page (a 52x error page or a challenge page) instead of a JSON error.
+ * Putting that page in a message gave a tool error text of about 6,000
+ * characters (#52). An HTML body becomes its `<title>` (Cloudflare's pages
+ * name the error there, e.g. "522: Connection timed out"); any other body is
+ * cut to {@link ERROR_BODY_EXCERPT_CHARS} characters on one line. The raw
+ * body stays on `HttpError.response.data`.
+ */
+export function summarizeErrorBody(
+  body: string,
+  contentType?: string | null,
+): string {
+  const trimmed = body.trim();
+  if (trimmed === "") return "";
+  const isHtml =
+    (contentType ?? "").toLowerCase().includes("html") ||
+    /^<(!doctype html|html)\b/i.test(trimmed);
+  if (!isHtml) return oneLineExcerpt(trimmed);
+  const title = oneLineExcerpt(htmlTitle(trimmed));
+  return title === "" ? "HTML error page" : `HTML error page "${title}"`;
+}
 
 /** Default per-request timeout. intervals.icu's slowest reads land well inside this. */
 export const DEFAULT_TIMEOUT_MS = 20_000;
@@ -679,6 +743,7 @@ export class FetchClient {
     let attempt = 0;
     while (true) {
       let response: Response;
+      let body: string;
       try {
         // A fresh signal per attempt: AbortSignal.timeout starts counting the
         // moment it is created, so a shared one would leave later retries with
@@ -691,9 +756,15 @@ export class FetchClient {
             signal: AbortSignal.timeout(this.timeoutMs),
           }),
         );
+        // The body read is part of the attempt. The timeout signal also
+        // covers it, and a body that stalls or is cut off is the same fault
+        // as a connection that does: a safe read retries it, and a timeout
+        // becomes a RequestTimeoutError, not a bare DOMException (#52).
+        body = await response.text();
       } catch (networkError) {
-        // fetch rejects on network faults (ECONNRESET, DNS, etc.) and on our
-        // own timeout. Both are transient, so safe reads back off and retry.
+        // fetch and the body read reject on network faults (ECONNRESET, DNS,
+        // etc.) and on our own timeout. Both are transient, so safe reads
+        // back off and retry.
         if (isRetriable && attempt < this.maxRetries) {
           await this.sleep(this.backoffDelay(attempt));
           attempt += 1;
@@ -711,7 +782,6 @@ export class FetchClient {
       this.rateLimit = parseRateLimitHeaders(response.headers);
 
       if (!response.ok) {
-        const errorText = await response.text();
         const status = response.status;
 
         if (status === 429) {
@@ -736,7 +806,7 @@ export class FetchClient {
             {
               status,
               statusText: response.statusText,
-              data: errorText,
+              data: body,
             },
             snapshot,
             snapshot.retryAfterSeconds ?? null,
@@ -753,23 +823,29 @@ export class FetchClient {
           continue;
         }
 
-        throw new HttpError(`HTTP ${status}: ${errorText}`, {
+        const contentType = response.headers.get("content-type") ?? undefined;
+        const summary =
+          summarizeErrorBody(body, contentType) || response.statusText;
+        throw new HttpError(`HTTP ${status}: ${summary}`, {
           status,
           statusText: response.statusText,
-          data: errorText,
+          data: body,
+          contentType,
+          cloudflareChallenge:
+            response.headers.get("cf-mitigated") === "challenge",
         });
       }
 
       // Parse response
       if (responseType === "text") {
-        return (await response.text()) as T;
+        return body as T;
       }
       const contentType = response.headers.get("content-type");
       if (contentType?.includes("application/json")) {
         // Parse via text so oversized ids survive without precision loss.
-        return parseJsonWithLargeInts(await response.text()) as T;
+        return parseJsonWithLargeInts(body) as T;
       }
-      return (await response.text()) as T;
+      return body as T;
     }
   }
 

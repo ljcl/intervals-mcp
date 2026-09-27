@@ -6,8 +6,8 @@ import {
   getTimeZone,
   MissingApiKeyError,
 } from "./config";
-import { handleHealth } from "./health";
-import { unauthorizedMcpResponse, warnIfMcpUnprotected } from "./mcpAuth";
+import { createShutdown, serveOptions } from "./httpServer";
+import { warnIfMcpUnprotected } from "./mcpAuth";
 import { createMcpEndpoint } from "./mcpEndpoint";
 import { createServer } from "./server";
 
@@ -35,40 +35,20 @@ const mcp = createMcpEndpoint(createServer);
 console.error("Starting Intervals Extra MCP server...");
 warnIfMcpUnprotected();
 
-const httpServer = Bun.serve({
-  port: PORT,
-  hostname: HOST,
-  async fetch(req) {
-    const url = new URL(req.url);
-
-    if (url.pathname === "/mcp") {
-      const denied = unauthorizedMcpResponse(req);
-      if (denied) return denied;
-      return mcp.handleRequest(req);
-    }
-
-    if (url.pathname === "/health") {
-      return handleHealth(req, url);
-    }
-
-    return new Response("Not found", { status: 404 });
-  },
-});
+const httpServer = Bun.serve(serveOptions(mcp, { port: PORT, hostname: HOST }));
 
 console.error(`Listening on http://${HOST}:${PORT}`);
 console.error(`MCP endpoint: http://${HOST}:${PORT}/mcp`);
 console.error(`Health check: http://${HOST}:${PORT}/health`);
 
 // Graceful shutdown. SIGINT covers Ctrl-C; SIGTERM is what `docker stop` and
-// orchestrators send — without a handler the container is hard-killed after
-// the grace period with exchanges left open.
-async function shutdown(signal: string): Promise<void> {
-  console.error(`Received ${signal}, shutting down...`);
-  // Stop accepting new connections while draining in-flight exchanges.
-  httpServer.stop();
-  await mcp.close();
-  process.exit(0);
-}
+// orchestrators send. The first signal drains in-flight calls for up to
+// SHUTDOWN_GRACE_MS; a second one exits at once (httpServer.ts).
+const shutdown = createShutdown({
+  server: httpServer,
+  mcp,
+  exit: (code) => process.exit(code),
+});
 
 process.on("SIGINT", () => void shutdown("SIGINT"));
 process.on("SIGTERM", () => void shutdown("SIGTERM"));

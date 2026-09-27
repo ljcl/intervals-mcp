@@ -4,6 +4,14 @@ import { parseJsonWithLargeInts } from "./fetchClient";
 /** JSON-RPC error code used by the raw HTTP layer (before the SDK sees the body). */
 const PARSE_ERROR = -32700;
 
+/**
+ * Interval of the SSE keep-alive comment on a streamed response (a tool call
+ * that reports progress). The SDK's default, stated here because
+ * `IDLE_TIMEOUT_SECONDS` in `httpServer.ts` must stay above it: a stream that
+ * sends nothing for longer than Bun's idle timeout is closed mid-call (#51).
+ */
+export const SSE_KEEP_ALIVE_MS = 15_000;
+
 function jsonRpcError(code: number, message: string, status: number): Response {
   return new Response(
     JSON.stringify({ jsonrpc: "2.0", error: { code, message }, id: null }),
@@ -14,7 +22,10 @@ function jsonRpcError(code: number, message: string, status: number): Response {
 export interface McpEndpoint {
   /** Route one HTTP request on the /mcp endpoint. */
   handleRequest(req: Request): Promise<Response>;
-  /** Abort in-flight exchanges, e.g. on SIGTERM before exit. */
+  /**
+   * Abort in-flight exchanges. Shutdown calls this after the drain in
+   * `httpServer.ts`, so it only cuts calls that outlived the grace period.
+   */
   close(): Promise<void>;
 }
 
@@ -41,6 +52,7 @@ export interface McpEndpoint {
 export function createMcpEndpoint(createServer: () => Server): McpEndpoint {
   const handler = createMcpHandler(() => createServer(), {
     legacy: "reject",
+    keepAliveMs: SSE_KEEP_ALIVE_MS,
     // Reporting only — the SDK already shaped the response by the time this
     // fires, so a throw here could not change what the client sees.
     onerror: (error) => console.error("MCP handler error:", error),

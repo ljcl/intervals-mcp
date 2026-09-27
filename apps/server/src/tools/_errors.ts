@@ -84,6 +84,12 @@ export function toolErrorText(
     const detail = error.detail || error.message;
     return `${PREFIX} Rate limit reached while trying to ${context}. ${detail} Retry after the window resets.`;
   }
+  // Before the 401/403 branch: a challenge is a 403 that never reached
+  // intervals.icu, so "check the API key" would send the athlete to rotate
+  // a key that is fine (#52).
+  if (error instanceof HttpError && error.response.cloudflareChallenge) {
+    return `${PREFIX} Cloudflare, in front of intervals.icu, answered with a challenge (HTTP ${error.response.status}) while trying to ${context}. The request did not reach intervals.icu, so the API key was not checked. Wait a few minutes, then try again.`;
+  }
   if (error instanceof HttpError && error.response.status === 404) {
     return `${PREFIX} ${notFound ?? DEFAULT_NOT_FOUND}`;
   }

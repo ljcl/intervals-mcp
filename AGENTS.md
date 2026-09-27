@@ -34,8 +34,10 @@ breaking them has shipped bugs — do not work around them locally.
   intact.
 - **Rate limits and retries live in `fetchClient.ts`, never per-tool.**
   Parses `X-RateLimit-*`/`Retry-After` into a snapshot; bounded retries honour
-  `Retry-After`; transient 5xx/network faults retry GET/HEAD only, never
-  writes.
+  `Retry-After`; transient 5xx (Cloudflare 520-524 too)/network faults retry
+  GET/HEAD only, never writes. The body read is inside the attempt, so its
+  timeout retries and is a `RequestTimeoutError`. Error bodies reach a
+  message only through `summarizeErrorBody` (an HTML page becomes its title).
 - **Error types survive translation.** `handleApiError` rethrows
   `RateLimitError` intact (context prefixed onto `message`, bare window detail
   kept) and wraps everything else in `IntervalsApiError extends HttpError`
@@ -76,6 +78,10 @@ breaking them has shipped bugs — do not work around them locally.
   always present). Tick counter without `total` (spec demands monotonic
   increase; multi-phase calls can't carry two denominators); time-based
   throttle with `important: true` bypass; fire-and-forget.
+- **`Bun.serve` options live in `httpServer.ts`.** `idleTimeout` stays above
+  the SSE keep-alive (`SSE_KEEP_ALIVE_MS`): Bun's 10 s default cut streamed
+  calls mid-flight. Shutdown drains in-flight calls for `SHUTDOWN_GRACE_MS`,
+  which stays below compose's `stop_grace_period`; tests check both.
 - **The API key comes from `getIntervalsApiKey()`** (`config.ts`), passed to
   handlers as argument 2; never read `process.env.INTERVALS_API_KEY`
   elsewhere. A missing key maps to one not-configured message naming the env
@@ -129,7 +135,8 @@ breaking them has shipped bugs — do not work around them locally.
   ids, `structuredContent`, `isError` not JSON-RPC errors, app resources,
   prompts. Extend the shared client, never a new bootstrap copy.
 - **Tool error text has one home: `toolErrorText` (`tools/_errors.ts`).** It
-  branches on `RateLimitError` / `HttpError.status` (404, 402, 401/403),
+  branches on `RateLimitError` / `HttpError.status` (404, 402, 401/403)
+  and the typed `response.cloudflareChallenge` flag (checked before 401/403),
   never on message text; every `isError` text starts with `❌`. Imports come
   from `fetchClient.ts` only (tool tests mock the client module with bare
   factories, so an import from there would be `undefined` under those

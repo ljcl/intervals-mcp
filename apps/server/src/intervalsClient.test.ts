@@ -491,6 +491,32 @@ describe("intervalsClient", () => {
     expect(calls).toHaveLength(1);
   });
 
+  it("reports progress once per window on a multi-window scan (#51)", async () => {
+    mockJson([]);
+    const progress = vi.fn();
+    await listActivities(
+      "k",
+      { oldest: "2026-01-01", newest: "2026-03-11" },
+      progress,
+    );
+    expect(progress.mock.calls.map(([message]) => message)).toEqual([
+      "Listing activities 2026-01-01 to 2026-01-31 (window 1 of 3)…",
+      "Listing activities 2026-02-01 to 2026-03-03 (window 2 of 3)…",
+      "Listing activities 2026-03-04 to 2026-03-11 (window 3 of 3)…",
+    ]);
+  });
+
+  it("reports no window progress for a single-window range", async () => {
+    mockJson([]);
+    const progress = vi.fn();
+    await listActivities(
+      "k",
+      { oldest: "2026-09-01", newest: "2026-09-24" },
+      progress,
+    );
+    expect(progress).not.toHaveBeenCalled();
+  });
+
   it("de-duplicates by id and sorts by start_date_local descending", async () => {
     mockJson([
       { ...activity, id: "a", start_date_local: "2026-09-01T00:00:00" },
@@ -589,6 +615,54 @@ describe("intervalsClient", () => {
     mockJson({}, 401);
     await expect(getActivity("k", "i0")).rejects.toMatchObject({
       response: { status: 401 },
+    });
+  });
+
+  it("keeps an upstream HTML error page out of the error message (#52)", async () => {
+    const page = `<!DOCTYPE html><html><head><title>intervals.icu | 522: Connection timed out</title><style>${"x".repeat(6000)}</style></head><body>...</body></html>`;
+    const calls: string[] = [];
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      calls.push(String(input));
+      return new Response(page, {
+        status: 522,
+        headers: { "content-type": "text/html; charset=UTF-8" },
+      });
+    }) as unknown as typeof fetch;
+
+    const error = await getActivity("k", "i0").catch((e) => e);
+
+    expect(error).toBeInstanceOf(IntervalsApiError);
+    expect(error.message).toBe(
+      'getActivity for ID i0: 522 HTML error page "intervals.icu | 522: Connection timed out"',
+    );
+    // The raw page is still there for anyone who needs it.
+    expect(error.response.data).toBe(page);
+    expect(error.response.contentType).toBe("text/html; charset=UTF-8");
+    // 522 is transient, so the GET was retried like a 502.
+    expect(calls).toHaveLength(3);
+  });
+
+  it("carries the Cloudflare challenge flag through the translation", async () => {
+    globalThis.fetch = vi.fn(
+      async () =>
+        new Response(
+          "<html><head><title>Just a moment...</title></head></html>",
+          {
+            status: 403,
+            headers: {
+              "content-type": "text/html",
+              "cf-mitigated": "challenge",
+            },
+          },
+        ),
+    ) as unknown as typeof fetch;
+
+    const error = await getActivity("k", "i0").catch((e) => e);
+
+    expect(error).toBeInstanceOf(IntervalsApiError);
+    expect(error.response).toMatchObject({
+      status: 403,
+      cloudflareChallenge: true,
     });
   });
 

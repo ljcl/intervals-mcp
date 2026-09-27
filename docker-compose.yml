@@ -5,6 +5,10 @@ services:
       dockerfile: apps/server/Dockerfile
     container_name: intervals-mcp-server
     restart: unless-stopped
+    # Time between SIGTERM and SIGKILL on `docker stop`. The server drains
+    # in-flight calls for up to 8 s (SHUTDOWN_GRACE_MS in
+    # apps/server/src/httpServer.ts), so keep this above that.
+    stop_grace_period: 10s
     ports:
       - "3000:3000"
     environment:

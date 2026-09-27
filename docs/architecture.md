@@ -35,6 +35,22 @@ Related docs: [mcp-apps.md](mcp-apps.md) for the UI packages,
   list/read/discover results, because that surface only changes on redeploy.
   `cacheScope` stays on the SDK's `private` default since `/mcp` can sit
   behind `MCP_AUTH_TOKEN`.
+- `httpServer.ts` holds what `index.ts` passes to `Bun.serve`: the routes
+  and `idleTimeout: 120`. Bun's default idle timeout is 10 s, and a tool call
+  that reports progress answers as an SSE stream whose keep-alive comes only
+  every 15 s (`SSE_KEEP_ALIVE_MS`, `mcpEndpoint.ts`). So a streamed call that
+  waited more than 10 s on intervals.icu was cut with a connection reset
+  (#51). The idle timeout must stay above the keep-alive interval;
+  `httpServer.test.ts` checks that. A plain JSON reply that is slow to start
+  is not cut (verified on Bun 1.4.2). The protocol tests call
+  `handleRequest` directly, so they cannot see this.
+- Shutdown drains (`createShutdown`, `httpServer.ts`). On SIGTERM or SIGINT,
+  `server.stop()` refuses new connections at once and resolves when the
+  requests in flight finish. Shutdown waits for that for up to
+  `SHUTDOWN_GRACE_MS` (8 s), then `mcp.close()` aborts what is left and the
+  process exits. A second signal exits at once. The grace period must stay
+  below the time between SIGTERM and SIGKILL (`stop_grace_period` in
+  `docker-compose.yml`, 10 s; also Docker's default).
 
 ## HTTP layer (`fetchClient.ts`)
 
@@ -48,7 +64,20 @@ never per-tool.
 - Retries 429s honouring `Retry-After` (bounded, so a call never blocks on a
   full 15-minute window).
 - Retries transient 5xx and network faults with bounded exponential backoff —
-  GET/HEAD only, never writes.
+  GET/HEAD only, never writes. Transient includes Cloudflare's 520-524
+  (intervals.icu sits behind Cloudflare; these mean Cloudflare got no answer
+  from it in time).
+- The body read is part of the attempt: the timeout signal covers it, a GET
+  whose body stalls or is cut off retries, and a timeout during the read is a
+  `RequestTimeoutError` like one during the connect (#52).
+- An error body goes into `HttpError.message` only as a one-line summary
+  (`summarizeErrorBody`): an HTML page becomes its `<title>`, anything else
+  is cut to 200 characters. `handleApiError` uses the same summary. The raw
+  body stays on `response.data`, with `response.contentType`. A Cloudflare
+  error page once put about 6,000 characters of HTML into a tool error.
+- `response.cloudflareChallenge` is true when the response carried
+  `cf-mitigated: challenge`: Cloudflare stopped the request before
+  intervals.icu, so the API key was never checked.
 - An exhausted-limit 429 surfaces as a structured `RateLimitError`.
   `handleApiError` (`intervalsClient.ts`) turns it into an actionable message
   **without flattening it**: the rethrow is still a `RateLimitError` (caller
@@ -61,7 +90,9 @@ never per-tool.
 - Tool-facing error text has one home: `toolErrorText` in
   `tools/_errors.ts`. It maps `RateLimitError` to the window/reset line
   (quoting `detail`), `HttpError.status` 404 to the tool's not-found sentence
-  and 402 to its subscription sentence, and everything else to
+  and 402 to its subscription sentence, `response.cloudflareChallenge` to a
+  challenge sentence (checked before 401/403, which name
+  `INTERVALS_API_KEY`), and everything else to
   `❌ Failed to <context>: <message>`; every `isError` text on the surface
   starts with `❌`. Tool catch blocks and the dispatcher's final catch call it
   for the text and write the `{ content, isError: true }` literal themselves
@@ -269,6 +300,10 @@ for.
   50 activities in a second is one line of news, not 50.
   `important: true` bypasses it for phase changes and rate-limit aborts.
 - Counts from a bounded pool are completion-ordered, not index-ordered.
+- `listActivities` (`intervalsClient.ts`) takes the reporter as an optional
+  third argument and reports each 31-day window of a longer scan ("window 3
+  of 17"); callers pass theirs through. A run-only lookback of 515 days is 17
+  requests in a row, and before #51 it sent nothing between them.
 - Sends are fire-and-forget; every failure is swallowed.
 - Client side, `useServerToolData` and `useServerToolFetcher` (per key) share
   `progressCallOptions`. It sets `resetTimeoutOnProgress` (so a live sweep is

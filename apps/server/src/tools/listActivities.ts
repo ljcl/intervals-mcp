@@ -185,7 +185,11 @@ export const listActivitiesTool = {
 
     try {
       progress(`Fetching activities ${oldest} to ${newest}`);
-      const activities = await listActivitiesClient(apiKey, { oldest, newest });
+      const activities = await listActivitiesClient(
+        apiKey,
+        { oldest, newest },
+        progress,
+      );
 
       let filtered = activities;
       if (type) {

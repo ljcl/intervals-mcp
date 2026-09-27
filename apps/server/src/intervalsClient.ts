@@ -1,6 +1,13 @@
 import { z } from "zod";
 import { basicAuthHeader, getIntervalsAthleteId } from "./config";
-import { HttpError, intervalsApi, RateLimitError } from "./fetchClient";
+import {
+  HttpError,
+  type HttpErrorResponse,
+  intervalsApi,
+  RateLimitError,
+  summarizeErrorBody,
+} from "./fetchClient";
+import { NO_PROGRESS, type ReportProgress } from "./progress";
 import { addDays } from "./utils/localDate";
 import { SERVER_VERSION } from "./version";
 
@@ -378,17 +385,19 @@ const IntervalsAthleteSelfSchema = z
  * needs `instanceof`/`.response.status` to still work.
  */
 export class IntervalsApiError extends HttpError {
-  constructor(
-    message: string,
-    response: { status: number; statusText: string; data: string },
-  ) {
+  constructor(message: string, response: HttpErrorResponse) {
     super(message, response);
     this.name = "IntervalsApiError";
   }
 }
 
-/** Pulls a human-readable detail out of an error response body, if any. */
-function extractDetail(data: string, statusText: string): string {
+/**
+ * Pulls a human-readable detail out of an error response: a JSON body's
+ * `message`, else a one-line summary of the body (an HTML error page becomes
+ * its title; see `summarizeErrorBody`), else the status text.
+ */
+function extractDetail(response: HttpErrorResponse): string {
+  const { data, statusText, contentType } = response;
   try {
     const parsed: unknown = JSON.parse(data);
     if (
@@ -402,7 +411,7 @@ function extractDetail(data: string, statusText: string): string {
   } catch {
     // data is not JSON; fall through.
   }
-  return data || statusText;
+  return summarizeErrorBody(data, contentType) || statusText;
 }
 
 /**
@@ -419,10 +428,7 @@ function handleApiError(error: unknown, context: string): never {
     throw error;
   }
   if (error instanceof HttpError) {
-    const detail = extractDetail(
-      error.response.data,
-      error.response.statusText,
-    );
+    const detail = extractDetail(error.response);
     throw new IntervalsApiError(
       `${context}: ${error.response.status} ${detail}`,
       error.response,
@@ -520,16 +526,26 @@ export function splitDateRangeIntoWindows(
  * so the shared client's request spacing and any future rate-limit backoff
  * apply per request as intended). Results are concatenated, de-duplicated by
  * `id`, and sorted by `start_date_local` descending.
+ *
+ * A multi-window scan reports progress once per window. A 515-day run-only
+ * lookback is 17 requests in a row, and without a message between them a
+ * streamed call showed nothing for that long (#51).
  */
 export async function listActivities(
   apiKey: string,
   range: DateRange,
+  progress: ReportProgress = NO_PROGRESS,
 ): Promise<IntervalsActivity[]> {
   requireApiKey(apiKey);
   const windows = splitDateRangeIntoWindows(range.oldest, range.newest);
   const collected: IntervalsActivity[] = [];
 
-  for (const window of windows) {
+  for (const [index, window] of windows.entries()) {
+    if (windows.length > 1) {
+      progress(
+        `Listing activities ${window.oldest} to ${window.newest} (window ${index + 1} of ${windows.length})…`,
+      );
+    }
     const context = `listActivities for ${window.oldest} to ${window.newest}`;
     let data: unknown;
     try {
