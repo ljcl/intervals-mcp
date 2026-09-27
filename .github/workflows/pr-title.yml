@@ -16,7 +16,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  lint:
+  # The job name is the status context branch protection requires
+  # (scripts/setup-branch-protection.sh); renaming it unrequires the check.
+  pr-title:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
