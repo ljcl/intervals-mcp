@@ -1,4 +1,4 @@
-import { interpolateNulls } from "./hillAnalysis";
+import { hasRealSample, interpolateNulls } from "./hillAnalysis";
 
 /**
  * Urban-stop-aware interval detection for `get-interval-analysis`.
@@ -636,7 +636,11 @@ export function computeIntervalAnalysis(
   laps: IntervalLap[] = [],
   athlete: AthleteHr = {},
 ): IntervalAnalysis {
-  if (!streams.time || streams.time.length < 2 || !streams.distance) {
+  if (
+    !streams.time ||
+    streams.time.length < 2 ||
+    !hasRealSample(streams.distance)
+  ) {
     throw new IntervalAnalysisError(
       "The activity's time and distance streams are required for interval analysis.",
     );

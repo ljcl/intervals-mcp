@@ -679,6 +679,14 @@ describe("error handling", () => {
     );
   });
 
+  it("throws its own error when the distance stream has no real sample", () => {
+    const streams = buildStreams([easy(600)]);
+    streams.distance = streams.distance.map(() => null);
+    expect(() => computeIntervalAnalysis(streams)).toThrow(
+      IntervalAnalysisError,
+    );
+  });
+
   it("warns and reports low confidence without a moving stream or laps", () => {
     const streams = buildStreams([easy(600), work(190), easy(300)]);
     streams.moving = undefined;
