@@ -67,6 +67,7 @@ jobs:
               - "turbo.json"
               - ".dockerignore"
               - ".github/workflows/docker.yml"
+              - "scripts/docker-smoke.sh"
 
   build:
     needs: [changes]
@@ -114,6 +115,33 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Start the image before anything is published: dockerRuntime.test.ts
+      # reads the repo tree, so it cannot see what the build context left
+      # out, a broken CMD or HEALTHCHECK, uid 65534 permissions, or an
+      # arm64-only failure. This loads the same build into the runner's
+      # docker (no attestations; the push build below reuses the builder's
+      # layers), and a failing leg keeps `merge` from publishing any tag.
+      - name: Build for smoke test
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: apps/server/Dockerfile
+          platforms: ${{ matrix.platform }}
+          load: true
+          tags: intervals-mcp:smoke
+          provenance: false
+          sbom: false
+          cache-from: type=gha,scope=${{ steps.prep.outputs.pair }}
+
+      # A backfill checks out an old release tag, which may predate the script.
+      - name: Smoke test
+        run: |
+          if [ -x scripts/docker-smoke.sh ]; then
+            scripts/docker-smoke.sh intervals-mcp:smoke
+          else
+            echo "::notice::scripts/docker-smoke.sh is not in this checkout; smoke test skipped"
+          fi
 
       - name: Build (push by digest on non-PR)
         id: build
