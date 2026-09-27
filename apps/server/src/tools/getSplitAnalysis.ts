@@ -37,8 +37,12 @@ Notes:
 - Halves are cut at the exact midpoint of recorded distance.
 - Stopped time is excluded from pace. A trailing partial split is marked and
   left out of fastest and slowest.
-- Grade comes from intervals.icu's smoothed grade, else altitude. With
-  neither, the terrain correction is unavailable and the response says so.
+- Grade comes from intervals.icu's smoothed grade, else altitude, and is
+  averaged over 100 m before the grade adjustment. A noisy elevation track
+  adds a warning. With no elevation data, the grade-adjusted figures are
+  null and the verdict is on the clock only.
+- Elevation gain is intervals.icu's own total (as get-activity reports it)
+  when the activity has one, else summed from the altitude samples.
 - An activity with no recorded streams (a manual entry) returns an error.
 `;
 
@@ -153,7 +157,9 @@ export const getSplitAnalysisTool = {
         watts: streams.watts,
         moving: streams.moving,
       };
-      const analysis = computeSplitAnalysis(splitStreams);
+      const analysis = computeSplitAnalysis(splitStreams, {
+        recordedElevationGainM: activity.total_elevation_gain ?? null,
+      });
 
       const structured = {
         activity_id: id,
@@ -202,6 +208,7 @@ export const getSplitAnalysisTool = {
           moving_time_s: analysis.totals.movingTimeS,
           elapsed_time_s: analysis.totals.elapsedTimeS,
           elevation_gain_m: analysis.totals.elevationGainM,
+          elevation_gain_source: analysis.totals.elevationGainSource,
           avg_pace_sec_per_km: analysis.totals.avgPaceSecPerKm,
           avg_pace_min_per_km: paceMinPerKm(analysis.totals.avgPaceSecPerKm),
           avg_gap_pace_sec_per_km: analysis.totals.avgGapPaceSecPerKm,
@@ -223,10 +230,11 @@ export const getSplitAnalysisTool = {
       warnOnSchemaDrift(name, SplitAnalysisOutputSchema, structured);
 
       const distanceLabel = (analysis.totals.distanceM / 1000).toFixed(2);
+      const gain = structured.totals.elevation_gain_m;
       const lines = [
         `Split Analysis: ${structured.name} (${structured.date})`,
         `Grade source: ${structured.grade_source}`,
-        `${distanceLabel} km, ${analysis.splits.length} splits, average ${structured.totals.avg_pace_min_per_km ? `${structured.totals.avg_pace_min_per_km} min/km` : "n/a"}`,
+        `${distanceLabel} km, ${analysis.splits.length} splits, average ${structured.totals.avg_pace_min_per_km ? `${structured.totals.avg_pace_min_per_km} min/km` : "n/a"}${gain != null ? `, +${Math.round(gain)} m gain (${structured.totals.elevation_gain_source})` : ""}`,
         "",
       ];
 
@@ -234,7 +242,9 @@ export const getSplitAnalysisTool = {
       if (verdict) {
         const sign = (value: number) => (value >= 0 ? "+" : "");
         lines.push(
-          `Verdict: ${verdict.shape} split on the clock, ${verdict.gap_shape} grade-adjusted`,
+          verdict.gap_shape
+            ? `Verdict: ${verdict.shape} split on the clock, ${verdict.gap_shape} grade-adjusted`
+            : `Verdict: ${verdict.shape} split on the clock (no elevation data, so no grade-adjusted verdict)`,
           `  First half ${verdict.first_half_pace_min_per_km} min/km, second half ${verdict.second_half_pace_min_per_km} min/km (${sign(verdict.delta_pct)}${verdict.delta_pct}%)`,
         );
         if (verdict.gap_delta_pct != null) {

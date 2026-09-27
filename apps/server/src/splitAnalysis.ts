@@ -11,16 +11,18 @@
  * separates the two.
  *
  * Grade handling, null-sample handling, and the Minetti GAP factor are
- * `hillAnalysis.ts`'s (`computeGrades`, `normalizeHillStreams`, `gapFactor`):
- * there is one definition of grade-adjusted pace in this server, and the
- * climb tool and this one share it.
+ * `hillAnalysis.ts`'s (`computeGrades`, `normalizeHillStreams`, `gapGrades`,
+ * `gapFactor`): there is one definition of grade-adjusted pace in this
+ * server, and the climb tool and this one share it.
  */
 
 import {
   computeGrades,
   type GradeSource,
   gapFactor,
+  gapGrades,
   type HillStreams,
+  hasRealSample,
   MAX_SAMPLE_GAP_SECONDS,
   type NormalizedHillStreams,
   normalizeHillStreams,
@@ -53,7 +55,25 @@ export const MIN_HALF_MOVING_SECONDS = 120;
  */
 export const MIN_TRAILING_SPLIT_FRACTION = 0.05;
 
+/**
+ * Metres the altitude must move against the current direction before a turn
+ * counts ({@link ascentFromAltitude}), so sample noise is not summed as
+ * climbing.
+ */
+export const ASCENT_HYSTERESIS_M = 3;
+
 export type SplitShape = "even" | "positive" | "negative";
+
+/** {@link GradeSource}, or `none` when the activity has no elevation data. */
+export type SplitGradeSource = GradeSource | "none";
+
+/** Where `totals.elevationGainM` came from. */
+export type ElevationGainSource = "intervals.icu" | "computed";
+
+export interface SplitAnalysisOptions {
+  /** The activity's own `total_elevation_gain` (m), preferred when known. */
+  recordedElevationGainM?: number | null;
+}
 
 export interface Split {
   /** 1-based split number. */
@@ -82,8 +102,8 @@ export interface Split {
 export interface SplitVerdict {
   /** Shape on the clock: positive = second half slower. */
   shape: SplitShape;
-  /** Shape once grade is corrected for — the terrain-free read. */
-  gapShape: SplitShape;
+  /** Shape once grade is corrected for — the terrain-free read. Null without elevation data. */
+  gapShape: SplitShape | null;
   firstHalfPaceSecPerKm: number;
   secondHalfPaceSecPerKm: number;
   firstHalfGapPaceSecPerKm: number | null;
@@ -106,14 +126,16 @@ export interface SplitVerdict {
 export interface SplitAnalysis {
   splits: Split[];
   verdict: SplitVerdict | null;
-  gradeSource: GradeSource;
+  gradeSource: SplitGradeSource;
   fastestSplitIndex: number | null;
   slowestSplitIndex: number | null;
   totals: {
     distanceM: number;
     movingTimeS: number;
     elapsedTimeS: number;
-    elevationGainM: number;
+    /** Total ascent; null with neither a recorded value nor altitude. */
+    elevationGainM: number | null;
+    elevationGainSource: ElevationGainSource | null;
     avgPaceSecPerKm: number | null;
     avgGapPaceSecPerKm: number | null;
   };
@@ -168,10 +190,12 @@ function emptyBin(startM: number, endM: number): Bin {
  * buckets in proportion to the distance falling in each, so a coarse stream
  * does not dump a whole 40 m interval into whichever split it happened to end
  * in — and so the same core can bin per-km splits and exact halves alike.
+ * `gapGrade` is `gapGrades`' averaged grade; null (no elevation data) leaves
+ * every bucket without a grade-adjusted pace rather than calling it flat.
  */
 export function binByDistance(
   streams: NormalizedHillStreams,
-  grades: number[],
+  gapGrade: number[] | null,
   edges: number[],
 ): Bin[] {
   const bins: Bin[] = [];
@@ -224,7 +248,7 @@ export function binByDistance(
       continue;
     }
 
-    const gapSpeedFactor = gapFactor((grades[i] ?? 0) / 100);
+    const gapSpeedFactor = gapGrade ? gapFactor(gapGrade[i]! / 100) : null;
     const speed = velocity_smooth?.[i] ?? dd / dt;
     const hr = heartrate?.[i];
     const cad = cadence?.[i];
@@ -257,7 +281,7 @@ export function binByDistance(
         bin.wattsSum += w * binWeight;
         bin.wattsW += binWeight;
       }
-      if (speed != null && speed > 0) {
+      if (gapSpeedFactor != null && speed != null && speed > 0) {
         bin.gapSpeedSum += speed * gapSpeedFactor * binWeight;
         bin.gapW += binWeight;
       }
@@ -297,7 +321,7 @@ const pct = (value: number) => `${Math.abs(round(value, 1))}%`;
  */
 export function interpretSplit(
   shape: SplitShape,
-  gapShape: SplitShape,
+  gapShape: SplitShape | null,
   deltaPct: number,
   gapDeltaPct: number | null,
 ): string {
@@ -354,14 +378,41 @@ function elevationChange(bin: Bin): number | null {
     : null;
 }
 
-/** Positive elevation change only, for a gain figure. */
-function elevationGain(bins: Bin[]): number {
+/**
+ * Total ascent from the altitude samples. A climb or descent only counts as
+ * turned once the altitude has moved {@link ASCENT_HYSTERESIS_M} back from
+ * its extreme, and each confirmed climb adds its full valley-to-peak height.
+ * Noise smaller than the hysteresis adds nothing; a climb that also descends
+ * inside one split still counts, which summing each split's net change did
+ * not.
+ */
+export function ascentFromAltitude(altitude: number[]): number {
+  if (altitude.length === 0) return 0;
+  let climbing = true;
+  let low = altitude[0]!;
+  let high = altitude[0]!;
   let gain = 0;
-  for (const bin of bins) {
-    const change = elevationChange(bin);
-    if (change != null && change > 0) gain += change;
+  for (const a of altitude) {
+    if (climbing) {
+      if (a > high) high = a;
+      else if (high - a >= ASCENT_HYSTERESIS_M) {
+        // Only the opening stretch can turn before clearing the hysteresis.
+        if (high - low >= ASCENT_HYSTERESIS_M) gain += high - low;
+        climbing = false;
+        low = a;
+      } else if (a < low) {
+        low = a;
+      }
+    } else if (a < low) {
+      low = a;
+    } else if (a - low >= ASCENT_HYSTERESIS_M) {
+      climbing = true;
+      high = a;
+    }
   }
-  return round(gain, 1);
+  // A climb still open at the end counts once it clears the hysteresis.
+  if (climbing && high - low >= ASCENT_HYSTERESIS_M) gain += high - low;
+  return gain;
 }
 
 /**
@@ -369,8 +420,16 @@ function elevationGain(bins: Bin[]): number {
  * exact midpoint of recorded distance rather than by grouping splits, so an
  * odd split count or a short trailing split cannot skew the comparison.
  */
-export function computeSplitAnalysis(streams: SplitStreams): SplitAnalysis {
-  if (!streams.distance || streams.distance.length < 2 || !streams.time) {
+export function computeSplitAnalysis(
+  streams: SplitStreams,
+  options: SplitAnalysisOptions = {},
+): SplitAnalysis {
+  if (
+    !streams.distance ||
+    streams.distance.length < 2 ||
+    !streams.time ||
+    !hasRealSample(streams.distance)
+  ) {
     throw new SplitAnalysisError(
       "No distance and time streams are available: split analysis needs both.",
     );
@@ -387,19 +446,26 @@ export function computeSplitAnalysis(streams: SplitStreams): SplitAnalysis {
 
   const warnings: string[] = [];
   // Grade comes from hillAnalysis (intervals.icu's grade_smooth, else an
-  // altitude window). With neither, every sample is treated as flat: GAP
-  // collapses onto raw pace, which the warning says outright rather than
-  // letting an uncorrected verdict read as corrected.
+  // altitude window), averaged over distance by gapGrades. With neither
+  // stream there is no grade at all: every grade-adjusted figure is null, so
+  // the verdict is on the clock only rather than an uncorrected one dressed
+  // up as corrected.
   const hasElevation = Boolean(normalized.altitude || normalized.grade_smooth);
-  const { grades, source: gradeSource } = hasElevation
-    ? computeGrades(normalized)
-    : {
-        grades: new Array<number>(distance.length).fill(0),
-        source: "computed" as const,
-      };
-  if (!hasElevation) {
+  let gradeSource: SplitGradeSource = "none";
+  let gapGrade: number[] | null = null;
+  let noisyElevation = false;
+  if (hasElevation) {
+    const { grades, source } = computeGrades(normalized);
+    const gap = gapGrades(grades, distance);
+    gradeSource = source;
+    gapGrade = gap.grades;
+    if (gap.warning) {
+      warnings.push(gap.warning);
+      noisyElevation = true;
+    }
+  } else {
     warnings.push(
-      "No elevation or grade stream: grade-adjusted pace equals raw pace, so the terrain correction is unavailable.",
+      "No elevation or grade stream: there is no grade-adjusted pace, so the verdict is on the clock only.",
     );
   }
 
@@ -419,7 +485,7 @@ export function computeSplitAnalysis(streams: SplitStreams): SplitAnalysis {
     splitEdges.splice(splitEdges.length - 2, 1);
   }
 
-  const splitBins = binByDistance(normalized, grades, splitEdges);
+  const splitBins = binByDistance(normalized, gapGrade, splitEdges);
   const splits: Split[] = splitBins.map((bin, i) => {
     const partial = bin.endM - bin.startM < SPLIT_LENGTH_M - 1;
     const change = elevationChange(bin);
@@ -463,16 +529,42 @@ export function computeSplitAnalysis(streams: SplitStreams): SplitAnalysis {
     .filter((split) => split.paceSecPerKm != null)
     .sort((a, b) => a.paceSecPerKm! - b.paceSecPerKm!);
 
-  const totalBin = binByDistance(normalized, grades, [base, base + totalM])[0]!;
-  const halfBins = binByDistance(normalized, grades, [
+  const totalBin = binByDistance(normalized, gapGrade, [
+    base,
+    base + totalM,
+  ])[0]!;
+  const halfBins = binByDistance(normalized, gapGrade, [
     base,
     base + totalM / 2,
     base + totalM,
   ]);
 
+  const verdict = buildVerdict(halfBins, warnings);
+  if (verdict && noisyElevation && verdict.gapDeltaPct != null) {
+    verdict.interpretation +=
+      " The elevation track is noisy, so the grade-adjusted part is approximate.";
+  }
+
+  // The activity's own total ascent is what get-activity reports (in whole
+  // metres, as here), so prefer it; the samples are a fallback for an
+  // activity without one.
+  const recordedGain = options.recordedElevationGainM;
+  const elevationGainSource: ElevationGainSource | null =
+    recordedGain != null
+      ? "intervals.icu"
+      : normalized.altitude
+        ? "computed"
+        : null;
+  const elevationGainM =
+    recordedGain != null
+      ? Math.round(recordedGain)
+      : normalized.altitude
+        ? Math.round(ascentFromAltitude(normalized.altitude))
+        : null;
+
   return {
     splits,
-    verdict: buildVerdict(halfBins, warnings),
+    verdict,
     gradeSource,
     fastestSplitIndex: ranked[0]?.index ?? null,
     slowestSplitIndex: ranked[ranked.length - 1]?.index ?? null,
@@ -480,7 +572,8 @@ export function computeSplitAnalysis(streams: SplitStreams): SplitAnalysis {
       distanceM: Math.round(totalM),
       movingTimeS: Math.round(totalBin.movingTimeS),
       elapsedTimeS: Math.round(totalBin.elapsedTimeS),
-      elevationGainM: elevationGain(splitBins),
+      elevationGainM,
+      elevationGainSource,
       avgPaceSecPerKm: roundOrNull(paceFromBin(totalBin)),
       avgGapPaceSecPerKm: roundOrNull(gapPaceFromBin(totalBin)),
     },
@@ -522,7 +615,7 @@ function buildVerdict(
       : null;
 
   const shape = shapeOf(deltaPct);
-  const gapShape = gapDeltaPct == null ? shape : shapeOf(gapDeltaPct);
+  const gapShape = gapDeltaPct == null ? null : shapeOf(gapDeltaPct);
 
   return {
     shape,

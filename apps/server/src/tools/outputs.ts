@@ -554,9 +554,9 @@ export const SplitAnalysisOutputSchema = z.object({
   date: z.string(),
   type: z.string(),
   grade_source: z
-    .enum(["grade_smooth", "computed"])
+    .enum(["grade_smooth", "computed", "none"])
     .describe(
-      "grade_smooth when intervals.icu's smoothed-grade stream was used, computed when derived from altitude",
+      "grade_smooth when intervals.icu's smoothed-grade stream was used, computed when derived from altitude, none without elevation data (every grade-adjusted field is then null)",
     ),
   gap_source: z
     .literal("model")
@@ -568,7 +568,9 @@ export const SplitAnalysisOutputSchema = z.object({
       shape: SplitShapeSchema.describe(
         "On the clock: positive = second half slower",
       ),
-      gap_shape: SplitShapeSchema.describe("Same, corrected for grade"),
+      gap_shape: SplitShapeSchema.nullable().describe(
+        "Same, corrected for grade; null without elevation data",
+      ),
       first_half_pace_sec_per_km: z.number(),
       second_half_pace_sec_per_km: z.number(),
       first_half_pace_min_per_km: z.string().nullable(),
@@ -602,7 +604,18 @@ export const SplitAnalysisOutputSchema = z.object({
     distance_m: z.number(),
     moving_time_s: z.number().int(),
     elapsed_time_s: z.number().int(),
-    elevation_gain_m: z.number(),
+    elevation_gain_m: z
+      .number()
+      .nullable()
+      .describe(
+        "Total ascent in whole metres; null with neither a recorded value nor an altitude stream",
+      ),
+    elevation_gain_source: z
+      .enum(["intervals.icu", "computed"])
+      .nullable()
+      .describe(
+        "intervals.icu: the activity's own total_elevation_gain, as get-activity reports it; computed: summed from the altitude samples with a 3 m hysteresis",
+      ),
     avg_pace_sec_per_km: z.number().nullable(),
     avg_pace_min_per_km: z.string().nullable(),
     avg_gap_pace_sec_per_km: z.number().nullable(),

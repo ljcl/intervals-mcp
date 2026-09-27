@@ -225,18 +225,32 @@ The rule assumes that intervals.icu keeps smart-recording gaps in the
 ## Analysis math: one home per definition
 
 **Grade-adjusted pace has one definition.** `hillAnalysis.ts`'s `gapFactor`
-(Minetti) and `computeGrades` (intervals.icu's `grade_smooth`, else an
-altitude window). `splitAnalysis.ts` imports both rather than re-deriving them, along
+(Minetti), `computeGrades` (intervals.icu's `grade_smooth`, else an
+altitude window) and `gapGrades` (that grade averaged over a centred 100 m
+window, clamped to ±30%, plus a noise measure). `splitAnalysis.ts` imports
+them rather than re-deriving them, along
 with `MAX_SAMPLE_GAP_SECONDS` and `POWER_COVERAGE_MIN`, so a hilly split and a
-hilly climb are corrected identically. Its own contribution is the distance
+hilly climb are corrected identically. `gapFactor` never sees a raw
+per-sample grade. The Minetti curve is convex, so zero-mean grade noise
+applied sample by sample still raises the mean factor (Jensen's
+inequality): ±5% noise gave a mean factor of 1.03 and ±10% gave 1.13, so a
+noisy barometric track made flat GAP 3% to 13% too fast (#45). The 100 m
+average cancels the noise and keeps a steady climb's grade exactly. The RMS
+of the raw grade around the average measures the noise; above 3 points,
+both tools warn that GAP is approximate. Its own contribution is the distance
 binner: `binByDistance` accumulates streams into buckets bounded by a
 caller-supplied edge list, dividing a sample interval that straddles a boundary
 in proportion — which is why the per-km splits and the exact-midpoint halves
 behind the verdict come from one function. Halves are cut at half the recorded
 distance, never by grouping splits, so an odd split count or trailing partial
-cannot skew the verdict. With no elevation stream, grades are all zero and GAP
-collapses onto raw pace: the response warns rather than presenting an
-uncorrected verdict as corrected.
+cannot skew the verdict. With no elevation data there is no grade, not a
+flat one: `binByDistance` gets no grade, every grade-adjusted figure is
+null, and the verdict is on the clock only. `normalizeHillStreams` drops an
+altitude stream with no real samples (an `allNull` stream) for the same
+reason, and `interpolateNulls` throws on one rather than fill it with 0.
+Elevation gain is the activity's own `total_elevation_gain` when it has one,
+so `get-split-analysis` and `get-activity` agree; `ascentFromAltitude`
+(valley-to-peak climbs with a 3 m hysteresis) is the fallback.
 
 **Running efficiency has one definition.** `speedEfficiencyFactor` in
 `aerobicAnalysis.ts`: metres per minute per heartbeat, so higher is better

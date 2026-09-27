@@ -110,6 +110,14 @@ at `apps/server/src/__fixtures__/intervals/`.
   percent of FTP, whether `icu_zone_times` has one entry per `icu_power_zones` bound or one
   extra (SS), and whether pairing by `id` (rather than by array index, as `activityZones.ts`
   did before this was dropped) is needed to line entries up correctly.
+- `fixed_altitude` (m) is present on Apple Watch runs, but what it holds (a corrected track, or
+  a terrain-model lookup) is not known: `docs/intervals-openapi.json` does not mention it, and
+  no probe compared it with `altitude` (checked 2026-09-27, no live access). Hill and split
+  analysis use `grade_smooth` and `altitude` only. Compare the two streams on a run with a
+  noisy barometric track before using `fixed_altitude` for grade.
+- A stream that is entirely null (`allNull: true`) reaches the analysis modules as an array of
+  nulls. Hill and split analysis treat an all-null `altitude` as no altitude, not as flat
+  ground (#45).
 - `average_gradient` (interval field) is a fraction, not a percent: confirmed by checking
   elevation gain against `average_gradient * distance` (see `intervalLaps.ts`).
 

@@ -269,7 +269,14 @@ the shared intervals.icu stream adapter (`distance`, `altitude`,
 (`gapFactor`/`computeGrades` in `hillAnalysis.ts`): grade prefers
 intervals.icu's `grade_smooth` stream, falling back to an altitude-window
 derivation when it is absent or entirely null, and `grade_source` in the
-response names which was used. A null sample in `distance`/`altitude`/grade
+response names which was used. An altitude stream with no real samples
+counts as no altitude, not as flat ground. GAP applies the Minetti factor to
+grade averaged over a centred 100 m window (`gapGrades`), clamped to ±30%,
+never to the raw per-sample grade: the curve is convex, so zero-mean grade
+noise applied per sample made GAP too fast (±10% noise, 13% too fast on the
+flat). When the raw grade swings more than 3 points (RMS) around that
+average, both tools add a warning that the elevation track is noisy and GAP
+is approximate. A null sample in `distance`/`altitude`/grade
 is interpolated between its known neighbours (held flat across a leading or
 trailing gap) rather than treated as zero; a null HR/cadence/velocity sample
 is simply excluded from whatever average it would have fed. Pace is a bare
@@ -288,14 +295,26 @@ grade, elevation change, moving and grade-adjusted pace, HR, cadence, and
 power. The headline is early-vs-late climb drift: HR per unit of
 grade-adjusted speed compared between climbs in the first and second half of
 the activity, or GAP pace alone without HR, positive meaning the same
-climbing cost more late in the run.
+climbing cost more late in the run. With no elevation data (no grade stream
+and no real altitude samples) it returns an error. Climb detection still
+reads the per-sample grade, not the 100 m average.
 
 `get-split-analysis` bins the streams into fixed 1 km splits (device laps
 are ignored) and states a two-halves verdict twice: once on the clock, once
 grade-adjusted, cut at the exact midpoint of recorded distance rather than
 by grouping splits. `terrain_pct` names how many percentage points of the
 raw change the terrain accounts for, so a hilly back half is not misread as
-fade and a course that flattens out does not hide real fade.
+fade and a course that flattens out does not hide real fade. With no
+elevation data, `grade_source` is `none`, every grade-adjusted field
+(`gap_pace_*`, `gap_shape`, `gap_delta_pct`, `terrain_pct`) is null, and the
+verdict is on the clock only. On a noisy elevation track the interpretation
+also says the grade-adjusted part is approximate. `totals.elevation_gain_m`
+is the activity's own `total_elevation_gain` (`elevation_gain_source:
+"intervals.icu"`, the value `get-activity` reports) when it has one, else
+the ascent summed from the altitude samples with a 3 m hysteresis
+(`computed`), else null. It once added each split's net change, so a km
+that climbed 20 m and descended 20 m added 0 (136 m against
+`get-activity`'s 693 m on one marathon, #45).
 
 `get-aerobic-analysis` prefers the activity's own `decoupling` and
 `icu_efficiency_factor` fields when intervals.icu has already computed them

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { gapFactor } from "./hillAnalysis";
 import {
+  ASCENT_HYSTERESIS_M,
+  ascentFromAltitude,
   computeSplitAnalysis,
   EVEN_SPLIT_PCT,
   interpretSplit,
@@ -15,7 +18,12 @@ import {
  */
 function streams(
   legs: { metres: number; secPerKm: number; gradePct?: number; hr?: number }[],
-  options: { sampleMetres?: number; withAltitude?: boolean } = {},
+  options: {
+    sampleMetres?: number;
+    withAltitude?: boolean;
+    /** Zero-mean grade noise (%) added to sample `i` on top of the leg's grade. */
+    gradeNoise?: (i: number) => number;
+  } = {},
 ): SplitStreams {
   const step = options.sampleMetres ?? 10;
   const time: number[] = [0];
@@ -32,13 +40,14 @@ function streams(
     const samples = Math.round(leg.metres / step);
     const speed = 1000 / leg.secPerKm;
     for (let i = 0; i < samples; i++) {
+      const g = (leg.gradePct ?? 0) + (options.gradeNoise?.(time.length) ?? 0);
       t += step / speed;
       d += step;
-      alt += (step * (leg.gradePct ?? 0)) / 100;
+      alt += (step * g) / 100;
       time.push(Math.round(t * 100) / 100);
       distance.push(Math.round(d * 100) / 100);
       altitude.push(Math.round(alt * 100) / 100);
-      grade.push(leg.gradePct ?? 0);
+      grade.push(g);
       heartrate.push(leg.hr ?? 140);
       velocity.push(speed);
     }
@@ -57,6 +66,27 @@ function streams(
 
 /** Flat 5 km at a steady 5:00/km. */
 const flat5k = () => streams([{ metres: 5000, secPerKm: 300 }]);
+
+/**
+ * Deterministic uniform noise in about [-amplitude, amplitude] (LCG, fixed
+ * seed) for `n` samples, shifted to a mean of exactly 0 so the course stays
+ * flat overall: a net rise would be real terrain that GAP should credit.
+ */
+function seededNoise(amplitude: number, n: number) {
+  let state = 42;
+  const values = Array.from({ length: n }, () => {
+    state = (state * 1664525 + 1013904223) % 2 ** 32;
+    return (state / 2 ** 32) * 2 * amplitude - amplitude;
+  });
+  const mean = values.reduce((sum, v) => sum + v, 0) / n;
+  return (i: number) => values[i]! - mean;
+}
+
+/** Relative difference of the whole-run GAP pace from raw pace. */
+const gapVsRaw = (analysis: ReturnType<typeof computeSplitAnalysis>) =>
+  Math.abs(
+    analysis.totals.avgGapPaceSecPerKm! - analysis.totals.avgPaceSecPerKm!,
+  ) / analysis.totals.avgPaceSecPerKm!;
 
 describe("computeSplitAnalysis", () => {
   it("splits an even flat run into equal kilometres", () => {
@@ -293,7 +323,8 @@ describe("split verdict", () => {
     );
   });
 
-  it("says the terrain correction is unavailable without elevation", () => {
+  it("gives no grade-adjusted verdict without elevation", () => {
+    // 10 km at 5:00/km then 5:30/km, no altitude or grade stream.
     const analysis = computeSplitAnalysis(
       streams(
         [
@@ -304,19 +335,141 @@ describe("split verdict", () => {
       ),
     );
 
-    expect(analysis.gradeSource).toBe("computed");
+    expect(analysis.gradeSource).toBe("none");
     expect(analysis.warnings.join(" ")).toContain("No elevation or grade");
     const verdict = analysis.verdict!;
-    // Grade is unknown, so GAP is raw pace: reported, but never dressed up as
-    // a terrain-corrected verdict.
-    expect(verdict.gapDeltaPct).toBeCloseTo(verdict.deltaPct, 0);
+    // Grade is unknown, not flat: no GAP, no terrain share, no gap shape.
+    expect(verdict.deltaPct).toBeCloseTo(10, 0);
+    expect(verdict.gapDeltaPct).toBeNull();
+    expect(verdict.terrainPct).toBeNull();
+    expect(verdict.gapShape).toBeNull();
+    expect(verdict.firstHalfGapPaceSecPerKm).toBeNull();
+    expect(verdict.interpretation).toContain("No elevation data");
+    expect(verdict.interpretation).not.toContain("grade-adjusted");
+    expect(analysis.splits.every((s) => s.gapPaceSecPerKm === null)).toBe(true);
+    expect(analysis.totals.avgGapPaceSecPerKm).toBeNull();
     expect(analysis.splits[0]!.elevationChangeM).toBeNull();
     expect(analysis.splits[0]!.avgGradePct).toBeNull();
+    expect(analysis.totals.elevationGainM).toBeNull();
+    expect(analysis.totals.elevationGainSource).toBeNull();
+  });
+
+  it("treats an all-null altitude stream as no elevation, not flat", () => {
+    const base = streams([
+      { metres: 5000, secPerKm: 300 },
+      { metres: 5000, secPerKm: 330 },
+    ]);
+    const analysis = computeSplitAnalysis({
+      ...base,
+      grade_smooth: undefined,
+      altitude: base.altitude!.map(() => null),
+    });
+
+    expect(analysis.gradeSource).toBe("none");
+    expect(analysis.verdict!.gapDeltaPct).toBeNull();
   });
 
   it("reports grade_smooth as the source when the stream is present", () => {
     const analysis = computeSplitAnalysis(flat5k());
     expect(analysis.gradeSource).toBe("grade_smooth");
+  });
+});
+
+describe("grade-adjusted pace on noisy elevation (#45)", () => {
+  const flat10k = (gradeNoise: (i: number) => number) =>
+    streams([{ metres: 10000, secPerKm: 300 }], { gradeNoise });
+
+  it("keeps GAP within 1% of raw pace on a flat course with ±10% alternating grade noise", () => {
+    const analysis = computeSplitAnalysis(
+      flat10k((i) => (i % 2 === 0 ? 10 : -10)),
+    );
+    // Per sample, the Minetti factor averaged 1.13 here: GAP 13% too fast.
+    expect(gapVsRaw(analysis)).toBeLessThan(0.01);
+    expect(analysis.verdict!.gapShape).toBe("even");
+    expect(analysis.warnings.join(" ")).toContain("elevation track is noisy");
+    expect(analysis.verdict!.interpretation).toContain("approximate");
+  });
+
+  it("keeps GAP within 1% of raw pace with random ±10% grade noise", () => {
+    const analysis = computeSplitAnalysis(flat10k(seededNoise(10, 1001)));
+    expect(gapVsRaw(analysis)).toBeLessThan(0.01);
+    expect(analysis.warnings.join(" ")).toContain("elevation track is noisy");
+  });
+
+  it("does the same when grade is derived from a noisy altitude track", () => {
+    const noisy = flat10k(seededNoise(10, 1001));
+    const analysis = computeSplitAnalysis({
+      ...noisy,
+      grade_smooth: undefined,
+    });
+    expect(analysis.gradeSource).toBe("computed");
+    expect(gapVsRaw(analysis)).toBeLessThan(0.01);
+  });
+
+  it("still gives the Minetti value on a steady +3% climb", () => {
+    const analysis = computeSplitAnalysis(
+      streams([{ metres: 5000, secPerKm: 300, gradePct: 3 }]),
+    );
+    expect(
+      Math.abs(analysis.totals.avgGapPaceSecPerKm! - 300 / gapFactor(0.03)),
+    ).toBeLessThanOrEqual(1);
+    expect(analysis.warnings.join(" ")).not.toContain("noisy");
+  });
+
+  it("adds no noise warning on a clean hilly course", () => {
+    const analysis = computeSplitAnalysis(
+      streams([
+        { metres: 3000, secPerKm: 300, gradePct: 0 },
+        { metres: 2000, secPerKm: 340, gradePct: 4 },
+        { metres: 2000, secPerKm: 280, gradePct: -4 },
+      ]),
+    );
+    expect(analysis.warnings.join(" ")).not.toContain("noisy");
+  });
+});
+
+describe("elevation gain (#45)", () => {
+  it("counts a climb that descends again inside one split", () => {
+    // Every km climbs 20 m over 500 m and descends 20 m over the next 500 m:
+    // each split's net change is 0, the real ascent 20 m per km.
+    const legs = Array.from({ length: 5 }, () => [
+      { metres: 500, secPerKm: 300, gradePct: 4 },
+      { metres: 500, secPerKm: 300, gradePct: -4 },
+    ]).flat();
+    const analysis = computeSplitAnalysis(streams(legs));
+
+    expect(analysis.splits[0]!.elevationChangeM).toBeCloseTo(0, 0);
+    expect(analysis.totals.elevationGainM).toBeCloseTo(100, 0);
+    expect(analysis.totals.elevationGainSource).toBe("computed");
+  });
+
+  it("prefers the activity's own total_elevation_gain", () => {
+    const analysis = computeSplitAnalysis(flat5k(), {
+      recordedElevationGainM: 693.4,
+    });
+    expect(analysis.totals.elevationGainM).toBe(693);
+    expect(analysis.totals.elevationGainSource).toBe("intervals.icu");
+  });
+});
+
+describe("ascentFromAltitude", () => {
+  it("ignores noise smaller than the hysteresis", () => {
+    const wobble = Array.from({ length: 200 }, (_, i) =>
+      i % 2 === 0 ? 100 : 100 + ASCENT_HYSTERESIS_M - 0.5,
+    );
+    expect(ascentFromAltitude(wobble)).toBe(0);
+  });
+
+  it("counts each climb valley to peak", () => {
+    expect(ascentFromAltitude([100, 110, 120, 105, 90, 95, 130, 128])).toBe(60);
+  });
+
+  it("counts a climb still going at the end", () => {
+    expect(ascentFromAltitude([100, 99, 104, 108])).toBe(9);
+  });
+
+  it("is 0 for an empty stream", () => {
+    expect(ascentFromAltitude([])).toBe(0);
   });
 });
 

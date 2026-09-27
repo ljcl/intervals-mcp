@@ -2,10 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   computeGrades,
   computeHillAnalysis,
+  GAP_MAX_GRADE_PCT,
   gapFactor,
+  gapGrades,
   HillAnalysisError,
   type HillStreams,
   interpolateNulls,
+  NOISY_GRADE_RMS_PCT,
   normalizeHillStreams,
 } from "./hillAnalysis";
 
@@ -151,6 +154,53 @@ describe("computeGrades", () => {
   });
 });
 
+describe("gapGrades", () => {
+  /** Cumulative distance for `n` samples `step` metres apart. */
+  const distances = (n: number, step: number) =>
+    Array.from({ length: n }, (_, i) => i * step);
+
+  it("keeps a steady climb's grade and adds no warning", () => {
+    const distance = distances(1000, 3.5);
+    const result = gapGrades(
+      distance.map(() => 3),
+      distance,
+    );
+    expect(result.grades.every((g) => Math.abs(g - 3) < 1e-9)).toBe(true);
+    expect(result.noiseRmsPct).toBeCloseTo(0, 9);
+    expect(result.warning).toBeNull();
+  });
+
+  it("averages ±10% zero-mean noise out and flags the track as noisy", () => {
+    const distance = distances(2000, 3.5);
+    const noisy = distance.map((_, i) => (i % 2 === 0 ? 10 : -10));
+    const result = gapGrades(noisy, distance);
+    const worst = Math.max(...result.grades.map(Math.abs));
+    // A 100 m window holds ~28 samples, so the residual is under 1%.
+    expect(worst).toBeLessThan(1);
+    expect(result.noiseRmsPct).toBeGreaterThan(NOISY_GRADE_RMS_PCT);
+    expect(result.warning).toContain("noisy");
+  });
+
+  it("follows a grade change over about the window, not a sample", () => {
+    const distance = distances(600, 1);
+    const grades = distance.map((d) => (d < 300 ? 0 : 6));
+    const result = gapGrades(grades, distance);
+    expect(result.grades[100]).toBeCloseTo(0, 9);
+    expect(result.grades[300]).toBeCloseTo(3, 0);
+    expect(result.grades[500]).toBeCloseTo(6, 9);
+    expect(result.warning).toBeNull();
+  });
+
+  it("clamps an averaged grade to the running range", () => {
+    const distance = distances(200, 1);
+    const result = gapGrades(
+      distance.map(() => 60),
+      distance,
+    );
+    expect(Math.max(...result.grades)).toBe(GAP_MAX_GRADE_PCT);
+  });
+});
+
 describe("interpolateNulls", () => {
   it("straight-lines a null run bounded by known samples", () => {
     expect(interpolateNulls([0, null, null, 3])).toEqual([0, 1, 2, 3]);
@@ -163,6 +213,10 @@ describe("interpolateNulls", () => {
 
   it("passes fully-populated arrays through unchanged", () => {
     expect(interpolateNulls([1, 2, 3])).toEqual([1, 2, 3]);
+  });
+
+  it("refuses an all-null stream instead of filling it with 0", () => {
+    expect(() => interpolateNulls([null, null, null])).toThrow(RangeError);
   });
 });
 
@@ -192,6 +246,13 @@ describe("normalizeHillStreams", () => {
     streams.grade_smooth = streams.grade_smooth!.map(() => null);
     const normalized = normalizeHillStreams(streams);
     expect(normalized.grade_smooth).toBeUndefined();
+  });
+
+  it("drops an entirely-null altitude stream instead of reading it as flat", () => {
+    const streams = buildStreams([flat(200)]);
+    streams.altitude = streams.altitude!.map(() => null);
+    const normalized = normalizeHillStreams(streams);
+    expect(normalized.altitude).toBeUndefined();
   });
 });
 
@@ -360,6 +421,36 @@ describe("computeHillAnalysis", () => {
     expect(() =>
       computeHillAnalysis({ time: [0, 1], distance: [] as number[] }),
     ).toThrow(HillAnalysisError);
+    expect(() =>
+      computeHillAnalysis({ time: [0, 1], distance: [null, null] }),
+    ).toThrow(HillAnalysisError);
+  });
+
+  it("refuses an all-null altitude with no grade rather than calling the run flat", () => {
+    const streams = buildStreams([flat(1000), climb(500), flat(1000)]);
+    streams.grade_smooth = undefined;
+    streams.altitude = streams.altitude!.map(() => null);
+    expect(() => computeHillAnalysis(streams)).toThrow(/elevation data/);
+  });
+
+  it("warns on a noisy elevation track and keeps climb GAP on the averaged grade", () => {
+    const streams = buildStreams([flat(1000), climb(600), flat(1000)]);
+    const clean = computeHillAnalysis(streams);
+    // ±8% alternating noise on top of the climb's real grade. (On the flat
+    // too, the raw grade would open phantom climbs: detection still reads
+    // the per-sample grade.)
+    streams.grade_smooth = streams.grade_smooth!.map((g, i) =>
+      g === 6 ? g + (i % 2 === 0 ? 8 : -8) : g,
+    );
+    const noisy = computeHillAnalysis(streams);
+    expect(clean.warnings.join(" ")).not.toContain("noisy");
+    expect(noisy.warnings.join(" ")).toContain("elevation track is noisy");
+    expect(noisy.climbs).toHaveLength(1);
+    // Averaged, the noise cancels: the climb's GAP barely moves.
+    const cleanGap = clean.climbs[0]!.gapPaceSecPerKm!;
+    expect(
+      Math.abs(noisy.climbs[0]!.gapPaceSecPerKm! - cleanGap) / cleanGap,
+    ).toBeLessThan(0.01);
   });
 
   describe("segment power (#213)", () => {
