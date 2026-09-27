@@ -86,28 +86,40 @@ export class IntervalsStreamsUnavailableError extends Error {
 }
 
 /**
- * A recording gap longer than this many seconds marks the sample after the
- * gap as not moving (an auto-pause resume point). intervals.icu auto-pause
- * gaps of 38 to 76 s were observed on the athlete's account (research note
- * 2026-09-24); 5 s sits well below every observed gap while staying above
- * the normal 1 s sample cadence, so a real pause is always caught.
+ * A recording gap longer than this many seconds may be a pause (an
+ * auto-pause resume point); the distance across it decides (see
+ * {@link deriveMoving}). intervals.icu auto-pause gaps of 38 to 76 s were
+ * observed on the athlete's account (research note 2026-09-24); 5 s sits
+ * well below every observed gap while staying above the normal 1 s sample
+ * cadence, so a real pause is always checked.
  */
 export const MOVING_GAP_THRESHOLD_SECONDS = 5;
 
-/** Below this speed (m/s), a sample counts as stopped when velocity is known. */
+/**
+ * Below this speed (m/s), a sample counts as stopped: its smoothed velocity
+ * when known, or the average speed across a gap longer than
+ * {@link MOVING_GAP_THRESHOLD_SECONDS}.
+ */
 export const MOVING_MIN_VELOCITY_MPS = 0.5;
 
 /**
- * Derives `moving` from elapsed-time gaps and (when requested) smoothed
- * velocity. `moving[i]` is `false` when the gap since the previous sample
- * exceeds {@link MOVING_GAP_THRESHOLD_SECONDS}, or `velocity_smooth[i]` is a
- * known value below {@link MOVING_MIN_VELOCITY_MPS}; `true` otherwise. A
- * `null` velocity sample is unknown, not stopped, and never flags a sample
- * by itself. `moving[0]` has no previous sample to gap against, so it is
+ * Derives `moving` from elapsed-time gaps, distance and (when requested)
+ * smoothed velocity. `moving[i]` is `false` when `velocity_smooth[i]` is a
+ * known value below {@link MOVING_MIN_VELOCITY_MPS}, or when the gap since
+ * the previous sample exceeds {@link MOVING_GAP_THRESHOLD_SECONDS} and is a
+ * stop: the distance covered across it implies a speed below
+ * {@link MOVING_MIN_VELOCITY_MPS}. A watch auto-pause shows as a time gap
+ * with almost no distance; a gap covered at running speed is sparse
+ * sampling (Garmin "smart recording"), not a stop, so its time stays moving
+ * time (#73). When `distance` is unknown at either end of the gap (no GPS,
+ * no distance stream), the gap alone counts as a stop, as before. A `null`
+ * velocity sample is unknown, not stopped, and never flags a sample by
+ * itself. `moving[0]` has no previous sample to gap against, so it is
  * `true` unless velocity at index 0 is known and below the threshold.
  */
 function deriveMoving(
   time: number[],
+  distance: (number | null)[] | undefined,
   velocity: (number | null)[] | undefined,
 ): boolean[] {
   return time.map((current, index) => {
@@ -118,9 +130,16 @@ function deriveMoving(
       return !belowThreshold;
     }
 
-    const previous = time[index - 1] as number;
-    const gapped = current - previous > MOVING_GAP_THRESHOLD_SECONDS;
-    return !gapped && !belowThreshold;
+    const gap = current - (time[index - 1] as number);
+    if (gap <= MOVING_GAP_THRESHOLD_SECONDS) {
+      return !belowThreshold;
+    }
+
+    const from = distance?.[index - 1];
+    const to = distance?.[index];
+    const stopped =
+      from == null || to == null || (to - from) / gap < MOVING_MIN_VELOCITY_MPS;
+    return !stopped && !belowThreshold;
   });
 }
 
@@ -154,9 +173,10 @@ function heartrateSample(value: number | null): number | null {
 
 /**
  * Fetches and reshapes an activity's data streams via `getActivityStreams`
- * (`intervalsClient.ts`), calling it exactly once. Requests `time` even when
- * the caller omits it, since `moving` and every downstream index depend on
- * it, but only returns the optional arrays the caller actually asked for.
+ * (`intervalsClient.ts`), calling it exactly once. Requests `time` and
+ * `distance` even when the caller omits them, since `moving` and every
+ * downstream index depend on them, but only returns the optional arrays the
+ * caller actually asked for.
  *
  * Samples where `time` is `null` are dropped, along with the matching sample
  * in every other array, so the returned `time` is always non-null numbers;
@@ -176,7 +196,8 @@ export async function loadIntervalsStreams(
   id: string,
   types: IntervalsStreamType[],
 ): Promise<IntervalsStreams> {
-  const requestTypes = types.includes("time") ? types : ["time", ...types];
+  const requestTypes = types.includes("time") ? [...types] : ["time", ...types];
+  if (!requestTypes.includes("distance")) requestTypes.push("distance");
 
   let raw: IntervalsStream[];
   try {
@@ -212,12 +233,14 @@ export async function loadIntervalsStreams(
   }
 
   const result: IntervalsStreams = { time, moving: [], length: time.length };
+  const aligned = (stream: IntervalsStream) =>
+    keepIndices.map((index) => stream.data[index] ?? null);
 
   for (const type of OPTIONAL_STREAM_TYPES) {
     if (!types.includes(type)) continue;
     const stream = byType.get(type);
     if (!stream) continue;
-    const values = keepIndices.map((index) => stream.data[index] ?? null);
+    const values = aligned(stream);
     result[type] = type === "heartrate" ? values.map(heartrateSample) : values;
   }
 
@@ -234,7 +257,12 @@ export async function loadIntervalsStreams(
     }
   }
 
-  result.moving = deriveMoving(time, result.velocity_smooth);
+  // `distance` is always requested for `moving`, but returned only when the
+  // caller asked for it.
+  const distanceStream = byType.get("distance");
+  const distance =
+    result.distance ?? (distanceStream ? aligned(distanceStream) : undefined);
+  result.moving = deriveMoving(time, distance, result.velocity_smooth);
 
   return result;
 }

@@ -57,7 +57,9 @@ breaking them has shipped bugs — do not work around them locally.
   `IntervalsStreamsUnavailableError`, the one error a caller may degrade on.
   It maps a `heartrate` sample of 0 or below (a sensor dropout, which
   intervals.icu sends as 0) to `null`, once, for every caller; `watts` and
-  `cadence` zeros stay 0.
+  `cadence` zeros stay 0. It derives `moving` too: a time gap is a stop only
+  when the distance across it gives a speed under 0.5 m/s, so it always
+  requests `distance` (#73).
 - **Derived numbers have exactly one home.** GAP: `hillAnalysis.ts`
   (`gapFactor`, `computeGrades`); `splitAnalysis.ts` imports, never
   re-derives. CTL/ATL/TSB and any projection/taper math: `fitnessTrend.ts`.

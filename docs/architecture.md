@@ -207,6 +207,21 @@ moving is a dropout) stays in the analysis modules that read power. The
 `get-activity-streams` once read the client directly and reported the zeros
 as 0 bpm (#46).
 
+**`moving` is derived here, once, for every caller.** intervals.icu never
+returns a `moving` stream. A sample is stopped when its `velocity_smooth` is
+known and below `MOVING_MIN_VELOCITY_MPS` (0.5 m/s), or when the time since
+the previous sample is over `MOVING_GAP_THRESHOLD_SECONDS` (5 s) and the
+distance across that gap gives a speed below 0.5 m/s. A watch auto-pause is
+a time gap with almost no distance, so it is a stop. A gap covered at
+running speed is sparse sampling (Garmin "smart recording"), so its time
+stays moving time. When `distance` is unknown at either end of a gap, the
+gap alone counts as a stop. So the loader always requests `distance`, and
+returns it only to a caller that asked for it. The analysis modules keep a
+stopped sample's distance but drop its time; before #73 every gap over 5 s
+was a stop, and a smart-recording run read at about twice its real pace.
+The rule assumes that intervals.icu keeps smart-recording gaps in the
+`time` stream; that is not verified yet (docs/api-notes.md).
+
 ## Analysis math: one home per definition
 
 **Grade-adjusted pace has one definition.** `hillAnalysis.ts`'s `gapFactor`

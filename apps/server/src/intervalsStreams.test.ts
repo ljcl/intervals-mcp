@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import streamsFixture from "./__fixtures__/intervals/streams.json";
 import streamsHillyFixture from "./__fixtures__/intervals/streams-hilly.json";
 import streamsHrDropoutFixture from "./__fixtures__/intervals/streams-hr-dropout.json";
+import streamsMultilapFixture from "./__fixtures__/intervals/streams-multilap.json";
 import { HttpError, intervalsApi, RateLimitError } from "./fetchClient";
 import {
   IntervalsStreamsUnavailableError,
@@ -14,6 +15,7 @@ import {
   MOVING_GAP_THRESHOLD_SECONDS,
   MOVING_MIN_VELOCITY_MPS,
 } from "./intervalsStreams";
+import { computeSplitAnalysis } from "./splitAnalysis";
 
 vi.mock("./fetchClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./fetchClient")>();
@@ -113,46 +115,165 @@ describe("loadIntervalsStreams", () => {
     expect(streams.distance?.some((v) => v === null)).toBe(true);
   });
 
-  it("only requests the types passed in, always including time", async () => {
+  it("only requests the types passed in, plus time and distance for moving", async () => {
     mockedGet.mockResolvedValueOnce({
       data: [
         { type: "time", data: [0, 1, 2] },
         { type: "heartrate", data: [100, 110, 120] },
+        { type: "distance", data: [0, 3, 6] },
       ],
     });
 
-    await loadIntervalsStreams("key", "i1", ["heartrate"]);
+    const streams = await loadIntervalsStreams("key", "i1", ["heartrate"]);
 
     expect(mockedGet).toHaveBeenCalledWith(
-      "/activity/i1/streams.json?types=time,heartrate",
+      "/activity/i1/streams.json?types=time,heartrate,distance",
       expect.anything(),
     );
+    // Fetched for `moving` only: not returned to a caller that did not ask.
+    expect(Object.hasOwn(streams, "distance")).toBe(false);
   });
 
-  it("does not duplicate time when the caller already requested it", async () => {
+  it("does not duplicate time or distance when the caller already requested them", async () => {
     mockedGet.mockResolvedValueOnce({
-      data: [{ type: "time", data: [0, 1, 2] }],
+      data: [
+        { type: "time", data: [0, 1, 2] },
+        { type: "distance", data: [0, 3, 6] },
+      ],
     });
 
-    await loadIntervalsStreams("key", "i1", ["time"]);
+    const streams = await loadIntervalsStreams("key", "i1", [
+      "distance",
+      "time",
+    ]);
 
     expect(mockedGet).toHaveBeenCalledWith(
-      "/activity/i1/streams.json?types=time",
+      "/activity/i1/streams.json?types=distance,time",
       expect.anything(),
     );
+    expect(streams.distance).toEqual([0, 3, 6]);
   });
 
   describe("derived moving", () => {
-    it("marks the sample after a recording gap as not moving", async () => {
+    it("marks the sample after an auto-pause gap as not moving", async () => {
       // Gap from t=10 to t=70: a 60 s auto-pause, well past the 5 s
-      // threshold, so the resume sample (index 2) is stopped.
+      // threshold, with no distance covered, so the resume sample (index 2)
+      // is stopped.
       mockedGet.mockResolvedValueOnce({
-        data: [{ type: "time", data: [9, 10, 70, 71] }],
+        data: [
+          { type: "time", data: [9, 10, 70, 71] },
+          { type: "distance", data: [30, 33, 33, 36] },
+        ],
       });
 
       const streams = await loadIntervalsStreams("key", "i1", ["time"]);
 
       expect(streams.moving).toEqual([true, true, false, true]);
+    });
+
+    it("still marks a gap as not moving when the runner drifted a little across it", async () => {
+      // 20 m in 60 s (0.33 m/s): GPS drift or a shuffle at a crossing, below
+      // MOVING_MIN_VELOCITY_MPS, so still a stop.
+      mockedGet.mockResolvedValueOnce({
+        data: [
+          { type: "time", data: [9, 10, 70, 71] },
+          { type: "distance", data: [30, 33, 53, 56] },
+        ],
+      });
+
+      const streams = await loadIntervalsStreams("key", "i1", ["time"]);
+
+      expect(streams.moving).toEqual([true, true, false, true]);
+    });
+
+    it("keeps a gap covered at running speed as moving (smart recording)", async () => {
+      // 8 s gaps at 3.33 m/s: sparse sampling, not a pause (#73).
+      mockedGet.mockResolvedValueOnce({
+        data: [
+          { type: "time", data: [0, 8, 16, 17] },
+          { type: "distance", data: [0, 26.7, 53.3, 56.7] },
+        ],
+      });
+
+      const streams = await loadIntervalsStreams("key", "i1", ["time"]);
+
+      expect(streams.moving).toEqual([true, true, true, true]);
+    });
+
+    it("keeps a paused stretch walked at over the speed floor as moving", async () => {
+      // 72 m in 60 s (1.2 m/s): the runner walked on while the watch was
+      // paused. The distance is real, so its time counts too.
+      mockedGet.mockResolvedValueOnce({
+        data: [
+          { type: "time", data: [9, 10, 70, 71] },
+          { type: "distance", data: [30, 33, 105, 108] },
+        ],
+      });
+
+      const streams = await loadIntervalsStreams("key", "i1", ["time"]);
+
+      expect(streams.moving).toEqual([true, true, true, true]);
+    });
+
+    it("falls back to the gap alone when distance is unknown across it", async () => {
+      // No distance stream at all (index 2), and a null distance sample at
+      // the far end of the second gap (index 4): no way to tell a pause from
+      // sparse sampling, so each gap counts as a stop, as before #73.
+      mockedGet.mockResolvedValueOnce({
+        data: [{ type: "time", data: [9, 10, 70, 71, 131, 132] }],
+      });
+      const noDistance = await loadIntervalsStreams("key", "i1", ["time"]);
+      expect(noDistance.moving).toEqual([true, true, false, true, false, true]);
+
+      mockedGet.mockResolvedValueOnce({
+        data: [
+          { type: "time", data: [9, 10, 70, 71, 131, 132] },
+          { type: "distance", data: [30, 33, 233, 236, null, 439] },
+        ],
+      });
+      const nullDistance = await loadIntervalsStreams("key", "i1", ["time"]);
+      expect(nullDistance.moving).toEqual([
+        true,
+        true,
+        true,
+        true,
+        false,
+        true,
+      ]);
+    });
+
+    it("lets a known low velocity mark a gap as stopped even when distance says moving", async () => {
+      mockedGet.mockResolvedValueOnce({
+        data: [
+          { type: "time", data: [0, 8, 16] },
+          { type: "distance", data: [0, 26.7, 53.3] },
+          { type: "velocity_smooth", data: [3.3, 3.3, 0.2] },
+        ],
+      });
+
+      const streams = await loadIntervalsStreams("key", "i1", [
+        "time",
+        "velocity_smooth",
+      ]);
+
+      expect(streams.moving).toEqual([true, true, false]);
+    });
+
+    it("catches the multi-lap fixture's real 74 s auto-pause from its flat distance", async () => {
+      mockedGet.mockResolvedValueOnce({ data: streamsMultilapFixture });
+
+      // Distance is not requested; the loader fetches it for `moving` anyway.
+      const streams = await loadIntervalsStreams("key", "i3", [
+        "time",
+        "heartrate",
+      ]);
+
+      // t=164 -> t=238 at index 165, distance flat at 525.92 m, velocity
+      // null throughout. The 3 s and 4 s gaps later on stay under the
+      // threshold.
+      expect(streams.time.slice(164, 166)).toEqual([164, 238]);
+      expect(streams.moving[165]).toBe(false);
+      expect(streams.moving.filter((moving) => !moving)).toHaveLength(1);
     });
 
     it("does not flag a normal 1 s cadence gap", async () => {
@@ -235,6 +356,50 @@ describe("loadIntervalsStreams", () => {
     it("respects the exported threshold constants", () => {
       expect(MOVING_GAP_THRESHOLD_SECONDS).toBe(5);
       expect(MOVING_MIN_VELOCITY_MPS).toBe(0.5);
+    });
+
+    it("gives a steady smart-recording run its real pace in split analysis (#73)", async () => {
+      // A steady 5:00/km 10 km run (3,000 s), sampled every 1 to 8 s like
+      // Garmin smart recording. 249 of the gaps are over the 5 s threshold;
+      // counted as stops, split analysis kept their distance but dropped
+      // their time: 1,257 s of moving time, a 2:06/km average.
+      const time = [0];
+      for (let i = 0; time.at(-1)! < 3000; i++) {
+        time.push(Math.min(time.at(-1)! + (i % 8) + 1, 3000));
+      }
+      const speed = 10_000 / 3000;
+      mockedGet.mockResolvedValueOnce({
+        data: [
+          { type: "time", data: time },
+          { type: "distance", data: time.map((t) => t * speed) },
+          { type: "velocity_smooth", data: time.map(() => speed) },
+        ],
+      });
+
+      const streams = await loadIntervalsStreams("key", "i4", [
+        "distance",
+        "velocity_smooth",
+      ]);
+      const gaps = time.filter(
+        (t, i) => i > 0 && t - time[i - 1]! > MOVING_GAP_THRESHOLD_SECONDS,
+      );
+      expect(gaps).toHaveLength(249);
+      expect(streams.moving.every(Boolean)).toBe(true);
+
+      const analysis = computeSplitAnalysis({
+        time: streams.time,
+        distance: streams.distance ?? [],
+        velocity_smooth: streams.velocity_smooth,
+        moving: streams.moving,
+      });
+
+      expect(analysis.totals.distanceM).toBe(10_000);
+      expect(analysis.totals.movingTimeS).toBe(3000);
+      expect(analysis.totals.avgPaceSecPerKm).toBe(300);
+      expect(analysis.splits).toHaveLength(10);
+      for (const split of analysis.splits) {
+        expect(split.paceSecPerKm).toBe(300);
+      }
     });
   });
 

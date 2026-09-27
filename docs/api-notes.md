@@ -158,7 +158,7 @@ sport-settings, fitness-model-events, athlete-summary, and one activity, all aga
 - All 12 arrays are aligned at length 2,374 on this run (`latlng`'s `data`
   and `data2` are both 2,374 too).
 - `time`: 0..2373, 0 nulls, no gaps over 1s on this run (continuous 1 Hz;
-  other runs have auto-pause gaps, see the Phase 1 verified section above).
+  other runs have auto-pause gaps, see "Recording gaps" below).
 - Leading/trailing-only nulls: `cadence` 0, `heartrate` 0; `distance` 2,
   `altitude` 2, `grade_smooth` 2, `latlng` 2 (both `data` and `data2`), all
   at indices 0-1; `velocity_smooth` 7 (3 leading, 4 trailing).
@@ -212,6 +212,34 @@ sensor lost contact.
   sample of 0 or below to `null`, once, for every caller. `watts` and
   `cadence` keep their zeros: 0 W while coasting and 0 cadence while stopped
   are real values.
+
+## Recording gaps and the derived `moving` stream (2026-09-27, #73, fixtures only)
+
+intervals.icu never returns a `moving` stream, so `loadIntervalsStreams`
+derives it (docs/architecture.md, "Streams").
+
+- Verified: the `time` stream keeps auto-pause gaps (38 to 76 s on this
+  account, 2026-09-24). In `streams-multilap.json` the 74 s gap (t=164 to
+  t=238) has `distance` flat at 525.92 m and `velocity_smooth` `null` on
+  both sides. The same fixture has two short gaps: 3 s at t=430 (3.06 m
+  covered) and 4 s at t=529 (0 m).
+- `recording_stops` on that activity is `[164, 431, 530, 2215, 3023, 3283]`.
+  The first three match those gaps to within 1 s. So the values are elapsed
+  seconds, not sample indices (the gap at t=430 is at index 357). The spec
+  only types the field as an integer array. The field gives where a stop
+  starts, but not how long it is; the `time` stream shows every gap, so
+  `moving` does not read `recording_stops`.
+- Not verified: whether intervals.icu also keeps smart-recording gaps in the
+  `time` stream (Garmin "smart recording" writes a sample every 1 to 8 s or
+  so). This account has only Apple Watch runs at 1 Hz, and no live probe
+  was made. The `moving` rule assumes that it does: a gap over 5 s is a stop
+  only when the distance across it gives a speed below 0.5 m/s. To confirm,
+  probe one smart-recording run: `GET /activity/{id}/streams.json?types=time,distance`,
+  read-only. Record the gap sizes and the distance across them here.
+- Also not verified: what `distance` does across a pause when the runner
+  walks on. If the device holds distance while paused, the gap reads as a
+  stop. If intervals.icu fills the gap with the GPS distance, a walk at over
+  0.5 m/s reads as moving, and its time and distance both count.
 
 ## update-activity live write check (2026-09-25, user-approved, one run)
 
