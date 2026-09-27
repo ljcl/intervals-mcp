@@ -76,6 +76,12 @@ export interface FitnessTrendData {
   tsbPositiveDate: string | null;
   /** Today in the server's time zone, the window's last date. */
   endDate?: string;
+  /**
+   * CTL change over the 7 calendar days to the last series day, computed
+   * server-side by date (the text tool's `ctl_7d_delta`); null when the day
+   * 7 before is missing. Optional since older payloads never carried it.
+   */
+  ctl7dDelta?: number | null;
   bands: TrendBand[];
   /** The bands that run to today — what the text tool prints. */
   flags: string[];

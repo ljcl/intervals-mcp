@@ -4,6 +4,8 @@ import {
   buildFitnessTrend,
   CTL_TIME_CONSTANT_DAYS,
   computeFlags,
+  ctlAtlTsb,
+  ctlDelta,
   DEEP_FATIGUE_DAYS,
   DEEP_FATIGUE_TSB,
   type FitnessTrendDay,
@@ -23,6 +25,7 @@ import {
   taperTargetDateError,
   taperWeekWeights,
   trendBands,
+  tsbDelta,
 } from "./fitnessTrend";
 import { addDays } from "./utils/localDate";
 
@@ -542,6 +545,41 @@ describe("solveTaperPlan", () => {
     const first = trend.taper!.days[0]!;
     expect(Math.abs(first.ctl - current.ctl)).toBeLessThan(10);
     expect(trend.taper!.recent_daily_load).toBeGreaterThan(0);
+  });
+});
+
+describe("ctlAtlTsb", () => {
+  it("takes TSB from the raw values, then rounds each", () => {
+    // Rounding first would give 40.1 - 30.1 = 10; raw gives 9.9.
+    expect(ctlAtlTsb(40.05, 30.14)).toEqual({ ctl: 40.1, atl: 30.1, tsb: 9.9 });
+  });
+});
+
+describe("ctlDelta / tsbDelta", () => {
+  function day(date: string, ctl: number, tsb = 0): FitnessTrendDay {
+    return { date, load: 0, ctl, atl: ctl - tsb, tsb };
+  }
+
+  it("compares with the day exactly N calendar days back, by date", () => {
+    const series = [
+      day("2026-07-01", 30, -10),
+      day("2026-07-02", 31),
+      // 2026-07-03 and 2026-07-04 missing: 7 rows back is 2026-07-01.
+      day("2026-07-05", 33),
+      day("2026-07-06", 34),
+      day("2026-07-07", 35),
+      day("2026-07-08", 36),
+      day("2026-07-09", 37, 4),
+    ];
+    expect(ctlDelta(series, 7)).toBe(6);
+    expect(tsbDelta(series, 7)).toBe(4);
+  });
+
+  it("is null when the day N back is missing or the series is empty", () => {
+    const series = [day("2026-07-01", 30), day("2026-07-09", 37)];
+    expect(ctlDelta(series, 7)).toBeNull();
+    expect(tsbDelta(series, 7)).toBeNull();
+    expect(ctlDelta([], 7)).toBeNull();
   });
 });
 

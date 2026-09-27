@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { buildZoneSet, mapIntervalsZones } from "../activityZones";
+import { resolveHrZones } from "../activityZones";
 import {
   formatDuration,
   formatFeel,
@@ -147,57 +147,25 @@ export interface ActivityDetail {
 }
 
 /**
- * Prefers the activity's own recorded `icu_hr_zones` (via `mapIntervalsZones`,
- * the same source the activity-zones app and `get-activity-zones` read) over
- * the athlete's current sport settings: the activity's own zones are the
- * correct settings group for any activity type, including Walk/Hike, and
- * survive an athlete later editing their zone bounds. `sportSettings` (the
- * *Run* group; `types` on this athlete is `["Run","VirtualRun","TrailRun"]`)
- * is used only as a fallback, and only when the activity carries no HR zone
- * bounds of its own, since a Walk or Hike is a different settings group with
- * its own zone bounds and zone count (this tool does not fetch that group),
- * and a non-step-cadence type's zone count need not even match (7 zones for
- * WeightTraining on this athlete, not the Run group's 5). `hr_zones`
- * degrades to `[]` when neither source is usable, rather than mislabelling
- * the athlete's own recorded zone times under the wrong boundaries.
+ * `hr_zones` from `resolveHrZones` (the activity's own bounds, else the Run
+ * sport settings group when it covers this type), shared with
+ * `get-running-summary`. `[]` when neither source is usable, rather than
+ * mislabelling the athlete's own recorded zone times under the wrong bounds.
  */
 function buildHrZones(
   activity: IntervalsActivity,
   sportSettings: IntervalsSportSettings | null,
   type: string,
 ): HrZoneEntry[] {
-  const hrSet = mapIntervalsZones(activity).find(
-    (set) => set.type === "heartrate",
-  );
-  if (hrSet) {
-    return hrSet.buckets.map((bucket) => ({
+  const { set } = resolveHrZones(activity, sportSettings, type);
+  return (
+    set?.buckets.map((bucket) => ({
       zone: bucket.zone,
       min_bpm: bucket.min,
       max_bpm: bucket.max,
       seconds: bucket.seconds,
-    }));
-  }
-
-  // Only fall back to sport settings when the activity has no HR zone
-  // bounds of its own; a bounds/times count mismatch is a data problem
-  // sport settings can't safely paper over either.
-  if (activity.icu_hr_zones && activity.icu_hr_zones.length > 0) return [];
-  if (!sportSettings?.types?.includes(type)) return [];
-
-  const fallback = buildZoneSet(
-    "heartrate",
-    "bpm",
-    sportSettings.hr_zones,
-    activity.icu_hr_zone_times,
+    })) ?? []
   );
-  if (!fallback) return [];
-
-  return fallback.buckets.map((bucket) => ({
-    zone: bucket.zone,
-    min_bpm: bucket.min,
-    max_bpm: bucket.max,
-    seconds: bucket.seconds,
-  }));
 }
 
 function mapInterval(

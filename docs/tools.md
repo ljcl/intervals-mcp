@@ -104,6 +104,8 @@ type), the same source `get-activity-zones` reads; otherwise they fall back
 to the athlete's Run sport settings group (`types` Run, VirtualRun,
 TrailRun) when that group covers the activity's type. `hr_zones` is an
 empty array when neither source is usable, rather than failing the call.
+`resolveHrZones` (`activityZones.ts`) holds this rule, shared with
+`get-running-summary`.
 `pace_min_per_km` and `gap_min_per_km` (grade-adjusted pace, derived
 from the activity's `gap` field, which intervals.icu reports in m/s, the
 same unit as `average_speed`) are set for Run/TrailRun/VirtualRun only: a
@@ -145,7 +147,7 @@ the intervals.icu Gear page.
 `get-wellness` returns daily wellness: HRV (both `hrv_rmssd_ms` and
 `hrv_sdnn_ms`), resting HR, sleep, weight, training load (`ctl`, `atl`,
 `ramp_rate`, and `tsb` = ctl minus atl from the unrounded values, each
-rounded to 0.1), and the subjective/device fields (readiness, soreness,
+rounded to 0.1, through the same `ctlAtlTsb` as `get-fitness-trend`), and the subjective/device fields (readiness, soreness,
 fatigue, stress, mood, motivation, `spo2` (%), `respiration`
 (breaths/min), comments); `units` names all of these, including `spo2` and
 `respiration`. Takes either a single `date` or an `oldest`/`newest` range
@@ -466,8 +468,10 @@ and is also in `flags`; a band that ended earlier has a past-tense reason.
 loader (`loadFitnessTrend` in `loadFitnessTrend.ts`) for both the whole-body
 and run-only paths, so the app's `runOnly: true` payload is built the same
 way as the text tool's and the two can never disagree. The app's payload adds
-`source`, `runOnly`, `activityTypesIncluded`, `warnings`, and `endDate`
-(today, so the app can show "already positive today") alongside the
+`source`, `runOnly`, `activityTypesIncluded`, `warnings`, `endDate`
+(today, so the app can show "already positive today"), and `ctl7dDelta`
+(the same `ctlDelta` value as `trend.ctl_7d_delta`, by date, so the app's
+narration and the text tool agree on a series with gaps) alongside the
 series/projection/taper it already carried.
 
 `get-training-load` reports weekly running volume (distance, time,

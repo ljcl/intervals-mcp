@@ -291,6 +291,32 @@ with the average of the complete weeks up to and including it, not with the
 whole period: with a whole-period average, the layoff lowered the average and
 flagged the normal weeks before it.
 
+**CTL/ATL/TSB numbers have one home each** (#75), all in `fitnessTrend.ts`.
+`ctlAtlTsb` turns raw CTL and ATL into display values: TSB from the raw
+values, then each rounded to 0.1. The recurrence, the whole-body wellness
+series (`fitnessTrendWellness.ts`) and `get-wellness` all use it. `ctlDelta`
+(and `tsbDelta`) gives the change over N calendar days to the last day,
+looked up by date, or null when that day is missing. `get-fitness-trend`'s
+`ctl_7d_delta`, the steep-ramp bands and the fitness-trend app all read it;
+the app gets it as `ctl7dDelta` in its payload, because an MCP App cannot
+import server code. The app used to count 7 rows back, and a whole-body
+series leaves out days with no wellness, so with 2 missing days it described
+9 calendar days as "the last 7 days" and gave a different number from the
+text tool.
+
+**HR zone bounds have one home.** `resolveHrZones` in `activityZones.ts`:
+the activity's own `icu_hr_zones` first, else the Run sport settings group
+when its `types` names the activity's type, else no zones with a note.
+`get-activity` (`hr_zones`) and `get-running-summary` (`hr_zone_summary`)
+both call it; each only shapes the result.
+
+**Run types have one home.** `PACE_ACTIVITY_TYPES` in `utils/running.ts`
+(Run, TrailRun, VirtualRun). `get-running-summary` accepts exactly these,
+and `fitnessTrend.ts` re-exports them as `RUN_TYPES` for the run-only series
+and `get-training-load`. `STEP_CADENCE_ACTIVITY_TYPES` and
+`RUNNING_ACTIVITY_TYPES` add Walk and Hike on purpose: those have a step
+cadence but no pace.
+
 **Taper solving.** `fitnessTrend.ts` owns every CTL/ATL/TSB number, including
 the forward-looking ones — `plannedLoads` projects a prescribed load instead of
 rest, and `solveTaperPlan` finds the weekly load taper that lands on a target

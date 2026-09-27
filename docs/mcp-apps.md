@@ -416,6 +416,10 @@ weeks take them. Calls `get-fitness-trend-data` on mount with `days`,
   the payload's `endDate` (today): equal means form is already positive today,
   so the tile says "Today" rather than a date. The server sets the date; the
   app only compares.
+- The narration's 7-day fitness change is the payload's `ctl7dDelta`
+  (`ctlDelta`, by date), the text tool's `ctl_7d_delta`. The app must not
+  count rows back in `series`: a whole-body series skips days with no
+  wellness, so 7 rows can be 9 calendar days.
 - `ComposedChart`: fitness `Area` left axis, fatigue line beside it, form
   thinner line on its own right axis with dashed zero line. The forward half
   draws as separate `plan*` series with `strokeDasharray`; handover day carries

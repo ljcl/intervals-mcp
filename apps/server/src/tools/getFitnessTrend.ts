@@ -1,11 +1,13 @@
 import { z } from "zod";
 import { getTimeZone } from "../config";
 import {
+  ctlDelta,
   type FitnessTrendDay,
   MAX_TAPER_DAYS,
   type PlannedLoad,
   type TaperWeek,
   taperTargetDateError,
+  tsbDelta,
 } from "../fitnessTrend";
 import { loadFitnessTrend } from "../loadFitnessTrend";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
@@ -245,18 +247,13 @@ export const getFitnessTrendTool = {
         ...loaded.warnings,
       ];
 
-      // 7-day delta by date, not array index, since a gappy whole-body
-      // series is not necessarily contiguous.
-      const byDate = new Map(displaySeries.map((d) => [d.date, d]));
-      const weekAgo = current
-        ? (byDate.get(addDays(current.date, -7)) ?? null)
-        : null;
+      // By date, not array index: a gappy whole-body series is not
+      // contiguous. The app narrates the same `ctlDelta`.
+      const ctl7d = ctlDelta(displaySeries, 7);
+      const tsb7d = tsbDelta(displaySeries, 7);
       const trendSummary =
-        current && weekAgo
-          ? {
-              ctl_7d_delta: Math.round((current.ctl - weekAgo.ctl) * 10) / 10,
-              tsb_7d_delta: Math.round((current.tsb - weekAgo.tsb) * 10) / 10,
-            }
+        ctl7d !== null && tsb7d !== null
+          ? { ctl_7d_delta: ctl7d, tsb_7d_delta: tsb7d }
           : null;
 
       const result = {

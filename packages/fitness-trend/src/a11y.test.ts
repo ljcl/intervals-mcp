@@ -39,12 +39,27 @@ describe("buildTrendA11y", () => {
     );
   });
 
-  it("skips the direction clause on a series shorter than a week", () => {
+  it("skips the direction clause when the server has no 7-day change", () => {
     const desc = buildTrendA11y({
       ...mockFitnessTrendData,
       series: mockFitnessTrendData.series.slice(-3),
+      ctl7dDelta: null,
     }).desc;
     expect(desc).not.toContain("over the last 7 days");
+  });
+
+  it("narrates the server's 7-day change, not one counted back by rows", () => {
+    // Two days missing from the last week: 7 rows back is 9 calendar days
+    // back. The server's date-keyed change is the one to narrate.
+    const series = mockFitnessTrendData.series.filter(
+      (day) => day.date !== "2026-06-24" && day.date !== "2026-06-25",
+    );
+    const desc = buildTrendA11y({
+      ...mockFitnessTrendData,
+      series,
+      ctl7dDelta: 2.5,
+    }).desc;
+    expect(desc).toContain("Fitness rose 2.5 over the last 7 days.");
   });
 
   it("says so when nothing is shaded", () => {

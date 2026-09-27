@@ -177,6 +177,12 @@ function toDays(
 
 export const mockSeries: TrendDay[] = toDays(SERIES_ROWS, SERIES_START);
 
+/** Last CTL minus CTL 7 rows back: correct only for a series with no gaps. */
+function sevenDayCtlChange(series: TrendDay[]): number {
+  const change = series.at(-1)!.ctl - series.at(-8)!.ctl;
+  return Math.round(change * 10) / 10;
+}
+
 const forwardStart = addDays(SERIES_START, SERIES_ROWS.length);
 export const mockProjection: TrendDay[] = toDays(PROJECTION_ROWS, forwardStart);
 export const mockTaperDays: TrendDay[] = toDays(TAPER_ROWS, forwardStart);
@@ -285,6 +291,8 @@ export const mockFitnessTrendData: FitnessTrendData = {
   current: mockSeries[mockSeries.length - 1]!,
   tsbPositiveDate: "2026-07-02",
   endDate: "2026-06-28",
+  // What the server's `ctlDelta` gives for this gap-free series.
+  ctl7dDelta: sevenDayCtlChange(mockSeries),
   bands: mockBands,
   flags: mockFlags,
   activitiesIncluded: 51,
@@ -340,6 +348,8 @@ export const mockRunOnlyFitnessTrendData: FitnessTrendData = {
   taper: null,
   current: mockRunOnlySeries[mockRunOnlySeries.length - 1]!,
   tsbPositiveDate: "2026-07-05",
+  endDate: "2026-06-28",
+  ctl7dDelta: sevenDayCtlChange(mockRunOnlySeries),
   bands: mockBands
     .filter((band) => band.kind !== "fresh")
     .map((band) => ({ ...band })),

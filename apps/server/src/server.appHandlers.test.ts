@@ -879,6 +879,44 @@ describe("fitness trend handlers", () => {
     expect(textTaper.achieved_tsb).toBe(appTaper.achievedTsb);
   });
 
+  it("get-fitness-trend and the app payload give the same 7-day CTL change on a gappy series (#75)", async () => {
+    // Two days of the last week have no wellness: 7 rows back is 9 calendar
+    // days back, which is what the app's narration used to read.
+    const gappy = () =>
+      wellnessSeries(TODAY, 91, 21, 80).filter(
+        (row) => row.id !== inDays(-3) && row.id !== inDays(-4),
+      );
+
+    mockedWellness.mockResolvedValueOnce(gappy());
+    mockedIntervalsList.mockResolvedValueOnce([]);
+    const textResult = await dispatchToolCall("get-fitness-trend", {});
+    const textData = textResult.structuredContent as {
+      trend: { ctl_7d_delta: number } | null;
+      daily: { date: string; ctl: number }[];
+    };
+
+    mockedWellness.mockResolvedValueOnce(gappy());
+    mockedIntervalsList.mockResolvedValueOnce([]);
+    const appData = JSON.parse(
+      (await dispatchToolCall("get-fitness-trend-data", {})).content[0]?.text ??
+        "",
+    );
+
+    const weekAgo = textData.daily.find((d) => d.date === inDays(-7))!;
+    const expected =
+      Math.round((textData.daily.at(-1)!.ctl - weekAgo.ctl) * 10) / 10;
+    expect(textData.trend?.ctl_7d_delta).toBe(expected);
+    expect(appData.ctl7dDelta).toBe(expected);
+    const byRows =
+      Math.round(
+        (textData.daily.at(-1)!.ctl - textData.daily.at(-8)!.ctl) * 10,
+      ) / 10;
+    expect(byRows).not.toBe(expected);
+    expect(textResult.content[0]?.text).toContain(
+      `**Last 7 days**: CTL ${expected >= 0 ? "+" : ""}${expected}`,
+    );
+  });
+
   it("projectDays: 0 gives an empty projection in both, even with unsynced wellness days (#catch-up bug)", async () => {
     // Drop the trailing 2 synced days so asOfDate trails endDate (TODAY) by
     // 2 unsynced days, the shape that used to make the app keep rolling a

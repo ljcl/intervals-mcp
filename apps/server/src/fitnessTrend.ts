@@ -200,6 +200,55 @@ const ATL_DECAY = Math.exp(-1 / ATL_TIME_CONSTANT_DAYS);
 export const round1 = (value: number) => Math.round(value * 10) / 10;
 
 /**
+ * Display CTL/ATL/TSB from raw (unrounded) CTL and ATL: TSB is CTL − ATL of
+ * the raw values, then each is rounded to 0.1. The one home for this, used by
+ * the recurrence here, the wellness series (`fitnessTrendWellness.ts`) and
+ * `get-wellness`, so a day's TSB is the same number on every surface.
+ */
+export function ctlAtlTsb(
+  ctl: number,
+  atl: number,
+): { ctl: number; atl: number; tsb: number } {
+  return { ctl: round1(ctl), atl: round1(atl), tsb: round1(ctl - atl) };
+}
+
+/**
+ * `metric` on `day` minus `metric` exactly `days` calendar days earlier, or
+ * null when the series has no day on that date. Looked up by date, not by
+ * array index: a whole-body series leaves out days with no wellness, so an
+ * index 7 back can be 9 calendar days back.
+ */
+function deltaLookup(series: FitnessTrendDay[]) {
+  const byDate = new Map(series.map((day) => [day.date, day]));
+  return (
+    day: FitnessTrendDay,
+    days: number,
+    metric: "ctl" | "tsb",
+  ): number | null => {
+    const prior = byDate.get(addDays(day.date, -days));
+    return prior ? round1(day[metric] - prior[metric]) : null;
+  };
+}
+
+/**
+ * CTL change over the `days` calendar days to the series' last day, by date;
+ * null when the day `days` before it is not in the series. The one home for
+ * the 7-day CTL change: `get-fitness-trend`'s `ctl_7d_delta`, the steep-ramp
+ * bands, and the fitness-trend app's narration (through its payload) all
+ * read it.
+ */
+export function ctlDelta(series: FitnessTrendDay[], days: number) {
+  const last = series[series.length - 1];
+  return last ? deltaLookup(series)(last, days, "ctl") : null;
+}
+
+/** TSB change over the `days` calendar days to the last day; see {@link ctlDelta}. */
+export function tsbDelta(series: FitnessTrendDay[], days: number) {
+  const last = series[series.length - 1];
+  return last ? deltaLookup(series)(last, days, "tsb") : null;
+}
+
+/**
  * Build the daily CTL/ATL/TSB series from `input.days`, rolling the
  * recurrence forward from `input.seed` (default `{ ctl: 0, atl: 0 }`). A
  * caller starting from zero should supply enough runway (~90 days) that the
@@ -224,13 +273,7 @@ export function buildFitnessTrend(
   for (const { date, ctlLoad, atlLoad } of input.days) {
     ctl = ctlLoad * (1 - CTL_DECAY) + ctl * CTL_DECAY;
     atl = atlLoad * (1 - ATL_DECAY) + atl * ATL_DECAY;
-    series.push({
-      date,
-      load: round1(atlLoad),
-      ctl: round1(ctl),
-      atl: round1(atl),
-      tsb: round1(ctl - atl),
-    });
+    series.push({ date, load: round1(atlLoad), ...ctlAtlTsb(ctl, atl) });
   }
 
   const endDate = series[series.length - 1]?.date;
@@ -333,13 +376,7 @@ export function projectLoads(
     atl = load * (1 - ATL_DECAY) + atl * ATL_DECAY;
     const tsb = ctl - atl;
     const date = addDays(startDate, i);
-    days.push({
-      date,
-      load: round1(load),
-      ctl: round1(ctl),
-      atl: round1(atl),
-      tsb: round1(tsb),
-    });
+    days.push({ date, load: round1(load), ...ctlAtlTsb(ctl, atl) });
     const eligible =
       options.positiveDateFrom === undefined ||
       date >= options.positiveDateFrom;
@@ -716,7 +753,7 @@ export function trendBands(series: FitnessTrendDay[]): TrendBand[] {
   if (series.length === 0) return bands;
 
   const lastIndex = series.length - 1;
-  const indexByDate = new Map(series.map((day, index) => [day.date, index]));
+  const deltaAt = deltaLookup(series);
   const calendarDays = (start: number, end: number) =>
     daysBetween(series[start]!.date, series[end]!.date) + 1;
 
@@ -808,13 +845,7 @@ export function trendBands(series: FitnessTrendDay[]): TrendBand[] {
     );
   }
 
-  const rampAt = (index: number) => {
-    const day = series[index]!;
-    const priorIndex = indexByDate.get(addDays(day.date, -7));
-    return priorIndex === undefined
-      ? 0
-      : round1(day.ctl - series[priorIndex]!.ctl);
-  };
+  const rampAt = (index: number) => deltaAt(series[index]!, 7, "ctl") ?? 0;
   for (const { start, end } of runs(
     (_, index) => rampAt(index) >= RAMP_RISK_PER_WEEK,
   )) {
