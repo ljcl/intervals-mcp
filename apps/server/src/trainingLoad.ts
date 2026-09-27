@@ -73,13 +73,15 @@ export interface WeekWarning {
 
 /**
  * Injury-risk warnings per week: a >30% week-over-week volume increase, and
- * an unusually high week (>150% of the complete-week average and over 30
- * km). One week can trigger both rules. A week in progress is never the
- * baseline for a rise or part of the average, because its volume is only the
- * days so far. It is flagged only when that partial volume already breaks a
- * rule, which the rest of the week cannot undo. The text tool prefixes each
- * reason with "Week of <date>: "; the app feed attaches them to the week's
- * row.
+ * an unusually high week (>150% of the average of the complete weeks up to
+ * and including it, and over 30 km). One week can trigger both rules. The
+ * average never looks ahead: weeks after a week cannot flag it, so a layoff
+ * that follows a normal week does not make that week look high. A week in
+ * progress is never the baseline for a rise or part of the average, because
+ * its volume is only the days so far. It is flagged only when that partial
+ * volume already breaks a rule, which the rest of the week cannot undo. The
+ * text tool prefixes each reason with "Week of <date>: "; the app feed
+ * attaches them to the week's row.
  */
 export function computeWeekWarnings(weeks: WeeklyVolume[]): WeekWarning[] {
   const warnings: WeekWarning[] = [];
@@ -107,20 +109,23 @@ export function computeWeekWarnings(weeks: WeeklyVolume[]): WeekWarning[] {
     }
   }
 
-  // Check for very high weeks compared to the complete-week average
-  const complete = weeks.filter((w) => !w.in_progress);
-  if (complete.length === 0) {
-    return warnings;
-  }
-  const avgDistance =
-    complete.reduce((sum, w) => sum + w.distance_km, 0) / complete.length;
-
+  // Check for very high weeks compared to the average of the complete weeks
+  // up to and including each one
+  let completeKm = 0;
+  let completeWeeks = 0;
   for (const week of weeks) {
+    if (!week.in_progress) {
+      completeKm += week.distance_km;
+      completeWeeks += 1;
+    }
+    if (completeWeeks === 0) continue;
+
+    const avgDistance = completeKm / completeWeeks;
     if (week.distance_km > avgDistance * 1.5 && week.distance_km > 30) {
       const volume = week.in_progress ? "volume so far" : "volume";
       warnings.push({
         week_starting: week.week_starting,
-        reason: `Unusually high ${volume} (${week.distance_km} km vs ${Math.round(avgDistance)} km average)`,
+        reason: `Unusually high ${volume} (${week.distance_km} km vs ${Math.round(avgDistance)} km average up to that week)`,
       });
     }
   }
@@ -233,19 +238,24 @@ export interface WeekBucket {
 /**
  * Builds the weekly timeline both `get-training-load` and
  * `get-training-load-data` read from: a continuous Monday-to-Monday run,
- * spanning from the earliest to the latest week that has either a run
- * activity (`runs`) or a load activity (`loadActivities`); a load-only
- * week (e.g. a strength-only week, or a window with no runs at all) is not
- * dropped, it just carries zeroed run fields, and a run-only week carries
- * zeroed load fields. Any week between the earliest and latest active week
- * with neither is zero-filled too, so the series is gap-visible. The one
- * home this timeline is built through, so the text tool and the app feed
- * can never disagree on a week's load or volume (see AGENTS.md's "derived
- * numbers have exactly one home").
+ * from the earliest week that has either a run activity (`runs`) or a load
+ * activity (`loadActivities`) to the current week (`currentWeekStart`,
+ * from {@link trainingLoadWindow}). A load-only week (e.g. a strength-only
+ * week, or a window with no runs at all) is not dropped, it just carries
+ * zeroed run fields, and a run-only week carries zeroed load fields. Every
+ * week after the earliest active one with neither is zero-filled too, up to
+ * and including the current week, so a skipped week and a layoff that is
+ * still going on are both visible. Weeks before the earliest active one are
+ * left out: they may be missing data (a new account, say), and with no
+ * activity at all the timeline is empty. The one home this timeline is
+ * built through, so the text tool and the app feed can never disagree on a
+ * week's load or volume (see AGENTS.md's "derived numbers have exactly one
+ * home").
  */
 export function aggregateWeeks(
   runs: TrainingLoadActivity[],
   loadActivities: TrainingLoadActivity[],
+  currentWeekStart: string,
 ): WeekBucket[] {
   const emptyBucket = (weekStarting: string): WeekBucket => ({
     weekStarting,
@@ -282,8 +292,12 @@ export function aggregateWeeks(
   const sortedKeys = [...buckets.keys()].sort();
   if (sortedKeys.length === 0) return [];
 
+  // A later active week than the current one only comes from a time-zone
+  // mismatch; the timeline still reaches it rather than dropping activity.
+  const latestActive = sortedKeys[sortedKeys.length - 1]!;
+  const last =
+    latestActive > currentWeekStart ? latestActive : currentWeekStart;
   const weekKeys: string[] = [];
-  const last = sortedKeys[sortedKeys.length - 1]!;
   for (let key = sortedKeys[0]!; key <= last; key = addDays(key, 7)) {
     weekKeys.push(key);
   }
@@ -309,7 +323,7 @@ export function weekInProgress(
 
 /** The weeks the run-based rules read; see {@link selectRunWeeks}. */
 export interface RunWeeks {
-  /** First to last week with a run, zero-run weeks inside kept. */
+  /** First week with a run to the end of the timeline, zero-run weeks kept. */
   span: WeekBucket[];
   /** `span` without the week in progress. Averages and the trend read these. */
   complete: WeekBucket[];
@@ -322,23 +336,25 @@ export interface RunWeeks {
  * them. The one home for this choice: `get-training-load` and the app feed
  * both call it, so their warnings can never differ (#43).
  *
- * The span runs from the first to the last week with a run. Zero-run weeks
- * inside it are kept: a layoff is a real gap the averages, the trend and the
- * warnings must see, and dropping it would compare two weeks that are not
- * adjacent as if they were. Weeks outside it hold load only (for example a
- * bike week before the first run, which the whole-body timeline also
- * holds), so counting them would change the run numbers with `runOnly`. The
- * week starting on or after `currentWeekStart` is in progress: it can be
- * flagged, but only on the volume it already has (see
- * {@link computeWeekWarnings}), and it is left out of `complete`.
+ * The span runs from the first week with a run to the end of the timeline,
+ * which {@link aggregateWeeks} carries to the current week. Zero-run weeks
+ * in it are kept, those after the last run included: a layoff is a real gap
+ * the averages, the trend and the warnings must see, whether or not it has
+ * ended, and dropping it would compare two weeks that are not adjacent as if
+ * they were. Weeks before the first run are left out: they may be missing
+ * data, and in whole-body mode they can hold load only (for example a bike
+ * week), so counting them would change the run numbers with `runOnly`.
+ * Neither end depends on load-only activities. The week starting on or after
+ * `currentWeekStart` is in progress: it can be flagged, but only on the
+ * volume it already has (see {@link computeWeekWarnings}), and it is left
+ * out of `complete`.
  */
 export function selectRunWeeks(
   buckets: WeekBucket[],
   currentWeekStart: string,
 ): RunWeeks {
   const first = buckets.findIndex((b) => b.runs > 0);
-  const last = buckets.findLastIndex((b) => b.runs > 0);
-  const span = first === -1 ? [] : buckets.slice(first, last + 1);
+  const span = first === -1 ? [] : buckets.slice(first);
   const inProgress = (b: WeekBucket) =>
     weekInProgress(b.weekStarting, currentWeekStart);
 
@@ -377,7 +393,14 @@ export function volumeTrend(complete: WeekBucket[]): VolumeTrend {
   const km = compared.map(weekDistanceKm);
   const previous = km[0]! + km[1]!;
   const recent = km[2]! + km[3]!;
-  if (previous <= 0) return none("insufficient data");
+  if (previous <= 0) {
+    // A layoff of 4 weeks or more is an answer, not missing data.
+    return none(
+      recent <= 0
+        ? "no running volume in the last 4 complete weeks"
+        : "insufficient data",
+    );
+  }
 
   return {
     label: trendLabel(((recent - previous) / previous) * 100),
@@ -429,7 +452,11 @@ export function buildTrainingLoadData(
   const loadActivities = options.loadActivities ?? runs;
   const runOnly = options.runOnly ?? true;
 
-  const buckets = aggregateWeeks(runs, loadActivities);
+  const buckets = aggregateWeeks(
+    runs,
+    loadActivities,
+    lookback.currentWeekStart,
+  );
   const { warnings } = selectRunWeeks(buckets, lookback.currentWeekStart);
   const inProgress = (b: WeekBucket) =>
     weekInProgress(b.weekStarting, lookback.currentWeekStart);

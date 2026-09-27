@@ -428,11 +428,14 @@ through the shared `buildRunOnlyFitnessTrend` helper in `fitnessTrend.ts` and
 its `days + 150` day zero-seeded runway, so the two tools can never disagree
 (`source: "computed"`). `activity_types_included` names which types `load`
 covers either way. The weekly timeline (`aggregateWeeks` in `trainingLoad.ts`,
-also shared with the app feed below) spans the union of weeks with a run and
-weeks with load: a strength-only week, or a whole-body window with no runs at
-all, still gets a row, with run fields zeroed rather than the week being
-dropped, so weekly and total load can never differ between this tool and the
-app feed for the same activities. Weeks start Monday on each activity's own
+also shared with the app feed below) runs from the first week with a run or
+load to the current week: a strength-only week, or a whole-body window with no
+runs at all, still gets a row, with run fields zeroed rather than the week
+being dropped, and so does every week after the last activity, so a layoff
+that is still going on shows as zero weeks. Weeks before the first activity
+are left out, because they may be missing data (a new account, say). So weekly
+and total load can never differ between this tool and the app feed for the
+same activities. Weeks start Monday on each activity's own
 local calendar date (`start_date_local`, as intervals.icu reports it, never
 re-interpreted through the server's time zone) via `startOfWeekMonday` in
 `utils/localDate.ts`, the same helper `get-athlete-stats` uses. Time is
@@ -448,17 +451,22 @@ days more than the requested `days`. Only the current week can be partial:
 the text marks it "in progress, N of 7 days" and adds a line to `warnings`
 (#43). Averages, the trend and the warnings read the weeks `selectRunWeeks`
 picks, the one call this tool and the app feed both make, so their warnings
-cannot differ: every week from the first to the last week with a run, with
-zero-run weeks kept (a layoff is a real gap) and load-only weeks outside that
-span left out. Averages and the trend use its complete weeks only; with no
-complete week yet, the averages are this week so far. The trend compares the
-distance of the last 2 complete weeks with the 2 before, and the text names
-the four weeks. A warning fires on a rise of over 30% on the week before, or
-on a week over 150% of the complete-week average and over 30 km. The week in
-progress is never the baseline for a rise or part of that average, and it is
-flagged only on the volume it already has ("so far" in the reason). The
-run-only runway still counts `days + 150` days back from today, so `current`
-matches `get-fitness-trend`'s run-only value.
+cannot differ: every week from the first week with a run to the current week,
+with zero-run weeks kept, those after the last run included (a layoff is a
+real gap, even one that is still going on), and weeks before the first run
+left out. Neither end depends on load-only activities, so `runOnly` does not
+change which weeks the run numbers read. Averages and the trend use its
+complete weeks only; with no complete week yet, the averages are this week so
+far. The trend compares the distance of the last 2 complete weeks with the 2
+before, and the text names the four weeks; when all four have no running
+volume, it says so instead of reporting too little data. A warning fires on a
+rise of over 30% on the week before, or on a week over 150% of the average of
+the complete weeks up to and including it, and over 30 km. That average never
+looks ahead, so a layoff cannot make the weeks before it look unusually high.
+The week in progress is never the baseline for a rise or part of that
+average, and it is flagged only on the volume it already has ("so far" in the
+reason). The run-only runway still counts `days + 150` days back from today,
+so `current` matches `get-fitness-trend`'s run-only value.
 
 `update-activity` changes an activity's name, description, gear, RPE
 (`icu_rpe`), or feel. It always does a fresh read first (bypassing the
