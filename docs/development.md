@@ -95,11 +95,23 @@ Supplementary when the change touches UI:
 `apps/server`, `packages/data`, `packages/design-system`, and `packages/ui`
 set `coverage.thresholds` in their vitest.config.ts, and each `test:coverage`
 run **auto-ratchets** them: vitest rewrites the numbers to a fixed cushion under
-measured coverage (5 points for server and ui, 2 for the ~100% packages), so
-the floor rises as coverage grows and a genuine drop fails CI.
+measured coverage (5 points for server and ui, 2 for the ~100% packages).
 
-If a coverage run dirties a vitest.config.ts, that's the ratchet — commit it,
-never hand-edit the numbers.
+vitest's own rewrite is not monotonic: `autoUpdate` gets only the newly
+measured value, not the previous threshold, so it can floor a rewrite below
+the committed value whenever coverage drops by less than the cushion (#62).
+`scripts/coverage-ratchet-guard.ts` wraps each `test:coverage` script: it
+snapshots thresholds before the run and restores any key vitest wrote below
+that snapshot, so a run can raise a threshold but never lower one. Commit a
+dirtied vitest.config.ts; never hand-edit the numbers.
+
+`scripts/check-coverage-thresholds.ts` is the CI half, run after the Story
+tests step on pull requests. It fails the build if a committed threshold is
+lower than the same key on `origin/main` (escape hatch: the
+`coverage-lower-ok` label), catching a hand-lowered threshold the guard
+script can't see; a removed key counts as lowered too. It also warns,
+without failing, when a run above raised a threshold the PR hasn't
+committed.
 
 The view-heavy packages are intentionally unthresholded per package; their
 component floor is the story render-path report

@@ -311,8 +311,12 @@ bun run test:stories      # needs Playwright browsers
 docker compose build      # when the change affects the container
 ```
 
-Coverage ratchets auto-tighten: if `test:coverage` rewrites numbers in a vitest.config.ts, commit
-that — never hand-edit the threshold values.
+Coverage ratchets only ever rise: `scripts/coverage-ratchet-guard.ts` wraps each `test:coverage`
+run and restores any threshold vitest's `autoUpdate` would have lowered. A rewrite in a
+vitest.config.ts is always a raise; commit it, never hand-edit the values. CI's
+`scripts/check-coverage-thresholds.ts` step fails a PR that lowers a threshold (including a removed
+key) against `origin/main` (escape hatch: the `coverage-lower-ok` label) and warns, without
+failing, when a raise in the run has not been committed (docs/development.md#coverage-thresholds).
 
 Turborepo caches all tasks; Biome and Knip run as root tasks (do NOT move root `lint` under turbo —
 infinite loop). Package boundaries are enforced by `turbo boundaries`; CI runs on every PR.

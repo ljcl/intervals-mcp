@@ -8,7 +8,7 @@
   },
   "scripts": {
     "test": "vitest run",
-    "test:coverage": "vitest run --coverage --coverage.reporter=text --coverage.reporter=json-summary",
+    "test:coverage": "bun ../../scripts/coverage-ratchet-guard.ts vitest.config.ts -- vitest run --coverage --coverage.reporter=text --coverage.reporter=json-summary",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
