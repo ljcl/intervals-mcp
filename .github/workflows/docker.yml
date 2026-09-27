@@ -33,9 +33,9 @@ permissions:
 jobs:
   # Decides whether a PR or main push actually touches anything the image
   # consumes. The build legs are skipped (not path-filtered at the workflow
-  # level) so that a required Docker status still reports on docs-only PRs —
-  # skipped jobs count as passing for required checks, whereas a path-filtered
-  # workflow never reports and would block auto-merge. On main it keeps a
+  # level) so that the required `docker-ok` status still reports on docs-only
+  # PRs, whereas a path-filtered workflow never reports and would block
+  # auto-merge. On main it keeps a
   # docs-only merge from giving `edge` a new digest, which restarts containers
   # under update tools for nothing. Tag pushes and the backfill dispatch bypass
   # the filter entirely, so releases always build.
@@ -333,3 +333,27 @@ jobs:
             echo "docker buildx imagetools inspect $ref --format '{{ json .SBOM }}'"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # One stable status context for branch protection to require. The build
+  # legs report as `build (linux/amd64, ubuntu-latest)` and so on when they
+  # run and as a bare `build` when skipped, so neither name can be required.
+  # This passes when every job it needs succeeded or was skipped (a docs-only
+  # PR), and fails on any failure or cancellation, so a PR that breaks the
+  # image build, Dependabot's included, cannot merge.
+  docker-ok:
+    needs: [changes, build]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Require every Docker job to have passed or been skipped
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          for result in $RESULTS; do
+            case "$result" in
+              success | skipped) ;;
+              *) echo "::error::a Docker job ended '$result'"; exit 1 ;;
+            esac
+          done

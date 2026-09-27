@@ -13,6 +13,15 @@ workflow rejects non-conforming titles, and the repo squash setting is pinned
 to `PR_TITLE` so the title is always what lands. Branch commits can be messy;
 only the PR title matters.
 
+Branch protection on `main` requires three checks: `check` (ci.yml),
+`pr-title` (pr-title.yml) and `docker-ok` (docker.yml's aggregator, which
+passes only when the image built and passed the smoke test on both arches, or
+the PR touched nothing the image uses). Dependabot's auto-merge waits on the
+same three. A `refs/tags/v*` ruleset lets only admins create, move or delete a
+release tag, since both publish workflows ship whatever a tag points at.
+`scripts/setup-branch-protection.sh` applies all of this, and re-running it
+converges; renaming any of those three jobs silently unrequires its check.
+
 The repo is pre-1.0 with `bump-minor-pre-major: true`
 (`release-please-config.json`), so a breaking change bumps minor, not major,
 until the first 1.0.0 release:
