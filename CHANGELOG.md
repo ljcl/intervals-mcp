@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.1.1](https://github.com/ljcl/intervals-mcp/compare/v2.1.0...v2.1.1) (2026-09-27)
+
+
+### Bug Fixes
+
+* training load counts a layoff that is still going on ([#109](https://github.com/ljcl/intervals-mcp/issues/109)) ([8d93dd8](https://github.com/ljcl/intervals-mcp/commit/8d93dd8477abebeaa37cab7458f7516840eef855))
+* training load counts whole weeks, and the chart and text tool give the same warnings ([#107](https://github.com/ljcl/intervals-mcp/issues/107)) ([7649df2](https://github.com/ljcl/intervals-mcp/commit/7649df215a38317cedeb6f07db9c83bf55576916))
+
 ## [2.1.0](https://github.com/ljcl/intervals-mcp/compare/v2.0.0...v2.1.0) (2026-09-26)
 
 
