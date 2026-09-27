@@ -14,9 +14,10 @@
  * still supplies the package.json, so resolution gets all the way to
  * `./src/index.ts` before discovering the file is not in the image.
  *
- * Neither `docker compose build` nor docker.yml can catch that: both assert
- * the image builds, and the missing file is only resolved at container start.
- * So this guard resolves every `@intervals-mcp/*` specifier the server's runtime
+ * `docker compose build` cannot catch that: it asserts the image builds, and
+ * the missing file is only resolved at container start. docker.yml's smoke
+ * test (scripts/docker-smoke.sh) starts the image, but only in CI. So this
+ * guard resolves every `@intervals-mcp/*` specifier the server's runtime
  * sources reference through the target package's own `exports` map, and
  * asserts the file it lands on is inside something the runner copies.
  *

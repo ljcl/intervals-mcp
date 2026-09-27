@@ -281,3 +281,16 @@ mirror source paths (bun resolves against `/app` as repo root) and that the
 entry point a specifier resolves to is covered. It models only `--from=builder`
 copies as content, and it is sound only while COPYs are directories — narrowing
 one to a single file outruns the test.
+
+Each `docker.yml` build leg (amd64 and arm64) then starts the image before
+anything is published: `scripts/docker-smoke.sh` waits for the image's own
+`HEALTHCHECK` to report healthy, checks `/health` against `package.json`,
+the bearer gate, that `tools/list` matches `tool-surface.lock.json`, that every
+`ui://` app resource returns HTML, that a 2025-era `initialize` gets `-32022`,
+and that `docker stop` exits 0 promptly. A failing leg keeps the merge job from
+publishing any tag. Run it locally against any build:
+
+```bash
+docker build -f apps/server/Dockerfile -t intervals-mcp:smoke .
+scripts/docker-smoke.sh intervals-mcp:smoke
+```
