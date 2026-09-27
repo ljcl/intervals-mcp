@@ -69,8 +69,13 @@ export interface FitnessTrendData {
   /** Solved taper, when the caller named a target date. */
   taper: TaperPlan | null;
   current: TrendDay | null;
-  /** First projected date form returns positive, if it does. */
+  /**
+   * `endDate` when form is already positive today, else the first projected
+   * date it returns positive, if it does.
+   */
   tsbPositiveDate: string | null;
+  /** Today in the server's time zone, the window's last date. */
+  endDate?: string;
   bands: TrendBand[];
   /** The bands that run to today — what the text tool prints. */
   flags: string[];

@@ -188,7 +188,7 @@ export const mockBands: TrendBand[] = [
     endDate: "2026-05-20",
     days: 5,
     reason:
-      "TSB at or below -25 for 5 consecutive days — deep fatigue; an easy block or rest is overdue.",
+      "TSB was at or below -25 for 5 consecutive days (2026-05-16 to 2026-05-20): deep fatigue, since eased.",
   },
   {
     kind: "deep-fatigue",
@@ -196,7 +196,7 @@ export const mockBands: TrendBand[] = [
     endDate: "2026-05-27",
     days: 6,
     reason:
-      "TSB at or below -25 for 6 consecutive days — deep fatigue; an easy block or rest is overdue.",
+      "TSB was at or below -25 for 6 consecutive days (2026-05-22 to 2026-05-27): deep fatigue, since eased.",
   },
   {
     kind: "deep-fatigue",
@@ -204,7 +204,7 @@ export const mockBands: TrendBand[] = [
     endDate: "2026-06-02",
     days: 5,
     reason:
-      "TSB at or below -25 for 5 consecutive days — deep fatigue; an easy block or rest is overdue.",
+      "TSB was at or below -25 for 5 consecutive days (2026-05-29 to 2026-06-02): deep fatigue, since eased.",
   },
   {
     kind: "steep-ramp",
@@ -212,7 +212,7 @@ export const mockBands: TrendBand[] = [
     endDate: "2026-04-09",
     days: 3,
     reason:
-      "CTL climbed 5 in the last 7 days — a steep ramp; sustained rates above ~5/week carry injury and illness risk.",
+      "CTL climbed 5 in the 7 days to 2026-04-09: a steep ramp; sustained rates above ~5/week carry injury and illness risk.",
   },
   {
     kind: "steep-ramp",
@@ -220,7 +220,7 @@ export const mockBands: TrendBand[] = [
     endDate: "2026-06-02",
     days: 18,
     reason:
-      "CTL climbed 5.6 in the last 7 days — a steep ramp; sustained rates above ~5/week carry injury and illness risk.",
+      "CTL climbed 5.6 in the 7 days to 2026-06-02: a steep ramp; sustained rates above ~5/week carry injury and illness risk.",
   },
   {
     kind: "steep-ramp",
@@ -228,7 +228,7 @@ export const mockBands: TrendBand[] = [
     endDate: "2026-06-28",
     days: 7,
     reason:
-      "CTL climbed 5.3 in the last 7 days — a steep ramp; sustained rates above ~5/week carry injury and illness risk.",
+      "CTL climbed 5.3 in the last 7 days: a steep ramp; sustained rates above ~5/week carry injury and illness risk.",
   },
 ];
 
@@ -263,7 +263,7 @@ export const mockTaperWeeks: TaperWeek[] = [
 ];
 
 const mockFlags: string[] = [
-  "CTL climbed 5.3 in the last 7 days — a steep ramp; sustained rates above ~5/week carry injury and illness risk.",
+  "CTL climbed 5.3 in the last 7 days: a steep ramp; sustained rates above ~5/week carry injury and illness risk.",
 ];
 
 /** The default payload: recorded series plus a solved taper. */
@@ -284,6 +284,7 @@ export const mockFitnessTrendData: FitnessTrendData = {
   },
   current: mockSeries[mockSeries.length - 1]!,
   tsbPositiveDate: "2026-07-02",
+  endDate: "2026-06-28",
   bands: mockBands,
   flags: mockFlags,
   activitiesIncluded: 51,

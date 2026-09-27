@@ -58,6 +58,12 @@ export interface FitnessTrendAppData {
    */
   asOf?: string | null;
   /**
+   * Today in the server's time zone, the window's last date. A
+   * `tsbPositiveDate` equal to it means form is already positive today.
+   * Optional for the same reason as {@link FitnessTrendAppData.asOf}.
+   */
+  endDate?: string;
+  /**
    * Where `current` CTL/ATL came from (mirrors the text tool's `source`):
    * `"intervals.icu"` for the whole-body path, `"computed"` for run-only.
    * Optional for the same reason as {@link FitnessTrendAppData.asOf}.
@@ -74,6 +80,8 @@ export interface FitnessTrendAppData {
 export interface FitnessTrendAppMeta {
   /** Lookback window the caller asked for. */
   days: number;
+  /** Today in the server's time zone; see {@link FitnessTrendAppData.endDate}. */
+  endDate?: string;
   /** Count of activities within the window whose load fed the series. */
   activitiesIncluded: number;
   /** Count of activities within the window with no usable load, excluded from the series. */
@@ -131,6 +139,7 @@ export function mapFitnessTrendApp(
     activitiesIncluded: meta.activitiesIncluded,
     activitiesMissingLoad: meta.activitiesMissingLoad,
     asOf: trend.current?.date ?? null,
+    ...(meta.endDate !== undefined ? { endDate: meta.endDate } : {}),
     source: meta.source ?? "intervals.icu",
     runOnly: meta.runOnly ?? false,
     activityTypesIncluded: meta.activityTypesIncluded ?? [],

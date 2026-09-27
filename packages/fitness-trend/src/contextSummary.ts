@@ -1,4 +1,4 @@
-import { isPlanned, planDays, signedTsb } from "./normalize";
+import { isPlanned, isPositiveToday, planDays, signedTsb } from "./normalize";
 import { type FitnessTrendData } from "./types";
 
 /**
@@ -26,9 +26,11 @@ export function buildFitnessTrendContextSummary(
     if (!taper.feasible && taper.note) parts.push(taper.note);
   } else if (landing && !isPlanned(data)) {
     parts.push(
-      data.tsbPositiveDate
-        ? `Rest projection to ${landing.date}; form turns positive on ${data.tsbPositiveDate}.`
-        : `Rest projection to ${landing.date}, reaching form ${signedTsb(landing.tsb)}.`,
+      isPositiveToday(data)
+        ? `Rest projection to ${landing.date}; form is already positive today (${data.tsbPositiveDate}).`
+        : data.tsbPositiveDate
+          ? `Rest projection to ${landing.date}; form turns positive on ${data.tsbPositiveDate}.`
+          : `Rest projection to ${landing.date}, reaching form ${signedTsb(landing.tsb)}.`,
     );
   }
 

@@ -8,14 +8,19 @@ import {
   DEEP_FATIGUE_TSB,
   type FitnessTrendDay,
   type FitnessTrendLoadDay,
+  FRESH_EXIT_TSB,
+  FRESH_MERGE_GAP_DAYS,
+  FRESH_MIN_DAYS,
   FRESH_TSB,
   MAX_TAPER_DAILY_LOAD,
+  MAX_TAPER_DAYS,
   projectFromWellness,
   RAMP_RISK_PER_WEEK,
   RECENT_LOAD_DAYS,
   recentDailyLoad,
   solveTaperPlan,
   TAPER_WEEK_DECAY,
+  taperTargetDateError,
   taperWeekWeights,
   trendBands,
 } from "./fitnessTrend";
@@ -156,6 +161,24 @@ describe("buildFitnessTrend", () => {
       { projectDays: 2 },
     );
     expect(trend.current!.tsb).toBeLessThan(0);
+    expect(trend.tsbPositiveDate).toBeNull();
+  });
+
+  it("reports the last day, not tomorrow, when TSB is already positive", () => {
+    // A big block, then two weeks of rest: form is well positive today.
+    const trend = buildFitnessTrend(
+      { days: window("2026-07-10", 60, rangeLoads("2026-06-01", 25, 90)) },
+      { projectDays: 14 },
+    );
+    expect(trend.current!.tsb).toBeGreaterThan(0);
+    expect(trend.tsbPositiveDate).toBe("2026-07-10");
+  });
+
+  it("leaves tsbPositiveDate null with no projection, even when TSB is positive", () => {
+    const trend = buildFitnessTrend({
+      days: window("2026-07-10", 60, rangeLoads("2026-06-01", 25, 90)),
+    });
+    expect(trend.current!.tsb).toBeGreaterThan(0);
     expect(trend.tsbPositiveDate).toBeNull();
   });
 });
@@ -486,6 +509,15 @@ describe("solveTaperPlan", () => {
     expect(plan.achieved_tsb).toBe(-15);
   });
 
+  it("solves a very long plan without overflowing the call stack", () => {
+    // `Math.max(...shape)` threw RangeError for a far-future date (#44).
+    const plan = solveTaperPlan(start, "2026-06-28", {
+      targetDate: addDays("2026-06-28", 300_000),
+      targetTsb: 10,
+    });
+    expect(plan.days).toHaveLength(300_000);
+  });
+
   it("omits pct_of_recent when there is no recent load to compare to", () => {
     const plan = solveTaperPlan(start, "2026-06-28", {
       targetDate: "2026-07-05",
@@ -510,6 +542,40 @@ describe("solveTaperPlan", () => {
     const first = trend.taper!.days[0]!;
     expect(Math.abs(first.ctl - current.ctl)).toBeLessThan(10);
     expect(trend.taper!.recent_daily_load).toBeGreaterThan(0);
+  });
+});
+
+describe("taperTargetDateError", () => {
+  const TODAY = "2026-09-27";
+
+  it("accepts a date from tomorrow to MAX_TAPER_DAYS ahead", () => {
+    expect(taperTargetDateError(addDays(TODAY, 1), TODAY)).toBeNull();
+    expect(
+      taperTargetDateError(addDays(TODAY, MAX_TAPER_DAYS), TODAY),
+    ).toBeNull();
+  });
+
+  it("rejects a date past the horizon, naming the last allowed date", () => {
+    const error = taperTargetDateError("2062-10-17", TODAY);
+    expect(error).toContain(`at most ${MAX_TAPER_DAYS} days`);
+    expect(error).toContain(addDays(TODAY, MAX_TAPER_DAYS));
+    expect(
+      taperTargetDateError(addDays(TODAY, MAX_TAPER_DAYS + 1), TODAY),
+    ).not.toBeNull();
+    expect(taperTargetDateError("9999-12-31", TODAY)).not.toBeNull();
+  });
+
+  it("rejects today and past dates", () => {
+    expect(taperTargetDateError(TODAY, TODAY)).toContain("not after today");
+    expect(taperTargetDateError("2026-01-01", TODAY)).toContain(
+      "not after today",
+    );
+  });
+
+  it("rejects an impossible calendar date instead of rolling it over", () => {
+    expect(taperTargetDateError("2027-02-30", TODAY)).toContain(
+      "not a real calendar date",
+    );
   });
 });
 
@@ -583,20 +649,100 @@ describe("trendBands", () => {
     );
   });
 
-  it("bands each fresh stretch separately", () => {
-    const series = [
-      day("2026-07-01", FRESH_TSB + 1),
-      day("2026-07-02", 0),
-      day("2026-07-03", FRESH_TSB),
-      day("2026-07-04", FRESH_TSB + 4),
-    ];
-    const fresh = trendBands(series).filter((b) => b.kind === "fresh");
-    expect(fresh.map((b) => [b.start_date, b.end_date])).toEqual([
-      ["2026-07-01", "2026-07-01"],
-      ["2026-07-03", "2026-07-04"],
+  /** One `day` per TSB value, on consecutive dates from `start`. */
+  function tsbDays(start: string, values: number[]): FitnessTrendDay[] {
+    return values.map((tsb, i) => day(addDays(start, i), tsb));
+  }
+  const fresh = (series: FitnessTrendDay[]) =>
+    trendBands(series).filter((b) => b.kind === "fresh");
+
+  it("bands fresh stretches more than FRESH_MERGE_GAP_DAYS apart separately", () => {
+    const series = tsbDays("2026-07-01", [
+      ...Array(FRESH_MIN_DAYS).fill(FRESH_TSB + 1),
+      ...Array(FRESH_MERGE_GAP_DAYS + 1).fill(0),
+      ...Array(FRESH_MIN_DAYS).fill(FRESH_TSB + 4),
+      0,
     ]);
-    // Reason quotes the band's own last day, not the series' last day.
-    expect(fresh[0]!.reason).toContain(`TSB at ${FRESH_TSB + 1}`);
+    expect(fresh(series).map((b) => [b.start_date, b.end_date])).toEqual([
+      ["2026-07-01", "2026-07-03"],
+      ["2026-07-07", "2026-07-09"],
+    ]);
+  });
+
+  it("keeps one band through a 1-day dip below +15 inside a 3-week fresh stretch", () => {
+    // A dip into the hysteresis zone never ends the band; a dip below it
+    // ends the run for a day, and the merge joins the two halves again.
+    for (const dip of [FRESH_EXIT_TSB, FRESH_EXIT_TSB - 8]) {
+      const values = Array<number>(21).fill(FRESH_TSB + 3);
+      values[10] = dip;
+      const series = [...tsbDays("2026-07-01", values), day("2026-07-22", 0)];
+      const bands = fresh(series);
+      expect(bands).toHaveLength(1);
+      expect(bands[0]).toMatchObject({
+        start_date: "2026-07-01",
+        end_date: "2026-07-21",
+        days: 21,
+      });
+    }
+  });
+
+  it("makes a few bands, not stripes, when TSB moves around +15 for weeks", () => {
+    // The live case from #44: 42 days wobbling across +15 gave 8 bands,
+    // 6 of them 1 day long.
+    const wobble = [16, 14, 15, 13, 16, 11, 15, 14, 17, 12];
+    const values = Array.from({ length: 42 }, (_, i) => wobble[i % 10]!);
+    const bands = fresh(tsbDays("2026-07-01", values));
+    expect(bands).toHaveLength(1);
+    expect(bands[0]!.days).toBe(42);
+  });
+
+  it("drops a short fresh band unless it runs to the last day", () => {
+    const short = Array(FRESH_MIN_DAYS - 1).fill(FRESH_TSB + 2);
+    expect(fresh(tsbDays("2026-07-01", [...short, 0, 0, 0, 0]))).toEqual([]);
+    // The same short spell at the end is today's state, so it bands and flags.
+    const current = tsbDays("2026-07-01", [0, 0, ...short]);
+    expect(fresh(current)).toHaveLength(1);
+    expect(computeFlags(current).join(" ")).toContain("race-ready now");
+  });
+
+  it("uses the past tense for bands that ended, and 'now' only for the current one", () => {
+    const deep = Array(DEEP_FATIGUE_DAYS).fill(DEEP_FATIGUE_TSB - 2);
+    const series = tsbDays("2026-07-01", [
+      ...deep,
+      0,
+      ...Array(4).fill(FRESH_TSB + 2),
+      0,
+      0,
+      0,
+      ...Array(4).fill(FRESH_TSB + 1),
+    ]);
+    const bands = trendBands(series);
+    const [fatigue, oldFresh, nowFresh] = bands;
+    expect(fatigue!.reason).toContain("TSB was at or below");
+    expect(fatigue!.reason).not.toContain("overdue");
+    expect(oldFresh!.reason).toBe(
+      `Fresh from 2026-07-07 to 2026-07-10 (4 days, TSB peak +${FRESH_TSB + 2}).`,
+    );
+    expect(nowFresh!.reason).toContain(`TSB at +${FRESH_TSB + 1}`);
+    expect(nowFresh!.reason).toContain("fresh since 2026-07-14");
+    expect(nowFresh!.reason).toContain("race-ready now");
+    // Only the current band is a flag.
+    expect(computeFlags(series)).toEqual([nowFresh!.reason]);
+  });
+
+  it("dates a past steep ramp to its last day rather than 'the last 7 days'", () => {
+    const series = [
+      ...Array.from({ length: 10 }, (_, i) =>
+        day(`2026-07-${String(i + 1).padStart(2, "0")}`, -5, 40 + i * 2),
+      ),
+      ...Array.from({ length: 8 }, (_, i) =>
+        day(`2026-07-${String(i + 11).padStart(2, "0")}`, -5, 58),
+      ),
+    ];
+    const ramp = trendBands(series).filter((b) => b.kind === "steep-ramp");
+    expect(ramp).toHaveLength(1);
+    expect(ramp[0]!.reason).toContain(`in the 7 days to ${ramp[0]!.end_date}`);
+    expect(computeFlags(series)).toEqual([]);
   });
 
   it("bands a steep CTL ramp and needs a week of runway first", () => {
@@ -791,6 +937,20 @@ describe("projectFromWellness", () => {
       { projectDays: 7 },
     );
     expect(result.unsyncedDays).toBe(2);
+    expect(result.tsbPositiveDate).toBe(ENDDATE);
+  });
+
+  it("reports endDate, not tomorrow, when a synced series is already positive", () => {
+    const result = projectFromWellness(
+      {
+        series,
+        seed: { ctl: 50, atl: 38 },
+        asOfDate: ENDDATE,
+        endDate: ENDDATE,
+      },
+      { projectDays: 14 },
+    );
+    expect(result.unsyncedDays).toBe(0);
     expect(result.tsbPositiveDate).toBe(ENDDATE);
   });
 

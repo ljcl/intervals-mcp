@@ -25,6 +25,7 @@ import {
   type CadenceTrendData,
 } from "./cadenceTrendData";
 import { getIntervalsApiKey, getTimeZone } from "./config";
+import { taperTargetDateError } from "./fitnessTrend";
 import {
   type FitnessTrendAppData,
   mapFitnessTrendApp,
@@ -950,6 +951,7 @@ async function loadFitnessTrendAppData(
     },
     {
       days,
+      endDate: loaded.endDate,
       activitiesIncluded: loaded.activitiesIncluded,
       activitiesMissingLoad: loaded.activitiesMissingLoad,
       source: loaded.source,
@@ -960,11 +962,34 @@ async function loadFitnessTrendAppData(
   );
 }
 
+/**
+ * The taper target check both fitness-trend app tools run before any fetch,
+ * the same `taperTargetDateError` the text tool runs: a date too far ahead
+ * would otherwise solve a plan of any size.
+ */
+function fitnessTrendTargetError(
+  args: Record<string, unknown>,
+): ToolCallResult | null {
+  if (typeof args.targetDate !== "string") return null;
+  const message = taperTargetDateError(
+    args.targetDate,
+    todayLocal(getTimeZone()),
+  );
+  return message
+    ? {
+        isError: true,
+        content: [{ type: "text", text: prefixedErrorText(message) }],
+      }
+    : null;
+}
+
 async function handleGetFitnessTrendData(
   args: Record<string, unknown>,
   token: string,
   progress: ReportProgress,
 ): Promise<ToolCallResult> {
+  const invalid = fitnessTrendTargetError(args);
+  if (invalid) return invalid;
   const data = await loadFitnessTrendAppData(token, args, progress);
   return { content: [{ type: "text", text: JSON.stringify(data) }] };
 }
@@ -974,6 +999,8 @@ async function handleViewFitnessTrend(
   token: string,
   progress: ReportProgress,
 ): Promise<ToolCallResult> {
+  const invalid = fitnessTrendTargetError(args);
+  if (invalid) return invalid;
   const data = await loadFitnessTrendAppData(token, args, progress);
   const current = data.current;
   const lines = [
@@ -996,7 +1023,7 @@ async function handleViewFitnessTrend(
         )}; lands TSB ${taper.achievedTsb >= 0 ? "+" : ""}${taper.achievedTsb}`,
     );
     if (!taper.feasible && taper.note) lines.push(`Warning: ${taper.note}`);
-  } else if (data.tsbPositiveDate === todayLocal(getTimeZone())) {
+  } else if (data.tsbPositiveDate && data.tsbPositiveDate === data.endDate) {
     lines.push(`Form is already positive today (${data.tsbPositiveDate})`);
   } else if (data.tsbPositiveDate) {
     lines.push(

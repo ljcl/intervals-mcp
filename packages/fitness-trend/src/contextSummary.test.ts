@@ -33,6 +33,16 @@ describe("buildFitnessTrendContextSummary", () => {
     expect(summary).not.toContain("Taper plan");
   });
 
+  it("says form is already positive today, not that it turns positive", () => {
+    const today = mockRestProjectionData.endDate!;
+    const summary = buildFitnessTrendContextSummary({
+      ...mockRestProjectionData,
+      tsbPositiveDate: today,
+    })!;
+    expect(summary).toContain(`form is already positive today (${today})`);
+    expect(summary).not.toContain("turns positive on");
+  });
+
   it("names the landing form when rest never turns form positive", () => {
     const summary = buildFitnessTrendContextSummary({
       ...mockRestProjectionData,

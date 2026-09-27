@@ -410,7 +410,12 @@ weeks take them. Calls `get-fitness-trend-data` on mount with `days`,
   without copying `DEEP_FATIGUE_TSB` and friends across the boundary, and a
   chart shading a different "deep fatigue" than the prose describes is the
   drift the split prevents. An old resolved block still shades; only a current
-  one flags.
+  one flags. Fresh bands have hysteresis and merge server-side, so TSB moving
+  around +15 shades one band, not stripes.
+- The "Fresh on" tile and the context summary read `tsbPositiveDate` against
+  the payload's `endDate` (today): equal means form is already positive today,
+  so the tile says "Today" rather than a date. The server sets the date; the
+  app only compares.
 - `ComposedChart`: fitness `Area` left axis, fatigue line beside it, form
   thinner line on its own right axis with dashed zero line. The forward half
   draws as separate `plan*` series with `strokeDasharray`; handover day carries

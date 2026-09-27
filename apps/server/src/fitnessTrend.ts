@@ -12,7 +12,7 @@
  * exactly requires exactly this split. Callers own how load is measured
  * (relative effort, TRIMP, or anything else) and how it maps to each series.
  */
-import { addDays, daysBetween } from "./utils/localDate";
+import { addDays, daysBetween, isValidCalendarDate } from "./utils/localDate";
 import { PACE_ACTIVITY_TYPES } from "./utils/running";
 
 /** One day's inputs to the CTL/ATL recurrence. */
@@ -135,8 +135,9 @@ export interface FitnessTrendResult {
   /** Decay projection past endDate (zero load by default); empty when not requested. */
   projection: FitnessTrendDay[];
   /**
-   * First projected date on which TSB crosses ≥ 0, or null if it never does
-   * within the projection (or no projection was requested).
+   * The last input day when its TSB is already ≥ 0, else the first projected
+   * date on which TSB reaches 0; null if it never does within the projection
+   * (or no projection was requested). See `tsbPositiveFrom`.
    */
   tsbPositiveDate: string | null;
   /** Solved taper plan when `taper` was requested, else null. */
@@ -156,6 +157,16 @@ export const DEEP_FATIGUE_TSB = -25;
 export const DEEP_FATIGUE_DAYS = 5;
 /** TSB at or above this reads as fresh / race-ready (detraining if held). */
 export const FRESH_TSB = 15;
+/**
+ * Once a fresh band has started, it holds until TSB drops below this. With no
+ * gap between entry and exit, TSB moving around +15 for weeks cut one fresh
+ * spell into many 1-day bands (#44).
+ */
+export const FRESH_EXIT_TSB = 12;
+/** Fewest days a fresh band needs, unless it runs to the last day. */
+export const FRESH_MIN_DAYS = 3;
+/** Fresh bands with this many days or fewer between them merge into one. */
+export const FRESH_MERGE_GAP_DAYS = 2;
 /** CTL gain per week above which the ramp carries injury/illness risk. */
 export const RAMP_RISK_PER_WEEK = 5;
 /**
@@ -173,6 +184,14 @@ export const RECENT_LOAD_DAYS = 28;
  * solver clamps there and reports the TSB that lands instead.
  */
 export const MAX_TAPER_DAILY_LOAD = 200;
+/**
+ * Furthest ahead a taper target date may be. The solver sizes its day array
+ * from the distance to the target, so an unbounded date is an unbounded
+ * response: a typo like 2062-10-17 gave a 13,170-day plan of about 950 KB
+ * (#44). A race more than about six months out needs a training plan, not a
+ * taper.
+ */
+export const MAX_TAPER_DAYS = 180;
 
 const CTL_DECAY = Math.exp(-1 / CTL_TIME_CONSTANT_DAYS);
 const ATL_DECAY = Math.exp(-1 / ATL_TIME_CONSTANT_DAYS);
@@ -238,7 +257,10 @@ export function buildFitnessTrend(
     days: series,
     current: series[series.length - 1] ?? null,
     projection,
-    tsbPositiveDate,
+    tsbPositiveDate:
+      projection.length > 0
+        ? tsbPositiveFrom(ctl - atl, endDate, tsbPositiveDate)
+        : null,
     taper: taper
       ? solveTaperPlan(
           { ctl, atl },
@@ -326,6 +348,45 @@ export function projectLoads(
   }
 
   return { days, tsbPositiveDate };
+}
+
+/**
+ * The one rule for `tsbPositiveDate`, on every path that projects: `today`
+ * when today's raw TSB is already ≥ 0, else the first projected date it
+ * reaches 0 (`crossing`). A projection starts the day after today, so without
+ * the first branch a form of +12 today read as "returns positive" tomorrow
+ * (#44). Callers print `tsbPositiveDate === today` as "already positive today".
+ */
+function tsbPositiveFrom(
+  todayTsb: number,
+  today: string,
+  crossing: string | null,
+): string | null {
+  return todayTsb >= 0 ? today : crossing;
+}
+
+/**
+ * Why a taper cannot be solved for `targetDate` from `today`, or null when it
+ * can: the date must be a real calendar date, after today, and at most
+ * {@link MAX_TAPER_DAYS} ahead. Every caller checks this before any fetch,
+ * so a typo gets a clear error instead of a huge plan, a stack overflow
+ * (9999-12-31), or a date that rolls over (2027-02-30 into March).
+ */
+export function taperTargetDateError(
+  targetDate: string,
+  today: string,
+): string | null {
+  if (!isValidCalendarDate(targetDate)) {
+    return `targetDate ${targetDate} is not a real calendar date. Use YYYY-MM-DD.`;
+  }
+  const days = daysBetween(today, targetDate);
+  if (days < 1) {
+    return `targetDate ${targetDate} is not after today (${today}). A taper plan needs a date in the future.`;
+  }
+  if (days > MAX_TAPER_DAYS) {
+    return `targetDate ${targetDate} is ${days} days after today (${today}); a taper plan covers at most ${MAX_TAPER_DAYS} days. Check the date, or pick one on or before ${addDays(today, MAX_TAPER_DAYS)}.`;
+  }
+  return null;
 }
 
 /** TSB the recurrence lands on after `loads`, unrounded. */
@@ -426,7 +487,10 @@ export function solveTaperPlan(
     note = `Even complete rest only reaches TSB ${signedRound1(restTsb)} by ${targetDate}, short of the ${signedRound1(targetTsb)} target: the target date is too soon, or the target too high.`;
   }
 
-  const peakWeight = Math.max(...shape);
+  // A loop, not `Math.max(...shape)`: spreading a long array overflows the
+  // call stack.
+  let peakWeight = 0;
+  for (const weight of shape) if (weight > peakWeight) peakWeight = weight;
   const peakLoad = peakWeight * scale;
   if (peakLoad > MAX_TAPER_DAILY_LOAD) {
     scale = MAX_TAPER_DAILY_LOAD / peakWeight;
@@ -593,7 +657,16 @@ export function projectFromWellness(
   });
   return {
     projection: projected.days,
-    tsbPositiveDate: projected.tsbPositiveDate,
+    // With unsynced days, endDate is in the catch-up and `positiveDateFrom`
+    // already reports it; synced, the seed is today's value.
+    tsbPositiveDate:
+      unsyncedDays > 0
+        ? projected.tsbPositiveDate
+        : tsbPositiveFrom(
+            seed.ctl - seed.atl,
+            endDate,
+            projected.tsbPositiveDate,
+          ),
     taper: null,
     unsyncedDays,
     warnings,
@@ -611,7 +684,11 @@ export interface TrendBand {
   start_date: string;
   end_date: string;
   days: number;
-  /** The sentence `computeFlags` prints when the band reaches today. */
+  /**
+   * What the band means: in the present tense ("now") when it runs to the
+   * last day, the sentence `computeFlags` prints; in the past tense when it
+   * ended earlier.
+   */
   reason: string;
 }
 
@@ -627,15 +704,27 @@ export interface TrendBand {
  * than zero-filled): a run breaks at a gap rather than bridging it, and the
  * 7-day CTL ramp looks its prior day up by date, not by array index, so a
  * gap elsewhere in the series never misattributes which day is "7 days ago".
+ *
+ * Fresh bands are the one kind with hysteresis: a band starts at
+ * {@link FRESH_TSB} and holds until TSB drops below {@link FRESH_EXIT_TSB};
+ * bands at most {@link FRESH_MERGE_GAP_DAYS} apart merge (also across a
+ * short wellness gap); and a band needs {@link FRESH_MIN_DAYS} days unless
+ * it runs to the last day, which is the current state `computeFlags` reports.
  */
 export function trendBands(series: FitnessTrendDay[]): TrendBand[] {
   const bands: TrendBand[] = [];
   if (series.length === 0) return bands;
 
+  const lastIndex = series.length - 1;
   const indexByDate = new Map(series.map((day, index) => [day.date, index]));
+  const calendarDays = (start: number, end: number) =>
+    daysBetween(series[start]!.date, series[end]!.date) + 1;
 
+  type Test = (day: FitnessTrendDay, index: number) => boolean;
+  /** Runs that start where `enter` holds and continue while `stay` holds. */
   const runs = (
-    predicate: (day: FitnessTrendDay, index: number) => boolean,
+    enter: Test,
+    stay: Test = enter,
   ): { start: number; end: number }[] => {
     const found: { start: number; end: number }[] = [];
     let start: number | null = null;
@@ -644,19 +733,14 @@ export function trendBands(series: FitnessTrendDay[]): TrendBand[] {
       const day = series[i]!;
       const gapFromPrev =
         prevDate !== null && addDays(prevDate, 1) !== day.date;
-      if (gapFromPrev && start !== null) {
+      if (start !== null && (gapFromPrev || !stay(day, i))) {
         found.push({ start, end: i - 1 });
         start = null;
       }
-      if (predicate(day, i)) {
-        if (start === null) start = i;
-      } else if (start !== null) {
-        found.push({ start, end: i - 1 });
-        start = null;
-      }
+      if (start === null && enter(day, i)) start = i;
       prevDate = day.date;
     }
-    if (start !== null) found.push({ start, end: series.length - 1 });
+    if (start !== null) found.push({ start, end: lastIndex });
     return found;
   };
 
@@ -669,7 +753,7 @@ export function trendBands(series: FitnessTrendDay[]): TrendBand[] {
     kind,
     start_date: series[start]!.date,
     end_date: series[end]!.date,
-    days: end - start + 1,
+    days: calendarDays(start, end),
     reason,
   });
 
@@ -682,18 +766,44 @@ export function trendBands(series: FitnessTrendDay[]): TrendBand[] {
         "deep-fatigue",
         start,
         end,
-        `TSB at or below ${DEEP_FATIGUE_TSB} for ${days} consecutive days: deep fatigue; an easy block or rest is overdue.`,
+        end === lastIndex
+          ? `TSB at or below ${DEEP_FATIGUE_TSB} for ${days} consecutive days: deep fatigue; an easy block or rest is overdue.`
+          : `TSB was at or below ${DEEP_FATIGUE_TSB} for ${days} consecutive days (${series[start]!.date} to ${series[end]!.date}): deep fatigue, since eased.`,
       ),
     );
   }
 
-  for (const { start, end } of runs((day) => day.tsb >= FRESH_TSB)) {
+  const freshRuns: { start: number; end: number }[] = [];
+  for (const run of runs(
+    (day) => day.tsb >= FRESH_TSB,
+    (day) => day.tsb >= FRESH_EXIT_TSB,
+  )) {
+    const prev = freshRuns[freshRuns.length - 1];
+    const daysApart = prev
+      ? daysBetween(series[prev.end]!.date, series[run.start]!.date) - 1
+      : Number.POSITIVE_INFINITY;
+    if (prev && daysApart <= FRESH_MERGE_GAP_DAYS) {
+      prev.end = run.end;
+    } else {
+      freshRuns.push({ ...run });
+    }
+  }
+  for (const { start, end } of freshRuns) {
+    const days = calendarDays(start, end);
+    if (end !== lastIndex && days < FRESH_MIN_DAYS) continue;
+    let peak = series[start]!.tsb;
+    for (let i = start + 1; i <= end; i++) {
+      peak = Math.max(peak, series[i]!.tsb);
+    }
+    const startDate = series[start]!.date;
     bands.push(
       band(
         "fresh",
         start,
         end,
-        `TSB at ${series[end]!.tsb} (≥ +${FRESH_TSB}): fresh and race-ready now, but fitness decays if this holds for long.`,
+        end === lastIndex
+          ? `TSB at ${signedRound1(series[end]!.tsb)} (fresh since ${startDate}, peak ${signedRound1(peak)}): fresh and race-ready now, but fitness decays if this holds for long.`
+          : `Fresh from ${startDate} to ${series[end]!.date} (${days} days, TSB peak ${signedRound1(peak)}).`,
       ),
     );
   }
@@ -713,7 +823,7 @@ export function trendBands(series: FitnessTrendDay[]): TrendBand[] {
         "steep-ramp",
         start,
         end,
-        `CTL climbed ${rampAt(end)} in the last 7 days: a steep ramp; sustained rates above ~${RAMP_RISK_PER_WEEK}/week carry injury and illness risk.`,
+        `CTL climbed ${rampAt(end)} in the ${end === lastIndex ? "last 7 days" : `7 days to ${series[end]!.date}`}: a steep ramp; sustained rates above ~${RAMP_RISK_PER_WEEK}/week carry injury and illness risk.`,
       ),
     );
   }

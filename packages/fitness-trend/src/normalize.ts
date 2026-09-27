@@ -141,6 +141,14 @@ export function countBandKinds(
   return [...counts].map(([kind, count]) => ({ kind, count }));
 }
 
+/**
+ * True when the server reported form as already positive today: it sets
+ * `tsbPositiveDate` to today (`endDate`) then, not to the first projected day.
+ */
+export function isPositiveToday(data: FitnessTrendData): boolean {
+  return data.tsbPositiveDate !== null && data.tsbPositiveDate === data.endDate;
+}
+
 /** SummaryBar row: today's fitness, fatigue, form, and what comes next. */
 export function buildSummaryStats(data: FitnessTrendData): SummaryStat[] {
   const current = data.current;
@@ -158,7 +166,9 @@ export function buildSummaryStats(data: FitnessTrendData): SummaryStat[] {
   } else if (data.tsbPositiveDate) {
     stats.push({
       label: "Fresh on",
-      value: formatShortDate(data.tsbPositiveDate),
+      value: isPositiveToday(data)
+        ? "Today"
+        : formatShortDate(data.tsbPositiveDate),
     });
   } else {
     stats.push({ label: "Activities", value: `${data.activitiesIncluded}` });

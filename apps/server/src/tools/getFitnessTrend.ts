@@ -2,8 +2,10 @@ import { z } from "zod";
 import { getTimeZone } from "../config";
 import {
   type FitnessTrendDay,
+  MAX_TAPER_DAYS,
   type PlannedLoad,
   type TaperWeek,
+  taperTargetDateError,
 } from "../fitnessTrend";
 import { loadFitnessTrend } from "../loadFitnessTrend";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
@@ -14,7 +16,7 @@ import {
   todayLocal,
 } from "../utils/localDate";
 import { READ_ONLY } from "./_annotations";
-import { toolErrorText } from "./_errors";
+import { prefixedErrorText, toolErrorText } from "./_errors";
 import { FitnessTrendOutputSchema, warnOnSchemaDrift } from "./outputs";
 
 const name = "get-fitness-trend";
@@ -88,14 +90,10 @@ const inputSchema = z.object({
         "[{ date: YYYY-MM-DD, load }], dates after today. Dates inside the " +
         "projection window that are not listed count as rest (zero).",
     ),
-  targetDate: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, {
-      error: "Invalid target date. Use YYYY-MM-DD.",
-    })
+  targetDate: dateInputSchema
     .optional()
     .describe(
-      "Race or peak date (YYYY-MM-DD) to solve a load taper for. Omit for no taper plan.",
+      `Race or peak date (YYYY-MM-DD) to solve a load taper for: after today, at most ${MAX_TAPER_DAYS} days ahead. Omit for no taper plan.`,
     ),
   targetTsb: z
     .number()
@@ -199,6 +197,17 @@ export const getFitnessTrendTool = {
       const tz = getTimeZone();
       const endDate = todayLocal(tz);
       const windowStart = addDays(endDate, -(days - 1));
+      const targetError = targetDate
+        ? taperTargetDateError(targetDate, endDate)
+        : null;
+      if (targetError) {
+        return {
+          content: [
+            { type: "text" as const, text: prefixedErrorText(targetError) },
+          ],
+          isError: true,
+        };
+      }
       const resolvedProjectDays = resolveProjectDays(
         projectDays,
         typedPlannedLoads,

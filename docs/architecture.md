@@ -303,6 +303,30 @@ day (`MAX_TAPER_DAILY_LOAD`). Both report the form that actually lands rather
 than inventing a plan. Keep new projection math here, not in a tool —
 `get-fitness-trend` and the fitness-trend app both read one solve.
 
+The solver sizes its day array from the distance to the target date, so the
+date is checked before any fetch: `taperTargetDateError` requires a real
+calendar date, after today, and at most `MAX_TAPER_DAYS` (180) ahead. The text
+tool and both app tools call it. Before #44 the date had only a regex check:
+a typo like 2062-10-17 gave a 13,170-day plan of about 950 KB, 9999-12-31
+overflowed the call stack in `Math.max(...shape)` (now a loop), and
+2027-02-30 rolled over into March.
+
+**Form turning positive has one rule.** `tsbPositiveFrom` in `fitnessTrend.ts`
+sets `tsbPositiveDate` for the run-only, whole-body synced and whole-body
+lagging paths: today when today's raw TSB is already ≥ 0, else the first
+projected date it reaches 0. The projection starts the day after today, so
+before #44 a form of +12 today read as "returns positive" tomorrow. The
+callers print `tsbPositiveDate === today` as "already positive today".
+
+**Warning bands.** `trendBands` dates every stretch, and `computeFlags` is
+the subset that runs to the last day, so the chart and the prose agree. Fresh
+bands have hysteresis (start at `FRESH_TSB` +15, hold until TSB drops below
+`FRESH_EXIT_TSB` +12), merge across a gap of up to `FRESH_MERGE_GAP_DAYS` (2),
+and need `FRESH_MIN_DAYS` (3) unless they run to the last day. Before #44, TSB
+moving around +15 for 42 days gave 8 fresh bands, 6 of them 1 day long, and
+the chart showed stripes. Reasons are in the present tense only for the bands
+that are also flags; a band that ended earlier reads in the past tense.
+
 **Interval detection pairs by adjacency.** `computeIntervalAnalysis` in
 `intervalAnalysis.ts` builds work segments and rests in one ordered pass, and
 each rest records the segment that ends right before it. The rests and

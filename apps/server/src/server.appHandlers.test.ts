@@ -745,6 +745,48 @@ describe("fitness trend handlers", () => {
     expect(text).not.toContain(`form turns positive on ${addDays(TODAY, -1)}`);
   });
 
+  it("view-fitness-trend and its data feed say already positive when synced and positive", async () => {
+    for (let call = 0; call < 2; call++) {
+      mockedWellness.mockResolvedValueOnce(
+        laggingPositiveWellnessSeries(TODAY, 91, 0),
+      );
+      mockedIntervalsList.mockResolvedValueOnce([]);
+    }
+
+    const view = await dispatchToolCall("view-fitness-trend", {});
+    expect(view.content[0]?.text).toContain(
+      `Form is already positive today (${TODAY})`,
+    );
+    const data = JSON.parse(
+      (await dispatchToolCall("get-fitness-trend-data", {})).content[0]?.text ??
+        "",
+    );
+    expect(data.tsbPositiveDate).toBe(TODAY);
+    expect(data.endDate).toBe(TODAY);
+  });
+
+  it.each(["view-fitness-trend", "get-fitness-trend-data"])(
+    "%s rejects a target date past the taper horizon before any fetch",
+    async (tool) => {
+      const result = await dispatchToolCall(tool, { targetDate: "2062-10-17" });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain("at most 180 days");
+      expect(mockedWellness).not.toHaveBeenCalled();
+      expect(mockedIntervalsList).not.toHaveBeenCalled();
+    },
+  );
+
+  it("get-fitness-trend-data rejects a target date on or before today", async () => {
+    const result = await dispatchToolCall("get-fitness-trend-data", {
+      targetDate: TODAY,
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("not after today");
+    expect(mockedWellness).not.toHaveBeenCalled();
+  });
+
   it("rejects a malformed target date via the input schema", async () => {
     const result = await dispatchToolCall("get-fitness-trend-data", {
       targetDate: "next Sunday",

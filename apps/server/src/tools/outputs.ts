@@ -333,7 +333,9 @@ export const FitnessTrendOutputSchema = z.object({
   tsb_positive_date: z
     .string()
     .nullable()
-    .describe("First projected date TSB crosses ≥ 0, if projected"),
+    .describe(
+      "If projected: end_date when TSB is already ≥ 0 today, else the first projected date TSB reaches 0; null if it does not",
+    ),
   taper: TaperPlanSchema.nullable().describe(
     "Solved load taper to the requested target date, or null if none was requested",
   ),

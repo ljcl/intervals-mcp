@@ -428,6 +428,50 @@ describe("get-fitness-trend execute (whole-body, default)", () => {
     expect(text).not.toContain(`TSB returns positive on ${addDays(TODAY, -1)}`);
   });
 
+  it("says TSB is already positive today, not tomorrow, when wellness is synced", async () => {
+    mockedWellness.mockResolvedValueOnce(
+      wellnessWindow(TODAY, 3, () => ({ ctl: 50, atl: 38 })),
+    );
+    mockedListActivities.mockResolvedValueOnce([]);
+
+    const result = await getFitnessTrendTool.execute(
+      { ...DEFAULT_INPUT, days: 3, projectDays: 14 },
+      "test-key",
+    );
+
+    const structured = result.structuredContent as {
+      tsb_positive_date: string | null;
+    };
+    expect(structured.tsb_positive_date).toBe(TODAY);
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain(`TSB is already positive today (${TODAY})`);
+    expect(text).not.toContain("returns positive on");
+  });
+
+  it.each([
+    ["far in the future", "2062-10-17", "at most 180 days"],
+    ["at the end of time", "9999-12-31", "at most 180 days"],
+    ["today", TODAY, "not after today"],
+    ["in the past", "2026-01-01", "not after today"],
+    ["not a real date", "2027-02-30", "not a real calendar date"],
+  ])(
+    "rejects a targetDate %s before any fetch",
+    async (_, targetDate, message) => {
+      const result = await getFitnessTrendTool.execute(
+        { ...DEFAULT_INPUT, targetDate },
+        "test-key",
+      );
+
+      expect(result.isError).toBe(true);
+      const text = result.content[0]?.text ?? "";
+      expect(text.startsWith("❌")).toBe(true);
+      expect(text).toContain(message);
+      expect(text.length).toBeLessThan(400);
+      expect(mockedWellness).not.toHaveBeenCalled();
+      expect(mockedListActivities).not.toHaveBeenCalled();
+    },
+  );
+
   it("solves a taper plan to a target date and prints the weekly plan", async () => {
     mockedWellness.mockResolvedValueOnce(
       wellnessWindow(TODAY, 30, (daysAgo) => ({
@@ -568,6 +612,29 @@ describe("get-fitness-trend execute (runOnly: true)", () => {
     expect(structured.activities_included).toBe(20);
     expect(structured.warnings.join(" ")).toContain("zero-seeded");
     expect(FitnessTrendOutputSchema.safeParse(structured).success).toBe(true);
+  });
+
+  it("says TSB is already positive today after a rest week", async () => {
+    // Steady running that stopped 10 days ago: fatigue has faded, form is up.
+    const activities = Array.from({ length: 60 }, (_, i) =>
+      run(i + 10, { icu_training_load: 70 }),
+    );
+    mockedListActivities.mockResolvedValueOnce(activities);
+
+    const result = await getFitnessTrendTool.execute(
+      { ...DEFAULT_INPUT, days: 30, runOnly: true, projectDays: 14 },
+      "test-key",
+    );
+
+    const structured = result.structuredContent as {
+      current: { tsb: number } | null;
+      tsb_positive_date: string | null;
+    };
+    expect(structured.current!.tsb).toBeGreaterThan(0);
+    expect(structured.tsb_positive_date).toBe(TODAY);
+    expect(result.content[0]?.text).toContain(
+      `TSB is already positive today (${TODAY})`,
+    );
   });
 
   it("only sums Run/TrailRun/VirtualRun load, ignoring other types", async () => {

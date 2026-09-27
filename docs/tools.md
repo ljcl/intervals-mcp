@@ -450,13 +450,24 @@ capped at 60) projects TSB forward assuming rest, or `plannedLoads`
 (`[{ date: YYYY-MM-DD, load }]`, dates after today; unlisted dates in the
 projection count as rest; an entry on or before today, or beyond the
 projection, is ignored and named in a warning) projects with a specific plan
-instead. `targetDate`/`targetTsb` solve a load taper landing on a target
-form, unchanged from before. `get-fitness-trend` and the
+instead. `tsb_positive_date` (only with a projection) is today when TSB is
+already ≥ 0 today, and the text says "already positive today"; otherwise it is
+the first projected date TSB reaches 0, or null. `targetDate`/`targetTsb`
+solve a load taper landing on a target form. `targetDate` must be a real
+calendar date, after today, and at most 180 days ahead (`MAX_TAPER_DAYS`);
+any other date is an error before any fetch, in this tool and in the app
+pair. `bands` date the deep-fatigue, fresh and steep-ramp stretches. A fresh
+band starts at TSB +15 and holds until TSB drops below +12; fresh bands 2
+days apart or less merge, and a fresh band needs 3 days unless it runs to the
+last day. A band that runs to the last day has a present-tense reason ("now")
+and is also in `flags`; a band that ended earlier has a past-tense reason.
+`get-fitness-trend` and the
 `view-fitness-trend`/`get-fitness-trend-data` MCP App pair (below) share one
 loader (`loadFitnessTrend` in `loadFitnessTrend.ts`) for both the whole-body
 and run-only paths, so the app's `runOnly: true` payload is built the same
 way as the text tool's and the two can never disagree. The app's payload adds
-`source`, `runOnly`, `activityTypesIncluded`, and `warnings` alongside the
+`source`, `runOnly`, `activityTypesIncluded`, `warnings`, and `endDate`
+(today, so the app can show "already positive today") alongside the
 series/projection/taper it already carried.
 
 `get-training-load` reports weekly running volume (distance, time,

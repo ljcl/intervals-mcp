@@ -111,7 +111,8 @@ predicts on the slow side.
 **Fitness and taper planning.** `get-fitness-trend` with `targetDate` and
 `targetTsb` to solve a taper (or `projectDays`/`plannedLoads` to project
 forward under an assumed plan), or `view-fitness-trend` for the same thing as
-a chart with a Whole body / Runs only toggle.
+a chart with a Whole body / Runs only toggle. `targetDate` must be after today
+and at most 180 days ahead.
 
 **Updating an activity.** `get-running-summary` and `get-activity-laps` for
 context, draft a short note, show it to the athlete and get confirmation,
