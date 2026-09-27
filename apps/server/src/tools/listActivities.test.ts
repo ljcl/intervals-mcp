@@ -158,10 +158,11 @@ describe("listActivitiesTool.execute", () => {
 
     const result = await listActivitiesTool.execute({ limit: 30 }, "key");
 
-    expect(mockedListActivities).toHaveBeenCalledWith("key", {
-      oldest: "2026-08-28",
-      newest: "2026-09-24",
-    });
+    expect(mockedListActivities).toHaveBeenCalledWith(
+      "key",
+      { oldest: "2026-08-28", newest: "2026-09-24" },
+      expect.any(Function),
+    );
     expect(result.structuredContent?.oldest).toBe("2026-08-28");
     expect(result.structuredContent?.newest).toBe("2026-09-24");
     expect(result.structuredContent?.count).toBe(0);

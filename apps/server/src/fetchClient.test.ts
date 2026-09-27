@@ -8,6 +8,7 @@ import {
   parseRateLimitHeaders,
   RateLimitError,
   RequestTimeoutError,
+  summarizeErrorBody,
 } from "./fetchClient";
 
 describe("HttpError", () => {
@@ -216,6 +217,71 @@ function makeResponse(
   });
 }
 
+/** A 200 whose body read fails with `error`, as a stalled or cut-off body does. */
+function failingBodyResponse(error: unknown): Response {
+  return new Response(
+    new ReadableStream({
+      pull(controller) {
+        controller.error(error);
+      },
+    }),
+    { status: 200, headers: { "content-type": "application/json" } },
+  );
+}
+
+const timeoutError = () =>
+  new DOMException("The operation timed out.", "TimeoutError");
+
+describe("summarizeErrorBody", () => {
+  it("returns an empty string for an empty body", () => {
+    expect(summarizeErrorBody("  \n ")).toBe("");
+  });
+
+  it("reduces an HTML page to its title", () => {
+    const page = `<!DOCTYPE html>
+<html lang="en-US"><head>
+  <TITLE>
+    intervals.icu | 522: Connection timed out
+  </TITLE>
+  <style>${"body{}".repeat(1000)}</style>
+</head><body><h1>Connection timed out</h1></body></html>`;
+    expect(summarizeErrorBody(page, "text/html; charset=UTF-8")).toBe(
+      'HTML error page "intervals.icu | 522: Connection timed out"',
+    );
+  });
+
+  it("recognises HTML by its opening tag when the content type is missing", () => {
+    expect(
+      summarizeErrorBody("<html><head><title>Just a moment...</title></head>"),
+    ).toBe('HTML error page "Just a moment..."');
+  });
+
+  it("names an HTML page without a title without quoting its markup", () => {
+    const summary = summarizeErrorBody(
+      `<html><body><h1>Whitelabel Error Page</h1>${"<p>x</p>".repeat(500)}</body></html>`,
+      "text/html",
+    );
+    expect(summary).toBe("HTML error page");
+  });
+
+  it("cuts a long non-HTML body to one line of about 200 characters", () => {
+    const summary = summarizeErrorBody(`line one\n\n${"y".repeat(5000)}`);
+    expect(summary.startsWith("line one yyy")).toBe(true);
+    expect(summary.endsWith("…")).toBe(true);
+    expect(summary.length).toBeLessThanOrEqual(201);
+    expect(summary).not.toContain("\n");
+  });
+
+  it("leaves a short JSON body as it is", () => {
+    expect(
+      summarizeErrorBody(
+        '{"status":404,"error":"Not Found"}',
+        "application/json",
+      ),
+    ).toBe('{"status":404,"error":"Not Found"}');
+  });
+});
+
 describe("FetchClient retry and rate-limit behaviour", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -369,6 +435,101 @@ describe("FetchClient retry and rate-limit behaviour", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
+  it.each([520, 521, 522, 523, 524])(
+    "retries Cloudflare's %i on GET like a 502 (#52)",
+    async (status) => {
+      const fetchMock = vi
+        .fn()
+        .mockImplementation(async () => makeResponse("", { status }));
+      vi.stubGlobal("fetch", fetchMock);
+
+      await expect(newClient().get("/thing")).rejects.toBeInstanceOf(HttpError);
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    },
+  );
+
+  it("does not retry a Cloudflare 522 on a write", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(makeResponse("", { status: 522 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(newClient().put("/thing", { a: 1 })).rejects.toBeInstanceOf(
+      HttpError,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("puts a summary of an HTML error page in the message and keeps the raw page on the response", async () => {
+    const page = `<!DOCTYPE html><html><head><title>intervals.icu | 503: Service Unavailable</title></head><body>${"<div>filler</div>".repeat(400)}</body></html>`;
+    expect(page.length).toBeGreaterThan(6000);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () =>
+        makeResponse(page, {
+          status: 503,
+          headers: { "content-type": "text/html; charset=UTF-8" },
+        }),
+      ),
+    );
+
+    const error = await newClient()
+      .get("/thing")
+      .catch((e) => e);
+
+    expect(error).toBeInstanceOf(HttpError);
+    expect(error.message).toBe(
+      'HTTP 503: HTML error page "intervals.icu | 503: Service Unavailable"',
+    );
+    expect(error.response).toMatchObject({
+      status: 503,
+      data: page,
+      contentType: "text/html; charset=UTF-8",
+      cloudflareChallenge: false,
+    });
+  });
+
+  it("falls back to the status text when the error body is empty", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response("", { status: 404, statusText: "Not Found" }),
+        ),
+    );
+
+    const error = await newClient()
+      .get("/thing")
+      .catch((e) => e);
+    expect(error.message).toBe("HTTP 404: Not Found");
+  });
+
+  it("flags a Cloudflare challenge from the cf-mitigated header (#52)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        makeResponse(
+          "<html><head><title>Just a moment...</title></head></html>",
+          {
+            status: 403,
+            headers: {
+              "content-type": "text/html",
+              "cf-mitigated": "challenge",
+            },
+          },
+        ),
+      ),
+    );
+
+    const error = await newClient()
+      .get("/thing")
+      .catch((e) => e);
+    expect(error).toBeInstanceOf(HttpError);
+    expect(error.response.status).toBe(403);
+    expect(error.response.cloudflareChallenge).toBe(true);
+  });
+
   it("does not retry writes on a transient 5xx", async () => {
     const fetchMock = vi
       .fn()
@@ -467,6 +628,58 @@ describe("FetchClient retry and rate-limit behaviour", () => {
       RequestTimeoutError,
     );
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries a GET whose body read times out, then succeeds (#52)", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(failingBodyResponse(timeoutError()))
+      .mockResolvedValueOnce(makeResponse('{"ok":true}'));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await newClient().get<{ ok: boolean }>("/thing");
+
+    expect(result.data.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("surfaces a body-read timeout as a RequestTimeoutError once a GET exhausts its retries", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(async () => failingBodyResponse(timeoutError()));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const error = await newClient()
+      .get("/thing")
+      .catch((e) => e);
+
+    expect(error).toBeInstanceOf(RequestTimeoutError);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not retry a write whose body read times out, and reports a timeout", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(async () => failingBodyResponse(timeoutError()));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(newClient().put("/thing", { a: 1 })).rejects.toBeInstanceOf(
+      RequestTimeoutError,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries a GET whose body is cut off mid-read", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(failingBodyResponse(new Error("ECONNRESET")))
+      .mockResolvedValueOnce(makeResponse('{"ok":true}'));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await newClient().get<{ ok: boolean }>("/thing");
+
+    expect(result.data.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("leaves a plain network fault as-is once retries are exhausted", async () => {

@@ -153,10 +153,11 @@ export const getAthleteStatsTool = {
 
     try {
       progress(`Fetching run activities ${fetchOldest} to ${today}`);
-      const activities = await listActivitiesClient(apiKey, {
-        oldest: fetchOldest,
-        newest: today,
-      });
+      const activities = await listActivitiesClient(
+        apiKey,
+        { oldest: fetchOldest, newest: today },
+        progress,
+      );
 
       const response: AthleteStatsOutput = {
         this_week: aggregateRunTotals(activities, weekStart, today),

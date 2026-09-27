@@ -182,10 +182,11 @@ describe("getAthleteStatsTool.execute", () => {
 
     await getAthleteStatsTool.execute({}, "key");
 
-    expect(mockedListActivities).toHaveBeenCalledWith("key", {
-      oldest: "2026-01-01",
-      newest: "2026-09-24",
-    });
+    expect(mockedListActivities).toHaveBeenCalledWith(
+      "key",
+      { oldest: "2026-01-01", newest: "2026-09-24" },
+      expect.any(Function),
+    );
   });
 
   it("extends the fetch window past 1 January in early January for the rolling 28 days", async () => {
@@ -194,10 +195,11 @@ describe("getAthleteStatsTool.execute", () => {
 
     await getAthleteStatsTool.execute({}, "key");
 
-    expect(mockedListActivities).toHaveBeenCalledWith("key", {
-      oldest: "2025-12-09",
-      newest: "2026-01-05",
-    });
+    expect(mockedListActivities).toHaveBeenCalledWith(
+      "key",
+      { oldest: "2025-12-09", newest: "2026-01-05" },
+      expect.any(Function),
+    );
   });
 
   it("aggregates the activities fixture into week and month buckets", async () => {

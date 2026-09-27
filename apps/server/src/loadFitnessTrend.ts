@@ -115,10 +115,11 @@ export async function loadFitnessTrend(
     progress(`Listing activities ${runwayStart} to ${endDate}…`, {
       important: true,
     });
-    const activities = await listActivities(apiKey, {
-      oldest: runwayStart,
-      newest: endDate,
-    });
+    const activities = await listActivities(
+      apiKey,
+      { oldest: runwayStart, newest: endDate },
+      progress,
+    );
     const runActivities = activities.filter((a) =>
       RUN_TYPES.includes(a.type ?? ""),
     );
@@ -227,10 +228,11 @@ export async function loadFitnessTrend(
     }
 
     progress(`Listing activities ${windowStart} to ${endDate}…`);
-    const activities = await listActivities(apiKey, {
-      oldest: windowStart,
-      newest: endDate,
-    });
+    const activities = await listActivities(
+      apiKey,
+      { oldest: windowStart, newest: endDate },
+      progress,
+    );
     activityTypesIncluded = typesWithLoad(activities);
     activitiesIncluded = activities.length;
     activitiesMissingLoad = activities.filter(

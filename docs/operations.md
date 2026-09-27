@@ -108,8 +108,16 @@ The HTTP layer handles rate limits centrally: passive, nothing to configure
   client still parses and honours them: a rate-limit response gets bounded
   retries respecting `Retry-After`, and a genuinely exhausted limit surfaces
   as a structured message naming which window is gone and when it resets.
-- Transient `5xx` and network faults retry with bounded exponential backoff;
-  only idempotent reads are retried, never writes.
+- Transient `5xx` (including Cloudflare's `520`-`524`), network faults, and
+  timeouts retry with bounded exponential backoff; only idempotent reads are
+  retried, never writes. A timeout while the response body is still arriving
+  counts the same as one before it.
+- intervals.icu sits behind Cloudflare. When Cloudflare answers with an HTML
+  error page, the tool error quotes only the page title, not the page. When
+  it answers with a challenge (`cf-mitigated: challenge`, usually a 403), the
+  tool error says so instead of blaming the API key: the request never
+  reached intervals.icu. A challenge that keeps happening points at the
+  server's outbound IP address or its `User-Agent`, not at the key.
 
 Read `rate_limit` from [`/health`](#health-check) to see where you stand — it
 reports the snapshot from the most recent intervals.icu response's headers,
@@ -120,6 +128,13 @@ which is `null` today since intervals.icu sends none.
 The image is distroless and runs as non-root **UID 65534**. There is no
 persistent state to mount: credentials come from `INTERVALS_API_KEY` on every
 start.
+
+On `docker stop` (SIGTERM), the server stops accepting connections and gives
+calls already running up to 8 seconds to finish, then aborts the rest and
+exits. `docker-compose.yml` sets `stop_grace_period: 10s` so Docker waits
+longer than that before it sends SIGKILL; if you run the image some other
+way, give it at least 10 seconds too (Docker's default). A second signal,
+such as a second Ctrl-C, exits at once.
 
 ### Verifying a pulled image
 
