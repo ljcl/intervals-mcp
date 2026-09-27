@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.2.0](https://github.com/ljcl/intervals-mcp/compare/v2.1.1...v2.2.0) (2026-09-27)
+
+
+### Features
+
+* analysis numbers you can trust (epic [#114](https://github.com/ljcl/intervals-mcp/issues/114)) ([#125](https://github.com/ljcl/intervals-mcp/issues/125)) ([8f83650](https://github.com/ljcl/intervals-mcp/commit/8f83650ebb516a2e0b8fb7d8f594e2903762fe23))
+
+
+### Bug Fixes
+
+* :latest image tag tracks the newest release, not unreleased main ([#120](https://github.com/ljcl/intervals-mcp/issues/120)) ([9d0a5b9](https://github.com/ljcl/intervals-mcp/commit/9d0a5b966e555a6a92d9d75af580962932509150))
+* handle Cloudflare errors, body timeouts, quiet progress streams and shutdown drain ([#110](https://github.com/ljcl/intervals-mcp/issues/110)) ([7d56bd1](https://github.com/ljcl/intervals-mcp/commit/7d56bd1ae97e4b382bd71180f5e3cacdfb863f42))
+* ship the server as one bundle, without the MCP Apps' build-time dependencies ([#122](https://github.com/ljcl/intervals-mcp/issues/122)) ([6444867](https://github.com/ljcl/intervals-mcp/commit/6444867be1285a12843e9899c7a81f2a45f751ad))
+
 ## [2.1.1](https://github.com/ljcl/intervals-mcp/compare/v2.1.0...v2.1.1) (2026-09-27)
 
 
