@@ -286,10 +286,20 @@ partial now, and no rule uses it as a baseline or in an average.
 The timeline and the run weeks used to stop at the last week with activity,
 so a layoff that was still going on did not count: an athlete who had not run
 for 2 weeks got the averages and a "limited data" trend of the weeks before.
-Both now run on to the current week. The "unusually high" rule compares a week
-with the average of the complete weeks up to and including it, not with the
-whole period: with a whole-period average, the layoff lowered the average and
-flagged the normal weeks before it.
+Both now run on to the current week. The warning compares a week with the
+average of the complete weeks before it, not with the whole period: with a
+whole-period average, the layoff lowered the average and flagged the normal
+weeks before it.
+
+`computeWeekWarnings` has one rule: a week over 1.5 times the average of the
+4 complete weeks before it (the acute:chronic ratio; 3 weeks at least). A
+rise of over 30% on the previous week warned about every normal week after a
+recovery, taper or illness week, and a second "unusually high" rule flagged
+the same weeks again (#60). So that the first weeks of a window have an
+average, `trainingLoadWindow` reaches 4 weeks further back
+(`baselineStartDate`) and `loadTrainingLoadInputs` returns those runs as
+`baselineRuns`. `baselineWeeks` turns them into weeks, and `selectRunWeeks`
+reads them only as the baseline: they never get a row, a total or a warning.
 
 **CTL/ATL/TSB numbers have one home each** (#75), all in `fitnessTrend.ts`.
 `ctlAtlTsb` turns raw CTL and ATL into display values: TSB from the raw

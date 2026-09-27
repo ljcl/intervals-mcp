@@ -326,7 +326,7 @@ exercise the real default view.
 
 ### Training Load
 
-Weekly running-volume bars with rolling trend line and injury-risk warning
+Weekly running-volume bars with rolling trend line and volume-spike warning
 weeks. Calls `get-training-load-data` with the `days` window (default 84,
 max 365).
 
@@ -337,10 +337,13 @@ max 365).
   weeks zero-filled so the timeline stays continuous and runs on to the
   current week (a layoff that is still going on shows as empty weeks), a
   centered rolling-average trend over complete weeks, per-week warning flags
-  with reasons. The weeks the warnings read (`selectRunWeeks`) and the rules
-  (`computeWeekWarnings`: >30% week-over-week spike, a high week over 150% of
-  the average up to it) are shared with the `get-training-load` text tool, so
-  chart and prose cannot drift (#43).
+  with reasons. The weeks the warnings read (`selectRunWeeks`, with the 4
+  weeks before the window as a baseline only) and the rule
+  (`computeWeekWarnings`: a week over 1.5 times the average of the 4 complete
+  weeks before it, #60) are shared with the `get-training-load` text tool, so
+  chart and prose cannot drift (#43). The tooltip shows the reason as the
+  server wrote it; the narration and model context call the weeks volume
+  spikes, not injury risk.
 - The current week carries `inProgress: true` and `trendKm: null`: it draws
   as a light dashed bar with a "This week so far" legend key, the trend line
   ends at the last complete week, and the tooltip, narration and model

@@ -29,7 +29,7 @@ describe("buildTrainingLoadContextSummary", () => {
       data([week("2026-06-01"), week("2026-06-08")]),
     );
     expect(summary).toBe(
-      "Training load, last 84 days. 12 runs, 120 km over 2 weeks. No injury-risk warnings.",
+      "Training load, last 84 days. 12 runs, 120 km over 2 weeks. No volume-spike warnings.",
     );
   });
 
@@ -45,7 +45,7 @@ describe("buildTrainingLoadContextSummary", () => {
     expect(summary).toBe(
       "Training load from 2026-03-16 to 2026-06-10. 12 runs, 120 km over 2 weeks. " +
         "The week of 2026-06-08 is still in progress, so its volume is only the days so far. " +
-        "No injury-risk warnings.",
+        "No volume-spike warnings.",
     );
   });
 
@@ -56,7 +56,7 @@ describe("buildTrainingLoadContextSummary", () => {
         week("2026-06-08", { warning: true, warningReasons: ["spike"] }),
       ]),
     );
-    expect(summary).toContain("Injury-risk warnings on week of 2026-06-08.");
+    expect(summary).toContain("Volume-spike warnings on week of 2026-06-08.");
   });
 
   it("returns null when there is no period", () => {

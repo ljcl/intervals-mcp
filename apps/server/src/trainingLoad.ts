@@ -1,12 +1,19 @@
 /**
  * Pure training-load aggregation shared by the `get-training-load` text tool
  * and the `get-training-load-data` MCP App feed. The week window, the weeks
- * the run-based rules read, and the injury-risk warning rules live here
+ * the run-based rules read, and the volume-spike warning rule live here
  * once, so the chart's per-week flags can never drift from the text tool's
  * prose warnings.
  */
 import { RUN_TYPES } from "./fitnessTrend";
 import { addDays, daysBetween, startOfWeekMonday } from "./utils/localDate";
+
+/** Complete weeks before a week that its recent (chronic) average reads. */
+const CHRONIC_WEEKS = 4;
+/** Fewest complete weeks a recent average needs: fewer is not a baseline. */
+const MIN_CHRONIC_WEEKS = 3;
+/** Acute:chronic ratio above which a week is a volume spike. */
+const SPIKE_RATIO = 1.5;
 
 /**
  * The window both training-load surfaces read: `days` rounded up to whole
@@ -17,6 +24,12 @@ import { addDays, daysBetween, startOfWeekMonday } from "./utils/localDate";
  * Sunday included, so the trend always has its 4 complete weeks.
  */
 export interface TrainingLoadWindow {
+  /**
+   * Monday 4 weeks before `startDate`. Runs from here to `startDate` are
+   * only the recent average the first weeks of the window are compared
+   * with (#60); they are not reported.
+   */
+  baselineStartDate: string;
   /** Monday of the first complete week. */
   startDate: string;
   /** Today in the athlete's time zone: the last day read. */
@@ -38,8 +51,10 @@ export function trainingLoadWindow(
   const completeWeeks = Math.ceil(days / 7);
   const currentWeekStart = startOfWeekMonday(endDate);
   const currentWeekDays = daysBetween(currentWeekStart, endDate) + 1;
+  const startDate = addDays(currentWeekStart, -7 * completeWeeks);
   return {
-    startDate: addDays(currentWeekStart, -7 * completeWeeks),
+    baselineStartDate: addDays(startDate, -7 * CHRONIC_WEEKS),
+    startDate,
     endDate,
     currentWeekStart,
     completeWeeks,
@@ -72,63 +87,43 @@ export interface WeekWarning {
 }
 
 /**
- * Injury-risk warnings per week: a >30% week-over-week volume increase, and
- * an unusually high week (>150% of the average of the complete weeks up to
- * and including it, and over 30 km). One week can trigger both rules. The
- * average never looks ahead: weeks after a week cannot flag it, so a layoff
- * that follows a normal week does not make that week look high. A week in
- * progress is never the baseline for a rise or part of the average, because
- * its volume is only the days so far. It is flagged only when that partial
- * volume already breaks a rule, which the rest of the week cannot undo. The
- * text tool prefixes each reason with "Week of <date>: "; the app feed
- * attaches them to the week's row.
+ * Volume-spike warnings per week (#60): a week whose distance is over 1.5
+ * times the average of the 4 complete weeks before it (the acute:chronic
+ * ratio). The average needs at least 3 weeks, and one of 0 km gives no
+ * ratio. It is the one rule: a rise on the previous week alone flagged a
+ * normal week after a recovery or taper week, and a separate "high week"
+ * rule flagged the same weeks twice. The average never looks ahead, so a
+ * layoff after a normal week does not make that week look high. A week in
+ * progress is never part of an average, because its volume is only the
+ * days so far. It is flagged only when that partial volume is already a
+ * spike, which the rest of the week cannot undo. The text tool prefixes each
+ * reason with "Week of <date>: "; the app feed attaches them to the week's
+ * row.
  */
 export function computeWeekWarnings(weeks: WeeklyVolume[]): WeekWarning[] {
   const warnings: WeekWarning[] = [];
 
-  if (weeks.length < 2) {
-    return warnings;
-  }
+  weeks.forEach((week, i) => {
+    const previous = weeks
+      .slice(Math.max(0, i - CHRONIC_WEEKS), i)
+      .filter((w) => !w.in_progress);
+    if (previous.length < MIN_CHRONIC_WEEKS) return;
 
-  // Check for sudden volume increases (>30% week over week)
-  for (let i = 1; i < weeks.length; i += 1) {
-    const prev = weeks[i - 1]!;
-    const curr = weeks[i]!;
-    if (prev.in_progress) continue;
+    const chronic =
+      previous.reduce((sum, w) => sum + w.distance_km, 0) / previous.length;
+    if (chronic <= 0) return;
+    // Compared as shown, so the reason never reads "1.5 times".
+    const ratio = Math.round((week.distance_km / chronic) * 100) / 100;
+    if (ratio <= SPIKE_RATIO) return;
 
-    if (prev.distance_km > 0 && curr.distance_km > prev.distance_km * 1.3) {
-      const increase = Math.round(
-        (curr.distance_km / prev.distance_km - 1) * 100,
-      );
-      warnings.push({
-        week_starting: curr.week_starting,
-        reason: curr.in_progress
-          ? `Volume so far is already ${increase}% above the previous week - consider injury risk`
-          : `Volume increased ${increase}% from previous week - consider injury risk`,
-      });
-    }
-  }
-
-  // Check for very high weeks compared to the average of the complete weeks
-  // up to and including each one
-  let completeKm = 0;
-  let completeWeeks = 0;
-  for (const week of weeks) {
-    if (!week.in_progress) {
-      completeKm += week.distance_km;
-      completeWeeks += 1;
-    }
-    if (completeWeeks === 0) continue;
-
-    const avgDistance = completeKm / completeWeeks;
-    if (week.distance_km > avgDistance * 1.5 && week.distance_km > 30) {
-      const volume = week.in_progress ? "volume so far" : "volume";
-      warnings.push({
-        week_starting: week.week_starting,
-        reason: `Unusually high ${volume} (${week.distance_km} km vs ${Math.round(avgDistance)} km average up to that week)`,
-      });
-    }
-  }
+    const average = `${Math.round(chronic * 10) / 10} km average of the previous ${previous.length} weeks`;
+    warnings.push({
+      week_starting: week.week_starting,
+      reason: week.in_progress
+        ? `Volume spike so far: ${week.distance_km} km is already ${ratio} times the ${average}`
+        : `Volume spike: ${week.distance_km} km is ${ratio} times the ${average}`,
+    });
+  });
 
   return warnings;
 }
@@ -235,6 +230,16 @@ export interface WeekBucket {
   loadByType: Record<string, number>;
 }
 
+const emptyBucket = (weekStarting: string): WeekBucket => ({
+  weekStarting,
+  runs: 0,
+  distanceM: 0,
+  timeS: 0,
+  elevationM: 0,
+  load: 0,
+  loadByType: {},
+});
+
 /**
  * Builds the weekly timeline both `get-training-load` and
  * `get-training-load-data` read from: a continuous Monday-to-Monday run,
@@ -257,16 +262,6 @@ export function aggregateWeeks(
   loadActivities: TrainingLoadActivity[],
   currentWeekStart: string,
 ): WeekBucket[] {
-  const emptyBucket = (weekStarting: string): WeekBucket => ({
-    weekStarting,
-    runs: 0,
-    distanceM: 0,
-    timeS: 0,
-    elevationM: 0,
-    load: 0,
-    loadByType: {},
-  });
-
   const buckets = new Map<string, WeekBucket>();
 
   for (const activity of runs) {
@@ -327,8 +322,23 @@ export interface RunWeeks {
   span: WeekBucket[];
   /** `span` without the week in progress. Averages and the trend read these. */
   complete: WeekBucket[];
-  /** Injury-risk warnings over `span`. */
+  /** Volume-spike warnings over `span`. */
   warnings: WeekWarning[];
+}
+
+/**
+ * The run weeks before the window that the first weeks' recent average
+ * reads (#60): from the first run in `baselineRuns` (the runs from
+ * `lookback.baselineStartDate` up to `lookback.startDate`) to the week before
+ * the window, zero-run weeks kept. Weeks before that first run are left out,
+ * as in {@link selectRunWeeks}. Without it, a 28-day request could compare
+ * only its last complete week and the current one with an average.
+ */
+export function baselineWeeks(
+  baselineRuns: TrainingLoadActivity[],
+  lookback: Pick<TrainingLoadWindow, "startDate">,
+): WeekBucket[] {
+  return aggregateWeeks(baselineRuns, [], addDays(lookback.startDate, -7));
 }
 
 /**
@@ -348,10 +358,16 @@ export interface RunWeeks {
  * `currentWeekStart` is in progress: it can be flagged, but only on the
  * volume it already has (see {@link computeWeekWarnings}), and it is left
  * out of `complete`.
+ *
+ * `before` ({@link baselineWeeks}) is only a baseline: the warnings compare
+ * the span's first weeks with it, and the weeks from its end to the span's
+ * first run count as zero weeks, but it adds no week to `span` and gets no
+ * warning.
  */
 export function selectRunWeeks(
   buckets: WeekBucket[],
   currentWeekStart: string,
+  before: WeekBucket[] = [],
 ): RunWeeks {
   const first = buckets.findIndex((b) => b.runs > 0);
   const span = first === -1 ? [] : buckets.slice(first);
@@ -361,14 +377,40 @@ export function selectRunWeeks(
   return {
     span,
     complete: span.filter((b) => !inProgress(b)),
-    warnings: computeWeekWarnings(
-      span.map((b) => ({
-        week_starting: b.weekStarting,
-        distance_km: weekDistanceKm(b),
-        in_progress: inProgress(b),
-      })),
-    ),
+    warnings: spikeWarnings(span, before, inProgress),
   };
+}
+
+/** {@link computeWeekWarnings} over `span`, with `before` as the first weeks' baseline. */
+function spikeWarnings(
+  span: WeekBucket[],
+  before: WeekBucket[],
+  inProgress: (b: WeekBucket) => boolean,
+): WeekWarning[] {
+  const spanStart = span[0]?.weekStarting;
+  if (spanStart === undefined) return [];
+
+  const firstRun = before.findIndex((b) => b.runs > 0);
+  const baseline = firstRun === -1 ? [] : before.slice(firstRun);
+  const gap: WeekBucket[] = [];
+  const lastBaseline = baseline[baseline.length - 1]?.weekStarting;
+  if (lastBaseline !== undefined) {
+    for (
+      let key = addDays(lastBaseline, 7);
+      key < spanStart;
+      key = addDays(key, 7)
+    ) {
+      gap.push(emptyBucket(key));
+    }
+  }
+
+  return computeWeekWarnings(
+    [...baseline, ...gap, ...span].map((b) => ({
+      week_starting: b.weekStarting,
+      distance_km: weekDistanceKm(b),
+      in_progress: inProgress(b),
+    })),
+  ).filter((w) => w.week_starting >= spanStart);
 }
 
 export interface VolumeTrend {
@@ -425,6 +467,11 @@ export interface BuildTrainingLoadDataOptions {
    * cross-training week) still appears; see `aggregateWeeks`.
    */
   loadActivities?: TrainingLoadActivity[];
+  /**
+   * Runs in the 4 weeks before the window, the recent average the first
+   * weeks' warnings compare with; see {@link baselineWeeks}. Not reported.
+   */
+  baselineRuns?: TrainingLoadActivity[];
   /** True when `loadActivities` is a run-only set rather than whole-body. */
   runOnly?: boolean;
   /** Most recent CTL/ATL/TSB, computed by the caller (async, off wellness or a run-only fitness trend). */
@@ -457,7 +504,11 @@ export function buildTrainingLoadData(
     loadActivities,
     lookback.currentWeekStart,
   );
-  const { warnings } = selectRunWeeks(buckets, lookback.currentWeekStart);
+  const { warnings } = selectRunWeeks(
+    buckets,
+    lookback.currentWeekStart,
+    baselineWeeks(options.baselineRuns ?? [], lookback),
+  );
   const inProgress = (b: WeekBucket) =>
     weekInProgress(b.weekStarting, lookback.currentWeekStart);
 

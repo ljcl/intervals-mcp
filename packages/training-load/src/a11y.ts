@@ -68,10 +68,10 @@ export function buildLoadA11y(
         .map((week) => `week of ${fullDate(week.weekStarting)}`)
         .join(", ");
       parts.push(
-        `${flagged.length} week${flagged.length === 1 ? " is" : "s are"} highlighted for injury risk: ${names}.`,
+        `${flagged.length} week${flagged.length === 1 ? " is" : "s are"} highlighted as a volume spike: ${names}.`,
       );
     } else {
-      parts.push("No weeks are flagged for injury risk.");
+      parts.push("No weeks are flagged as a volume spike.");
     }
   }
 

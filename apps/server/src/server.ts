@@ -537,7 +537,7 @@ function buildToolDefs(): ToolDef[] {
     name: "view-training-load",
     title: "Training load chart",
     description:
-      "Open an interactive training-load chart: weekly running volume bars with a rolling trend line, and injury-risk warning weeks highlighted with their reason on hover. " +
+      "Open an interactive training-load chart: weekly running volume bars with a rolling trend line, and volume-spike weeks (over 1.5 times the average of the 4 weeks before) highlighted with their reason on hover. " +
       "Prefer this over text when the user wants to see how their training volume is trending. Takes a number of days of history.",
     inputSchema: toInputSchema(APP_TOOL_INPUT_SCHEMAS["view-training-load"]!),
     annotations: READ_ONLY,
@@ -550,7 +550,7 @@ function buildToolDefs(): ToolDef[] {
     name: "get-training-load-data",
     title: "Training load chart data",
     description:
-      "Internal data feed for the training-load UI: returns per-week running volume (distance, runs, time, elevation), a rolling trend value, and injury-risk warning flags with reasons as JSON. " +
+      "Internal data feed for the training-load UI: returns per-week running volume (distance, runs, time, elevation), a rolling trend value, and volume-spike warning flags with reasons as JSON. " +
       "The view-training-load app calls this; not intended for direct model use.",
     inputSchema: toInputSchema(
       APP_TOOL_INPUT_SCHEMAS["get-training-load-data"]!,
@@ -863,11 +863,12 @@ async function loadTrainingLoadAppData(
   const days = Number(args.days) || 84;
   const runOnly = Boolean(args.runOnly);
 
-  const { lookback, runs, loadActivities, current, source } =
+  const { lookback, runs, baselineRuns, loadActivities, current, source } =
     await loadTrainingLoadInputs(apiKey, { days, runOnly }, progress);
 
   return buildTrainingLoadData(runs, lookback, {
     loadActivities,
+    baselineRuns,
     runOnly,
     current,
     source,

@@ -29,6 +29,11 @@ export interface TrainingLoadInputs {
   /** Run activities (Run/TrailRun/VirtualRun) inside `lookback`, for volume/warnings. */
   runs: IntervalsActivity[];
   /**
+   * Runs from `lookback.baselineStartDate` up to the window: only the recent
+   * average the first weeks' warnings compare with (#60), never reported.
+   */
+  baselineRuns: IntervalsActivity[];
+  /**
    * Activities `icu_training_load` is summed over: the same runs (run-only)
    * or every window activity (whole-body).
    */
@@ -43,9 +48,11 @@ export interface TrainingLoadInputs {
 /**
  * Fetches and classifies training-load inputs for `days` back from today,
  * rounded up to whole weeks plus the current week so far
- * (`trainingLoadWindow`). Run-only fetches a runway before the window
- * (`RUN_ONLY_RUNWAY_DAYS`) so `buildRunOnlyFitnessTrend`'s local CTL/ATL has
- * settled, the same runway `get-fitness-trend`'s run-only path uses.
+ * (`trainingLoadWindow`). Both paths also read the runs of the 4 weeks
+ * before the window (`baselineRuns`), the volume-spike baseline. Run-only
+ * fetches a runway before the window (`RUN_ONLY_RUNWAY_DAYS`) so
+ * `buildRunOnlyFitnessTrend`'s local CTL/ATL has settled, the same runway
+ * `get-fitness-trend`'s run-only path uses; it covers those 4 weeks.
  * Whole-body reads CTL/ATL straight off intervals.icu wellness via
  * `loadWellnessFitnessSeries` instead.
  */
@@ -57,7 +64,13 @@ export async function loadTrainingLoadInputs(
   const { days, runOnly } = options;
   const tz = getTimeZone();
   const lookback = trainingLoadWindow(days, todayLocal(tz));
-  const { startDate: windowStart, endDate } = lookback;
+  const { baselineStartDate, startDate: windowStart, endDate } = lookback;
+  const localDay = (a: IntervalsActivity) => a.start_date_local.split("T")[0]!;
+  const inWindow = (a: IntervalsActivity) =>
+    localDay(a) >= windowStart && localDay(a) <= endDate;
+  const inBaseline = (a: IntervalsActivity) =>
+    localDay(a) >= baselineStartDate && localDay(a) < windowStart;
+  const isRun = (a: IntervalsActivity) => RUN_TYPES.includes(a.type ?? "");
 
   if (runOnly) {
     // Counted back from today by the requested days, as get-fitness-trend
@@ -75,13 +88,8 @@ export async function loadTrainingLoadInputs(
       { oldest: runwayStart, newest: endDate },
       progress,
     );
-    const runActivities = activities.filter((a) =>
-      RUN_TYPES.includes(a.type ?? ""),
-    );
-    const windowRuns = runActivities.filter((a) => {
-      const date = a.start_date_local.split("T")[0]!;
-      return date >= windowStart && date <= endDate;
-    });
+    const runActivities = activities.filter(isRun);
+    const windowRuns = runActivities.filter(inWindow);
 
     const { trend } = buildRunOnlyFitnessTrend(runActivities, {
       endDate,
@@ -100,6 +108,7 @@ export async function loadTrainingLoadInputs(
     return {
       lookback,
       runs: windowRuns,
+      baselineRuns: runActivities.filter(inBaseline),
       loadActivities: windowRuns,
       current,
       source: "computed",
@@ -107,15 +116,20 @@ export async function loadTrainingLoadInputs(
     };
   }
 
-  progress(`Listing activities ${windowStart} to ${endDate}…`, {
+  // One listing from the baseline start, split by date: the baseline runs
+  // only feed the warnings, the window's activities everything else. No
+  // upper bound, as before: aggregateWeeks keeps a week after the current
+  // one that only a time-zone mismatch can produce.
+  progress(`Listing activities ${baselineStartDate} to ${endDate}…`, {
     important: true,
   });
-  const activities = await listActivities(
+  const listed = await listActivities(
     apiKey,
-    { oldest: windowStart, newest: endDate },
+    { oldest: baselineStartDate, newest: endDate },
     progress,
   );
-  const runs = activities.filter((a) => RUN_TYPES.includes(a.type ?? ""));
+  const activities = listed.filter((a) => localDay(a) >= windowStart);
+  const runs = activities.filter(isRun);
 
   progress(`Fetching wellness ${windowStart} to ${endDate}…`);
   const { series } = await loadWellnessFitnessSeries(apiKey, {
@@ -130,6 +144,7 @@ export async function loadTrainingLoadInputs(
   return {
     lookback,
     runs,
+    baselineRuns: listed.filter((a) => isRun(a) && inBaseline(a)),
     loadActivities: activities,
     current,
     source: "intervals.icu",

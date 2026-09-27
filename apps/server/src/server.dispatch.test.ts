@@ -211,7 +211,8 @@ describe("dispatchToolCall input validation", () => {
       weeks: [],
     });
     const params = mockedIntervalsList.mock.calls[0]?.[1];
-    expect(params?.oldest).toBe(lookback.startDate);
+    // The listing starts 4 weeks early, for the volume-spike baseline.
+    expect(params?.oldest).toBe(lookback.baselineStartDate);
     expect(params?.newest).toBe(lookback.endDate);
   });
 

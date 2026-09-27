@@ -35,7 +35,7 @@ describe("buildLoadA11y", () => {
     expect(a11y.desc).toBe(
       "2 weeks of running volume from 1 Jun 2026 to 8 Jun 2026. " +
         "Weekly distance ranges from 20 to 30 km; a line shows the 3-week rolling average. " +
-        "No weeks are flagged for injury risk.",
+        "No weeks are flagged as a volume spike.",
     );
   });
 
@@ -45,7 +45,7 @@ describe("buildLoadA11y", () => {
       week("2026-06-08", 40, { warning: true, warningReasons: ["spike"] }),
     ]);
     expect(a11y.desc).toContain(
-      "1 week is highlighted for injury risk: week of 8 Jun 2026.",
+      "1 week is highlighted as a volume spike: week of 8 Jun 2026.",
     );
   });
 
@@ -68,7 +68,7 @@ describe("buildLoadA11y", () => {
     expect(a11y.desc).not.toContain("rolling average");
   });
 
-  it("says nothing about injury risk when warnings are hidden", () => {
+  it("says nothing about volume spikes when warnings are hidden", () => {
     const a11y = buildLoadA11y(
       [
         week("2026-06-01", 20),
@@ -76,6 +76,6 @@ describe("buildLoadA11y", () => {
       ],
       { showTrend: true, showWarnings: false },
     );
-    expect(a11y.desc).not.toContain("injury risk");
+    expect(a11y.desc).not.toContain("volume spike");
   });
 });

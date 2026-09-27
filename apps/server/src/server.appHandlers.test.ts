@@ -486,7 +486,8 @@ describe("training load handlers", () => {
 
   it("get-training-load and get-training-load-data give the same warnings for 30, 0, 0, 45 km weeks (#43)", async () => {
     // The app used to drop the two empty weeks and warn "Volume increased
-    // 50%"; the text tool kept them and warned "Unusually high volume".
+    // 50%"; the text tool kept them and warned "Unusually high volume". Both
+    // now give the one volume-spike warning (#60).
     const activities = [
       intervalsRun({
         id: "1",
@@ -516,16 +517,75 @@ describe("training load handlers", () => {
     });
     const textWarnings = (
       textResult.structuredContent as { warnings: string[] }
-    ).warnings.filter((w) => /injury risk|Unusually high/.test(w));
+    ).warnings.filter((w) => /Volume spike/.test(w));
 
     expect(textWarnings).toEqual([
-      "Week of 2026-05-25: Unusually high volume (45 km vs 19 km average up to that week)",
+      "Week of 2026-05-25: Volume spike: 45 km is 4.5 times the 10 km average of the previous 3 weeks",
     ]);
     expect(
       appData.weeks.flatMap((w) =>
         w.warningReasons.map((r) => `Week of ${w.weekStarting}: ${r}`),
       ),
     ).toEqual(textWarnings);
+  });
+
+  it("get-training-load and get-training-load-data compare with the 4 weeks before the window alike (#60)", async () => {
+    // TL_TODAY is a Monday: the window starts on 2026-05-04. Before it, 3
+    // weeks of 40 km and a 10 km recovery week. The return to 40 km is no
+    // spike (the old rule said "increased 300%"); the 52 km week is.
+    const km = [
+      ["2026-04-08", 40],
+      ["2026-04-15", 40],
+      ["2026-04-22", 40],
+      ["2026-04-29", 10],
+      ["2026-05-06", 40],
+      ["2026-05-13", 40],
+      ["2026-05-20", 40],
+      ["2026-05-27", 52],
+    ] as const;
+    const activities = km.map(([date, distanceKm], i) =>
+      intervalsRun({
+        id: String(i + 1),
+        start_date_local: `${date}T07:00:00`,
+        distance: distanceKm * 1000,
+      }),
+    );
+
+    mockedIntervalsList.mockResolvedValueOnce(activities);
+    mockedWellness.mockResolvedValueOnce([]);
+    const appResult = await dispatchToolCall("get-training-load-data", {
+      days: 28,
+    });
+    const appData = JSON.parse(appResult.content[0]?.text ?? "") as {
+      totals: { distanceKm: number };
+      weeks: Array<{ weekStarting: string; warningReasons: string[] }>;
+    };
+
+    mockedIntervalsList.mockResolvedValueOnce(activities);
+    mockedWellness.mockResolvedValueOnce([]);
+    const textResult = await dispatchToolCall("get-training-load", {
+      days: 28,
+    });
+    const textData = textResult.structuredContent as {
+      totals: { distance_km: number };
+      warnings: string[];
+    };
+    const textWarnings = textData.warnings.filter((w) =>
+      /Volume spike/.test(w),
+    );
+
+    expect(textWarnings).toEqual([
+      "Week of 2026-05-25: Volume spike: 52 km is 1.6 times the 32.5 km average of the previous 4 weeks",
+    ]);
+    expect(
+      appData.weeks.flatMap((w) =>
+        w.warningReasons.map((r) => `Week of ${w.weekStarting}: ${r}`),
+      ),
+    ).toEqual(textWarnings);
+    // The baseline weeks are not reported.
+    expect(appData.weeks[0]!.weekStarting).toBe("2026-05-04");
+    expect(appData.totals.distanceKm).toBe(172);
+    expect(textData.totals.distance_km).toBe(172);
   });
 
   it("get-training-load and get-training-load-data both count a layoff that is still going on", async () => {
@@ -593,9 +653,7 @@ describe("training load handlers", () => {
     ]);
     expect(textData.trend).toBe("decreasing significantly");
     expect(textData.averages.distance_km_per_week).toBe(25);
-    expect(
-      textData.warnings.filter((w) => /injury risk|Unusually high/.test(w)),
-    ).toEqual([]);
+    expect(textData.warnings.filter((w) => /Volume spike/.test(w))).toEqual([]);
     expect(appData.weeks.some((w) => w.warning)).toBe(false);
   });
 });

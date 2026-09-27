@@ -79,7 +79,7 @@ descriptions.
 | `get-race-prediction` | Predicted race times from intervals.icu pace-curve points (Riegel) alongside intervals.icu's own critical-speed model, with confidence, source point, and km goal-pace splits |
 | `get-athlete-stats` | Run totals (this week, last 4 weeks, this month, YTD) aggregated from list-activities data |
 | `get-fitness-trend` | Fitness/fatigue/form (CTL/ATL/TSB), whole-body from intervals.icu wellness or run-only computed locally, with rest/planned-load projection and a solved taper to a target form on a target date |
-| `get-training-load` | Weekly running volume and injury-risk warnings, weekly intervals.icu training load and the types it covers, plus current CTL/ATL/TSB |
+| `get-training-load` | Weekly running volume and volume-spike warnings, weekly intervals.icu training load and the types it covers, plus current CTL/ATL/TSB |
 | `update-activity` | Update an activity's name, description, gear, RPE, or feel, echoing before/after values (write tool) |
 
 `list-activities` defaults to the last 28 days (today back to 27 days
@@ -475,7 +475,7 @@ narration and the text tool agree on a series with gaps) alongside the
 series/projection/taper it already carried.
 
 `get-training-load` reports weekly running volume (distance, time,
-elevation, run count) and injury-risk warnings (`computeWeekWarnings` in
+elevation, run count) and volume-spike warnings (`computeWeekWarnings` in
 `trainingLoad.ts`, shared with the app feed below),
 always from Run/TrailRun/VirtualRun activities regardless of `runOnly`. It
 also reports weekly `load` (the sum of `icu_training_load` over the included
@@ -521,14 +521,30 @@ change which weeks the run numbers read. Averages and the trend use its
 complete weeks only; with no complete week yet, the averages are this week so
 far. The trend compares the distance of the last 2 complete weeks with the 2
 before, and the text names the four weeks; when all four have no running
-volume, it says so instead of reporting too little data. A warning fires on a
-rise of over 30% on the week before, or on a week over 150% of the average of
-the complete weeks up to and including it, and over 30 km. That average never
-looks ahead, so a layoff cannot make the weeks before it look unusually high.
-The week in progress is never the baseline for a rise or part of that
-average, and it is flagged only on the volume it already has ("so far" in the
-reason). The run-only runway still counts `days + 150` days back from today,
-so `current` matches `get-fitness-trend`'s run-only value.
+volume, it says so instead of reporting too little data.
+
+A warning fires when a week's distance is over 1.5 times the average of the
+4 complete weeks before it: the acute:chronic ratio (#60). The reason gives
+both distances, the ratio and how many weeks the average has. The average
+needs at least 3 weeks, and an average of 0 km (4 weeks with no runs) gives
+no ratio and no warning. The tool also reads the runs of the 4 weeks before
+the window (`baselineStartDate` to `startDate` in `trainingLoadWindow`), so
+the first weeks of the window have an average too. Those weeks are only the
+baseline: they get no row, no total and no warning, and weeks before the
+first run in them are left out, like the weeks before the first run in the
+window. This is the only rule. A rise of over 30% on the week before used to
+fire too, and it warned about a normal week after a recovery or taper week
+(40 km after a 10 km week was "increased 300%"). Against the 4-week average
+that week is 1.23. A separate "unusually high" rule (over 150% of the average
+up to the week, and over 30 km) is gone as well: it flagged the same weeks a
+second time. The 1.5 threshold is the top of the usual 1.3 to 1.5 caution
+zone. The evidence for any ratio threshold is weak, so the reason says
+"volume spike", not injury risk. The average never looks ahead, so a layoff
+cannot make the weeks before it look high. The week in progress is never
+part of an average, and it is flagged only on the volume it already has
+("so far" in the reason). The run-only runway still counts `days + 150` days
+back from today, so `current` matches `get-fitness-trend`'s run-only value;
+it already covers the 4 baseline weeks.
 
 `update-activity` changes an activity's name, description, gear, RPE
 (`icu_rpe`), or feel. It always does a fresh read first (bypassing the
@@ -576,7 +592,7 @@ and `view-route-map`/`get-route-map-data` are all ported to intervals.icu.
 | `get-cadence-trend-data` | Summary cadence/pace data for the cadence trends UI (app-only) |
 | `view-route-map` | Interactive map of an activity's GPS track, fit to bounds with start/finish markers; optional distance-anchored waypoints (MCP App) |
 | `get-route-map-data` | `[lat, lng]` coordinates from the activity's latlng stream plus index-aligned metric streams and WORK-interval end markers for the route map UI (app-only) |
-| `view-training-load` | Weekly running-volume bars with a rolling trend line and injury-risk warning weeks (MCP App) |
+| `view-training-load` | Weekly running-volume bars with a rolling trend line and volume-spike warning weeks (MCP App) |
 | `get-training-load-data` | Per-week volume, trend value, warning flags, weekly load, and current CTL/ATL/TSB for the training-load UI (app-only) |
 | `view-compare-activities` | Interactive overlay of two activities' streams on a shared distance/time axis with a delta summary (MCP App) |
 | `get-compare-activities-data` | Aggregate comparison (summaries, activity2−activity1 differences, efficiency) for the compare-activities UI (app-only) |

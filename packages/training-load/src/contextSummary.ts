@@ -30,9 +30,9 @@ export function buildTrainingLoadContextSummary(
       .filter((w) => w.warning)
       .map((w) => `week of ${w.weekStarting}`)
       .join(", ");
-    parts.push(`Injury-risk warnings on ${flagged}.`);
+    parts.push(`Volume-spike warnings on ${flagged}.`);
   } else {
-    parts.push("No injury-risk warnings.");
+    parts.push("No volume-spike warnings.");
   }
 
   return parts.join(" ");
