@@ -9,7 +9,8 @@ on:
   # Backfill: tag pushes run this workflow at the tag's commit, so a workflow
   # bug baked into a release tag cannot be fixed by re-running that run. This
   # dispatch builds an existing release tag with the workflow from main and
-  # publishes its X.Y.Z / X.Y image tags (it never moves `latest` or main-*).
+  # publishes its X.Y.Z / X.Y image tags (it never moves `latest`, `edge` or
+  # main-*).
   workflow_dispatch:
     inputs:
       tag:
@@ -18,7 +19,9 @@ on:
         type: string
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # The backfill dispatch runs on main's ref, so it gets its own group: sharing
+  # main's would let a later main push replace it while it is pending.
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && format('backfill-{0}', inputs.tag) || github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
@@ -28,19 +31,23 @@ permissions:
   contents: read
 
 jobs:
-  # Decides whether a PR actually touches anything the image consumes. The
-  # build legs are skipped (not path-filtered at the workflow level) so that a
-  # required Docker status still reports on docs-only PRs — skipped jobs count
-  # as passing for required checks, whereas a path-filtered workflow never
-  # reports and would block auto-merge. Tag and main pushes bypass the filter
-  # entirely, so releases always build.
+  # Decides whether a PR or main push actually touches anything the image
+  # consumes. The build legs are skipped (not path-filtered at the workflow
+  # level) so that a required Docker status still reports on docs-only PRs —
+  # skipped jobs count as passing for required checks, whereas a path-filtered
+  # workflow never reports and would block auto-merge. On main it keeps a
+  # docs-only merge from giving `edge` a new digest, which restarts containers
+  # under update tools for nothing. Tag pushes and the backfill dispatch bypass
+  # the filter entirely, so releases always build.
   changes:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: read
       pull-requests: read # paths-filter lists the PR's changed files via the API
+    # On main pushes paths-filter diffs against github.event.before in git,
+    # fetching the history it needs itself.
     outputs:
       image: ${{ steps.filter.outputs.image }}
     steps:
@@ -63,9 +70,9 @@ jobs:
 
   build:
     needs: [changes]
-    # Non-PR events skip `changes`, so !cancelled() is needed for this
-    # expression to be evaluated at all in that case.
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.image == 'true') }}
+    # Tag pushes and the dispatch skip `changes`, so !cancelled() is needed for
+    # this expression to be evaluated at all in that case.
+    if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') || needs.changes.outputs.image == 'true') }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     permissions:
@@ -190,11 +197,18 @@ jobs:
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ env.REGISTRY_IMAGE }}
-          # The backfill dispatch runs on main's ref, so `latest`/main-* are
-          # pinned off there and the semver tags come from the tag input.
+          # `latest` is the newest release, nothing else: README and SECURITY.md
+          # point users at it. latest=false turns off the action's default
+          # (latest=auto), which adds `latest` to any non-prerelease semver
+          # output, including a backfill of an old tag. It is then set only on a
+          # release tag push (a `-` marks a prerelease). Main builds get `edge`
+          # and main-<sha>; the dispatch runs on main's ref, so those check the
+          # event too, and its semver tags come from the tag input.
+          flavor: latest=false
           tags: |
-            type=raw,value=latest,enable=${{ github.event_name != 'workflow_dispatch' && '{{is_default_branch}}' || 'false' }}
-            type=sha,prefix=main-,enable=${{ github.event_name != 'workflow_dispatch' && '{{is_default_branch}}' || 'false' }}
+            type=raw,value=latest,enable=${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-') }}
+            type=raw,value=edge,enable=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+            type=sha,prefix=main-,enable=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{version}},value=${{ inputs.tag }},enable=${{ github.event_name == 'workflow_dispatch' }}

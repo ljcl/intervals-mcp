@@ -52,11 +52,12 @@ Docker:
 docker compose up -d
 ```
 
-Prefer the prebuilt image? Pull `ghcr.io/ljcl/intervals-mcp:latest` (also on
-the [MCP registry](https://registry.modelcontextprotocol.io) as
-`io.github.ljcl/intervals-mcp`) and point your compose `image:` at it instead
-of building; you still supply your own API key. Published images carry
-SBOM/provenance attestations you can verify; see
+Prefer the prebuilt image? Pull `ghcr.io/ljcl/intervals-mcp:latest`, the
+newest release (also on the
+[MCP registry](https://registry.modelcontextprotocol.io) as
+`io.github.ljcl/intervals-mcp`), and point your compose `image:` at it instead
+of building; you still supply your own API key. `:edge` tracks unreleased
+`main`. Published images carry SBOM/provenance attestations you can verify; see
 [operations.md](docs/operations.md#verifying-a-pulled-image).
 
 `GET /health` reports liveness without spending an intervals.icu API request;
