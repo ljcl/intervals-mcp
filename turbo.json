@@ -9,7 +9,9 @@
     "PORT",
     "MCP_AUTH_TOKEN",
     "PLAYWRIGHT_BROWSERS_PATH",
-    "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH"
+    "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH",
+    "COVERAGE_RATCHET_BASE_REF",
+    "COVERAGE_RATCHET_ESCAPE_HATCH"
   ],
   "globalDependencies": [".env", ".env.local"],
   "boundaries": {

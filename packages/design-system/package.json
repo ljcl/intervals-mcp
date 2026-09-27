@@ -12,7 +12,7 @@
   },
   "scripts": {
     "test": "vitest run",
-    "test:coverage": "vitest run --coverage",
+    "test:coverage": "bun ../../scripts/coverage-ratchet-guard.ts vitest.config.ts -- vitest run --coverage",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

@@ -3,6 +3,11 @@ name: CI
 on:
   pull_request:
     branches: [main]
+    # `labeled`/`unlabeled` on top of the defaults (opened, synchronize,
+    # reopened) so adding or removing the coverage-lower-ok escape hatch
+    # label re-runs the Coverage ratchet check without needing an empty
+    # commit.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
   push:
     branches: [main]
   schedule:
@@ -34,6 +39,14 @@ jobs:
       # warn-level rules that never fail the build.
       - name: Lint
         run: bun run lint --reporter=github
+
+      # Unit tests for the coverage-ratchet comparison logic (#62). Not run
+      # through turbo: scripts/ has no vitest config of its own (a
+      # default-named root one would hijack every package's bare
+      # `vitest run`), so these run on bun:test instead, outside the
+      # per-package Coverage step below.
+      - name: Script tests
+        run: bun run test:scripts
 
       # `test` is deliberately absent: the Coverage step below runs the same
       # specs through `test:coverage`, and that is the pass which gates (the
@@ -104,6 +117,19 @@ jobs:
       # summary row lands in the coverage table below.
       - name: Story tests
         run: bun run turbo run test:stories:coverage
+
+      # #62: fails a PR that lowers a committed coverage threshold versus
+      # origin/main (escape hatch: the coverage-lower-ok label), and warns,
+      # without failing, when a run above just raised a threshold the PR has
+      # not committed. Runs after Story tests, not straight after Coverage,
+      # so it also sees any in-memory auto-update to
+      # vitest.stories.config.ts; PR-only because there is no prior commit
+      # to compare a push to main against.
+      - name: Coverage ratchet check
+        if: github.event_name == 'pull_request'
+        env:
+          COVERAGE_RATCHET_ESCAPE_HATCH: ${{ contains(github.event.pull_request.labels.*.name, 'coverage-lower-ok') }}
+        run: bun scripts/check-coverage-thresholds.ts
 
       # Restore the latest main coverage snapshot into coverage-baseline/ so the
       # summary can annotate each cell with its delta vs main. Best-effort: the
