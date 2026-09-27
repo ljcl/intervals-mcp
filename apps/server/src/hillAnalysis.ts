@@ -55,6 +55,28 @@ export const CLIMB_MIN_LENGTH_M = 200;
 export const CLIMB_MIN_AVG_GRADE_PCT = 2;
 /** Window (m) for deriving grade from altitude when grade_smooth is absent. */
 export const GRADE_WINDOW_M = 30;
+/**
+ * Centred window (m) that grade is averaged over before {@link gapFactor}
+ * sees it. The Minetti curve is convex, so zero-mean grade noise applied
+ * sample by sample still raises the mean factor (±10% noise made flat GAP
+ * 13% too fast); averaging over 100 m cancels the noise and keeps a real
+ * climb's grade.
+ */
+export const GAP_GRADE_WINDOW_M = 100;
+/**
+ * Averaged grade (%) beyond which the GAP factor stops growing. Steeper than
+ * this over 100 m is walking or scrambling, where a running cost model does
+ * not hold.
+ */
+export const GAP_MAX_GRADE_PCT = 30;
+/**
+ * Distance-weighted RMS (percentage points) of per-sample grade around its
+ * {@link GAP_GRADE_WINDOW_M} average above which the elevation track counts
+ * as noisy. Real terrain changes grade over more than 100 m, so on a clean
+ * track the residual stays small; barometric noise swings grade sample to
+ * sample.
+ */
+export const NOISY_GRADE_RMS_PCT = 3;
 /** Sample gaps longer than this contribute only this much weight. */
 export const MAX_SAMPLE_GAP_SECONDS = 10;
 /**
@@ -118,7 +140,8 @@ export interface HillAnalysis {
  * Minetti et al. metabolic cost of gradient running, normalised to flat
  * (cost(0) = 3.6 J/kg/m). Multiplying speed by this factor yields the
  * flat-equivalent (GAP) speed. Gradient is clamped to ±35% where the
- * polynomial is well-behaved.
+ * polynomial is well-behaved. Callers pass grade from {@link gapGrades},
+ * never a raw per-sample grade (see {@link GAP_GRADE_WINDOW_M}).
  */
 export function gapFactor(gradeFraction: number): number {
   const i = Math.max(-0.35, Math.min(0.35, gradeFraction));
@@ -142,8 +165,17 @@ export function gapFactor(gradeFraction: number): number {
  * absent instead of being filled in (heart rate, cadence, velocity) is left
  * alone and its null samples are skipped where they are consumed, not routed
  * through this function.
+ *
+ * A stream with no real sample at all (intervals.icu's `allNull`) is an
+ * absent stream, not a gap: callers drop it first ({@link hasRealSample}).
+ * Given one, this throws rather than invent a value for every sample.
  */
 export function interpolateNulls(values: (number | null)[]): number[] {
+  if (values.length > 0 && !hasRealSample(values)) {
+    throw new RangeError(
+      "The stream has no recorded samples to interpolate between.",
+    );
+  }
   const out = new Array<number>(values.length);
   let i = 0;
   while (i < values.length) {
@@ -162,7 +194,8 @@ export function interpolateNulls(values: (number | null)[]): number[] {
       if (prev != null && next != null) {
         out[k] = prev + ((next - prev) * (k - (i - 1))) / span;
       } else {
-        out[k] = prev ?? next ?? 0;
+        // At least one side is known: the all-null case threw above.
+        out[k] = (prev ?? next) as number;
       }
     }
     i = j;
@@ -170,16 +203,22 @@ export function interpolateNulls(values: (number | null)[]): number[] {
   return out;
 }
 
+/** True when the stream holds at least one recorded (non-null) sample. */
+export function hasRealSample(values: (number | null)[] | undefined): boolean {
+  return values?.some((v) => v != null) ?? false;
+}
+
 /**
  * `HillStreams` with distance/altitude/grade_smooth resolved to plain,
  * fully-populated numeric arrays (nulls interpolated, see
  * {@link interpolateNulls}) so every downstream function below can index
- * them without a null check. `grade_smooth` is dropped entirely (treated as
- * absent) when the raw stream has no length match or is entirely null, so
- * {@link computeGrades} falls back to computing grade from altitude exactly
- * as it would for a genuinely missing stream. Every other stream is passed
- * through unchanged: a null sample there means "no data for this sample",
- * which the functions below already skip rather than treat as 0.
+ * them without a null check. `altitude` and `grade_smooth` are each dropped
+ * entirely (treated as absent) when the raw stream has no length match or is
+ * entirely null, so {@link computeGrades} falls back exactly as it would for
+ * a genuinely missing stream: an all-null altitude is no elevation data, not
+ * flat terrain. Every other stream is passed through unchanged: a null
+ * sample there means "no data for this sample", which the functions below
+ * already skip rather than treat as 0.
  */
 export interface NormalizedHillStreams {
   time: number[];
@@ -193,21 +232,29 @@ export interface NormalizedHillStreams {
   moving?: boolean[];
 }
 
-/** Resolves nulls in `distance`/`altitude`/`grade_smooth`; see {@link NormalizedHillStreams}. */
+/**
+ * Resolves nulls in `distance`/`altitude`/`grade_smooth`; see
+ * {@link NormalizedHillStreams}. `distance` must hold a real sample (callers
+ * check with {@link hasRealSample} and raise their own error first).
+ */
 export function normalizeHillStreams(
   streams: HillStreams,
 ): NormalizedHillStreams {
-  const hasUsableGrade =
-    streams.grade_smooth != null &&
-    streams.grade_smooth.length === streams.distance.length &&
-    streams.grade_smooth.some((g) => g != null);
+  const usable = (
+    values: (number | null)[] | undefined,
+  ): values is (number | null)[] =>
+    values != null &&
+    values.length === streams.distance.length &&
+    hasRealSample(values);
 
   return {
     time: streams.time,
     distance: interpolateNulls(streams.distance),
-    altitude: streams.altitude ? interpolateNulls(streams.altitude) : undefined,
-    grade_smooth: hasUsableGrade
-      ? interpolateNulls(streams.grade_smooth as (number | null)[])
+    altitude: usable(streams.altitude)
+      ? interpolateNulls(streams.altitude)
+      : undefined,
+    grade_smooth: usable(streams.grade_smooth)
+      ? interpolateNulls(streams.grade_smooth)
       : undefined,
     heartrate: streams.heartrate,
     velocity_smooth: streams.velocity_smooth,
@@ -246,6 +293,109 @@ export function computeGrades(
     grades[i] = run > 0 ? ((altitude[i]! - altitude[j]!) / run) * 100 : 0;
   }
   return { grades, source: "computed" };
+}
+
+/** Grade prepared for {@link gapFactor}, plus how noisy the raw grade was. */
+export interface GapGrades {
+  /** Per-sample grade (%) averaged over {@link GAP_GRADE_WINDOW_M}, clamped. */
+  grades: number[];
+  /** Distance-weighted RMS of the raw grade around that average (points). */
+  noiseRmsPct: number;
+  /** Set when {@link noiseRmsPct} exceeds {@link NOISY_GRADE_RMS_PCT}. */
+  warning: string | null;
+}
+
+/**
+ * The one grade every GAP number in this server is computed from: each
+ * sample's grade is the distance-weighted mean over a centred
+ * {@link GAP_GRADE_WINDOW_M} window (cut short at the ends of the
+ * activity), clamped to ±{@link GAP_MAX_GRADE_PCT}. A steady climb keeps its
+ * grade; zero-mean noise averages out instead of biasing GAP fast. The
+ * residual of the raw grade around that mean measures how noisy the
+ * elevation track is, and a noisy one gets a warning.
+ */
+export function gapGrades(grades: number[], distance: number[]): GapGrades {
+  const n = grades.length;
+  // rise[i] = grade × metres summed to sample i (sample i's grade covers
+  // the interval that ends at it), so the mean over any distance span is a
+  // difference of two interpolated values.
+  const rise = new Array<number>(n).fill(0);
+  for (let i = 1; i < n; i++) {
+    const dd = Math.max(0, distance[i]! - distance[i - 1]!);
+    rise[i] = rise[i - 1]! + grades[i]! * dd;
+  }
+  /** Rise at distance `d`, where `j` is the last sample at or before it. */
+  const riseAt = (d: number, j: number) =>
+    j >= n - 1
+      ? rise[n - 1]!
+      : rise[j]! + grades[j + 1]! * Math.max(0, d - distance[j]!);
+
+  const first = distance[0] ?? 0;
+  const last = distance[n - 1] ?? 0;
+  const half = GAP_GRADE_WINDOW_M / 2;
+  const out = new Array<number>(n);
+  let lo = 0;
+  let hi = 0;
+  let squares = 0;
+  let weight = 0;
+  for (let i = 0; i < n; i++) {
+    const from = Math.max(first, distance[i]! - half);
+    const to = Math.min(last, distance[i]! + half);
+    while (lo < n - 1 && distance[lo + 1]! <= from) lo++;
+    while (hi < n - 1 && distance[hi + 1]! <= to) hi++;
+    const mean =
+      to > from
+        ? (riseAt(to, hi) - riseAt(from, lo)) / (to - from)
+        : grades[i]!;
+    out[i] = Math.max(-GAP_MAX_GRADE_PCT, Math.min(GAP_MAX_GRADE_PCT, mean));
+    const dd = i > 0 ? distance[i]! - distance[i - 1]! : 0;
+    if (dd > 0) {
+      squares += (grades[i]! - mean) ** 2 * dd;
+      weight += dd;
+    }
+  }
+
+  const noiseRmsPct = weight > 0 ? Math.sqrt(squares / weight) : 0;
+  return {
+    grades: out,
+    noiseRmsPct,
+    warning:
+      noiseRmsPct > NOISY_GRADE_RMS_PCT
+        ? `The elevation track is noisy: grade swings about ±${round(noiseRmsPct, 1)}% around its ${GAP_GRADE_WINDOW_M} m average from sample to sample. Grade-adjusted pace uses grade averaged over ${GAP_GRADE_WINDOW_M} m, but read it as approximate.`
+        : null,
+  };
+}
+
+/**
+ * Per-sample grade-adjusted speed (m/s) for a caller that needs a GAP stream
+ * rather than segment averages (`get-aerobic-analysis`): `velocity_smooth`
+ * times {@link gapFactor} of {@link gapGrades}' averaged grade, the same GAP
+ * the hill and split tools report. Null without a distance stream, a speed
+ * stream, or any elevation data; a null speed sample stays null.
+ */
+export function gradeAdjustedSpeeds(
+  streams: Pick<
+    HillStreams,
+    "time" | "distance" | "altitude" | "grade_smooth" | "velocity_smooth"
+  >,
+): {
+  speeds: (number | null)[];
+  gradeSource: GradeSource;
+  warning: string | null;
+} | null {
+  const velocity = streams.velocity_smooth;
+  if (!velocity || !hasRealSample(streams.distance)) return null;
+  const normalized = normalizeHillStreams(streams);
+  if (!normalized.altitude && !normalized.grade_smooth) return null;
+  const { grades, source } = computeGrades(normalized);
+  const gap = gapGrades(grades, normalized.distance);
+  return {
+    speeds: velocity.map((v, i) =>
+      v == null ? null : v * gapFactor(gap.grades[i]! / 100),
+    ),
+    gradeSource: source,
+    warning: gap.warning,
+  };
 }
 
 interface IndexRange {
@@ -321,9 +471,14 @@ function averageGrade(
 const round = (value: number, dp = 2) =>
   Math.round(value * 10 ** dp) / 10 ** dp;
 
+/**
+ * `grades` is the detection grade (drives the average when there is no
+ * altitude); `gapGrade` is {@link gapGrades}' averaged grade for GAP.
+ */
 function summarizeSegment(
   streams: NormalizedHillStreams,
   grades: number[],
+  gapGrade: number[],
   range: IndexRange,
 ): HillSegment {
   const { time, distance, altitude, heartrate, velocity_smooth, watts } =
@@ -369,7 +524,7 @@ function summarizeSegment(
     }
     const v = velocity_smooth?.[i] ?? (distance[i]! - distance[i - 1]!) / dt;
     if (v != null && v > 0) {
-      gapSpeedSum += v * gapFactor(grades[i]! / 100) * weight;
+      gapSpeedSum += v * gapFactor(gapGrade[i]! / 100) * weight;
       gapW += weight;
     }
   }
@@ -455,7 +610,11 @@ export function computeDrift(
 }
 
 export function computeHillAnalysis(streams: HillStreams): HillAnalysis {
-  if (!streams.distance || streams.distance.length < 2) {
+  if (
+    !streams.distance ||
+    streams.distance.length < 2 ||
+    !hasRealSample(streams.distance)
+  ) {
     throw new HillAnalysisError(
       "No distance stream is available: hill analysis needs distance and elevation data.",
     );
@@ -474,6 +633,8 @@ export function computeHillAnalysis(streams: HillStreams): HillAnalysis {
       "No smoothed-grade stream; grade was derived from altitude over ~30 m windows.",
     );
   }
+  const gap = gapGrades(grades, normalized.distance);
+  if (gap.warning) warnings.push(gap.warning);
   if (!normalized.heartrate) {
     warnings.push(
       "No heart rate stream; climb drift falls back to grade-adjusted pace only.",
@@ -494,10 +655,10 @@ export function computeHillAnalysis(streams: HillStreams): HillAnalysis {
   );
 
   const climbs = climbRanges.map((r) =>
-    summarizeSegment(normalized, grades, r),
+    summarizeSegment(normalized, grades, gap.grades, r),
   );
   const descents = descentRanges.map((r) =>
-    summarizeSegment(normalized, grades, r),
+    summarizeSegment(normalized, grades, gap.grades, r),
   );
 
   const totalDistanceM = normalized.distance[normalized.distance.length - 1]!;

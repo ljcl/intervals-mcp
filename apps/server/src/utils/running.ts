@@ -91,6 +91,10 @@ export function metersPerSecToPace(
  * walks or hikes (those get a cadence but no pace_min_per_km in the
  * intervals.icu tools). Distinct from {@link STEP_CADENCE_ACTIVITY_TYPES}
  * below on purpose; see that set's comment.
+ *
+ * This is also the one run-type set: `get-running-summary` accepts exactly
+ * these types, and `fitnessTrend.ts` re-exports it as `RUN_TYPES` for the
+ * run-only CTL/ATL series and `get-training-load`.
  */
 export const PACE_ACTIVITY_TYPES = new Set(["Run", "TrailRun", "VirtualRun"]);
 

@@ -5,7 +5,11 @@
  * shape, using the hilly and flat intervals.icu fixtures.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { handledNotFound, handledRateLimit } from "../__fixtures__";
+import {
+  handledNotFound,
+  handledRateLimit,
+  syntheticStreams,
+} from "../__fixtures__";
 import activityFixture from "../__fixtures__/intervals/activity.json";
 import activityHilly from "../__fixtures__/intervals/activity-hilly.json";
 import streamsFixture from "../__fixtures__/intervals/streams.json";
@@ -126,6 +130,44 @@ describe("get-hill-analysis", () => {
       grade_source: string;
     };
     expect(structured.grade_source).toBe("computed");
+  });
+
+  it("warns on a noisy elevation track", async () => {
+    mockedGetActivity.mockResolvedValue(flatActivity);
+    mockedGetActivityStreams.mockResolvedValue(
+      syntheticStreams([{ metres: 6000, speed: 3.5 }], {
+        altitudeNoise: (i) => (i % 2 === 0 ? 1 : -1),
+      }),
+    );
+
+    const result = await getHillAnalysisTool.execute(
+      { id: "i189807578" },
+      "test-key",
+    );
+
+    expect(result.isError).toBeUndefined();
+    const structured = result.structuredContent as { warnings: string[] };
+    expect(structured.warnings.join(" ")).toContain("elevation track is noisy");
+    expect(result.content[0]?.text).toContain(
+      "Warning: The elevation track is noisy",
+    );
+  });
+
+  it("errors rather than calling a run with no elevation data flat", async () => {
+    mockedGetActivity.mockResolvedValue(flatActivity);
+    mockedGetActivityStreams.mockResolvedValue(
+      syntheticStreams([{ metres: 3000, speed: 3.5 }], {
+        withAltitude: false,
+      }),
+    );
+
+    const result = await getHillAnalysisTool.execute(
+      { id: "i189807578" },
+      "test-key",
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("needs elevation data");
   });
 
   it("errors cleanly for an activity with no recorded streams, naming it", async () => {

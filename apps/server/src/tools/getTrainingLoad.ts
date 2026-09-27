@@ -4,6 +4,7 @@ import { formatDuration } from "../formatters";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
 import {
   aggregateWeeks,
+  baselineWeeks,
   getWeekStart,
   selectRunWeeks,
   volumeTrend,
@@ -19,9 +20,9 @@ const name = "get-training-load";
 
 const description = `
 Returns weekly running volume (distance, time, elevation, run count) with a
-trend and injury-risk warnings for sudden increases, weekly intervals.icu
-training load, and current CTL/ATL/TSB. Use it for "how is my training
-volume trending?" or "am I ramping up too fast?".
+trend and volume-spike warnings, weekly intervals.icu training load, and
+current CTL/ATL/TSB. Use it for "how is my training volume trending?" or
+"am I ramping up too fast?".
 
 For the day-by-day CTL/ATL/TSB trend, a projection or a taper plan, use
 get-fitness-trend. For plain totals (this week, month, year to date), use
@@ -38,9 +39,12 @@ Notes:
   week. Averages and the trend use complete weeks only; the trend compares
   the last 2 with the 2 before.
 - Weeks with no runs count as zero weeks, a layoff still going on included.
-- A warning fires on a week-over-week rise over 30%, or a week over 150% of
-  the average up to it and over 30 km. The current week is flagged only on
-  the volume it already has.
+- A warning fires when a week's distance is over 1.5 times the average of
+  the 4 complete weeks before it (the acute:chronic ratio; needs 3 of them,
+  and the 4 weeks before the window count). So a normal week after a
+  recovery or taper week does not fire. It marks a sharp rise on recent
+  volume, not a measured injury risk: the evidence for ratio thresholds is
+  weak. The current week is flagged only on the volume it already has.
 `;
 
 const inputSchema = z.object({
@@ -94,6 +98,7 @@ export const getTrainingLoadTool = {
       const {
         lookback,
         runs: runActivities,
+        baselineRuns,
         loadActivities,
         current,
         source,
@@ -163,12 +168,17 @@ export const getTrainingLoadTool = {
       );
       const totalLoad = sortedWeeks.reduce((sum, w) => sum + w.load, 0);
 
-      // Averages, the trend verdict and the injury-risk warnings are
+      // Averages, the trend verdict and the volume-spike warnings are
       // run-based, over the weeks selectRunWeeks picks: the same call the
-      // app feed makes, so the two surfaces can never disagree (#43).
+      // app feed makes, so the two surfaces can never disagree (#43). The
+      // runs before the window are only the warnings' baseline (#60).
       // Averages and the trend read complete weeks only. With no complete
       // week yet, the averages fall back to the week in progress.
-      const runWeeks = selectRunWeeks(buckets, lookback.currentWeekStart);
+      const runWeeks = selectRunWeeks(
+        buckets,
+        lookback.currentWeekStart,
+        baselineWeeks(baselineRuns, lookback),
+      );
       const averageWeeks =
         runWeeks.complete.length > 0 ? runWeeks.complete : runWeeks.span;
       const numWeeks = averageWeeks.length || 1;
@@ -202,7 +212,7 @@ export const getTrainingLoadTool = {
         );
       }
       warnings.push(
-        "Weekly volume and injury-risk warnings are computed from " +
+        "Weekly volume and volume-spike warnings are computed from " +
           "Run/TrailRun/VirtualRun activities only.",
       );
       if (runOnly) {

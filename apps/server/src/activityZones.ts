@@ -7,7 +7,10 @@
  * so the chart and the text can never disagree on the numbers.
  */
 import { type ZoneSet } from "@intervals-mcp/data";
-import { type IntervalsActivity } from "./intervalsClient";
+import {
+  type IntervalsActivity,
+  type IntervalsSportSettings,
+} from "./intervalsClient";
 
 export interface ActivityZonesData {
   activityId: string;
@@ -30,10 +33,9 @@ const round1 = (value: number) => Math.round(value * 10) / 10;
  * times count mismatch (would mislabel recorded time under the wrong zone),
  * or nothing recorded.
  *
- * Exported so the sport-settings fallback in `tools/getActivity.ts` and
- * `tools/getRunningSummary.ts` can build a zone set from a fallback bounds
- * array with the same min/max/pct derivation as the activity's own zones,
- * rather than each re-deriving zone edges from a bounds array by hand.
+ * The sport-settings fallback in {@link resolveHrZones} builds its zone set
+ * here too, with the same min/max/pct derivation as the activity's own
+ * zones.
  */
 export function buildZoneSet(
   type: ZoneSet["type"],
@@ -107,4 +109,75 @@ export function hrZoneMismatchWarning(
   if (bounds.length === times.length) return null;
 
   return `Heart rate zones omitted: recorded bounds (${bounds.length} zones) do not match the recorded zone times (${times.length} zones).`;
+}
+
+/** HR zone bounds for one activity's recorded zone times, and where they came from. */
+export type ResolvedHrZones =
+  | { set: ZoneSet; source: "activity" | "sport_settings"; note: null }
+  /** `note` says why there is no set; null when there were no zone times. */
+  | { set: null; source: null; note: string | null };
+
+/**
+ * The one home for HR zone bound resolution, shared by `get-activity`
+ * (`hr_zones`) and `get-running-summary` (`hr_zone_summary`). The
+ * activity's own recorded `icu_hr_zones` come first, through
+ * `mapIntervalsZones`, the same source `get-activity-zones` reads: they are
+ * the right settings group for any type and survive a later edit of the
+ * athlete's zones. `sportSettings` (the Run group) is a fallback only when
+ * the activity has no bounds of its own and the group's `types` names this
+ * activity's type: a Walk or Hike is a different group with its own bounds
+ * and zone count. Returns no set, with a note, rather than label recorded
+ * zone times under bounds that do not match them.
+ */
+export function resolveHrZones(
+  activity: IntervalsActivity,
+  sportSettings: IntervalsSportSettings | null,
+  type: string,
+): ResolvedHrZones {
+  const times = activity.icu_hr_zone_times;
+  if (!times || times.length === 0) {
+    return { set: null, source: null, note: null };
+  }
+
+  const own = mapIntervalsZones(activity).find(
+    (set) => set.type === "heartrate",
+  );
+  if (own) return { set: own, source: "activity", note: null };
+
+  // The activity has bounds, but `mapIntervalsZones` dropped them (a
+  // bounds/times count mismatch, or no time recorded): sport settings
+  // cannot safely paper over that.
+  if (activity.icu_hr_zones && activity.icu_hr_zones.length > 0) {
+    return {
+      set: null,
+      source: null,
+      note: hrZoneMismatchWarning(activity) ?? "No time recorded in HR zones.",
+    };
+  }
+
+  const bounds =
+    sportSettings?.types?.includes(type) &&
+    sportSettings.hr_zones &&
+    sportSettings.hr_zones.length > 0
+      ? sportSettings.hr_zones
+      : null;
+  if (!bounds) {
+    return {
+      set: null,
+      source: null,
+      note: "HR zone bounds are unavailable; recorded zone times could not be labelled.",
+    };
+  }
+  if (bounds.length !== times.length) {
+    return {
+      set: null,
+      source: null,
+      note: `HR zone bounds (${bounds.length} zones) do not match the recorded zone times (${times.length} zones); omitted.`,
+    };
+  }
+
+  const fallback = buildZoneSet("heartrate", "bpm", bounds, times);
+  return fallback
+    ? { set: fallback, source: "sport_settings", note: null }
+    : { set: null, source: null, note: "No time recorded in HR zones." };
 }

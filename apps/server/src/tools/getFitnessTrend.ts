@@ -1,9 +1,13 @@
 import { z } from "zod";
 import { getTimeZone } from "../config";
 import {
+  ctlDelta,
   type FitnessTrendDay,
+  MAX_TAPER_DAYS,
   type PlannedLoad,
   type TaperWeek,
+  taperTargetDateError,
+  tsbDelta,
 } from "../fitnessTrend";
 import { loadFitnessTrend } from "../loadFitnessTrend";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
@@ -14,7 +18,7 @@ import {
   todayLocal,
 } from "../utils/localDate";
 import { READ_ONLY } from "./_annotations";
-import { toolErrorText } from "./_errors";
+import { prefixedErrorText, toolErrorText } from "./_errors";
 import { FitnessTrendOutputSchema, warnOnSchemaDrift } from "./outputs";
 
 const name = "get-fitness-trend";
@@ -88,14 +92,10 @@ const inputSchema = z.object({
         "[{ date: YYYY-MM-DD, load }], dates after today. Dates inside the " +
         "projection window that are not listed count as rest (zero).",
     ),
-  targetDate: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, {
-      error: "Invalid target date. Use YYYY-MM-DD.",
-    })
+  targetDate: dateInputSchema
     .optional()
     .describe(
-      "Race or peak date (YYYY-MM-DD) to solve a load taper for. Omit for no taper plan.",
+      `Race or peak date (YYYY-MM-DD) to solve a load taper for: after today, at most ${MAX_TAPER_DAYS} days ahead. Omit for no taper plan.`,
     ),
   targetTsb: z
     .number()
@@ -199,6 +199,17 @@ export const getFitnessTrendTool = {
       const tz = getTimeZone();
       const endDate = todayLocal(tz);
       const windowStart = addDays(endDate, -(days - 1));
+      const targetError = targetDate
+        ? taperTargetDateError(targetDate, endDate)
+        : null;
+      if (targetError) {
+        return {
+          content: [
+            { type: "text" as const, text: prefixedErrorText(targetError) },
+          ],
+          isError: true,
+        };
+      }
       const resolvedProjectDays = resolveProjectDays(
         projectDays,
         typedPlannedLoads,
@@ -236,18 +247,13 @@ export const getFitnessTrendTool = {
         ...loaded.warnings,
       ];
 
-      // 7-day delta by date, not array index, since a gappy whole-body
-      // series is not necessarily contiguous.
-      const byDate = new Map(displaySeries.map((d) => [d.date, d]));
-      const weekAgo = current
-        ? (byDate.get(addDays(current.date, -7)) ?? null)
-        : null;
+      // By date, not array index: a gappy whole-body series is not
+      // contiguous. The app narrates the same `ctlDelta`.
+      const ctl7d = ctlDelta(displaySeries, 7);
+      const tsb7d = tsbDelta(displaySeries, 7);
       const trendSummary =
-        current && weekAgo
-          ? {
-              ctl_7d_delta: Math.round((current.ctl - weekAgo.ctl) * 10) / 10,
-              tsb_7d_delta: Math.round((current.tsb - weekAgo.tsb) * 10) / 10,
-            }
+        ctl7d !== null && tsb7d !== null
+          ? { ctl_7d_delta: ctl7d, tsb_7d_delta: tsb7d }
           : null;
 
       const result = {

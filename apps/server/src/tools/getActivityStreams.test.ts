@@ -389,6 +389,7 @@ describe("getActivityStreamsTool.execute", () => {
     expect(mockedGetActivityStreams).toHaveBeenCalledWith("key", "i189807578", [
       "heartrate",
       "time",
+      "distance",
     ]);
     expect(result.isError).toBeUndefined();
     expect(Object.keys(result.structuredContent?.streams ?? {})).toEqual([

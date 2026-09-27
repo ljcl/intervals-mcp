@@ -68,10 +68,10 @@ export function buildTrendA11y(
     );
   }
 
-  const direction =
-    visibility.showCtl && data.series.length >= 8
-      ? last.ctl - data.series[data.series.length - 8]!.ctl
-      : null;
+  // The server's number, not one derived from `series` by index: a
+  // whole-body series skips days with no wellness, so 7 rows back can be 9
+  // calendar days back, and the text tool would print a different change.
+  const direction = visibility.showCtl ? (data.ctl7dDelta ?? null) : null;
   if (direction !== null) {
     const rounded = Math.round(direction * 10) / 10;
     parts.push(

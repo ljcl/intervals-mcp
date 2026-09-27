@@ -480,8 +480,8 @@ describe("get-training-load weeks (#43)", () => {
     };
   }
 
-  const injuryWarnings = (warnings: string[]) =>
-    warnings.filter((w) => /injury risk|Unusually high/.test(w));
+  const spikeWarnings = (warnings: string[]) =>
+    warnings.filter((w) => /Volume spike/.test(w));
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -509,7 +509,7 @@ describe("get-training-load weeks (#43)", () => {
     expect(structured.weekly_breakdown.map((w) => w.distance_km)).toEqual([
       60, 60, 60, 60, 40,
     ]);
-    expect(injuryWarnings(structured.warnings)).toEqual([]);
+    expect(spikeWarnings(structured.warnings)).toEqual([]);
     expect(structured.trend).toBe("stable");
     expect(structured.averages.distance_km_per_week).toBe(60);
     expect(structured.averages.runs_per_week).toBe(6);
@@ -533,7 +533,7 @@ describe("get-training-load weeks (#43)", () => {
     expect(structured.weekly_breakdown.map((w) => w.distance_km)).toEqual([
       60, 60, 60, 60, 16,
     ]);
-    expect(injuryWarnings(structured.warnings)).toEqual([]);
+    expect(spikeWarnings(structured.warnings)).toEqual([]);
     expect(structured.trend).toBe("stable");
     expect(structured.averages.distance_km_per_week).toBe(60);
   });
@@ -550,7 +550,7 @@ describe("get-training-load weeks (#43)", () => {
   it("gives every weekday the same verdict for the same training", async () => {
     for (let i = 0; i < 7; i += 1) {
       const { structured } = await callOn(addDays("2026-09-21", i), 28);
-      expect(injuryWarnings(structured.warnings)).toEqual([]);
+      expect(spikeWarnings(structured.warnings)).toEqual([]);
       expect(structured.trend).toBe("stable");
       expect(structured.averages.distance_km_per_week).toBe(60);
     }
@@ -568,12 +568,12 @@ describe("get-training-load weeks (#43)", () => {
       { loadActivities: activities, runOnly: false },
     );
 
-    const textWarnings = injuryWarnings(structured.warnings);
+    const textWarnings = spikeWarnings(structured.warnings);
     const appWarnings = appData.weeks.flatMap((w) =>
       w.warningReasons.map((reason) => `Week of ${w.weekStarting}: ${reason}`),
     );
     expect(textWarnings).toEqual([
-      "Week of 2026-06-22: Unusually high volume (45 km vs 19 km average up to that week)",
+      "Week of 2026-06-22: Volume spike: 45 km is 4.5 times the 10 km average of the previous 3 weeks",
     ]);
     expect(appWarnings).toEqual(textWarnings);
   });
@@ -605,7 +605,7 @@ describe("get-training-load weeks (#43)", () => {
     );
     // No "unusually high" warning on the 50 km weeks from the lower
     // average the layoff brings.
-    expect(injuryWarnings(structured.warnings)).toEqual([]);
+    expect(spikeWarnings(structured.warnings)).toEqual([]);
 
     // App feed: the same weeks, a trend line that falls with the layoff, and
     // the same (no) warnings.

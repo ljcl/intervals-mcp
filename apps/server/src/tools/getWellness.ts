@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { getTimeZone } from "../config";
+import { ctlAtlTsb } from "../fitnessTrend";
 import { round } from "../formatters";
 import {
   getWellness as getWellnessClient,
@@ -74,10 +75,10 @@ export interface WellnessDayEntry {
 
 /** Maps one raw intervals.icu wellness record to the compact entry. Exported for direct testing. */
 export function mapWellnessDay(w: IntervalsWellness): WellnessDayEntry {
-  const ctl = w.ctl ?? null;
-  const atl = w.atl ?? null;
-  // tsb comes from the unrounded ctl and atl, as get-fitness-trend does.
-  const tsb = ctl != null && atl != null ? round(ctl - atl, 1) : null;
+  // CTL/ATL/TSB come from `ctlAtlTsb`, the one home get-fitness-trend reads
+  // its wellness series through too. A day with only one of CTL or ATL still
+  // reports it, with no TSB.
+  const loads = w.ctl != null && w.atl != null ? ctlAtlTsb(w.ctl, w.atl) : null;
 
   return {
     date: w.id,
@@ -87,9 +88,9 @@ export function mapWellnessDay(w: IntervalsWellness): WellnessDayEntry {
     sleep_hours: w.sleepSecs != null ? round(w.sleepSecs / 3600, 1) : null,
     sleep_score: w.sleepScore ?? null,
     weight_kg: w.weight ?? null,
-    ctl: ctl != null ? round(ctl, 1) : null,
-    atl: atl != null ? round(atl, 1) : null,
-    tsb,
+    ctl: loads?.ctl ?? (w.ctl != null ? round(w.ctl, 1) : null),
+    atl: loads?.atl ?? (w.atl != null ? round(w.atl, 1) : null),
+    tsb: loads?.tsb ?? null,
     ramp_rate: w.rampRate != null ? round(w.rampRate, 1) : null,
     readiness: w.readiness ?? null,
     soreness: w.soreness ?? null,

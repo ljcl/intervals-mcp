@@ -170,6 +170,14 @@ describe("buildSummaryStats", () => {
     );
   });
 
+  it("says Today when form is already positive today", () => {
+    const stats = buildSummaryStats({
+      ...mockRestProjectionData,
+      tsbPositiveDate: mockRestProjectionData.endDate!,
+    });
+    expect(stats[3]).toEqual({ label: "Fresh on", value: "Today" });
+  });
+
   it("falls back to the activity count when form never turns positive", () => {
     const stats = buildSummaryStats({
       ...mockRestProjectionData,

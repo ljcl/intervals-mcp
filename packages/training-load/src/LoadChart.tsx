@@ -22,7 +22,7 @@ interface LoadChartProps {
   weeks: WeekSummary[];
   /** Draw the rolling-average trend line. */
   showTrend: boolean;
-  /** Highlight injury-risk weeks in the warning color. */
+  /** Highlight volume-spike weeks in the warning color. */
   showWarnings: boolean;
   mode?: "mobile" | "desktop";
 }

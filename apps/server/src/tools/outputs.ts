@@ -173,15 +173,21 @@ export const CompareActivitiesOutputSchema = z.object({
 const AerobicHalfSchema = z.object({
   avg_output: z
     .number()
-    .describe("m/s on the pace basis, W on the power basis"),
+    .describe(
+      "m/s on the gap and pace bases (grade-adjusted on gap), W on the power basis",
+    ),
   avg_pace_min_per_km: z
     .string()
     .nullable()
-    .describe("m:ss on the pace basis; null on the power basis"),
+    .describe(
+      "m:ss on the gap and pace bases (grade-adjusted on gap); null on the power basis",
+    ),
   avg_hr: z.number(),
   output_per_beat: z
     .number()
-    .describe("m/min per beat on the pace basis, W/beat on the power basis"),
+    .describe(
+      "m/min per beat on the gap and pace bases, W/beat on the power basis",
+    ),
   minutes: z.number(),
 });
 
@@ -192,15 +198,29 @@ export const AerobicAnalysisOutputSchema = z.object({
   name: z.string(),
   date: z.string(),
   type: z.string(),
-  basis: z.enum(["pace", "power"]),
+  basis: z
+    .enum(["gap", "pace", "power"])
+    .nullable()
+    .describe(
+      "Basis decoupling_pct and efficiency_factor were computed on; null when both are intervals.icu's own values, whose basis it does not report",
+    ),
   decoupling_pct: z.number(),
   decoupling_source: AerobicSourceEnum,
   interpretation: z.string(),
-  /** m/min per beat on the pace basis, W/beat on the power basis. */
+  /** m/min per beat on the gap and pace bases, W/beat on the power basis. */
   efficiency_factor: z.number(),
   efficiency_factor_source: AerobicSourceEnum,
   intensity_factor: z.number().nullable(),
   threshold_power_w: z.number().nullable(),
+  intervals_icu: z
+    .object({
+      decoupling_pct: z.number().nullable(),
+      efficiency_factor: z.number().nullable(),
+    })
+    .nullable()
+    .describe(
+      "intervals.icu's own values for the activity, kept apart from the computed ones: it does not report their basis or unit. Null when it has neither",
+    ),
   breakdown: z
     .object({
       first_half: AerobicHalfSchema,
@@ -208,7 +228,7 @@ export const AerobicAnalysisOutputSchema = z.object({
       normalized_output: z
         .number()
         .describe(
-          "m/s on the pace basis, W (normalized power) on the power basis",
+          "m/s on the gap and pace bases, W (normalized power) on the power basis",
         ),
       normalized_pace_min_per_km: z.string().nullable(),
       moving_minutes: z.number(),
@@ -216,9 +236,7 @@ export const AerobicAnalysisOutputSchema = z.object({
       excluded_warmup_minutes: z.number(),
     })
     .nullable()
-    .describe(
-      "Null when both decoupling and efficiency factor came from intervals.icu and includeBreakdown was not set",
-    ),
+    .describe("Null when both values are intervals.icu's own (basis is null)"),
   units: z.object({
     pace: z.literal("min/km"),
     power: z.literal("W"),
@@ -315,7 +333,9 @@ export const FitnessTrendOutputSchema = z.object({
   tsb_positive_date: z
     .string()
     .nullable()
-    .describe("First projected date TSB crosses ≥ 0, if projected"),
+    .describe(
+      "If projected: end_date when TSB is already ≥ 0 today, else the first projected date TSB reaches 0; null if it does not",
+    ),
   taper: TaperPlanSchema.nullable().describe(
     "Solved load taper to the requested target date, or null if none was requested",
   ),
@@ -554,9 +574,9 @@ export const SplitAnalysisOutputSchema = z.object({
   date: z.string(),
   type: z.string(),
   grade_source: z
-    .enum(["grade_smooth", "computed"])
+    .enum(["grade_smooth", "computed", "none"])
     .describe(
-      "grade_smooth when intervals.icu's smoothed-grade stream was used, computed when derived from altitude",
+      "grade_smooth when intervals.icu's smoothed-grade stream was used, computed when derived from altitude, none without elevation data (every grade-adjusted field is then null)",
     ),
   gap_source: z
     .literal("model")
@@ -568,7 +588,9 @@ export const SplitAnalysisOutputSchema = z.object({
       shape: SplitShapeSchema.describe(
         "On the clock: positive = second half slower",
       ),
-      gap_shape: SplitShapeSchema.describe("Same, corrected for grade"),
+      gap_shape: SplitShapeSchema.nullable().describe(
+        "Same, corrected for grade; null without elevation data",
+      ),
       first_half_pace_sec_per_km: z.number(),
       second_half_pace_sec_per_km: z.number(),
       first_half_pace_min_per_km: z.string().nullable(),
@@ -602,7 +624,18 @@ export const SplitAnalysisOutputSchema = z.object({
     distance_m: z.number(),
     moving_time_s: z.number().int(),
     elapsed_time_s: z.number().int(),
-    elevation_gain_m: z.number(),
+    elevation_gain_m: z
+      .number()
+      .nullable()
+      .describe(
+        "Total ascent in whole metres; null with neither a recorded value nor an altitude stream",
+      ),
+    elevation_gain_source: z
+      .enum(["intervals.icu", "computed"])
+      .nullable()
+      .describe(
+        "intervals.icu: the activity's own total_elevation_gain, as get-activity reports it; computed: summed from the altitude samples with a 3 m hysteresis",
+      ),
     avg_pace_sec_per_km: z.number().nullable(),
     avg_pace_min_per_km: z.string().nullable(),
     avg_gap_pace_sec_per_km: z.number().nullable(),
@@ -674,10 +707,15 @@ export const IntervalAnalysisOutputSchema = z.object({
     .nullable(),
   hr_signal: z
     .object({
-      max_hr: z.number(),
+      max_hr: z.number().describe("Max HR the share is measured against"),
+      max_hr_source: z
+        .enum(["athlete_max_hr", "hr_zones", "activity_peak"])
+        .describe(
+          "athlete_max_hr or the top icu_hr_zones bound; activity_peak (this run's own peak) is a fallback that cannot tell easy from hard",
+        ),
       high_intensity_share_pct: z
         .number()
-        .describe("% of moving time at ≥ 88% of the activity's max HR"),
+        .describe("% of moving time at ≥ 88% of max_hr"),
       assessment: z.string(),
     })
     .nullable(),

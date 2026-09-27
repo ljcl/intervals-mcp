@@ -14,7 +14,7 @@
  * no recorded `ctl`/`atl` is a gap, not a zero-load day, so it is left out of
  * the series rather than filled with a fabricated zero.
  */
-import { type FitnessTrendDay, round1 } from "./fitnessTrend";
+import { ctlAtlTsb, type FitnessTrendDay, round1 } from "./fitnessTrend";
 import { getWellness } from "./intervalsClient";
 import { addDays } from "./utils/localDate";
 
@@ -78,9 +78,7 @@ export async function loadWellnessFitnessSeries(
     series.push({
       date,
       load: round1(w.atlLoad ?? 0),
-      ctl: round1(w.ctl!),
-      atl: round1(w.atl!),
-      tsb: round1(w.ctl! - w.atl!),
+      ...ctlAtlTsb(w.ctl!, w.atl!),
     });
   }
 

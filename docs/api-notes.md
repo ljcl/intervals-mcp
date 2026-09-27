@@ -56,6 +56,8 @@ at `apps/server/src/__fixtures__/intervals/`.
 - Wellness HRV fields (2026-09-26, #48): `hrv` carries rMSSD and `hrvSDNN` carries SDNN, both in ms. The spec types both as plain floats and describes neither. Which field is set depends on the source device. Apple Watch sets only `hrvSDNN` (above). #48 reports that Garmin, Oura and Whoop set `hrv` and leave `hrvSDNN` null. This account has no such device, so that part is not verified here. `get-wellness` reads both fields and assumes neither.
 - Stride and step length (2026-09-26, #76): `average_stride` (m) is distance per step, not per two-step stride. It equals distance divided by moving time, divided by the step rate (`average_cadence` times 2, divided by 60). This holds to four decimals on the three fixture runs and on every fixture interval. For example, run `i189807578` covers 8,030.29 m in 2,372 s at 83.155 strides/min: 3.3855 m/s over 2.7718 steps/s gives 1.2214 m, and `average_stride` is 1.2213699. So intervals.icu computes it from speed and cadence. `average_step_length` (mm) is the device's own step length. On whole runs the two agree within about 1% (1,226 mm and 1.221 m, 1,108 mm and 1.097 m, 1,209 mm and 1.204 m on the three fixture runs). On an interval they can differ: a slow WORK interval in `activity-multilap-intervals.json` (803 m in 320 s) has `average_stride` 0.900 m and `average_step_length` 1,191 mm. The text of `get-activity` and `get-running-dynamics` prints step length only. `stride_m` stays in structuredContent.
 - `GET /athlete/0/sport-settings/Run`: `lthr`, `max_hr` and `hr_zones` (ascending bpm upper bounds, the last equal to `max_hr`); `threshold_pace` and `pace_zones` null.
+- Athlete HR on the activity (2026-09-27, #47, from the committed fixtures): `GET /activity/{id}` carries `athlete_max_hr` and `lthr` (the athlete's settings, OpenAPI `Activity`) next to `icu_hr_zones`. On `activity.json`, `activity-hilly.json`, `activity-multilap.json` and every row of `activities.json`: `athlete_max_hr` 190 and `lthr` 172. `icu_hr_zones` is `[142, 154, 163, 171, 190]` on the runs and a 7-zone set ending at 190 on some other types, so the last zone bound equals `athlete_max_hr` either way. `max_heartrate` is the run's own peak (182 to 186 on those runs). `get-interval-analysis` reads `athlete_max_hr`, then the last zone bound.
+- Sliver intervals (2026-09-27, #47): `activity-multilap-intervals.json` ends with a WORK interval of 26 m in 12 s and a RECOVERY interval of 4 s with `distance` and `average_speed` null, and has a 21 m / 6 s RECOVERY interval mid-run. Apple Watch activities often end this way. `get-interval-analysis` ignores intervals under 50 m or 15 s.
 - `GET /athlete/0/gear` returns Gear objects `{ id (numeric string, e.g. "71459"), name, type ("Shoes"), distance (metres, includes the starting distance entered in the UI), activities (count), retired (null when active), reminders ([]) }`.
 - `PUT /activity/{id}` with `{"gear":{"id":"<gearId>"}}` returns 200 and assigns the gear: the activity then reads `gear: { id, name: null, distance: null, primary: null }` (name is not populated on the activity; resolve it via the gear list), and the gear's `distance` increases by the activity distance and `activities` by 1 (54000 to 62030.29 m on the test).
 - `{"gear": null}` and `{"gear": {"id": null}}` both return 200 but are ignored: gear cannot be cleared this way. `update-activity` should support switching gear, not clearing it.
@@ -99,7 +101,10 @@ at `apps/server/src/__fixtures__/intervals/`.
   `efficiency_factor` as pace/power per heartbeat) is an assumption carried over from the
   intervals.icu UI and the OpenAPI field names, not something observed on a populated value.
   Re-verify against an activity that actually carries these fields before trusting the unit beyond
-  the advisory framing the tools already give it.
+  the advisory framing the tools already give it. Which basis intervals.icu uses for them (power,
+  raw pace, or grade-adjusted pace) was never observed either, so `get-aerobic-analysis` reports
+  them with `basis: null` and no efficiency unit, and keeps them apart from any value it computes
+  (#74).
 - Power zones are dropped from `mapIntervalsZones` (`activityZones.ts`) and the
   `get-activity-zones`/activity-zones-app outputs for now, rather than shipped unverified.
   `icu_zone_times`'s `{id, secs}` shape (per `IntervalsZoneTimeSchema`) has not been exercised
@@ -110,6 +115,14 @@ at `apps/server/src/__fixtures__/intervals/`.
   percent of FTP, whether `icu_zone_times` has one entry per `icu_power_zones` bound or one
   extra (SS), and whether pairing by `id` (rather than by array index, as `activityZones.ts`
   did before this was dropped) is needed to line entries up correctly.
+- `fixed_altitude` (m) is present on Apple Watch runs, but what it holds (a corrected track, or
+  a terrain-model lookup) is not known: `docs/intervals-openapi.json` does not mention it, and
+  no probe compared it with `altitude` (checked 2026-09-27, no live access). Hill and split
+  analysis use `grade_smooth` and `altitude` only. Compare the two streams on a run with a
+  noisy barometric track before using `fixed_altitude` for grade.
+- A stream that is entirely null (`allNull: true`) reaches the analysis modules as an array of
+  nulls. Hill and split analysis treat an all-null `altitude` as no altitude, not as flat
+  ground (#45).
 - `average_gradient` (interval field) is a fraction, not a percent: confirmed by checking
   elevation gain against `average_gradient * distance` (see `intervalLaps.ts`).
 
@@ -158,7 +171,7 @@ sport-settings, fitness-model-events, athlete-summary, and one activity, all aga
 - All 12 arrays are aligned at length 2,374 on this run (`latlng`'s `data`
   and `data2` are both 2,374 too).
 - `time`: 0..2373, 0 nulls, no gaps over 1s on this run (continuous 1 Hz;
-  other runs have auto-pause gaps, see the Phase 1 verified section above).
+  other runs have auto-pause gaps, see "Recording gaps" below).
 - Leading/trailing-only nulls: `cadence` 0, `heartrate` 0; `distance` 2,
   `altitude` 2, `grade_smooth` 2, `latlng` 2 (both `data` and `data2`), all
   at indices 0-1; `velocity_smooth` 7 (3 leading, 4 trailing).
@@ -212,6 +225,34 @@ sensor lost contact.
   sample of 0 or below to `null`, once, for every caller. `watts` and
   `cadence` keep their zeros: 0 W while coasting and 0 cadence while stopped
   are real values.
+
+## Recording gaps and the derived `moving` stream (2026-09-27, #73, fixtures only)
+
+intervals.icu never returns a `moving` stream, so `loadIntervalsStreams`
+derives it (docs/architecture.md, "Streams").
+
+- Verified: the `time` stream keeps auto-pause gaps (38 to 76 s on this
+  account, 2026-09-24). In `streams-multilap.json` the 74 s gap (t=164 to
+  t=238) has `distance` flat at 525.92 m and `velocity_smooth` `null` on
+  both sides. The same fixture has two short gaps: 3 s at t=430 (3.06 m
+  covered) and 4 s at t=529 (0 m).
+- `recording_stops` on that activity is `[164, 431, 530, 2215, 3023, 3283]`.
+  The first three match those gaps to within 1 s. So the values are elapsed
+  seconds, not sample indices (the gap at t=430 is at index 357). The spec
+  only types the field as an integer array. The field gives where a stop
+  starts, but not how long it is; the `time` stream shows every gap, so
+  `moving` does not read `recording_stops`.
+- Not verified: whether intervals.icu also keeps smart-recording gaps in the
+  `time` stream (Garmin "smart recording" writes a sample every 1 to 8 s or
+  so). This account has only Apple Watch runs at 1 Hz, and no live probe
+  was made. The `moving` rule assumes that it does: a gap over 5 s is a stop
+  only when the distance across it gives a speed below 0.5 m/s. To confirm,
+  probe one smart-recording run: `GET /activity/{id}/streams.json?types=time,distance`,
+  read-only. Record the gap sizes and the distance across them here.
+- Also not verified: what `distance` does across a pause when the runner
+  walks on. If the device holds distance while paused, the gap reads as a
+  stop. If intervals.icu fills the gap with the GPS distance, a walk at over
+  0.5 m/s reads as moving, and its time and distance both count.
 
 ## update-activity live write check (2026-09-25, user-approved, one run)
 

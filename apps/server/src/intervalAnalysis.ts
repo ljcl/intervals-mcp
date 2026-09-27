@@ -1,4 +1,4 @@
-import { interpolateNulls } from "./hillAnalysis";
+import { hasRealSample, interpolateNulls } from "./hillAnalysis";
 
 /**
  * Urban-stop-aware interval detection for `get-interval-analysis`.
@@ -15,6 +15,8 @@ import { interpolateNulls } from "./hillAnalysis";
  * lights), and pace/HR/cadence fade across reps is reported. Clean
  * structured laps are preferred over stream reconstruction when present,
  * because device laps corrupt in rain/sweat but are exact when healthy.
+ * Rests are paired with the work segment that ends right before them, by
+ * adjacency, so a standing start cannot shift every later pairing (#47).
  */
 
 /**
@@ -48,6 +50,20 @@ export interface IntervalLap {
   avgHr: number | null;
   avgCadence: number | null;
   avgWatts: number | null;
+  /** intervals.icu's own label (`WORK`/`RECOVERY`), when present. */
+  type?: string | null;
+}
+
+/**
+ * The athlete's heart-rate settings as recorded on the activity. The
+ * near-max threshold comes from these, never from the run's own peak: on an
+ * easy run the peak is low, so most of the run would read as "near max".
+ */
+export interface AthleteHr {
+  /** The activity's `athlete_max_hr`. */
+  athleteMaxHr?: number | null;
+  /** The activity's `icu_hr_zones` (ascending upper bounds, last = max HR). */
+  hrZones?: number[] | null;
 }
 
 /** Raised for inputs the analysis cannot work with; message is user-facing. */
@@ -70,6 +86,26 @@ export const MAX_SAMPLE_GAP_SECONDS = 10;
 export const CLEAN_LAP_SPEED_COV = 0.08;
 /** Share of moving time near max HR that reads as a hard workout. */
 export const HR_HIGH_INTENSITY_SHARE = 0.15;
+/** "Near max HR" starts at this fraction of the athlete's max HR. */
+export const HR_NEAR_MAX_FRACTION = 0.88;
+/**
+ * Laps shorter than this (metres or seconds) are slivers, such as the 0 m
+ * lap an Apple Watch often records at the end: ignored, not a reason to
+ * give up on the lap set.
+ */
+export const MIN_LAP_DISTANCE_M = 50;
+export const MIN_LAP_SECONDS = 15;
+/** A lap within this fraction of 1 km or 1 mile has an auto-lap distance. */
+const AUTO_LAP_TOLERANCE = 0.03;
+/** Share of full laps at an auto-lap distance that marks an auto-lap set. */
+const AUTO_LAP_SHARE = 0.7;
+/**
+ * On an auto-lap set a fast lap can be a downhill km, so without matching
+ * WORK/RECOVERY labels it takes this many fast blocks, each at least this
+ * multiple of the slower laps' speed, to count as intervals.
+ */
+export const AUTO_LAP_MIN_BLOCKS = 3;
+export const AUTO_LAP_FAST_FACTOR = 1.15;
 /**
  * Minimum fraction of a rep's moving time that must carry a real (non-zero)
  * power sample before an average is reported; below this the power stream is
@@ -115,9 +151,16 @@ export interface IntervalFade {
   summary: string;
 }
 
+/**
+ * Where `HrSignal.maxHr` came from: the activity's `athlete_max_hr`, the
+ * last `icu_hr_zones` bound, or (last resort) this run's own peak.
+ */
+export type MaxHrSource = "athlete_max_hr" | "hr_zones" | "activity_peak";
+
 export interface HrSignal {
   maxHr: number;
-  /** Share (0–1) of time spent at ≥ 88% of the activity's max HR. */
+  maxHrSource: MaxHrSource;
+  /** Share (0–1) of moving time at ≥ 88% of `maxHr`. */
   highIntensityShare: number;
   assessment: string;
 }
@@ -315,56 +358,154 @@ export function classifyRest(
   };
 }
 
-/**
- * Clean structured laps: at least 3 laps, at least 2 clearly-fast work laps,
- * and the work laps tightly clustered in speed. Corrupted auto-laps (rain,
- * sweat) fail the cluster test and fall back to streams.
- */
-export function selectCleanWorkLaps(laps: IntervalLap[]): IntervalLap[] | null {
-  if (laps.length < 3) return null;
-  const speeds = laps
-    .map(
-      (l) =>
-        l.avgSpeedMs ?? (l.movingTimeS > 0 ? l.distanceM / l.movingTimeS : 0),
-    )
-    .filter((s) => s > 0);
-  if (speeds.length !== laps.length) return null;
-  const sorted = [...speeds].sort((a, b) => a - b);
-  const median = sorted[Math.floor(sorted.length / 2)]!;
-  const work = laps.filter(
-    (_lap, i) => speeds[i]! >= FAST_SEGMENT_FACTOR * median,
-  );
-  if (work.length < 2) return null;
-  const workSpeeds = work.map(
-    (l) => l.avgSpeedMs ?? l.distanceM / l.movingTimeS,
-  );
-  const mean = workSpeeds.reduce((a, b) => a + b, 0) / workSpeeds.length;
-  const variance =
-    workSpeeds.reduce((sum, s) => sum + (s - mean) ** 2, 0) / workSpeeds.length;
-  const cov = mean > 0 ? Math.sqrt(variance) / mean : 1;
-  return cov <= CLEAN_LAP_SPEED_COV ? work : null;
+const lapSpeed = (lap: IntervalLap) =>
+  lap.avgSpeedMs ?? (lap.movingTimeS > 0 ? lap.distanceM / lap.movingTimeS : 0);
+
+/** A sliver lap (under 50 m or 15 s, or no speed): ignored, not fatal. */
+const isSliverLap = (lap: IntervalLap) =>
+  lap.distanceM < MIN_LAP_DISTANCE_M ||
+  lap.movingTimeS < MIN_LAP_SECONDS ||
+  !(lapSpeed(lap) > 0);
+
+/** Distance over time across a run of laps (a block, or the laps between). */
+function blockSpeed(block: IntervalLap[]): number {
+  if (block.length === 1) return lapSpeed(block[0]!);
+  const time = block.reduce((sum, l) => sum + l.movingTimeS, 0);
+  const distance = block.reduce((sum, l) => sum + l.distanceM, 0);
+  return time > 0 ? distance / time : 0;
 }
 
-function lapReps(laps: IntervalLap[], work: IntervalLap[]): WorkRep[] {
+/**
+ * True when most full laps (all but the last, which is usually partial) sit
+ * at 1 km or 1 mile: the device split the run by distance, not by effort.
+ */
+function isAutoLapSet(laps: IntervalLap[]): boolean {
+  const full = laps.slice(0, -1);
+  if (full.length < 3) return false;
+  const atAutoDistance = full.filter((lap) =>
+    [1000, 1609.34].some(
+      (d) => Math.abs(lap.distanceM - d) <= d * AUTO_LAP_TOLERANCE,
+    ),
+  ).length;
+  return atAutoDistance / full.length >= AUTO_LAP_SHARE;
+}
+
+export interface CleanLapSet {
+  /** Work reps: runs of consecutive fast laps, in lap order. */
+  blocks: IntervalLap[][];
+  /**
+   * intervals.icu's WORK/RECOVERY labels against the speed split: `agree`
+   * when every fast lap is WORK and every lap between blocks is RECOVERY,
+   * `none` when the laps do not carry both labels.
+   */
+  labels: "agree" | "disagree" | "none";
+  autoLaps: boolean;
+  /** Sliver laps left out of the analysis. */
+  slivers: number;
+}
+
+/**
+ * Clean structured laps. Sliver laps are dropped first. Consecutive fast
+ * laps (≥ 1.08 × the median lap speed) merge into one block, and it takes
+ * at least 2 blocks with slower laps between them, their speeds tightly
+ * clustered. Corrupted laps (rain, sweat) fail the cluster test and fall
+ * back to streams. An auto-lap set (1 km or 1 mile laps) needs matching
+ * WORK/RECOVERY labels, or 3 blocks clearly faster than the laps between,
+ * because a fast auto-lap is often only a downhill km.
+ */
+export function selectCleanWorkLaps(laps: IntervalLap[]): CleanLapSet | null {
+  const ordered = [...laps].sort((a, b) => a.lapIndex - b.lapIndex);
+  const valid = ordered.filter((lap) => !isSliverLap(lap));
+  if (valid.length < 3) return null;
+  const speeds = valid.map(lapSpeed);
+  const sorted = [...speeds].sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)]!;
+  const fast = speeds.map((s) => s >= FAST_SEGMENT_FACTOR * median);
+
+  const blocks: IntervalLap[][] = [];
+  const between: IntervalLap[] = [];
+  let pending: IntervalLap[] = [];
+  valid.forEach((lap, i) => {
+    if (fast[i]) {
+      if (i > 0 && fast[i - 1]) blocks[blocks.length - 1]!.push(lap);
+      else {
+        if (blocks.length > 0) between.push(...pending);
+        blocks.push([lap]);
+      }
+      pending = [];
+    } else {
+      pending.push(lap);
+    }
+  });
+  if (blocks.length < 2) return null;
+
+  const blockSpeeds = blocks.map(blockSpeed);
+  const mean = blockSpeeds.reduce((a, b) => a + b, 0) / blockSpeeds.length;
+  const variance =
+    blockSpeeds.reduce((sum, s) => sum + (s - mean) ** 2, 0) /
+    blockSpeeds.length;
+  const cov = mean > 0 ? Math.sqrt(variance) / mean : 1;
+  if (cov > CLEAN_LAP_SPEED_COV) return null;
+
+  const hasLabels =
+    valid.some((lap) => lap.type === "WORK") &&
+    valid.some((lap) => lap.type === "RECOVERY");
+  const labels: CleanLapSet["labels"] = !hasLabels
+    ? "none"
+    : blocks.every((block) => block.every((lap) => lap.type === "WORK")) &&
+        between.every((lap) => lap.type === "RECOVERY")
+      ? "agree"
+      : "disagree";
+
+  const autoLaps = isAutoLapSet(valid);
+  if (autoLaps && labels !== "agree") {
+    const slowSpeed = blockSpeed(between);
+    const clearlyFaster = blockSpeeds.every(
+      (s) => slowSpeed > 0 && s >= AUTO_LAP_FAST_FACTOR * slowSpeed,
+    );
+    if (blocks.length < AUTO_LAP_MIN_BLOCKS || !clearlyFaster) return null;
+  }
+
+  return { blocks, labels, autoLaps, slivers: laps.length - valid.length };
+}
+
+/** Time-weighted mean of one lap field across a block, skipping nulls. */
+function blockMean(
+  block: IntervalLap[],
+  field: "avgHr" | "avgCadence" | "avgWatts",
+): number | null {
+  let sum = 0;
+  let weight = 0;
+  for (const lap of block) {
+    const value = lap[field];
+    if (value == null) continue;
+    sum += value * lap.movingTimeS;
+    weight += lap.movingTimeS;
+  }
+  return weight > 0 ? sum / weight : null;
+}
+
+function lapReps(laps: IntervalLap[], blocks: IntervalLap[][]): WorkRep[] {
   const startKmByLap = new Map<number, number>();
   let cumulative = 0;
   for (const lap of [...laps].sort((a, b) => a.lapIndex - b.lapIndex)) {
     startKmByLap.set(lap.lapIndex, cumulative / 1000);
     cumulative += lap.distanceM;
   }
-  return work.map((lap, i) => {
-    const speed =
-      lap.avgSpeedMs ??
-      (lap.movingTimeS > 0 ? lap.distanceM / lap.movingTimeS : 0);
+  return blocks.map((block, i) => {
+    const speed = blockSpeed(block);
+    const hr = blockMean(block, "avgHr");
+    const cadence = blockMean(block, "avgCadence");
+    const watts = blockMean(block, "avgWatts");
     return {
       index: i + 1,
-      startKm: round(startKmByLap.get(lap.lapIndex) ?? 0),
-      distanceM: Math.round(lap.distanceM),
-      movingTimeS: Math.round(lap.movingTimeS),
+      startKm: round(startKmByLap.get(block[0]!.lapIndex) ?? 0),
+      distanceM: Math.round(block.reduce((sum, l) => sum + l.distanceM, 0)),
+      movingTimeS: Math.round(block.reduce((sum, l) => sum + l.movingTimeS, 0)),
       paceSecPerKm: speed > 0 ? Math.round(1000 / speed) : null,
-      avgHr: lap.avgHr != null ? round(lap.avgHr, 0) : null,
-      avgCadence: lap.avgCadence != null ? round(lap.avgCadence, 1) : null,
-      avgWatts: lap.avgWatts != null ? round(lap.avgWatts, 0) : null,
+      avgHr: hr != null ? round(hr, 0) : null,
+      avgCadence: cadence != null ? round(cadence, 1) : null,
+      avgWatts: watts != null ? round(watts, 0) : null,
     };
   });
 }
@@ -421,17 +562,45 @@ export function computeFade(reps: WorkRep[]): IntervalFade | null {
 }
 
 /**
- * The "was this a workout at all" tiebreaker: share of time at ≥ 88% of the
- * activity's own max HR.
+ * The athlete's max HR from the activity: `athlete_max_hr`, else the last
+ * `icu_hr_zones` bound (intervals.icu sets it to max HR). Null when neither
+ * is recorded.
  */
-export function computeHrSignal(streams: IntervalStreams): HrSignal | null {
+export function resolveAthleteMaxHr(
+  athlete: AthleteHr,
+): { maxHr: number; source: MaxHrSource } | null {
+  if (athlete.athleteMaxHr != null && athlete.athleteMaxHr > 0) {
+    return { maxHr: athlete.athleteMaxHr, source: "athlete_max_hr" };
+  }
+  const zoneTop = athlete.hrZones?.[athlete.hrZones.length - 1];
+  if (zoneTop != null && zoneTop > 0) {
+    return { maxHr: zoneTop, source: "hr_zones" };
+  }
+  return null;
+}
+
+/**
+ * The "was this a workout at all" tiebreaker: share of moving time at
+ * ≥ 88% of the athlete's max HR. Without an athlete max HR it falls back to
+ * this run's own peak, which cannot tell easy from hard (on an easy run the
+ * peak is low too), so that assessment says so and makes no call.
+ */
+export function computeHrSignal(
+  streams: IntervalStreams,
+  athlete: AthleteHr = {},
+): HrSignal | null {
   const { time, heartrate, moving } = streams;
   if (!heartrate || heartrate.length === 0) return null;
-  let maxHr = 0;
-  for (const hr of heartrate) if (hr != null && hr > maxHr) maxHr = hr;
-  if (maxHr <= 0) return null;
+  let peakHr = 0;
+  for (const hr of heartrate) if (hr != null && hr > peakHr) peakHr = hr;
+  if (peakHr <= 0) return null;
+  const resolved = resolveAthleteMaxHr(athlete) ?? {
+    maxHr: peakHr,
+    source: "activity_peak" as const,
+  };
+  const { maxHr } = resolved;
 
-  const threshold = maxHr * 0.88;
+  const threshold = maxHr * HR_NEAR_MAX_FRACTION;
   let total = 0;
   let high = 0;
   for (let i = 1; i < time.length; i++) {
@@ -447,19 +616,31 @@ export function computeHrSignal(streams: IntervalStreams): HrSignal | null {
 
   const share = high / total;
   const assessment =
-    share >= HR_HIGH_INTENSITY_SHARE
-      ? "substantial time near max HR: consistent with a hard workout"
-      : share < 0.05
-        ? "little time near max HR: consistent with an easy continuous effort"
-        : "moderate time near max HR: ambiguous between tempo and intervals";
-  return { maxHr, highIntensityShare: round(share, 3), assessment };
+    resolved.source === "activity_peak"
+      ? "no athlete max HR recorded: time near this run's own peak cannot tell an easy run from a hard one"
+      : share >= HR_HIGH_INTENSITY_SHARE
+        ? "substantial time near max HR: consistent with a hard workout"
+        : share < 0.05
+          ? "little time near max HR: consistent with an easy continuous effort"
+          : "moderate time near max HR: ambiguous between tempo and intervals";
+  return {
+    maxHr,
+    maxHrSource: resolved.source,
+    highIntensityShare: round(share, 3),
+    assessment,
+  };
 }
 
 export function computeIntervalAnalysis(
   streams: IntervalStreams,
   laps: IntervalLap[] = [],
+  athlete: AthleteHr = {},
 ): IntervalAnalysis {
-  if (!streams.time || streams.time.length < 2 || !streams.distance) {
+  if (
+    !streams.time ||
+    streams.time.length < 2 ||
+    !hasRealSample(streams.distance)
+  ) {
     throw new IntervalAnalysisError(
       "The activity's time and distance streams are required for interval analysis.",
     );
@@ -488,29 +669,45 @@ export function computeIntervalAnalysis(
   // --- Rest detection and classification (stream path) ---
   const rawRests = detectRests(normalized);
 
-  // Work segments between rests.
-  const boundaries: Array<{ start: number; end: number }> = [];
+  // Work segments and rests in one ordered pass. Each rest records the
+  // segment that ends right before it (none for a stop before any
+  // movement), and each segment the rest right before it. Pairing them by
+  // array position instead judged every rest by the segment after it once
+  // the first rest had no segment before it (#47).
+  const segments: Aggregates[] = [];
+  const segmentRestBefore: Array<number | null> = [];
+  const restSegmentBefore: Array<number | null> = [];
   let cursor = 0;
-  for (const rest of rawRests) {
+  let lastRest: number | null = null;
+  rawRests.forEach((rest, r) => {
     if (rest.startIdx - 1 > cursor) {
-      boundaries.push({ start: cursor, end: rest.startIdx - 1 });
+      segments.push(aggregate(normalized, cursor, rest.startIdx - 1));
+      segmentRestBefore.push(lastRest);
+      restSegmentBefore.push(segments.length - 1);
+    } else {
+      restSegmentBefore.push(null);
     }
+    lastRest = r;
     cursor = rest.endIdx;
-  }
+  });
   if (cursor < normalized.time.length - 1) {
-    boundaries.push({ start: cursor, end: normalized.time.length - 1 });
+    segments.push(aggregate(normalized, cursor, normalized.time.length - 1));
+    segmentRestBefore.push(lastRest);
   }
 
-  const segments = boundaries.map((b) => aggregate(normalized, b.start, b.end));
   const totalMoving = segments.reduce((sum, s) => sum + s.movingTimeS, 0);
   const totalDistance = segments.reduce((sum, s) => sum + s.distanceM, 0);
   const overallSpeed = totalMoving > 0 ? totalDistance / totalMoving : 0;
   const isFast = (agg: Aggregates) =>
     overallSpeed > 0 && avgSpeed(agg) >= FAST_SEGMENT_FACTOR * overallSpeed;
 
-  const rests: RestSegment[] = rawRests.map((rest, i) => {
-    const preceding = segments[i];
-    const precedingFast = preceding != null && isFast(preceding);
+  // A stop before any movement is a standing start (waiting for GPS), not
+  // a rest in the session: it is left out of the rests entirely.
+  const standingStart =
+    rawRests.length > 0 && restSegmentBefore[0] === null ? rawRests[0]! : null;
+  const classified = rawRests.map((rest, r) => {
+    const before = restSegmentBefore[r];
+    const precedingFast = before != null && isFast(segments[before]!);
     const { kind, reason } = classifyRest(rest.durationS, precedingFast);
     return {
       startTimeS: Math.round(rest.startTimeS),
@@ -518,46 +715,52 @@ export function computeIntervalAnalysis(
       atKm: round(normalized.distance[rest.startIdx]! / 1000),
       kind,
       reason,
-    };
+    } satisfies RestSegment;
   });
+  const rests = standingStart ? classified.slice(1) : classified;
 
   // Merge work segments across traffic lights when both sides run at the
   // same intensity (a light mid-rep or mid-easy-run must not split a block).
   const blocks: Aggregates[] = [];
-  for (let i = 0; i < segments.length; i++) {
+  segments.forEach((segment, i) => {
     const prev = blocks[blocks.length - 1];
-    const restBefore = rests[i - 1];
+    const restBefore = segmentRestBefore[i];
     if (
       prev &&
-      restBefore &&
-      restBefore.kind === "traffic_light" &&
-      isFast(prev) === isFast(segments[i]!)
+      restBefore != null &&
+      classified[restBefore]!.kind === "traffic_light" &&
+      isFast(prev) === isFast(segment)
     ) {
-      blocks[blocks.length - 1] = mergeAggregates(prev, segments[i]!);
+      blocks[blocks.length - 1] = mergeAggregates(prev, segment);
     } else {
-      blocks.push(segments[i]!);
+      blocks.push(segment);
     }
-  }
+  });
 
   const streamReps = blocks
     .filter((b) => isFast(b) && b.movingTimeS > 0)
     .map((b, i) => toRep(b, i + 1, normalized));
 
   // --- Lap path: prefer clean structured laps when they exist ---
-  const cleanWork = selectCleanWorkLaps(laps);
-  const source: "laps" | "streams" | "none" = cleanWork
+  const cleanLaps = selectCleanWorkLaps(laps);
+  const source: "laps" | "streams" | "none" = cleanLaps
     ? "laps"
     : streamReps.length > 0
       ? "streams"
       : "none";
-  const reps = cleanWork ? lapReps(laps, cleanWork) : streamReps;
+  const reps = cleanLaps ? lapReps(laps, cleanLaps.blocks) : streamReps;
 
   const recoveries = rests.filter((r) => r.kind === "recovery").length;
   const isIntervals =
     source === "laps" ? reps.length >= 2 : reps.length >= 2 && recoveries >= 1;
 
   const fade = isIntervals ? computeFade(reps) : null;
-  const hrSignal = computeHrSignal(streams);
+  const hrSignal = computeHrSignal(streams, athlete);
+  if (hrSignal?.maxHrSource === "activity_peak") {
+    warnings.push(
+      "The activity has no athlete max HR or HR zones; the HR signal is measured against this run's own peak and is not used as evidence.",
+    );
+  }
 
   // --- Confidence and reasoning ---
   const counts: Record<RestKind, number> = {
@@ -569,11 +772,15 @@ export function computeIntervalAnalysis(
   for (const rest of rests) counts[rest.kind]++;
 
   let confidence: "high" | "medium" | "low" = "high";
-  if (!streams.moving && !cleanWork) confidence = "low";
+  if (!streams.moving && !cleanLaps) confidence = "low";
   else if (source === "streams" && counts.other_stop > 0) confidence = "medium";
-  else if (!streams.heartrate) confidence = "medium";
+  else if (source === "laps" && cleanLaps?.labels === "disagree") {
+    confidence = "medium";
+  } else if (!streams.heartrate) confidence = "medium";
   const workoutSignal =
-    hrSignal != null && hrSignal.highIntensityShare >= HR_HIGH_INTENSITY_SHARE;
+    hrSignal != null &&
+    hrSignal.maxHrSource !== "activity_peak" &&
+    hrSignal.highIntensityShare >= HR_HIGH_INTENSITY_SHARE;
   if (!isIntervals && workoutSignal && confidence === "high") {
     confidence = "medium";
   }
@@ -583,12 +790,35 @@ export function computeIntervalAnalysis(
       (rests.length > 0
         ? ` (${counts.traffic_light} traffic lights, ${counts.recovery} interval recoveries, ${counts.long_stop} long stops, ${counts.other_stop} unclassified)`
         : ""),
-    source === "laps"
-      ? `${reps.length} work reps taken from clean structured laps`
-      : source === "streams"
+  ];
+  if (standingStart) {
+    reasonBits.push(
+      `${Math.round(standingStart.durationS)} s standing start ignored`,
+    );
+  }
+  if (cleanLaps) {
+    const lapBits = [
+      `${reps.length} work reps taken from clean structured laps`,
+    ];
+    if (cleanLaps.labels === "agree") {
+      lapBits.push("WORK/RECOVERY labels agree");
+    } else if (cleanLaps.labels === "disagree") {
+      lapBits.push("WORK/RECOVERY labels do not match the fast laps");
+    }
+    if (cleanLaps.autoLaps) lapBits.push("laps are 1 km or 1 mile auto-laps");
+    if (cleanLaps.slivers > 0) {
+      lapBits.push(
+        `${cleanLaps.slivers} sliver lap${cleanLaps.slivers === 1 ? "" : "s"} ignored`,
+      );
+    }
+    reasonBits.push(lapBits.join(", "));
+  } else {
+    reasonBits.push(
+      source === "streams"
         ? `${reps.length} work reps reconstructed from stream work/rest boundaries`
         : "no work reps found",
-  ];
+    );
+  }
   if (!isIntervals && workoutSignal) {
     reasonBits.push(
       "HR distribution suggests hard work despite no interval structure: possibly a tempo/race effort",

@@ -52,7 +52,7 @@ describe("schemas align with the real tool rawObjects", () => {
         },
       ],
       warnings: [
-        "Week of 2026-05-11: Volume increased 35% - consider injury risk",
+        "Week of 2026-05-11: Volume spike: 54 km is 1.8 times the 30 km average of the previous 4 weeks",
       ],
       units: {
         load: "intervals.icu training load",

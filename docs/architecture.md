@@ -207,28 +207,65 @@ moving is a dropout) stays in the analysis modules that read power. The
 `get-activity-streams` once read the client directly and reported the zeros
 as 0 bpm (#46).
 
+**`moving` is derived here, once, for every caller.** intervals.icu never
+returns a `moving` stream. A sample is stopped when its `velocity_smooth` is
+known and below `MOVING_MIN_VELOCITY_MPS` (0.5 m/s), or when the time since
+the previous sample is over `MOVING_GAP_THRESHOLD_SECONDS` (5 s) and the
+distance across that gap gives a speed below 0.5 m/s. A watch auto-pause is
+a time gap with almost no distance, so it is a stop. A gap covered at
+running speed is sparse sampling (Garmin "smart recording"), so its time
+stays moving time. When `distance` is unknown at either end of a gap, the
+gap alone counts as a stop. So the loader always requests `distance`, and
+returns it only to a caller that asked for it. The analysis modules keep a
+stopped sample's distance but drop its time; before #73 every gap over 5 s
+was a stop, and a smart-recording run read at about twice its real pace.
+The rule assumes that intervals.icu keeps smart-recording gaps in the
+`time` stream; that is not verified yet (docs/api-notes.md).
+
 ## Analysis math: one home per definition
 
 **Grade-adjusted pace has one definition.** `hillAnalysis.ts`'s `gapFactor`
-(Minetti) and `computeGrades` (intervals.icu's `grade_smooth`, else an
-altitude window). `splitAnalysis.ts` imports both rather than re-deriving them, along
+(Minetti), `computeGrades` (intervals.icu's `grade_smooth`, else an
+altitude window) and `gapGrades` (that grade averaged over a centred 100 m
+window, clamped to ±30%, plus a noise measure). `splitAnalysis.ts` imports
+them rather than re-deriving them, along
 with `MAX_SAMPLE_GAP_SECONDS` and `POWER_COVERAGE_MIN`, so a hilly split and a
-hilly climb are corrected identically. Its own contribution is the distance
+hilly climb are corrected identically. `gapFactor` never sees a raw
+per-sample grade. The Minetti curve is convex, so zero-mean grade noise
+applied sample by sample still raises the mean factor (Jensen's
+inequality): ±5% noise gave a mean factor of 1.03 and ±10% gave 1.13, so a
+noisy barometric track made flat GAP 3% to 13% too fast (#45). The 100 m
+average cancels the noise and keeps a steady climb's grade exactly. The RMS
+of the raw grade around the average measures the noise; above 3 points,
+both tools warn that GAP is approximate. Its own contribution is the distance
 binner: `binByDistance` accumulates streams into buckets bounded by a
 caller-supplied edge list, dividing a sample interval that straddles a boundary
 in proportion — which is why the per-km splits and the exact-midpoint halves
 behind the verdict come from one function. Halves are cut at half the recorded
 distance, never by grouping splits, so an odd split count or trailing partial
-cannot skew the verdict. With no elevation stream, grades are all zero and GAP
-collapses onto raw pace: the response warns rather than presenting an
-uncorrected verdict as corrected.
+cannot skew the verdict. With no elevation data there is no grade, not a
+flat one: `binByDistance` gets no grade, every grade-adjusted figure is
+null, and the verdict is on the clock only. `normalizeHillStreams` drops an
+altitude stream with no real samples (an `allNull` stream) for the same
+reason, and `interpolateNulls` throws on one rather than fill it with 0.
+Elevation gain is the activity's own `total_elevation_gain` when it has one,
+so `get-split-analysis` and `get-activity` agree; `ascentFromAltitude`
+(valley-to-peak climbs with a 3 m hysteresis) is the fallback.
 
 **Running efficiency has one definition.** `speedEfficiencyFactor` in
 `aerobicAnalysis.ts`: metres per minute per heartbeat, so higher is better
 and a slower pace at a proportionally lower heart rate scores the same.
 `get-aerobic-analysis` applies it to stream averages, `compare-activities`
 to each run's grade-adjusted speed (or moving speed, on both sides, when
-either run has no `gap`). `compare-activities` once divided pace by heart
+either run has no `gap`). The aerobic tool's default `gap` basis reads
+`gradeAdjustedSpeeds` (`hillAnalysis.ts`): `velocity_smooth` times the same
+averaged-grade GAP factor the hill and split tools use, so it never builds a
+second GAP. On raw speed, an out-and-back course at a steady heart rate
+decoupled by -19% one way round and +16% the other; grade-adjusted, both
+are about 0% (#74). intervals.icu's own `decoupling` and
+`icu_efficiency_factor` never carry a basis label the tool did not compute:
+they are the headline only when the caller asks for no basis, and
+otherwise sit in their own `intervals_icu` field. `compare-activities` once divided pace by heart
 rate instead, where a slower pace and a lower heart rate add up rather than
 cancel, and called an unchanged runner "declined" (#42).
 
@@ -249,10 +286,46 @@ partial now, and no rule uses it as a baseline or in an average.
 The timeline and the run weeks used to stop at the last week with activity,
 so a layoff that was still going on did not count: an athlete who had not run
 for 2 weeks got the averages and a "limited data" trend of the weeks before.
-Both now run on to the current week. The "unusually high" rule compares a week
-with the average of the complete weeks up to and including it, not with the
-whole period: with a whole-period average, the layoff lowered the average and
-flagged the normal weeks before it.
+Both now run on to the current week. The warning compares a week with the
+average of the complete weeks before it, not with the whole period: with a
+whole-period average, the layoff lowered the average and flagged the normal
+weeks before it.
+
+`computeWeekWarnings` has one rule: a week over 1.5 times the average of the
+4 complete weeks before it (the acute:chronic ratio; 3 weeks at least). A
+rise of over 30% on the previous week warned about every normal week after a
+recovery, taper or illness week, and a second "unusually high" rule flagged
+the same weeks again (#60). So that the first weeks of a window have an
+average, `trainingLoadWindow` reaches 4 weeks further back
+(`baselineStartDate`) and `loadTrainingLoadInputs` returns those runs as
+`baselineRuns`. `baselineWeeks` turns them into weeks, and `selectRunWeeks`
+reads them only as the baseline: they never get a row, a total or a warning.
+
+**CTL/ATL/TSB numbers have one home each** (#75), all in `fitnessTrend.ts`.
+`ctlAtlTsb` turns raw CTL and ATL into display values: TSB from the raw
+values, then each rounded to 0.1. The recurrence, the whole-body wellness
+series (`fitnessTrendWellness.ts`) and `get-wellness` all use it. `ctlDelta`
+(and `tsbDelta`) gives the change over N calendar days to the last day,
+looked up by date, or null when that day is missing. `get-fitness-trend`'s
+`ctl_7d_delta`, the steep-ramp bands and the fitness-trend app all read it;
+the app gets it as `ctl7dDelta` in its payload, because an MCP App cannot
+import server code. The app used to count 7 rows back, and a whole-body
+series leaves out days with no wellness, so with 2 missing days it described
+9 calendar days as "the last 7 days" and gave a different number from the
+text tool.
+
+**HR zone bounds have one home.** `resolveHrZones` in `activityZones.ts`:
+the activity's own `icu_hr_zones` first, else the Run sport settings group
+when its `types` names the activity's type, else no zones with a note.
+`get-activity` (`hr_zones`) and `get-running-summary` (`hr_zone_summary`)
+both call it; each only shapes the result.
+
+**Run types have one home.** `PACE_ACTIVITY_TYPES` in `utils/running.ts`
+(Run, TrailRun, VirtualRun). `get-running-summary` accepts exactly these,
+and `fitnessTrend.ts` re-exports them as `RUN_TYPES` for the run-only series
+and `get-training-load`. `STEP_CADENCE_ACTIVITY_TYPES` and
+`RUNNING_ACTIVITY_TYPES` add Walk and Hike on purpose: those have a step
+cadence but no pace.
 
 **Taper solving.** `fitnessTrend.ts` owns every CTL/ATL/TSB number, including
 the forward-looking ones — `plannedLoads` projects a prescribed load instead of
@@ -265,6 +338,42 @@ even complete rest cannot reach in time, and one that would take racing every
 day (`MAX_TAPER_DAILY_LOAD`). Both report the form that actually lands rather
 than inventing a plan. Keep new projection math here, not in a tool —
 `get-fitness-trend` and the fitness-trend app both read one solve.
+
+The solver sizes its day array from the distance to the target date, so the
+date is checked before any fetch: `taperTargetDateError` requires a real
+calendar date, after today, and at most `MAX_TAPER_DAYS` (180) ahead. The text
+tool and both app tools call it. Before #44 the date had only a regex check:
+a typo like 2062-10-17 gave a 13,170-day plan of about 950 KB, 9999-12-31
+overflowed the call stack in `Math.max(...shape)` (now a loop), and
+2027-02-30 rolled over into March.
+
+**Form turning positive has one rule.** `tsbPositiveFrom` in `fitnessTrend.ts`
+sets `tsbPositiveDate` for the run-only, whole-body synced and whole-body
+lagging paths: today when today's raw TSB is already ≥ 0, else the first
+projected date it reaches 0. The projection starts the day after today, so
+before #44 a form of +12 today read as "returns positive" tomorrow. The
+callers print `tsbPositiveDate === today` as "already positive today".
+
+**Warning bands.** `trendBands` dates every stretch, and `computeFlags` is
+the subset that runs to the last day, so the chart and the prose agree. Fresh
+bands have hysteresis (start at `FRESH_TSB` +15, hold until TSB drops below
+`FRESH_EXIT_TSB` +12), merge across a gap of up to `FRESH_MERGE_GAP_DAYS` (2),
+and need `FRESH_MIN_DAYS` (3) unless they run to the last day. Before #44, TSB
+moving around +15 for 42 days gave 8 fresh bands, 6 of them 1 day long, and
+the chart showed stripes. Reasons are in the present tense only for the bands
+that are also flags; a band that ended earlier reads in the past tense.
+
+**Interval detection pairs by adjacency.** `computeIntervalAnalysis` in
+`intervalAnalysis.ts` builds work segments and rests in one ordered pass, and
+each rest records the segment that ends right before it. The rests and
+segments were paired by array position (`segments[i]`, `rests[i - 1]`), so a
+standing start (a rest with no segment before it) judged every later rest by
+the segment after it (#47). The near-max HR share is measured against the
+athlete's max HR (`athlete_max_hr`, else the top `icu_hr_zones` bound), never
+the run's own peak, which made an easy run read as hard. The lap path drops
+sliver laps rather than the whole lap set, and needs 2 blocks of consecutive
+fast laps with slower laps between; `selectCleanWorkLaps` holds the lap
+rules, including the stricter test for 1 km or 1 mile auto-laps.
 
 ## Per-call telemetry
 

@@ -36,7 +36,10 @@ aerobic durability, get-aerobic-analysis.
 
 Notes:
 - Grade comes from intervals.icu's smoothed grade stream, else from altitude
-  over about 30 m; grade_source says which.
+  over about 30 m; grade_source says which. Grade-adjusted pace uses grade
+  averaged over 100 m, and a noisy elevation track adds a warning.
+- With no elevation data (no grade and no real altitude samples), it
+  returns an error rather than treating the run as flat.
 - Works without power, and without HR (the drift then uses grade-adjusted
   pace only).
 - Stopped time is excluded from segment pace.

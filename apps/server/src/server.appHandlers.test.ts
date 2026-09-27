@@ -486,7 +486,8 @@ describe("training load handlers", () => {
 
   it("get-training-load and get-training-load-data give the same warnings for 30, 0, 0, 45 km weeks (#43)", async () => {
     // The app used to drop the two empty weeks and warn "Volume increased
-    // 50%"; the text tool kept them and warned "Unusually high volume".
+    // 50%"; the text tool kept them and warned "Unusually high volume". Both
+    // now give the one volume-spike warning (#60).
     const activities = [
       intervalsRun({
         id: "1",
@@ -516,16 +517,75 @@ describe("training load handlers", () => {
     });
     const textWarnings = (
       textResult.structuredContent as { warnings: string[] }
-    ).warnings.filter((w) => /injury risk|Unusually high/.test(w));
+    ).warnings.filter((w) => /Volume spike/.test(w));
 
     expect(textWarnings).toEqual([
-      "Week of 2026-05-25: Unusually high volume (45 km vs 19 km average up to that week)",
+      "Week of 2026-05-25: Volume spike: 45 km is 4.5 times the 10 km average of the previous 3 weeks",
     ]);
     expect(
       appData.weeks.flatMap((w) =>
         w.warningReasons.map((r) => `Week of ${w.weekStarting}: ${r}`),
       ),
     ).toEqual(textWarnings);
+  });
+
+  it("get-training-load and get-training-load-data compare with the 4 weeks before the window alike (#60)", async () => {
+    // TL_TODAY is a Monday: the window starts on 2026-05-04. Before it, 3
+    // weeks of 40 km and a 10 km recovery week. The return to 40 km is no
+    // spike (the old rule said "increased 300%"); the 52 km week is.
+    const km = [
+      ["2026-04-08", 40],
+      ["2026-04-15", 40],
+      ["2026-04-22", 40],
+      ["2026-04-29", 10],
+      ["2026-05-06", 40],
+      ["2026-05-13", 40],
+      ["2026-05-20", 40],
+      ["2026-05-27", 52],
+    ] as const;
+    const activities = km.map(([date, distanceKm], i) =>
+      intervalsRun({
+        id: String(i + 1),
+        start_date_local: `${date}T07:00:00`,
+        distance: distanceKm * 1000,
+      }),
+    );
+
+    mockedIntervalsList.mockResolvedValueOnce(activities);
+    mockedWellness.mockResolvedValueOnce([]);
+    const appResult = await dispatchToolCall("get-training-load-data", {
+      days: 28,
+    });
+    const appData = JSON.parse(appResult.content[0]?.text ?? "") as {
+      totals: { distanceKm: number };
+      weeks: Array<{ weekStarting: string; warningReasons: string[] }>;
+    };
+
+    mockedIntervalsList.mockResolvedValueOnce(activities);
+    mockedWellness.mockResolvedValueOnce([]);
+    const textResult = await dispatchToolCall("get-training-load", {
+      days: 28,
+    });
+    const textData = textResult.structuredContent as {
+      totals: { distance_km: number };
+      warnings: string[];
+    };
+    const textWarnings = textData.warnings.filter((w) =>
+      /Volume spike/.test(w),
+    );
+
+    expect(textWarnings).toEqual([
+      "Week of 2026-05-25: Volume spike: 52 km is 1.6 times the 32.5 km average of the previous 4 weeks",
+    ]);
+    expect(
+      appData.weeks.flatMap((w) =>
+        w.warningReasons.map((r) => `Week of ${w.weekStarting}: ${r}`),
+      ),
+    ).toEqual(textWarnings);
+    // The baseline weeks are not reported.
+    expect(appData.weeks[0]!.weekStarting).toBe("2026-05-04");
+    expect(appData.totals.distanceKm).toBe(172);
+    expect(textData.totals.distance_km).toBe(172);
   });
 
   it("get-training-load and get-training-load-data both count a layoff that is still going on", async () => {
@@ -593,9 +653,7 @@ describe("training load handlers", () => {
     ]);
     expect(textData.trend).toBe("decreasing significantly");
     expect(textData.averages.distance_km_per_week).toBe(25);
-    expect(
-      textData.warnings.filter((w) => /injury risk|Unusually high/.test(w)),
-    ).toEqual([]);
+    expect(textData.warnings.filter((w) => /Volume spike/.test(w))).toEqual([]);
     expect(appData.weeks.some((w) => w.warning)).toBe(false);
   });
 });
@@ -745,6 +803,48 @@ describe("fitness trend handlers", () => {
     expect(text).not.toContain(`form turns positive on ${addDays(TODAY, -1)}`);
   });
 
+  it("view-fitness-trend and its data feed say already positive when synced and positive", async () => {
+    for (let call = 0; call < 2; call++) {
+      mockedWellness.mockResolvedValueOnce(
+        laggingPositiveWellnessSeries(TODAY, 91, 0),
+      );
+      mockedIntervalsList.mockResolvedValueOnce([]);
+    }
+
+    const view = await dispatchToolCall("view-fitness-trend", {});
+    expect(view.content[0]?.text).toContain(
+      `Form is already positive today (${TODAY})`,
+    );
+    const data = JSON.parse(
+      (await dispatchToolCall("get-fitness-trend-data", {})).content[0]?.text ??
+        "",
+    );
+    expect(data.tsbPositiveDate).toBe(TODAY);
+    expect(data.endDate).toBe(TODAY);
+  });
+
+  it.each(["view-fitness-trend", "get-fitness-trend-data"])(
+    "%s rejects a target date past the taper horizon before any fetch",
+    async (tool) => {
+      const result = await dispatchToolCall(tool, { targetDate: "2062-10-17" });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain("at most 180 days");
+      expect(mockedWellness).not.toHaveBeenCalled();
+      expect(mockedIntervalsList).not.toHaveBeenCalled();
+    },
+  );
+
+  it("get-fitness-trend-data rejects a target date on or before today", async () => {
+    const result = await dispatchToolCall("get-fitness-trend-data", {
+      targetDate: TODAY,
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("not after today");
+    expect(mockedWellness).not.toHaveBeenCalled();
+  });
+
   it("rejects a malformed target date via the input schema", async () => {
     const result = await dispatchToolCall("get-fitness-trend-data", {
       targetDate: "next Sunday",
@@ -835,6 +935,44 @@ describe("fitness trend handlers", () => {
     // Same shared `solveTaperPlan` (closed-form, no bisection/tolerance) via
     // the same `loadFitnessTrend`, so exact rather than close.
     expect(textTaper.achieved_tsb).toBe(appTaper.achievedTsb);
+  });
+
+  it("get-fitness-trend and the app payload give the same 7-day CTL change on a gappy series (#75)", async () => {
+    // Two days of the last week have no wellness: 7 rows back is 9 calendar
+    // days back, which is what the app's narration used to read.
+    const gappy = () =>
+      wellnessSeries(TODAY, 91, 21, 80).filter(
+        (row) => row.id !== inDays(-3) && row.id !== inDays(-4),
+      );
+
+    mockedWellness.mockResolvedValueOnce(gappy());
+    mockedIntervalsList.mockResolvedValueOnce([]);
+    const textResult = await dispatchToolCall("get-fitness-trend", {});
+    const textData = textResult.structuredContent as {
+      trend: { ctl_7d_delta: number } | null;
+      daily: { date: string; ctl: number }[];
+    };
+
+    mockedWellness.mockResolvedValueOnce(gappy());
+    mockedIntervalsList.mockResolvedValueOnce([]);
+    const appData = JSON.parse(
+      (await dispatchToolCall("get-fitness-trend-data", {})).content[0]?.text ??
+        "",
+    );
+
+    const weekAgo = textData.daily.find((d) => d.date === inDays(-7))!;
+    const expected =
+      Math.round((textData.daily.at(-1)!.ctl - weekAgo.ctl) * 10) / 10;
+    expect(textData.trend?.ctl_7d_delta).toBe(expected);
+    expect(appData.ctl7dDelta).toBe(expected);
+    const byRows =
+      Math.round(
+        (textData.daily.at(-1)!.ctl - textData.daily.at(-8)!.ctl) * 10,
+      ) / 10;
+    expect(byRows).not.toBe(expected);
+    expect(textResult.content[0]?.text).toContain(
+      `**Last 7 days**: CTL ${expected >= 0 ? "+" : ""}${expected}`,
+    );
   });
 
   it("projectDays: 0 gives an empty projection in both, even with unsynced wellness days (#catch-up bug)", async () => {

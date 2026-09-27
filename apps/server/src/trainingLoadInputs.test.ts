@@ -98,13 +98,43 @@ describe("loadTrainingLoadInputs", () => {
     expect(result.activityTypesIncluded).toEqual(["Ride", "Run"]);
 
     // TODAY is a Wednesday: 4 complete weeks from Monday 2026-07-20, plus
-    // this week so far, instead of a window that starts mid-week.
+    // this week so far, instead of a window that starts mid-week. The
+    // listing starts 4 weeks earlier, for the volume-spike baseline;
+    // wellness does not need it.
     expect(result.lookback).toEqual(trainingLoadWindow(28, TODAY));
     const [, options] = mockedList.mock.calls[0]!;
-    expect(options.oldest).toBe("2026-07-20");
+    expect(options.oldest).toBe("2026-06-22");
     expect(options.newest).toBe(TODAY);
     const [, wellnessOptions] = mockedWellness.mock.calls[0]!;
     expect(wellnessOptions).toEqual({ oldest: "2026-07-20", newest: TODAY });
+  });
+
+  it("whole-body: keeps the 4 weeks before the window as baseline runs only (#60)", async () => {
+    mockedList.mockResolvedValueOnce([
+      activity(TODAY, { id: "window-run" }),
+      activity("2026-07-19", { id: "baseline-run" }),
+      activity("2026-07-19", {
+        id: "baseline-ride",
+        type: "Ride",
+        icu_training_load: 90,
+      }),
+      activity("2026-06-22", { id: "first-baseline-day" }),
+    ]);
+    mockedWellness.mockResolvedValueOnce([]);
+
+    const result = await loadTrainingLoadInputs(
+      "key",
+      { days: 28, runOnly: false },
+      () => {},
+    );
+
+    expect(result.runs.map((a) => a.id)).toEqual(["window-run"]);
+    expect(result.loadActivities.map((a) => a.id)).toEqual(["window-run"]);
+    expect(result.activityTypesIncluded).toEqual(["Run"]);
+    expect(result.baselineRuns.map((a) => a.id)).toEqual([
+      "baseline-run",
+      "first-baseline-day",
+    ]);
   });
 
   it("run-only: fetches a runway, computes CTL/ATL locally, and labels it computed", async () => {
@@ -143,6 +173,7 @@ describe("loadTrainingLoadInputs", () => {
     mockedList.mockResolvedValueOnce([
       activity("2026-07-21", { id: "first-week" }),
       activity("2026-07-19", { id: "runway" }),
+      activity("2026-06-21", { id: "before-baseline" }),
     ]);
 
     const result = await loadTrainingLoadInputs(
@@ -152,6 +183,9 @@ describe("loadTrainingLoadInputs", () => {
     );
 
     expect(result.runs.map((a) => a.id)).toEqual(["first-week"]);
+    // The 4 weeks before the window (from Monday 2026-06-22) are the
+    // volume-spike baseline; the rest of the runway only feeds CTL/ATL.
+    expect(result.baselineRuns.map((a) => a.id)).toEqual(["runway"]);
   });
 
   it("returns a null current when there is no wellness data in the window", async () => {

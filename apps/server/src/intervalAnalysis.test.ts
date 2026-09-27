@@ -238,6 +238,87 @@ describe("computeIntervalAnalysis — stream path", () => {
     expect(analysis.rests).toHaveLength(0);
   });
 
+  it("calls an easy steady run an easy continuous effort (#47)", () => {
+    const analysis = computeIntervalAnalysis(
+      buildStreams([easy(900, { hr: 146 }), easy(900, { hr: 150 })]),
+      [],
+      { athleteMaxHr: 190 },
+    );
+    expect(analysis.isIntervals).toBe(false);
+    expect(analysis.hrSignal!.assessment).toContain(
+      "consistent with an easy continuous effort",
+    );
+    expect(analysis.confidence).toBe("high");
+    expect(analysis.reasoning).not.toContain("tempo/race");
+    expect(analysis.warnings).toEqual([]);
+  });
+
+  it("warns and draws no tempo conclusion when only the run's own peak is known", () => {
+    const analysis = computeIntervalAnalysis(
+      buildStreams([easy(900, { hr: 146 }), easy(900, { hr: 150 })]),
+    );
+    expect(analysis.hrSignal!.maxHrSource).toBe("activity_peak");
+    expect(analysis.confidence).toBe("high");
+    expect(analysis.reasoning).not.toContain("tempo/race");
+    expect(analysis.warnings.join(" ")).toContain("no athlete max HR");
+  });
+
+  describe("standing start (#47)", () => {
+    // 10 min easy, a 40 s traffic light, 3 x (4 min fast + 90 s standing
+    // recovery), 10 min easy.
+    const session = [
+      easy(600),
+      stop(40),
+      work(240),
+      stop(90),
+      work(240),
+      stop(90),
+      work(240),
+      stop(90),
+      easy(600),
+    ];
+
+    it("reads the session without a standing start", () => {
+      const analysis = computeIntervalAnalysis(buildStreams(session));
+      expect(analysis.rests.map((r) => r.kind)).toEqual([
+        "traffic_light",
+        "recovery",
+        "recovery",
+        "recovery",
+      ]);
+      expect(analysis.reps).toHaveLength(3);
+      expect(analysis.confidence).toBe("high");
+    });
+
+    it("reads the same session with a 15 s standing start the same way", () => {
+      const analysis = computeIntervalAnalysis(
+        buildStreams([stop(15), ...session]),
+      );
+      // Pairing rests with segments by array position judged each rest by
+      // the segment after it: the start became a traffic light, the 40 s
+      // light a recovery, and the last recovery an unclassified stop.
+      expect(analysis.rests.map((r) => r.kind)).toEqual([
+        "traffic_light",
+        "recovery",
+        "recovery",
+        "recovery",
+      ]);
+      expect(analysis.rests[0]!.durationS).toBe(40);
+      expect(analysis.isIntervals).toBe(true);
+      expect(analysis.reps).toHaveLength(3);
+      expect(analysis.confidence).toBe("high");
+      expect(analysis.reasoning).toContain("15 s standing start ignored");
+    });
+
+    it("keeps a long standing start from lowering confidence", () => {
+      const analysis = computeIntervalAnalysis(
+        buildStreams([stop(120), ...session]),
+      );
+      expect(analysis.rests.map((r) => r.kind)).not.toContain("other_stop");
+      expect(analysis.confidence).toBe("high");
+    });
+  });
+
   it("downgrades confidence when unclassified stops exist", () => {
     const analysis = computeIntervalAnalysis(
       buildStreams([
@@ -330,6 +411,166 @@ describe("computeIntervalAnalysis — lap path", () => {
   it("selectCleanWorkLaps rejects too few laps", () => {
     expect(selectCleanWorkLaps(structuredLaps.slice(0, 2))).toBeNull();
   });
+
+  it("ignores a trailing sliver lap instead of dropping the lap set (#47)", () => {
+    // Apple Watch often ends with a 0 m, few-second lap: no speed at all.
+    const withSliver = [...structuredLaps, lap(8, 0, 4, { avgSpeedMs: null })];
+    const analysis = computeIntervalAnalysis(
+      buildStreams([easy(2400)]),
+      withSliver,
+    );
+    expect(analysis.source).toBe("laps");
+    expect(analysis.isIntervals).toBe(true);
+    expect(analysis.reps).toHaveLength(3);
+    expect(analysis.reasoning).toContain("1 sliver lap ignored");
+  });
+
+  it("ignores a short sliver lap mid-session too", () => {
+    const laps = [
+      ...structuredLaps.slice(0, 3),
+      lap(31, 20, 6), // 20 m / 6 s split between recovery and rep
+      ...structuredLaps.slice(3),
+    ];
+    const selection = selectCleanWorkLaps(laps);
+    expect(selection).not.toBeNull();
+    expect(selection!.blocks).toHaveLength(3);
+    expect(selection!.slivers).toBe(1);
+  });
+
+  it("merges consecutive fast laps into one rep", () => {
+    // Rep 1 is split into 1,000 m + 600 m by the device.
+    const laps = [
+      lap(1, 2000, 720),
+      lap(2, 1000, 238, { avgHr: 168 }),
+      lap(3, 600, 143, { avgHr: 174 }),
+      lap(4, 400, 240),
+      lap(5, 1600, 382, { avgHr: 172 }),
+      lap(6, 400, 240),
+      lap(7, 1600, 384, { avgHr: 175 }),
+      lap(8, 400, 240),
+      lap(9, 1500, 540),
+    ];
+    const analysis = computeIntervalAnalysis(buildStreams([easy(2400)]), laps);
+    expect(analysis.source).toBe("laps");
+    expect(analysis.reps).toHaveLength(3);
+    const rep1 = analysis.reps[0]!;
+    expect(rep1.distanceM).toBe(1600);
+    expect(rep1.movingTimeS).toBe(381);
+    expect(rep1.paceSecPerKm).toBe(Math.round(381 / 1.6));
+    // Time-weighted: (168 x 238 + 174 x 143) / 381.
+    expect(rep1.avgHr).toBe(170);
+    expect(rep1.startKm).toBe(2);
+  });
+
+  it("needs slower laps between fast ones: one fast block is not intervals", () => {
+    const laps = [
+      lap(1, 2000, 720),
+      lap(2, 800, 190),
+      lap(3, 800, 191),
+      lap(4, 800, 192),
+      lap(5, 1500, 540),
+    ];
+    expect(selectCleanWorkLaps(laps)).toBeNull();
+  });
+
+  describe("auto-laps (#47)", () => {
+    const EASY_KM_S = 357; // 2.8 m/s
+    const DOWNHILL_KM_S = 320; // 3.125 m/s, 1.12x
+    /** 10.4 km in 1 km auto-laps; the given kms are downhill. */
+    const autoLapRun = (downhill: number[]) => [
+      ...Array.from({ length: 10 }, (_, i) =>
+        lap(i + 1, 1000, downhill.includes(i + 1) ? DOWNHILL_KM_S : EASY_KM_S),
+      ),
+      lap(11, 400, 143),
+    ];
+
+    it("does not call two consecutive downhill kms intervals", () => {
+      const analysis = computeIntervalAnalysis(
+        buildStreams([easy(3700)]),
+        autoLapRun([3, 4]),
+      );
+      expect(analysis.isIntervals).toBe(false);
+      expect(analysis.source).toBe("none");
+      expect(analysis.fade).toBeNull();
+    });
+
+    it("does not call two separate downhill kms intervals", () => {
+      const analysis = computeIntervalAnalysis(
+        buildStreams([easy(3700)]),
+        autoLapRun([3, 7]),
+      );
+      expect(analysis.isIntervals).toBe(false);
+      expect(analysis.reps).toHaveLength(0);
+    });
+
+    it("still reads 1 km reps with 1 km floats when they are clearly faster", () => {
+      // 4 x (1 km at 3:50 + 1 km float at 5:00): no labels needed.
+      const laps = [
+        lap(1, 1000, 360),
+        ...Array.from({ length: 8 }, (_, i) =>
+          lap(i + 2, 1000, i % 2 === 0 ? 230 : 300),
+        ),
+        lap(10, 1000, 360),
+        lap(11, 300, 110),
+      ];
+      const analysis = computeIntervalAnalysis(
+        buildStreams([easy(3000)]),
+        laps,
+      );
+      expect(analysis.source).toBe("laps");
+      expect(analysis.reps).toHaveLength(4);
+      expect(analysis.reasoning).toContain("auto-laps");
+    });
+
+    it("accepts two fast auto-laps when WORK/RECOVERY labels match them", () => {
+      const labelled = autoLapRun([3, 7]).map((l) => ({
+        ...l,
+        type: l.lapIndex === 3 || l.lapIndex === 7 ? "WORK" : "RECOVERY",
+      }));
+      const analysis = computeIntervalAnalysis(
+        buildStreams([easy(3700)]),
+        labelled,
+      );
+      expect(analysis.source).toBe("laps");
+      expect(analysis.reps).toHaveLength(2);
+      expect(analysis.reasoning).toContain("WORK/RECOVERY labels agree");
+    });
+  });
+
+  it("detects an under-and-over session from laps", () => {
+    // Continuous: 2 km warm-up, 5 x (2 min over + 3 min under), cool-down.
+    // The unders are still quick, so the stream path sees nothing.
+    const laps = [
+      lap(1, 2000, 720, { type: "RECOVERY" }),
+      ...Array.from(
+        { length: 10 },
+        (_, i) =>
+          i % 2 === 0
+            ? lap(i + 2, 504, 120, { avgHr: 172 + i, type: "WORK" }) // 4.2 m/s
+            : lap(i + 2, 666, 180, { avgHr: 165 + i, type: "RECOVERY" }), // 3.7 m/s
+      ),
+      lap(12, 1500, 540, { type: "RECOVERY" }),
+      lap(13, 0, 3, { avgSpeedMs: null }),
+    ];
+    const analysis = computeIntervalAnalysis(buildStreams([easy(4200)]), laps);
+    expect(analysis.source).toBe("laps");
+    expect(analysis.isIntervals).toBe(true);
+    expect(analysis.reps).toHaveLength(5);
+    expect(analysis.confidence).toBe("high");
+    expect(analysis.reasoning).toContain("WORK/RECOVERY labels agree");
+    expect(analysis.fade!.hrDriftBpm).toBe(8);
+  });
+
+  it("lowers confidence when the WORK/RECOVERY labels do not match the fast laps", () => {
+    const laps = structuredLaps.map((l) => ({
+      ...l,
+      type: l.lapIndex === 4 ? "RECOVERY" : "WORK",
+    }));
+    const analysis = computeIntervalAnalysis(buildStreams([easy(2400)]), laps);
+    expect(analysis.source).toBe("laps");
+    expect(analysis.confidence).toBe("medium");
+    expect(analysis.reasoning).toContain("labels do not match");
+  });
 });
 
 describe("computeFade", () => {
@@ -364,12 +605,16 @@ describe("computeFade", () => {
 });
 
 describe("computeHrSignal", () => {
+  const athlete = { athleteMaxHr: 190, hrZones: [142, 154, 163, 171, 190] };
+
   it("reads sustained near-max time as a hard workout", () => {
     const signal = computeHrSignal(
       buildStreams([easy(600, { hr: 140 }), work(600, { hr: 180 })]),
+      athlete,
     );
     expect(signal).not.toBeNull();
-    expect(signal!.maxHr).toBe(180);
+    expect(signal!.maxHr).toBe(190);
+    expect(signal!.maxHrSource).toBe("athlete_max_hr");
     expect(signal!.highIntensityShare).toBeGreaterThan(0.4);
     expect(signal!.assessment).toContain("hard workout");
   });
@@ -382,8 +627,42 @@ describe("computeHrSignal", () => {
         work(10, { hr: 165 }),
         easy(1200, { hr: 140 }),
       ]),
+      athlete,
     );
     expect(signal!.assessment).toContain("easy continuous");
+  });
+
+  it("measures an easy run against the athlete's max HR, not the run's own peak (#47)", () => {
+    // Zone 2 all the way (142-154 bpm). Against its own 150 bpm peak the
+    // 88% line is 132 bpm and the whole run read as "near max".
+    const streams = buildStreams([
+      easy(900, { hr: 146 }),
+      easy(900, { hr: 150 }),
+    ]);
+    const signal = computeHrSignal(streams, athlete);
+    expect(signal!.maxHr).toBe(190);
+    expect(signal!.highIntensityShare).toBe(0);
+    expect(signal!.assessment).toContain(
+      "consistent with an easy continuous effort",
+    );
+  });
+
+  it("falls back to the top HR zone bound when athlete_max_hr is missing", () => {
+    const signal = computeHrSignal(buildStreams([easy(600, { hr: 146 })]), {
+      athleteMaxHr: null,
+      hrZones: [142, 154, 163, 171, 188],
+    });
+    expect(signal!.maxHr).toBe(188);
+    expect(signal!.maxHrSource).toBe("hr_zones");
+  });
+
+  it("makes no call when only the run's own peak is known", () => {
+    const signal = computeHrSignal(buildStreams([easy(600, { hr: 146 })]));
+    expect(signal!.maxHr).toBe(146);
+    expect(signal!.maxHrSource).toBe("activity_peak");
+    expect(signal!.highIntensityShare).toBe(1);
+    expect(signal!.assessment).toContain("cannot tell");
+    expect(signal!.assessment).not.toContain("hard workout");
   });
 
   it("returns null without HR", () => {
@@ -396,6 +675,14 @@ describe("computeHrSignal", () => {
 describe("error handling", () => {
   it("throws on missing time stream", () => {
     expect(() => computeIntervalAnalysis({ time: [0], distance: [0] })).toThrow(
+      IntervalAnalysisError,
+    );
+  });
+
+  it("throws its own error when the distance stream has no real sample", () => {
+    const streams = buildStreams([easy(600)]);
+    streams.distance = streams.distance.map(() => null);
+    expect(() => computeIntervalAnalysis(streams)).toThrow(
       IntervalAnalysisError,
     );
   });

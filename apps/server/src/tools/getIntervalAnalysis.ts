@@ -32,13 +32,19 @@ get-split-analysis.
 
 Notes:
 - Clean intervals.icu laps (icu_intervals) are preferred, and they also catch
-  jog-recovery sessions. Laps that fail a consistency check (corrupted
-  auto-laps) fall back to the streams.
+  jog-recovery sessions. Consecutive fast laps make one rep, and it takes 2
+  reps with slower laps between them. Sliver laps (under 50 m or 15 s) are
+  ignored. Laps that fail a consistency check fall back to the streams. On
+  1 km or 1 mile auto-laps a fast lap is often a downhill km, so they need
+  matching WORK/RECOVERY labels or 3 clearly faster reps.
 - In the streams, stops are classified before they count: under 60 s with no
   fast effort before it is a traffic light (ignored), up to 3 min after a
-  fast effort is a recovery, over 5 min is a long stop (ignored).
+  fast effort is a recovery, over 5 min is a long stop (ignored). A stop
+  before any movement is a standing start (ignored).
 - Stream-based detection only sees rests where you stopped, so a
   jog-recovery workout needs laps.
+- The HR signal measures time at 88% or more of the athlete's max HR
+  (athlete_max_hr, else the top HR zone bound), not the run's own peak.
 `;
 
 const inputSchema = z.object({
@@ -84,8 +90,15 @@ function toIntervalLap(
     avgHr: interval.average_heartrate ?? null,
     avgCadence: interval.average_cadence ?? null,
     avgWatts: interval.average_watts ?? null,
+    type: interval.type ?? null,
   };
 }
+
+const MAX_HR_SOURCE_TEXT = {
+  athlete_max_hr: "athlete max HR",
+  hr_zones: "top HR zone bound",
+  activity_peak: "this run's own peak",
+} as const;
 
 export const getIntervalAnalysisTool = {
   name,
@@ -134,7 +147,10 @@ export const getIntervalAnalysisTool = {
         watts: streams.watts,
       };
       const laps = (activity.icu_intervals ?? []).map(toIntervalLap);
-      const analysis = computeIntervalAnalysis(intervalStreams, laps);
+      const analysis = computeIntervalAnalysis(intervalStreams, laps, {
+        athleteMaxHr: activity.athlete_max_hr,
+        hrZones: activity.icu_hr_zones,
+      });
       const cadenceUnitLabel = cadenceUnit(type);
 
       const structured = {
@@ -176,6 +192,7 @@ export const getIntervalAnalysisTool = {
         hr_signal: analysis.hrSignal
           ? {
               max_hr: analysis.hrSignal.maxHr,
+              max_hr_source: analysis.hrSignal.maxHrSource,
               high_intensity_share_pct:
                 Math.round(analysis.hrSignal.highIntensityShare * 1000) / 10,
               assessment: analysis.hrSignal.assessment,
@@ -233,7 +250,7 @@ export const getIntervalAnalysisTool = {
 
       if (structured.hr_signal) {
         lines.push(
-          `HR signal: ${structured.hr_signal.assessment} (${structured.hr_signal.high_intensity_share_pct}% of moving time at ≥88% of max ${structured.hr_signal.max_hr} bpm)`,
+          `HR signal: ${structured.hr_signal.assessment} (${structured.hr_signal.high_intensity_share_pct}% of moving time at ≥88% of ${structured.hr_signal.max_hr} bpm, ${MAX_HR_SOURCE_TEXT[structured.hr_signal.max_hr_source]})`,
         );
       }
 

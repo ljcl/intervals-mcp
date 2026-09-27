@@ -25,7 +25,7 @@ export function buildTotalsStats(
   ];
 }
 
-/** Count of weeks carrying at least one injury-risk warning. */
+/** Count of weeks carrying at least one volume-spike warning. */
 export function countWarningWeeks(weeks: WeekSummary[]): number {
   return weeks.filter((w) => w.warning).length;
 }

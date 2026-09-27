@@ -52,7 +52,7 @@ rather than (or alongside) text.
 | ---- | ------- | ---------- |
 | `get-hill-analysis` | How did the climbs go, and did I fade on them late? | `id` |
 | `get-split-analysis` | Did I positive-split, or was that the hills? | `id` |
-| `get-aerobic-analysis` | Did I decouple? What's my efficiency factor? | `id`, `basis` (pace or power) |
+| `get-aerobic-analysis` | Did I decouple? What's my efficiency factor? | `id`, `basis` (gap, pace or power; gap corrects for hills) |
 | `get-interval-analysis` | Interval workout breakdown: pace/HR per rep, did reps fade? | `id` |
 | `compare-activities` | How does this run compare to that one? | `activityId1`, `activityId2` |
 
@@ -62,7 +62,7 @@ rather than (or alongside) text.
 | ---- | ------- | ---------- |
 | `get-athlete-stats` | Run totals this week/month/YTD | (none) |
 | `get-fitness-trend` | Am I fresh or fatigued? What if I taper for a race? | `days`, `runOnly`, `projectDays`/`plannedLoads`, `targetDate`/`targetTsb` |
-| `get-training-load` | Weekly volume, injury-risk flags, weekly load | `days`, `runOnly` |
+| `get-training-load` | Weekly volume, volume-spike flags, weekly load | `days`, `runOnly` |
 | `get-best-efforts` | My best 5K/10K/half/marathon times | `distances`, `window`, `topN` |
 | `get-race-prediction` | What could I run for X? What pace do I need for a goal time? | `raceDistance`, `goalTime` |
 
@@ -84,7 +84,7 @@ same numbers as text use the matching read tool (e.g. `get-fitness-trend`,
 | `view-activity-chart` | `get-activity-streams-raw` | HR, power, pace, altitude, cadence, grade, and dynamics overlays with interval bands |
 | `view-cadence-trends` | `get-cadence-trend-data` | Cadence over time: timeline, scatter, zones, overlay views |
 | `view-route-map` | `get-route-map-data` | GPS track with start/finish markers and optional waypoints |
-| `view-training-load` | `get-training-load-data` | Weekly volume bars with a trend line and injury-risk weeks |
+| `view-training-load` | `get-training-load-data` | Weekly volume bars with a trend line and volume-spike weeks |
 | `view-compare-activities` | `get-compare-activities-data` | Two activities' streams overlaid with a delta summary |
 | `view-activity-zones` | `get-activity-zones-data` | Time-in-zone bar chart for HR |
 | `view-fitness-trend` | `get-fitness-trend-data` | CTL/ATL/TSB over time with fatigue/freshness bands and a taper plan; toggles whole-body vs runs-only |
@@ -111,7 +111,8 @@ predicts on the slow side.
 **Fitness and taper planning.** `get-fitness-trend` with `targetDate` and
 `targetTsb` to solve a taper (or `projectDays`/`plannedLoads` to project
 forward under an assumed plan), or `view-fitness-trend` for the same thing as
-a chart with a Whole body / Runs only toggle.
+a chart with a Whole body / Runs only toggle. `targetDate` must be after today
+and at most 180 days ahead.
 
 **Updating an activity.** `get-running-summary` and `get-activity-laps` for
 context, draft a short note, show it to the athlete and get confirmation,
@@ -138,6 +139,11 @@ description is kept. (This is also the `annotate-last-run` prompt.)
   leave it out, and it gets a warning only for the volume it already has.
   Do not read a short current week as a drop in volume. Weeks with no runs
   count as zero weeks, a layoff that is still going on included.
+- **Volume-spike flags compare with the recent average.** A week is flagged
+  when its distance is over 1.5 times the average of the 4 complete weeks
+  before it; the reason gives the ratio. A normal week after a recovery or
+  taper week is not flagged. The flag marks a sharp rise, not a measured
+  injury risk: say so, and do not present it as a diagnosis.
 - **Gaps in charts are missing data, not zero.** Streams with no recorded
   sample (a dropped HR strap, a watch that doesn't record running dynamics
   continuously) show as a break in the line, not a dip to zero. This applies

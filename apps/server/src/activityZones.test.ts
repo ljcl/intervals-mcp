@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { hrZoneMismatchWarning, mapIntervalsZones } from "./activityZones";
-import { type IntervalsActivity } from "./intervalsClient";
+import {
+  hrZoneMismatchWarning,
+  mapIntervalsZones,
+  resolveHrZones,
+} from "./activityZones";
+import {
+  type IntervalsActivity,
+  type IntervalsSportSettings,
+} from "./intervalsClient";
 
 function activity(
   overrides: Partial<IntervalsActivity> = {},
@@ -123,5 +130,74 @@ describe("hrZoneMismatchWarning", () => {
     );
     expect(warning).toContain("3 zones");
     expect(warning).toContain("2 zones");
+  });
+});
+
+describe("resolveHrZones", () => {
+  const RUN_GROUP = {
+    types: ["Run", "VirtualRun", "TrailRun"],
+    hr_zones: [130, 150, 165, 180, 200],
+  } as IntervalsSportSettings;
+  const TIMES = [600, 1800, 900, 500, 200];
+
+  it("prefers the activity's own bounds", () => {
+    const resolved = resolveHrZones(
+      activity({
+        icu_hr_zones: [120, 145, 160, 175, 197],
+        icu_hr_zone_times: TIMES,
+      }),
+      RUN_GROUP,
+      "Run",
+    );
+    expect(resolved.source).toBe("activity");
+    expect(resolved.set?.buckets[0]?.max).toBe(120);
+  });
+
+  it("falls back to the Run group when the activity has no bounds and the group covers its type", () => {
+    const resolved = resolveHrZones(
+      activity({ icu_hr_zone_times: TIMES }),
+      RUN_GROUP,
+      "TrailRun",
+    );
+    expect(resolved.source).toBe("sport_settings");
+    expect(resolved.set?.buckets[0]?.max).toBe(130);
+  });
+
+  it("does not fall back for a type the group does not cover", () => {
+    const resolved = resolveHrZones(
+      activity({ icu_hr_zone_times: TIMES }),
+      RUN_GROUP,
+      "Walk",
+    );
+    expect(resolved.set).toBeNull();
+    expect(resolved.note).toContain("unavailable");
+  });
+
+  it("does not fall back when the activity's own bounds do not match its times", () => {
+    const resolved = resolveHrZones(
+      activity({ icu_hr_zones: [120, 145, 160], icu_hr_zone_times: TIMES }),
+      RUN_GROUP,
+      "Run",
+    );
+    expect(resolved.set).toBeNull();
+    expect(resolved.note).toContain("do not match");
+  });
+
+  it("refuses fallback bounds with a different zone count", () => {
+    const resolved = resolveHrZones(
+      activity({ icu_hr_zone_times: [600, 1800, 900] }),
+      RUN_GROUP,
+      "Run",
+    );
+    expect(resolved.set).toBeNull();
+    expect(resolved.note).toContain("(5 zones)");
+  });
+
+  it("has no set and no note when nothing was recorded", () => {
+    expect(resolveHrZones(activity(), RUN_GROUP, "Run")).toEqual({
+      set: null,
+      source: null,
+      note: null,
+    });
   });
 });

@@ -73,13 +73,13 @@ descriptions.
 | `compare-activities` | Compare two activities side-by-side: pace, HR, cadence, load, and running dynamics, plus activity2-activity1 differences and an efficiency verdict |
 | `get-hill-analysis` | Climb/descent detection with GAP and early-vs-late climb effort drift |
 | `get-split-analysis` | Even km splits with a two-halves pacing verdict stated on the clock and grade-adjusted |
-| `get-aerobic-analysis` | Aerobic decoupling and efficiency factor, preferring intervals.icu's own values and computing from streams otherwise |
+| `get-aerobic-analysis` | Aerobic decoupling and efficiency factor on a grade-adjusted, pace or power basis from streams, with intervals.icu's own values labelled apart |
 | `get-interval-analysis` | Interval detection with urban-stop-aware rest classification and rep fade |
 | `get-best-efforts` | Best times at standard running distances, from intervals.icu's pace curves |
 | `get-race-prediction` | Predicted race times from intervals.icu pace-curve points (Riegel) alongside intervals.icu's own critical-speed model, with confidence, source point, and km goal-pace splits |
 | `get-athlete-stats` | Run totals (this week, last 4 weeks, this month, YTD) aggregated from list-activities data |
 | `get-fitness-trend` | Fitness/fatigue/form (CTL/ATL/TSB), whole-body from intervals.icu wellness or run-only computed locally, with rest/planned-load projection and a solved taper to a target form on a target date |
-| `get-training-load` | Weekly running volume and injury-risk warnings, weekly intervals.icu training load and the types it covers, plus current CTL/ATL/TSB |
+| `get-training-load` | Weekly running volume and volume-spike warnings, weekly intervals.icu training load and the types it covers, plus current CTL/ATL/TSB |
 | `update-activity` | Update an activity's name, description, gear, RPE, or feel, echoing before/after values (write tool) |
 
 `list-activities` defaults to the last 28 days (today back to 27 days
@@ -104,6 +104,8 @@ type), the same source `get-activity-zones` reads; otherwise they fall back
 to the athlete's Run sport settings group (`types` Run, VirtualRun,
 TrailRun) when that group covers the activity's type. `hr_zones` is an
 empty array when neither source is usable, rather than failing the call.
+`resolveHrZones` (`activityZones.ts`) holds this rule, shared with
+`get-running-summary`.
 `pace_min_per_km` and `gap_min_per_km` (grade-adjusted pace, derived
 from the activity's `gap` field, which intervals.icu reports in m/s, the
 same unit as `average_speed`) are set for Run/TrailRun/VirtualRun only: a
@@ -145,7 +147,7 @@ the intervals.icu Gear page.
 `get-wellness` returns daily wellness: HRV (both `hrv_rmssd_ms` and
 `hrv_sdnn_ms`), resting HR, sleep, weight, training load (`ctl`, `atl`,
 `ramp_rate`, and `tsb` = ctl minus atl from the unrounded values, each
-rounded to 0.1), and the subjective/device fields (readiness, soreness,
+rounded to 0.1, through the same `ctlAtlTsb` as `get-fitness-trend`), and the subjective/device fields (readiness, soreness,
 fatigue, stress, mood, motivation, `spo2` (%), `respiration`
 (breaths/min), comments); `units` names all of these, including `spo2` and
 `respiration`. Takes either a single `date` or an `oldest`/`newest` range
@@ -269,7 +271,14 @@ the shared intervals.icu stream adapter (`distance`, `altitude`,
 (`gapFactor`/`computeGrades` in `hillAnalysis.ts`): grade prefers
 intervals.icu's `grade_smooth` stream, falling back to an altitude-window
 derivation when it is absent or entirely null, and `grade_source` in the
-response names which was used. A null sample in `distance`/`altitude`/grade
+response names which was used. An altitude stream with no real samples
+counts as no altitude, not as flat ground. GAP applies the Minetti factor to
+grade averaged over a centred 100 m window (`gapGrades`), clamped to ±30%,
+never to the raw per-sample grade: the curve is convex, so zero-mean grade
+noise applied per sample made GAP too fast (±10% noise, 13% too fast on the
+flat). When the raw grade swings more than 3 points (RMS) around that
+average, both tools add a warning that the elevation track is noisy and GAP
+is approximate. A null sample in `distance`/`altitude`/grade
 is interpolated between its known neighbours (held flat across a leading or
 trailing gap) rather than treated as zero; a null HR/cadence/velocity sample
 is simply excluded from whatever average it would have fed. Pace is a bare
@@ -288,25 +297,49 @@ grade, elevation change, moving and grade-adjusted pace, HR, cadence, and
 power. The headline is early-vs-late climb drift: HR per unit of
 grade-adjusted speed compared between climbs in the first and second half of
 the activity, or GAP pace alone without HR, positive meaning the same
-climbing cost more late in the run.
+climbing cost more late in the run. With no elevation data (no grade stream
+and no real altitude samples) it returns an error. Climb detection still
+reads the per-sample grade, not the 100 m average.
 
 `get-split-analysis` bins the streams into fixed 1 km splits (device laps
 are ignored) and states a two-halves verdict twice: once on the clock, once
 grade-adjusted, cut at the exact midpoint of recorded distance rather than
 by grouping splits. `terrain_pct` names how many percentage points of the
 raw change the terrain accounts for, so a hilly back half is not misread as
-fade and a course that flattens out does not hide real fade.
+fade and a course that flattens out does not hide real fade. With no
+elevation data, `grade_source` is `none`, every grade-adjusted field
+(`gap_pace_*`, `gap_shape`, `gap_delta_pct`, `terrain_pct`) is null, and the
+verdict is on the clock only. On a noisy elevation track the interpretation
+also says the grade-adjusted part is approximate. `totals.elevation_gain_m`
+is the activity's own `total_elevation_gain` (`elevation_gain_source:
+"intervals.icu"`, the value `get-activity` reports) when it has one, else
+the ascent summed from the altitude samples with a 3 m hysteresis
+(`computed`), else null. It once added each split's net change, so a km
+that climbed 20 m and descended 20 m added 0 (136 m against
+`get-activity`'s 693 m on one marathon, #45).
 
-`get-aerobic-analysis` prefers the activity's own `decoupling` and
-`icu_efficiency_factor` fields when intervals.icu has already computed them
-(`decoupling_source`/`efficiency_factor_source: "intervals.icu"`), and in
-that case skips the stream fetch entirely unless `includeBreakdown: true` is
-passed. Otherwise both are computed from streams
-(`source: "computed"`) using the shared intervals.icu stream adapter. The
-`basis` input picks the output stream: `pace` (default) reads
-`velocity_smooth`, `power` reads `watts`; pace figures render as a bare
-`m:ss` string in `avg_pace_min_per_km`/`normalized_pace_min_per_km`, never
-miles. On the power basis a recording device name starting
+`get-aerobic-analysis` computes decoupling and efficiency factor from
+streams on one `basis`: `gap` reads `velocity_smooth` corrected for grade
+(`gradeAdjustedSpeeds` in `hillAnalysis.ts`, the same 100 m averaged grade
+and Minetti factor as the hill and split tools), `pace` reads raw
+`velocity_smooth`, `power` reads `watts`. On raw pace, terrain reads as
+fitness: an out-and-back at a steady 150 bpm, 2.8 m/s up a 1.8% grade and
+3.4 m/s back down, decouples by -19% one way round and +16% the other; on
+`gap` both are about 0% (#74). With no elevation data, `gap` falls back to
+`pace` with a warning, and `basis` in the response says `pace`. When the
+caller passes no `basis` and no `includeBreakdown`, and the activity
+carries both of intervals.icu's own `decoupling` and
+`icu_efficiency_factor`, the tool reports those without a stream fetch
+(`decoupling_source`/`efficiency_factor_source: "intervals.icu"`), with
+`basis: null` and no efficiency unit: intervals.icu does not say which basis
+it used (docs/api-notes.md). In every other case both numbers are
+`computed` (the default basis is `gap`), and intervals.icu's values, when
+the activity has any, are in a separate `intervals_icu` field and a
+separate text line, never labelled with the computed basis. Pace figures
+render as a bare
+`m:ss` string in `avg_pace_min_per_km`/`normalized_pace_min_per_km`
+(grade-adjusted on `gap`), never miles. On the power basis a recording
+device name starting
 with `Watch` (an Apple Watch) adds a warning that the power stream is
 Apple's own estimate, not a power meter reading. Warm-up exclusion defaults
 to the activity's `icu_warmup_time`, then the athlete's Run sport-settings
@@ -317,16 +350,32 @@ the athlete's Run sport-settings `ftp`, then the activity's `icu_ftp`.
 `moving` stream) before trusting it as interval structure: under 60 s with no
 fast effort before it is a traffic light (excluded), up to 3 min after a fast
 effort is genuine recovery, over 5 min is a café/regroup stop (excluded),
-anything else is unclassified and lowers confidence. When the activity
+anything else is unclassified and lowers confidence. Each stop is judged by
+the work segment that ends right before it. A stop before any movement (a
+standing start while the watch finds GPS) is not a rest: it is left out of
+`rests`, and the reasoning names it. When the activity
 carries clean structured intervals.icu laps (`icu_intervals`, WORK/RECOVERY)
 those are preferred over stream reconstruction; they also catch
-jog-recovery sessions, which never stop moving, and fall back to streams
-when the laps' speeds are not tightly clustered (rain, sweat, a
-non-effort-based auto-lap split). Work reps are reconstructed between
+jog-recovery sessions, which never stop moving. Sliver laps (under 50 m or
+15 s, such as the 0 m lap an Apple Watch often records at the end) are
+ignored. A lap is fast at 1.08 times the median lap speed or more;
+consecutive fast laps merge into one rep, and it takes at least 2 reps with
+slower laps between them. The laps fall back to streams when the reps'
+speeds are not tightly clustered (rain, sweat). On an auto-lap set (most
+laps 1 km or 1 mile) a fast lap is often a downhill km, so the laps count
+only when intervals.icu's labels match (every fast lap WORK, every lap
+between RECOVERY) or there are 3 reps each at least 1.15 times the speed of
+the laps between. Labels that do not match the fast laps lower confidence.
+Work reps are reconstructed between
 recoveries, merging straight through traffic lights, and reported with
 per-rep pace (`pace_min_per_km`, bare `m:ss`), HR, cadence, and power; fade compares the last rep
 against the first. An HR-distribution tiebreaker ("was this a workout at
-all") reports the share of moving time at ≥ 88% of the activity's own max HR.
+all") reports the share of moving time at ≥ 88% of the athlete's max HR:
+the activity's `athlete_max_hr`, else the top `icu_hr_zones` bound
+(`hr_signal.max_hr_source`). It used the run's own peak, and on an easy run
+the peak is low, so an easy zone 2 run read as "a hard workout" (#47). When
+the activity has neither, the peak is a last resort: the response warns,
+and the signal makes no call and does not change the verdict.
 
 `get-best-efforts` reports best times at standard distances (400m, 1km, 5km,
 10km, half marathon, marathon by default, or a subset via `distances`) from
@@ -403,17 +452,30 @@ capped at 60) projects TSB forward assuming rest, or `plannedLoads`
 (`[{ date: YYYY-MM-DD, load }]`, dates after today; unlisted dates in the
 projection count as rest; an entry on or before today, or beyond the
 projection, is ignored and named in a warning) projects with a specific plan
-instead. `targetDate`/`targetTsb` solve a load taper landing on a target
-form, unchanged from before. `get-fitness-trend` and the
+instead. `tsb_positive_date` (only with a projection) is today when TSB is
+already ≥ 0 today, and the text says "already positive today"; otherwise it is
+the first projected date TSB reaches 0, or null. `targetDate`/`targetTsb`
+solve a load taper landing on a target form. `targetDate` must be a real
+calendar date, after today, and at most 180 days ahead (`MAX_TAPER_DAYS`);
+any other date is an error before any fetch, in this tool and in the app
+pair. `bands` date the deep-fatigue, fresh and steep-ramp stretches. A fresh
+band starts at TSB +15 and holds until TSB drops below +12; fresh bands 2
+days apart or less merge, and a fresh band needs 3 days unless it runs to the
+last day. A band that runs to the last day has a present-tense reason ("now")
+and is also in `flags`; a band that ended earlier has a past-tense reason.
+`get-fitness-trend` and the
 `view-fitness-trend`/`get-fitness-trend-data` MCP App pair (below) share one
 loader (`loadFitnessTrend` in `loadFitnessTrend.ts`) for both the whole-body
 and run-only paths, so the app's `runOnly: true` payload is built the same
 way as the text tool's and the two can never disagree. The app's payload adds
-`source`, `runOnly`, `activityTypesIncluded`, and `warnings` alongside the
+`source`, `runOnly`, `activityTypesIncluded`, `warnings`, `endDate`
+(today, so the app can show "already positive today"), and `ctl7dDelta`
+(the same `ctlDelta` value as `trend.ctl_7d_delta`, by date, so the app's
+narration and the text tool agree on a series with gaps) alongside the
 series/projection/taper it already carried.
 
 `get-training-load` reports weekly running volume (distance, time,
-elevation, run count) and injury-risk warnings (`computeWeekWarnings` in
+elevation, run count) and volume-spike warnings (`computeWeekWarnings` in
 `trainingLoad.ts`, shared with the app feed below),
 always from Run/TrailRun/VirtualRun activities regardless of `runOnly`. It
 also reports weekly `load` (the sum of `icu_training_load` over the included
@@ -459,14 +521,30 @@ change which weeks the run numbers read. Averages and the trend use its
 complete weeks only; with no complete week yet, the averages are this week so
 far. The trend compares the distance of the last 2 complete weeks with the 2
 before, and the text names the four weeks; when all four have no running
-volume, it says so instead of reporting too little data. A warning fires on a
-rise of over 30% on the week before, or on a week over 150% of the average of
-the complete weeks up to and including it, and over 30 km. That average never
-looks ahead, so a layoff cannot make the weeks before it look unusually high.
-The week in progress is never the baseline for a rise or part of that
-average, and it is flagged only on the volume it already has ("so far" in the
-reason). The run-only runway still counts `days + 150` days back from today,
-so `current` matches `get-fitness-trend`'s run-only value.
+volume, it says so instead of reporting too little data.
+
+A warning fires when a week's distance is over 1.5 times the average of the
+4 complete weeks before it: the acute:chronic ratio (#60). The reason gives
+both distances, the ratio and how many weeks the average has. The average
+needs at least 3 weeks, and an average of 0 km (4 weeks with no runs) gives
+no ratio and no warning. The tool also reads the runs of the 4 weeks before
+the window (`baselineStartDate` to `startDate` in `trainingLoadWindow`), so
+the first weeks of the window have an average too. Those weeks are only the
+baseline: they get no row, no total and no warning, and weeks before the
+first run in them are left out, like the weeks before the first run in the
+window. This is the only rule. A rise of over 30% on the week before used to
+fire too, and it warned about a normal week after a recovery or taper week
+(40 km after a 10 km week was "increased 300%"). Against the 4-week average
+that week is 1.23. A separate "unusually high" rule (over 150% of the average
+up to the week, and over 30 km) is gone as well: it flagged the same weeks a
+second time. The 1.5 threshold is the top of the usual 1.3 to 1.5 caution
+zone. The evidence for any ratio threshold is weak, so the reason says
+"volume spike", not injury risk. The average never looks ahead, so a layoff
+cannot make the weeks before it look high. The week in progress is never
+part of an average, and it is flagged only on the volume it already has
+("so far" in the reason). The run-only runway still counts `days + 150` days
+back from today, so `current` matches `get-fitness-trend`'s run-only value;
+it already covers the 4 baseline weeks.
 
 `update-activity` changes an activity's name, description, gear, RPE
 (`icu_rpe`), or feel. It always does a fresh read first (bypassing the
@@ -514,7 +592,7 @@ and `view-route-map`/`get-route-map-data` are all ported to intervals.icu.
 | `get-cadence-trend-data` | Summary cadence/pace data for the cadence trends UI (app-only) |
 | `view-route-map` | Interactive map of an activity's GPS track, fit to bounds with start/finish markers; optional distance-anchored waypoints (MCP App) |
 | `get-route-map-data` | `[lat, lng]` coordinates from the activity's latlng stream plus index-aligned metric streams and WORK-interval end markers for the route map UI (app-only) |
-| `view-training-load` | Weekly running-volume bars with a rolling trend line and injury-risk warning weeks (MCP App) |
+| `view-training-load` | Weekly running-volume bars with a rolling trend line and volume-spike warning weeks (MCP App) |
 | `get-training-load-data` | Per-week volume, trend value, warning flags, weekly load, and current CTL/ATL/TSB for the training-load UI (app-only) |
 | `view-compare-activities` | Interactive overlay of two activities' streams on a shared distance/time axis with a delta summary (MCP App) |
 | `get-compare-activities-data` | Aggregate comparison (summaries, activity2−activity1 differences, efficiency) for the compare-activities UI (app-only) |

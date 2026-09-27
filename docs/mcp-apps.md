@@ -326,7 +326,7 @@ exercise the real default view.
 
 ### Training Load
 
-Weekly running-volume bars with rolling trend line and injury-risk warning
+Weekly running-volume bars with rolling trend line and volume-spike warning
 weeks. Calls `get-training-load-data` with the `days` window (default 84,
 max 365).
 
@@ -337,10 +337,13 @@ max 365).
   weeks zero-filled so the timeline stays continuous and runs on to the
   current week (a layoff that is still going on shows as empty weeks), a
   centered rolling-average trend over complete weeks, per-week warning flags
-  with reasons. The weeks the warnings read (`selectRunWeeks`) and the rules
-  (`computeWeekWarnings`: >30% week-over-week spike, a high week over 150% of
-  the average up to it) are shared with the `get-training-load` text tool, so
-  chart and prose cannot drift (#43).
+  with reasons. The weeks the warnings read (`selectRunWeeks`, with the 4
+  weeks before the window as a baseline only) and the rule
+  (`computeWeekWarnings`: a week over 1.5 times the average of the 4 complete
+  weeks before it, #60) are shared with the `get-training-load` text tool, so
+  chart and prose cannot drift (#43). The tooltip shows the reason as the
+  server wrote it; the narration and model context call the weeks volume
+  spikes, not injury risk.
 - The current week carries `inProgress: true` and `trendKm: null`: it draws
   as a light dashed bar with a "This week so far" legend key, the trend line
   ends at the last complete week, and the tooltip, narration and model
@@ -410,7 +413,16 @@ weeks take them. Calls `get-fitness-trend-data` on mount with `days`,
   without copying `DEEP_FATIGUE_TSB` and friends across the boundary, and a
   chart shading a different "deep fatigue" than the prose describes is the
   drift the split prevents. An old resolved block still shades; only a current
-  one flags.
+  one flags. Fresh bands have hysteresis and merge server-side, so TSB moving
+  around +15 shades one band, not stripes.
+- The "Fresh on" tile and the context summary read `tsbPositiveDate` against
+  the payload's `endDate` (today): equal means form is already positive today,
+  so the tile says "Today" rather than a date. The server sets the date; the
+  app only compares.
+- The narration's 7-day fitness change is the payload's `ctl7dDelta`
+  (`ctlDelta`, by date), the text tool's `ctl_7d_delta`. The app must not
+  count rows back in `series`: a whole-body series skips days with no
+  wellness, so 7 rows can be 9 calendar days.
 - `ComposedChart`: fitness `Area` left axis, fatigue line beside it, form
   thinner line on its own right axis with dashed zero line. The forward half
   draws as separate `plan*` series with `strokeDasharray`; handover day carries

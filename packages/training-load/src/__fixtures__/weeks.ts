@@ -1,9 +1,10 @@
 import { type TrainingLoadData, type WeekSummary } from "../types";
 
 /**
- * 12 weeks of build with one skipped week, a >30% spike week, and an
- * unusually-high peak week, then the current week in progress: exercises
- * the trend line, the zero-fill row, both warning rules, and the partial bar.
+ * 12 weeks of build with one skipped week and one volume-spike week (over
+ * 1.5 times the average of the 4 weeks before it, as the server flags it),
+ * then the current week in progress: exercises the trend line, the
+ * zero-fill row, the warning, and the partial bar.
  */
 export const mockWeeks: WeekSummary[] = [
   {
@@ -12,7 +13,7 @@ export const mockWeeks: WeekSummary[] = [
     distanceKm: 24.5,
     timeHours: 2.45,
     elevationM: 180,
-    trendKm: 26.1,
+    trendKm: 26.2,
     warning: false,
     warningReasons: [],
   },
@@ -22,7 +23,7 @@ export const mockWeeks: WeekSummary[] = [
     distanceKm: 27.8,
     timeHours: 2.8,
     elevationM: 210,
-    trendKm: 27.4,
+    trendKm: 27.5,
     warning: false,
     warningReasons: [],
   },
@@ -42,7 +43,7 @@ export const mockWeeks: WeekSummary[] = [
     distanceKm: 30.5,
     timeHours: 3.1,
     elevationM: 220,
-    trendKm: 24.9,
+    trendKm: 20.2,
     warning: false,
     warningReasons: [],
   },
@@ -52,37 +53,37 @@ export const mockWeeks: WeekSummary[] = [
     distanceKm: 0,
     timeHours: 0,
     elevationM: 0,
-    trendKm: 21.5,
+    trendKm: 20.6,
     warning: false,
     warningReasons: [],
   },
   {
     weekStarting: "2026-05-04",
     runs: 4,
-    distanceKm: 34,
-    timeHours: 3.4,
+    distanceKm: 31.2,
+    timeHours: 3.1,
     elevationM: 260,
-    trendKm: 23.7,
+    trendKm: 21.5,
     warning: false,
     warningReasons: [],
   },
   {
     weekStarting: "2026-05-11",
     runs: 5,
-    distanceKm: 37.2,
-    timeHours: 3.75,
+    distanceKm: 33.4,
+    timeHours: 3.35,
     elevationM: 300,
-    trendKm: 36.1,
+    trendKm: 32.9,
     warning: false,
     warningReasons: [],
   },
   {
     weekStarting: "2026-05-18",
     runs: 5,
-    distanceKm: 37,
-    timeHours: 3.7,
+    distanceKm: 34,
+    timeHours: 3.4,
     elevationM: 280,
-    trendKm: 42.6,
+    trendKm: 40.3,
     warning: false,
     warningReasons: [],
   },
@@ -92,11 +93,10 @@ export const mockWeeks: WeekSummary[] = [
     distanceKm: 53.5,
     timeHours: 5.4,
     elevationM: 420,
-    trendKm: 43.6,
+    trendKm: 42.6,
     warning: true,
     warningReasons: [
-      "Volume increased 45% from previous week - consider injury risk",
-      "Unusually high volume (53.5 km vs 33 km average)",
+      "Volume spike: 53.5 km is 2.17 times the 24.6 km average of the previous 4 weeks",
     ],
   },
   {

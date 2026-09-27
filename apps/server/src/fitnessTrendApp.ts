@@ -8,7 +8,11 @@
  * carrying only what the chart draws.
  */
 
-import { type FitnessTrendDay, type FitnessTrendResult } from "./fitnessTrend";
+import {
+  ctlDelta,
+  type FitnessTrendDay,
+  type FitnessTrendResult,
+} from "./fitnessTrend";
 
 export interface TrendBandData {
   kind: "deep-fatigue" | "fresh" | "steep-ramp";
@@ -47,6 +51,13 @@ export interface FitnessTrendAppData {
   taper: TaperPlanData | null;
   current: FitnessTrendDay | null;
   tsbPositiveDate: string | null;
+  /**
+   * CTL change over the 7 calendar days to the last series day, from
+   * `ctlDelta`, the same number `get-fitness-trend` prints as
+   * `ctl_7d_delta`; null when the day 7 before is not in the series. The app
+   * narrates this rather than deriving it from `series`.
+   */
+  ctl7dDelta: number | null;
   bands: TrendBandData[];
   flags: string[];
   activitiesIncluded: number;
@@ -57,6 +68,12 @@ export interface FitnessTrendAppData {
    * carried it.
    */
   asOf?: string | null;
+  /**
+   * Today in the server's time zone, the window's last date. A
+   * `tsbPositiveDate` equal to it means form is already positive today.
+   * Optional for the same reason as {@link FitnessTrendAppData.asOf}.
+   */
+  endDate?: string;
   /**
    * Where `current` CTL/ATL came from (mirrors the text tool's `source`):
    * `"intervals.icu"` for the whole-body path, `"computed"` for run-only.
@@ -74,6 +91,8 @@ export interface FitnessTrendAppData {
 export interface FitnessTrendAppMeta {
   /** Lookback window the caller asked for. */
   days: number;
+  /** Today in the server's time zone; see {@link FitnessTrendAppData.endDate}. */
+  endDate?: string;
   /** Count of activities within the window whose load fed the series. */
   activitiesIncluded: number;
   /** Count of activities within the window with no usable load, excluded from the series. */
@@ -120,6 +139,7 @@ export function mapFitnessTrendApp(
       : null,
     current: trend.current,
     tsbPositiveDate: trend.tsbPositiveDate,
+    ctl7dDelta: ctlDelta(trend.days, 7),
     bands: trend.bands.map((band) => ({
       kind: band.kind,
       startDate: band.start_date,
@@ -131,6 +151,7 @@ export function mapFitnessTrendApp(
     activitiesIncluded: meta.activitiesIncluded,
     activitiesMissingLoad: meta.activitiesMissingLoad,
     asOf: trend.current?.date ?? null,
+    ...(meta.endDate !== undefined ? { endDate: meta.endDate } : {}),
     source: meta.source ?? "intervals.icu",
     runOnly: meta.runOnly ?? false,
     activityTypesIncluded: meta.activityTypesIncluded ?? [],

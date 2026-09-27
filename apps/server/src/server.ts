@@ -25,6 +25,7 @@ import {
   type CadenceTrendData,
 } from "./cadenceTrendData";
 import { getIntervalsApiKey, getTimeZone } from "./config";
+import { taperTargetDateError } from "./fitnessTrend";
 import {
   type FitnessTrendAppData,
   mapFitnessTrendApp,
@@ -536,7 +537,7 @@ function buildToolDefs(): ToolDef[] {
     name: "view-training-load",
     title: "Training load chart",
     description:
-      "Open an interactive training-load chart: weekly running volume bars with a rolling trend line, and injury-risk warning weeks highlighted with their reason on hover. " +
+      "Open an interactive training-load chart: weekly running volume bars with a rolling trend line, and volume-spike weeks (over 1.5 times the average of the 4 weeks before) highlighted with their reason on hover. " +
       "Prefer this over text when the user wants to see how their training volume is trending. Takes a number of days of history.",
     inputSchema: toInputSchema(APP_TOOL_INPUT_SCHEMAS["view-training-load"]!),
     annotations: READ_ONLY,
@@ -549,7 +550,7 @@ function buildToolDefs(): ToolDef[] {
     name: "get-training-load-data",
     title: "Training load chart data",
     description:
-      "Internal data feed for the training-load UI: returns per-week running volume (distance, runs, time, elevation), a rolling trend value, and injury-risk warning flags with reasons as JSON. " +
+      "Internal data feed for the training-load UI: returns per-week running volume (distance, runs, time, elevation), a rolling trend value, and volume-spike warning flags with reasons as JSON. " +
       "The view-training-load app calls this; not intended for direct model use.",
     inputSchema: toInputSchema(
       APP_TOOL_INPUT_SCHEMAS["get-training-load-data"]!,
@@ -862,11 +863,12 @@ async function loadTrainingLoadAppData(
   const days = Number(args.days) || 84;
   const runOnly = Boolean(args.runOnly);
 
-  const { lookback, runs, loadActivities, current, source } =
+  const { lookback, runs, baselineRuns, loadActivities, current, source } =
     await loadTrainingLoadInputs(apiKey, { days, runOnly }, progress);
 
   return buildTrainingLoadData(runs, lookback, {
     loadActivities,
+    baselineRuns,
     runOnly,
     current,
     source,
@@ -950,6 +952,7 @@ async function loadFitnessTrendAppData(
     },
     {
       days,
+      endDate: loaded.endDate,
       activitiesIncluded: loaded.activitiesIncluded,
       activitiesMissingLoad: loaded.activitiesMissingLoad,
       source: loaded.source,
@@ -960,11 +963,34 @@ async function loadFitnessTrendAppData(
   );
 }
 
+/**
+ * The taper target check both fitness-trend app tools run before any fetch,
+ * the same `taperTargetDateError` the text tool runs: a date too far ahead
+ * would otherwise solve a plan of any size.
+ */
+function fitnessTrendTargetError(
+  args: Record<string, unknown>,
+): ToolCallResult | null {
+  if (typeof args.targetDate !== "string") return null;
+  const message = taperTargetDateError(
+    args.targetDate,
+    todayLocal(getTimeZone()),
+  );
+  return message
+    ? {
+        isError: true,
+        content: [{ type: "text", text: prefixedErrorText(message) }],
+      }
+    : null;
+}
+
 async function handleGetFitnessTrendData(
   args: Record<string, unknown>,
   token: string,
   progress: ReportProgress,
 ): Promise<ToolCallResult> {
+  const invalid = fitnessTrendTargetError(args);
+  if (invalid) return invalid;
   const data = await loadFitnessTrendAppData(token, args, progress);
   return { content: [{ type: "text", text: JSON.stringify(data) }] };
 }
@@ -974,6 +1000,8 @@ async function handleViewFitnessTrend(
   token: string,
   progress: ReportProgress,
 ): Promise<ToolCallResult> {
+  const invalid = fitnessTrendTargetError(args);
+  if (invalid) return invalid;
   const data = await loadFitnessTrendAppData(token, args, progress);
   const current = data.current;
   const lines = [
@@ -996,7 +1024,7 @@ async function handleViewFitnessTrend(
         )}; lands TSB ${taper.achievedTsb >= 0 ? "+" : ""}${taper.achievedTsb}`,
     );
     if (!taper.feasible && taper.note) lines.push(`Warning: ${taper.note}`);
-  } else if (data.tsbPositiveDate === todayLocal(getTimeZone())) {
+  } else if (data.tsbPositiveDate && data.tsbPositiveDate === data.endDate) {
     lines.push(`Form is already positive today (${data.tsbPositiveDate})`);
   } else if (data.tsbPositiveDate) {
     lines.push(

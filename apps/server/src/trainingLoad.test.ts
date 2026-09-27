@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   aggregateWeeks,
+  baselineWeeks,
   buildTrainingLoadData,
   computeWeekWarnings,
   getWeekStart,
@@ -19,6 +20,7 @@ describe("trainingLoadWindow", () => {
   it("rounds days up to whole weeks and adds this week so far (Saturday)", () => {
     // 2026-09-26 is a Saturday: the issue's example day.
     expect(trainingLoadWindow(28, "2026-09-26")).toEqual({
+      baselineStartDate: "2026-07-27",
       startDate: "2026-08-24",
       endDate: "2026-09-26",
       currentWeekStart: "2026-09-21",
@@ -90,89 +92,68 @@ describe("getWeekStart", () => {
 });
 
 describe("computeWeekWarnings", () => {
-  const week = (week_starting: string, distance_km: number) => ({
-    week_starting,
-    distance_km,
+  /** Consecutive complete weeks from Monday 2026-06-01, one per distance. */
+  const weeks = (...km: number[]) =>
+    km.map((distance_km, i) => ({
+      week_starting: addDays("2026-06-01", 7 * i),
+      distance_km,
+    }));
+
+  it("needs 3 complete weeks before a week to compare it with", () => {
+    expect(computeWeekWarnings(weeks(20, 60))).toEqual([]);
+    expect(computeWeekWarnings(weeks(20, 20, 60))).toEqual([]);
   });
 
-  it("returns nothing for fewer than two weeks", () => {
-    expect(computeWeekWarnings([week("2026-06-01", 100)])).toEqual([]);
+  it("does not flag a return to normal volume after a recovery week (#60)", () => {
+    // The old rule said "Volume increased 300% from previous week".
+    expect(computeWeekWarnings(weeks(40, 40, 40, 10, 40))).toEqual([]);
+    // The issue's live case: a race week, a short recovery week, then an
+    // easy week at about half the usual volume ("increased 243%").
+    expect(computeWeekWarnings(weeks(60, 60, 50, 8.5, 29.2))).toEqual([]);
   });
 
-  it("flags a >30% week-over-week increase", () => {
-    const warnings = computeWeekWarnings([
-      week("2026-06-01", 20),
-      week("2026-06-08", 28),
-    ]);
-    expect(warnings).toEqual([
-      {
-        week_starting: "2026-06-08",
-        reason:
-          "Volume increased 40% from previous week - consider injury risk",
-      },
-    ]);
-  });
-
-  it("does not flag a 30%-or-smaller increase", () => {
-    expect(
-      computeWeekWarnings([week("2026-06-01", 20), week("2026-06-08", 26)]),
-    ).toEqual([]);
-  });
-
-  it("flags an unusually high week (>150% of average and over 30 km)", () => {
-    const warnings = computeWeekWarnings([
-      week("2026-05-25", 20),
-      week("2026-06-01", 21),
-      week("2026-06-08", 19),
-      week("2026-06-15", 62),
-    ]);
-    const high = warnings.find((w) => w.reason.startsWith("Unusually"));
-    expect(high).toEqual({
-      week_starting: "2026-06-15",
-      reason: "Unusually high volume (62 km vs 31 km average up to that week)",
-    });
-  });
-
-  it("never flags a week because of a layoff after it", () => {
-    // Over all four weeks the average is 25 km, so a whole-period average
-    // would call both 50 km weeks unusually high. Up to each of them it is
-    // 50 km.
-    expect(
-      computeWeekWarnings([
-        week("2026-06-01", 50),
-        week("2026-06-08", 50),
-        week("2026-06-15", 0),
-        week("2026-06-22", 0),
-      ]),
-    ).toEqual([]);
-  });
-
-  it("flags a return to full volume after a layoff, not the week before the layoff", () => {
-    expect(
-      computeWeekWarnings([
-        week("2026-06-01", 40),
-        week("2026-06-08", 0),
-        week("2026-06-15", 0),
-        week("2026-06-22", 0),
-        week("2026-06-29", 42),
-      ]),
-    ).toEqual([
+  it("flags a week at 1.6 times the previous 4-week average, and states the ratio", () => {
+    expect(computeWeekWarnings(weeks(40, 40, 40, 40, 64))).toEqual([
       {
         week_starting: "2026-06-29",
         reason:
-          "Unusually high volume (42 km vs 16 km average up to that week)",
+          "Volume spike: 64 km is 1.6 times the 40 km average of the previous 4 weeks",
       },
     ]);
   });
 
-  it("can flag the same week under both rules", () => {
-    const warnings = computeWeekWarnings([
-      week("2026-06-01", 20),
-      week("2026-06-08", 22),
-      week("2026-06-15", 65),
+  it("does not flag a week at exactly 1.5 times the average", () => {
+    expect(computeWeekWarnings(weeks(40, 40, 40, 40, 60))).toEqual([]);
+  });
+
+  it("averages only the 4 weeks before, and says so with 3", () => {
+    // The 100 km week is 5 weeks back: it is not part of the average.
+    expect(computeWeekWarnings(weeks(100, 40, 40, 40, 40, 64))).toHaveLength(1);
+    expect(computeWeekWarnings(weeks(30, 30, 30, 48))).toEqual([
+      {
+        week_starting: "2026-06-22",
+        reason:
+          "Volume spike: 48 km is 1.6 times the 30 km average of the previous 3 weeks",
+      },
     ]);
-    const forSpike = warnings.filter((w) => w.week_starting === "2026-06-15");
-    expect(forSpike).toHaveLength(2);
+  });
+
+  it("never flags a week because of a layoff after it", () => {
+    expect(computeWeekWarnings(weeks(50, 50, 50, 50, 0, 0))).toEqual([]);
+  });
+
+  it("flags a return to full volume after a layoff, not the week before the layoff", () => {
+    expect(computeWeekWarnings(weeks(40, 0, 0, 0, 42))).toEqual([
+      {
+        week_starting: "2026-06-29",
+        reason:
+          "Volume spike: 42 km is 4.2 times the 10 km average of the previous 4 weeks",
+      },
+    ]);
+  });
+
+  it("gives no ratio when the previous 4 weeks have no volume", () => {
+    expect(computeWeekWarnings(weeks(40, 0, 0, 0, 0, 42))).toEqual([]);
   });
 
   const inProgress = (week_starting: string, distance_km: number) => ({
@@ -181,51 +162,22 @@ describe("computeWeekWarnings", () => {
     in_progress: true,
   });
 
-  it("never uses a week in progress as the baseline for a rise", () => {
-    // 5 km so far is not a week's volume: 20 km after it is no 300% rise.
-    expect(
-      computeWeekWarnings([
-        inProgress("2026-06-01", 5),
-        week("2026-06-08", 20),
-      ]),
-    ).toEqual([]);
-  });
-
   it("does not flag a week in progress for being lower so far", () => {
     expect(
-      computeWeekWarnings([
-        week("2026-06-01", 60),
-        week("2026-06-08", 60),
-        inProgress("2026-06-15", 16),
-      ]),
+      computeWeekWarnings([...weeks(60, 60, 60), inProgress("2026-06-22", 16)]),
     ).toEqual([]);
   });
 
-  it("warns early when the week in progress is already over 30% up", () => {
-    const warnings = computeWeekWarnings([
-      week("2026-06-01", 30),
-      inProgress("2026-06-08", 45),
+  it("warns early when the week in progress is already a spike", () => {
+    expect(
+      computeWeekWarnings([...weeks(30, 30, 30), inProgress("2026-06-22", 48)]),
+    ).toEqual([
+      {
+        week_starting: "2026-06-22",
+        reason:
+          "Volume spike so far: 48 km is already 1.6 times the 30 km average of the previous 3 weeks",
+      },
     ]);
-    expect(warnings).toContainEqual({
-      week_starting: "2026-06-08",
-      reason:
-        "Volume so far is already 50% above the previous week - consider injury risk",
-    });
-  });
-
-  it("flags unusually high volume so far in the week in progress", () => {
-    const warnings = computeWeekWarnings([
-      week("2026-06-01", 20),
-      week("2026-06-08", 20),
-      inProgress("2026-06-15", 45),
-    ]);
-    // The average is over the 2 complete weeks only: counting the week in
-    // progress would make it 28 km.
-    expect(warnings).toContainEqual({
-      week_starting: "2026-06-15",
-      reason:
-        "Unusually high volume so far (45 km vs 20 km average up to that week)",
-    });
   });
 });
 
@@ -258,13 +210,62 @@ describe("selectRunWeeks", () => {
       "2026-06-29",
     );
     expect(span).toHaveLength(4);
-    // The average is 18.75 km over the 4 weeks. No "increased 50%": the week
-    // before the 45 km week had no volume, so there is no rise to measure.
+    // The 45 km week against the 3 weeks before it, the empty ones included.
     expect(warnings).toEqual([
       {
         week_starting: "2026-06-22",
         reason:
-          "Unusually high volume (45 km vs 19 km average up to that week)",
+          "Volume spike: 45 km is 4.5 times the 10 km average of the previous 3 weeks",
+      },
+    ]);
+  });
+
+  it("compares the first weeks with the weeks before the window, which it never flags (#60)", () => {
+    // Before the window: 3 steady weeks and a spike week of its own.
+    const before = [
+      bucket("2026-05-04", 30),
+      bucket("2026-05-11", 30),
+      bucket("2026-05-18", 30),
+      bucket("2026-05-25", 60),
+    ];
+    const window = [bucket("2026-06-01", 60), bucket("2026-06-08", 40)];
+
+    expect(selectRunWeeks(window, "2026-06-15").warnings).toEqual([]);
+    const { span, complete, warnings } = selectRunWeeks(
+      window,
+      "2026-06-15",
+      before,
+    );
+    expect(span).toEqual(window);
+    expect(complete).toEqual(window);
+    expect(warnings).toEqual([
+      {
+        week_starting: "2026-06-01",
+        reason:
+          "Volume spike: 60 km is 1.6 times the 37.5 km average of the previous 4 weeks",
+      },
+    ]);
+  });
+
+  it("counts the weeks between the baseline and the first run in the window as zero weeks", () => {
+    // The window starts on 2026-06-01, but its first run is on 2026-06-15.
+    const before = [
+      bucket("2026-05-04", 40),
+      bucket("2026-05-11", 40),
+      bucket("2026-05-18", 40),
+      bucket("2026-05-25", 40),
+    ];
+    const { span, warnings } = selectRunWeeks(
+      [bucket("2026-06-15", 64)],
+      "2026-06-22",
+      before,
+    );
+    expect(span.map((b) => b.weekStarting)).toEqual(["2026-06-15"]);
+    expect(warnings).toEqual([
+      {
+        week_starting: "2026-06-15",
+        reason:
+          "Volume spike: 64 km is 3.2 times the 20 km average of the previous 4 weeks",
       },
     ]);
   });
@@ -562,26 +563,87 @@ describe("buildTrainingLoadData", () => {
 
   it("flags the week in progress only on the volume it already has", () => {
     const data = buildTrainingLoadData(
-      [run("2026-06-01", 20), run("2026-06-08", 20), run("2026-06-15", 45)],
-      until("2026-06-18"),
+      [
+        run("2026-06-01", 20),
+        run("2026-06-08", 20),
+        run("2026-06-15", 20),
+        run("2026-06-22", 45),
+      ],
+      until("2026-06-25"),
     );
-    expect(data.weeks[2]!.warningReasons).toEqual([
-      "Volume so far is already 125% above the previous week - consider injury risk",
-      "Unusually high volume so far (45 km vs 20 km average up to that week)",
+    expect(data.weeks[3]!.warningReasons).toEqual([
+      "Volume spike so far: 45 km is already 2.25 times the 20 km average of the previous 3 weeks",
     ]);
   });
 
   it("attaches warning flags and reasons to the offending week", () => {
     const data = buildTrainingLoadData(
-      [run("2026-06-01", 20), run("2026-06-08", 40)],
-      until("2026-06-15"),
+      [
+        run("2026-06-01", 20),
+        run("2026-06-08", 20),
+        run("2026-06-15", 20),
+        run("2026-06-22", 40),
+      ],
+      until("2026-06-29"),
     );
-    const spikeWeek = data.weeks.find((w) => w.weekStarting === "2026-06-08")!;
+    const spikeWeek = data.weeks.find((w) => w.weekStarting === "2026-06-22")!;
     expect(spikeWeek.warning).toBe(true);
     expect(spikeWeek.warningReasons).toEqual([
-      "Volume increased 100% from previous week - consider injury risk",
+      "Volume spike: 40 km is 2 times the 20 km average of the previous 3 weeks",
     ]);
-    expect(data.weeks[0]!.warning).toBe(false);
+    expect(data.weeks.filter((w) => w.warning)).toEqual([spikeWeek]);
+  });
+
+  it("compares the first weeks with baselineRuns, and reports none of them (#60)", () => {
+    // A 14-day window from Monday 2026-06-01. Before it: 3 normal weeks and
+    // a 10 km recovery week. The 40 km week after it is no spike; the
+    // 65 km week after that is.
+    const lookback = until("2026-06-15", 14);
+    const baselineRuns = [
+      run("2026-05-04", 40),
+      run("2026-05-11", 40),
+      run("2026-05-18", 40),
+      run("2026-05-25", 10),
+    ];
+    const data = buildTrainingLoadData(
+      [run("2026-06-01", 40), run("2026-06-08", 65)],
+      lookback,
+      { baselineRuns },
+    );
+
+    expect(data.weeks.map((w) => w.weekStarting)).toEqual([
+      "2026-06-01",
+      "2026-06-08",
+      "2026-06-15",
+    ]);
+    expect(data.totals.distanceKm).toBe(105);
+    expect(data.weeks.map((w) => w.warningReasons)).toEqual([
+      [],
+      [
+        "Volume spike: 65 km is 2 times the 32.5 km average of the previous 4 weeks",
+      ],
+      [],
+    ]);
+    // Without the baseline there is no average for either week.
+    expect(
+      buildTrainingLoadData(
+        [run("2026-06-01", 40), run("2026-06-08", 65)],
+        lookback,
+      ).weeks.some((w) => w.warning),
+    ).toBe(false);
+  });
+
+  it("baselineWeeks runs from the first baseline run to the week before the window", () => {
+    expect(
+      baselineWeeks([run("2026-05-13", 30)], { startDate: "2026-06-01" }).map(
+        (b) => [b.weekStarting, weekDistanceKm(b)],
+      ),
+    ).toEqual([
+      ["2026-05-11", 30],
+      ["2026-05-18", 0],
+      ["2026-05-25", 0],
+    ]);
+    expect(baselineWeeks([], { startDate: "2026-06-01" })).toEqual([]);
   });
 
   it("keeps zero weeks inside the run span for warnings, like the text tool (#43)", () => {
@@ -598,7 +660,7 @@ describe("buildTrainingLoadData", () => {
     expect(data.weeks).toHaveLength(6);
     const returnWeek = data.weeks.find((w) => w.weekStarting === "2026-06-29")!;
     expect(returnWeek.warningReasons).toEqual([
-      "Unusually high volume (42 km vs 16 km average up to that week)",
+      "Volume spike: 42 km is 4.2 times the 10 km average of the previous 4 weeks",
     ]);
     expect(data.weeks[0]!.warning).toBe(false);
     const shared = selectRunWeeks(
