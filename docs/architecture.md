@@ -303,6 +303,18 @@ day (`MAX_TAPER_DAILY_LOAD`). Both report the form that actually lands rather
 than inventing a plan. Keep new projection math here, not in a tool —
 `get-fitness-trend` and the fitness-trend app both read one solve.
 
+**Interval detection pairs by adjacency.** `computeIntervalAnalysis` in
+`intervalAnalysis.ts` builds work segments and rests in one ordered pass, and
+each rest records the segment that ends right before it. The rests and
+segments were paired by array position (`segments[i]`, `rests[i - 1]`), so a
+standing start (a rest with no segment before it) judged every later rest by
+the segment after it (#47). The near-max HR share is measured against the
+athlete's max HR (`athlete_max_hr`, else the top `icu_hr_zones` bound), never
+the run's own peak, which made an easy run read as hard. The lap path drops
+sliver laps rather than the whole lap set, and needs 2 blocks of consecutive
+fast laps with slower laps between; `selectCleanWorkLaps` holds the lap
+rules, including the stricter test for 1 km or 1 mile auto-laps.
+
 ## Per-call telemetry
 
 `dispatchToolCall` is timed end to end and emits one structured JSON line per

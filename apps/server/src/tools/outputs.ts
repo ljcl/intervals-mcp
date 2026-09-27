@@ -705,10 +705,15 @@ export const IntervalAnalysisOutputSchema = z.object({
     .nullable(),
   hr_signal: z
     .object({
-      max_hr: z.number(),
+      max_hr: z.number().describe("Max HR the share is measured against"),
+      max_hr_source: z
+        .enum(["athlete_max_hr", "hr_zones", "activity_peak"])
+        .describe(
+          "athlete_max_hr or the top icu_hr_zones bound; activity_peak (this run's own peak) is a fallback that cannot tell easy from hard",
+        ),
       high_intensity_share_pct: z
         .number()
-        .describe("% of moving time at ≥ 88% of the activity's max HR"),
+        .describe("% of moving time at ≥ 88% of max_hr"),
       assessment: z.string(),
     })
     .nullable(),

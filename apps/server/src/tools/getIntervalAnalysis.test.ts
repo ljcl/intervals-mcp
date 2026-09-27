@@ -163,14 +163,77 @@ describe("get-interval-analysis", () => {
     const structured = result.structuredContent as {
       confidence: string;
       warnings: string[];
-      rests: Array<{ duration_s: number }>;
+      rests: Array<{ duration_s: number; kind: string }>;
+      hr_signal: {
+        max_hr: number;
+        max_hr_source: string;
+        assessment: string;
+      } | null;
     };
     expect(structured.rests.some((r) => r.duration_s >= 70)).toBe(true);
+    expect(structured.rests.map((r) => r.kind)).toEqual(["other_stop"]);
     // Derived moving found the stop, so this is not the "no moving stream"
-    // low-confidence path; a lone unclassified stop still downgrades from
-    // high.
-    expect(structured.confidence).toBe("medium");
+    // low-confidence path. With no reps, the unclassified stop leaves the
+    // verdict at high; so does the HR signal, now measured against the
+    // athlete's 190 bpm max rather than this stretch's own 170 bpm peak
+    // (which put 72% of it "near max" and downgraded the verdict, #47).
+    expect(structured.confidence).toBe("high");
+    expect(structured.hr_signal!.max_hr).toBe(190);
+    expect(structured.hr_signal!.max_hr_source).toBe("athlete_max_hr");
+    expect(structured.hr_signal!.assessment).not.toContain("hard workout");
     expect(structured.warnings).toEqual([]);
+  });
+
+  it("reads the real multi-lap laps, sliver laps and all, as one continuous effort", async () => {
+    // The fixture's icu_intervals end with a 26 m / 12 s lap and a 4 s lap
+    // with no distance. Those no longer switch the lap path off (#47); the
+    // laps are then judged on their own and hold no fast reps.
+    mockedGetActivity.mockResolvedValue({
+      ...multilapActivity,
+      icu_intervals: multilapIntervals,
+    } as IntervalsActivity);
+    mockedGetActivityStreams.mockResolvedValue(multilapStreams);
+
+    const result = await getIntervalAnalysisTool.execute(
+      { id: "i189757183" },
+      "test-key",
+    );
+
+    const structured = result.structuredContent as {
+      is_intervals: boolean;
+      source: string;
+      reps: unknown[];
+    };
+    expect(structured.is_intervals).toBe(false);
+    expect(structured.source).toBe("none");
+    expect(structured.reps).toEqual([]);
+  });
+
+  it("falls back to the run's own peak with a warning when the activity has no max HR", async () => {
+    mockedGetActivity.mockResolvedValue({
+      ...multilapActivity,
+      athlete_max_hr: null,
+      icu_hr_zones: null,
+    } as IntervalsActivity);
+    mockedGetActivityStreams.mockResolvedValue(multilapStreams);
+
+    const result = await getIntervalAnalysisTool.execute(
+      { id: "i189757183" },
+      "test-key",
+    );
+
+    const structured = result.structuredContent as {
+      confidence: string;
+      warnings: string[];
+      hr_signal: { max_hr_source: string } | null;
+    };
+    expect(structured.hr_signal!.max_hr_source).toBe("activity_peak");
+    expect(structured.confidence).toBe("high");
+    expect(structured.warnings.join(" ")).toContain("no athlete max HR");
+    expect(result.content[0]?.text).toContain("this run's own peak");
+    expect(IntervalAnalysisOutputSchema.safeParse(structured).success).toBe(
+      true,
+    );
   });
 
   it("requests the intervals.icu stream types and fetches icu_intervals via getActivity", async () => {

@@ -348,16 +348,32 @@ the athlete's Run sport-settings `ftp`, then the activity's `icu_ftp`.
 `moving` stream) before trusting it as interval structure: under 60 s with no
 fast effort before it is a traffic light (excluded), up to 3 min after a fast
 effort is genuine recovery, over 5 min is a café/regroup stop (excluded),
-anything else is unclassified and lowers confidence. When the activity
+anything else is unclassified and lowers confidence. Each stop is judged by
+the work segment that ends right before it. A stop before any movement (a
+standing start while the watch finds GPS) is not a rest: it is left out of
+`rests`, and the reasoning names it. When the activity
 carries clean structured intervals.icu laps (`icu_intervals`, WORK/RECOVERY)
 those are preferred over stream reconstruction; they also catch
-jog-recovery sessions, which never stop moving, and fall back to streams
-when the laps' speeds are not tightly clustered (rain, sweat, a
-non-effort-based auto-lap split). Work reps are reconstructed between
+jog-recovery sessions, which never stop moving. Sliver laps (under 50 m or
+15 s, such as the 0 m lap an Apple Watch often records at the end) are
+ignored. A lap is fast at 1.08 times the median lap speed or more;
+consecutive fast laps merge into one rep, and it takes at least 2 reps with
+slower laps between them. The laps fall back to streams when the reps'
+speeds are not tightly clustered (rain, sweat). On an auto-lap set (most
+laps 1 km or 1 mile) a fast lap is often a downhill km, so the laps count
+only when intervals.icu's labels match (every fast lap WORK, every lap
+between RECOVERY) or there are 3 reps each at least 1.15 times the speed of
+the laps between. Labels that do not match the fast laps lower confidence.
+Work reps are reconstructed between
 recoveries, merging straight through traffic lights, and reported with
 per-rep pace (`pace_min_per_km`, bare `m:ss`), HR, cadence, and power; fade compares the last rep
 against the first. An HR-distribution tiebreaker ("was this a workout at
-all") reports the share of moving time at ≥ 88% of the activity's own max HR.
+all") reports the share of moving time at ≥ 88% of the athlete's max HR:
+the activity's `athlete_max_hr`, else the top `icu_hr_zones` bound
+(`hr_signal.max_hr_source`). It used the run's own peak, and on an easy run
+the peak is low, so an easy zone 2 run read as "a hard workout" (#47). When
+the activity has neither, the peak is a last resort: the response warns,
+and the signal makes no call and does not change the verdict.
 
 `get-best-efforts` reports best times at standard distances (400m, 1km, 5km,
 10km, half marathon, marathon by default, or a subset via `distances`) from

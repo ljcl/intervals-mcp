@@ -137,6 +137,8 @@ const IntervalsActivitySchema = z
     gear: IntervalsActivityGearRefSchema.nullable().optional(),
     average_speed: z.number().nullable().optional(),
     icu_hr_zones: z.array(z.number()).nullable().optional(),
+    /** The athlete's max HR setting when the activity was processed. */
+    athlete_max_hr: z.number().nullable().optional(),
     icu_power_zones: z.array(z.number()).nullable().optional(),
     icu_zone_times: z.array(IntervalsZoneTimeSchema).nullable().optional(),
     pace_zones: z.array(z.number()).nullable().optional(),
