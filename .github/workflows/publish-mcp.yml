@@ -7,14 +7,35 @@ name: Publish MCP Registry
 # this job waits for the multi-arch manifest to appear on GHCR before
 # publishing. Auth is GitHub OIDC (io.github.ljcl namespace) — no long-lived
 # registry token secret.
+#
+# `validate` also runs on PRs that touch server.json (release-please's release
+# PR included), so a registry-side rejection shows up before the tag and the
+# image ship rather than after.
 
 on:
   push:
     tags: ["v*"]
+  pull_request:
+    branches: [main]
+    paths:
+      - "server.json"
+      - ".github/workflows/publish-mcp.yml"
+  # Recovery: tag pushes run this workflow at the tag's commit, so a failed
+  # publish could otherwise only be fixed by cutting another release. This
+  # re-runs the publish for an existing release tag with the workflow from
+  # main and the server.json from the tag.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing vX.Y.Z release tag to publish to the MCP registry"
+        required: true
+        type: string
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+  # Keyed on the tag for both a tag push and its recovery dispatch, so the two
+  # never publish the same version at once.
+  group: ${{ github.workflow }}-${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -23,7 +44,72 @@ env:
   REGISTRY_IMAGE: ghcr.io/${{ github.repository }}
 
 jobs:
+  # Stamps server.json exactly as a publish would and asks the registry to
+  # validate it. The publish job publishes this same file with this same
+  # binary, so what was validated is what ships.
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Empty on push/pull_request (the triggering ref); the recovery
+          # dispatch publishes the requested tag's server.json.
+          ref: ${{ inputs.tag }}
+
+      - name: Stamp version and image tag into server.json
+        # release-please keeps $.version current in-repo, but the OCI
+        # identifier embeds the image tag, which release-please's json updater
+        # cannot template, so the in-repo tag is a placeholder
+        # (serverJsonManifest.test.ts). A release takes the version from its
+        # tag; a PR takes the version release-please would release.
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            version="$(jq -r .version server.json)"
+          elif [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            version="${TAG#v}"
+          else
+            echo "::error::'$TAG' is not a vX.Y.Z release tag"
+            exit 1
+          fi
+          jq --arg v "$version" --arg image "$REGISTRY_IMAGE" '
+            .version = $v
+            | .packages[0].identifier = $image + ":" + $v
+          ' server.json > server.json.tmp
+          mv server.json.tmp server.json
+          jq . server.json
+
+      - name: Install mcp-publisher
+        # Deliberately unpinned: the registry rejects stale publisher binaries
+        # outright ("invalid audience"), so latest is the supported version.
+        run: |
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+
+      # Server-side validation against the live registry's rules (schema plus
+      # registry checks such as reserved version strings). Needs no login and
+      # does not pull the image.
+      - name: Validate with the registry
+        run: ./mcp-publisher validate server.json
+
+      - name: Upload validated server.json
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: registry-publish
+          path: |
+            server.json
+            mcp-publisher
+          if-no-files-found: error
+          retention-days: 1
+
   publish:
+    needs: [validate]
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -31,20 +117,10 @@ jobs:
       packages: read # credentialed view of GHCR, to tell "not pushed" from "private"
       id-token: write # OIDC token for mcp-publisher login github-oidc
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Stamp version and image tag into server.json
-        # release-please keeps $.version current in-repo, but the OCI
-        # identifier embeds the image tag, which release-please's json updater
-        # cannot template — so both are derived from the pushed tag here.
-        run: |
-          version="${GITHUB_REF#refs/tags/v}"
-          jq --arg v "$version" --arg image "$REGISTRY_IMAGE" '
-            .version = $v
-            | .packages[0].identifier = $image + ":" + $v
-          ' server.json > server.json.tmp
-          mv server.json.tmp server.json
-          jq . server.json
+      - name: Download validated server.json
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: registry-publish
 
       - name: Log in to GHCR
         # Only so the wait below can see the package as *we* see it. The check
@@ -73,8 +149,7 @@ jobs:
           ANON_DOCKER_CONFIG: ${{ runner.temp }}/anon-docker-config
         run: |
           set -euo pipefail
-          version="${GITHUB_REF#refs/tags/v}"
-          ref="$REGISTRY_IMAGE:$version"
+          ref="$(jq -r '.packages[0].identifier' server.json)"
           # An empty config dir carries no credentials, so inspects run through
           # it authenticate exactly the way the registry's verifier will.
           mkdir -p "$ANON_DOCKER_CONFIG"
@@ -103,20 +178,16 @@ jobs:
           echo "::error::Timed out waiting for $ref — did the Docker workflow fail?"
           exit 1
 
-      - name: Install mcp-publisher
-        # Deliberately unpinned: the registry rejects stale publisher binaries
-        # outright ("invalid audience"), so latest is the supported version.
-        run: |
-          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
-
       - name: Log in to the MCP registry (GitHub OIDC)
-        run: ./mcp-publisher login github-oidc
+        run: |
+          chmod +x mcp-publisher
+          ./mcp-publisher login github-oidc
 
       - name: Publish
-        run: ./mcp-publisher publish
+        run: ./mcp-publisher publish server.json
 
       # Record what was published in the run summary. server.json was stamped
-      # with the tag's version and image identifier earlier in this job.
+      # with the tag's version and image identifier by the validate job.
       - name: Publish summary
         if: success()
         run: |
