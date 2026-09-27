@@ -59,8 +59,9 @@ rate-limit state:
 ```
 
 `version` is `SERVER_VERSION`, resolved from the root `package.json` that
-release-please bumps, so it tracks the release you are running. `rate_limit`
-is a snapshot parsed from the most recent intervals.icu response's
+release-please bumps, so it tracks the release you are running. An `:edge` or
+`:main-<sha>` image runs unreleased code and still reports the last release.
+`rate_limit` is a snapshot parsed from the most recent intervals.icu response's
 `X-RateLimit-*`/`Retry-After` headers (`intervalsApi.getRateLimitSnapshot()`);
 intervals.icu sends none of these today (verified 2026-09-24), so `rate_limit`
 stays `null` even after calls have been made, not just before the first one.

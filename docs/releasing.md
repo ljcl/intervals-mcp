@@ -50,8 +50,13 @@ part of a string.)
 Merging that PR pushes the `vX.Y.Z` tag (via the `RELEASE_PLEASE_PAT` secret),
 triggering:
 
-- `docker.yml` → publishes `ghcr.io/ljcl/intervals-mcp:X.Y.Z` and `:X.Y`
+- `docker.yml` → publishes `ghcr.io/ljcl/intervals-mcp:X.Y.Z`, `:X.Y` and
+  `:latest`
 - `publish-mcp.yml` → publishes `server.json` to the MCP registry via GitHub OIDC
+
+`latest` moves only on a release tag push; a backfill dispatch of an old tag
+never moves it. Main pushes that touch an image path (the `changes` filter in
+`docker.yml`) publish `:edge` and `:main-<sha>` instead.
 
 Commits touching only `docs/`, `.agents/`, or `.claude/` are excluded from
 release parsing (`exclude-paths` in `release-please-config.json`), so a
