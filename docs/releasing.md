@@ -43,9 +43,12 @@ nonzero, so it does not need to change.
 
 It opens a `chore: release X.Y.Z` PR that bumps root `package.json`, the
 top-level `server.json` version, and `CHANGELOG.md`. (The OCI package tag
-inside `server.json` is NOT templated — `publish-mcp.yml` stamps it from the
-git tag at publish time, since release-please's json updater cannot rewrite
-part of a string.)
+inside `server.json` is NOT templated — release-please's json updater cannot
+rewrite part of a string — so the in-repo identifier carries the placeholder
+tag `stamped-at-publish`, and `publish-mcp.yml` stamps the real one from the
+git tag at publish time. `serverJsonManifest.test.ts` pins the placeholder, so
+a manual publish from a checkout fails the registry's pull instead of
+registering a stale image.)
 
 Merging that PR pushes the `vX.Y.Z` tag (via the `RELEASE_PLEASE_PAT` secret),
 triggering:
@@ -100,6 +103,19 @@ until `docker.yml`'s manifest exists before publishing. That poll checks
 **anonymous** visibility, because anonymous is how the registry's verifier
 pulls: a package present but private fails immediately with a "make the package
 public" message rather than burning the timeout.
+
+The workflow's `validate` job stamps `server.json` the way a publish would and
+runs `mcp-publisher validate`, which checks it against the live registry's
+rules without logging in. It runs on every PR that touches `server.json`
+(release-please's release PR included) and on every publish, and the `publish`
+job publishes that validated file. `serverJsonManifest.test.ts` also pins the
+Dockerfile label to `name`.
+
+A failed publish is recoverable without a new release: run **Publish MCP
+Registry** from the Actions tab (`workflow_dispatch`) with the existing
+`vX.Y.Z` tag. It uses the workflow from `main` and the `server.json` from the
+tag. The registry rejects a version that is already published, so this is for
+a publish that failed, not for changing one that landed.
 
 ## Dependabot conventions
 
