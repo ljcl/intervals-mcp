@@ -5,7 +5,11 @@
  * skipping, basis selection, threshold/warm-up resolution, and text shape.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { handledNotFound, handledRateLimit } from "../__fixtures__";
+import {
+  handledNotFound,
+  handledRateLimit,
+  syntheticStreams,
+} from "../__fixtures__";
 import activityFixture from "../__fixtures__/intervals/activity.json";
 import sportSettingsRunFixture from "../__fixtures__/intervals/sport-settings-run.json";
 import streamsFixture from "../__fixtures__/intervals/streams.json";
@@ -62,7 +66,7 @@ beforeEach(() => {
 });
 
 describe("get-aerobic-analysis", () => {
-  it("computes from streams on the base fixture (null API decoupling/EF), pace basis by default", async () => {
+  it("computes from streams on the base fixture (null API decoupling/EF) on the pace basis", async () => {
     mockedGetActivity.mockResolvedValue(baseActivity);
     mockedGetActivityStreams.mockResolvedValue(baseStreams);
 
@@ -76,23 +80,55 @@ describe("get-aerobic-analysis", () => {
     expect(text).toContain("Aerobic Analysis: Run 1");
     expect(text).toContain("Basis: pace:HR (Pa:Hr)");
     expect(text).toMatch(/\[computed\]/);
+    // The caller chose pace: no "missing power stream" warning.
+    expect(text).not.toContain("No power stream");
 
     const structured = result.structuredContent as {
       basis: string;
       decoupling_source: string;
       efficiency_factor_source: string;
       breakdown: unknown;
+      intervals_icu: unknown;
     };
     expect(structured.basis).toBe("pace");
     expect(structured.decoupling_source).toBe("computed");
     expect(structured.efficiency_factor_source).toBe("computed");
     expect(structured.breakdown).not.toBeNull();
+    expect(structured.intervals_icu).toBeNull();
     expect(AerobicAnalysisOutputSchema.safeParse(structured).success).toBe(
       true,
     );
   });
 
-  it("prefers intervals.icu's decoupling/EF and skips the stream fetch", async () => {
+  it("defaults to the grade-adjusted basis when intervals.icu has no values", async () => {
+    mockedGetActivity.mockResolvedValue(baseActivity);
+    mockedGetActivityStreams.mockResolvedValue(baseStreams);
+
+    const result = await getAerobicAnalysisTool.execute(
+      { id: "i189807578", includeBreakdown: false },
+      "test-key",
+    );
+
+    expect(result.isError).toBeUndefined();
+    const requestedTypes = mockedGetActivityStreams.mock.calls[0]![2];
+    for (const type of ["distance", "altitude", "grade_smooth"]) {
+      expect(requestedTypes).toContain(type);
+    }
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain("Basis: grade-adjusted pace:HR (GAP:Hr)");
+    expect(text).toContain("Normalized grade-adjusted pace:");
+    const structured = result.structuredContent as {
+      basis: string;
+      units: { efficiency_factor: string };
+    };
+    expect(structured.basis).toBe("gap");
+    expect(structured.units.efficiency_factor).toContain("grade-adjusted");
+    expect(AerobicAnalysisOutputSchema.safeParse(structured).success).toBe(
+      true,
+    );
+  });
+
+  it("takes intervals.icu's own decoupling/EF when no basis is asked for, labelled with no basis", async () => {
     mockedGetActivity.mockResolvedValue({
       ...baseActivity,
       decoupling: 3.2,
@@ -100,7 +136,7 @@ describe("get-aerobic-analysis", () => {
     } as IntervalsActivity);
 
     const result = await getAerobicAnalysisTool.execute(
-      { id: "i189807578", basis: "pace", includeBreakdown: false },
+      { id: "i189807578", includeBreakdown: false },
       "test-key",
     );
 
@@ -108,23 +144,81 @@ describe("get-aerobic-analysis", () => {
     expect(mockedGetActivityStreams).not.toHaveBeenCalled();
 
     const structured = result.structuredContent as {
+      basis: string | null;
       decoupling_pct: number;
       decoupling_source: string;
       efficiency_factor: number;
       efficiency_factor_source: string;
       breakdown: unknown;
+      intervals_icu: { decoupling_pct: number; efficiency_factor: number };
+      units: { efficiency_factor: string };
     };
+    expect(structured.basis).toBeNull();
     expect(structured.decoupling_pct).toBeCloseTo(3.2, 5);
     expect(structured.decoupling_source).toBe("intervals.icu");
     expect(structured.efficiency_factor).toBeCloseTo(1.45, 5);
     expect(structured.efficiency_factor_source).toBe("intervals.icu");
+    expect(structured.intervals_icu).toEqual({
+      decoupling_pct: 3.2,
+      efficiency_factor: 1.45,
+    });
+    expect(structured.units.efficiency_factor).toBe("not reported");
     expect(structured.breakdown).toBeNull();
     expect(AerobicAnalysisOutputSchema.safeParse(structured).success).toBe(
       true,
     );
+
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain("Basis: not reported (intervals.icu's own values)");
+    expect(text).not.toMatch(/Pa:Hr|Pw:Hr|GAP:Hr|W\/beat|m\/min per beat/);
   });
 
-  it("fetches streams for the breakdown when includeBreakdown is set, keeping the intervals.icu decoupling/EF values", async () => {
+  it.each(["pace", "power", "gap"] as const)(
+    "computes an explicitly requested %s basis from streams and keeps intervals.icu's values apart",
+    async (basis) => {
+      mockedGetActivity.mockResolvedValue({
+        ...baseActivity,
+        decoupling: 3.2,
+        icu_efficiency_factor: 1.45,
+      } as IntervalsActivity);
+      mockedGetActivityStreams.mockResolvedValue(
+        basis === "power" ? powerStreams() : baseStreams,
+      );
+
+      const result = await getAerobicAnalysisTool.execute(
+        { id: "i189807578", basis, includeBreakdown: false },
+        "test-key",
+      );
+
+      expect(result.isError).toBeUndefined();
+      expect(mockedGetActivityStreams).toHaveBeenCalled();
+      const structured = result.structuredContent as {
+        basis: string;
+        decoupling_pct: number;
+        decoupling_source: string;
+        efficiency_factor_source: string;
+        breakdown: unknown;
+        intervals_icu: { decoupling_pct: number; efficiency_factor: number };
+      };
+      expect(structured.basis).toBe(basis);
+      expect(structured.decoupling_source).toBe("computed");
+      expect(structured.efficiency_factor_source).toBe("computed");
+      expect(structured.breakdown).not.toBeNull();
+      expect(structured.intervals_icu).toEqual({
+        decoupling_pct: 3.2,
+        efficiency_factor: 1.45,
+      });
+
+      const text = result.content[0]?.text ?? "";
+      // intervals.icu's value sits on its own line, never under the basis.
+      expect(text).not.toMatch(/Decoupling: \+3\.2%/);
+      expect(text).toContain(
+        "intervals.icu's own values (basis and unit not reported, so not comparable with the above): decoupling +3.2%, efficiency factor 1.45.",
+      );
+    },
+  );
+
+  it("computes from streams when includeBreakdown is set, on the grade-adjusted basis", async () => {
     mockedGetActivity.mockResolvedValue({
       ...baseActivity,
       decoupling: 3.2,
@@ -133,22 +227,83 @@ describe("get-aerobic-analysis", () => {
     mockedGetActivityStreams.mockResolvedValue(baseStreams);
 
     const result = await getAerobicAnalysisTool.execute(
-      { id: "i189807578", basis: "pace", includeBreakdown: true },
+      { id: "i189807578", includeBreakdown: true },
       "test-key",
     );
 
     expect(result.isError).toBeUndefined();
-    expect(mockedGetActivityStreams).toHaveBeenCalled();
-
     const structured = result.structuredContent as {
-      decoupling_pct: number;
+      basis: string;
       decoupling_source: string;
-      efficiency_factor_source: string;
       breakdown: unknown;
+      intervals_icu: unknown;
     };
-    expect(structured.decoupling_pct).toBeCloseTo(3.2, 5);
-    expect(structured.decoupling_source).toBe("intervals.icu");
+    expect(structured.basis).toBe("gap");
+    expect(structured.decoupling_source).toBe("computed");
     expect(structured.breakdown).not.toBeNull();
+    expect(structured.intervals_icu).not.toBeNull();
+  });
+
+  describe("an out-and-back course at a steady 150 bpm (#74)", () => {
+    const outAndBack = (upFirst: boolean) => {
+      const up = { metres: 5000, speed: 2.8, gradePct: 1.8, hr: 150 };
+      const down = { metres: 5000, speed: 3.4, gradePct: -1.8, hr: 150 };
+      return syntheticStreams(upFirst ? [up, down] : [down, up]);
+    };
+
+    it.each([
+      { label: "uphill first", upFirst: true, rawSign: -1 },
+      { label: "downhill first", upFirst: false, rawSign: 1 },
+    ])(
+      "reads the $label course as about 0% on the gap basis, and as drift on raw pace",
+      async ({ upFirst, rawSign }) => {
+        mockedGetActivity.mockResolvedValue(baseActivity);
+        mockedGetActivityStreams.mockResolvedValue(outAndBack(upFirst));
+
+        const run = async (basis: "gap" | "pace") =>
+          (
+            await getAerobicAnalysisTool.execute(
+              {
+                id: "i189807578",
+                basis,
+                excludeWarmupMinutes: 0,
+                includeBreakdown: false,
+              },
+              "test-key",
+            )
+          ).structuredContent as { decoupling_pct: number };
+
+        expect(Math.abs((await run("gap")).decoupling_pct)).toBeLessThan(1);
+        expect((await run("pace")).decoupling_pct * rawSign).toBeGreaterThan(
+          10,
+        );
+      },
+    );
+  });
+
+  it("falls back to raw pace, and says so, when the gap basis has no elevation data", async () => {
+    mockedGetActivity.mockResolvedValue(baseActivity);
+    mockedGetActivityStreams.mockResolvedValue(
+      syntheticStreams([{ metres: 8000, speed: 3.2, hr: 150 }], {
+        withAltitude: false,
+      }),
+    );
+
+    const result = await getAerobicAnalysisTool.execute(
+      { id: "i189807578", basis: "gap", includeBreakdown: false },
+      "test-key",
+    );
+
+    expect(result.isError).toBeUndefined();
+    const structured = result.structuredContent as {
+      basis: string;
+      warnings: string[];
+    };
+    expect(structured.basis).toBe("pace");
+    expect(structured.warnings.join(" ")).toContain(
+      "grade-adjusted basis is unavailable",
+    );
+    expect(result.content[0]?.text).toContain("Basis: pace:HR (Pa:Hr)");
   });
 
   it("analyses the power basis from the watts stream and notes an Apple Watch power estimate", async () => {

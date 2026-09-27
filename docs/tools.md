@@ -73,7 +73,7 @@ descriptions.
 | `compare-activities` | Compare two activities side-by-side: pace, HR, cadence, load, and running dynamics, plus activity2-activity1 differences and an efficiency verdict |
 | `get-hill-analysis` | Climb/descent detection with GAP and early-vs-late climb effort drift |
 | `get-split-analysis` | Even km splits with a two-halves pacing verdict stated on the clock and grade-adjusted |
-| `get-aerobic-analysis` | Aerobic decoupling and efficiency factor, preferring intervals.icu's own values and computing from streams otherwise |
+| `get-aerobic-analysis` | Aerobic decoupling and efficiency factor on a grade-adjusted, pace or power basis from streams, with intervals.icu's own values labelled apart |
 | `get-interval-analysis` | Interval detection with urban-stop-aware rest classification and rep fade |
 | `get-best-efforts` | Best times at standard running distances, from intervals.icu's pace curves |
 | `get-race-prediction` | Predicted race times from intervals.icu pace-curve points (Riegel) alongside intervals.icu's own critical-speed model, with confidence, source point, and km goal-pace splits |
@@ -316,16 +316,28 @@ the ascent summed from the altitude samples with a 3 m hysteresis
 that climbed 20 m and descended 20 m added 0 (136 m against
 `get-activity`'s 693 m on one marathon, #45).
 
-`get-aerobic-analysis` prefers the activity's own `decoupling` and
-`icu_efficiency_factor` fields when intervals.icu has already computed them
-(`decoupling_source`/`efficiency_factor_source: "intervals.icu"`), and in
-that case skips the stream fetch entirely unless `includeBreakdown: true` is
-passed. Otherwise both are computed from streams
-(`source: "computed"`) using the shared intervals.icu stream adapter. The
-`basis` input picks the output stream: `pace` (default) reads
-`velocity_smooth`, `power` reads `watts`; pace figures render as a bare
-`m:ss` string in `avg_pace_min_per_km`/`normalized_pace_min_per_km`, never
-miles. On the power basis a recording device name starting
+`get-aerobic-analysis` computes decoupling and efficiency factor from
+streams on one `basis`: `gap` reads `velocity_smooth` corrected for grade
+(`gradeAdjustedSpeeds` in `hillAnalysis.ts`, the same 100 m averaged grade
+and Minetti factor as the hill and split tools), `pace` reads raw
+`velocity_smooth`, `power` reads `watts`. On raw pace, terrain reads as
+fitness: an out-and-back at a steady 150 bpm, 2.8 m/s up a 1.8% grade and
+3.4 m/s back down, decouples by -19% one way round and +16% the other; on
+`gap` both are about 0% (#74). With no elevation data, `gap` falls back to
+`pace` with a warning, and `basis` in the response says `pace`. When the
+caller passes no `basis` and no `includeBreakdown`, and the activity
+carries both of intervals.icu's own `decoupling` and
+`icu_efficiency_factor`, the tool reports those without a stream fetch
+(`decoupling_source`/`efficiency_factor_source: "intervals.icu"`), with
+`basis: null` and no efficiency unit: intervals.icu does not say which basis
+it used (docs/api-notes.md). In every other case both numbers are
+`computed` (the default basis is `gap`), and intervals.icu's values, when
+the activity has any, are in a separate `intervals_icu` field and a
+separate text line, never labelled with the computed basis. Pace figures
+render as a bare
+`m:ss` string in `avg_pace_min_per_km`/`normalized_pace_min_per_km`
+(grade-adjusted on `gap`), never miles. On the power basis a recording
+device name starting
 with `Watch` (an Apple Watch) adds a warning that the power stream is
 Apple's own estimate, not a power meter reading. Warm-up exclusion defaults
 to the activity's `icu_warmup_time`, then the athlete's Run sport-settings

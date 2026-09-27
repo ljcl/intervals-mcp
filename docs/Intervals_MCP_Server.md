@@ -52,7 +52,7 @@ rather than (or alongside) text.
 | ---- | ------- | ---------- |
 | `get-hill-analysis` | How did the climbs go, and did I fade on them late? | `id` |
 | `get-split-analysis` | Did I positive-split, or was that the hills? | `id` |
-| `get-aerobic-analysis` | Did I decouple? What's my efficiency factor? | `id`, `basis` (pace or power) |
+| `get-aerobic-analysis` | Did I decouple? What's my efficiency factor? | `id`, `basis` (gap, pace or power; gap corrects for hills) |
 | `get-interval-analysis` | Interval workout breakdown: pace/HR per rep, did reps fade? | `id` |
 | `compare-activities` | How does this run compare to that one? | `activityId1`, `activityId2` |
 

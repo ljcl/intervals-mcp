@@ -257,7 +257,15 @@ so `get-split-analysis` and `get-activity` agree; `ascentFromAltitude`
 and a slower pace at a proportionally lower heart rate scores the same.
 `get-aerobic-analysis` applies it to stream averages, `compare-activities`
 to each run's grade-adjusted speed (or moving speed, on both sides, when
-either run has no `gap`). `compare-activities` once divided pace by heart
+either run has no `gap`). The aerobic tool's default `gap` basis reads
+`gradeAdjustedSpeeds` (`hillAnalysis.ts`): `velocity_smooth` times the same
+averaged-grade GAP factor the hill and split tools use, so it never builds a
+second GAP. On raw speed, an out-and-back course at a steady heart rate
+decoupled by -19% one way round and +16% the other; grade-adjusted, both
+are about 0% (#74). intervals.icu's own `decoupling` and
+`icu_efficiency_factor` never carry a basis label the tool did not compute:
+they are the headline only when the caller asks for no basis, and
+otherwise sit in their own `intervals_icu` field. `compare-activities` once divided pace by heart
 rate instead, where a slower pace and a lower heart rate add up rather than
 cancel, and called an unchanged runner "declined" (#42).
 

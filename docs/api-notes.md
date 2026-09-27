@@ -99,7 +99,10 @@ at `apps/server/src/__fixtures__/intervals/`.
   `efficiency_factor` as pace/power per heartbeat) is an assumption carried over from the
   intervals.icu UI and the OpenAPI field names, not something observed on a populated value.
   Re-verify against an activity that actually carries these fields before trusting the unit beyond
-  the advisory framing the tools already give it.
+  the advisory framing the tools already give it. Which basis intervals.icu uses for them (power,
+  raw pace, or grade-adjusted pace) was never observed either, so `get-aerobic-analysis` reports
+  them with `basis: null` and no efficiency unit, and keeps them apart from any value it computes
+  (#74).
 - Power zones are dropped from `mapIntervalsZones` (`activityZones.ts`) and the
   `get-activity-zones`/activity-zones-app outputs for now, rather than shipped unverified.
   `icu_zone_times`'s `{id, secs}` shape (per `IntervalsZoneTimeSchema`) has not been exercised

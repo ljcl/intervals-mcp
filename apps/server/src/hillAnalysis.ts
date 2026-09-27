@@ -366,6 +366,38 @@ export function gapGrades(grades: number[], distance: number[]): GapGrades {
   };
 }
 
+/**
+ * Per-sample grade-adjusted speed (m/s) for a caller that needs a GAP stream
+ * rather than segment averages (`get-aerobic-analysis`): `velocity_smooth`
+ * times {@link gapFactor} of {@link gapGrades}' averaged grade, the same GAP
+ * the hill and split tools report. Null without a distance stream, a speed
+ * stream, or any elevation data; a null speed sample stays null.
+ */
+export function gradeAdjustedSpeeds(
+  streams: Pick<
+    HillStreams,
+    "time" | "distance" | "altitude" | "grade_smooth" | "velocity_smooth"
+  >,
+): {
+  speeds: (number | null)[];
+  gradeSource: GradeSource;
+  warning: string | null;
+} | null {
+  const velocity = streams.velocity_smooth;
+  if (!velocity || !hasRealSample(streams.distance)) return null;
+  const normalized = normalizeHillStreams(streams);
+  if (!normalized.altitude && !normalized.grade_smooth) return null;
+  const { grades, source } = computeGrades(normalized);
+  const gap = gapGrades(grades, normalized.distance);
+  return {
+    speeds: velocity.map((v, i) =>
+      v == null ? null : v * gapFactor(gap.grades[i]! / 100),
+    ),
+    gradeSource: source,
+    warning: gap.warning,
+  };
+}
+
 interface IndexRange {
   start: number;
   end: number;

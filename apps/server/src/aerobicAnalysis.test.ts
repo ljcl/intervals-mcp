@@ -6,6 +6,7 @@ import {
   MIN_MOVING_SECONDS,
   speedEfficiencyFactor,
 } from "./aerobicAnalysis";
+import { gradeAdjustedSpeeds } from "./hillAnalysis";
 
 /** 1 Hz streams of `seconds` samples from per-second value functions. */
 function makeStreams(
@@ -78,14 +79,15 @@ describe("computeAerobicAnalysis", () => {
     expect(analysis.movingSeconds).toBeLessThan(3700);
   });
 
-  it("falls back to the speed basis with a warning when watts are absent", () => {
+  it("uses the speed basis when the caller passes speed, not watts", () => {
     const streams = makeStreams(3600, {
       heartrate: () => 150,
       velocity: () => 3.2,
     });
     const analysis = computeAerobicAnalysis(streams);
     expect(analysis.basis).toBe("speed");
-    expect(analysis.warnings.join(" ")).toContain("speed:HR");
+    // The caller chose the basis: no "missing power" warning.
+    expect(analysis.warnings.join(" ")).not.toContain("power");
     // Running EF: metres-per-minute per beat.
     expect(analysis.efficiencyFactor).toBeCloseTo((3.2 * 60) / 150, 3);
     expect(analysis.intensityFactor).toBeNull();
@@ -165,6 +167,68 @@ describe("computeAerobicAnalysis", () => {
     expect(() =>
       computeAerobicAnalysis(streams, { excludeWarmupSeconds: 3600 }),
     ).toThrow(/No usable moving samples/i);
+  });
+});
+
+describe("grade-adjusted basis (#74)", () => {
+  /**
+   * 5 km out and 5 km back at a steady 150 bpm: 2.8 m/s up a 1.8% grade,
+   * 3.4 m/s down it (about the same effort by the Minetti curve). `upFirst`
+   * false runs the same route the other way round.
+   */
+  function outAndBack(upFirst: boolean) {
+    const legs = [
+      { grade: 1.8, speed: 2.8 },
+      { grade: -1.8, speed: 3.4 },
+    ];
+    if (!upFirst) legs.reverse();
+    const time = [0];
+    const distance = [0];
+    const altitude = [100];
+    const velocity = [legs[0]!.speed];
+    for (const leg of legs) {
+      const seconds = Math.round(5000 / leg.speed);
+      for (let s = 0; s < seconds; s++) {
+        time.push(time.length);
+        distance.push(distance[distance.length - 1]! + leg.speed);
+        altitude.push(
+          altitude[altitude.length - 1]! + (leg.speed * leg.grade) / 100,
+        );
+        velocity.push(leg.speed);
+      }
+    }
+    return {
+      time,
+      distance,
+      altitude,
+      velocity_smooth: velocity,
+      heartrate: time.map(() => 150),
+    };
+  }
+
+  it.each([
+    { label: "uphill first", upFirst: true, rawSign: -1 },
+    { label: "downhill first", upFirst: false, rawSign: 1 },
+  ])(
+    "reads the $label out-and-back as terrain on raw pace but about 0% grade-adjusted",
+    ({ upFirst, rawSign }) => {
+      const streams = outAndBack(upFirst);
+      const raw = computeAerobicAnalysis(streams);
+      expect(raw.decouplingPct * rawSign).toBeGreaterThan(10);
+
+      const gap = gradeAdjustedSpeeds(streams);
+      expect(gap).not.toBeNull();
+      const adjusted = computeAerobicAnalysis({
+        ...streams,
+        velocity_smooth: gap!.speeds,
+      });
+      expect(Math.abs(adjusted.decouplingPct)).toBeLessThan(1);
+    },
+  );
+
+  it("has no grade-adjusted speed without elevation data", () => {
+    const { altitude: _altitude, ...streams } = outAndBack(true);
+    expect(gradeAdjustedSpeeds(streams)).toBeNull();
   });
 });
 

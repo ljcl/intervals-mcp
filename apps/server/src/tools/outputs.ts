@@ -173,15 +173,21 @@ export const CompareActivitiesOutputSchema = z.object({
 const AerobicHalfSchema = z.object({
   avg_output: z
     .number()
-    .describe("m/s on the pace basis, W on the power basis"),
+    .describe(
+      "m/s on the gap and pace bases (grade-adjusted on gap), W on the power basis",
+    ),
   avg_pace_min_per_km: z
     .string()
     .nullable()
-    .describe("m:ss on the pace basis; null on the power basis"),
+    .describe(
+      "m:ss on the gap and pace bases (grade-adjusted on gap); null on the power basis",
+    ),
   avg_hr: z.number(),
   output_per_beat: z
     .number()
-    .describe("m/min per beat on the pace basis, W/beat on the power basis"),
+    .describe(
+      "m/min per beat on the gap and pace bases, W/beat on the power basis",
+    ),
   minutes: z.number(),
 });
 
@@ -192,15 +198,29 @@ export const AerobicAnalysisOutputSchema = z.object({
   name: z.string(),
   date: z.string(),
   type: z.string(),
-  basis: z.enum(["pace", "power"]),
+  basis: z
+    .enum(["gap", "pace", "power"])
+    .nullable()
+    .describe(
+      "Basis decoupling_pct and efficiency_factor were computed on; null when both are intervals.icu's own values, whose basis it does not report",
+    ),
   decoupling_pct: z.number(),
   decoupling_source: AerobicSourceEnum,
   interpretation: z.string(),
-  /** m/min per beat on the pace basis, W/beat on the power basis. */
+  /** m/min per beat on the gap and pace bases, W/beat on the power basis. */
   efficiency_factor: z.number(),
   efficiency_factor_source: AerobicSourceEnum,
   intensity_factor: z.number().nullable(),
   threshold_power_w: z.number().nullable(),
+  intervals_icu: z
+    .object({
+      decoupling_pct: z.number().nullable(),
+      efficiency_factor: z.number().nullable(),
+    })
+    .nullable()
+    .describe(
+      "intervals.icu's own values for the activity, kept apart from the computed ones: it does not report their basis or unit. Null when it has neither",
+    ),
   breakdown: z
     .object({
       first_half: AerobicHalfSchema,
@@ -208,7 +228,7 @@ export const AerobicAnalysisOutputSchema = z.object({
       normalized_output: z
         .number()
         .describe(
-          "m/s on the pace basis, W (normalized power) on the power basis",
+          "m/s on the gap and pace bases, W (normalized power) on the power basis",
         ),
       normalized_pace_min_per_km: z.string().nullable(),
       moving_minutes: z.number(),
@@ -216,9 +236,7 @@ export const AerobicAnalysisOutputSchema = z.object({
       excluded_warmup_minutes: z.number(),
     })
     .nullable()
-    .describe(
-      "Null when both decoupling and efficiency factor came from intervals.icu and includeBreakdown was not set",
-    ),
+    .describe("Null when both values are intervals.icu's own (basis is null)"),
   units: z.object({
     pace: z.literal("min/km"),
     power: z.literal("W"),

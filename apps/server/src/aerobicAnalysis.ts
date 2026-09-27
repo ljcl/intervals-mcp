@@ -13,7 +13,10 @@
  * The basis (power vs. speed) is chosen by the caller, not auto-detected
  * here: `get-aerobic-analysis` decides which output stream to pass in based
  * on its `basis` input, so a `pace`-basis request never silently reads watts
- * and a `power`-basis request never silently falls back to speed.
+ * and a `power`-basis request never silently falls back to speed. On the
+ * grade-adjusted basis the caller passes `hillAnalysis.ts`'s
+ * `gradeAdjustedSpeeds` as `velocity_smooth`: to this module it is a speed,
+ * and the hills no longer read as drift.
  */
 
 /**
@@ -30,7 +33,7 @@ export interface AerobicStreams {
   heartrate?: (number | null)[];
   /** Power in watts (power basis). */
   watts?: (number | null)[];
-  /** Smoothed speed in m/s (speed/pace basis). */
+  /** Speed in m/s (speed basis): raw `velocity_smooth`, or grade-adjusted. */
   velocity_smooth?: (number | null)[];
   /** Derived moving flag per sample; false = stopped (traffic light, café). */
   moving?: boolean[];
@@ -230,11 +233,6 @@ export function computeAerobicAnalysis(
   if (!output || output.length === 0) {
     throw new AerobicAnalysisError(
       "Neither a power nor a speed stream is available for this activity.",
-    );
-  }
-  if (!hasWatts) {
-    warnings.push(
-      "No power stream; analysis uses the speed:HR ratio (Pa:Hr) instead of power:HR.",
     );
   }
   if (!streams.moving) {
