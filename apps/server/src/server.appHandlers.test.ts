@@ -130,6 +130,9 @@ describe("app handlers with no key configured", () => {
 describe("view-activity-chart", () => {
   it("summarises the activity for the model", async () => {
     mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
+    mockedIntervalsStreams.mockResolvedValueOnce([
+      { type: "time", data: [0, 1, 2] },
+    ]);
 
     const result = await dispatchToolCall("view-activity-chart", {
       activity_id: "i123",
@@ -139,6 +142,7 @@ describe("view-activity-chart", () => {
     const text = result.content[0]?.text ?? "";
     expect(text).toContain("Activity: Morning Run");
     expect(text).toContain("Distance: 10.00 km");
+    expect(text).not.toContain("No recorded streams");
     // Same fetch options as get-activity-streams-raw (intervals: true), so
     // the two share one cache entry.
     expect(mockedIntervalsActivity).toHaveBeenCalledWith("test-token", "i123", {
@@ -157,6 +161,39 @@ describe("view-activity-chart", () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain("Record Not Found");
+  });
+
+  it("says so when the activity has no recorded streams", async () => {
+    mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
+    // intervals.icu returns no streams for a manual entry.
+    mockedIntervalsStreams.mockResolvedValueOnce([]);
+
+    const result = await dispatchToolCall("view-activity-chart", {
+      activity_id: "i123",
+    });
+
+    expect(result.isError).toBeUndefined();
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain("Activity: Morning Run");
+    expect(text).toContain(
+      "No recorded streams; the chart has nothing to plot.",
+    );
+    expect(text.endsWith("[Interactive activity chart rendered above]")).toBe(
+      true,
+    );
+  });
+
+  it("reports a stream fetch failure rather than calling the chart empty", async () => {
+    mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
+    mockedIntervalsStreams.mockRejectedValueOnce(new Error("Rate limited"));
+
+    const result = await dispatchToolCall("view-activity-chart", {
+      activity_id: "i123",
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("Rate limited");
+    expect(result.content[0]?.text).not.toContain("No recorded streams");
   });
 });
 
@@ -209,6 +246,30 @@ describe("get-activity-streams-raw", () => {
     ]);
     expect(mockedIntervalsActivity).toHaveBeenCalledWith("test-token", "i123", {
       intervals: true,
+    });
+  });
+
+  it("returns a valid empty payload for an activity with no streams", async () => {
+    mockedIntervalsActivity.mockResolvedValueOnce(
+      intervalsActivity({
+        icu_intervals: [{ type: "WORK", start_time: 0, end_time: 60 }],
+      }),
+    );
+    // intervals.icu returns no streams for a manual/no-GPS entry (#65).
+    mockedIntervalsStreams.mockResolvedValueOnce([]);
+
+    const result = await dispatchToolCall("get-activity-streams-raw", {
+      activity_id: "i123",
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect(JSON.parse(result.content[0]?.text ?? "")).toEqual({
+      activityId: "i123",
+      activityType: "Run",
+      name: "Morning Run",
+      streams: { time: [] },
+      laps: [],
+      noStreams: true,
     });
   });
 

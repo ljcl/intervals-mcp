@@ -89,6 +89,8 @@ export interface ActivityChartData {
     step_length?: (number | null)[];
   };
   laps: ActivityChartBand[];
+  /** Set when intervals.icu has no streams for the activity (#65); streams.time is then empty. */
+  noStreams?: true;
 }
 
 /** Stream keys `buildActivityChartData` copies from `streams` onto the wire, in order. */
@@ -139,6 +141,17 @@ function mapBands(
   });
 }
 
+/** The id, type and display name both payload builders put on the wire. */
+function chartIdentity(
+  activity: IntervalsActivity,
+): Pick<ActivityChartData, "activityId" | "activityType" | "name"> {
+  return {
+    activityId: activity.id,
+    activityType: activity.type ?? "Workout",
+    name: activityDisplayName(activity),
+  };
+}
+
 /**
  * Builds the activity-chart app's wire shape from a fetched activity, its
  * loaded streams (`loadIntervalsStreams`), and its intervals
@@ -177,10 +190,26 @@ export function buildActivityChartData(
   }
 
   return {
-    activityId: activity.id,
-    activityType: activity.type ?? "Workout",
-    name: activityDisplayName(activity),
+    ...chartIdentity(activity),
     streams: outStreams,
     laps: mapBands(intervals, time),
+  };
+}
+
+/**
+ * The payload for an activity intervals.icu has no streams for (a manual
+ * entry, #65): the same identity fields as {@link buildActivityChartData}
+ * with nothing to plot and `noStreams` set, so the app can say so instead of
+ * showing an error. Bands are empty too: their indices point into a time
+ * array that does not exist.
+ */
+export function emptyActivityChartData(
+  activity: IntervalsActivity,
+): ActivityChartData {
+  return {
+    ...chartIdentity(activity),
+    streams: { time: [] },
+    laps: [],
+    noStreams: true,
   };
 }

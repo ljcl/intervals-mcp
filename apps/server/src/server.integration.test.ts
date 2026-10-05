@@ -17,6 +17,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getTimeZone } from "./config";
 import {
   getActivity,
+  getActivityStreams,
   getAthletePaceCurves,
   listActivities,
   searchActivities,
@@ -28,6 +29,7 @@ vi.mock("./intervalsClient", async (importOriginal) => {
   return {
     ...actual,
     getActivity: vi.fn(),
+    getActivityStreams: vi.fn(),
     getAthletePaceCurves: vi.fn(),
     listActivities: vi.fn(),
     searchActivities: vi.fn(),
@@ -45,6 +47,7 @@ const { connectTestClient } = await import("./mcpTestClient");
 const { TOOL_DEFS } = await import("./server");
 
 const mockedIntervalsActivity = vi.mocked(getActivity);
+const mockedIntervalsStreams = vi.mocked(getActivityStreams);
 const mockedAthleteCurves = vi.mocked(getAthletePaceCurves);
 
 /**
@@ -435,6 +438,9 @@ describe("tools/call", () => {
       distance: 10000,
       moving_time: 3000,
     } as never);
+    mockedIntervalsStreams.mockResolvedValueOnce([
+      { type: "time", data: [0, 1, 2] },
+    ]);
 
     const client = await connectTestClient();
     await client.send("tools/call", {

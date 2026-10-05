@@ -285,6 +285,15 @@ nullable) alongside the existing display `name` ("Recovery" for an unlabeled
 RECOVERY interval, else "Lap N"). Cadence stays raw strides/min on the wire;
 the app doubles it client-side for step-cadence activity types.
 
+An activity with no streams (a manual entry; `IntervalsStreamsUnavailableError`
+from `loadIntervalsStreams`, the one error these handlers degrade on, as
+`get-route-map-data` does) is not an error (#65). `get-activity-streams-raw`
+returns `emptyActivityChartData`: the usual `activityId`/`activityType`/`name`,
+`streams: { time: [] }`, `laps: []` and `noStreams: true`.
+`view-activity-chart` reads the streams itself (a cache hit for the app's own
+call afterwards) and adds "No recorded streams; the chart has nothing to
+plot." to its text. A rate limit or any other failure still propagates.
+
 `get-hill-analysis` and `get-split-analysis` both read their streams through
 the shared intervals.icu stream adapter (`distance`, `altitude`,
 `grade_smooth`, `heartrate`, `velocity_smooth`, `cadence`, plus a derived

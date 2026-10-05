@@ -14,6 +14,7 @@ import { z } from "zod";
 import {
   type ActivityChartData,
   buildActivityChartData,
+  emptyActivityChartData,
 } from "./activityChartData";
 import {
   type ActivityZonesData,
@@ -794,9 +795,17 @@ async function handleViewActivityChart(
     `Type: ${activity.type ?? "Workout"}`,
     `Distance: ${((activity.distance ?? 0) / 1000).toFixed(2)} km`,
     `Moving Time: ${Math.floor((activity.moving_time ?? 0) / 60)}min`,
-    "",
-    "[Interactive activity chart rendered above]",
   ];
+  // The app's own streams call hits the cache afterwards (same URL), so this
+  // read costs no extra upstream request. Only a genuinely stream-less
+  // activity degrades; a rate limit or auth failure must not read as "empty".
+  try {
+    await loadIntervalsStreams(token, activityId, CHART_STREAM_TYPES);
+  } catch (error) {
+    if (!(error instanceof IntervalsStreamsUnavailableError)) throw error;
+    lines.push("No recorded streams; the chart has nothing to plot.");
+  }
+  lines.push("", "[Interactive activity chart rendered above]");
   return { content: [{ type: "text", text: lines.join("\n") }] };
 }
 
@@ -808,24 +817,24 @@ async function handleGetActivityStreamsRaw(
   const activity = await getIntervalsActivity(token, activityId, {
     intervals: true,
   });
-  const displayName = activityDisplayName(activity);
 
   let streams: Awaited<ReturnType<typeof loadIntervalsStreams>>;
   try {
     streams = await loadIntervalsStreams(token, activityId, CHART_STREAM_TYPES);
   } catch (error) {
-    if (error instanceof IntervalsStreamsUnavailableError) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `❌ No data streams are recorded for "${displayName}" (activity ${activityId}): this looks like an activity with no GPS/sensor streams (e.g. a manual entry), so the chart has nothing to plot.`,
-          },
-        ],
-        isError: true,
-      };
-    }
-    throw error;
+    // Same rule as `get-route-map-data`: a genuinely stream-less activity
+    // (e.g. a manual entry) is a valid empty payload, so the app renders its
+    // own "no streams" state instead of an error. Anything else (rate limit,
+    // auth, 5xx) still propagates.
+    if (!(error instanceof IntervalsStreamsUnavailableError)) throw error;
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(emptyActivityChartData(activity)),
+        },
+      ],
+    };
   }
 
   const result: ActivityChartData = buildActivityChartData(
