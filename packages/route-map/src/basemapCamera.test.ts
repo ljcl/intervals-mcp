@@ -1,12 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
-import { createBasemapCamera, describeZoom, isZoomedIn } from "./basemapCamera";
+import { createBasemapCamera } from "./basemapCamera";
 
 function fakeMap(zoom = 12) {
   const handlers: Record<string, Array<() => void>> = {};
   const map = {
     zoom,
+    bounds: [
+      [151.2, -33.87],
+      [151.22, -33.85],
+    ] as [[number, number], [number, number]],
     fitBounds: vi.fn(),
     getZoom: () => map.zoom,
+    getBounds: () => ({ toArray: () => map.bounds }),
     on: (type: string, fn: () => void) => {
       handlers[type] = [...(handlers[type] ?? []), fn];
     },
@@ -97,6 +102,25 @@ describe("createBasemapCamera", () => {
     expect(seen.at(-1)).toBe(4);
   });
 
+  it("reports the bounds in view as plain numbers", () => {
+    const map = fakeMap();
+    const seen: Array<[[number, number], [number, number]]> = [];
+    createBasemapCamera(map, ({ bounds }) => seen.push(bounds));
+    map.fire("load");
+    // A pan moves the bounds at the same zoom.
+    map.bounds = [
+      [151.25, -33.9],
+      [151.27, -33.88],
+    ];
+    map.fire("moveend");
+    expect(seen).toEqual([
+      [
+        [151.25, -33.9],
+        [151.27, -33.88],
+      ],
+    ]);
+  });
+
   it("captures the fit zoom before a pending frame moves the camera", () => {
     const map = fakeMap(12);
     const seen: number[] = [];
@@ -124,24 +148,5 @@ describe("createBasemapCamera", () => {
     createBasemapCamera(map, ({ zoomFactor }) => seen.push(zoomFactor));
     map.fire("moveend");
     expect(seen).toEqual([]);
-  });
-});
-
-describe("describeZoom", () => {
-  it("names the whole route near 1x and the factor otherwise", () => {
-    expect(describeZoom(1)).toBe("Showing the whole route");
-    expect(describeZoom(1.02)).toBe("Showing the whole route");
-    expect(describeZoom(0.5)).toBe("Showing the whole route");
-    expect(describeZoom(3.2)).toBe("Zoomed to 3.2×");
-  });
-});
-
-describe("isZoomedIn", () => {
-  it("agrees with describeZoom's whole-route wording", () => {
-    for (const factor of [0.5, 1, 1.02, 1.05, 1.4, 3.2]) {
-      expect(isZoomedIn(factor)).toBe(
-        describeZoom(factor) !== "Showing the whole route",
-      );
-    }
   });
 });

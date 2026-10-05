@@ -34,8 +34,8 @@ import {
   WAYPOINT_COLORS,
 } from "./annotations";
 import { BasemapView } from "./BasemapView";
-import { type CameraFrame, describeZoom, isZoomedIn } from "./basemapCamera";
-import { frameBoundsForRange, trackBounds } from "./basemapData";
+import { type CameraFrame, type CameraReport } from "./basemapCamera";
+import { boundsContain, frameBoundsForRange, trackBounds } from "./basemapData";
 import { buildRouteMapContextSummary } from "./contextSummary";
 import { buildElevationProfile, nearestXIndex } from "./elevationProfile";
 import {
@@ -61,7 +61,7 @@ import {
 } from "./panZoom";
 import styles from "./RouteMap.module.css";
 import { type RouteMapData } from "./types";
-import { frameForIndexRange } from "./viewport";
+import { describeView, frameForIndexRange, visibleRoute } from "./viewport";
 import { resolveViewportRequest } from "./viewportRequest";
 
 interface RouteMapProps {
@@ -283,35 +283,74 @@ export function RouteMap({
     return () => svg.removeEventListener("wheel", onWheel);
   }, [canZoom, base, svgEl]);
 
-  // Polite screen-reader narration of zoom changes (the SVG's <desc> is static;
-  // this announces the button / keyboard zoom actions and the basemap's
-  // camera moves as they happen). Both views word it through `describeZoom`.
-  const [zoomMessage, setZoomMessage] = useState("");
+  // What a view shows, in the one wording (`describeView`) the live region
+  // and the model context share: the whole route exactly when every point is
+  // in view, otherwise the stretches in view by km.
+  const describeVisible = (
+    isVisible: (index: number) => boolean,
+    zoomFactor: number,
+  ) => {
+    const visible = visibleRoute(
+      data.coordinates.length,
+      isVisible,
+      data.streams?.distance,
+    );
+    return { text: describeView(visible, zoomFactor), whole: visible.whole };
+  };
+  const describeGrid = (v: ViewBox) =>
+    describeVisible(
+      (i) => {
+        const p = projected?.points[i];
+        return (
+          p !== undefined &&
+          p.x >= v.x &&
+          p.x <= v.x + v.w &&
+          p.y >= v.y &&
+          p.y <= v.y + v.h
+        );
+      },
+      zoomLevel(v, base),
+    );
+
+  // Polite screen-reader narration of view changes (the SVG's <desc> is
+  // static; this announces the button / keyboard zoom actions and the
+  // basemap's camera moves as they happen).
+  const [viewMessage, setViewMessage] = useState("");
   const applyView = (next: ViewBox) => {
     setView(next);
-    setZoomMessage(describeZoom(zoomLevel(next, base)));
+    setViewMessage(describeGrid(next).text);
   };
   const zoomByCenter = (factor: number) =>
     applyView(zoomAboutCenter(viewRef.current, base, factor));
   const resetView = () => applyView(base);
 
   // The basemap owns its camera: `set-viewport` hands it a frame to fit, and
-  // every move (the model's or the user's own) reports the zoom back here.
+  // every move (the model's or the user's own pan, zoom or resize) reports
+  // the bounds in view back here.
   const [frame, setFrame] = useState<CameraFrame | undefined>();
   const frameNonce = useRef(0);
   const frameBasemap = (bounds: CameraFrame["bounds"]) => {
     frameNonce.current += 1;
     setFrame({ bounds, nonce: frameNonce.current });
   };
-  const [basemapZoom, setBasemapZoom] = useState(1);
+  /** What the basemap camera last showed, when not the whole route. */
+  const [basemapPartial, setBasemapPartial] = useState<string | null>(null);
+  const handleCamera = ({ zoomFactor, bounds }: CameraReport) => {
+    const seen = describeVisible(
+      (i) => boundsContain(bounds, data.coordinates[i]!),
+      zoomFactor,
+    );
+    setBasemapPartial(seen.whole ? null : seen.text);
+    setViewMessage(seen.text);
+  };
 
   // The fallback grid starts from the whole route, so a camera the basemap
   // reported (or a frame it never got to apply) must not outlive it.
   const [cameraView, setCameraView] = useState(showBasemap);
   if (cameraView !== showBasemap) {
     setCameraView(showBasemap);
-    setZoomMessage("");
-    setBasemapZoom(1);
+    setViewMessage("");
+    setBasemapPartial(null);
     setFrame(undefined);
   }
 
@@ -561,9 +600,15 @@ export function RouteMap({
   const mapDescId = `${uid}-map-desc`;
   const stripDescId = `${uid}-strip-desc`;
 
-  // The zoom of whichever view is showing: the basemap's camera as it last
-  // reported, or the grid's viewBox (which wheel and pinch move too).
-  const visibleZoom = showBasemap ? basemapZoom : zoomLevel(view, base);
+  // What the view that is showing shows, when not the whole route: the
+  // basemap's camera as it last reported, or the grid's viewBox (which wheel,
+  // pinch and drag move too, without an announcement).
+  const gridSeen = showBasemap ? null : describeGrid(view);
+  const partialView = showBasemap
+    ? basemapPartial
+    : gridSeen && !gridSeen.whole
+      ? gridSeen.text
+      : null;
 
   useModelContextSync(
     app,
@@ -575,9 +620,9 @@ export function RouteMap({
         elevationGain: data.elevationGain,
         hasGeometry: projected !== null,
         colorMetric: activeSeries?.label ?? null,
-        // `describeZoom` is the phrasing the screen reader hears, so the
+        // `describeView` is the phrasing the screen reader hears, so the
         // model and the narration cannot describe different views.
-        zoom: isZoomedIn(visibleZoom) ? describeZoom(visibleZoom) : null,
+        visible: partialView,
       }),
     [
       data.name,
@@ -586,7 +631,7 @@ export function RouteMap({
       data.elevationGain,
       projected !== null,
       activeSeries?.label,
-      visibleZoom,
+      partialView,
     ],
   );
 
@@ -673,14 +718,11 @@ export function RouteMap({
             scrubTip={scrubTipContent}
             onFail={() => setBasemapFailed(true)}
             frame={frame}
-            onCamera={({ zoomFactor }) => {
-              setBasemapZoom(zoomFactor);
-              setZoomMessage(describeZoom(zoomFactor));
-            }}
+            onCamera={handleCamera}
           />
           {/* Polite narration of camera moves for screen-reader users. */}
           <p className={styles.srOnly} aria-live="polite">
-            {zoomMessage}
+            {viewMessage}
           </p>
         </div>
       )}
@@ -876,9 +918,9 @@ export function RouteMap({
             </div>
           )}
 
-          {/* Polite narration of zoom actions for screen-reader users. */}
+          {/* Polite narration of view changes for screen-reader users. */}
           <p className={styles.srOnly} aria-live="polite">
-            {zoomMessage}
+            {viewMessage}
           </p>
 
           {scrubInView && scrubTipContent && (

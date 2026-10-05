@@ -17,6 +17,7 @@ import { type SplitMarker, type WaypointMarker } from "./annotations";
 import {
   BASEMAP_PADDING,
   type CameraFrame,
+  type CameraReport,
   createBasemapCamera,
 } from "./basemapCamera";
 import {
@@ -90,9 +91,9 @@ interface BasemapViewProps {
   onFail: () => void;
   /** Bounds to fit the camera to; a new nonce moves it again. */
   frame?: CameraFrame;
-  /** Every camera move, the user's own included, as a zoom factor relative
-   * to the whole-route fit. */
-  onCamera?: (camera: { zoomFactor: number }) => void;
+  /** Every camera move, the user's own included: the bounds in view and the
+   * zoom relative to the whole-route fit. */
+  onCamera?: (camera: CameraReport) => void;
 }
 
 function scrubPointGeoJson(

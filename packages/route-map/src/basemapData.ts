@@ -148,6 +148,22 @@ export function frameBoundsForRange(
   ];
 }
 
+/**
+ * Whether the `[lat, lng]` pair lies inside `[[west, south], [east, north]]`
+ * as the camera reports them. Longitude is compared on the world copy the
+ * bounds sit in: MapLibre's bounds run past 180 when the camera straddles
+ * the antimeridian, and by whole turns on another copy of the world.
+ */
+export function boundsContain(
+  bounds: [[number, number], [number, number]],
+  [lat, lng]: [number, number],
+): boolean {
+  const [[west, south], [east, north]] = bounds;
+  if (lat < south || lat > north) return false;
+  const shifted = lng + 360 * Math.round(((west + east) / 2 - lng) / 360);
+  return shifted >= west && shifted <= east;
+}
+
 /** Point features with a `title` property for the hover popup. Waypoint
  * features also carry a `color` for the per-kind circle paint. */
 export interface TitledPointFeatureCollection {

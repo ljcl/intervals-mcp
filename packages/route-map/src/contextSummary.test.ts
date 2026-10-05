@@ -54,17 +54,17 @@ describe("buildRouteMapContextSummary", () => {
     );
   });
 
-  it("says how far the map is zoomed in", () => {
+  it("says which stretch of the route is in view", () => {
     const summary = buildRouteMapContextSummary({
       name: "Morning Run",
       activityType: "Run",
-      distanceKm: 10,
+      distanceKm: 20,
       elevationGain: 0,
       hasGeometry: true,
-      zoom: "Zoomed to 3.2×",
+      visible: "Showing 12.0–16.0 km of the route",
     });
     expect(summary).toBe(
-      'Viewing the map for Run activity "Morning Run". Distance 10.0 km. Zoomed to 3.2×.',
+      'Viewing the map for Run activity "Morning Run". Distance 20.0 km. Showing 12.0–16.0 km of the route.',
     );
   });
 
