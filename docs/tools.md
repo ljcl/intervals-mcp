@@ -94,7 +94,10 @@ entry carries `tags` and `race`. A page that
 would overrun the response size budget (a year of daily activities at limit
 200) comes back shorter, with `truncated: true`; whenever the list is
 truncated, the text names the `oldest`/`newest` call that fetches the older
-matches. An activity
+matches. A truncated search names the call with `search` and `newest` (and
+`oldest` when one was given). A search returns at most 200 matches; when it
+hits that cap the text says to narrow the query or add `oldest`/`newest`. An
+activity
 synced into intervals.icu from Strava (`source: "STRAVA"`) is a stub: the
 intervals.icu API has no further detail for it, so the response flags it with
 `is_strava_stub` and the text response adds a trailing note. That detection

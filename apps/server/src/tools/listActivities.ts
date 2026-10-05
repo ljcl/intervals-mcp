@@ -83,6 +83,8 @@ const inputSchema = z.object({
 type ListActivitiesInput = z.infer<typeof inputSchema>;
 
 const MAX_RANGE_DAYS = 366;
+/** The most matches search-full is asked for, and the cap the text warns about. */
+const SEARCH_RESULT_CAP = 200;
 
 export interface ActivitySummaryEntry {
   id: string;
@@ -164,6 +166,8 @@ interface ListTextOptions {
   budgetCut?: boolean;
   /** Scope shown in a search header; defaults to "all history". */
   windowLabel?: string;
+  /** The caller gave `oldest` with a search, so a paging hint keeps it. */
+  keepOldest?: boolean;
   /** Extra lines after the activities, before the budget and paging lines. */
   notes?: string[];
 }
@@ -195,7 +199,7 @@ export function formatActivityListText(
   const oldestShown = response.activities.at(-1)?.date;
   if (truncated && oldestShown) {
     const call = response.search
-      ? `search: "${response.search}", newest: ${oldestShown}`
+      ? `search: "${response.search}", ${options.keepOldest ? `oldest: ${oldest}, ` : ""}newest: ${oldestShown}`
       : `oldest: ${oldest}, newest: ${oldestShown}`;
     lines.push(
       `For the ${matched - count} older matches, call again with ${call}.`,
@@ -252,6 +256,19 @@ export const listActivitiesTool = {
       // Provisional: a search sets the real span once the matches are known.
       oldest = rawOldest ?? today;
       newest = rawNewest ?? today;
+      // No length cap, but a reversed window is still an error.
+      const rangeError =
+        rawOldest && rawNewest
+          ? validateRange(rawOldest, rawNewest, Number.POSITIVE_INFINITY)
+          : null;
+      if (rangeError) {
+        return {
+          content: [
+            { type: "text" as const, text: `❌ ${rangeError.message}` },
+          ],
+          isError: true,
+        };
+      }
     }
 
     try {
@@ -264,15 +281,22 @@ export const listActivitiesTool = {
             "nameContains is ignored with search; put the text in search.",
           );
         progress(`Searching activities for "${search}"`);
-        activities = (await searchActivitiesClient(apiKey, search, 200)).filter(
-          (a) => {
-            const date = a.start_date_local.slice(0, 10);
-            return (
-              (!rawOldest || date >= rawOldest) &&
-              (!rawNewest || date <= rawNewest)
-            );
-          },
+        const found = await searchActivitiesClient(
+          apiKey,
+          search,
+          SEARCH_RESULT_CAP,
         );
+        if (found.length >= SEARCH_RESULT_CAP)
+          notes.push(
+            `search returns at most ${SEARCH_RESULT_CAP} matches; narrow the query or add oldest/newest to reach older ones.`,
+          );
+        activities = found.filter((a) => {
+          const date = a.start_date_local.slice(0, 10);
+          return (
+            (!rawOldest || date >= rawOldest) &&
+            (!rawNewest || date <= rawNewest)
+          );
+        });
       } else {
         progress(`Fetching activities ${oldest} to ${newest}`);
         activities = await listActivitiesClient(
@@ -324,7 +348,11 @@ export const listActivitiesTool = {
       // page by the measured overshoot.
       let size = limit;
       let response = build(size);
-      let text = formatActivityListText(response, { windowLabel, notes });
+      let text = formatActivityListText(response, {
+        windowLabel,
+        notes,
+        keepOldest: Boolean(rawOldest),
+      });
       for (let pass = 0; pass < 5; pass += 1) {
         const chars = responseSize(text, response);
         if (chars <= RESPONSE_BUDGET_CHARS || size <= 1) break;
@@ -340,6 +368,7 @@ export const listActivitiesTool = {
           budgetCut: true,
           windowLabel,
           notes,
+          keepOldest: Boolean(rawOldest),
         });
       }
 

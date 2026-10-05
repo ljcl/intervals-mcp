@@ -530,4 +530,84 @@ describe("listActivitiesTool.execute search", () => {
       search: "nope",
     });
   });
+
+  it("keeps oldest in a truncated search's paging hint only when given", async () => {
+    const many = Array.from({ length: 5 }, (_, n) => ({
+      ...twoYearsAgo,
+      id: `i80${n}`,
+      start_date_local: `2026-09-2${5 - n}T07:00:00`,
+    })) as IntervalsActivity[];
+
+    mockedSearch.mockResolvedValueOnce(many);
+    const without = await listActivitiesTool.execute(
+      { search: "club", limit: 2 },
+      "key",
+    );
+    expect(without.content[0]!.text).toContain(
+      'For the 3 older matches, call again with search: "club", newest: 2026-09-24.',
+    );
+
+    mockedSearch.mockResolvedValueOnce(many);
+    const withOldest = await listActivitiesTool.execute(
+      { search: "club", oldest: "2026-01-01", limit: 2 },
+      "key",
+    );
+    expect(withOldest.content[0]!.text).toContain(
+      'For the 3 older matches, call again with search: "club", oldest: 2026-01-01, newest: 2026-09-24.',
+    );
+  });
+
+  it("labels the window in the header when only newest is given", async () => {
+    mockedSearch.mockResolvedValueOnce([lastWeek, twoYearsAgo]);
+
+    const result = await listActivitiesTool.execute(
+      { search: "club", newest: "2025-01-01", limit: 30 },
+      "key",
+    );
+
+    expect(result.content[0]!.text.split("\n")[0]).toBe(
+      'Activities matching "club" (2024-09-26 to 2025-01-01): showing 1 of 1',
+    );
+  });
+
+  it("notes the 200-match cap when the search returns 200", async () => {
+    mockedSearch.mockResolvedValueOnce(
+      Array.from({ length: 200 }, (_, n) => ({
+        ...twoYearsAgo,
+        id: `i9${n}`,
+      })) as IntervalsActivity[],
+    );
+
+    const result = await listActivitiesTool.execute(
+      { search: "club", limit: 5 },
+      "key",
+    );
+
+    expect(result.content[0]!.text).toContain(
+      "search returns at most 200 matches; narrow the query or add oldest/newest to reach older ones.",
+    );
+  });
+
+  it("rejects a reversed search window before calling the client", async () => {
+    const result = await listActivitiesTool.execute(
+      { search: "club", oldest: "2026-09-24", newest: "2026-09-01", limit: 30 },
+      "key",
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]!.text).toContain("after newest");
+    expect(mockedSearch).not.toHaveBeenCalled();
+  });
+
+  it("translates a search failure into an error text", async () => {
+    mockedSearch.mockRejectedValueOnce(handledRateLimit("searchActivities"));
+
+    const result = await listActivitiesTool.execute(
+      { search: "club", limit: 30 },
+      "key",
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]!.text.startsWith("❌")).toBe(true);
+  });
 });
