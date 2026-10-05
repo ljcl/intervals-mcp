@@ -65,6 +65,7 @@ const TOOL_NAME_MENTION =
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(listActivities).mockReset();
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 

@@ -49,9 +49,7 @@ function invalidParams(message: string): ProtocolError {
 
 /** The step that finds the activity: the given id, else the newest run. */
 function targetStep(id: string | undefined): string {
-  return id
-    ? `Use activity ${id}.`
-    : `Find my most recent run: call list-activities with type "runs" and limit 1 (Run, TrailRun or VirtualRun; never a swim, ride or gym session).`;
+  return id ? `Use activity ${id}.` : 'Use id "latest" (my most recent run).';
 }
 
 const MAX_REVIEW_WEEKS = 52;

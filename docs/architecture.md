@@ -447,6 +447,14 @@ digit string. `mcpEndpoint.ts` parses the inbound `/mcp` body with
 `parseJsonWithLargeInts` for the same reason, and handlers pass ids through as
 strings rather than parsing them back.
 
+Every activity-id input except `update-activity`'s accepts the special value
+`"latest"`, which resolves to the newest Run/TrailRun/VirtualRun in the last 366 days.
+Resolution happens once per call by `resolveLatestIds` (`latestActivity.ts`) in
+`dispatchToolCall` after validation, from a cached `listActivities` read. If no
+run is found, the tool returns an error naming the fix. `update-activity` cannot
+use `"latest"` because a write must name its specific target; it rejects with a
+validation error if sent `"latest"`.
+
 ## Structured output
 
 A tool that returns data publishes an `outputSchema` and a matching

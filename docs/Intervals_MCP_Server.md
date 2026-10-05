@@ -133,7 +133,8 @@ description is kept. (This is also the `annotate-last-run` prompt.)
 ## Gotchas
 
 - **Activity id format.** Ids are digit strings, optionally prefixed with
-  `i` (as `list-activities` returns them, e.g. `i189807578`). Always pass ids
+  `i` (as `list-activities` returns them, e.g. `i189807578`), or pass id
+  `"latest"` for the most recent run (not `update-activity`). Always pass ids
   as quoted strings, never bare numbers: some hosts round large numbers
   through JSON, which silently corrupts the id.
 - **Whole-body vs runs-only fitness.** `get-fitness-trend` and

@@ -593,6 +593,16 @@ current activity reports "no change" and sends no PUT. Any field whose
 re-read value does not match what was sent (e.g. gear not applied) adds a
 warning rather than failing the call.
 
+## Activity ids
+
+Every tool that takes an `id` argument accepts either a numeric id (from
+`list-activities`, e.g. `189807578`) or its `i`-prefixed form (e.g.
+`i189807578`), or the special value `"latest"` for the most recent run in the
+last 366 days (newest Run, TrailRun, or VirtualRun). The `"latest"` value is
+resolved once per call by the dispatcher; if no run is found, the tool returns
+an error. `update-activity` cannot use `"latest"` because a write must name its
+specific target.
+
 ## Visualization tools
 
 Each `view-*` MCP App has an app-only `get-*-data` companion that fetches what

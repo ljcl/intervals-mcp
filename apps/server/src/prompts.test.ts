@@ -76,7 +76,8 @@ describe("annotate-last-run", () => {
   it("picks the newest run by type, never another sport", () => {
     const t = text("annotate-last-run");
 
-    expect(t).toContain('call list-activities with type "runs" and limit 1');
+    expect(t).toContain('Use id "latest" (my most recent run).');
+    expect(t).not.toContain("list-activities");
   });
 
   it("does not fetch the laps twice", () => {
@@ -194,9 +195,9 @@ describe("run-debrief", () => {
   });
 
   it("finds the newest run when no id is given", () => {
-    expect(text("run-debrief")).toContain(
-      'call list-activities with type "runs" and limit 1',
-    );
+    const t = text("run-debrief");
+    expect(t).toContain('Use id "latest" (my most recent run).');
+    expect(t).not.toContain("list-activities");
   });
 });
 
