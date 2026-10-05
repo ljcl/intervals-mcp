@@ -15,6 +15,8 @@ import {
   runsByDay,
   toOverlayPoints,
   trendTimeAxis,
+  windowLabel,
+  windowShortLabel,
 } from "./normalize";
 import {
   COMPARISON_COLORS,
@@ -198,13 +200,13 @@ describe("computeSummaryStats", () => {
   it("splits activities into current and previous halves deterministically", () => {
     const stats = computeSummaryStats(
       [
-        // Within the last 2 weeks (current half of a 4-week window)
+        // Within the last 14 days (current half of a 28-day window)
         run({ date: "2026-07-10T00:00:00Z", averageCadence: 180 }),
         run({ date: "2026-07-05T00:00:00Z", averageCadence: 176 }),
         // Older half
         run({ date: "2026-06-20T00:00:00Z", averageCadence: 170 }),
       ],
-      4,
+      28,
       NOW,
     );
 
@@ -217,13 +219,28 @@ describe("computeSummaryStats", () => {
   it("ignores zero-cadence runs and handles empty halves", () => {
     const stats = computeSummaryStats(
       [run({ date: "2026-07-10T00:00:00Z", averageCadence: 0 })],
-      4,
+      28,
       NOW,
     );
 
     expect(stats.currentAvg).toBe(0);
     expect(stats.previousAvg).toBe(0);
     expect(stats.delta).toBe(0);
+  });
+
+  it("halves a window of days that is not whole weeks", () => {
+    // 10 days: the current half is the last 5 days.
+    const stats = computeSummaryStats(
+      [
+        run({ date: "2026-07-08T00:00:00Z", averageCadence: 180 }),
+        run({ date: "2026-07-06T00:00:00Z", averageCadence: 170 }),
+      ],
+      10,
+      NOW,
+    );
+
+    expect(stats.currentAvg).toBe(180);
+    expect(stats.previousAvg).toBe(170);
   });
 });
 
@@ -341,15 +358,41 @@ describe("toOverlayPoints", () => {
 
 describe("buildCadenceSubtitle", () => {
   it("counts runs over the window", () => {
-    expect(buildCadenceSubtitle(18, 6)).toBe("18 runs · last 6 weeks");
+    expect(buildCadenceSubtitle(18, 42)).toBe("18 runs · last 6 weeks");
   });
 
   it("uses singular forms for one run and one week", () => {
-    expect(buildCadenceSubtitle(1, 1)).toBe("1 run · last 1 week");
+    expect(buildCadenceSubtitle(1, 7)).toBe("1 run · last 1 week");
+  });
+
+  it("names a window that is not whole weeks in days", () => {
+    expect(buildCadenceSubtitle(9, 30)).toBe("9 runs · last 30 days");
   });
 
   it("still names the window with no runs in it", () => {
-    expect(buildCadenceSubtitle(0, 12)).toBe("0 runs · last 12 weeks");
+    expect(buildCadenceSubtitle(0, 84)).toBe("0 runs · last 12 weeks");
+  });
+});
+
+describe("windowLabel", () => {
+  it.each([
+    [7, "1 week"],
+    [42, "6 weeks"],
+    [728, "104 weeks"],
+    [8, "8 days"],
+    [30, "30 days"],
+  ])("reads %i days as %s", (days, label) => {
+    expect(windowLabel(days)).toBe(label);
+  });
+});
+
+describe("windowShortLabel", () => {
+  it.each([
+    [7, "1w"],
+    [42, "6w"],
+    [30, "30d"],
+  ])("reads %i days as %s", (days, label) => {
+    expect(windowShortLabel(days)).toBe(label);
   });
 });
 

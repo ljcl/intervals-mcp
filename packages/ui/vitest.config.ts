@@ -32,6 +32,7 @@ export default defineConfig({
         "src/keyedFetchStore.ts",
         "src/latestPin.ts",
         "src/serverToolResult.ts",
+        "src/toolArgs.ts",
       ],
     },
   },

@@ -35,6 +35,7 @@ export {
   type SummaryStat,
 } from "./SummaryBar";
 export { Tooltip, TooltipEntry } from "./Tooltip";
+export { toolArgId, toolArgRecord } from "./toolArgs";
 export {
   detectMobile,
   type HostCtx,

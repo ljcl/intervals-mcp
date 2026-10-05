@@ -14,7 +14,7 @@ export const VIEW_TOOLS: ViewToolDefinition[] = [
     title: "Change the cadence view",
     // The model never sees the chart's runs, so the ids are the ones
     // list-activities gives it.
-    description: `Switch the cadence chart between trend, scatter, zones and overlay, choose up to ${MAX_COMPARE_RUNS} runs to overlay, and pick the overlay x-axis. runIds are activity ids from list-activities (for example "i189807578") for runs within the chart's weeks, and replace the current selection.`,
+    description: `Switch the cadence chart between trend, scatter, zones and overlay, choose up to ${MAX_COMPARE_RUNS} runs to overlay, and pick the overlay x-axis. runIds are activity ids from list-activities (for example "i189807578") for runs within the chart's window, and replace the current selection.`,
     inputSchema: z
       .object({
         view: z

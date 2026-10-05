@@ -90,9 +90,9 @@ export interface WaypointArg {
   kind?: WaypointKind;
 }
 
-/** Tool input for `view-route-map`. Waypoints ride along unchanged so
- * `get-route-map-data` can anchor them. */
+/** Tool input for `view-route-map`, normalised by `parseToolArgs`.
+ * Waypoints ride along unchanged so `get-route-map-data` can anchor them. */
 export interface ToolArgs {
-  activity_id: string;
+  id: string;
   waypoints?: WaypointArg[];
 }

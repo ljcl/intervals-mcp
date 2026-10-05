@@ -94,7 +94,7 @@ function badIdsText(unknown: string[], noCadence: string[]): string {
   const parts: string[] = [];
   if (unknown.length > 0) {
     parts.push(
-      `Not runs in this chart: ${unknown.join(", ")}. Run ids come from list-activities (for example "i189807578") and must fall within the chart's weeks.`,
+      `Not runs in this chart: ${unknown.join(", ")}. Run ids come from list-activities (for example "i189807578") and must fall within the chart's window.`,
     );
   }
   if (noCadence.length > 0) {

@@ -30,12 +30,25 @@ Every app's `main.tsx` is the same four-branch state machine, so it lives in
   classification is pure and unit-tested (`classifyToolInput`); the branches
   are storied on `AppRootView`, since a live host is not reachable from
   Storybook.
-- **`"latest"` reaches the app as the word.** A view tool called with
-  `id: "latest"` hands the app `toolArgs` holding `"latest"`, not the resolved
-  id; the app forwards it to its data feeds, and the dispatcher resolves it
-  again each time the app mounts. A view re-mounted later (the chat reopened)
-  can therefore show a newer run than the one first described. Pinning the
-  resolved id in the app is planned with the naming-scheme change.
+- **Host arguments are the model's raw arguments.** The server accepts old
+  spellings through its aliases, so `toolArgs` may say `activity_id`,
+  `activity_id_1`/`activity_id_2` or `weeks`. Each app's `parseToolInput`
+  (`src/toolArgs.ts`, unit-tested) normalises them first, to `id`,
+  `activityId1`/`activityId2` and `days` (`days ?? weeks * 7`), with
+  `toolArgId` from `packages/ui` reading an id; nothing else reads the raw
+  object, and the data feeds are called with the new names only.
+- **`"latest"` is pinned to the run the app first showed.** A view tool
+  called with `id: "latest"` hands the app `toolArgs` holding the word, and
+  its tool result names the run in `_meta["intervals-mcp/resolvedArgs"]`
+  (`RESOLVED_ARGS_META_KEY`, declared in `apps/server/src/latestActivity.ts`
+  and repeated in `packages/ui/src/latestPin.ts`). `useHostRoot` registers
+  `ontoolresult` before connect and replaces each `"latest"` in `toolArgs`
+  with the resolved id, so a view re-mounted later (the chat reopened) still
+  shows that run rather than a newer one. Until the result arrives
+  `pendingLatest` holds `AppRootView` on its waiting branch, so no app
+  fetches the word moments before the pin lands; after `LATEST_PIN_WAIT_MS`
+  (1,500 ms) with no result it lets go and the app fetches with `"latest"`,
+  so a host that never sends tool results still gets a chart.
 - **Fetching.** `useServerToolData` is the mount-time single fetch every app
   makes. Anything keyed and on-demand — a stream per selected run — goes
   through `useServerToolFetcher` instead of a hand-rolled effect. Its state
@@ -248,8 +261,11 @@ altitude overlays; cadence and grade where recorded).
 ### Cadence Trends
 
 Four views: Trend timeline, Scatter plot, Pace Zones, Overlay comparison.
-Calls `get-cadence-trend-data` on mount and `get-activity-streams-raw` for
-per-second overlays on demand through the shared `useServerToolFetcher` (one
+Calls `get-cadence-trend-data` on mount with `days` (the payload echoes
+`days`; the subtitle and context summary say "last 6 weeks" for a whole
+number of weeks, else "last 30 days", as the server's view text does) and
+`get-activity-streams-raw` for per-second overlays on demand through the
+shared `useServerToolFetcher` (one
 keyed fetch per selected run, each with its own loading/error/retry). The
 overlay's loading state shows the progress line of the first selected run
 that is still loading.
@@ -295,7 +311,7 @@ reads the chart's own data and Recharts skips a null pace; a Scatter-level
 
 The most complex app; defaults to a MapLibre basemap with a pure-SVG offline
 grid fallback (no Recharts). Calls `get-route-map-data` (app-only) with
-`activity_id`.
+`id`.
 
 - Geometry always comes from the `latlng` stream: intervals.icu has no
   encoded-polyline endpoint (`GET /activity/{id}/map` returns the same
@@ -462,7 +478,7 @@ run-based; load and CTL/ATL/TSB follow `runOnly`.
 
 Overlays two activities' streams so the user can see WHERE the difference
 happened (the text `compare-activities` tool reports aggregates only). Takes
-`activity_id_1` + `activity_id_2`; calls `get-activity-streams-raw` once per
+`activityId1` + `activityId2`; calls `get-activity-streams-raw` once per
 activity (TTL-cached server-side) and `get-compare-activities-data` for the
 delta summary bar. That tool reuses the text tool's aggregate logic, extracted
 as pure `buildComparison` in `apps/server/src/tools/compareActivities.ts`.

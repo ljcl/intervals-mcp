@@ -9,7 +9,7 @@ import { App } from "./App";
 import { buildCadenceSubtitle } from "./normalize";
 import { type CadenceTrendData } from "./types";
 
-const mockData: CadenceTrendData = { weeks: 6, activities: mockRuns };
+const mockData: CadenceTrendData = { days: 42, activities: mockRuns };
 
 const meta = preview.meta({ component: App });
 
@@ -20,7 +20,7 @@ export const Default = meta.story({
     // bare chart cannot say which runs or window it belongs to.
     await expect(canvas.getByText("Cadence trends")).toBeVisible();
     await expect(
-      canvas.getByText(buildCadenceSubtitle(mockRuns.length, mockData.weeks)),
+      canvas.getByText(buildCadenceSubtitle(mockRuns.length, mockData.days)),
     ).toBeVisible();
   },
 });
@@ -77,7 +77,7 @@ const streamlessApp = {
   }: {
     arguments?: Record<string, unknown>;
   }) => {
-    const id = String(args?.activity_id);
+    const id = String(args?.id);
     const payload =
       id === "i10013"
         ? {
@@ -160,7 +160,7 @@ function ModelDrivenCadence() {
         }: {
           arguments?: Record<string, unknown>;
         }) => {
-          const id = String(args?.activity_id);
+          const id = String(args?.id);
           const payload =
             id === "i10006"
               ? {
@@ -346,7 +346,7 @@ export const ModelDrivenView = meta.story({
     await click("call-unknown-run");
     await waitFor(() =>
       expect(said()).toBe(
-        'Not runs in this chart: i99999. Run ids come from list-activities (for example "i189807578") and must fall within the chart\'s weeks. Nothing was changed.',
+        'Not runs in this chart: i99999. Run ids come from list-activities (for example "i189807578") and must fall within the chart\'s window. Nothing was changed.',
       ),
     );
     await expect(

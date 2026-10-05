@@ -1,4 +1,4 @@
-import { overlayRunLabel } from "./normalize";
+import { overlayRunLabel, windowLabel } from "./normalize";
 import {
   type OverlayRunStatus,
   type OverlayXMode,
@@ -24,7 +24,8 @@ const NOT_DRAWN_HEADINGS: ReadonlyArray<
 ];
 
 export interface CadenceContextInput {
-  weeks: number;
+  /** The window the chart covers, in days. */
+  days: number;
   activeView: ViewId;
   selectedRuns: RunSummary[];
   /** The overlay's x-axis; reported only while the overlay is showing. */
@@ -45,7 +46,7 @@ export function buildCadenceContextSummary(
   input: CadenceContextInput,
 ): string | null {
   const {
-    weeks,
+    days,
     activeView,
     selectedRuns,
     overlayAxis,
@@ -53,10 +54,10 @@ export function buildCadenceContextSummary(
     excludedNoCadence,
     noPaceCount,
   } = input;
-  if (!weeks) return null;
+  if (!days) return null;
 
   const parts = [
-    `Cadence trends, last ${weeks} week${weeks === 1 ? "" : "s"}.`,
+    `Cadence trends, last ${windowLabel(days)}.`,
     `View: ${VIEW_LABELS[activeView] ?? activeView}.`,
   ];
   if (activeView === "overlay" && overlayAxis) {

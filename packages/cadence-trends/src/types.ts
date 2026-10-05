@@ -18,7 +18,8 @@ export interface RunSummary {
 
 /** Response from get-cadence-trend-data tool */
 export interface CadenceTrendData {
-  weeks: number;
+  /** The window the feed covers, in days (7 to 728). */
+  days: number;
   activities: RunSummary[];
   /** Run-type activities in the window with no recorded cadence, left out
    * of `activities` rather than plotted at a fabricated 0 spm. Optional so

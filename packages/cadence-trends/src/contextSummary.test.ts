@@ -15,10 +15,32 @@ const run = (over: Partial<RunSummary>): RunSummary => ({
 });
 
 describe("buildCadenceContextSummary", () => {
+  it("names a window that is not whole weeks in days", () => {
+    expect(
+      buildCadenceContextSummary({
+        days: 30,
+        activeView: "trend",
+        selectedRuns: [],
+      }),
+    ).toBe(
+      "Cadence trends, last 30 days. View: trend timeline. No runs selected for comparison.",
+    );
+  });
+
+  it("says 1 week for 7 days", () => {
+    expect(
+      buildCadenceContextSummary({
+        days: 7,
+        activeView: "trend",
+        selectedRuns: [],
+      }),
+    ).toMatch(/^Cadence trends, last 1 week\. /);
+  });
+
   it("notes when no runs are selected", () => {
     expect(
       buildCadenceContextSummary({
-        weeks: 6,
+        days: 42,
         activeView: "trend",
         selectedRuns: [],
       }),
@@ -29,7 +51,7 @@ describe("buildCadenceContextSummary", () => {
 
   it("lists selected runs with rounded cadence", () => {
     const text = buildCadenceContextSummary({
-      weeks: 6,
+      days: 42,
       activeView: "scatter",
       selectedRuns: [
         run({ id: "1", name: "Tempo Run", averageCadence: 181.6 }),
@@ -43,7 +65,7 @@ describe("buildCadenceContextSummary", () => {
 
   it("dates runs that share a name so they can be told apart", () => {
     const text = buildCadenceContextSummary({
-      weeks: 6,
+      days: 42,
       activeView: "overlay",
       selectedRuns: [
         run({
@@ -79,7 +101,7 @@ describe("buildCadenceContextSummary", () => {
   it("reports the overlay x-axis while the overlay shows", () => {
     expect(
       buildCadenceContextSummary({
-        weeks: 6,
+        days: 42,
         activeView: "overlay",
         selectedRuns: [
           run({ id: "1", name: "Tempo Run", averageCadence: 181 }),
@@ -95,7 +117,7 @@ describe("buildCadenceContextSummary", () => {
   it("leaves the overlay x-axis out of every other view", () => {
     expect(
       buildCadenceContextSummary({
-        weeks: 6,
+        days: 42,
         activeView: "scatter",
         selectedRuns: [],
         overlayAxis: "distance",
@@ -105,7 +127,7 @@ describe("buildCadenceContextSummary", () => {
 
   it("mentions runs excluded for missing cadence", () => {
     const text = buildCadenceContextSummary({
-      weeks: 6,
+      days: 42,
       activeView: "trend",
       selectedRuns: [],
       excludedNoCadence: 3,
@@ -118,7 +140,7 @@ describe("buildCadenceContextSummary", () => {
   it("uses the singular form for one exclusion and omits it entirely for zero", () => {
     expect(
       buildCadenceContextSummary({
-        weeks: 6,
+        days: 42,
         activeView: "trend",
         selectedRuns: [],
         excludedNoCadence: 1,
@@ -127,7 +149,7 @@ describe("buildCadenceContextSummary", () => {
 
     expect(
       buildCadenceContextSummary({
-        weeks: 6,
+        days: 42,
         activeView: "trend",
         selectedRuns: [],
         excludedNoCadence: 0,
@@ -137,7 +159,7 @@ describe("buildCadenceContextSummary", () => {
 
   it("mentions runs excluded from pace-based views for missing pace", () => {
     const text = buildCadenceContextSummary({
-      weeks: 6,
+      days: 42,
       activeView: "scatter",
       selectedRuns: [],
       noPaceCount: 2,
@@ -150,7 +172,7 @@ describe("buildCadenceContextSummary", () => {
   it("uses the singular form for one no-pace run and omits it entirely for zero", () => {
     expect(
       buildCadenceContextSummary({
-        weeks: 6,
+        days: 42,
         activeView: "trend",
         selectedRuns: [],
         noPaceCount: 1,
@@ -159,7 +181,7 @@ describe("buildCadenceContextSummary", () => {
 
     expect(
       buildCadenceContextSummary({
-        weeks: 6,
+        days: 42,
         activeView: "trend",
         selectedRuns: [],
         noPaceCount: 0,
@@ -179,7 +201,7 @@ describe("buildCadenceContextSummary", () => {
     it("names every run by what the overlay is doing with it", () => {
       expect(
         buildCadenceContextSummary({
-          weeks: 6,
+          days: 42,
           activeView: "overlay",
           selectedRuns,
           overlayAxis: "distance",
@@ -199,7 +221,7 @@ describe("buildCadenceContextSummary", () => {
     it("says no run is drawn, and counts a run with no state as loading", () => {
       expect(
         buildCadenceContextSummary({
-          weeks: 6,
+          days: 42,
           activeView: "overlay",
           selectedRuns: selectedRuns.slice(0, 2),
           overlayStatus: new Map([["2", "noStreams"]]),
@@ -212,7 +234,7 @@ describe("buildCadenceContextSummary", () => {
     it("keeps listing the selection in the other views", () => {
       expect(
         buildCadenceContextSummary({
-          weeks: 6,
+          days: 42,
           activeView: "trend",
           selectedRuns: selectedRuns.slice(0, 2),
           overlayStatus: new Map([["2", "loading"]]),

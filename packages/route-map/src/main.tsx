@@ -13,6 +13,7 @@ import { type useApp } from "@modelcontextprotocol/ext-apps/react";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { RouteMap } from "./RouteMap";
+import { parseToolArgs } from "./toolArgs";
 import { type RouteMapData, type ToolArgs } from "./types";
 import { VIEW_TOOLS } from "./viewToolDeclarations";
 import "./global.css";
@@ -70,10 +71,7 @@ function Root() {
   return (
     <AppRoot<ToolArgs>
       appInfo={{ name: "Route Map", version: "1.0.0" }}
-      parseToolInput={(args) => {
-        const next = args as ToolArgs | undefined;
-        return next?.activity_id ? next : null;
-      }}
+      parseToolInput={parseToolArgs}
       missingArgsMessage="No activity id was provided to the map view."
       viewTools={VIEW_TOOLS}
       loading={<LoadingSkeleton />}

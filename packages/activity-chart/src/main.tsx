@@ -14,13 +14,10 @@ import { StrictMode, useMemo } from "react";
 import { createRoot } from "react-dom/client";
 import { ActivityChart } from "./ActivityChart";
 import { extractMeta, toChartData, toLapData } from "./normalize";
+import { parseToolArgs, type ToolArgs } from "./toolArgs";
 import { type ActivityStreamData } from "./types";
 import { VIEW_TOOLS } from "./viewToolDeclarations";
 import "./global.css";
-
-interface ToolArgs {
-  activity_id: string;
-}
 
 const LoadingSkeleton = () => (
   <LoadingState label="Loading activity chart">
@@ -49,7 +46,7 @@ function AppContent({
     error,
     retry,
   } = useServerToolData<ActivityStreamData>(app, "get-activity-streams-raw", {
-    activity_id: toolArgs.activity_id,
+    id: toolArgs.id,
   });
 
   const derived = useMemo(
@@ -91,10 +88,7 @@ function Root() {
   return (
     <AppRoot<ToolArgs>
       appInfo={{ name: "Activity Chart", version: "1.0.0" }}
-      parseToolInput={(args) => {
-        const next = args as ToolArgs | undefined;
-        return next?.activity_id ? next : null;
-      }}
+      parseToolInput={parseToolArgs}
       missingArgsMessage="No activity id was provided to the chart view."
       viewTools={VIEW_TOOLS}
       loading={<LoadingSkeleton />}
