@@ -153,3 +153,12 @@ export const mockRuns: RunSummary[] = [
     type: "Run",
   },
 ];
+
+/**
+ * `mockRuns` with a three-week break (8 to 28 Jan), as after an injury: runs
+ * either side of it sit 24 days apart, and a time axis must show that as a
+ * stretch of empty chart rather than butting the two runs together.
+ */
+export const runsWithGap: RunSummary[] = mockRuns.filter(
+  (r) => r.date < "2026-01-08" || r.date > "2026-01-28",
+);

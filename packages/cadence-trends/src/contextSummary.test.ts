@@ -41,6 +41,36 @@ describe("buildCadenceContextSummary", () => {
     );
   });
 
+  it("dates runs that share a name so they can be told apart", () => {
+    const text = buildCadenceContextSummary({
+      weeks: 6,
+      activeView: "overlay",
+      selectedRuns: [
+        run({
+          id: "1",
+          name: "Long Run",
+          date: "2026-01-11",
+          averageCadence: 168,
+        }),
+        run({
+          id: "2",
+          name: "Long Run",
+          date: "2026-01-25",
+          averageCadence: 170,
+        }),
+        run({
+          id: "3",
+          name: "Tempo",
+          date: "2026-01-09",
+          averageCadence: 172,
+        }),
+      ],
+    });
+    expect(text).toBe(
+      "Cadence trends, last 6 weeks. View: per-run overlay. Comparing: Long Run · 11 Jan 26 (168 spm), Long Run · 25 Jan 26 (170 spm), Tempo (172 spm).",
+    );
+  });
+
   it("mentions runs excluded for missing cadence", () => {
     const text = buildCadenceContextSummary({
       weeks: 6,

@@ -1,3 +1,4 @@
+import { overlayRunLabel } from "./normalize";
 import { type RunSummary, type ViewId } from "./types";
 
 const VIEW_LABELS: Record<ViewId, string> = {
@@ -33,7 +34,10 @@ export function buildCadenceContextSummary(
   ];
   if (selectedRuns.length) {
     const runs = selectedRuns
-      .map((r) => `${r.name} (${Math.round(r.averageCadence)} spm)`)
+      .map(
+        (r) =>
+          `${overlayRunLabel(r, selectedRuns)} (${Math.round(r.averageCadence)} spm)`,
+      )
       .join(", ");
     parts.push(`Comparing: ${runs}.`);
   } else {

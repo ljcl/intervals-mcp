@@ -23,10 +23,13 @@ import {
   YAxis,
 } from "recharts";
 import { buildOverlayA11y } from "./a11y";
-import { resampleOverlayRuns } from "./normalize";
+import {
+  assignOverlayColors,
+  overlayRunLabel,
+  resampleOverlayRuns,
+} from "./normalize";
 import styles from "./OverlayView.module.css";
 import {
-  COMPARISON_COLORS,
   type OverlayPoint,
   type RunStreamState,
   type RunSummary,
@@ -116,26 +119,44 @@ export function OverlayView({
     for (const id of selectedRunIds) requestStream(id);
   }, [selectedRunIds, requestStream]);
 
+  // Colours follow selection order, fixed before any stream has loaded, so a
+  // run never changes colour as the others arrive.
+  const colors = useMemo(
+    () => assignOverlayColors(selectedRunIds),
+    [selectedRunIds],
+  );
+
+  // The selected runs the overlay knows about, in selection order. A run
+  // with no stream state yet cannot be named, and is not shown.
+  const selectedRuns = useMemo(
+    () =>
+      [...selectedRunIds].flatMap((id) => {
+        const run = streams.get(id)?.run;
+        return run ? [run] : [];
+      }),
+    [selectedRunIds, streams],
+  );
+
   const runs = useMemo(() => {
     const entries: Array<{
       run: RunSummary;
       points: OverlayPoint[];
       color: string;
+      label: string;
     }> = [];
-    let colorIdx = 0;
     for (const id of selectedRunIds) {
       const state = streams.get(id);
       if (state?.points) {
         entries.push({
           run: state.run,
           points: state.points,
-          color: COMPARISON_COLORS[colorIdx % COMPARISON_COLORS.length]!,
+          color: colors.get(id)!,
+          label: overlayRunLabel(state.run, selectedRuns),
         });
-        colorIdx += 1;
       }
     }
     return entries;
-  }, [selectedRunIds, streams]);
+  }, [selectedRunIds, streams, colors, selectedRuns]);
 
   const failed = useMemo(
     () =>
@@ -189,7 +210,7 @@ export function OverlayView({
 
   const failureMessage =
     failed.length === 1
-      ? `Could not load stream data for ${failed[0]!.run.name}.`
+      ? `Could not load stream data for ${overlayRunLabel(failed[0]!.run, selectedRuns)}.`
       : `Could not load stream data for ${failed.length} of the selected runs.`;
   const retryFailed = () => {
     for (const state of failed) retryStream(state.run.id);
@@ -297,7 +318,7 @@ export function OverlayView({
                 strokeWidth={tokens.strokeWidth}
                 dot={false}
                 hide={hiddenRuns.has(r.run.id)}
-                name={r.run.name}
+                name={r.label}
               />
             ))}
           </ComposedChart>
@@ -318,7 +339,7 @@ export function OverlayView({
         <Legend size={isMobile ? "touch" : "default"}>
           {runs.map((r) => {
             const label = isMobile
-              ? r.run.name
+              ? r.label
               : `${r.run.name} · ${formatShortDate(r.run.date, "short")}`;
             return (
               <LegendItem

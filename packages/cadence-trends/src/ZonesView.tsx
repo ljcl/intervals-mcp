@@ -14,7 +14,7 @@ import {
 } from "recharts";
 import { buildZonesA11y } from "./a11y";
 import styles from "./chartView.module.css";
-import { computeZoneStats } from "./normalize";
+import { buildZoneRows, computeZoneStats } from "./normalize";
 import { type RunSummary } from "./types";
 
 interface ZonesViewProps {
@@ -36,21 +36,7 @@ export function ZonesView({ activities, mode = "desktop" }: ZonesViewProps) {
 
   const zoneStats = useMemo(() => computeZoneStats(activities), [activities]);
 
-  const chartData = useMemo(
-    () =>
-      zoneStats
-        .filter((z) => z.count > 0)
-        .map((z) => ({
-          zone: z.zone.label,
-          mean: z.mean,
-          min: z.min,
-          max: z.max,
-          count: z.count,
-          errorLow: z.mean - z.min,
-          errorHigh: z.max - z.mean,
-        })),
-    [zoneStats],
-  );
+  const chartData = useMemo(() => buildZoneRows(zoneStats), [zoneStats]);
 
   const a11y = useMemo(() => buildZonesA11y(chartData), [chartData]);
 
@@ -111,15 +97,15 @@ export function ZonesView({ activities, mode = "desktop" }: ZonesViewProps) {
             }
           />
           <Bar dataKey="mean" radius={[4, 4, 0, 0]}>
-            {chartData.map((_, i) => (
+            {chartData.map((row) => (
               <Cell
-                key={chartData[i]!.zone}
+                key={row.zone}
                 fill="var(--chart-cadence)"
-                fillOpacity={ZONE_OPACITIES[i] ?? 0.4}
+                fillOpacity={ZONE_OPACITIES[row.zoneIndex] ?? 0.4}
               />
             ))}
             <ErrorBar
-              dataKey="errorHigh"
+              dataKey="error"
               direction="y"
               width={tokens.errorBarWidth}
               stroke="var(--color-text-tertiary)"

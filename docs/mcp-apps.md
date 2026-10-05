@@ -240,6 +240,11 @@ Recharts `Cell` dots carry no tabindex/role/key handling, so the picker is the
 accessible alternative rather than fighting SVG focus. Unselected chips disable
 at the cap so the limit is legible.
 
+Trend uses a time axis (`dateTs`, UTC day), so gaps in running show as gaps. Zone
+whiskers run from min to max (`buildZoneRows`). Overlay colours follow selection
+order (`assignOverlayColors`); runs sharing a name are labelled with their date
+(`overlayRunLabel`).
+
 ### Route Map
 
 The most complex app; defaults to a MapLibre basemap with a pure-SVG offline

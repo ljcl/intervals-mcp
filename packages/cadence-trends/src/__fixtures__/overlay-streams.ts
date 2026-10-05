@@ -51,6 +51,8 @@ function generateOverlayPointsWithGap(
 }
 
 const run10003 = mockRuns.find((r) => r.id === "i10003")!;
+const run10004 = mockRuns.find((r) => r.id === "i10004")!;
+const run10009 = mockRuns.find((r) => r.id === "i10009")!;
 const run10013 = mockRuns.find((r) => r.id === "i10013")!;
 
 const loaded = (run: RunSummary, points: OverlayPoint[]): RunStreamState => ({
@@ -70,6 +72,21 @@ export const mockStreams = new Map<string, RunStreamState>([
   [
     "i10013",
     loaded(run10013, generateOverlayPoints(run10013.distance, 178, 4.0, 50)),
+  ],
+]);
+
+/**
+ * Two runs both named "Long Run" (10004 on 11 Jan, 10009 on 25 Jan): the
+ * tooltip, mobile legend and context summary must tell them apart by date.
+ */
+export const duplicateNameStreams = new Map<string, RunStreamState>([
+  [
+    "i10004",
+    loaded(run10004, generateOverlayPoints(run10004.distance, 168, 5.67, 50)),
+  ],
+  [
+    "i10009",
+    loaded(run10009, generateOverlayPoints(run10009.distance, 170, 5.67, 50)),
   ],
 ]);
 

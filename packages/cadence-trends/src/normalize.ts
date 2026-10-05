@@ -1,5 +1,6 @@
-import { isRunning, smooth } from "@intervals-mcp/data";
+import { formatShortDate, isRunning, smooth } from "@intervals-mcp/data";
 import {
+  COMPARISON_COLORS,
   type OverlayPoint,
   type OverlayStreamData,
   type PaceZone,
@@ -90,14 +91,16 @@ export function computeSummaryStats(
   };
 }
 
-/** Group activities by pace zone and compute per-zone stats */
-export function computeZoneStats(activities: RunSummary[]): Array<{
+export interface ZoneStat {
   zone: PaceZone;
   mean: number;
   min: number;
   max: number;
   count: number;
-}> {
+}
+
+/** Group activities by pace zone and compute per-zone stats */
+export function computeZoneStats(activities: RunSummary[]): ZoneStat[] {
   return PACE_ZONES.map((zone) => {
     const inZone = activities.filter(
       (a) =>
@@ -118,6 +121,65 @@ export function computeZoneStats(activities: RunSummary[]): Array<{
       count: inZone.length,
     };
   });
+}
+
+/** One drawn bar of the pace-zone chart. */
+export interface ZoneRow {
+  zone: string;
+  mean: number;
+  min: number;
+  max: number;
+  count: number;
+  /** Position in PACE_ZONES, so a zone keeps its shade when another is empty. */
+  zoneIndex: number;
+  /** [mean - min, max - mean]: Recharts draws an asymmetric whisker from a pair. */
+  error: [number, number];
+}
+
+/** The non-empty zones as bars, each keeping its own index into PACE_ZONES. */
+export function buildZoneRows(stats: ZoneStat[]): ZoneRow[] {
+  return stats.flatMap((s, zoneIndex) =>
+    s.count > 0
+      ? [
+          {
+            zone: s.zone.label,
+            mean: s.mean,
+            min: s.min,
+            max: s.max,
+            count: s.count,
+            zoneIndex,
+            error: [s.mean - s.min, s.max - s.mean] as [number, number],
+          },
+        ]
+      : [],
+  );
+}
+
+/**
+ * A run's day as a UTC timestamp, read from the leading YYYY-MM-DD so the
+ * viewer's time zone cannot move it.
+ */
+export function dayTimestamp(date: string): number {
+  const [y, m, d] = date.slice(0, 10).split("-").map(Number);
+  return Date.UTC(y!, m! - 1, d!);
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * X-axis domain (and ticks) for the trend timeline. Normally the span of the
+ * runs. When every run falls on one day that span is empty and the time
+ * scale invents sub-day ticks that all read as the same date, so the span
+ * widens by a day each side with one tick on the day.
+ */
+export function trendTimeAxis(timestamps: number[]): {
+  domain: ["dataMin", "dataMax"] | [number, number];
+  ticks?: number[];
+} {
+  const min = Math.min(...timestamps);
+  const max = Math.max(...timestamps);
+  if (min !== max) return { domain: ["dataMin", "dataMax"] };
+  return { domain: [min - DAY_MS, max + DAY_MS], ticks: [min] };
 }
 
 /** Simple linear regression: y = slope * x + intercept */
@@ -280,4 +342,36 @@ export function dotSize(distanceKm: number, maxDistanceKm: number): number {
   if (maxDistanceKm <= 0) return 6;
   const ratio = Math.min(distanceKm / maxDistanceKm, 1);
   return 4 + ratio * 8;
+}
+
+/**
+ * Overlay colour per selected run, by selection order. Colours never depend
+ * on which streams have loaded, so a run keeps its colour as others arrive.
+ */
+export function assignOverlayColors(
+  selectedIds: Iterable<string>,
+): Map<string, string> {
+  const colors = new Map<string, string>();
+  let i = 0;
+  for (const id of selectedIds) {
+    colors.set(id, COMPARISON_COLORS[i % COMPARISON_COLORS.length]!);
+    i += 1;
+  }
+  return colors;
+}
+
+/**
+ * A selected run's display name: its date is added only when another
+ * selected run shares the name, so two "Long Run"s can be told apart.
+ */
+export function overlayRunLabel(
+  run: Pick<RunSummary, "id" | "name" | "date">,
+  selected: ReadonlyArray<Pick<RunSummary, "id" | "name">>,
+): string {
+  const shared = selected.some(
+    (other) => other.id !== run.id && other.name === run.name,
+  );
+  return shared
+    ? `${run.name} · ${formatShortDate(run.date, "short")}`
+    : run.name;
 }

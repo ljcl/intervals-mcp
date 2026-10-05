@@ -3,6 +3,7 @@ import { MobileCardShell } from "@intervals-mcp/ui";
 import { expect, fn, waitFor } from "storybook/test";
 import {
   allFailedStreams,
+  duplicateNameStreams,
   gappyStreams,
   mockStreams,
   partiallyFailedStreams,
@@ -16,6 +17,7 @@ const noop = () => {};
 const meta = preview.meta({ component: OverlayView });
 
 const bothRuns = new Set(["i10003", "i10013"]);
+const twoLongRuns = new Set(["i10004", "i10009"]);
 
 export const EmptyState = meta.story({
   args: {
@@ -207,6 +209,48 @@ export const WithGaps = meta.story({
   },
 });
 
+/**
+ * Two selected runs are both named "Long Run". Each is labelled with its own
+ * date (11 Jan, 25 Jan) so the legend, and the tooltip it shares a name
+ * with, can tell them apart; a run with a unique name stays bare.
+ */
+export const DuplicateNames = meta.story({
+  args: {
+    selectedRunIds: twoLongRuns,
+    streams: duplicateNameStreams,
+    requestStream: noop,
+    retryStream: noop,
+  },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    await waitFor(() =>
+      expect(
+        canvasElement.querySelectorAll("path.recharts-line-curve").length,
+      ).toBe(2),
+    );
+    await expect(
+      canvas.getByRole("button", { name: "Toggle Long Run · 11 Jan 26" }),
+    ).toBeVisible();
+    await expect(
+      canvas.getByRole("button", { name: "Toggle Long Run · 25 Jan 26" }),
+    ).toBeVisible();
+
+    const surface = canvasElement.querySelector(".recharts-wrapper")!;
+    const box = surface.getBoundingClientRect();
+    await userEvent.pointer({
+      target: surface,
+      coords: {
+        clientX: box.left + box.width / 2,
+        clientY: box.top + box.height / 3,
+      },
+    });
+    await waitFor(() => {
+      const tooltip = canvasElement.querySelector(".recharts-tooltip-wrapper");
+      expect(tooltip).toHaveTextContent("Long Run · 11 Jan 26");
+      expect(tooltip).toHaveTextContent("Long Run · 25 Jan 26");
+    });
+  },
+});
+
 export const Mobile = meta.story({
   args: {
     selectedRunIds: bothRuns,
@@ -215,6 +259,23 @@ export const Mobile = meta.story({
     retryStream: noop,
     mode: "mobile",
   },
+  globals: {
+    viewport: { value: "claudeIosCard" },
+  },
+  parameters: { layout: "fullscreen" },
+  decorators: [
+    (StoryFn) => (
+      <MobileCardShell>
+        <div style={{ height: 260 }}>
+          <StoryFn />
+        </div>
+      </MobileCardShell>
+    ),
+  ],
+});
+
+export const DuplicateNamesMobile = DuplicateNames.extend({
+  args: { mode: "mobile" },
   globals: {
     viewport: { value: "claudeIosCard" },
   },

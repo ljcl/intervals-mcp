@@ -1,4 +1,4 @@
-import { formatShortDate } from "@intervals-mcp/data";
+import { formatPace, formatShortDate } from "@intervals-mcp/data";
 import { GRID_DASHARRAY, getChartTokens } from "@intervals-mcp/design-system";
 import { EmptyState } from "@intervals-mcp/ui";
 import { useMemo } from "react";
@@ -15,7 +15,12 @@ import {
 } from "recharts";
 import { buildTrendA11y } from "./a11y";
 import styles from "./chartView.module.css";
-import { dotSize, rollingAverage } from "./normalize";
+import {
+  dayTimestamp,
+  dotSize,
+  rollingAverage,
+  trendTimeAxis,
+} from "./normalize";
 import { SharedTooltip } from "./SharedTooltip";
 import { type RunSummary } from "./types";
 
@@ -63,12 +68,23 @@ export function TrendView({
     () =>
       sorted.map((a, i) => ({
         ...a,
-        dateFormatted: formatShortDate(a.date),
-        dateTs: new Date(a.date).getTime(),
+        dateTs: dayTimestamp(a.date),
         trendCadence: trend[i]?.cadence ?? null,
         size: dotSize(a.distance, maxDistance) * tokens.dotScale,
       })),
     [sorted, trend, maxDistance, tokens.dotScale],
+  );
+
+  // A run with no recorded speed has no pace to plot: it stays a cadence dot
+  // and draws no pace symbol, rather than a point at a fabricated 0.
+  const paceData = useMemo(
+    () => chartData.filter((r) => r.averagePace != null),
+    [chartData],
+  );
+
+  const timeAxis = useMemo(
+    () => trendTimeAxis(chartData.map((r) => r.dateTs)),
+    [chartData],
   );
 
   const a11y = useMemo(() => buildTrendA11y(sorted), [sorted]);
@@ -97,7 +113,14 @@ export function TrendView({
             stroke="var(--color-border-tertiary)"
           />
           <XAxis
-            dataKey="dateFormatted"
+            dataKey="dateTs"
+            type="number"
+            scale="time"
+            domain={timeAxis.domain}
+            ticks={timeAxis.ticks}
+            tickFormatter={(ts: number) =>
+              formatShortDate(new Date(ts).toISOString().slice(0, 10))
+            }
             tick={{
               fontSize: tokens.axisFont,
               fill: "var(--color-text-tertiary)",
@@ -136,13 +159,14 @@ export function TrendView({
             orientation="right"
             reversed
             domain={["auto", "auto"]}
+            tickFormatter={(v: number) => formatPace(v)}
             tick={{
               fontSize: tokens.axisFont,
               fill: "var(--color-text-tertiary)",
             }}
             tickLine={false}
             axisLine={false}
-            width={isMobile ? 34 : 44}
+            width={isMobile ? 40 : 58}
             label={
               isMobile
                 ? undefined
@@ -196,12 +220,13 @@ export function TrendView({
           </Scatter>
           <Scatter
             yAxisId="pace"
+            data={paceData}
             dataKey="averagePace"
             fill="var(--chart-pace)"
             fillOpacity={0.5}
             isAnimationActive={false}
           >
-            {chartData.map((entry) => (
+            {paceData.map((entry) => (
               <Cell
                 key={entry.id}
                 cursor="pointer"

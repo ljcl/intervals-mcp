@@ -1,14 +1,20 @@
+import { formatShortDate } from "@intervals-mcp/data";
 import { describe, expect, it } from "vitest";
 import {
+  assignOverlayColors,
   buildCadenceSubtitle,
+  buildZoneRows,
   computeSummaryStats,
   computeZoneStats,
+  dayTimestamp,
   linearRegression,
+  overlayRunLabel,
   resampleOverlayRuns,
   rollingAverage,
   toOverlayPoints,
+  trendTimeAxis,
 } from "./normalize";
-import { type OverlayPoint, type RunSummary } from "./types";
+import { COMPARISON_COLORS, type OverlayPoint, type RunSummary } from "./types";
 
 const run = (overrides: Partial<RunSummary>): RunSummary => ({
   id: "1",
@@ -337,5 +343,109 @@ describe("buildCadenceSubtitle", () => {
 
   it("still names the window with no runs in it", () => {
     expect(buildCadenceSubtitle(0, 12)).toBe("0 runs · last 12 weeks");
+  });
+});
+
+describe("buildZoneRows", () => {
+  const zone = (label: string) => ({ label, minPace: 0, maxPace: 0 });
+  const stats = [
+    { zone: zone("Threshold"), mean: 0, min: 0, max: 0, count: 0 },
+    { zone: zone("Tempo"), mean: 178, min: 170, max: 190, count: 4 },
+    { zone: zone("Moderate"), mean: 172, min: 168, max: 174, count: 6 },
+    { zone: zone("Easy"), mean: 166, min: 150, max: 171, count: 9 },
+  ];
+
+  it("drops empty zones but keeps each zone's own index", () => {
+    expect(buildZoneRows(stats).map((r) => [r.zone, r.zoneIndex])).toEqual([
+      ["Tempo", 1],
+      ["Moderate", 2],
+      ["Easy", 3],
+    ]);
+  });
+
+  it("draws whiskers from min to max, not a symmetric spread", () => {
+    expect(buildZoneRows(stats)[0]?.error).toEqual([8, 12]);
+  });
+
+  it("keeps the fields the bars and narration read", () => {
+    expect(buildZoneRows(stats)[2]).toMatchObject({
+      zone: "Easy",
+      mean: 166,
+      min: 150,
+      max: 171,
+      count: 9,
+    });
+  });
+
+  it("returns no rows when every zone is empty", () => {
+    expect(buildZoneRows(computeZoneStats([]))).toEqual([]);
+  });
+});
+
+describe("dayTimestamp", () => {
+  it("reads the leading YYYY-MM-DD as a UTC day", () => {
+    expect(dayTimestamp("2026-01-11")).toBe(Date.UTC(2026, 0, 11));
+    expect(dayTimestamp("2026-01-11T07:30:00")).toBe(Date.UTC(2026, 0, 11));
+  });
+
+  it("puts a gap of three weeks three weeks apart", () => {
+    const day = 24 * 60 * 60 * 1000;
+    expect(dayTimestamp("2026-02-01") - dayTimestamp("2026-01-11")).toBe(
+      21 * day,
+    );
+  });
+});
+
+describe("trendTimeAxis", () => {
+  const day = 24 * 60 * 60 * 1000;
+
+  it("spans the runs when they fall on more than one day", () => {
+    expect(
+      trendTimeAxis([dayTimestamp("2026-01-01"), dayTimestamp("2026-01-20")]),
+    ).toEqual({
+      domain: ["dataMin", "dataMax"],
+    });
+  });
+
+  it("widens a one-day span by a day each side with a single tick on it", () => {
+    const ts = dayTimestamp("2026-01-01");
+    expect(trendTimeAxis([ts])).toEqual({
+      domain: [ts - day, ts + day],
+      ticks: [ts],
+    });
+    expect(trendTimeAxis([ts, ts])).toEqual({
+      domain: [ts - day, ts + day],
+      ticks: [ts],
+    });
+  });
+});
+
+describe("assignOverlayColors", () => {
+  it("colours runs by selection order, independent of what has loaded", () => {
+    const colors = assignOverlayColors(["i3", "i1", "i2"]);
+    expect([...colors.entries()]).toEqual([
+      ["i3", COMPARISON_COLORS[0]],
+      ["i1", COMPARISON_COLORS[1]],
+      ["i2", COMPARISON_COLORS[2]],
+    ]);
+  });
+
+  it("wraps past the end of the palette", () => {
+    const ids = COMPARISON_COLORS.map((_, i) => `r${i}`).concat("extra");
+    expect(assignOverlayColors(ids).get("extra")).toBe(COMPARISON_COLORS[0]);
+  });
+});
+
+describe("overlayRunLabel", () => {
+  const a = { id: "i10004", name: "Long Run", date: "2026-01-11" };
+  const b = { id: "i10009", name: "Long Run", date: "2026-01-25" };
+  const c = { id: "i10003", name: "Tempo", date: "2026-01-09" };
+
+  it("adds the date only when another selected run shares the name", () => {
+    expect(overlayRunLabel(a, [a, b, c])).toBe(
+      `Long Run · ${formatShortDate("2026-01-11", "short")}`,
+    );
+    expect(overlayRunLabel(c, [a, b, c])).toBe("Tempo");
+    expect(overlayRunLabel(a, [a, c])).toBe("Long Run");
   });
 });

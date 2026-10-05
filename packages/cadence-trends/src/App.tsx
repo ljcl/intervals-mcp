@@ -112,10 +112,15 @@ export function App({ app, data, mode = "desktop" }: AppProps) {
     return map;
   }, [data.activities, entries]);
 
-  const selectedRuns = useMemo(
-    () => data.activities.filter((a) => selectedRunIds.has(a.id)),
-    [data.activities, selectedRunIds],
-  );
+  // In selection order, so the context summary lists runs in the same order
+  // the overlay colours them.
+  const selectedRuns = useMemo(() => {
+    const byId = new Map(data.activities.map((a) => [a.id, a]));
+    return [...selectedRunIds].flatMap((id) => {
+      const run = byId.get(id);
+      return run ? [run] : [];
+    });
+  }, [data.activities, selectedRunIds]);
 
   // Runs the overlay can plot (it needs a cadence stream); the same pool the
   // Trend/Scatter dots draw from, offered as a keyboard/touch picker.
