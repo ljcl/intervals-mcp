@@ -52,20 +52,30 @@ export interface ViewToolResult {
 }
 
 /**
- * A tool a view exposes. The schema is a zod schema (or any Standard Schema),
- * kept as `unknown` so `packages/ui` need not depend on zod — each app already
- * owns the one it uses.
+ * A tool a view exposes. The schema is declared with zod and kept as `unknown`
+ * here: `registerTool` reads it as a Standard Schema, which zod 4 implements
+ * (validation and the advertised JSON Schema), and this module has no use for
+ * its type.
  */
 export interface ViewToolDefinition {
   name: string;
   /** Model-facing prose: when to call this, and what it does to the view. */
   description: string;
   title?: string;
-  /** Standard Schema for the arguments. */
+  /**
+   * A zod object (`.strict()`, every field `.nullish()`). Every field is
+   * optional because a view tool is a nudge from the model ("show me 12-18
+   * km", "reset the zoom"), and the handler decides which combinations are
+   * meaningful. `.strict()` rejects an unknown key instead of letting a
+   * model's mistake look like success.
+   */
   inputSchema: unknown;
 }
 
-/** The live half, installed by the component that owns the state. */
+/**
+ * The live half, installed by the component that owns the state. Receives the
+ * validated arguments with null-valued keys already removed.
+ */
 export type ViewToolHandler = (
   args: Record<string, unknown>,
 ) => ViewToolResult | Promise<ViewToolResult>;
@@ -76,6 +86,11 @@ export type ViewToolHandler = (
  * and the model should be told to retry, not handed a stack trace.
  */
 const NOT_READY = "The view is still loading and cannot be adjusted yet.";
+
+/** A view tool is a nudge: null from a model means "not given" (#68). */
+function withoutNulls(args: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(args).filter(([, v]) => v !== null));
+}
 
 /**
  * Holds the declared tools and the handlers installed against them. One per
@@ -164,7 +179,7 @@ export class ViewToolRegistry {
   ): Promise<ViewToolResult> {
     const handler = this.handlers.get(name);
     if (!handler) return { text: NOT_READY, isError: true };
-    return await handler(args);
+    return await handler(withoutNulls(args));
   }
 }
 

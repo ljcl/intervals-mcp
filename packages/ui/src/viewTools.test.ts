@@ -8,16 +8,25 @@
  */
 import { type App } from "@modelcontextprotocol/ext-apps";
 import { describe, expect, it } from "vitest";
-import { optionalObjectSchema } from "./standardSchema";
+import { z } from "zod";
 import { type ViewToolDefinition, ViewToolRegistry } from "./viewTools";
+
+/** The shape every view tool declares: strict, every field nullish. */
+const SCHEMA = z
+  .object({
+    fromKm: z.number().min(0).nullish().describe("Start, km."),
+    reset: z.boolean().nullish().describe("Show the whole route."),
+  })
+  .strict();
 
 const DEFINITION: ViewToolDefinition = {
   name: "set-viewport",
   description: "Frame a stretch of the course.",
-  inputSchema: optionalObjectSchema({
-    fromKm: { type: "number", description: "Start, km.", minimum: 0 },
-  }),
+  inputSchema: SCHEMA,
 };
+
+/** What `registerTool` does with the schema it is handed. */
+const standard = (schema: unknown) => (schema as typeof SCHEMA)["~standard"];
 
 /** An App stand-in capturing what registerTool was handed. */
 function fakeApp() {
@@ -135,64 +144,96 @@ describe("ViewToolRegistry", () => {
       content: [{ text: "This route has no recorded distances." }],
     });
   });
-});
 
-describe("optionalObjectSchema", () => {
-  const schema = optionalObjectSchema({
-    fromKm: { type: "number", description: "Start, km.", minimum: 0 },
-    reset: { type: "boolean", description: "Show the whole route." },
-  });
-  const std = schema["~standard"];
+  it("hands the host a strict JSON Schema built from the zod schema", () => {
+    const { app, registered } = fakeApp();
+    new ViewToolRegistry().register(app, [DEFINITION]);
 
-  it("advertises a JSON Schema the SDK can serialize", () => {
-    // Without `jsonSchema` the SDK throws rather than falling back.
-    expect(std.jsonSchema.input()).toEqual({
-      type: "object",
-      properties: {
-        fromKm: { type: "number", description: "Start, km.", minimum: 0 },
-        reset: { type: "boolean", description: "Show the whole route." },
-      },
-      additionalProperties: false,
+    // Without `jsonSchema` the SDK throws rather than falling back; zod 4
+    // supplies it, so this is the document the host actually receives.
+    const json = standard(registered[0]?.config.inputSchema).jsonSchema.input({
+      target: "draft-2020-12",
+    }) as {
+      type: string;
+      additionalProperties: boolean;
+      required?: string[];
+      properties: Record<string, Record<string, unknown>>;
+    };
+
+    expect(json).toMatchObject({ type: "object", additionalProperties: false });
+    // Nothing required: a view tool is a nudge, not a form.
+    expect(json.required).toBeUndefined();
+    expect(Object.keys(json.properties)).toEqual(["fromKm", "reset"]);
+    expect(json.properties.fromKm).toMatchObject({
+      description: "Start, km.",
+      anyOf: [{ type: "number", minimum: 0 }, { type: "null" }],
+    });
+    expect(json.properties.reset).toMatchObject({
+      description: "Show the whole route.",
     });
   });
 
-  it("requires nothing, so a partial nudge from the model is valid", () => {
-    expect(std.validate({})).toEqual({ value: {} });
-    expect(std.validate(undefined)).toEqual({ value: {} });
-    expect(std.validate({ reset: true })).toEqual({ value: { reset: true } });
-  });
-
-  it("accepts a number the host stringified", () => {
-    expect(std.validate({ fromKm: "12.5" })).toEqual({
-      value: { fromKm: 12.5 },
-    });
-  });
-
-  it("rejects a value that is not a number at all", () => {
-    expect(std.validate({ fromKm: "soon" })).toMatchObject({
-      issues: [{ message: "expected a number", path: ["fromKm"] }],
-    });
-  });
-
-  it("enforces a minimum", () => {
-    expect(std.validate({ fromKm: -4 })).toMatchObject({
-      issues: [{ message: "must be at least 0", path: ["fromKm"] }],
-    });
-  });
-
-  it("rejects an unknown argument rather than ignoring it", () => {
+  it("rejects an unknown argument rather than ignoring it", async () => {
     // Silently dropping it would make a model's mistake look like success.
-    expect(std.validate({ toKm: 5 })).toMatchObject({
-      issues: [{ message: "unknown argument", path: ["toKm"] }],
+    const result = await standard(SCHEMA).validate({ toKm: 5 });
+
+    expect(result).toMatchObject({
+      issues: [{ code: "unrecognized_keys", keys: ["toKm"] }],
     });
   });
 
-  it("rejects a non-object", () => {
-    expect(std.validate([1, 2])).toMatchObject({ issues: expect.any(Array) });
-    expect(std.validate("nope")).toMatchObject({ issues: expect.any(Array) });
+  it("accepts a null field and still enforces a minimum", async () => {
+    expect(
+      await standard(SCHEMA).validate({ fromKm: null, reset: null }),
+    ).toEqual({ value: { fromKm: null, reset: null } });
+    expect(await standard(SCHEMA).validate({})).toEqual({ value: {} });
+
+    const tooSmall = await standard(SCHEMA).validate({ fromKm: -4 });
+    expect(tooSmall).toMatchObject({ issues: [{ path: ["fromKm"] }] });
   });
 
-  it("treats an explicit null field as absent", () => {
-    expect(std.validate({ fromKm: null })).toEqual({ value: {} });
+  it("hands a handler null-valued arguments as absent", async () => {
+    // Models send null for a field they are leaving out (#68); the handler
+    // only ever has to ask "was it given".
+    const registry = new ViewToolRegistry();
+    const seen: unknown[] = [];
+    registry.setHandler("set-viewport", (args) => {
+      seen.push(args);
+      return { text: "ok" };
+    });
+
+    await registry.invoke("set-viewport", { fromKm: null, toKm: 2 });
+
+    expect(seen).toEqual([{ toKm: 2 }]);
+    expect(Object.keys(seen[0] as object)).toEqual(["toKm"]);
+  });
+
+  it("strips nulls on the path the host's call takes too", async () => {
+    const { app, registered } = fakeApp();
+    const registry = new ViewToolRegistry();
+    registry.register(app, [DEFINITION]);
+    const seen: unknown[] = [];
+    registry.setHandler("set-viewport", (args) => {
+      seen.push(args);
+      return { text: "ok" };
+    });
+
+    await registered[0]!.cb({ fromKm: null, reset: true });
+
+    expect(seen).toEqual([{ reset: true }]);
+    expect(Object.keys(seen[0] as object)).toEqual(["reset"]);
+  });
+
+  it("keeps a falsy value that is not null", async () => {
+    const registry = new ViewToolRegistry();
+    const seen: unknown[] = [];
+    registry.setHandler("set-viewport", (args) => {
+      seen.push(args);
+      return { text: "ok" };
+    });
+
+    await registry.invoke("set-viewport", { fromKm: 0, reset: false });
+
+    expect(seen).toEqual([{ fromKm: 0, reset: false }]);
   });
 });

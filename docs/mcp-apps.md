@@ -188,9 +188,10 @@ anyway (capabilities arrive after registration must have happened), and none is
 needed — registering pre-connect sends nothing, so an unsupporting host sees
 one extra key it already ignores.
 
-Schemas come from `optionalObjectSchema` (`packages/ui/src/standardSchema.ts`),
-a small Standard Schema rather than a zod dependency in single-file bundles;
-take the dependency instead of growing it. Every field is optional because a
+Schemas are zod objects (`.strict()`, every field `.nullish()`): zod 4
+implements Standard JSON Schema, which `registerTool` needs, and already ships
+in every app through ext-apps. The registry drops null-valued arguments before
+the handler runs, so null means not given. Every field is optional because a
 view tool is a nudge. View tools carry `readOnlyHint: true` **with
 `destructiveHint: false` stated explicitly**. Each tool echoes its effect back
 through the existing `useModelContextSync` summary.

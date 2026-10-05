@@ -5,7 +5,6 @@ import {
   ErrorState,
   type HostCtx,
   LoadingState,
-  optionalObjectSchema,
   Skeleton,
   useServerToolData,
   type ViewToolDefinition,
@@ -14,6 +13,7 @@ import {
 import { type useApp } from "@modelcontextprotocol/ext-apps/react";
 import { StrictMode, useMemo } from "react";
 import { createRoot } from "react-dom/client";
+import { z } from "zod";
 import { ActivityChart } from "./ActivityChart";
 import { extractMeta, toChartData, toLapData } from "./normalize";
 import { type ActivityStreamData } from "./types";
@@ -34,34 +34,38 @@ const VIEW_TOOLS: ViewToolDefinition[] = [
     title: "Zoom the chart",
     description:
       "Zoom the activity chart's x-axis to one window of the activity, given either in kilometres from the start or in seconds of elapsed time. Use it to put the part of the run being discussed on screen — a surge, a climb, an interval — rather than describing where to look. Pass reset to show the whole activity again.",
-    inputSchema: optionalObjectSchema({
-      fromKm: {
-        type: "number",
-        description:
-          "Start of the window, in km from the start. Use with toKm for a distance window.",
-        minimum: 0,
-      },
-      toKm: {
-        type: "number",
-        description: "End of the window, in km from the start.",
-        minimum: 0,
-      },
-      fromSeconds: {
-        type: "number",
-        description:
-          "Start of the window, in seconds of elapsed time. Use with toSeconds for a time window.",
-        minimum: 0,
-      },
-      toSeconds: {
-        type: "number",
-        description: "End of the window, in seconds of elapsed time.",
-        minimum: 0,
-      },
-      reset: {
-        type: "boolean",
-        description: "Zoom back out to the whole activity.",
-      },
-    }),
+    inputSchema: z
+      .object({
+        fromKm: z
+          .number()
+          .min(0)
+          .nullish()
+          .describe(
+            "Start of the window, in km from the start. Use with toKm for a distance window.",
+          ),
+        toKm: z
+          .number()
+          .min(0)
+          .nullish()
+          .describe("End of the window, in km from the start."),
+        fromSeconds: z
+          .number()
+          .min(0)
+          .nullish()
+          .describe(
+            "Start of the window, in seconds of elapsed time. Use with toSeconds for a time window.",
+          ),
+        toSeconds: z
+          .number()
+          .min(0)
+          .nullish()
+          .describe("End of the window, in seconds of elapsed time."),
+        reset: z
+          .boolean()
+          .nullish()
+          .describe("Zoom back out to the whole activity."),
+      })
+      .strict(),
   },
 ];
 

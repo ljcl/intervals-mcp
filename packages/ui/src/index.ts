@@ -34,11 +34,6 @@ export {
   type SummaryBarProps,
   type SummaryStat,
 } from "./SummaryBar";
-export {
-  type MinimalStandardSchema,
-  optionalObjectSchema,
-  type SchemaField,
-} from "./standardSchema";
 export { Tooltip, TooltipEntry } from "./Tooltip";
 export {
   detectMobile,

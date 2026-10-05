@@ -5,7 +5,6 @@ import {
   ErrorState,
   type HostCtx,
   LoadingState,
-  optionalObjectSchema,
   Skeleton,
   useServerToolData,
   type ViewToolDefinition,
@@ -14,6 +13,7 @@ import {
 import { type useApp } from "@modelcontextprotocol/ext-apps/react";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { z } from "zod";
 import { RouteMap } from "./RouteMap";
 import { type RouteMapData, type ToolArgs } from "./types";
 import "./global.css";
@@ -29,24 +29,28 @@ const VIEW_TOOLS: ViewToolDefinition[] = [
     title: "Frame part of the route",
     description:
       "Zoom the route map to a stretch of the course, given in kilometres from the start. Use it to show the user where on the route something happens — a climb, a split, a segment — instead of only describing it. Omit both bounds and pass reset to show the whole route again.",
-    inputSchema: optionalObjectSchema({
-      fromKm: {
-        type: "number",
-        description:
-          "Start of the stretch, in km from the start. Defaults to the start of the route.",
-        minimum: 0,
-      },
-      toKm: {
-        type: "number",
-        description:
-          "End of the stretch, in km from the start. Defaults to the end of the route.",
-        minimum: 0,
-      },
-      reset: {
-        type: "boolean",
-        description: "Zoom back out to the whole route.",
-      },
-    }),
+    inputSchema: z
+      .object({
+        fromKm: z
+          .number()
+          .min(0)
+          .nullish()
+          .describe(
+            "Start of the stretch, in km from the start. Defaults to the start of the route.",
+          ),
+        toKm: z
+          .number()
+          .min(0)
+          .nullish()
+          .describe(
+            "End of the stretch, in km from the start. Defaults to the end of the route.",
+          ),
+        reset: z
+          .boolean()
+          .nullish()
+          .describe("Zoom back out to the whole route."),
+      })
+      .strict(),
   },
 ];
 
