@@ -436,16 +436,18 @@ describe("input naming scheme (#141)", () => {
     expect(structured.target?.distance).toBe("half marathon");
   });
 
-  it("reads weeks: 6 on get-cadence-trend-data as days: 42", async () => {
+  // 4, not the default 6: zod strips an unknown `weeks`, so a value equal to
+  // the default would pass with the alias rule deleted.
+  it("reads weeks: 4 on get-cadence-trend-data as days: 28", async () => {
     mockedIntervalsList.mockResolvedValueOnce([]);
 
     const result = await dispatchToolCall("get-cadence-trend-data", {
-      weeks: 6,
+      weeks: 4,
     });
 
     expect(result.isError).toBeUndefined();
-    expect(JSON.parse(result.content[0]?.text ?? "").days).toBe(42);
-    expect(windowDays(mockedIntervalsList.mock.calls[0]?.[1])).toBe(42);
+    expect(JSON.parse(result.content[0]?.text ?? "").days).toBe(28);
+    expect(windowDays(mockedIntervalsList.mock.calls[0]?.[1])).toBe(28);
   });
 });
 
