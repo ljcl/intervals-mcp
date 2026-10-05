@@ -30,6 +30,7 @@ export default defineConfig({
         "src/useModelContextSync.ts",
         "src/useMobileMode.ts",
         "src/keyedFetchStore.ts",
+        "src/latestPin.ts",
         "src/serverToolResult.ts",
       ],
     },

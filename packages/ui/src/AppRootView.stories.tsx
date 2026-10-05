@@ -18,7 +18,7 @@ const meta = preview.meta({
 });
 
 interface ToolArgs {
-  activity_id?: string;
+  id?: string;
 }
 
 /** Stand-in for the connected app; the ready branch only passes it through. */
@@ -46,6 +46,7 @@ const base = {
   // These branches all render before an app is connected, so there is no
   // registry to install view tools into (ljcl/strava-mcp#278).
   viewToolRegistry: null,
+  pendingLatest: false,
 } as const;
 
 /** Host has not sent tool input yet: skeleton, no error. */
@@ -111,7 +112,7 @@ export const Ready = meta.story({
     <AppRootView<ToolArgs>
       {...base}
       app={connectedApp}
-      toolArgs={{ activity_id: "123" }}
+      toolArgs={{ id: "123" }}
       connectError={null}
       argsError={null}
     />
@@ -119,5 +120,27 @@ export const Ready = meta.story({
   play: async ({ canvas }) => {
     await expect(canvas.getByText("Morning Run")).toBeInTheDocument();
     await expect(canvas.queryByRole("status")).toBeNull();
+  },
+});
+
+/**
+ * Opened with `id: "latest"` and the tool result naming the run has not
+ * arrived: still the skeleton, so the content does not fetch the word moments
+ * before the pin lands.
+ */
+export const PinningLatest = meta.story({
+  render: () => (
+    <AppRootView<ToolArgs>
+      {...base}
+      app={connectedApp}
+      toolArgs={{ id: "latest" }}
+      pendingLatest
+      connectError={null}
+      argsError={null}
+    />
+  ),
+  play: async ({ canvas }) => {
+    await expect(canvas.getByRole("status")).toBeInTheDocument();
+    await expect(canvas.queryByText("Morning Run")).toBeNull();
   },
 });

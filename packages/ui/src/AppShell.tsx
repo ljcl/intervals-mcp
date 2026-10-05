@@ -14,6 +14,7 @@ import {
 } from "react";
 import styles from "./AppShell.module.css";
 import { ErrorState } from "./ErrorState";
+import { useLatestPin } from "./latestPin";
 import { type HostCtx, useMobileMode } from "./useMobileMode";
 import { type ViewToolDefinition, ViewToolRegistry } from "./viewTools";
 
@@ -105,8 +106,19 @@ export interface HostRoot<TArgs> {
   hostCtx: HostCtx;
   /** Resolved layout mode from `useMobileMode`. */
   mode: AppMode;
-  /** Parsed tool args, or `null` until the host sends usable input. */
+  /**
+   * Parsed tool args, or `null` until the host sends usable input. An id the
+   * host sent as `"latest"` is replaced by the id the tool result says it
+   * resolved to, once that result arrives.
+   */
   toolArgs: TArgs | null;
+  /**
+   * True while an id argument is `"latest"` and the tool result naming the
+   * run has not arrived (for at most `LATEST_PIN_WAIT_MS`). `AppRootView`
+   * keeps the skeleton up meanwhile, so no app fetches the word itself
+   * moments before the pin lands.
+   */
+  pendingLatest: boolean;
   /** Connection error from the initialization handshake, if any. */
   connectError: Error | null;
   /**
@@ -135,7 +147,8 @@ export function useHostRoot<TArgs>({
   capabilities = DEFAULT_CAPABILITIES,
   viewTools,
 }: UseHostRootOptions<TArgs>): HostRoot<TArgs> {
-  const [toolArgs, setToolArgs] = useState<TArgs | null>(null);
+  const [parsedArgs, setParsedArgs] = useState<TArgs | null>(null);
+  const { toolArgs, pendingLatest, onToolResult } = useLatestPin(parsedArgs);
   const [argsError, setArgsError] = useState<string | null>(null);
   const [hostCtx, setHostCtx] = useState<HostCtx>({});
 
@@ -163,12 +176,15 @@ export function useHostRoot<TArgs>({
           missingArgsMessage,
         );
         if (outcome.status === "ready") {
-          setToolArgs(outcome.toolArgs);
+          setParsedArgs(outcome.toolArgs);
           setArgsError(null);
         } else if (outcome.status === "unusable") {
           setArgsError(outcome.message);
         }
       };
+      // Registered before connect, like `ontoolinput`, so the result that
+      // names a "latest" run is not missed.
+      createdApp.ontoolresult = onToolResult;
       createdApp.onerror = console.error;
     },
   });
@@ -198,6 +214,7 @@ export function useHostRoot<TArgs>({
     hostCtx,
     mode,
     toolArgs,
+    pendingLatest,
     connectError,
     argsError,
     viewToolRegistry: registryRef.current,
@@ -354,7 +371,8 @@ export interface AppRootViewProps<TArgs> extends HostRoot<TArgs> {
 
 /**
  * The pre-content state machine, as a pure function of `HostRoot`: connect
- * error, unusable input, waiting for input, connected. Split from `AppRoot`
+ * error, unusable input, waiting for input (including the pin for
+ * `"latest"`), connected. Split from `AppRoot`
  * so every branch is renderable without a live host — the story smoke tests
  * and their axe checks are what hold the convention in place.
  *
@@ -366,6 +384,7 @@ export function AppRootView<TArgs>({
   hostCtx,
   mode,
   toolArgs,
+  pendingLatest,
   connectError,
   argsError,
   viewToolRegistry,
@@ -388,7 +407,9 @@ export function AppRootView<TArgs>({
       </AppShell>
     );
   }
-  if (!app || toolArgs === null) {
+  // Waiting for the tool result that pins "latest" is still waiting for
+  // input: the content (and so its fetch) must not start with the word.
+  if (!app || toolArgs === null || pendingLatest) {
     return (
       <AppShell hostCtx={hostCtx} mode={mode}>
         {loading}
