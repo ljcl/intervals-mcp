@@ -37,7 +37,7 @@ function Swatch({ variable }: { variable: string }) {
         style={{
           fontSize: "var(--font-text-xs-size)",
           // Secondary, not tertiary: this is the swatch's only label, and
-          // tertiary at 12px falls under 4.5:1 in some host palettes (#286).
+          // tertiary at 12px falls under 4.5:1 in some host palettes (ljcl/strava-mcp#286).
           color: "var(--color-text-secondary)",
         }}
       >

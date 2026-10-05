@@ -115,7 +115,7 @@ describe("buildChartA11yDescription", () => {
     });
     expect(desc).toContain("No metrics are currently shown.");
   });
-  it("names a metric recorded but not drawn at this size (#256)", () => {
+  it("names a metric recorded but not drawn at this size (ljcl/strava-mcp#256)", () => {
     const desc = buildChartA11yDescription({
       meta: runMeta,
       data: runData,

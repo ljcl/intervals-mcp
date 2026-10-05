@@ -84,7 +84,7 @@ describe("KeyedFetchStore", () => {
     expect(calls).toEqual(["42"]);
   });
 
-  it("records the failure and does not refetch a failed key (#250)", async () => {
+  it("records the failure and does not refetch a failed key (ljcl/strava-mcp#250)", async () => {
     const { fetcher, calls, reject } = deferredFetcher();
     const store = new KeyedFetchStore(fetcher);
 

@@ -1,5 +1,5 @@
 /**
- * Success and error paths for the MCP App tool handlers in server.ts (#115).
+ * Success and error paths for the MCP App tool handlers in server.ts (ljcl/strava-mcp#115).
  * Table-driven through dispatchToolCall, the same path the host uses, with
  * the intervals.icu client mocked. The missing-key table pins the regression
  * where those early returns lacked `isError: true` and surfaced as ordinary
@@ -33,7 +33,7 @@ vi.mock("./intervalsClient", async (importOriginal) => {
   };
 });
 
-// dispatchToolCall resolves the API key once per call (#240), so the
+// dispatchToolCall resolves the API key once per call (ljcl/strava-mcp#240), so the
 // key source is mocked here rather than the env var each handler used to read.
 vi.mock("./config", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./config")>();
@@ -100,7 +100,7 @@ describe("app handlers with no key configured", () => {
       const result = await dispatchToolCall(name, args);
 
       expect(result.isError).toBe(true);
-      // One message for every tool, naming the one recovery (#240).
+      // One message for every tool, naming the one recovery (ljcl/strava-mcp#240).
       expect(result.content[0]?.text).toContain("INTERVALS_API_KEY");
     },
   );
@@ -296,7 +296,7 @@ describe("cadence trends handlers", () => {
     expect(text).toContain("Excluded (no cadence recorded): 1");
   });
 
-  it("a view-/get-…-data pair shares one local-date window (#329)", async () => {
+  it("a view-/get-…-data pair shares one local-date window (ljcl/strava-mcp#329)", async () => {
     // The two calls of one app open land seconds apart. Cadence-trends now
     // windows on calendar dates (`todayLocal`), which are already the same
     // for calls seconds apart on the same day, so the pair builds the same
@@ -317,7 +317,7 @@ describe("cadence trends handlers", () => {
     }
   });
 
-  it("the fitness-trend pair shares both window bounds (#329)", async () => {
+  it("the fitness-trend pair shares both window bounds (ljcl/strava-mcp#329)", async () => {
     // The two calls of one app open land seconds apart. Unlike the epoch
     // `after`/`before` the other apps quantize, fitness-trend windows on
     // calendar dates (`todayLocal`), which are already the same for calls

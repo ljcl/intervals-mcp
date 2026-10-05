@@ -1,5 +1,5 @@
 /**
- * The MCP protocol surface, asserted through the real server (#270).
+ * The MCP protocol surface, asserted through the real server (ljcl/strava-mcp#270).
  *
  * Every other server suite enters below the protocol layer — calling
  * `dispatchToolCall` directly, or building a throwaway `new Server()` with no
@@ -9,7 +9,7 @@
  * template would all ship green.
  *
  * So these drive real requests through the endpoint and assert the JSON that comes back. The
- * suite is deliberately the last piece of epic #284, so it asserts the
+ * suite is deliberately the last piece of epic ljcl/strava-mcp#284, so it asserts the
  * finished surface — the output schemas and the progress plumbing — rather
  * than being amended three times on the way.
  */
@@ -23,7 +23,7 @@ vi.mock("./intervalsClient", async (importOriginal) => {
   return { ...actual, getActivity: vi.fn() };
 });
 
-// Dispatch resolves the key before any handler runs (#240), so without this
+// Dispatch resolves the key before any handler runs (ljcl/strava-mcp#240), so without this
 // an end-to-end tools/call reads process.env directly.
 vi.mock("./config", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./config")>();
@@ -298,7 +298,7 @@ describe("tools/list", () => {
     // Advertising `type: "string"` is only half the convention:
     // `intervalsActivityIdInput` also accepts a safe-integer number at
     // runtime and normalises it, so a host emitting `routeId: 12345` is not
-    // left stuck on "expected string, received number" (#282). A hand-rolled
+    // left stuck on "expected string, received number" (ljcl/strava-mcp#282). A hand-rolled
     // `z.string().regex(/^\d+$/)` serialises to the same shape while
     // rejecting that call, so the hint appended to every id's description is
     // what distinguishes it here: `intervalsActivityIdInput`'s own hint,
@@ -353,7 +353,7 @@ describe("tools/call", () => {
       arguments: { id: "229781" },
     });
 
-    // The point of #243: a caller chains on fields instead of regexing ids
+    // The point of ljcl/strava-mcp#243: a caller chains on fields instead of regexing ids
     // out of prose. That only holds if the SDK actually serialises them.
     expect(result?.structuredContent).toMatchObject({ activity_id: "229781" });
   });

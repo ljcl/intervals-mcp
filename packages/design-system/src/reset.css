@@ -1,4 +1,4 @@
-/* Shared MCP App reset (#116): every app's global.css imports this instead
+/* Shared MCP App reset (ljcl/strava-mcp#116): every app's global.css imports this instead
  * of carrying an identical copy. Pulls the design tokens along so apps need
  * exactly one import. */
 @import "./tokens.css";

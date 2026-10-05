@@ -1,5 +1,5 @@
 /**
- * Static-markup assertions on the ARIA wiring (#62): the SVG grid's
+ * Static-markup assertions on the ARIA wiring (ljcl/strava-mcp#62): the SVG grid's
  * title/desc pair and the basemap view's visually-hidden narration. SSR
  * render — effects never run, so no MapLibre map is created — but the
  * module-level worker setup still needs the maplibre imports mocked.

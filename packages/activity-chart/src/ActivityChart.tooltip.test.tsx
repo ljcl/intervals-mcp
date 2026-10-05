@@ -1,5 +1,5 @@
 /**
- * Regression for #134: the tooltip filtered on falsy values, so legitimate
+ * Regression for ljcl/strava-mcp#134: the tooltip filtered on falsy values, so legitimate
  * zero readings (0 W coasting, 0% grade, cadence 0) vanished while their
  * lines still rendered.
  */

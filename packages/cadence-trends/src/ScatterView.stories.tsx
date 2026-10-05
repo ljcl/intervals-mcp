@@ -20,7 +20,7 @@ const runMarks = (root: HTMLElement) =>
   );
 
 /**
- * Click-to-select (#275): the dots are the only interaction in this view
+ * Click-to-select (ljcl/strava-mcp#275): the dots are the only interaction in this view
  * and were render-only smoke tested, so an id mismatch could not fail CI.
  */
 export const Default = meta.story({

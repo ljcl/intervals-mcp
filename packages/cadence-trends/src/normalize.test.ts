@@ -45,7 +45,7 @@ describe("resampleOverlayRuns", () => {
     expect(rows).toEqual([]);
   });
 
-  // Regression for #110: the old index merge plotted every run's cadence
+  // Regression for ljcl/strava-mcp#110: the old index merge plotted every run's cadence
   // against the last-iterated run's x values, misaligning runs at
   // different speeds.
   it("keeps each run aligned to its own x values on the shared grid", () => {
@@ -75,7 +75,7 @@ describe("resampleOverlayRuns", () => {
     expect(at2500m.cadence_7).toBeCloseTo(125);
   });
 
-  // Regression for #110: past a shorter run's end the old merge clamped to
+  // Regression for ljcl/strava-mcp#110: past a shorter run's end the old merge clamped to
   // its final point, fabricating a flat tail out to the longest run.
   it("leaves shorter runs undefined past their own extent", () => {
     const long = { id: "1", points: makePoints(11, 10, 60, () => 180) };

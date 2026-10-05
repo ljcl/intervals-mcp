@@ -758,7 +758,7 @@ describe("updateActivityTool.execute", () => {
 
 // Driven through dispatchToolCall (the path a host actually takes) rather
 // than a direct tool.execute() call, so the structured payload is validated
-// exactly as advertised (#243).
+// exactly as advertised (ljcl/strava-mcp#243).
 describe("update-activity via dispatchToolCall", () => {
   it("returns the intervals.icu activity as freshly re-read", async () => {
     mockedGetActivity.mockResolvedValueOnce(activity());

@@ -69,7 +69,7 @@ descriptions.
 | `get-activity-laps` | Laps of an activity, derived from its intervals, with sport-aware pace/speed, GAP, HR, power, cadence |
 | `get-running-summary` | get-activity's detail fields for a run plus cadence, HR zone, and running-dynamics assessments, and a lap breakdown |
 | `get-running-dynamics` | Ground contact time, vertical oscillation/ratio, step length, and cadence for a run, with VO/GCT target assessments and a per-WORK-interval breakdown |
-| `get-activity-zones` | Time spent in each HR and power zone for an activity, from the activity's own recorded zone bounds |
+| `get-activity-zones` | Time spent in each HR zone for an activity, from the activity's own recorded zone bounds |
 | `compare-activities` | Compare two activities side-by-side: pace, HR, cadence, load, and running dynamics, plus activity2-activity1 differences and an efficiency verdict |
 | `get-hill-analysis` | Climb/descent detection with GAP and early-vs-late climb effort drift |
 | `get-split-analysis` | Even km splits with a two-halves pacing verdict stated on the clock and grade-adjusted |
@@ -216,8 +216,8 @@ full list. One `get-activity(..., { intervals: true })` call; no streams.
 `get-activity-zones` and the `view-activity-zones`/`get-activity-zones-data`
 MCP App share one mapper (`mapIntervalsZones`): heart rate from the
 activity's own `icu_hr_zones` (upper bounds, zone 1's lower bound is always
-0) and `icu_hr_zone_times`, power from `icu_power_zones` and `icu_zone_times`
-only when both are present. Unlike get-activity's `hr_zones`, there is no
+0) and `icu_hr_zone_times`. Power zones are dropped for now (docs/api-notes.md).
+Unlike get-activity's `hr_zones`, there is no
 sport-settings fallback here; pace zones are out of scope (Phase 4). Heart
 rate is omitted, with a warning in the text, when the activity recorded
 bounds and zone times with different zone counts. The app payload carries
@@ -230,9 +230,11 @@ output can never drift. Each side reports the same fields `get-activity`
 does for one activity: `pace_min_per_km`/`gap_min_per_km` as `m:ss` strings
 (`gap_source: "intervals.icu"`), training load (`icu_training_load`),
 decoupling, efficiency factor, and running-dynamics averages when the
-device recorded them. Differences are derived from each activity's raw
-distance/time/HR/cadence, never from the rounded or formatted per-side
-fields; the pace delta renders as `pace_delta_min_per_km` (signed `m:ss`)
+device recorded them. The pace delta comes from each activity's raw
+distance and moving time, never from the formatted per-side paces, so two
+roundings cannot compound; the distance, HR, cadence and elevation
+differences subtract the per-side summary values (off by at most one
+rounding step). The pace delta renders as `pace_delta_min_per_km` (signed `m:ss`)
 plus `pace_delta_sec_per_km` (the underlying signed seconds) and
 `pace_delta_interpretation`. The `efficiency` block is the running efficiency
 factor, metres per minute per heartbeat (higher is better), from the same
@@ -566,9 +568,8 @@ and lists the available gear ids and names; a retired gear id is accepted
 with a warning. Gear can be switched but not cleared; intervals.icu ignores
 a null gear id (docs/api-notes.md). Name, description, and RPE writes were
 live-verified 2026-09-25 (docs/api-notes.md); `feel` is 1 to 5 on
-intervals.icu's scale, 1 the strongest feeling and 5 the weakest. The write
-check did not exercise `feel`, but its scale was verified separately in the
-intervals.icu web UI (docs/api-notes.md). A
+intervals.icu's scale, 1 the strongest feeling and 5 the weakest (verified
+2026-09-26 in the intervals.icu web UI, docs/api-notes.md). A
 request with nothing left to change after diffing against the
 current activity reports "no change" and sends no PUT. Any field whose
 re-read value does not match what was sent (e.g. gear not applied) adds a

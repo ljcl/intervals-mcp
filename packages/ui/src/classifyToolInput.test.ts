@@ -29,7 +29,7 @@ describe("classifyToolInput", () => {
     });
   });
 
-  it("reports unusable input against the app's own message (#249)", () => {
+  it("reports unusable input against the app's own message (ljcl/strava-mcp#249)", () => {
     const outcome = classifyToolInput(
       {},
       requireActivityId,

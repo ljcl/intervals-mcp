@@ -24,7 +24,7 @@ export const Dark = meta.story({
 });
 
 /**
- * A long server-side scan reports what it is doing (#279). The line sits
+ * A long server-side scan reports what it is doing (ljcl/strava-mcp#279). The line sits
  * inside the same status region as the label, so each update is announced.
  */
 export const WithProgress = meta.story({

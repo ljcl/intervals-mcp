@@ -67,7 +67,7 @@ describe("buildTrendA11y", () => {
     expect(desc).toContain("No periods are shaded");
   });
 
-  it("drops hidden series, the hidden plan, and hidden band kinds (#328)", () => {
+  it("drops hidden series, the hidden plan, and hidden band kinds (ljcl/strava-mcp#328)", () => {
     const desc = buildTrendA11y(mockFitnessTrendData, {
       showCtl: false,
       showAtl: true,

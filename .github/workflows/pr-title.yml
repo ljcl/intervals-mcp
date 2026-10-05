@@ -29,8 +29,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          # Keep in sync with release-please: types that produce no release
-          # (chore, docs, refactor, ci) are still allowed as valid titles.
+          # Keep in sync with docs/releasing.md: types that produce no release
+          # (chore, docs, refactor, ci, test, build, style) are still valid.
           types: |
             feat
             fix

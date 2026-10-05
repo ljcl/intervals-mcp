@@ -181,7 +181,7 @@ describe("computeIntervalAnalysis — stream path", () => {
     expect(analysis.fade!.summary).toContain("higher HR");
   });
 
-  it("reports per-rep power and excludes zero-watt dropouts (#213)", () => {
+  it("reports per-rep power and excludes zero-watt dropouts (ljcl/strava-mcp#213)", () => {
     const streams = buildStreams([
       easy(600),
       stop(30),
@@ -203,7 +203,7 @@ describe("computeIntervalAnalysis — stream path", () => {
     }
   });
 
-  it("omits per-rep power when a rep sits in a power gap (#213)", () => {
+  it("omits per-rep power when a rep sits in a power gap (ljcl/strava-mcp#213)", () => {
     const analysis = computeIntervalAnalysis(
       buildStreams([
         easy(600),

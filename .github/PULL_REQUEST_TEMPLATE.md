@@ -15,4 +15,6 @@ Closes #
 ## Verification
 
 - [ ] `bun run check` (or `bun run check:affected` on a branch) passes
+- [ ] `bun run test:stories` passes
+- [ ] `docker compose build` succeeds, if the change affects the container
 - [ ] Storybook sweep for UI changes (desktop + `claudeIosCard` viewport), if applicable

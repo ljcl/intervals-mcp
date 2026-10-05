@@ -1,5 +1,5 @@
 /**
- * The per-call telemetry (#241), and the `logging` capability it no longer
+ * The per-call telemetry (ljcl/strava-mcp#241), and the `logging` capability it no longer
  * feeds (#72). The capability checks go over the real transport rather than
  * against the in-memory server object: what a host sees is what serializes.
  */

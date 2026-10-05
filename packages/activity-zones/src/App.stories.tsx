@@ -16,7 +16,7 @@ const meta = preview.meta({ component: App });
 export const Default = meta.story({
   args: { app: null, data: mockZonesData },
   play: async ({ canvas }) => {
-    // The card opens with a title (#247), and the subtitle names the set on
+    // The card opens with a title (ljcl/strava-mcp#247), and the subtitle names the set on
     // screen — the pill row only appears when both sets exist.
     await expect(canvas.getByText(mockZonesData.name)).toBeVisible();
     await expect(

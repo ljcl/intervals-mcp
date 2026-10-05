@@ -13,7 +13,7 @@ const meta = preview.meta({ component: App });
 export const Default = meta.story({
   args: { app: null, data: mockData },
   play: async ({ canvas }) => {
-    // The card opens with a title (#247): scrolled back in a transcript, a
+    // The card opens with a title (ljcl/strava-mcp#247): scrolled back in a transcript, a
     // bare chart cannot say which runs or window it belongs to.
     await expect(canvas.getByText("Cadence trends")).toBeVisible();
     await expect(
@@ -23,7 +23,7 @@ export const Default = meta.story({
 });
 
 /**
- * Keyboard-accessible run selection (#169). Previously the only way to build an
+ * Keyboard-accessible run selection (ljcl/strava-mcp#169). Previously the only way to build an
  * overlay comparison was clicking Recharts dots, which carry no tabindex or key
  * handling. The run picker below the Trend/Scatter charts lets a keyboard user
  * select and deselect runs: focus a chip, activate it, and its `aria-pressed`

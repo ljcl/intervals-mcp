@@ -1,5 +1,5 @@
 /**
- * One structured payload per tool group (#243), driven through
+ * One structured payload per tool group (ljcl/strava-mcp#243), driven through
  * `dispatchToolCall` — the path a host actually takes — and validated against
  * the schema each tool advertises. Before this, these tools rendered ids into
  * prose like `(ID: 123)` and a caller had to regex them back out to chain.

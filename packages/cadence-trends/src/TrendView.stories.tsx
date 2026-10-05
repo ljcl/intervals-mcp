@@ -20,7 +20,7 @@ const runMarks = (root: HTMLElement) =>
   );
 
 /**
- * Click-to-select (#275) was render-only smoke tested, so a broken click
+ * Click-to-select (ljcl/strava-mcp#275) was render-only smoke tested, so a broken click
  * target or an id mismatch could not fail CI. Clicking a plotted run must
  * report that run's id — the same callback the run picker drives.
  */

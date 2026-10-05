@@ -3,7 +3,7 @@
   font-family: var(--font-sans);
 }
 
-/* Legend-hover dimming (#133). Hover state is a data attribute on this
+/* Legend-hover dimming (ljcl/strava-mcp#133). Hover state is a data attribute on this
    wrapper and resolves entirely in CSS, so hovering the legend never
    re-renders the memoized Recharts tree. The opacity applies to the series'
    <g> layer, dimming stroke and fill together — numerically identical to
@@ -57,7 +57,7 @@
   justify-content: flex-start;
 }
 
-/* Brush (#35): theme Recharts' internals via CSS since the component only
+/* Brush (ljcl/strava-mcp#35): theme Recharts' internals via CSS since the component only
    exposes stroke/fill props for the frame, not the slide or travellers. */
 .brush :global(.recharts-brush-slide) {
   fill: var(--color-text-tertiary);

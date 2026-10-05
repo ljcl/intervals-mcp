@@ -453,7 +453,7 @@ describe("computeHillAnalysis", () => {
     ).toBeLessThan(0.01);
   });
 
-  describe("segment power (#213)", () => {
+  describe("segment power (ljcl/strava-mcp#213)", () => {
     it("reports power for a climb with full coverage", () => {
       const analysis = computeHillAnalysis(
         buildStreams([flat(1000), climb(500, { watts: 250 }), flat(1000)]),

@@ -3,9 +3,10 @@ name: Release Please
 on:
   push:
     branches: [main]
-  # Manual re-run for when a push run failed transiently or a release needs
-  # forcing (e.g. after fixing a mislabeled squash title with a Release-As
-  # commit) without pushing an empty commit to main.
+  # Manual re-run for when a push run failed transiently, without pushing an
+  # empty commit to main. To force a version, set `release-as` in
+  # release-please-config.json (docs/releasing.md); a Release-As commit
+  # footer does not work in this repo.
   workflow_dispatch:
 
 # Serialize runs: release-please mutates the release PR and tags, so two runs

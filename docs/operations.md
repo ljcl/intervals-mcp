@@ -24,7 +24,8 @@ auth using the literal username `API_KEY`.
 Every tool call and every MCP App data fetch uses this key: `dispatchToolCall`
 resolves it once per call via `getIntervalsApiKey()` and passes it to the
 handler, which sends it as the Basic auth password on every intervals.icu
-request. `/health` also validates and reports on it (`api_key_configured`).
+request. `/health` reports whether it is set (`api_key_configured`); it does
+not check the key against intervals.icu.
 
 The key grants full read/write access on the account it belongs to, with no
 scoping. Keep `MCP_AUTH_TOKEN` set whenever the server is reachable from
@@ -54,7 +55,16 @@ rate-limit state:
   "api_key_configured": true,
   "athlete_id": "0",
   "time_zone": "Australia/Sydney",
-  "rate_limit": null
+  "rate_limit": null,
+  "tools": {
+    "list-activities": {
+      "calls": 3,
+      "errors": 0,
+      "total_ms": 1260,
+      "last_called_at": "2026-10-05T01:02:03.000Z",
+      "mean_ms": 420
+    }
+  }
 }
 ```
 
@@ -65,6 +75,7 @@ release-please bumps, so it tracks the release you are running. An `:edge` or
 `X-RateLimit-*`/`Retry-After` headers (`intervalsApi.getRateLimitSnapshot()`);
 intervals.icu sends none of these today (verified 2026-09-24), so `rate_limit`
 stays `null` even after calls have been made, not just before the first one.
+`tools` holds per-tool counters since the process started, busiest first.
 Wiring monitoring: point an uptime check at the unauthenticated shape; send
 the secret only when you want the config and quota detail.
 

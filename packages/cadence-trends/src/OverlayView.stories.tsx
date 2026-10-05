@@ -36,7 +36,7 @@ export const WithData = meta.story({
 });
 
 /**
- * Interaction test (#164): the x-axis pills reslice the overlay onto a
+ * Interaction test (ljcl/strava-mcp#164): the x-axis pills reslice the overlay onto a
  * time grid, and a run's legend toggle hides its line. Recharts drops a
  * hidden Line's path from the SVG, so the curve count is the ground truth
  * that the toggle really removed the series.
@@ -72,7 +72,7 @@ export const SwitchAxisAndHideRun = meta.story({
 });
 
 /**
- * Dark host theme (#117): the overlay tooltip must render via the shared
+ * Dark host theme (ljcl/strava-mcp#117): the overlay tooltip must render via the shared
  * themed Tooltip, not Recharts' default white box. Hover a line to verify.
  */
 export const WithDataDark = meta.story({
@@ -132,7 +132,7 @@ export const LoadingWithProgress = meta.story({
 
 /**
  * A failed run used to vanish from the overlay, leaving the user with a
- * silently-incomplete comparison and a console.error (#250). It now reports
+ * silently-incomplete comparison and a console.error (ljcl/strava-mcp#250). It now reports
  * the failure by name with a retry, while the runs that did load stay drawn.
  */
 export const OneRunFailed = meta.story({

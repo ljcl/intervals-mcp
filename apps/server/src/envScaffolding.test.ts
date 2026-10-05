@@ -1,7 +1,7 @@
 /**
- * The API-key-resolution convention (#301).
+ * The API-key-resolution convention (ljcl/strava-mcp#301).
  *
- * Key resolution is centralised (#240): `dispatchToolCall` resolves the
+ * Key resolution is centralised (ljcl/strava-mcp#240): `dispatchToolCall` resolves the
  * intervals.icu API key once per call and passes it to the handler as its
  * second argument, so `config.ts` is the only module that reads or writes
  * `process.env.INTERVALS_API_KEY`. Twenty-six test files went on setting it
