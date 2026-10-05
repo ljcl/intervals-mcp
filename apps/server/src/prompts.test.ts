@@ -51,7 +51,7 @@ describe("weekly-review", () => {
     expect(t).toContain(
       "list-activities with oldest=2026-07-14, newest=2026-10-05",
     );
-    expect(t).toContain("view-cadence-trends with weeks=12");
+    expect(t).toContain("view-cadence-trends with days=84");
   });
 
   it("defaults to 4 weeks", () => {
@@ -113,12 +113,12 @@ describe("race-readiness", () => {
       targetTsb: "12",
     });
 
-    expect(t).toContain("race on 2026-10-25 (Half Marathon), 20 days away");
+    expect(t).toContain("race on 2026-10-25 (half marathon), 20 days away");
     expect(t).toContain(
       "get-fitness-trend with targetDate=2026-10-25 and targetTsb=12",
     );
     expect(t).toContain(
-      'get-race-prediction with raceDistance="Half Marathon"',
+      'get-race-prediction with raceDistance="half marathon"',
     );
     expect(t).toContain(
       "get-wellness with oldest=2026-09-29, newest=2026-10-05",
@@ -151,6 +151,19 @@ describe("race-readiness", () => {
     );
   });
 
+  it.each([
+    ["Half Marathon", "half marathon"],
+    ["5K", "5km"],
+    ["50k", "50km"],
+  ])("reads the distance %s as %s", (typed, label) => {
+    const t = text("race-readiness", {
+      raceDate: "2026-10-25",
+      distance: typed,
+    });
+
+    expect(t).toContain(`get-race-prediction with raceDistance="${label}"`);
+  });
+
   it("rejects an unknown distance, naming the ones it takes", () => {
     expectInvalidParams(
       () =>
@@ -160,7 +173,7 @@ describe("race-readiness", () => {
           undefined,
           TODAY,
         ),
-      /distance "100K" is not one of: 5K, 10K, 15K, 10 mile, Half Marathon, Marathon, 50K/,
+      /distance "100K" is not one of: 5km, 10km, 15km, 10 mile, half marathon, marathon, 50km/,
     );
   });
 
@@ -228,20 +241,20 @@ describe("getPrompt", () => {
 describe("completePromptArgument", () => {
   it("suggests race distances, filtered by what was typed", () => {
     expect(completePromptArgument("race-readiness", "distance", "")).toEqual([
-      "5K",
-      "10K",
-      "15K",
+      "5km",
+      "10km",
+      "15km",
       "10 mile",
-      "Half Marathon",
-      "Marathon",
-      "50K",
+      "half marathon",
+      "marathon",
+      "50km",
     ]);
-    expect(completePromptArgument("race-readiness", "distance", "ma")).toEqual([
-      "Marathon",
+    expect(completePromptArgument("race-readiness", "distance", "Ma")).toEqual([
+      "marathon",
     ]);
     expect(completePromptArgument("race-readiness", "distance", "1")).toEqual([
-      "10K",
-      "15K",
+      "10km",
+      "15km",
       "10 mile",
     ]);
   });

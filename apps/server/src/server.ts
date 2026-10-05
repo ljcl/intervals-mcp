@@ -132,13 +132,13 @@ function toInputSchema(schema: z.ZodType): Record<string, unknown> {
  * argument gets a structured error instead of `"undefined"`/NaN flowing
  * into intervals.icu request paths.
  */
-const weeksInput = z
+const cadenceDaysInput = z
   .number()
   .int()
-  .positive()
-  .max(104)
-  .default(6)
-  .describe("Number of weeks of history to show (default: 6, max: 104)");
+  .min(7)
+  .max(728)
+  .default(42)
+  .describe("Days of history to show (default 42, i.e. 6 weeks; max 728)");
 
 const daysInput = z
   .number()
@@ -250,23 +250,19 @@ const trainingLoadInput = z.object({
 
 const APP_TOOL_INPUT_SCHEMAS: Record<string, z.ZodType> = {
   "view-activity-chart": z.object({
-    activity_id: intervalsActivityIdInput(
-      "The intervals.icu activity id to visualize.",
-    ),
+    id: intervalsActivityIdInput("The intervals.icu activity id to visualize."),
   }),
   "get-activity-streams-raw": z.object({
-    activity_id: intervalsActivityIdInput("The intervals.icu activity id."),
+    id: intervalsActivityIdInput("The intervals.icu activity id."),
   }),
-  "view-cadence-trends": z.object({ weeks: weeksInput }),
-  "get-cadence-trend-data": z.object({ weeks: weeksInput }),
+  "view-cadence-trends": z.object({ days: cadenceDaysInput }),
+  "get-cadence-trend-data": z.object({ days: cadenceDaysInput }),
   "view-route-map": z.object({
-    activity_id: intervalsActivityIdInput(
-      "The intervals.icu activity id to map.",
-    ),
+    id: intervalsActivityIdInput("The intervals.icu activity id to map."),
     waypoints: waypointsInput,
   }),
   "get-route-map-data": z.object({
-    activity_id: intervalsActivityIdInput("The intervals.icu activity id."),
+    id: intervalsActivityIdInput("The intervals.icu activity id."),
     waypoints: waypointsInput,
   }),
   "view-training-load": trainingLoadInput,
@@ -274,22 +270,22 @@ const APP_TOOL_INPUT_SCHEMAS: Record<string, z.ZodType> = {
   "view-fitness-trend": fitnessTrendInput,
   "get-fitness-trend-data": fitnessTrendInput,
   "view-activity-zones": z.object({
-    activity_id: intervalsActivityIdInput("The intervals.icu activity id."),
+    id: intervalsActivityIdInput("The intervals.icu activity id."),
   }),
   "get-activity-zones-data": z.object({
-    activity_id: intervalsActivityIdInput("The intervals.icu activity id."),
+    id: intervalsActivityIdInput("The intervals.icu activity id."),
   }),
   "view-compare-activities": z.object({
-    activity_id_1: intervalsActivityIdInput(
+    activityId1: intervalsActivityIdInput(
       "First activity ID (baseline/older activity).",
     ),
-    activity_id_2: intervalsActivityIdInput(
+    activityId2: intervalsActivityIdInput(
       "Second activity ID (comparison/newer activity).",
     ),
   }),
   "get-compare-activities-data": z.object({
-    activity_id_1: intervalsActivityIdInput("First activity ID (baseline)."),
-    activity_id_2: intervalsActivityIdInput("Second activity ID (comparison)."),
+    activityId1: intervalsActivityIdInput("First activity ID (baseline)."),
+    activityId2: intervalsActivityIdInput("Second activity ID (comparison)."),
   }),
 };
 
@@ -493,7 +489,7 @@ function buildToolDefs(): ToolDef[] {
     title: "Cadence trends chart",
     description:
       "Open an interactive cadence dashboard across recent runs: trend timeline, cadence-versus-pace scatter, pace-zone breakdown, and per-run overlay comparison. " +
-      "Prefer this over text when the user wants to explore cadence patterns over time. Takes a number of weeks of history.",
+      "Prefer this over text when the user wants to explore cadence patterns over time. Takes a number of days of history.",
     inputSchema: toInputSchema(APP_TOOL_INPUT_SCHEMAS["view-cadence-trends"]!),
     annotations: READ_ONLY,
     _meta: {
@@ -801,7 +797,7 @@ async function handleViewActivityChart(
   _progress: ReportProgress,
   context: ToolCallContext,
 ): Promise<ToolCallResult> {
-  const activityId = String(args.activity_id);
+  const activityId = String(args.id);
   // Same fetch options as `get-activity-streams-raw` (`intervals: true`): the
   // cache key is the full request URL, so matching options here means a
   // second read of the same activity is a cache hit rather than a fresh
@@ -848,7 +844,7 @@ async function handleGetActivityStreamsRaw(
   args: Record<string, unknown>,
   token: string,
 ): Promise<ToolCallResult> {
-  const activityId = String(args.activity_id);
+  const activityId = String(args.id);
   const activity = await getIntervalsActivity(token, activityId, {
     intervals: true,
   });
@@ -894,14 +890,21 @@ async function loadCadenceTrendData(
   apiKey: string,
   args: Record<string, unknown>,
 ): Promise<CadenceTrendData> {
-  const weeks = Number(args.weeks) || 6;
+  const days = Number(args.days) || 42;
   const tz = getTimeZone();
   const newest = todayLocal(tz);
-  const oldest = addDays(newest, -(weeks * 7 - 1));
+  const oldest = addDays(newest, -(days - 1));
 
   const activities = await listActivitiesFn(apiKey, { oldest, newest });
 
-  return buildCadenceTrendData(activities, { weeks });
+  return buildCadenceTrendData(activities, { days });
+}
+
+/** "4 weeks" for a whole number of weeks, else "30 days". */
+function windowLabel(days: number): string {
+  if (days % 7 !== 0) return `${days} days`;
+  const weeks = days / 7;
+  return weeks === 1 ? "1 week" : `${weeks} weeks`;
 }
 
 async function handleGetCadenceTrendData(
@@ -929,7 +932,7 @@ async function handleViewCadenceTrends(
       : 0;
 
   const lines = [
-    `Cadence Trends (last ${data.weeks} weeks)`,
+    `Cadence Trends (last ${windowLabel(data.days)})`,
     `Runs: ${runs.length}`,
     `Average cadence: ${avgCadence} spm`,
     ...(data.excludedNoCadence > 0
@@ -1189,7 +1192,7 @@ async function handleGetActivityZonesData(
   args: Record<string, unknown>,
   token: string,
 ): Promise<ToolCallResult> {
-  const data = await loadActivityZonesData(token, String(args.activity_id));
+  const data = await loadActivityZonesData(token, String(args.id));
   return { content: [{ type: "text", text: JSON.stringify(data) }] };
 }
 
@@ -1199,7 +1202,7 @@ async function handleViewActivityZones(
   _progress: ReportProgress,
   context: ToolCallContext,
 ): Promise<ToolCallResult> {
-  const data = await loadActivityZonesData(token, String(args.activity_id));
+  const data = await loadActivityZonesData(token, String(args.id));
   const lines = [`Activity Zones: ${data.name} (${data.date})`];
   if (data.zoneSets.length === 0) {
     lines.push(
@@ -1239,7 +1242,7 @@ const ROUTE_MAP_STREAM_TYPES: IntervalsStreamType[] = [
 ];
 
 /**
- * Resolve an activity_id into a route-map payload. intervals.icu has no
+ * Resolve an activity id into a route-map payload. intervals.icu has no
  * encoded-polyline endpoint (research note 2026-09-25 section 6), so the
  * geometry always comes from the latlng stream, jointly downsampled with the
  * metric streams and annotated with WORK-interval end markers
@@ -1251,9 +1254,9 @@ async function loadRouteMapData(
   args: Record<string, unknown>,
   token: string,
 ): Promise<RouteMapData> {
-  const activityId = args.activity_id ? String(args.activity_id) : undefined;
+  const activityId = args.id ? String(args.id) : undefined;
   if (!activityId) {
-    throw new Error("activity_id is required.");
+    throw new Error("id is required.");
   }
 
   const activity = await getIntervalsActivity(token, activityId, {
@@ -1336,8 +1339,8 @@ async function loadCompareActivitiesData(
   token: string,
 ): Promise<ReturnType<typeof buildComparison>> {
   const [activity1, activity2] = await Promise.all([
-    getIntervalsActivity(token, String(args.activity_id_1)),
-    getIntervalsActivity(token, String(args.activity_id_2)),
+    getIntervalsActivity(token, String(args.activityId1)),
+    getIntervalsActivity(token, String(args.activityId2)),
   ]);
   return buildComparison(activity1, activity2);
 }
@@ -1491,8 +1494,9 @@ export async function dispatchToolCall(
 
   let args: Record<string, unknown> = rawArgs ?? {};
   const shape = TOOL_ARG_SHAPES.get(name);
-  // Another tool's spelling of a shared input (`id` for `activity_id`, "5K"
-  // for "5km") is mapped before validation, so it costs no retry (#78).
+  // Another tool's spelling of a shared input (`activity_id` for `id`, "5K"
+  // for "5km", `weeks` for `days`) is mapped before validation, so it costs
+  // no retry (#78).
   if (shape) args = normalizeArgs(args, shape);
   const schema = TOOL_INPUT_SCHEMAS.get(name);
   if (schema) {

@@ -57,25 +57,30 @@ export const RECENT_WINDOW_DAYS = 90;
 /** Default first-half/second-half offset for the negative-split variant. */
 export const NEGATIVE_SPLIT_PCT = 0.01;
 
-/** Named race distances the tool can predict and split. */
+/**
+ * Named race distances the tool can predict and split. The labels follow the
+ * input naming scheme (lowercase, explicit units, as get-best-efforts spells
+ * its distances); the dispatcher's enum matching still accepts "5K" or
+ * "Half Marathon".
+ */
 export const RACE_DISTANCES = {
-  "5K": 5000,
-  "10K": 10000,
-  "15K": 15000,
+  "5km": 5000,
+  "10km": 10000,
+  "15km": 15000,
   "10 mile": 16093.4,
-  "Half Marathon": 21097.5,
-  Marathon: 42195,
-  "50K": 50000,
+  "half marathon": 21097.5,
+  marathon: 42195,
+  "50km": 50000,
 } as const;
 
 export type RaceDistanceName = keyof typeof RACE_DISTANCES;
 
 /** Distances always present in the equivalent-performance table. */
 export const STANDARD_TARGETS: RaceDistanceName[] = [
-  "5K",
-  "10K",
-  "Half Marathon",
-  "Marathon",
+  "5km",
+  "10km",
+  "half marathon",
+  "marathon",
 ];
 
 /** One recorded best effort, normalised out of intervals.icu's pace curves. */

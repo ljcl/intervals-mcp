@@ -49,7 +49,15 @@ const race = argShape({
   properties: {
     raceDistance: {
       type: "string",
-      enum: ["5K", "10K", "15K", "10 mile", "Half Marathon", "Marathon", "50K"],
+      enum: [
+        "5km",
+        "10km",
+        "15km",
+        "10 mile",
+        "half marathon",
+        "marathon",
+        "50km",
+      ],
     },
   },
 });
@@ -122,10 +130,16 @@ describe("normalizeArgs: enum values", () => {
       distances: ["half marathon", "5km", "10km", "marathon", "400m"],
     });
     expect(normalizeArgs({ raceDistance: "half-marathon" }, race)).toEqual({
-      raceDistance: "Half Marathon",
+      raceDistance: "half marathon",
     });
-    expect(normalizeArgs({ raceDistance: "5km" }, race)).toEqual({
-      raceDistance: "5K",
+    expect(normalizeArgs({ raceDistance: "Half Marathon" }, race)).toEqual({
+      raceDistance: "half marathon",
+    });
+    expect(normalizeArgs({ raceDistance: "5K" }, race)).toEqual({
+      raceDistance: "5km",
+    });
+    expect(normalizeArgs({ raceDistance: "50K" }, race)).toEqual({
+      raceDistance: "50km",
     });
     expect(normalizeArgs({ raceDistance: "10 miles" }, race)).toEqual({
       raceDistance: "10 mile",
@@ -168,11 +182,48 @@ describe("normalizeArgs: enum values", () => {
     const shape = argShape({
       type: "object",
       properties: {
-        raceDistance: { type: "string", enum: ["Half Marathon"] },
+        raceDistance: { type: "string", enum: ["half marathon"] },
       },
     });
-    expect(normalizeArgs({ race_distance: "half marathon" }, shape)).toEqual({
-      raceDistance: "Half Marathon",
+    expect(normalizeArgs({ race_distance: "Half Marathon" }, shape)).toEqual({
+      raceDistance: "half marathon",
+    });
+  });
+});
+
+describe("normalizeArgs: weeks to days", () => {
+  const takesDays = argShape({
+    type: "object",
+    properties: { days: { type: "integer" } },
+  });
+
+  it("turns weeks into days when the tool takes days and not weeks", () => {
+    expect(normalizeArgs({ weeks: 6 }, takesDays)).toEqual({ days: 42 });
+    expect(normalizeArgs({ weeks: "4" }, takesDays)).toEqual({ days: 28 });
+  });
+
+  it("leaves weeks alone when the tool takes weeks", () => {
+    const takesWeeks = argShape({
+      type: "object",
+      properties: { weeks: { type: "integer" }, days: { type: "integer" } },
+    });
+    expect(normalizeArgs({ weeks: 6 }, takesWeeks)).toEqual({ weeks: 6 });
+  });
+
+  it("leaves weeks alone when the tool takes neither", () => {
+    expect(normalizeArgs({ weeks: 6 }, single)).toEqual({ weeks: 6 });
+  });
+
+  it("never overrides days the caller sent", () => {
+    expect(normalizeArgs({ weeks: 6, days: 10 }, takesDays)).toEqual({
+      weeks: 6,
+      days: 10,
+    });
+  });
+
+  it("leaves a non-numeric weeks for validation to report", () => {
+    expect(normalizeArgs({ weeks: "six" }, takesDays)).toEqual({
+      weeks: "six",
     });
   });
 });

@@ -42,6 +42,13 @@ const mockedIntervalsWellness = vi.mocked(getIntervalsWellness);
 const mockedIntervalsActivity = vi.mocked(getIntervalsActivity);
 const mockedAthleteCurves = vi.mocked(getAthletePaceCurves);
 
+/** Inclusive day count of a listing window's oldest..newest dates. */
+function windowDays(params: { oldest?: string; newest?: string } | undefined) {
+  const oldest = Date.parse(`${params?.oldest}T00:00:00Z`);
+  const newest = Date.parse(`${params?.newest}T00:00:00Z`);
+  return Math.round((newest - oldest) / 86_400_000) + 1;
+}
+
 const emptyPaceCurves: IntervalsAthletePaceCurves = {
   list: [{ id: "1y", distance: [], values: [], activity_id: [] }],
   activities: {},
@@ -105,7 +112,7 @@ describe("dispatchToolCall input validation", () => {
     expect(mockedIntervalsList).not.toHaveBeenCalled();
   });
 
-  it("rejects an app tool call missing its required activity_id", async () => {
+  it("rejects an app tool call missing its required id", async () => {
     const result = await dispatchToolCall("view-activity-chart", {});
 
     expect(result.isError).toBe(true);
@@ -115,16 +122,16 @@ describe("dispatchToolCall input validation", () => {
     expect(mockedIntervalsActivity).not.toHaveBeenCalled();
   });
 
-  it("rejects a non-numeric activity_id for app tools", async () => {
+  it("rejects a non-numeric id for app tools", async () => {
     const result = await dispatchToolCall("get-activity-streams-raw", {
-      activity_id: "not-an-id",
+      id: "not-an-id",
     });
 
     expect(result.isError).toBe(true);
     expect(mockedIntervalsActivity).not.toHaveBeenCalled();
   });
 
-  it("explains an oversized activity_id sent as a JSON number (view-route-map)", async () => {
+  it("explains an oversized id sent as a JSON number (view-route-map)", async () => {
     // Reported failure: an activity id above 2^53 was called as an unquoted
     // number, which the host's JSON.parse rounded before dispatch. The
     // advertised schema is now string-only so this shape should not be
@@ -132,7 +139,7 @@ describe("dispatchToolCall input validation", () => {
     // and the string fix once, rather than claiming the value is not a
     // whole number.
     const result = await dispatchToolCall("view-route-map", {
-      activity_id: JSON.parse("3516039180561708486"),
+      id: JSON.parse("3516039180561708486"),
     });
 
     expect(result.isError).toBe(true);
@@ -143,11 +150,11 @@ describe("dispatchToolCall input validation", () => {
     expect(text).not.toContain("whole number");
   });
 
-  it("accepts an oversized activity_id as a digit string", async () => {
+  it("accepts an oversized id as a digit string", async () => {
     // The lossless form the advertised schema now asks for. It gets past
     // validation and fails later, at the (unmocked) intervals.icu fetch.
     const result = await dispatchToolCall("view-route-map", {
-      activity_id: "3516039180561708486",
+      id: "3516039180561708486",
     });
 
     expect(result.content[0]?.text ?? "").not.toContain("Invalid arguments");
@@ -167,7 +174,10 @@ describe("dispatchToolCall input validation", () => {
       }>
     ).flatMap((tool) =>
       Object.entries(tool.inputSchema?.properties ?? {})
-        .filter(([key]) => key === "id" || key.endsWith("_id"))
+        .filter(
+          ([key]) =>
+            key === "id" || key.endsWith("_id") || /^activityId\d$/.test(key),
+        )
         .map(([key, schema]) => ({ field: `${tool.name}.${key}`, schema })),
     );
 
@@ -180,15 +190,28 @@ describe("dispatchToolCall input validation", () => {
     }
   });
 
-  it("applies the weeks default for app tools", async () => {
+  it("applies the days default for get-cadence-trend-data", async () => {
     mockedIntervalsList.mockResolvedValueOnce([]);
 
     const result = await dispatchToolCall("get-cadence-trend-data", {});
 
     expect(result.isError).toBeUndefined();
-    const text = result.content[0]?.text ?? "";
-    expect(JSON.parse(text).weeks).toBe(6);
+    const parsed = JSON.parse(result.content[0]?.text ?? "");
+    expect(parsed.days).toBe(42);
+    expect(parsed).not.toHaveProperty("weeks");
+    const params = mockedIntervalsList.mock.calls[0]?.[1];
+    expect(windowDays(params)).toBe(42);
   });
+
+  it.each([6, 729])(
+    "rejects days=%i outside 7 to 728 for get-cadence-trend-data",
+    async (days) => {
+      const result = await dispatchToolCall("get-cadence-trend-data", { days });
+
+      expect(result.isError).toBe(true);
+      expect(mockedIntervalsList).not.toHaveBeenCalled();
+    },
+  );
 
   it("applies the days default for get-training-load-data", async () => {
     mockedIntervalsList.mockResolvedValueOnce([]);
@@ -231,7 +254,7 @@ describe("dispatchToolCall input validation", () => {
 
   it("rejects view-compare-activities when an id is missing", async () => {
     const result = await dispatchToolCall("view-compare-activities", {
-      activity_id_1: "123",
+      activityId1: "123",
     });
 
     expect(result.isError).toBe(true);
@@ -260,8 +283,8 @@ describe("dispatchToolCall input validation", () => {
     );
 
     const result = await dispatchToolCall("get-compare-activities-data", {
-      activity_id_1: "1",
-      activity_id_2: "2",
+      activityId1: "1",
+      activityId2: "2",
     });
 
     expect(result.isError).toBeUndefined();
@@ -316,8 +339,8 @@ describe("dispatchToolCall input validation", () => {
     mockedIntervalsActivity.mockRejectedValue(handledNotFound("getActivity"));
 
     const result = await dispatchToolCall("get-compare-activities-data", {
-      activity_id_1: "1",
-      activity_id_2: "2",
+      activityId1: "1",
+      activityId2: "2",
     });
 
     expect(result.isError).toBe(true);
@@ -333,6 +356,96 @@ describe("dispatchToolCall input validation", () => {
     expect(result.content[0]?.text).toBe(
       "❌ Failed to run get-training-load-data: boom",
     );
+  });
+});
+
+describe("input naming scheme (#141)", () => {
+  beforeEach(() => {
+    mockedToken.mockReset();
+    mockedToken.mockReturnValue("test-token");
+    mockedIntervalsList.mockReset();
+    mockedIntervalsActivity.mockReset();
+    mockedAthleteCurves.mockReset();
+  });
+
+  it("advertises no activity_id, activity_id_1, activity_id_2 or weeks input", () => {
+    const retired = new Set([
+      "activity_id",
+      "activity_id_1",
+      "activity_id_2",
+      "weeks",
+    ]);
+    const offenders = TOOL_DEFS.flatMap((tool) =>
+      Object.keys(tool.inputSchema.properties ?? {})
+        .filter((key) => retired.has(key))
+        .map((key) => `${tool.name}.${key}`),
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  it("accepts activity_id on view-route-map", async () => {
+    mockedIntervalsActivity.mockRejectedValue(handledNotFound("getActivity"));
+
+    const result = await dispatchToolCall("view-route-map", {
+      activity_id: "i42",
+    });
+
+    expect(result.content[0]?.text).not.toContain("Invalid arguments");
+    expect(mockedIntervalsActivity.mock.calls[0]?.[1]).toBe("i42");
+  });
+
+  it("accepts activity_id_1 and activity_id_2 on get-compare-activities-data", async () => {
+    mockedIntervalsActivity.mockRejectedValue(handledNotFound("getActivity"));
+
+    const result = await dispatchToolCall("get-compare-activities-data", {
+      activity_id_1: "i1",
+      activity_id_2: "i2",
+    });
+
+    expect(result.content[0]?.text).not.toContain("Invalid arguments");
+    const ids = mockedIntervalsActivity.mock.calls.map((call) => call[1]);
+    expect(ids).toEqual(["i1", "i2"]);
+  });
+
+  it('accepts raceDistance "Half Marathon" on get-race-prediction', async () => {
+    mockedAthleteCurves.mockResolvedValueOnce({
+      list: ["all", "90d"].map((id) => ({
+        id,
+        distance: [10000],
+        values: [2400],
+        activity_id: ["i1"],
+      })),
+      activities: {
+        i1: {
+          id: "i1",
+          name: "Run 1",
+          start_date_local: "2026-09-20T08:00:00",
+          race: false,
+        },
+      },
+    } as never);
+
+    const result = await dispatchToolCall("get-race-prediction", {
+      raceDistance: "Half Marathon",
+    });
+
+    expect(result.isError).toBeUndefined();
+    const structured = result.structuredContent as {
+      target?: { distance: string };
+    };
+    expect(structured.target?.distance).toBe("half marathon");
+  });
+
+  it("reads weeks: 6 on get-cadence-trend-data as days: 42", async () => {
+    mockedIntervalsList.mockResolvedValueOnce([]);
+
+    const result = await dispatchToolCall("get-cadence-trend-data", {
+      weeks: 6,
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect(JSON.parse(result.content[0]?.text ?? "").days).toBe(42);
+    expect(windowDays(mockedIntervalsList.mock.calls[0]?.[1])).toBe(42);
   });
 });
 

@@ -242,18 +242,18 @@ describe("selectSourceEfforts", () => {
 
 describe("predictRace", () => {
   it("returns null when nothing can be extrapolated", () => {
-    expect(predictRace([], 21097.5, "Half Marathon", REFERENCE)).toBeNull();
+    expect(predictRace([], 21097.5, "half marathon", REFERENCE)).toBeNull();
   });
 
   it("predicts from a single source and reports it as primary", () => {
     const prediction = predictRace(
       [effort({ elapsedSeconds: 2400 })],
       21097.5,
-      "Half Marathon",
+      "half marathon",
       REFERENCE,
     )!;
 
-    expect(prediction.label).toBe("Half Marathon");
+    expect(prediction.label).toBe("half marathon");
     expect(prediction.predictedSeconds).toBe(
       Math.round(riegelPredict(2400, 10000, 21097.5)!),
     );
@@ -269,7 +269,7 @@ describe("predictRace", () => {
         effort({ name: "10K", distanceMeters: 10000, elapsedSeconds: 2400 }),
       ],
       21097.5,
-      "Half Marathon",
+      "half marathon",
       REFERENCE,
     )!;
 
@@ -291,7 +291,7 @@ describe("predictRace", () => {
         }),
       ],
       21097.5,
-      "Half Marathon",
+      "half marathon",
       REFERENCE,
     )!;
 
@@ -305,7 +305,7 @@ describe("predictRace", () => {
         effort({ name: "10K", distanceMeters: 10000, elapsedSeconds: 2500 }),
       ],
       21097.5,
-      "Half Marathon",
+      "half marathon",
       REFERENCE,
     )!;
 
@@ -324,7 +324,7 @@ describe("predictRace", () => {
     const prediction = predictRace(
       [effort({ elapsedSeconds: 2400 })],
       10000,
-      "10K",
+      "10km",
       REFERENCE,
     )!;
 
@@ -339,7 +339,7 @@ describe("predictRace", () => {
         effort({ activityId: "race", race: true }),
       ],
       21097.5,
-      "Half Marathon",
+      "half marathon",
       REFERENCE,
     )!;
 
@@ -378,7 +378,7 @@ describe("predictRace", () => {
     const prediction = predictRace(
       selectSourceEfforts(efforts, REFERENCE),
       21097.5,
-      "Half Marathon",
+      "half marathon",
       REFERENCE,
     )!;
 
@@ -523,7 +523,7 @@ describe("buildSplits", () => {
   });
 
   it("ends a marathon with the 195 m partial split", () => {
-    const plan = buildSplits(10800, RACE_DISTANCES.Marathon, "km");
+    const plan = buildSplits(10800, RACE_DISTANCES.marathon, "km");
 
     expect(plan.splits).toHaveLength(43);
     const last = plan.splits.at(-1)!;
@@ -707,6 +707,26 @@ describe("paceCurveSourceEfforts", () => {
  * own effort. One point per run must not move a prediction far when the runs
  * behind the curve are independent efforts.
  */
+describe("RACE_DISTANCES", () => {
+  it("uses one lowercase label set with explicit units", () => {
+    expect(Object.keys(RACE_DISTANCES)).toEqual([
+      "5km",
+      "10km",
+      "15km",
+      "10 mile",
+      "half marathon",
+      "marathon",
+      "50km",
+    ]);
+    expect(STANDARD_TARGETS).toEqual([
+      "5km",
+      "10km",
+      "half marathon",
+      "marathon",
+    ]);
+  });
+});
+
 describe("predictions against 2.0.0", () => {
   const LIVE_CHECK_DATE = "2026-09-26";
 
@@ -742,10 +762,10 @@ describe("predictions against 2.0.0", () => {
     const curves = paceCurvesFixture as unknown as IntervalsAthletePaceCurves;
     const predictions = predictAll(curves);
 
-    expect(predictions.Marathon!.contributions).toHaveLength(6);
+    expect(predictions.marathon!.contributions).toHaveLength(6);
     expectWithin(
       predictions,
-      { "5K": 1379, "10K": 2903, "Half Marathon": 6481, Marathon: 13557 },
+      { "5km": 1379, "10km": 2903, "half marathon": 6481, marathon: 13557 },
       0.02,
     );
   });
@@ -799,7 +819,7 @@ describe("predictions against 2.0.0", () => {
 
     expectWithin(
       predictAll(curves),
-      { "5K": 1236, "10K": 2575, "Half Marathon": 5713, Marathon: 11982 },
+      { "5km": 1236, "10km": 2575, "half marathon": 5713, marathon: 11982 },
       0.03,
     );
   });

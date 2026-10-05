@@ -29,7 +29,8 @@ export interface RunSummary {
 
 /** Response shape for `get-cadence-trend-data`. */
 export interface CadenceTrendData {
-  weeks: number;
+  /** Days of history the window covers, as requested. */
+  days: number;
   activities: RunSummary[];
   /** Run-type activities in the window with no recorded cadence, left out
    * of `activities` (see {@link buildCadenceTrendData}) rather than counted
@@ -55,7 +56,7 @@ export interface CadenceTrendData {
  */
 export function buildCadenceTrendData(
   activities: IntervalsActivity[],
-  options: { weeks: number },
+  options: { days: number },
 ): CadenceTrendData {
   const runs = activities.filter((a) => a.type && isPaceActivity(a.type));
 
@@ -90,7 +91,7 @@ export function buildCadenceTrendData(
   }
 
   return {
-    weeks: options.weeks,
+    days: options.days,
     activities: summaries,
     excludedNoCadence,
     noPaceCount,

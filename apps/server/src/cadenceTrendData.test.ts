@@ -22,10 +22,11 @@ describe("buildCadenceTrendData", () => {
   it("keeps only run types and drops the rest", () => {
     const result = buildCadenceTrendData(
       [activity(), activity({ id: "i2", type: "Ride" })],
-      { weeks: 4 },
+      { days: 28 },
     );
 
-    expect(result.weeks).toBe(4);
+    expect(result.days).toBe(28);
+    expect(result).not.toHaveProperty("weeks");
     expect(result.activities).toHaveLength(1);
     expect(result.activities[0]?.id).toBe("i1");
   });
@@ -38,7 +39,7 @@ describe("buildCadenceTrendData", () => {
         activity({ id: "i3", type: "VirtualRun" }),
         activity({ id: "i4", type: "Walk" }),
       ],
-      { weeks: 4 },
+      { days: 28 },
     );
 
     expect(result.activities.map((a) => a.id)).toEqual(["i1", "i2", "i3"]);
@@ -46,7 +47,7 @@ describe("buildCadenceTrendData", () => {
 
   it("doubles cadence to steps/min via activityCadenceSpm", () => {
     const result = buildCadenceTrendData([activity({ average_cadence: 84 })], {
-      weeks: 4,
+      days: 28,
     });
 
     expect(result.activities[0]?.averageCadence).toBe(168);
@@ -55,7 +56,7 @@ describe("buildCadenceTrendData", () => {
   it("excludes a run with no recorded cadence rather than plotting it at 0 spm, and counts it", () => {
     const result = buildCadenceTrendData(
       [activity({ average_cadence: null })],
-      { weeks: 4 },
+      { days: 28 },
     );
 
     expect(result.activities).toHaveLength(0);
@@ -69,7 +70,7 @@ describe("buildCadenceTrendData", () => {
         activity({ id: "i2", average_cadence: null }),
         activity({ id: "i3", average_cadence: undefined }),
       ],
-      { weeks: 4 },
+      { days: 28 },
     );
 
     expect(result.activities.map((a) => a.id)).toEqual(["i1"]);
@@ -77,14 +78,14 @@ describe("buildCadenceTrendData", () => {
   });
 
   it("reports zero exclusions when every run has cadence", () => {
-    const result = buildCadenceTrendData([activity()], { weeks: 4 });
+    const result = buildCadenceTrendData([activity()], { days: 28 });
 
     expect(result.excludedNoCadence).toBe(0);
   });
 
   it("derives pace in decimal minutes/km from average_speed", () => {
     const result = buildCadenceTrendData([activity({ average_speed: 3.33 })], {
-      weeks: 4,
+      days: 28,
     });
 
     // 1000 / 3.33 / 60 ≈ 5.005
@@ -94,7 +95,7 @@ describe("buildCadenceTrendData", () => {
 
   it("gives a run with no recorded speed a null pace instead of 0 min/km, but keeps it (it still has cadence)", () => {
     const result = buildCadenceTrendData([activity({ average_speed: null })], {
-      weeks: 4,
+      days: 28,
     });
 
     expect(result.activities).toHaveLength(1);
@@ -109,7 +110,7 @@ describe("buildCadenceTrendData", () => {
         activity({ id: "i2", average_speed: null }),
         activity({ id: "i3", average_speed: 0 }),
       ],
-      { weeks: 4 },
+      { days: 28 },
     );
 
     expect(result.activities).toHaveLength(3);
@@ -121,7 +122,7 @@ describe("buildCadenceTrendData", () => {
 
   it("carries the intervals id through as a string", () => {
     const result = buildCadenceTrendData([activity({ id: "i189807578" })], {
-      weeks: 4,
+      days: 28,
     });
 
     expect(result.activities[0]?.id).toBe("i189807578");
@@ -133,7 +134,7 @@ describe("buildCadenceTrendData", () => {
     // suffix means this must never round-trip through `new Date()`.
     const result = buildCadenceTrendData(
       [activity({ start_date_local: "2026-06-01T23:30:00" })],
-      { weeks: 4 },
+      { days: 28 },
     );
 
     expect(result.activities[0]?.date).toBe("2026-06-01");
@@ -141,7 +142,7 @@ describe("buildCadenceTrendData", () => {
 
   it("converts distance to km rounded to 2dp", () => {
     const result = buildCadenceTrendData([activity({ distance: 8123.456 })], {
-      weeks: 4,
+      days: 28,
     });
 
     expect(result.activities[0]?.distance).toBe(8.12);
