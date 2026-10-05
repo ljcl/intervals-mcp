@@ -83,6 +83,31 @@ export const raceRun = synthRun({
   wattsBase: 272,
 });
 
+const { watts: _powerMeter, ...streamsWithoutPower } = raceRun.streams;
+
+/**
+ * `raceRun` recorded without a power meter: it shares pace, heart rate,
+ * cadence and altitude with `baselineRun`, but not power, so the overlay
+ * offers one metric fewer than for `raceRun` itself.
+ */
+export const noPowerRun: ActivityStreamData = {
+  ...raceRun,
+  activityId: "501",
+  name: "Bay Run • Race Pace (no power meter)",
+  streams: streamsWithoutPower,
+};
+
+/**
+ * The same session as `noPowerRun`, filed as a ride: against a run it is a
+ * mixed pair, so pace is drawn and named as speed.
+ */
+export const noPowerRide: ActivityStreamData = {
+  ...noPowerRun,
+  activityId: "502",
+  name: "Bay Ride • Steady (no power meter)",
+  activityType: "Ride",
+};
+
 export const compareData: CompareData = {
   units: {
     distance: "km",

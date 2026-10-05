@@ -465,6 +465,13 @@ as pure `buildComparison` in `apps/server/src/tools/compareActivities.ts`.
   still renders.
 - A stream-less side (`noStreams: true`, #65) is data, not an error: it keeps
   the delta tiles and shows the overlay EmptyState, with no retry.
+- `set-metric` (`metric`, `axis`) lets the model choose the overlay. A metric
+  or axis the pair did not both record is refused with the available ones listed
+  by their displayed labels (`resolveSetMetric`, `src/setMetric.ts`, unit-tested),
+  so a mixed-sport pair reads "speed" where a run pair reads "pace". Either part
+  being unavailable refuses the whole call, and a stream-less side gets a plain
+  "nothing to choose" answer rather than an empty list. The reply and the
+  context summary's `Overlay:` line use the same labels as the pills.
 
 ### Activity Zones
 

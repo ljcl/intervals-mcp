@@ -17,6 +17,8 @@ import {
   TooltipEntry,
   Tooltip as UiTooltip,
   useModelContextSync,
+  useViewTool,
+  type ViewToolRegistry,
 } from "@intervals-mcp/ui";
 import { useMemo, useState } from "react";
 import {
@@ -39,6 +41,12 @@ import {
 } from "./align";
 import styles from "./CompareActivities.module.css";
 import { buildCompareContextSummary } from "./contextSummary";
+import {
+  describeSetMetric,
+  NOTHING_TO_CHOOSE,
+  resolveSetMetric,
+  type SetMetricArgs,
+} from "./setMetric";
 import {
   type ActivityStreamData,
   type AxisKey,
@@ -304,6 +312,7 @@ interface CompareActivitiesProps {
   compare: CompareData | null;
   mode?: "mobile" | "desktop";
   app?: ModelContextApp;
+  viewToolRegistry?: ViewToolRegistry | null;
 }
 
 export function CompareActivities({
@@ -312,6 +321,7 @@ export function CompareActivities({
   compare,
   mode = "desktop",
   app,
+  viewToolRegistry = null,
 }: CompareActivitiesProps) {
   const isMobile = mode === "mobile";
   const isCompact = isMobile;
@@ -350,6 +360,33 @@ export function CompareActivities({
     () => alignSeries(seriesA, seriesB, axis),
     [seriesA, seriesB, axis],
   );
+
+  /**
+   * `set-metric`: the model chooses the overlay metric and axis from what
+   * both activities recorded. Installed here rather than declared here (see
+   * `viewToolDeclarations.ts`).
+   */
+  useViewTool(viewToolRegistry, "set-metric", (args) => {
+    const labelOf = (key: MetricKey) => metricLabel(key, display);
+    const result = resolveSetMetric(
+      args as SetMetricArgs,
+      metrics,
+      axes,
+      labelOf,
+    );
+    if (result.kind === "error") return { text: result.text, isError: true };
+
+    // What the call left alone stays as it is, and is described as such.
+    const nextMetric = result.metric ?? metric;
+    const nextAxis = result.axis ?? axis;
+    // Unreachable once `resolveSetMetric` has accepted: it refuses a pair
+    // with no shared metric, which is the only way `metric` starts null.
+    if (!nextMetric) return { text: NOTHING_TO_CHOOSE, isError: true };
+
+    setMetric(nextMetric);
+    setAxis(nextAxis);
+    return { text: describeSetMetric(nextMetric, nextAxis, labelOf) };
+  });
 
   useModelContextSync(
     app,

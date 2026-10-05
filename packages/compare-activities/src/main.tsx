@@ -7,12 +7,14 @@ import {
   LoadingState,
   Skeleton,
   useServerToolData,
+  type ViewToolRegistry,
 } from "@intervals-mcp/ui";
 import { type useApp } from "@modelcontextprotocol/ext-apps/react";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { CompareActivities } from "./CompareActivities";
 import { type ActivityStreamData, type CompareData } from "./types";
+import { VIEW_TOOLS } from "./viewToolDeclarations";
 import "./global.css";
 
 interface ToolArgs {
@@ -32,9 +34,16 @@ interface AppContentProps {
   toolArgs: ToolArgs;
   hostCtx: HostCtx;
   mode: AppMode;
+  viewToolRegistry: ViewToolRegistry | null;
 }
 
-function AppContent({ app, toolArgs, hostCtx, mode }: AppContentProps) {
+function AppContent({
+  app,
+  toolArgs,
+  hostCtx,
+  mode,
+  viewToolRegistry,
+}: AppContentProps) {
   const streamsA = useServerToolData<ActivityStreamData>(
     app,
     "get-activity-streams-raw",
@@ -79,6 +88,7 @@ function AppContent({ app, toolArgs, hostCtx, mode }: AppContentProps) {
           compare={compare.data}
           mode={mode}
           app={app ?? undefined}
+          viewToolRegistry={viewToolRegistry}
         />
       )}
     </AppShell>
@@ -94,14 +104,16 @@ function Root() {
         return next?.activity_id_1 && next?.activity_id_2 ? next : null;
       }}
       missingArgsMessage="Two activity ids are needed to compare activities; the host provided fewer."
+      viewTools={VIEW_TOOLS}
       loading={<LoadingSkeleton />}
     >
-      {({ app, toolArgs, hostCtx, mode }) => (
+      {({ app, toolArgs, hostCtx, mode, viewToolRegistry }) => (
         <AppContent
           app={app}
           toolArgs={toolArgs}
           hostCtx={hostCtx}
           mode={mode}
+          viewToolRegistry={viewToolRegistry}
         />
       )}
     </AppRoot>
