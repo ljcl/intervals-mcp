@@ -177,7 +177,7 @@ describe("formatRunningDynamicsText", () => {
     expect(text).not.toContain("WORK intervals:");
   });
 
-  it("caps the interval list at 20 lines with a '(n more)' note", () => {
+  it("caps the interval list at 100 lines with a '(n more)' note", () => {
     const row = {
       lap_index: 1,
       label: null,
@@ -221,7 +221,7 @@ describe("formatRunningDynamicsText", () => {
           message: "good - within the 200-260 ms target range",
         },
       },
-      intervals: Array.from({ length: 25 }, (_, i) => ({
+      intervals: Array.from({ length: 105 }, (_, i) => ({
         ...row,
         lap_index: i + 1,
       })),
@@ -238,8 +238,8 @@ describe("formatRunningDynamicsText", () => {
 
     const text = formatRunningDynamicsText(d);
     const lines = text.split("\n");
-    expect(lines.filter((l) => /^\d+\.\s/.test(l))).toHaveLength(20);
-    expect(text).toContain("(5 more)");
+    expect(lines.filter((l) => /^\d+\.\s/.test(l))).toHaveLength(100);
+    expect(text).toContain("(5 more WORK intervals not listed)");
   });
 });
 

@@ -185,7 +185,7 @@ describe("formatRunningSummaryText", () => {
     expect(text).toContain("Dynamics assessment: VO high");
     expect(text).toContain("HR zones: Z1 0-142");
     expect(text).toContain("Laps:");
-    expect(text).toContain("(16 more)");
+    expect(text).toContain("(16 more: get-activity-laps lists all 36)");
     expect(text).not.toContain("🏃");
     expect(text).not.toContain("Strava");
   });

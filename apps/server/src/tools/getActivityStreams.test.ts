@@ -1,5 +1,9 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { handledNotFound, handledRateLimit } from "../__fixtures__";
+import {
+  handledNotFound,
+  handledRateLimit,
+  syntheticAllTypesStreams,
+} from "../__fixtures__";
 import activityFixture from "../__fixtures__/intervals/activity.json";
 import activityHillyFixture from "../__fixtures__/intervals/activity-hilly.json";
 import streamsFixture from "../__fixtures__/intervals/streams.json";
@@ -20,6 +24,7 @@ import {
   getActivityStreamsTool,
   type StreamType,
 } from "./getActivityStreams";
+import { RESPONSE_BUDGET_CHARS, responseSize } from "./_responseBudget";
 
 vi.mock("../intervalsClient", async () => {
   const actual =
@@ -483,5 +488,86 @@ describe("getActivityStreamsTool.execute", () => {
     // dropout samples. Its mean is 138, not the 75 the zeros would give.
     expect(heartrate?.[2]).toBe(138);
     expect(result.content[0]?.text).toContain("heartrate: 125-155 bpm");
+  });
+});
+
+describe("getActivityStreamsTool.execute response budget", () => {
+  beforeEach(() => {
+    mockedGetActivity.mockReset();
+    mockedGetActivityStreams.mockReset();
+  });
+
+  // A 4 h run, 1 Hz, every type: the largest response the tool can be asked
+  // for. Claude Code refused a 61 KB version of this (#40).
+  const longRun = syntheticAllTypesStreams(4 * 3600);
+
+  async function callAtMax(types: StreamType[]) {
+    mockedGetActivity.mockResolvedValueOnce(runActivity);
+    mockedGetActivityStreams.mockResolvedValueOnce(longRun);
+    const result = await getActivityStreamsTool.execute(
+      { id: "i189807578", types, maxPoints: 2000 },
+      "key",
+    );
+    expect(result.isError).toBeUndefined();
+    return result as {
+      content: { text: string }[];
+      structuredContent: {
+        returned_points: number;
+        streams: Record<string, unknown[]>;
+      };
+    };
+  }
+
+  it.each([
+    [
+      "the default types",
+      [
+        "time",
+        "distance",
+        "heartrate",
+        "cadence",
+        "velocity_smooth",
+        "altitude",
+      ],
+    ],
+    ["every type", ALL_TYPES],
+  ] as const)(
+    "stays under the budget at maxPoints 2000 with %s",
+    async (_, types) => {
+      const result = await callAtMax([...types]);
+      const text = result.content[0]!.text;
+      expect(responseSize(text, result.structuredContent)).toBeLessThanOrEqual(
+        RESPONSE_BUDGET_CHARS,
+      );
+      // Shrunk, not gutted: the budget leaves room for well over the default.
+      expect(result.structuredContent.returned_points).toBeGreaterThan(120);
+      expect(result.structuredContent.returned_points).toBeLessThan(2000);
+    },
+  );
+
+  it("keeps every column the same length as returned_points after shrinking", async () => {
+    const result = await callAtMax(ALL_TYPES);
+    const n = result.structuredContent.returned_points;
+    for (const values of Object.values(result.structuredContent.streams))
+      expect(values).toHaveLength(n);
+  });
+
+  it("says in the text that it returned fewer points than asked, and how to get more", async () => {
+    const result = await callAtMax(ALL_TYPES);
+    const text = result.content[0]!.text;
+    const n = result.structuredContent.returned_points;
+    expect(text).toContain(`Reduced to ${n} of the 2000 points requested`);
+    expect(text).toContain("fewer types");
+  });
+
+  it("does not mention a reduction when the request already fits", async () => {
+    mockedGetActivity.mockResolvedValueOnce(runActivity);
+    mockedGetActivityStreams.mockResolvedValueOnce(rawStreams);
+    const result = await getActivityStreamsTool.execute(
+      { id: "i189807578", types: ALL_TYPES, maxPoints: 100 },
+      "key",
+    );
+    expect(result.structuredContent?.returned_points).toBe(100);
+    expect(result.content[0]?.text).not.toContain("Reduced to");
   });
 });

@@ -60,3 +60,54 @@ export function syntheticStreams(
   }
   return streams;
 }
+
+/**
+ * `seconds` of 1 Hz samples for every stream type `get-activity-streams`
+ * can return, with realistic digit counts (a moving GPS track, fractional
+ * altitude and speed), for response-size tests: a long run at maxPoints 2000
+ * with all types is the largest response that tool can make.
+ */
+export function syntheticAllTypesStreams(seconds: number): IntervalsStream[] {
+  const range = Array.from({ length: seconds }, (_, i) => i);
+  const wave = (i: number, period: number) =>
+    Math.sin((2 * Math.PI * i) / period);
+  return [
+    { type: "time", data: range },
+    { type: "distance", data: range.map((i) => i * 3.21 + wave(i, 97)) },
+    {
+      type: "heartrate",
+      data: range.map((i) => 150 + Math.round(10 * wave(i, 311))),
+    },
+    {
+      type: "cadence",
+      data: range.map((i) => 86 + Math.round(3 * wave(i, 53))),
+    },
+    {
+      type: "velocity_smooth",
+      data: range.map((i) => 3.21 + 0.37 * wave(i, 127)),
+    },
+    { type: "altitude", data: range.map((i) => 120.4 + 35.7 * wave(i, 1201)) },
+    {
+      type: "latlng",
+      data: range.map((i) => -33.861234 + i * 0.0000213),
+      data2: range.map((i) => 151.207654 + i * 0.0000187),
+    },
+    {
+      type: "watts",
+      data: range.map((i) => 260 + Math.round(40 * wave(i, 71))),
+    },
+    { type: "stance_time", data: range.map((i) => 241.3 + 12.1 * wave(i, 61)) },
+    {
+      type: "vertical_oscillation",
+      data: range.map((i) => 84.6 + 6.2 * wave(i, 67)),
+    },
+    {
+      type: "vertical_ratio",
+      data: range.map((i) => 7.81 + 0.42 * wave(i, 73)),
+    },
+    {
+      type: "step_length",
+      data: range.map((i) => 1123 + Math.round(40 * wave(i, 79))),
+    },
+  ];
+}

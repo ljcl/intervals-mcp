@@ -359,7 +359,7 @@ describe("formatActivityDetailText", () => {
     expect(text.length).toBeLessThan(6000);
   });
 
-  it("caps interval lines at 20 and adds a '(n more)' summary", () => {
+  it("caps interval lines at 20 and points at get-activity-laps for the rest", () => {
     const manyIntervals = Array.from({ length: 23 }, (_, i) => ({
       type: i % 2 === 0 ? "WORK" : "RECOVERY",
       label: null,
@@ -380,7 +380,7 @@ describe("formatActivityDetailText", () => {
     const text = formatActivityDetailText(detail);
     expect(text).toContain("20. RECOVERY:");
     expect(text).not.toContain("21.");
-    expect(text).toContain("(3 more)");
+    expect(text).toContain("(3 more: get-activity-laps lists all 23)");
   });
 
   it("adds a stub note when the activity is a Strava stub", () => {

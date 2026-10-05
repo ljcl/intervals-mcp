@@ -346,9 +346,23 @@ export const getFitnessTrendTool = {
         output += `\n`;
       }
 
+      // Some hosts pass only this text to the model, so the days before the
+      // last 14 are listed too, one per week counting back from the most
+      // recent, rather than left to structuredContent alone.
       const recent = displaySeries.slice(-14);
+      const earlier = displaySeries.slice(0, -14);
+      const weekly = earlier.filter(
+        (_, i) => (earlier.length - 1 - i) % 7 === 0,
+      );
+      if (weekly.length > 0) {
+        output += `**Earlier, weekly** (every 7th day)\n`;
+        for (const day of weekly) {
+          output += `${formatDay(day)}\n`;
+        }
+        output += `\n`;
+      }
       if (recent.length > 0) {
-        output += `**Last ${recent.length} days** (full series in structured output)\n`;
+        output += `**Last ${recent.length} days**\n`;
         for (const day of recent) {
           output += `${formatDay(day)}\n`;
         }
