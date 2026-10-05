@@ -19,12 +19,12 @@ export {
   RAMP_GRADIENT_CSS,
   rampColor,
 } from "./ramp";
+export { smooth } from "./smoothing";
 export {
+  type SpeedDisplay,
+  type SpeedSport,
   speedDisplay,
   speedDisplayForSport,
   speedSport,
-  type SpeedDisplay,
-  type SpeedSport,
 } from "./speed";
-export { smooth } from "./smoothing";
 export { dominantBucket, type ZoneBucket, type ZoneSet } from "./zones";
