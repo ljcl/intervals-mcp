@@ -87,7 +87,7 @@ step is a hard requirement.
 
 ```bash
 bun run check             # Lint + test + typecheck + build + boundaries (cached)
-bun run check:affected    # Same, only packages changed since main
+bun run check:affected    # Same, only packages changed since main (root lint + typecheck:root always run)
 bun run test:stories      # Every story renders in headless Chromium (needs Playwright browsers)
 docker compose build      # Server container builds from current sources
 ```

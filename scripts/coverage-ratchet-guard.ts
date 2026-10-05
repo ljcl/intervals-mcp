@@ -36,6 +36,7 @@ if (sepIndex <= 0 || sepIndex === args.length - 1) {
   usageError("expected a config path, `--`, then a command to run");
 }
 
+// sepIndex > 0 above guarantees args[0]; the check narrows the type.
 const configPath = args[0];
 if (configPath === undefined) {
   usageError("expected a config path, `--`, then a command to run");

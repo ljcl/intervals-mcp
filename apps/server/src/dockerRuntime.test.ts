@@ -355,6 +355,7 @@ describe("local toolchain pin", () => {
   });
 
   it("installs the .tool-versions Node in CI", () => {
+    // Asserts the line is a full x.y.z; the setup action reads it as-is.
     toolVersionsNode();
     const action = readFileSync(
       new URL(".github/actions/setup/action.yml", REPO_ROOT),
