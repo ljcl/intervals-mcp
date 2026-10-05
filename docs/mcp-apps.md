@@ -262,8 +262,11 @@ at the cap so the limit is legible.
 
 `set-view` (`view`, `runIds` up to 4, `xAxis`) lets the model drive the view;
 `runIds` replaces the selection, in the order given, so overlay colours follow
-it. `resolveSetView` (`src/setView.ts`, unit-tested) checks the ids against the
-chart's runs with cadence and names any it rejects; a `runIds` or `xAxis`
+it. The model never sees the chart's runs, so the description points it at
+`list-activities` for ids. `resolveSetView` (`src/setView.ts`, unit-tested)
+matches ids with or without the `i` prefix, as the server's
+`intervalsActivityIdInput` does, and a refusal names ids the chart lacks apart
+from runs with no cadence, each once; a `runIds` or `xAxis`
 without a `view` moves to the overlay, while an empty `runIds` only clears the
 selection. The overlay x-axis is `App` state (`OverlayView` is controlled), and
 the context summary reports it while the overlay shows.

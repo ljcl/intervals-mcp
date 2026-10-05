@@ -19,7 +19,7 @@ describe("cadence trends view tools", () => {
     expect(tool).toMatchObject({
       title: "Change the cadence view",
       description:
-        "Switch the cadence chart between trend, scatter, zones and overlay, choose up to 4 runs to overlay (ids from the chart's runs), and pick the overlay x-axis. runIds replaces the current selection.",
+        'Switch the cadence chart between trend, scatter, zones and overlay, choose up to 4 runs to overlay, and pick the overlay x-axis. runIds are activity ids from list-activities (for example "i189807578") for runs within the chart\'s weeks, and replace the current selection.',
     });
     expect(viewToolFields(tool!)).toEqual({
       view: {
@@ -31,7 +31,8 @@ describe("cadence trends view tools", () => {
         type: "array",
         items: { type: "string" },
         maxItems: 4,
-        description: "Run ids to overlay, up to 4; replaces the selection.",
+        description:
+          "Activity ids from list-activities to overlay, up to 4; replaces the selection.",
       },
       xAxis: {
         type: "string",

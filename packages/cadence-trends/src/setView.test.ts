@@ -60,18 +60,39 @@ describe("resolveSetView", () => {
     ).toMatchObject({ kind: "ok", runIds: ["i1", "i2"] });
   });
 
-  it("rejects ids that are unknown or have no cadence", () => {
-    const r = resolveSetView({ runIds: ["i9", "i3"] }, runs, "trend");
-    expect(r).toMatchObject({ kind: "error" });
-    expect((r as { text: string }).text).toContain("i9");
-    expect((r as { text: string }).text).toContain("i3");
+  it("accepts an id with or without the i prefix, as the server does", () => {
+    expect(
+      resolveSetView({ runIds: ["2", "i1"] }, runs, "trend"),
+    ).toMatchObject({ kind: "ok", runIds: ["i2", "i1"] });
+  });
+
+  it("selects a run once whichever way its id is spelled", () => {
+    expect(
+      resolveSetView({ runIds: ["i1", "1"] }, runs, "trend"),
+    ).toMatchObject({ kind: "ok", runIds: ["i1"] });
+  });
+
+  it("tells unknown ids from runs with no cadence, each named once", () => {
+    expect(
+      resolveSetView({ runIds: ["i9", "9", "i3", "i9", "3"] }, runs, "trend"),
+    ).toEqual({
+      kind: "error",
+      text: 'Not runs in this chart: i9. Run ids come from list-activities (for example "i189807578") and must fall within the chart\'s weeks. No recorded cadence, so nothing to overlay: i3. Nothing was changed.',
+    });
   });
 
   it("names only the ids that are wrong", () => {
     const r = resolveSetView({ runIds: ["i1", "i9"] }, runs, "trend");
     expect(r).toEqual({
       kind: "error",
-      text: "These runs are not in this chart or have no cadence: i9.",
+      text: 'Not runs in this chart: i9. Run ids come from list-activities (for example "i189807578") and must fall within the chart\'s weeks. Nothing was changed.',
+    });
+  });
+
+  it("reports a run with no cadence on its own", () => {
+    expect(resolveSetView({ runIds: ["i3"] }, runs, "trend")).toEqual({
+      kind: "error",
+      text: "No recorded cadence, so nothing to overlay: i3. Nothing was changed.",
     });
   });
 

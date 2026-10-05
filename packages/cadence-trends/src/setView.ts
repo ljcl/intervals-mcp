@@ -41,25 +41,64 @@ export function resolveSetView(
 
   let runIds: string[] | undefined;
   if (args.runIds) {
-    // The overlay plots a cadence stream, so a run without cadence is no more
-    // selectable than one that is not in the chart.
-    const selectable = new Set(
-      runs.filter((r) => r.averageCadence > 0).map((r) => r.id),
-    );
-    const bad = args.runIds.filter((id) => !selectable.has(id));
-    if (bad.length > 0) {
+    const byKey = new Map(runs.map((run) => [idKey(run.id), run]));
+    const chosen = new Map<string, string>();
+    const unknown = new Map<string, string>();
+    const noCadence = new Map<string, string>();
+    for (const id of args.runIds) {
+      const key = idKey(id);
+      const run = byKey.get(key);
+      // The overlay plots a cadence stream, so a run without cadence cannot
+      // be overlaid even though the chart has it.
+      if (!run) setOnce(unknown, key, id);
+      else if (run.averageCadence > 0) setOnce(chosen, key, run.id);
+      else setOnce(noCadence, key, run.id);
+    }
+    if (unknown.size > 0 || noCadence.size > 0) {
       return {
         kind: "error",
-        text: `These runs are not in this chart or have no cadence: ${bad.join(", ")}.`,
+        text: badIdsText([...unknown.values()], [...noCadence.values()]),
       };
     }
-    runIds = [...new Set(args.runIds)];
+    runIds = [...chosen.values()];
   }
 
   const view =
     args.view ??
     (runIds?.length || args.xAxis !== undefined ? "overlay" : currentView);
   return { kind: "ok", view, runIds, xAxis: args.xAxis };
+}
+
+/**
+ * An id's identity whichever way it is spelled: the server accepts an
+ * activity id with or without its `i` prefix (`intervalsActivityIdInput`), so
+ * "189807578" and "i189807578" name the same run here too.
+ */
+function idKey(id: string): string {
+  return /^i?(\d+)$/.exec(id)?.[1] ?? id;
+}
+
+/** Keeps the first spelling of each id, so a list names every run once. */
+function setOnce(map: Map<string, string>, key: string, value: string) {
+  if (!map.has(key)) map.set(key, value);
+}
+
+/** Why a selection was refused, telling ids the chart lacks from runs it
+ * cannot overlay, and where the right ids come from. */
+function badIdsText(unknown: string[], noCadence: string[]): string {
+  const parts: string[] = [];
+  if (unknown.length > 0) {
+    parts.push(
+      `Not runs in this chart: ${unknown.join(", ")}. Run ids come from list-activities (for example "i189807578") and must fall within the chart's weeks.`,
+    );
+  }
+  if (noCadence.length > 0) {
+    parts.push(
+      `No recorded cadence, so nothing to overlay: ${noCadence.join(", ")}.`,
+    );
+  }
+  parts.push("Nothing was changed.");
+  return parts.join(" ");
 }
 
 /** "A", "A and B", "A, B and C". */

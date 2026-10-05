@@ -263,7 +263,7 @@ export const ModelDrivenView = meta.story({
     await click("call-unknown-run");
     await waitFor(() =>
       expect(said()).toBe(
-        "These runs are not in this chart or have no cadence: i99999.",
+        'Not runs in this chart: i99999. Run ids come from list-activities (for example "i189807578") and must fall within the chart\'s weeks. Nothing was changed.',
       ),
     );
     await expect(
