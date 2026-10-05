@@ -54,7 +54,7 @@ import {
   NO_PROGRESS,
   type ReportProgress,
 } from "./progress";
-import { getPrompt, listPrompts } from "./prompts";
+import { completePromptArgument, getPrompt, listPrompts } from "./prompts";
 import { buildRouteMapData, type RouteMapData } from "./routeMapData";
 import { recordToolCall, type ToolOutcome } from "./telemetry";
 import { READ_ONLY } from "./tools/_annotations";
@@ -1419,6 +1419,9 @@ export function createServer(): Server {
         tools: {},
         resources: {},
         prompts: {},
+        // Static argument suggestions for prompts (race distance, review
+        // length); see completePromptArgument.
+        completions: {},
         // No `logging`: the 2026-07-28 revision deprecates it (SEP-2577), and
         // the per-call record it carried is the operator's stderr line, with
         // nothing in it the caller does not already know (#72).
@@ -1448,6 +1451,15 @@ export function createServer(): Server {
   server.setRequestHandler("prompts/get", async (request) =>
     getPrompt(request.params.name, request.params.arguments),
   );
+
+  server.setRequestHandler("completion/complete", async (request) => {
+    const { ref, argument } = request.params;
+    const values =
+      ref.type === "ref/prompt"
+        ? completePromptArgument(ref.name, argument.name, argument.value)
+        : [];
+    return { completion: { values, total: values.length, hasMore: false } };
+  });
 
   server.setRequestHandler("tools/call", async (request, ctx) => {
     const { name, arguments: args } = request.params;

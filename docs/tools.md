@@ -631,12 +631,23 @@ Reusable multi-step workflows a host can offer as slash commands or starters.
 
 | Prompt | Arguments | What it does |
 | ------ | --------- | ------------ |
-| `weekly-review` | `weeks` (optional, default 4) | Reviews recent training (load trend, key workouts, cadence patterns), ending with focus points for next week |
-| `annotate-last-run` | `activity_id` (optional, defaults to the most recent run) | Analyses a run and appends a short coaching note to its activity description. Confirms before writing |
+| `weekly-review` | `weeks` (optional, 1-52, default 4) | Reviews recent training (load trend, key workouts across the whole window, cadence patterns), ending with focus points for next week |
+| `annotate-last-run` | `id` (optional, defaults to the newest Run, TrailRun or VirtualRun; `activity_id` still accepted) | Analyses a run and appends a short coaching note to its activity description. Confirms before writing |
+| `race-readiness` | `raceDate` (required, after today, at most 180 days ahead), `distance` (optional), `targetTsb` (optional, default 10) | Race-day form and the taper that lands on it, predicted time, last 7 days of recovery, recent load; ends with a ready / nearly / not-yet verdict |
+| `run-debrief` | `id` (optional, defaults to the newest run) | The run summary, then the one analysis that fits the session (intervals, splits, hills or aerobic), plus that day's wellness |
+| `injury-check` | none | Load spikes and warnings, the 4-week HRV and resting-HR trend, form flags and shoe mileage; ends with a risk read and what to change, not a diagnosis |
 
 In Claude Desktop and Claude Code these appear in the prompt picker once the
 server is connected. `annotate-last-run` uses a write tool (`update-activity`),
 so a client needs to grant it before the prompt can write the note.
+
+A bad argument (`weeks: 100`, a past `raceDate`, an unknown distance) is
+rejected with Invalid Params (-32602) naming the fix, rather than rendering a
+workflow the tools would then refuse. The server advertises `completions`:
+`completion/complete` suggests race distances and `targetTsb` values for
+`race-readiness` and review lengths for `weekly-review`. Activity ids get no
+suggestions, because a completion is a bare value with no label and each
+keystroke would cost an intervals.icu request.
 
 ## Tool permissions
 

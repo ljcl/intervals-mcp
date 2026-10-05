@@ -66,6 +66,7 @@ describe("server/discover", () => {
       tools: expect.any(Object),
       resources: expect.any(Object),
       prompts: expect.any(Object),
+      completions: expect.any(Object),
     });
     // Deprecated in this revision (SEP-2577), so not advertised (#72).
     expect(discover.capabilities).not.toHaveProperty("logging");
@@ -612,6 +613,69 @@ describe("prompts", () => {
     expect(messages.length).toBeGreaterThan(0);
     expect(messages[0]?.content.type).toBe("text");
     expect(messages[0]?.content.text.length).toBeGreaterThan(0);
+  });
+
+  it("lists the race-readiness, run-debrief and injury-check workflows with titles", async () => {
+    const client = await connectTestClient();
+    const { result } = await client.send("prompts/list");
+    const prompts = result?.prompts as Array<{ name: string; title: string }>;
+
+    for (const name of ["race-readiness", "run-debrief", "injury-check"]) {
+      const prompt = prompts.find((p) => p.name === name);
+      expect(prompt?.title, name).toMatch(/\S/);
+    }
+  });
+
+  it("reviews 12 weeks of activities for weeks: 12", async () => {
+    const client = await connectTestClient();
+    const { result, error } = await client.send("prompts/get", {
+      name: "weekly-review",
+      arguments: { weeks: "12" },
+    });
+
+    expect(error).toBeUndefined();
+    const messages = result?.messages as Array<{ content: { text: string } }>;
+    const text = messages[0]?.content.text ?? "";
+    expect(text).toContain("get-training-load with days=84");
+    expect(text).toMatch(
+      /list-activities with oldest=\d{4}-\d{2}-\d{2}, newest=\d{4}-\d{2}-\d{2}/,
+    );
+  });
+
+  it("rejects weeks: 100 with Invalid Params (-32602)", async () => {
+    const client = await connectTestClient();
+    const { result, error } = await client.send("prompts/get", {
+      name: "weekly-review",
+      arguments: { weeks: "100" },
+    });
+
+    expect(result).toBeUndefined();
+    expect(error?.code).toBe(-32602);
+    expect(error?.message).toContain(
+      "weeks must be a whole number from 1 to 52",
+    );
+  });
+
+  it("completes a prompt argument through completion/complete", async () => {
+    const client = await connectTestClient();
+    const { result, error } = await client.send("completion/complete", {
+      ref: { type: "ref/prompt", name: "race-readiness" },
+      argument: { name: "distance", value: "ha" },
+    });
+
+    expect(error).toBeUndefined();
+    expect(result?.completion).toMatchObject({ values: ["Half Marathon"] });
+  });
+
+  it("completes nothing for a resource template reference", async () => {
+    const client = await connectTestClient();
+    const { result, error } = await client.send("completion/complete", {
+      ref: { type: "ref/resource", uri: "ui://route-map/app.html" },
+      argument: { name: "x", value: "" },
+    });
+
+    expect(error).toBeUndefined();
+    expect(result?.completion).toMatchObject({ values: [] });
   });
 
   it("answers an unknown prompt with Invalid Params (-32602), not Internal Error", async () => {
