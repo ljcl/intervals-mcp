@@ -162,3 +162,12 @@ export const mockRuns: RunSummary[] = [
 export const runsWithGap: RunSummary[] = mockRuns.filter(
   (r) => r.date < "2026-01-08" || r.date > "2026-01-28",
 );
+
+/**
+ * `mockRuns` where two runs (Recovery Jog, Easy 6k on 14 Jan) recorded no
+ * speed: they stay cadence dots but have no pace to plot, and every pace dot
+ * after them must still belong to its own run.
+ */
+export const runsWithNullPace: RunSummary[] = mockRuns.map((r) =>
+  r.id === "i10002" || r.id === "i10005" ? { ...r, averagePace: null } : r,
+);

@@ -243,7 +243,9 @@ at the cap so the limit is legible.
 Trend uses a time axis (`dateTs`, UTC day), so gaps in running show as gaps. Zone
 whiskers run from min to max (`buildZoneRows`). Overlay colours follow selection
 order (`assignOverlayColors`); runs sharing a name are labelled with their date
-(`overlayRunLabel`).
+(`overlayRunLabel`). The pace Scatter reads the chart's own data and Recharts skips
+a null pace; a Scatter-level `data` filter makes the shared tooltip show the wrong
+run for some dots.
 
 ### Route Map
 

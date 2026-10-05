@@ -75,13 +75,6 @@ export function TrendView({
     [sorted, trend, maxDistance, tokens.dotScale],
   );
 
-  // A run with no recorded speed has no pace to plot: it stays a cadence dot
-  // and draws no pace symbol, rather than a point at a fabricated 0.
-  const paceData = useMemo(
-    () => chartData.filter((r) => r.averagePace != null),
-    [chartData],
-  );
-
   const timeAxis = useMemo(
     () => trendTimeAxis(chartData.map((r) => r.dateTs)),
     [chartData],
@@ -218,15 +211,18 @@ export function TrendView({
               />
             ))}
           </Scatter>
+          {/* A run with no recorded speed has a null pace: Recharts skips it,
+              so it keeps its cadence dot and draws no pace symbol. Do not
+              filter it out with a Scatter-level `data` prop: that makes the
+              shared tooltip show the wrong run for some dots. */}
           <Scatter
             yAxisId="pace"
-            data={paceData}
             dataKey="averagePace"
             fill="var(--chart-pace)"
             fillOpacity={0.5}
             isAnimationActive={false}
           >
-            {paceData.map((entry) => (
+            {chartData.map((entry) => (
               <Cell
                 key={entry.id}
                 cursor="pointer"
