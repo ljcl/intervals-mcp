@@ -1,6 +1,21 @@
-import { formatDurationShort, formatShortDate } from "@intervals-mcp/data";
+import {
+  fitnessSourceLabel,
+  formatDurationShort,
+  formatShortDate,
+  formatSignedTsb,
+} from "@intervals-mcp/data";
 import { type SummaryStat } from "@intervals-mcp/ui";
-import { type TrainingLoadData, type WeekSummary } from "./types";
+import {
+  type TrainingLoadCurrent,
+  type TrainingLoadData,
+  type WeekSummary,
+} from "./types";
+
+/** What load and CTL/ATL/TSB were summed over, and where `current` came from. */
+type LoadScope = Pick<
+  TrainingLoadData,
+  "runOnly" | "activityTypesIncluded" | "current" | "source"
+>;
 
 /**
  * Weekly totals arrive as fractional hours; the shared formatter takes
@@ -10,19 +25,94 @@ export function formatHours(timeHours: number): string {
   return formatDurationShort(timeHours * 3600);
 }
 
-/** SummaryBar totals row: runs, distance, time, elevation. */
+/**
+ * What the app asks `get-training-load-data` for, from what the host called
+ * `view-training-load` with. `runOnly` must travel: the data tool defaults to
+ * whole-body, so dropping it would draw a whole-body chart under a run-only
+ * request. Defaults match the view tool's.
+ */
+export function buildDataArgs(args: { days?: number; runOnly?: boolean }): {
+  days: number;
+  runOnly: boolean;
+} {
+  return { days: args.days ?? 84, runOnly: args.runOnly ?? false };
+}
+
+/**
+ * SummaryBar row: runs, distance and load for the window, then fitness,
+ * fatigue and form as of `current`. The three fitness tiles are dashes when
+ * there is no wellness to read, so the row keeps its shape.
+ */
 export function buildTotalsStats(
   totals: TrainingLoadData["totals"],
+  current: TrainingLoadCurrent | null,
 ): SummaryStat[] {
   return [
     { label: "Runs", value: `${totals.runs}` },
     { label: "Distance", value: `${totals.distanceKm.toLocaleString()} km` },
-    { label: "Time", value: formatHours(totals.timeHours) },
-    {
-      label: "Elevation",
-      value: `${Math.round(totals.elevationM).toLocaleString()} m`,
-    },
+    { label: "Load", value: totals.load.toLocaleString() },
+    { label: "Fitness", value: current ? `${current.ctl}` : "—" },
+    { label: "Fatigue", value: current ? `${current.atl}` : "—" },
+    { label: "Form", value: current ? formatSignedTsb(current.tsb) : "—" },
   ];
+}
+
+/** "(Ride, Run)", or nothing when no activity type carried load. */
+const typeList = (types: string[]) =>
+  types.length > 0 ? ` (${types.join(", ")})` : "";
+
+/**
+ * The scope note under the totals: what the load line and the fitness tiles
+ * add up, and where CTL/ATL/TSB came from. "Whole-body load (Run, Ride) ·
+ * from intervals.icu as of 5 Oct" / "Run-only load · computed locally as of
+ * 5 Oct". Volume and warnings are run-based either way, so the note speaks
+ * only for load and fitness. No "as of" without a `current`.
+ */
+export function buildScopeNote(scope: LoadScope): string {
+  const load = scope.runOnly
+    ? "Run-only load"
+    : `Whole-body load${typeList(scope.activityTypesIncluded)}`;
+  const source = fitnessSourceLabel(scope.source).toLowerCase();
+  const asOf = scope.current
+    ? ` as of ${formatShortDate(scope.current.date)}`
+    : "";
+  return `${load} · ${source}${asOf}`;
+}
+
+/**
+ * The scope in a sentence for the narration and the model context: "whole
+ * body (Ride, Run)" or "runs only".
+ */
+export function describeLoadScope(
+  scope: Pick<LoadScope, "runOnly" | "activityTypesIncluded">,
+): string {
+  return scope.runOnly
+    ? "runs only"
+    : `whole body${typeList(scope.activityTypesIncluded)}`;
+}
+
+/**
+ * "CTL 52, ATL 61, TSB -9 (from intervals.icu)": the same three numbers as
+ * the Fitness, Fatigue and Form tiles, with where they came from, for the
+ * narration and the model context.
+ */
+export function formatCurrentFitness(
+  current: TrainingLoadCurrent,
+  source: TrainingLoadData["source"],
+): string {
+  return `CTL ${current.ctl}, ATL ${current.atl}, TSB ${formatSignedTsb(current.tsb)} (${fitnessSourceLabel(source).toLowerCase()})`;
+}
+
+/**
+ * A week's load by activity type, largest first. Equal loads fall back to
+ * the type name so the tooltip rows do not reorder between renders.
+ */
+export function buildLoadBreakdown(week: {
+  loadByType?: Record<string, number>;
+}): Array<{ type: string; load: number }> {
+  return Object.entries(week.loadByType ?? {})
+    .map(([type, load]) => ({ type, load }))
+    .sort((a, b) => b.load - a.load || a.type.localeCompare(b.type));
 }
 
 /** Count of weeks carrying at least one volume-spike warning. */

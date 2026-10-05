@@ -450,6 +450,77 @@ describe("training load handlers", () => {
     expect(text).toContain("Week of 2026-06-01 is in progress (partial).");
   });
 
+  it("view-training-load prints the whole-body scope and the current fitness line", async () => {
+    mockedIntervalsList.mockResolvedValueOnce([
+      intervalsRun(),
+      intervalsRun({
+        id: "2",
+        type: "Ride",
+        icu_training_load: 30,
+        distance: 20000,
+      }),
+    ]);
+    mockedWellness.mockResolvedValueOnce([
+      {
+        id: TL_TODAY,
+        ctl: 52,
+        atl: 61,
+        ctlLoad: 0,
+        atlLoad: 0,
+      } as IntervalsWellness,
+    ]);
+
+    const result = await dispatchToolCall("view-training-load", {});
+
+    expect(result.isError).toBeUndefined();
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain(
+      "Scope: whole-body load (Ride, Run), CTL/ATL from intervals.icu.",
+    );
+    expect(text).toContain(
+      `Current (as of ${TL_TODAY}): CTL 52 / ATL 61 / TSB -9`,
+    );
+    // The ride counts toward load but not toward the run totals.
+    expect(text).toContain("Runs: 1");
+    expect(text).toContain("Load: 80");
+  });
+
+  it("view-training-load prints the run-only scope and the locally computed current", async () => {
+    const run = intervalsRun();
+    mockedIntervalsList.mockResolvedValueOnce([run]);
+    const viewResult = await dispatchToolCall("view-training-load", {
+      runOnly: true,
+    });
+    mockedIntervalsList.mockResolvedValueOnce([run]);
+    const dataResult = await dispatchToolCall("get-training-load-data", {
+      runOnly: true,
+    });
+
+    expect(viewResult.isError).toBeUndefined();
+    const text = viewResult.content[0]?.text ?? "";
+    const data = JSON.parse(dataResult.content[0]?.text ?? "");
+    expect(text).toContain("Scope: run-only load, CTL/ATL computed locally.");
+    // The text prints the numbers the app draws: same total, same current.
+    expect(text).toContain(`Load: ${data.totals.load}`);
+    const { date, ctl, atl, tsb } = data.current;
+    expect(text).toContain(
+      `Current (as of ${date}): CTL ${ctl} / ATL ${atl} / TSB ${tsb >= 0 ? "+" : ""}${tsb}`,
+    );
+  });
+
+  it("view-training-load leaves the Current line out when there is no fitness to read", async () => {
+    mockedIntervalsList.mockResolvedValueOnce([intervalsRun()]);
+    mockedWellness.mockResolvedValueOnce([]);
+
+    const result = await dispatchToolCall("view-training-load", {});
+
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain(
+      "Scope: whole-body load (Run), CTL/ATL from intervals.icu.",
+    );
+    expect(text).not.toContain("Current (as of");
+  });
+
   it("get-training-load-data returns the weekly aggregation, whole-body by default", async () => {
     mockedIntervalsList.mockResolvedValueOnce([intervalsRun()]);
     mockedWellness.mockResolvedValueOnce([]);

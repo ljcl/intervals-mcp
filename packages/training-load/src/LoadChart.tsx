@@ -16,27 +16,33 @@ import {
 import { buildLoadA11y } from "./a11y";
 import styles from "./chartView.module.css";
 import { LoadTooltip } from "./LoadTooltip";
-import { type WeekSummary } from "./types";
+import { type TrainingLoadData } from "./types";
 
 interface LoadChartProps {
-  weeks: WeekSummary[];
+  data: TrainingLoadData;
   /** Draw the rolling-average trend line. */
   showTrend: boolean;
   /** Highlight volume-spike weeks in the warning color. */
   showWarnings: boolean;
+  /** Draw weekly training load as a line on its own right-hand axis. */
+  showLoad: boolean;
   mode?: "mobile" | "desktop";
 }
 
 export function LoadChart({
-  weeks,
+  data,
   showTrend,
   showWarnings,
+  showLoad,
   mode = "desktop",
 }: LoadChartProps) {
+  const { weeks } = data;
   const isMobile = mode === "mobile";
   const tokens = {
     ...getChartTokens(mode),
-    marginRight: isMobile ? 8 : 16,
+    // The load axis sits on the right and carries its own width, so the
+    // margin only needs to keep its last tick off the card edge.
+    marginRight: isMobile ? 4 : 8,
     marginLeft: isMobile ? -8 : 0,
     marginTop: 8,
     // Bottom margin must fit tick label descenders; see docs/mcp-apps.md.
@@ -53,8 +59,8 @@ export function LoadChart({
   );
 
   const a11y = useMemo(
-    () => buildLoadA11y(weeks, { showTrend, showWarnings }),
-    [weeks, showTrend, showWarnings],
+    () => buildLoadA11y(data, { showTrend, showWarnings, showLoad }),
+    [data, showTrend, showWarnings, showLoad],
   );
 
   if (chartData.length === 0) {
@@ -77,6 +83,7 @@ export function LoadChart({
           }}
         >
           <CartesianGrid
+            yAxisId="distance"
             strokeDasharray={GRID_DASHARRAY}
             stroke="var(--color-border-tertiary)"
             vertical={false}
@@ -93,6 +100,7 @@ export function LoadChart({
             minTickGap={isMobile ? 32 : 20}
           />
           <YAxis
+            yAxisId="distance"
             domain={[0, "auto"]}
             tick={{
               fontSize: tokens.axisFont,
@@ -115,8 +123,37 @@ export function LoadChart({
                   }
             }
           />
+          {/* Load is on its own scale: a hard week's load is in the hundreds
+           * against a few tens of km, and sharing an axis would flatten one
+           * of them. The axis hides with the line so the plot widens back. */}
+          <YAxis
+            yAxisId="load"
+            orientation="right"
+            domain={[0, "auto"]}
+            tick={{
+              fontSize: tokens.axisFont,
+              fill: "var(--color-text-tertiary)",
+            }}
+            tickLine={false}
+            axisLine={false}
+            width={isMobile ? 34 : 40}
+            hide={!showLoad}
+            label={
+              isMobile
+                ? undefined
+                : {
+                    value: "Load",
+                    angle: 90,
+                    position: "insideRight",
+                    style: {
+                      fontSize: 11,
+                      fill: "var(--color-text-tertiary)",
+                    },
+                  }
+            }
+          />
           <RechartsTooltip content={<LoadTooltip />} />
-          <Bar dataKey="distanceKm" radius={[4, 4, 0, 0]}>
+          <Bar yAxisId="distance" dataKey="distanceKm" radius={[4, 4, 0, 0]}>
             {chartData.map((entry) => {
               const fill =
                 showWarnings && entry.warning
@@ -137,11 +174,29 @@ export function LoadChart({
           </Bar>
           {showTrend && (
             <Line
+              yAxisId="distance"
               type="monotone"
               dataKey="trendKm"
               stroke="var(--chart-cadence)"
               strokeWidth={tokens.strokeWidth}
               dot={false}
+            />
+          )}
+          {showLoad && (
+            // Linear, not a spline: weeks are discrete points, and a curve
+            // would overshoot between a hard week and a rest week.
+            <Line
+              yAxisId="load"
+              type="linear"
+              dataKey="load"
+              stroke="var(--chart-power)"
+              strokeWidth={tokens.secondaryStrokeWidth}
+              dot={{
+                r: 2.5 * tokens.dotScale,
+                fill: "var(--chart-power)",
+                stroke: "var(--chart-power)",
+              }}
+              activeDot={{ r: 4 * tokens.dotScale }}
             />
           )}
         </ComposedChart>

@@ -16,9 +16,9 @@ export interface WeekSummary {
   warning: boolean;
   warningReasons: string[];
   /** Sum of icu_training_load over the included types this week. */
-  load?: number;
+  load: number;
   /** `load` split by activity type. */
-  loadByType?: Record<string, number>;
+  loadByType: Record<string, number>;
 }
 
 /** Most recent CTL/ATL/TSB, from get-training-load-data. */
@@ -41,13 +41,18 @@ export interface TrainingLoadData {
     distanceKm: number;
     timeHours: number;
     elevationM: number;
-    load?: number;
+    load: number;
   };
   weeks: WeekSummary[];
   /** Activity types load/loadByType are summed over. */
-  activityTypesIncluded?: string[];
-  /** True when load is run-only rather than whole-body. */
-  runOnly?: boolean;
-  current?: TrainingLoadCurrent | null;
-  source?: "intervals.icu" | "computed" | null;
+  activityTypesIncluded: string[];
+  /**
+   * True when load and CTL/ATL/TSB are run-only rather than whole-body. Volume
+   * and spike warnings are run-based either way.
+   */
+  runOnly: boolean;
+  /** Most recent CTL/ATL/TSB; null when there is no wellness to read. */
+  current: TrainingLoadCurrent | null;
+  /** Where `current` came from: intervals.icu wellness, or computed locally. */
+  source: "intervals.icu" | "computed" | null;
 }

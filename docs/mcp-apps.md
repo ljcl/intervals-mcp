@@ -369,8 +369,13 @@ exercise the real default view.
 ### Training Load
 
 Weekly running-volume bars with rolling trend line and volume-spike warning
-weeks. Calls `get-training-load-data` with the `days` window (default 84,
-max 365).
+weeks, a weekly load line, and Fitness/Fatigue/Form tiles. Calls
+`get-training-load-data` with the `days` window (default 84, max 365) and the
+`runOnly` scope the view tool was called with (default false). `runOnly` has
+to travel: the data tool defaults to whole-body, so dropping it would draw a
+whole-body chart under a run-only request. `buildDataArgs` (`normalize.ts`)
+builds the arguments, unit-tested. Volume and spike warnings are always
+run-based; load and CTL/ATL/TSB follow `runOnly`.
 
 - Server-side aggregation is pure and unit-tested in
   `apps/server/src/trainingLoad.ts` (`buildTrainingLoadData`): Monday-start
@@ -391,9 +396,24 @@ max 365).
   ends at the last complete week, and the tooltip, narration and model
   context all say the week is in progress.
 - `ComposedChart`: weekly distance bars (warning weeks recoloured in the
-  danger hue) plus trend `Line`; the shared scrub tooltip lists distance, runs,
-  time, elevation, warnings. Footer `Legend` toggles trend line and warning
-  highlighting; totals render in the shared `SummaryBar`.
+  danger hue) plus trend `Line` on the `distance` axis, and weekly `load` as a
+  linear `Line` on its own right-hand `load` axis (load runs to the hundreds
+  against tens of km, so one shared axis would flatten both). The shared scrub
+  tooltip lists distance, trend, load and its per-type breakdown (largest
+  first), runs, time, elevation, warnings. Footer `Legend` toggles trend line,
+  load line (the right axis hides with it) and warning highlighting; mobile
+  drops the axis titles.
+- The `SummaryBar` reads Runs, Distance, Load, Fitness, Fatigue, Form; the
+  three fitness tiles are dashes when `current` is null. A scope note under it
+  (`buildScopeNote`: "Whole-body load (Run, Ride) · from intervals.icu as of 5
+  Oct" or "Run-only load · computed locally as of 5 Oct") says what the load
+  and the tiles add up. The narration and model context carry the total load,
+  the scope and CTL/ATL/TSB with its source. Form is signed by
+  `formatSignedTsb` and the source by `fitnessSourceLabel`, both in
+  `packages/data` and shared with fitness-trend.
+- The `view-training-load` text prints the same numbers: a `Scope:` line and a
+  `Current (as of DATE): CTL x / ATL y / TSB +z` line, with its `Load:` total
+  equal to the payload's `totals.load`.
 
 ### Compare Activities
 

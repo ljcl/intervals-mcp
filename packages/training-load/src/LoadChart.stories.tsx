@@ -1,13 +1,19 @@
 import preview from "@intervals-mcp/design-system/preview";
 import { MobileCardShell } from "@intervals-mcp/ui";
 import { expect } from "storybook/test";
-import { layoffWeeks, mockWeeks } from "./__fixtures__/weeks";
+import {
+  layoffWeeks,
+  mockRunOnlyTrainingLoadData,
+  mockTrainingLoadData,
+} from "./__fixtures__/weeks";
 import { LoadChart } from "./LoadChart";
 
 const meta = preview.meta({ component: LoadChart });
 
+const shown = { showTrend: true, showWarnings: true, showLoad: true };
+
 export const Default = meta.story({
-  args: { weeks: mockWeeks, showTrend: true, showWarnings: true },
+  args: { data: mockTrainingLoadData, ...shown },
   play: async ({ canvas }) => {
     // Axis ticks come from the shared UTC formatter, the same one behind the
     // header subtitle and the narration. `toLocaleDateString` rendered "Jun
@@ -17,12 +23,22 @@ export const Default = meta.story({
   },
 });
 
+/** Run-only scope: the load line drops the rides, so the skipped week reads 0. */
+export const RunOnly = meta.story({
+  args: { data: mockRunOnlyTrainingLoadData, ...shown },
+});
+
 export const TrendHidden = meta.story({
-  args: { weeks: mockWeeks, showTrend: false, showWarnings: true },
+  args: { data: mockTrainingLoadData, ...shown, showTrend: false },
 });
 
 export const WarningsHidden = meta.story({
-  args: { weeks: mockWeeks, showTrend: true, showWarnings: false },
+  args: { data: mockTrainingLoadData, ...shown, showWarnings: false },
+});
+
+/** The load line and its right axis leave together; the bars keep the full width. */
+export const LoadHidden = meta.story({
+  args: { data: mockTrainingLoadData, ...shown, showLoad: false },
 });
 
 /**
@@ -30,7 +46,10 @@ export const WarningsHidden = meta.story({
  * the current week instead of stopping at the last run.
  */
 export const Layoff = meta.story({
-  args: { weeks: layoffWeeks, showTrend: true, showWarnings: true },
+  args: {
+    data: { ...mockTrainingLoadData, weeks: layoffWeeks },
+    ...shown,
+  },
   play: async ({ canvas }) => {
     // `preserveEnd` always draws the last tick: the current week, not the
     // last week with a run.
@@ -39,16 +58,11 @@ export const Layoff = meta.story({
 });
 
 export const Empty = meta.story({
-  args: { weeks: [], showTrend: true, showWarnings: true },
+  args: { data: { ...mockTrainingLoadData, weeks: [] }, ...shown },
 });
 
 export const Mobile = meta.story({
-  args: {
-    weeks: mockWeeks,
-    showTrend: true,
-    showWarnings: true,
-    mode: "mobile",
-  },
+  args: { data: mockTrainingLoadData, ...shown, mode: "mobile" },
   globals: {
     viewport: { value: "claudeIosCard" },
   },

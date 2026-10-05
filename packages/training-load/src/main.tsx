@@ -12,11 +12,13 @@ import { type useApp } from "@modelcontextprotocol/ext-apps/react";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import { buildDataArgs } from "./normalize";
 import { type TrainingLoadData } from "./types";
 import "./global.css";
 
 interface ToolArgs {
   days?: number;
+  runOnly?: boolean;
 }
 
 const LoadingSkeleton = ({ progress }: { progress?: string | null }) => (
@@ -35,9 +37,11 @@ interface AppContentProps {
 
 function AppContent({ app, toolArgs, hostCtx, mode }: AppContentProps) {
   const { data, loading, error, progress, retry } =
-    useServerToolData<TrainingLoadData>(app, "get-training-load-data", {
-      days: toolArgs.days ?? 84,
-    });
+    useServerToolData<TrainingLoadData>(
+      app,
+      "get-training-load-data",
+      buildDataArgs(toolArgs),
+    );
 
   return (
     <AppShell hostCtx={hostCtx} mode={mode} app={app}>

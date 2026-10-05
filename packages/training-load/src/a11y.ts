@@ -1,5 +1,6 @@
 import { formatShortDate } from "@intervals-mcp/data";
-import { type WeekSummary } from "./types";
+import { describeLoadScope, formatCurrentFitness } from "./normalize";
+import { type TrainingLoadData } from "./types";
 
 /**
  * Narration spells the year out: "14 Sep 2025". Week keys are date-only ISO
@@ -27,28 +28,40 @@ export interface ChartA11y {
 export interface LoadVisibility {
   showTrend: boolean;
   showWarnings: boolean;
+  showLoad: boolean;
 }
 
-const ALL_VISIBLE: LoadVisibility = { showTrend: true, showWarnings: true };
+const ALL_VISIBLE: LoadVisibility = {
+  showTrend: true,
+  showWarnings: true,
+  showLoad: true,
+};
 
 /**
- * Weekly volume bars with a rolling trend line and warning highlights.
- * The trend and warning clauses drop out when those layers are toggled off.
+ * Weekly volume bars with a rolling trend line, a weekly load line on its
+ * own axis, and warning highlights. The trend, load line and warning clauses
+ * drop out when those layers are toggled off; the total load and current
+ * fitness stay, since the summary tiles above the chart keep showing them.
  */
 export function buildLoadA11y(
-  weeks: WeekSummary[],
+  data: TrainingLoadData,
   visibility: LoadVisibility = ALL_VISIBLE,
 ): ChartA11y {
-  const title = "Weekly training volume";
+  const { weeks } = data;
+  const title = "Weekly training volume and load";
   if (weeks.length === 0) return { title, desc: "No runs to display." };
 
   const first = weeks[0]!;
   const last = weeks[weeks.length - 1]!;
   let min = Infinity;
   let max = -Infinity;
+  let minLoad = Infinity;
+  let maxLoad = -Infinity;
   for (const week of weeks) {
     if (week.distanceKm < min) min = week.distanceKm;
     if (week.distanceKm > max) max = week.distanceKm;
+    if (week.load < minLoad) minLoad = week.load;
+    if (week.load > maxLoad) maxLoad = week.load;
   }
 
   const parts = [
@@ -58,6 +71,20 @@ export function buildLoadA11y(
   if (last.inProgress) {
     parts.push(
       `The week of ${fullDate(last.weekStarting)} is still in progress, so its distance is only the days so far.`,
+    );
+  }
+
+  if (visibility.showLoad) {
+    parts.push(
+      `A second line shows weekly training load on the right axis, from ${minLoad} to ${maxLoad}.`,
+    );
+  }
+  parts.push(
+    `Total training load ${data.totals.load}, ${describeLoadScope(data)}.`,
+  );
+  if (data.current) {
+    parts.push(
+      `As of ${fullDate(data.current.date)}: ${formatCurrentFitness(data.current, data.source)}.`,
     );
   }
 

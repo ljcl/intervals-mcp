@@ -1,6 +1,6 @@
 import { Tooltip, TooltipEntry } from "@intervals-mcp/ui";
 import styles from "./LoadTooltip.module.css";
-import { formatHours } from "./normalize";
+import { buildLoadBreakdown, formatHours } from "./normalize";
 
 interface WeekTooltipPayloadItem {
   payload?: {
@@ -10,6 +10,8 @@ interface WeekTooltipPayloadItem {
     timeHours?: number;
     elevationM?: number;
     trendKm?: number | null;
+    load?: number;
+    loadByType?: Record<string, number>;
     inProgress?: boolean;
     warning?: boolean;
     warningReasons?: string[];
@@ -30,6 +32,8 @@ export function LoadTooltip({ active, payload }: LoadTooltipProps) {
     ? `Week of ${week.weekLabel}${week.inProgress ? " (in progress)" : ""}`
     : "";
 
+  const breakdown = buildLoadBreakdown(week);
+
   return (
     <Tooltip timestamp={heading}>
       {week.distanceKm !== undefined && (
@@ -48,6 +52,23 @@ export function LoadTooltip({ active, payload }: LoadTooltipProps) {
           unit="km"
         />
       )}
+      {week.load !== undefined && (
+        <TooltipEntry
+          color="var(--chart-power)"
+          label="Load"
+          value={`${week.load}`}
+          unit=""
+        />
+      )}
+      {breakdown.map(({ type, load }) => (
+        <TooltipEntry
+          key={type}
+          color="var(--color-text-tertiary)"
+          label={`${type} load`}
+          value={`${load}`}
+          unit=""
+        />
+      ))}
       {week.runs !== undefined && week.runs > 0 && (
         <TooltipEntry
           color="var(--color-text-tertiary)"

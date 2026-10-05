@@ -37,7 +37,7 @@ import {
   type FitnessTrendAppData,
   mapFitnessTrendApp,
 } from "./fitnessTrendApp";
-import { activityDisplayName } from "./formatters";
+import { activityDisplayName, formatSigned } from "./formatters";
 import { serverInstructions } from "./instructions";
 import {
   getActivity as getIntervalsActivity,
@@ -953,11 +953,24 @@ async function handleViewTrainingLoad(
   const warningWeeks = data.weeks.filter((w) => w.warning).length;
   const inProgress = data.weeks.find((w) => w.inProgress);
 
+  const { current } = data;
+  // What the app's scope note and tiles say, in the same words as the
+  // tool's own text: load follows `runOnly`, volume and warnings never do.
+  const scope = data.runOnly
+    ? "run-only load, CTL/ATL computed locally"
+    : `whole-body load${data.activityTypesIncluded.length > 0 ? ` (${data.activityTypesIncluded.join(", ")})` : ""}, CTL/ATL from intervals.icu`;
+
   const lines = [
     `Training Load (${data.startDate} to ${data.endDate}, CTL/ATL source: ${data.source})`,
+    `Scope: ${scope}.`,
     `Runs: ${data.totals.runs}`,
     `Distance: ${data.totals.distanceKm} km`,
     `Load: ${data.totals.load}`,
+    ...(current
+      ? [
+          `Current (as of ${current.date}): CTL ${current.ctl} / ATL ${current.atl} / TSB ${formatSigned(current.tsb)}`,
+        ]
+      : []),
     `Warning weeks: ${warningWeeks}`,
     ...(inProgress
       ? [`Week of ${inProgress.weekStarting} is in progress (partial).`]

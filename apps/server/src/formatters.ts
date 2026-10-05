@@ -44,6 +44,15 @@ export function formatFeel(feel: number): string {
 }
 
 /**
+ * `value` with an explicit "+" when it is zero or above: "+4.2", "+0", "-9".
+ * Form (TSB) only reads correctly with its sign. The one home for the
+ * signed TSB `get-training-load` and `view-training-load` print.
+ */
+export function formatSigned(value: number): string {
+  return `${value >= 0 ? "+" : ""}${value}`;
+}
+
+/**
  * Format duration in seconds to HH:MM:SS or MM:SS string.
  */
 export function formatDuration(seconds: number | null | undefined): string {
