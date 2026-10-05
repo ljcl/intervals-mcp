@@ -556,5 +556,11 @@ weeks take them. Calls `get-fitness-trend-data` on mount with `days`,
   `plan` the landing scope has no rows for (a scope still loading is given the
   benefit of the doubt), naming series by the value the schema accepts. The
   reply and the context summary list what is hidden the same way, noting what
-  the legend calls the plan ("taper plan" or "rest projection"). Band-kind
-  toggles are not exposed.
+  the legend calls the plan ("taper plan" or "rest projection"). The reply
+  claims "Showing" only for a chart that is drawn (`landingFor` reads the
+  landing scope's render state): a scope still loading is "Switching to ...;
+  it is still loading", a failed fetch is an error carrying what the card
+  shows, and a loaded scope with no recorded load is refused with nothing
+  changed, because the legend would still render over an EmptyState. The state
+  change is kept while a scope loads or fails. Band-kind toggles are not
+  exposed.

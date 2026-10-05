@@ -1,13 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
   mockFitnessTrendData,
+  mockNoLoadData,
   mockRestProjectionData,
+  mockRunOnlyFitnessTrendData,
 } from "./__fixtures__/trend";
 import {
   describeSetScope,
   hiddenSeriesNames,
+  type Landing,
+  landingFor,
   planInfo,
   resolveSetScope,
+  type Scope,
   type SeriesVisibility,
 } from "./setScope";
 
@@ -17,6 +22,10 @@ const allShown: SeriesVisibility = {
   form: true,
   plan: true,
 };
+
+const drawn = (scope: Scope): Landing => ({ scope, status: "drawn" });
+const loading = (scope: Scope): Landing => ({ scope, status: "loading" });
+const empty = (scope: Scope): Landing => ({ scope, status: "empty" });
 
 describe("resolveSetScope", () => {
   it("switches scope and applies show/hide", () => {
@@ -127,6 +136,61 @@ describe("resolveSetScope", () => {
       expected,
     );
   });
+
+  describe("against what the landing scope is rendering", () => {
+    const text =
+      "Runs only has no training load recorded in this window, so there is nothing to draw. Nothing was changed.";
+
+    it("refuses when the landing scope is loaded and has nothing to draw", () => {
+      expect(
+        resolveSetScope(
+          { show: ["form"] },
+          { hasPlan: true },
+          empty("runOnly"),
+        ),
+      ).toEqual({ kind: "error", text });
+    });
+
+    it("refuses a scope switch to a scope with nothing to draw, naming it", () => {
+      expect(
+        resolveSetScope(
+          { scope: "runOnly", hide: ["fatigue"] },
+          { hasPlan: true },
+          empty("runOnly"),
+        ),
+      ).toEqual({ kind: "error", text });
+      expect(
+        resolveSetScope(
+          { hide: ["form"] },
+          { hasPlan: true },
+          empty("wholeBody"),
+        ),
+      ).toMatchObject({ text: expect.stringMatching(/^Whole body has no/) });
+    });
+
+    it("asks for an argument before it reports an empty chart", () => {
+      expect(
+        resolveSetScope({}, { hasPlan: true }, empty("wholeBody")),
+      ).toMatchObject({ text: expect.stringContaining("Pass scope") });
+    });
+
+    it("applies a change to a scope that is still loading, or failed to load", () => {
+      expect(
+        resolveSetScope(
+          { scope: "runOnly", hide: ["fatigue"] },
+          { hasPlan: true },
+          loading("runOnly"),
+        ),
+      ).toEqual({ kind: "ok", scope: "runOnly", visible: { fatigue: false } });
+      expect(
+        resolveSetScope(
+          { hide: ["fatigue"] },
+          { hasPlan: true },
+          { scope: "runOnly", status: "failed", error: "timed out" },
+        ),
+      ).toMatchObject({ kind: "ok" });
+    });
+  });
 });
 
 describe("hiddenSeriesNames", () => {
@@ -185,27 +249,64 @@ describe("planInfo", () => {
   });
 });
 
+describe("landingFor", () => {
+  it("draws loaded data that recorded load", () => {
+    expect(landingFor("wholeBody", mockFitnessTrendData, null)).toEqual({
+      scope: "wholeBody",
+      status: "drawn",
+    });
+    expect(landingFor("runOnly", mockRunOnlyFitnessTrendData, null)).toEqual({
+      scope: "runOnly",
+      status: "drawn",
+    });
+  });
+
+  it("finds nothing to draw when the window recorded no load", () => {
+    expect(landingFor("wholeBody", mockNoLoadData, null)).toEqual({
+      scope: "wholeBody",
+      status: "empty",
+    });
+  });
+
+  it("is loading while there is neither data nor an error", () => {
+    expect(landingFor("runOnly", null, null)).toEqual({
+      scope: "runOnly",
+      status: "loading",
+    });
+  });
+
+  it("is failed once the fetch has an error, carrying it", () => {
+    expect(landingFor("runOnly", null, "Error: timed out")).toEqual({
+      scope: "runOnly",
+      status: "failed",
+      error: "Error: timed out",
+    });
+  });
+});
+
 describe("describeSetScope", () => {
   it("names the scope and what is hidden", () => {
     expect(
       describeSetScope(
-        "runOnly",
+        drawn("runOnly"),
         { ...allShown, fatigue: false },
-        { hasPlan: true },
+        {
+          hasPlan: true,
+        },
       ),
     ).toBe("Showing runs only. Hidden: fatigue.");
   });
 
   it("says nothing is hidden when every series shows", () => {
-    expect(describeSetScope("wholeBody", allShown, { hasPlan: true })).toBe(
-      "Showing whole body. Nothing hidden.",
-    );
+    expect(
+      describeSetScope(drawn("wholeBody"), allShown, { hasPlan: true }),
+    ).toBe("Showing whole body. Nothing hidden.");
   });
 
   it("lists several hidden series, noting the plan's legend name", () => {
     expect(
       describeSetScope(
-        "wholeBody",
+        drawn("wholeBody"),
         { fitness: true, fatigue: false, form: false, plan: false },
         { hasPlan: true, label: "taper plan" },
       ),
@@ -215,10 +316,53 @@ describe("describeSetScope", () => {
   it("does not report a hidden plan that the chart does not have", () => {
     expect(
       describeSetScope(
-        "runOnly",
+        drawn("runOnly"),
         { ...allShown, plan: false },
         { hasPlan: false },
       ),
     ).toBe("Showing runs only. Nothing hidden.");
+  });
+
+  it("does not claim to be showing a scope that is still loading", () => {
+    expect(
+      describeSetScope(
+        loading("runOnly"),
+        { ...allShown, fatigue: false },
+        {
+          hasPlan: true,
+        },
+      ),
+    ).toBe("Switching to runs only; it is still loading. Hidden: fatigue.");
+    expect(
+      describeSetScope(loading("wholeBody"), allShown, { hasPlan: true }),
+    ).toBe("Switching to whole body; it is still loading. Nothing hidden.");
+  });
+
+  it("says a scope failed to load, with the error the card shows", () => {
+    expect(
+      describeSetScope(
+        {
+          scope: "runOnly",
+          status: "failed",
+          error: "Error: MCP error -32001: Request timed out",
+        },
+        { ...allShown, form: false },
+        { hasPlan: true },
+      ),
+    ).toBe(
+      "Runs only failed to load: MCP error -32001: Request timed out. The card shows the error with a retry. Hidden: form.",
+    );
+  });
+
+  it("does not double the full stop an error already ends with", () => {
+    expect(
+      describeSetScope(
+        { scope: "wholeBody", status: "failed", error: "Not connected." },
+        allShown,
+        { hasPlan: true },
+      ),
+    ).toBe(
+      "Whole body failed to load: Not connected. The card shows the error with a retry. Nothing hidden.",
+    );
   });
 });

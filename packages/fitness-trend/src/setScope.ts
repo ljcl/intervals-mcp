@@ -1,4 +1,4 @@
-import { isPlanned, planDays } from "./normalize";
+import { hasRecordedLoad, isPlanned, planDays } from "./normalize";
 import { type FitnessTrendData } from "./types";
 
 /** Which fitness scope is on screen. */
@@ -38,6 +38,18 @@ export interface PlanInfo {
   label?: string;
 }
 
+/**
+ * What the scope a call lands on is rendering, which decides what a reply may
+ * claim. `drawn` is a chart on screen; `empty` is loaded data with no recorded
+ * load, which the card answers with an EmptyState; `loading` is a scope not
+ * yet fetched or still being fetched (the skeleton); `failed` is a fetch that
+ * errored (the ErrorState and its retry).
+ */
+export type Landing =
+  | { scope: Scope; status: "drawn" | "empty" | "loading" }
+  /** `error` is the fetch error as the card shows it. */
+  | { scope: Scope; status: "failed"; error: string };
+
 const NEEDS_AN_ARGUMENT = `Pass scope (wholeBody or runOnly), or name series (${SERIES.join(", ")}) in show or hide.`;
 
 const NO_PLAN =
@@ -58,21 +70,54 @@ export function planInfo(data: FitnessTrendData | null): PlanInfo {
   };
 }
 
+/** What `scope` shows as: the pill's label, in lower case. */
+const scopeName = (scope: Scope): string =>
+  scope === "runOnly" ? "runs only" : "whole body";
+
+const capitalised = (text: string): string =>
+  `${text[0]!.toUpperCase()}${text.slice(1)}`;
+
+/** The landing scope for a payload, or for the lack of one. */
+export function landingFor(
+  scope: Scope,
+  data: FitnessTrendData | null,
+  error: string | null,
+): Landing {
+  if (data) return { scope, status: hasRecordedLoad(data) ? "drawn" : "empty" };
+  return error
+    ? { scope, status: "failed", error }
+    : { scope, status: "loading" };
+}
+
 /**
  * Settle a `set-scope` call against the chart, before anything on screen
- * changes: a series cannot be both shown and hidden, and a plan cannot be
- * toggled when the chart has none. Either problem refuses the whole call, so a
- * half-applied change never needs explaining. Series are named by the value
- * the schema accepts, which is what the model must send back.
+ * changes: a series cannot be both shown and hidden, a plan cannot be toggled
+ * when the chart has none, and nothing can be shown on a scope whose window
+ * recorded no load. Any of these refuses the whole call, so a half-applied
+ * change never needs explaining. Series are named by the value the schema
+ * accepts, which is what the model must send back.
+ *
+ * A scope that is loading or failed to load is not refused: the state is kept
+ * for when the chart arrives, and `describeSetScope` says what is on screen.
+ * `landing` is omitted where the render state does not matter.
  */
 export function resolveSetScope(
   args: SetScopeArgs,
   plan: Pick<PlanInfo, "hasPlan">,
+  landing?: Landing,
 ): SetScopeResult {
   const show = [...new Set(args.show)];
   const hide = [...new Set(args.hide)];
   if (args.scope === undefined && show.length === 0 && hide.length === 0) {
     return { kind: "error", text: NEEDS_AN_ARGUMENT };
+  }
+
+  if (landing?.status === "empty") {
+    const name = scopeName(landing.scope);
+    return {
+      kind: "error",
+      text: `${capitalised(name)} has no training load recorded in this window, so there is nothing to draw. Nothing was changed.`,
+    };
   }
 
   const problems: string[] = [];
@@ -108,19 +153,32 @@ export function hiddenSeriesNames(
 }
 
 /**
- * One line telling the model what the chart now shows. Takes the scope and
- * visibility as they will be, not as they were given, so a call that changed
- * only one part still describes the whole view.
+ * One line telling the model what the card now shows. Takes the landing scope
+ * and visibility as they will be, not as they were given, so a call that
+ * changed only one part still describes the whole view. It claims "showing"
+ * only for a chart that is drawn: a scope still loading is switching to, and
+ * one that failed says so, since the card shows its error. An empty scope never
+ * reaches here; `resolveSetScope` refuses it first.
  */
 export function describeSetScope(
-  scope: Scope,
+  landing: Landing,
   visible: SeriesVisibility,
   plan: PlanInfo,
 ): string {
+  const name = scopeName(landing.scope);
   const head =
-    scope === "runOnly" ? "Showing runs only." : "Showing whole body.";
+    landing.status === "loading"
+      ? `Switching to ${name}; it is still loading.`
+      : landing.status === "failed"
+        ? `${capitalised(name)} failed to load: ${failureReason(landing.error)}. The card shows the error with a retry.`
+        : `Showing ${name}.`;
   const hidden = hiddenSeriesNames(visible, plan);
   return hidden.length > 0
     ? `${head} Hidden: ${hidden.join(", ")}.`
     : `${head} Nothing hidden.`;
+}
+
+/** The error as the card shows it, without a leading "Error:" or closing stop. */
+function failureReason(error: string): string {
+  return error.replace(/^Error:\s*/, "").replace(/\.+$/, "");
 }

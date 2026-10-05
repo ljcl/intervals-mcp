@@ -31,6 +31,7 @@ import {
 import {
   describeSetScope,
   hiddenSeriesNames,
+  landingFor,
   planInfo,
   resolveSetScope,
   type Scope,
@@ -142,15 +143,24 @@ export function App({
    * The model's way into the scope pills and the legend toggles (declared in
    * `viewToolDeclarations.ts`). Switching scope sets the same state the pills
    * do, so the effect above requests the other scope through the keyed
-   * fetcher; nothing here fetches. The plan is checked against the scope the
-   * call lands on, since a scope the model is switching to may differ from
-   * the one on screen.
+   * fetcher; nothing here fetches. The plan and what the card renders are
+   * read from the scope the call lands on, since the scope the model is
+   * switching to may differ from the one on screen: the reply says "showing"
+   * only for a chart that is drawn, and a scope still loading or failed to
+   * load is reported as such.
    */
   useViewTool(viewToolRegistry, "set-scope", (args) => {
     const call = args as SetScopeArgs;
     const nextScope = call.scope ?? scope;
-    const plan = planInfo(scopeData(nextScope));
-    const result = resolveSetScope(call, plan);
+    const nextData = scopeData(nextScope);
+    const plan = planInfo(nextData);
+    // The initial scope is never fetched, so only the other one can have failed.
+    const landing = landingFor(
+      nextScope,
+      nextData,
+      nextScope === initialScope ? null : (otherEntry?.error ?? null),
+    );
+    const result = resolveSetScope(call, plan, landing);
     if (result.kind === "error") return { text: result.text, isError: true };
 
     const setters: Record<SeriesKey, (shown: boolean) => void> = {
@@ -171,7 +181,10 @@ export function App({
       plan: showPlan,
       ...result.visible,
     };
-    return { text: describeSetScope(nextScope, next, plan) };
+    return {
+      text: describeSetScope(landing, next, plan),
+      ...(landing.status === "failed" ? { isError: true } : {}),
+    };
   });
 
   useModelContextSync(
