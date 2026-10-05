@@ -15,14 +15,15 @@ name: Dependabot autofix
 # the plain pull_request event and so cannot push. Unlike the earlier
 # lockfile-only version of this job, `bun run lint:fix` executes a dependency
 # binary (Biome), so the privileged context is locked down:
-#   - the job only runs for dependabot[bot] PRs from THIS repo — the actor
-#     check alone is spoofable by enabling Dependabot on a fork, the
-#     head-repo check closes that hole;
+#   - the job only runs for PRs authored by dependabot[bot] (the PR author,
+#     not github.actor, which is whoever caused the latest event) from THIS
+#     repo; the author check alone is spoofable by enabling Dependabot on a
+#     fork, the head-repo check closes that hole;
 #   - checkout does not persist credentials, and the push token is exposed
 #     only to the final push step, after all dependency code has run;
 #   - bun does not run lifecycle scripts for untrusted dependencies.
 
-on:
+on: # zizmor: ignore[dangerous-triggers] (justified above)
   pull_request_target:
     branches: [main]
 
@@ -36,7 +37,7 @@ concurrency:
 jobs:
   autofix:
     if: >-
-      github.actor == 'dependabot[bot]' &&
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 10

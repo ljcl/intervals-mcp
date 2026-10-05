@@ -29,8 +29,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
-      - uses: ./.github/actions/setup
+      - uses: $/.github/actions/setup
 
       # Biome runs outside turbo here (unlike the local `check` task) so its
       # GitHub reporter's ::error/::warning workflow commands start the line —
@@ -195,8 +196,10 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: ./.github/actions/setup
+      - uses: $/.github/actions/setup
         with:
           # This job runs `bun audit` and no turbo task, so it has nothing to
           # contribute to the cache — and it finishes long before `check`, so

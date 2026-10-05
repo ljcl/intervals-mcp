@@ -1,8 +1,12 @@
-# syntax=docker/dockerfile:1
-# Requires BuildKit (RUN --mount=type=cache, multi-stage COPY --from).
+# Requires BuildKit (RUN --mount=type=cache, multi-stage COPY --from), whose
+# built-in Dockerfile frontend covers both. No `# syntax=` line: it would pull
+# a floating frontend image from Docker Hub on every build.
+#
+# Every external image is pinned by digest (tag kept for readability and for
+# dockerRuntime.test.ts); Dependabot bumps tag and digest together.
 
 # Shell base: bun + a shell, used by every build-time stage
-FROM oven/bun:1.4.2 AS base
+FROM oven/bun:1.4.2@sha256:9114c058aeae42162ee16dd5084b95fe9473970bb6bcb5b232ab1630f0546895 AS base
 WORKDIR /app
 
 # Node for the MCP App builds only; it never reaches the runner. Vite and the
@@ -11,7 +15,7 @@ WORKDIR /app
 # built under Bun while CI builds and tests them under Node. This is the Node
 # from .tool-versions (the one CI's setup action installs);
 # dockerRuntime.test.ts pins the tag to it.
-FROM node:24.21.0-trixie-slim AS node
+FROM node:24.21.0-trixie-slim@sha256:8ec5d7557396cfe32d21c3f9c13072355ceab22b584578ca4bb28af31120cffe AS node
 
 # turbo isolated here so it never reaches the runner; the version is derived
 # from the root package.json devDependency so a Dependabot turbo bump can
@@ -45,7 +49,7 @@ RUN turbo run build --filter=@intervals-mcp/server^...
 RUN bun build apps/server/src/index.ts --target=bun --outdir apps/server/dist --sourcemap=linked
 
 # 3) Distroless runner: COPY only. nonroot (65534), no shell, ENTRYPOINT is bun.
-FROM oven/bun:1.4.2-distroless AS runner
+FROM oven/bun:1.4.2-distroless@sha256:1a0c31c7c5f9d193aedf60fe1cebdeb76ac8f6e29f24be8dd8cbd6df72df26ec AS runner
 WORKDIR /app
 
 # MCP registry ownership proof: publish-mcp.yml publishes server.json as an OCI

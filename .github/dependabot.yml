@@ -8,6 +8,11 @@ updates:
       time: "09:00"
       timezone: Australia/Melbourne
     open-pull-requests-limit: 5
+    # Hold a new release back a week before proposing it, so a
+    # compromised publish is usually caught and yanked before it lands here.
+    # Security updates ignore cooldown.
+    cooldown:
+      default-days: 7
     # fix(deps), not chore(deps): production deps ship inside the published
     # Docker image (server runtime plus the bundled MCP App HTML), so a bump
     # must cut a patch release or users never receive it. Dev-only tooling
@@ -40,6 +45,11 @@ updates:
       time: "09:00"
       timezone: Australia/Melbourne
     open-pull-requests-limit: 5
+    # Hold a new release back a week before proposing it, so a
+    # compromised publish is usually caught and yanked before it lands here.
+    # Security updates ignore cooldown.
+    cooldown:
+      default-days: 7
     commit-message:
       prefix: "chore(ci)"
     groups:
@@ -59,6 +69,11 @@ updates:
       time: "09:00"
       timezone: Australia/Melbourne
     open-pull-requests-limit: 5
+    # Hold a new release back a week before proposing it, so a
+    # compromised publish is usually caught and yanked before it lands here.
+    # Security updates ignore cooldown.
+    cooldown:
+      default-days: 7
     # fix(deps) for the same reason as npm: base-image bumps only reach users
     # via a new release publishing a fresh image.
     commit-message:

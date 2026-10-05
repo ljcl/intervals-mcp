@@ -1,0 +1,44 @@
+name: Workflow lint
+
+# zizmor audits the workflows, composite actions and dependabot.yml for
+# GitHub Actions security problems (template injection, excessive
+# permissions, persisted credentials, unpinned uses, dangerous triggers).
+# Intentional exceptions carry an inline `# zizmor: ignore[...]` with the
+# reason beside it. Not a required check: it only runs when .github/ changes.
+
+on:
+  pull_request:
+    branches: [main]
+    paths: [".github/**"]
+  push:
+    branches: [main]
+    paths: [".github/**"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  zizmor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
+        with:
+          inputs: .github
+          # Findings fail the job and print in the log rather than uploading
+          # SARIF, so the job needs no security-events permission.
+          advanced-security: false
+          annotations: true
+          # Pinned so a new zizmor audit cannot fail an unrelated PR; bump
+          # it deliberately.
+          version: 1.30.1

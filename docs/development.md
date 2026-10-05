@@ -169,6 +169,26 @@ action (`.github/actions/setup`) installs that Node with `actions/setup-node`
 rather than letting the runner image choose. `dockerRuntime.test.ts` fails if
 the line is not a full version or the setup action stops reading it.
 
+## Workflow security
+
+`workflow-lint.yml` runs [zizmor](https://docs.zizmor.sh) on any change under
+`.github/`; run it locally with `zizmor .github`. Conventions it enforces:
+
+- Each job gets only the permissions it uses; a job that installs
+  dependencies never also holds a deploy or publish permission
+  (`storybook.yml` builds in one job and deploys from another).
+- Every checkout sets `persist-credentials: false` unless the job pushes.
+- Every `uses:` is SHA-pinned; same-repo actions use `$/` (self-repository
+  syntax), which pins them to the running commit. actionlint does not know
+  `$/` yet and reports it as an invalid format.
+- Values from expressions reach `run:` scripts through `env:`, never inline.
+- An intentional exception carries `# zizmor: ignore[<audit>]` with the
+  reason beside it (the three `pull_request_target` workflows).
+- Dependabot waits 7 days (`cooldown`) before proposing a version update;
+  security updates skip the wait.
+- The Dockerfile pins every image by digest (`dockerRuntime.test.ts` checks)
+  and has no `# syntax=` line.
+
 ## Refreshing the intervals.icu API spec
 
 `docs/intervals-openapi.json` is a vendored, pretty-printed copy of

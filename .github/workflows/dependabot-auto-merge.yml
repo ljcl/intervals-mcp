@@ -1,18 +1,23 @@
 name: Dependabot auto-merge
 
-on: pull_request_target
+# pull_request_target: arming auto-merge needs a write token, which Dependabot
+# PRs never get on pull_request. Safe because the job checks out nothing and
+# runs no PR code; see the `if` below.
+on: pull_request_target # zizmor: ignore[dangerous-triggers]
 
 permissions:
   contents: read
 
 jobs:
   auto-merge:
-    # The head-repo check matters even though this job never checks out code:
-    # the actor check alone is spoofable by enabling Dependabot on a fork, and
-    # this job must never arm auto-merge for a PR whose branch this repo's
-    # branch protection does not control.
+    # Gated on the PR author, not github.actor: the actor is whoever caused
+    # the latest event, so a human (or a re-run) acting on a Dependabot PR
+    # can change it. The head-repo check matters even though this job never
+    # checks out code: the author check alone is spoofable by enabling
+    # Dependabot on a fork, and this job must never arm auto-merge for a PR
+    # whose branch this repo's branch protection does not control.
     if: >-
-      github.actor == 'dependabot[bot]' &&
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 5

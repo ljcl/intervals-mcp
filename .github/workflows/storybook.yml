@@ -19,31 +19,42 @@ permissions:
   contents: read
 
 jobs:
-  deploy:
+  # Build and deploy are separate jobs so `bun install` and the Storybook/Vite
+  # build (dependency code) never run beside the Pages deploy permissions.
+  build:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: $/.github/actions/setup
+
+      - name: Build Storybook
+        run: bun run build-storybook
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: apps/storybook/storybook-static
+
+  deploy:
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
       pages: write
       id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-
-      - uses: ./.github/actions/setup
-
-      - name: Build Storybook
-        run: bun run build-storybook
-
+      # Reads the Pages site config, which needs the Pages scope, so it lives
+      # here rather than in the build job.
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
-
-      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
-        with:
-          path: apps/storybook/storybook-static
 
       - id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

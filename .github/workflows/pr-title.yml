@@ -4,7 +4,10 @@ name: PR Title
 # release-please only bumps versions for Conventional Commit subjects.
 # This gate keeps PR titles parseable so releases are not silently skipped.
 
-on:
+# pull_request_target runs the base branch's copy of this workflow, so a PR
+# cannot edit the required check away. It checks out nothing, runs no PR
+# code, and its token is read-only.
+on: # zizmor: ignore[dangerous-triggers]
   pull_request_target:
     types: [opened, edited, synchronize]
 

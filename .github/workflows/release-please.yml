@@ -15,9 +15,9 @@ concurrency:
   group: ${{ github.workflow }}
   cancel-in-progress: false
 
-permissions:
-  contents: write
-  pull-requests: write
+# The action authenticates with RELEASE_PLEASE_PAT (so its tag push triggers
+# the publish workflows), never GITHUB_TOKEN, so the job token gets nothing.
+permissions: {}
 
 jobs:
   release-please:

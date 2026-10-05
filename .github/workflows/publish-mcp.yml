@@ -58,6 +58,7 @@ jobs:
           # Empty on push/pull_request (the triggering ref); the recovery
           # dispatch publishes the requested tag's server.json.
           ref: ${{ inputs.tag }}
+          persist-credentials: false
 
       - name: Stamp version and image tag into server.json
         # release-please keeps $.version current in-repo, but the OCI
@@ -84,11 +85,29 @@ jobs:
           mv server.json.tmp server.json
           jq . server.json
 
-      - name: Install mcp-publisher
-        # Deliberately unpinned: the registry rejects stale publisher binaries
-        # outright ("invalid audience"), so latest is the supported version.
+      # Not version-pinned: the registry rejects stale publisher binaries
+      # outright ("invalid audience"), so latest is the supported version.
+      # Pinned instead is who built it: the tarball must carry a Sigstore
+      # signature from the registry repo's own release workflow at that tag,
+      # so a swapped release asset fails here rather than running with this
+      # job's OIDC token.
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Install mcp-publisher (signature verified)
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+          set -euo pipefail
+          tag=$(gh release view --repo modelcontextprotocol/registry --json tagName --jq .tagName)
+          asset="mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz"
+          gh release download "$tag" --repo modelcontextprotocol/registry \
+            --pattern "$asset" --pattern "$asset.sigstore.json"
+          cosign verify-blob "$asset" \
+            --bundle "$asset.sigstore.json" \
+            --certificate-identity "https://github.com/modelcontextprotocol/registry/.github/workflows/release.yml@refs/tags/$tag" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
+          tar xzf "$asset" mcp-publisher
+          echo "mcp-publisher $tag" >> "$GITHUB_STEP_SUMMARY"
 
       # Server-side validation against the live registry's rules (schema plus
       # registry checks such as reserved version strings). Needs no login and
