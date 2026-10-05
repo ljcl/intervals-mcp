@@ -70,8 +70,7 @@ export class RateLimitError extends HttpError {
   /**
    * The window description on its own — which window is exhausted and when it
    * resets — with no caller context in front of it. `handleApiError` rethrows
-   * this error with `in <context>` prefixed onto `message`, so a tool composing
-   * its own sentence ("the scan stopped after 5 of 20 activities…") reads the
+   * this error unmodified, so a tool composing its own sentence ("the scan stopped after 5 of 20 activities…") reads the
    * useful half from here rather than quoting an internal function name at the
    * athlete.
    */

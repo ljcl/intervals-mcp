@@ -30,7 +30,7 @@ export const DarkSteadyVsRace = meta.story({
 });
 
 /**
- * Interaction test (#164): the metric pills swap which stream pair is
+ * Interaction test (ljcl/strava-mcp#164): the metric pills swap which stream pair is
  * overlaid and the axis pills re-align the grid. The SVG <desc> narration is
  * rebuilt from the active metric, so "bpm" appearing there proves the
  * heart-rate overlay really rendered (and the browser-mode test exercises

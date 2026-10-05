@@ -80,9 +80,8 @@ never per-tool.
   intervals.icu, so the API key was never checked.
 - An exhausted-limit 429 surfaces as a structured `RateLimitError`.
   `handleApiError` (`intervalsClient.ts`) turns it into an actionable message
-  **without flattening it**: the rethrow is still a `RateLimitError` (caller
-  context prefixed onto `message`; `detail` remains the bare window description
-  a tool can quote). Every other HTTP failure becomes an
+  **without flattening it**: the rethrow is the same `RateLimitError`,
+  unmodified (`detail` is the bare window description a tool can quote). Every other HTTP failure becomes an
   `IntervalsApiError extends HttpError`, so the status survives the translation.
 - Flattening either into a plain `Error` silently breaks callers that degrade
   on type or status (e.g. scan tools' `instanceof RateLimitError` abort). A
@@ -434,7 +433,8 @@ handler as its second argument. Tools never read
 Every tool argument naming an activity id goes through
 `intervalsActivityIdInput` (`apps/server/src/tools/_ids.ts`), never an
 ad-hoc `z.number()` or `z.union([z.number(), z.string()])`. It accepts an
-optional `i` prefix (e.g. `i189807578`) and normalises to the digit string.
+optional `i` prefix (e.g. `i189807578`); a string id passes through as given,
+prefix and all, which the API accepts.
 
 Some ids already exceed 2^53, so an id sent as a JSON number is rounded by the
 host's `JSON.parse` before validation sees it and the true digits are
@@ -506,7 +506,7 @@ effect of a write that already landed.
 
 ## Tool metadata
 
-**Permissions.** Every tool takes one of the four annotation constants in
+**Permissions.** Every tool takes one of the three annotation constants in
 `apps/server/src/tools/_annotations.ts` — never an inline `annotations`
 object. These are user-facing: hosts bucket tools into "read-only" (grantable
 once) and "write/delete" (re-prompts forever) from them. `READ_ONLY` states

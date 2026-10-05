@@ -83,7 +83,7 @@ export const WholeBody = meta.story({
     initialRunOnly: false,
   },
   play: async ({ canvas }) => {
-    // The card opens with a title (#247): scrolled back in a transcript, a
+    // The card opens with a title (ljcl/strava-mcp#247): scrolled back in a transcript, a
     // bare chart cannot say which window it belongs to.
     await expect(canvas.getByText("Fitness trend")).toBeVisible();
     await expect(

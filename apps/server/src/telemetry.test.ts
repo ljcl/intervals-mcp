@@ -1,5 +1,5 @@
 /**
- * Telemetry record shape and the rolling counters behind /health (#241).
+ * Telemetry record shape and the rolling counters behind /health (ljcl/strava-mcp#241).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { intervalsApi } from "./fetchClient";

@@ -39,8 +39,8 @@ breaking them has shipped bugs — do not work around them locally.
   timeout retries and is a `RequestTimeoutError`. Error bodies reach a
   message only through `summarizeErrorBody` (an HTML page becomes its title).
 - **Error types survive translation.** `handleApiError` rethrows
-  `RateLimitError` intact (context prefixed onto `message`, bare window detail
-  kept) and wraps everything else in `IntervalsApiError extends HttpError`
+  `RateLimitError` unmodified (its `detail` is the bare window description a
+  tool can quote) and wraps everything else in `IntervalsApiError extends HttpError`
   (`intervalsClient.ts`), so `tools/_errors.ts` can branch on the type or
   status without string-matching. Flattening to plain `Error` silently kills
   callers' `instanceof`/status checks; degrade only on a type or status that
@@ -115,7 +115,7 @@ breaking them has shipped bugs — do not work around them locally.
   itself times out, or anything fails after it resolved (the confirming
   re-read, parsing), it cannot tell whether the write landed, so it says so
   and points at `get-activity` rather than inviting a blind retry.
-- **Annotations come from the four `_annotations.ts` constants**, never inline
+- **Annotations come from the three `_annotations.ts` constants**, never inline
   objects — they decide whether hosts grant reads durably or re-prompt forever.
   `READ_ONLY` states `destructiveHint: false` explicitly (its documented
   default is `true`). Nothing may set `_meta["anthropic/requiresUserInteraction"]`.

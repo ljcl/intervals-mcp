@@ -44,7 +44,7 @@ export const GappyStreams = meta.story({
 });
 
 /**
- * Interaction test (#164): switching the colour metric re-bins the track and
+ * Interaction test (ljcl/strava-mcp#164): switching the colour metric re-bins the track and
  * reformats the gradient scale legend. The scale's min/max labels use the
  * metric's own unit, so "bpm" appearing there is proof the heart-rate series
  * became active (and the browser-mode test exercises the HR-coloured track).
@@ -71,7 +71,7 @@ export const SwitchColorMetric = meta.story({
 });
 
 /**
- * Keyboard/pointerless zoom (#167): the grid view carries visible zoom
+ * Keyboard/pointerless zoom (ljcl/strava-mcp#167): the grid view carries visible zoom
  * in/out/reset buttons and the focused SVG responds to +/- and arrow keys, so
  * the offline grid is fully operable without a wheel or a mouse. The buttons
  * disable at the frame edges (nothing to zoom out of at base), and the SVG
@@ -223,7 +223,7 @@ export const MobileMetricColoredTrack = meta.story({
 });
 
 /**
- * Host-driven view tool (#278): the model calls `set-viewport` and the map
+ * Host-driven view tool (ljcl/strava-mcp#278): the model calls `set-viewport` and the map
  * frames that stretch of the course. Asserted through the SVG `viewBox`,
  * which is the actual zoom state — the registry, the distance lookup, and the
  * component's `applyView` all have to line up for it to move.

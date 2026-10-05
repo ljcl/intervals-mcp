@@ -56,7 +56,7 @@ board (see docs/project.md for labels and board fields).
    - **Round-trip caution:** every hosted-MCP read path (`issue_read`,
      `list_issues`, `search_issues`) returns bodies through the same sanitizer.
      It strips HTML-shaped tokens and can truncate the body at the first one,
-     even inside inline backticks (#351 came back cut mid-sentence from both
+     even inside inline backticks (ljcl/strava-mcp#351 came back cut mid-sentence from both
      `issue_read` and `search_issues`); entities may also come back encoded
      (`&#34;`, `&#39;`). Before any `issue_write` that resends a body, fetch
      the rendered issue page (WebFetch on its `html_url`, or the browser) and
@@ -69,7 +69,7 @@ board (see docs/project.md for labels and board fields).
      rewriting them").
    - **Close only with evidence.** Fully-delivered work closes as *completed*
      with a link to the PR/commit that shipped it. Obsolete work closes as
-     *not planned* with a short rationale (see #25 for the shape). When in
+     *not planned* with a short rationale (see ljcl/strava-mcp#25 for the shape). When in
      doubt, update rather than close.
 
 4. **File issues for gaps found along the way.** Sweeps surface real gaps —

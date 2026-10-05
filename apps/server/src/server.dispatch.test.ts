@@ -1,5 +1,5 @@
 /**
- * Regression tests for #107: tool input schemas are enforced at dispatch
+ * Regression tests for ljcl/strava-mcp#107: tool input schemas are enforced at dispatch
  * time, so zod defaults apply when args are omitted and invalid args return
  * a structured error instead of flowing into intervals.icu requests as NaN.
  */
@@ -25,7 +25,7 @@ vi.mock("./intervalsClient", async (importOriginal) => {
   };
 });
 
-// dispatchToolCall resolves the API key once per call (#240).
+// dispatchToolCall resolves the API key once per call (ljcl/strava-mcp#240).
 vi.mock("./config", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./config")>();
   return { ...actual, getIntervalsApiKey: vi.fn() };

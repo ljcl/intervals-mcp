@@ -31,7 +31,7 @@ export const SomeSelected = meta.story({
 });
 
 /**
- * Keyboard access (#169): the group is a single Tab stop with roving arrow-key
+ * Keyboard access (ljcl/strava-mcp#169): the group is a single Tab stop with roving arrow-key
  * focus, and each chip activates on Enter/Space, calling back into the shared
  * selection toggle. The full select/deselect + aria-pressed flow is asserted at
  * the App level (state lives there); here we prove the keyboard plumbing.

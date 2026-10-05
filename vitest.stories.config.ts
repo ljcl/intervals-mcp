@@ -24,14 +24,14 @@ export default defineConfig({
     // Coverage is opt-in (`test:stories:coverage`, the CI story-test step):
     // it measures which packages/* source the stories actually execute in the
     // browser — the render-path floor for the view-heavy packages whose unit
-    // coverage is intentionally low (#197). Reports land in coverage-stories/
+    // coverage is intentionally low (ljcl/strava-mcp#197). Reports land in coverage-stories/
     // (distinct from the per-package coverage/ dirs) and feed a separate row
     // in scripts/coverage-summary.ts.
     coverage: {
       provider: "v8",
       reporter: ["text-summary", "json-summary"],
       reportsDirectory: "coverage-stories",
-      // Regression floor (#276), the same auto-ratchet the per-package configs
+      // Regression floor (ljcl/strava-mcp#276), the same auto-ratchet the per-package configs
       // use: the view packages' only regression signal previously gated
       // nothing, so a story that stopped rendering a branch cost no coverage
       // anywhere. Cushion is 5 points, matching apps/server — the two seeding

@@ -38,7 +38,7 @@ export const DarkTempoRun = meta.story({
 });
 
 /**
- * Interaction test (#164): toggling a legend item hides its series. The SVG
+ * Interaction test (ljcl/strava-mcp#164): toggling a legend item hides its series. The SVG
  * <desc> narration is rebuilt from the visible metrics, so it doubles as a
  * semantic assertion that the heart-rate line really left the chart (and
  * the browser-mode test exercises the toggled-off state).
@@ -67,7 +67,7 @@ export const LegendToggleHidesSeries = meta.story({
 });
 
 /**
- * Keyboard parity for the legend's hover isolation (#251). Hovering a legend
+ * Keyboard parity for the legend's hover isolation (ljcl/strava-mcp#251). Hovering a legend
  * entry dims the other series; before this, a keyboard user tabbing to the
  * same control got the focus ring and none of the isolation. The dimming is
  * driven by `data-hovered` on the chart area, so that is what is asserted.
@@ -254,7 +254,7 @@ export const MobileSwim = meta.story({
 });
 
 /**
- * The x-axis brush (#35) renders with both travellers, and the zoom window
+ * The x-axis brush (ljcl/strava-mcp#35) renders with both travellers, and the zoom window
  * survives a preset switch because the range is controlled state joined to
  * the chart-tree memo deps (an uncontrolled Brush would reset to full range
  * whenever the tree rebuilds).
@@ -318,7 +318,7 @@ export const DenseIntervalLabels = meta.story({
  * A manual entry has no streams at all. The card keeps its title and says
  * so, instead of rendering bare axes with an empty legend and an empty
  * preset selector — which read as a broken app rather than "nothing to
- * chart" (#248).
+ * chart" (ljcl/strava-mcp#248).
  */
 export const NoStreams = meta.story({
   args: {

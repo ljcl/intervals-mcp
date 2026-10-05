@@ -136,10 +136,10 @@ export type ComparisonResult = z.infer<typeof CompareActivitiesOutputSchema>;
 /**
  * Pure aggregate comparison of two intervals.icu activities: per-side
  * summaries, activity2 − activity1 differences, and the efficiency-factor
- * comparison. Differences are derived from each activity's raw distance (m)
- * and moving time (s)/heart rate/cadence/elevation, never from the rounded
- * or formatted per-side fields, so a pace delta reflects the true difference
- * rather than compounding two independent roundings.
+ * comparison. The pace delta comes from each activity's raw distance (m) and
+ * moving time (s), never from the formatted per-side paces, so it reflects
+ * the true difference rather than compounding two roundings. The distance,
+ * HR, cadence and elevation differences subtract the per-side summaries.
  *
  * Shared by this tool's text/structured output and the app-only
  * `get-compare-activities-data` feed behind `view-compare-activities`.

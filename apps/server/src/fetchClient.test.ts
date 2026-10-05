@@ -831,7 +831,7 @@ describe("FetchClient response cache", () => {
   });
 
   it("invalidates a parent resource when a sub-resource is written", async () => {
-    // #238: a PUT to a sub-resource flips a field on the parent. A
+    // ljcl/strava-mcp#238: a PUT to a sub-resource flips a field on the parent. A
     // descendants-only rule left the cached parent claiming the pre-write
     // value for its whole TTL.
     const fetchMock = vi
@@ -853,7 +853,7 @@ describe("FetchClient response cache", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
-  it("serves a repeated activity-listing page from cache (one upstream fetch per pair, #329)", async () => {
+  it("serves a repeated activity-listing page from cache (one upstream fetch per pair, ljcl/strava-mcp#329)", async () => {
     const fetchMock = vi
       .fn()
       .mockImplementation(async () => makeResponse("[]"));
@@ -926,7 +926,7 @@ const flushMicrotasks = () => new Promise<void>((r) => setTimeout(r, 0));
 
 type Payload = { id: number; tags: string[] };
 
-describe("FetchClient response cache hand-out immutability (#357)", () => {
+describe("FetchClient response cache hand-out immutability (ljcl/strava-mcp#357)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
@@ -997,7 +997,7 @@ describe("FetchClient response cache hand-out immutability (#357)", () => {
   });
 });
 
-describe("FetchClient in-flight GET coalescing (#355)", () => {
+describe("FetchClient in-flight GET coalescing (ljcl/strava-mcp#355)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();

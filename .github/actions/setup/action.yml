@@ -6,7 +6,7 @@ inputs:
       Restore and save the .turbo cache. Set to "false" in a job that runs no
       turbo task: cache entries are immutable and the first job to post one
       wins, so a job with nothing to contribute reserves the key and the job
-      that did the work cannot save (#271).
+      that did the work cannot save (ljcl/strava-mcp#271).
     required: false
     default: "true"
 runs:

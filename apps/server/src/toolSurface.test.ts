@@ -1,5 +1,5 @@
 /**
- * Tool-identity lock (#303).
+ * Tool-identity lock (ljcl/strava-mcp#303).
  *
  * A host stores the athlete's "Allow always" against a tool's identity, not
  * against the connector as a whole. Rename a tool or reshape its input schema
@@ -28,7 +28,7 @@ import { TOOL_DEFS } from "./server";
 const LOCK_PATH = new URL("../tool-surface.lock.json", import.meta.url);
 
 const LOCK_NOTE =
-  "Permission-relevant identity of every advertised tool (#303). Changing an " +
+  "Permission-relevant identity of every advertised tool (ljcl/strava-mcp#303). Changing an " +
   "entry invalidates the stored 'Allow always' grant for that tool. See " +
   "apps/server/src/toolSurface.test.ts for how to regenerate.";
 

@@ -19,7 +19,7 @@ FROM node:24.21.0-trixie-slim@sha256:8ec5d7557396cfe32d21c3f9c13072355ceab22b584
 
 # turbo isolated here so it never reaches the runner; the version is derived
 # from the root package.json devDependency so a Dependabot turbo bump can
-# never drift from the image (previously a hardcoded ARG guarded by CI, #120).
+# never drift from the image (previously a hardcoded ARG guarded by CI, ljcl/strava-mcp#120).
 FROM base AS toolchain
 COPY package.json ./
 RUN bun add -g turbo@"$(bun --print 'require("./package.json").devDependencies.turbo')"

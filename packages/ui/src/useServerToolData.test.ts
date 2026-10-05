@@ -233,7 +233,7 @@ describe("useServerToolData", () => {
 
     await harness.unmount();
   });
-  it("asks for the progress-based timeout reset (#279)", async () => {
+  it("asks for the progress-based timeout reset (ljcl/strava-mcp#279)", async () => {
     const { app, options } = fakeApp(() => textResult(JSON.stringify({})));
 
     const harness = await renderHook(

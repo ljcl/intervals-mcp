@@ -105,7 +105,7 @@ Every hosted-MCP read path (`issue_read`, `list_issues`, `search_issues`)
 returns issue bodies through the same sanitizer. It strips anything shaped
 like an HTML tag, and it can cut the body off at the first such token,
 including one inside inline backticks. Two observed cases: `Promise<string>`
-comes back as `Promise`, and the 2026-09-02 sweep saw #351 truncated
+comes back as `Promise`, and the 2026-09-02 sweep saw ljcl/strava-mcp#351 truncated
 mid-sentence by both `issue_read` and `search_issues` while the web page
 showed the complete text (three acceptance criteria). No read tool is exempt.
 
@@ -118,7 +118,7 @@ editing an approach section, any update), fetch the rendered issue page
 (WebFetch on the issue's `html_url`, or the browser) and compare it with the
 API copy. If the API copy is shorter, or the page holds any angle-bracketed
 text the API copy lacks, do not rewrite: leave a comment carrying the change
-instead, the way the 2026-09-02 sweep did on #351.
+instead, the way the 2026-09-02 sweep did on ljcl/strava-mcp#351.
 
 When filing or editing issues, put HTML-shaped payloads in fenced code blocks
 rather than inline backticks. The sanitizer's exact behaviour on fenced blocks

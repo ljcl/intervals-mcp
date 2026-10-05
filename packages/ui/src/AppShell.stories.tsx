@@ -83,7 +83,7 @@ const grantingApp: DisplayModeApp = {
 };
 
 /**
- * The fullscreen toggle (#35) renders only when the host advertises
+ * The fullscreen toggle (ljcl/strava-mcp#35) renders only when the host advertises
  * fullscreen in availableDisplayModes AND an app is connected; clicking it
  * requests the mode and flips to an exit control on success.
  */

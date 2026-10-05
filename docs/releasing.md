@@ -22,31 +22,16 @@ release tag, since both publish workflows ship whatever a tag points at.
 `scripts/setup-branch-protection.sh` applies all of this, and re-running it
 converges; renaming any of those three jobs silently unrequires its check.
 
-The repo is pre-1.0 with `bump-minor-pre-major: true`
-(`release-please-config.json`), so a breaking change bumps minor, not major,
-until the first 1.0.0 release:
+Normal semver applies (the package is past 1.0.0):
 
-- `fix:` bumps patch
+- `fix:` bumps patch; so do `perf:` and `revert:`, which also get changelog
+  sections
 - `feat:` bumps minor
-- `feat!:` or a `BREAKING CHANGE:` footer bumps minor pre-1.0, major once the
-  package reaches 1.0.0
-- `chore:` / `docs:` / `refactor:` / `ci:` release nothing
-
-## Pre-1.0
-
-The Strava to intervals.icu migration is done and `0.2.0` already shipped it
-(see `CHANGELOG.md`); every tool talks to intervals.icu directly. The package
-is ready for its first stable release.
-
-Cut `1.0.0` by forcing the version in config (see "Force a version" below):
-add `"release-as": "1.0.0"` to the `.` package in `release-please-config.json`,
-merge, and the open release PR retargets to `1.0.0`. Merge that PR, then
-remove `release-as` in a follow-up so later releases bump normally.
-
-After `1.0.0`, normal semver applies: `fix:` bumps patch, `feat:` bumps minor,
-`feat!:`/a `BREAKING CHANGE:` footer bumps major. `bump-minor-pre-major` in
-`release-please-config.json` stops mattering once the major version is
-nonzero, so it does not need to change.
+- Any type with `!` (`feat!:`, `fix!:`, `refactor!:`) or a `BREAKING CHANGE:`
+  footer bumps major. The type does not need to be releasable on its own:
+  `refactor!:` cut 2.0.0.
+- `chore:` / `docs:` / `refactor:` / `ci:` / `test:` / `build:` / `style:`
+  without `!` release nothing
 
 ## What release-please does
 

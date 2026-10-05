@@ -1,5 +1,5 @@
 /**
- * Regression tests for #129: /health reports config and rate-limit state
+ * Regression tests for ljcl/strava-mcp#129: /health reports config and rate-limit state
  * without spending an intervals.icu request, and the advertised version
  * comes from the root package.json that release-please bumps.
  */
@@ -93,7 +93,7 @@ describe("handleHealth", () => {
     expect(body.api_key_configured).toBe(false);
   });
 
-  it("reports per-tool call counters (#241)", async () => {
+  it("reports per-tool call counters (ljcl/strava-mcp#241)", async () => {
     mockedApiKeyConfigured.mockReturnValue(true);
     const { recordToolCall, resetToolCallStats } = await import("./telemetry");
     const stderr = vi.spyOn(console, "error").mockImplementation(() => {});

@@ -59,7 +59,7 @@ describe("buildLoadA11y", () => {
     );
   });
 
-  it("drops the trend clause when the trend line is hidden (#328)", () => {
+  it("drops the trend clause when the trend line is hidden (ljcl/strava-mcp#328)", () => {
     const a11y = buildLoadA11y(
       [week("2026-06-01", 20), week("2026-06-08", 30)],
       { showTrend: false, showWarnings: true },

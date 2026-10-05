@@ -1,5 +1,5 @@
 /**
- * Progress plumbing end to end (#279): the token threads from a CallTool
+ * Progress plumbing end to end (ljcl/strava-mcp#279): the token threads from a CallTool
  * request through `dispatchToolCall` into the handlers that fan out, and a
  * caller who did not ask for progress sees no change at all.
  */

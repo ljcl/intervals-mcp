@@ -375,7 +375,7 @@ as pure `buildComparison` in `apps/server/src/tools/compareActivities.ts`.
 
 ### Activity Zones
 
-One activity's time-in-zone distribution (#34). Calls
+One activity's time-in-zone distribution (ljcl/strava-mcp#34). Calls
 `get-activity-zones-data` on mount.
 
 - The server maps the activity's own `icu_zone_times`/`icu_hr_zones` fields

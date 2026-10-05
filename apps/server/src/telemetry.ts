@@ -38,7 +38,7 @@ export interface ToolCounters {
 }
 
 /**
- * Cardinality is bounded by the tool surface (~49 names), but only names the
+ * Cardinality is bounded by the tool surface (34 names), but only names the
  * server actually dispatched are held — an unknown-tool call must not be able
  * to grow the map without limit.
  */

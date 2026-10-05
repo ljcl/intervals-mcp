@@ -1,5 +1,5 @@
 /**
- * The tool permission contract (#303).
+ * The tool permission contract (ljcl/strava-mcp#303).
  *
  * Annotations are what a host uses to decide whether a tool lands in the
  * "read-only" bucket the athlete can grant once, or the "write/delete" bucket
@@ -26,7 +26,7 @@ describe("annotation constants", () => {
   });
   it("read-only states destructiveHint rather than leaning on the default", () => {
     // The spec default is `true`, so an absent field reads as destructive to
-    // any host that checks it before readOnlyHint — the whole point of #303.
+    // any host that checks it before readOnlyHint — the whole point of ljcl/strava-mcp#303.
     expect(READ_ONLY.destructiveHint).toBe(false);
   });
   it("update-activity is destructive and non-idempotent", () => {

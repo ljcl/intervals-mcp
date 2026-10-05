@@ -11,7 +11,7 @@ import { Skeleton } from "./Skeleton";
  * The four states every MCP App passes through before its content renders.
  * `AppRootView` is the pure half of `AppRoot`, so each branch is reachable
  * here without a live host — these stories are the shared coverage of the
- * convention (#249).
+ * convention (ljcl/strava-mcp#249).
  */
 const meta = preview.meta({
   component: AppRootView,
@@ -44,7 +44,7 @@ const base = {
   loading,
   children: content,
   // These branches all render before an app is connected, so there is no
-  // registry to install view tools into (#278).
+  // registry to install view tools into (ljcl/strava-mcp#278).
   viewToolRegistry: null,
 } as const;
 
@@ -65,7 +65,7 @@ export const WaitingForInput = meta.story({
 });
 
 /**
- * Host sent input the app cannot use. Before #249 four apps sat on the
+ * Host sent input the app cannot use. Before ljcl/strava-mcp#249 four apps sat on the
  * skeleton forever here; the args error must win over the waiting branch
  * even though `toolArgs` is still null.
  */

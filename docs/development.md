@@ -110,8 +110,8 @@ Supplementary when the change touches UI:
 - Storybook sweep: look at each affected story in desktop and the
   `claudeIosCard` mobile viewport (`bun run shots <story-id>…` renders PNGs).
 - MCP endpoint smoke test: `cd apps/server && bun run start`, then
-  `curl http://localhost:3000/health`. Needs a valid `INTERVALS_API_KEY`;
-  skip if it is not configured and say so explicitly.
+  `curl http://localhost:3000/health`. Any non-empty `INTERVALS_API_KEY`
+  starts the server; tool calls need a real one.
 
 ## Coverage thresholds
 
@@ -223,7 +223,7 @@ gate rendering the apps in a real browser). Check the diff for **downgrades and
 dropped packages**, not just bumps: the winner of the re-race is whichever
 constraint is hard, not whichever version is right. `overrides` in root
 package.json pins the cases where the race picks wrong (currently
-`react-is: 19.2.8` — hoisting can satisfy recharts' peer with
+`react-is: 19.3.0` — hoisting can satisfy recharts' peer with
 pretty-format@27's `^17.0.1`, whose brand-check misses React 19 elements and
 silently stops fragment flattening).
 
@@ -293,7 +293,7 @@ needed. Config caveats:
   `install-deps` — the apt-get half is never cached and must run either way.
 - Plain `bun run test:stories` stays coverage-free; `test:stories:coverage`
   adds v8 render-path coverage over every `packages/*` source the stories
-  execute (#197's report, gated by the ratchet above).
+  execute (ljcl/strava-mcp#197's report, gated by the ratchet above).
 
 ### Autodocs
 

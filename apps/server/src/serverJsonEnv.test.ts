@@ -2,10 +2,10 @@
  * `server.json` is what the MCP registry publishes as the run instructions
  * for the OCI package, so a variable missing from its `environmentVariables`
  * block is invisible to anyone deploying from the registry. `MCP_AUTH_TOKEN`
- * was missing for exactly that reason until #336 — the one knob protecting an
+ * was missing for exactly that reason until ljcl/strava-mcp#336 — the one knob protecting an
  * endpoint carrying the athlete's data and the write tools.
  *
- * This guard (#337) compares the manifest against the variables the server
+ * This guard (ljcl/strava-mcp#337) compares the manifest against the variables the server
  * actually reads, in both directions: a read with no manifest entry is a
  * deploy-time knob nobody deploying from the registry can discover, and a
  * manifest entry nothing reads is documentation for a knob that does nothing.

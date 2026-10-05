@@ -1,5 +1,5 @@
 /**
- * View-tool registration and the schema behind it (#278).
+ * View-tool registration and the schema behind it (ljcl/strava-mcp#278).
  *
  * The registry exists to resolve an ordering constraint in the SDK — tools
  * must be declared before `connect()`, but the state they act on only exists

@@ -52,7 +52,7 @@ jobs:
       # `test` is deliberately absent: the Coverage step below runs the same
       # specs through `test:coverage`, and that is the pass which gates (the
       # thresholds live in the vitest configs). Running both executed every
-      # spec twice per run and bought nothing (#273).
+      # spec twice per run and bought nothing (ljcl/strava-mcp#273).
       #
       # The root tasks (knip, typecheck:root) run unfiltered on PRs too.
       # --affected brings the root package into scope only when a root-owned
@@ -78,12 +78,12 @@ jobs:
       # vitest.config.ts (apps/server, data, design-system, ui) check a
       # threshold here; the MCP App packages' floor is the story render-path
       # report. It sits ahead of the browser steps so a failing spec surfaces
-      # before the ~2-minute story run rather than after it (#135, #273).
+      # before the ~2-minute story run rather than after it (ljcl/strava-mcp#135, ljcl/strava-mcp#273).
       - name: Coverage
         run: bun run turbo run test:coverage
 
       # Story smoke tests: every Storybook story renders in real headless
-      # Chromium via the Vitest addon (#163). This is the automated UI gate.
+      # Chromium via the Vitest addon (ljcl/strava-mcp#163). This is the automated UI gate.
       # Both halves of the browser cache key. ImageOS is read HERE, in a shell
       # step, and not as `${{ env.ImageOS }}` in the cache step's `with:` — the
       # env context holds only workflow/job/step-defined variables, so an
@@ -104,10 +104,10 @@ jobs:
           path: ~/.cache/ms-playwright
           # The image is in the key because the browser binaries link against
           # the runner image's system libraries: an image bump must not restore
-          # browsers built for the previous one (#274).
+          # browsers built for the previous one (ljcl/strava-mcp#274).
           key: ${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright-key.outputs.image }}-playwright-${{ steps.playwright-key.outputs.version }}
 
-      # Split on the cache result (#274). The download is what the cache exists
+      # Split on the cache result (ljcl/strava-mcp#274). The download is what the cache exists
       # to skip; the apt-get half is not cached and has to run either way, so a
       # hit still installs system deps — just without re-fetching ~150 MB of
       # browser.
@@ -120,7 +120,7 @@ jobs:
         run: bunx playwright install-deps chromium
 
       # With coverage: the same story smoke tests, plus a measure of which
-      # packages/* source the stories execute in the browser (#197). The
+      # packages/* source the stories execute in the browser (ljcl/strava-mcp#197). The
       # summary row lands in the coverage table below.
       - name: Story tests
         run: bun run turbo run test:stories:coverage
@@ -204,7 +204,7 @@ jobs:
           # This job runs `bun audit` and no turbo task, so it has nothing to
           # contribute to the cache — and it finishes long before `check`, so
           # left enabled it reserved the SHA key and locked out the save from
-          # the job that actually populated `.turbo` (#271).
+          # the job that actually populated `.turbo` (ljcl/strava-mcp#271).
           turbo-cache: "false"
 
       - name: Audit dependencies (high severity and above)

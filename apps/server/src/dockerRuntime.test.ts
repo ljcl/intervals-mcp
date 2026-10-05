@@ -6,7 +6,7 @@
  *
  *     error: Cannot find module '@intervals-mcp/data' from '/app/apps/server/src/server.ts'
  *
- * That is what #341 shipped: a JIT workspace import (`@intervals-mcp/data`,
+ * That is what ljcl/strava-mcp#341 shipped: a JIT workspace import (`@intervals-mcp/data`,
  * raw TypeScript under `src/`) that the runner never copied. The server now
  * runs as one `bun build` bundle (#89), so static imports are inlined at build
  * time and cannot go missing that way. What still resolves at runtime is each
@@ -28,7 +28,7 @@
  * would silently outrun this test.
  *
  * The second guard here is about the Bun the image runs rather than what it
- * copies (#359). Root package.json's `packageManager` is the single source of
+ * copies (ljcl/strava-mcp#359). Root package.json's `packageManager` is the single source of
  * truth: the CI setup action reads it via `bun-version-file`, so it is the
  * Bun that resolves bun.lock. The Dockerfile's `FROM oven/bun:<tag>` lines
  * are the Bun that installs that lockfile and runs the server. Dependabot
@@ -137,7 +137,7 @@ function serverSpecifiers(): Map<string, string[]> {
   const specifiers = new Map<string, string[]>();
   const files = readdirSync(SRC_DIR, { recursive: true, encoding: "utf8" })
     .map((entry) => entry.replaceAll("\\", "/"))
-    // Tests ride along in the image but never run there.
+    // .dockerignore keeps tests out of the image; skip them here too.
     .filter((entry) => entry.endsWith(".ts") && !entry.includes(".test."));
 
   for (const file of files) {

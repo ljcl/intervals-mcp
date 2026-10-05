@@ -1,5 +1,5 @@
 /**
- * Progress reporter behaviour (#279): the no-token path, monotonicity, the
+ * Progress reporter behaviour (ljcl/strava-mcp#279): the no-token path, monotonicity, the
  * time throttle and its `important` bypass, and the promise that a failing
  * transport cannot fail the scan.
  */

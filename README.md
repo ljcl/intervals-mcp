@@ -202,7 +202,7 @@ App's data handler talk to intervals.icu directly.
 | [docs/project.md](docs/project.md) | Issue tracking and project board |
 | [docs/Intervals_MCP_Server.md](docs/Intervals_MCP_Server.md) | Capability reference to upload as project knowledge in a Claude project using this server |
 
-PRs are squash-merged and the **PR title becomes the commit on `main`**, so write it as a [Conventional Commit](https://www.conventionalcommits.org/) (`feat:` minor, `fix:` patch, `feat!:` minor pre-1.0, major once the package reaches 1.0.0; `chore:`/`docs:`/`refactor:`/`ci:` release nothing). A CI check rejects non-conforming titles; see [docs/releasing.md](docs/releasing.md).
+PRs are squash-merged and the **PR title becomes the commit on `main`**, so write it as a [Conventional Commit](https://www.conventionalcommits.org/) (`fix:` patch, `feat:` minor, any `!` or `BREAKING CHANGE:` footer major; `chore:`/`docs:`/`refactor:`/`ci:` release nothing). A CI check rejects non-conforming titles; see [docs/releasing.md](docs/releasing.md).
 
 ## Troubleshooting
 

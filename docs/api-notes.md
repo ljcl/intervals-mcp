@@ -11,7 +11,7 @@ Contract: `docs/intervals-openapi.json`, from `https://intervals.icu/api/v1/docs
 - Base: `https://intervals.icu/api/v1`.
 - Activity ids are strings such as `i12345678`. Pass through unchanged.
 - `/activity/{id}` is global, not athlete-scoped. Resolve gear against the activity's own `athlete_id`.
-- The singular `/event/` route 404s; events use `/events/{id}` (not used: RunFun owns the plan).
+- The singular `/event/` route 404s; events use `/athlete/{id}/events/{eventId}` (not used: RunFun owns the plan).
 
 ## Endpoints (verified against spec)
 Paths below are relative to the base URL above (spec lists them as `/api/v1/...`; verified 2026-09-24 against `docs/intervals-openapi.json`, `jq -r '.paths|keys[]'`).
