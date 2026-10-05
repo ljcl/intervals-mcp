@@ -21,6 +21,12 @@ import {
   mapIntervalsZones,
 } from "./activityZones";
 import {
+  type ArgShape,
+  argShape,
+  normalizeArgs,
+  unknownArgsText,
+} from "./argAliases";
+import {
   buildCadenceTrendData,
   type CadenceTrendData,
 } from "./cadenceTrendData";
@@ -664,6 +670,15 @@ function buildToolDefs(): ToolDef[] {
 }
 
 export const TOOL_DEFS = buildToolDefs();
+
+/**
+ * Tool name → the advertised input shape, for the dispatcher's alias fix-up
+ * and unknown-key message (#78). Read from TOOL_DEFS so it matches exactly
+ * what a host was shown.
+ */
+const TOOL_ARG_SHAPES = new Map<string, ArgShape>(
+  TOOL_DEFS.map((def) => [def.name, argShape(def.inputSchema)]),
+);
 
 /**
  * Map of tool name to execute function, across every tool.
@@ -1313,17 +1328,22 @@ export async function dispatchToolCall(
   }
 
   let args: Record<string, unknown> = rawArgs ?? {};
+  const shape = TOOL_ARG_SHAPES.get(name);
+  // Another tool's spelling of a shared input (`id` for `activity_id`, "5K"
+  // for "5km") is mapped before validation, so it costs no retry (#78).
+  if (shape) args = normalizeArgs(args, shape);
   const schema = TOOL_INPUT_SCHEMAS.get(name);
   if (schema) {
     const parsed = schema.safeParse(args);
     if (!parsed.success) {
+      const unknown = shape ? unknownArgsText(args, shape) : null;
       return finish("invalid_args", {
         isError: true,
         content: [
           {
             type: "text",
             text: prefixedErrorText(
-              `Invalid arguments for ${name}: ${z.prettifyError(parsed.error)}`,
+              `Invalid arguments for ${name}: ${z.prettifyError(parsed.error)}${unknown ? `\n${unknown}` : ""}`,
             ),
           },
         ],
