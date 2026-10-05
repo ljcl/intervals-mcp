@@ -168,9 +168,11 @@ describe("view-activity-chart", () => {
     // intervals.icu returns no streams for a manual entry.
     mockedIntervalsStreams.mockResolvedValueOnce([]);
 
-    const result = await dispatchToolCall("view-activity-chart", {
-      activity_id: "i123",
-    });
+    const result = await dispatchToolCall(
+      "view-activity-chart",
+      { activity_id: "i123" },
+      { client: { rendersApps: true } },
+    );
 
     expect(result.isError).toBeUndefined();
     const text = result.content[0]?.text ?? "";
@@ -898,9 +900,11 @@ describe("fitness trend handlers", () => {
     mockedIntervalsList.mockResolvedValueOnce([]);
     const targetDate = inDays(14);
 
-    const result = await dispatchToolCall("view-fitness-trend", {
-      targetDate,
-    });
+    const result = await dispatchToolCall(
+      "view-fitness-trend",
+      { targetDate },
+      { client: { rendersApps: true } },
+    );
 
     expect(result.isError).toBeUndefined();
     const text = result.content[0]?.text ?? "";
@@ -1599,9 +1603,11 @@ describe("activity zones handlers", () => {
   it("view-activity-zones summarises the dominant zone for the model", async () => {
     mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
 
-    const result = await dispatchToolCall("view-activity-zones", {
-      activity_id: "123",
-    });
+    const result = await dispatchToolCall(
+      "view-activity-zones",
+      { activity_id: "123" },
+      { client: { rendersApps: true } },
+    );
 
     expect(result.isError).toBeUndefined();
     const text = result.content[0]?.text ?? "";
@@ -1674,5 +1680,169 @@ describe("activity zones handlers", () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain("Record Not Found");
+  });
+});
+
+describe("view tools and hosts that cannot render MCP Apps (#77)", () => {
+  const TODAY = "2026-06-01";
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(`${TODAY}T12:00:00Z`));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const run = (overrides: Partial<IntervalsActivity> = {}) =>
+    intervalsActivity({
+      icu_hr_zones: [130, 155, 190],
+      icu_hr_zone_times: [600, 1800, 600],
+      average_cadence: 42.5,
+      average_speed: 3.33,
+      icu_training_load: 50,
+      ...overrides,
+    });
+
+  /** Each view tool, its mocks, and the footer pair the twin table fixes. */
+  const VIEW_TOOLS: Array<{
+    name: string;
+    args: Record<string, unknown>;
+    arrange: () => void;
+    kind: string;
+    twin: string;
+  }> = [
+    {
+      name: "view-activity-chart",
+      args: { activity_id: "123" },
+      arrange: () => {
+        mockedIntervalsActivity.mockResolvedValueOnce(run());
+        mockedIntervalsStreams.mockResolvedValueOnce([
+          { type: "time", data: [0, 1, 2] },
+        ]);
+      },
+      kind: "activity chart",
+      twin: "get-activity-streams",
+    },
+    {
+      name: "view-cadence-trends",
+      args: {},
+      arrange: () => {
+        mockedIntervalsList.mockResolvedValueOnce([run()]);
+      },
+      kind: "cadence trends chart",
+      twin: "get-running-summary",
+    },
+    {
+      name: "view-training-load",
+      args: {},
+      arrange: () => {
+        mockedIntervalsList.mockResolvedValueOnce([
+          run({ start_date_local: `${TODAY}T07:00:00` }),
+        ]);
+        mockedWellness.mockResolvedValueOnce([]);
+      },
+      kind: "training load chart",
+      twin: "get-training-load",
+    },
+    {
+      name: "view-fitness-trend",
+      args: {},
+      arrange: () => {
+        mockedWellness.mockResolvedValueOnce(
+          Array.from({ length: 91 }, (_, i) => ({
+            id: addDays(TODAY, i - 90),
+            ctl: 50,
+            atl: 40,
+            ctlLoad: 0,
+            atlLoad: 0,
+          })),
+        );
+        mockedIntervalsList.mockResolvedValueOnce([]);
+      },
+      kind: "fitness trend chart",
+      twin: "get-fitness-trend",
+    },
+    {
+      name: "view-activity-zones",
+      args: { activity_id: "123" },
+      arrange: () => {
+        mockedIntervalsActivity.mockResolvedValueOnce(run());
+      },
+      kind: "zone distribution chart",
+      twin: "get-activity-zones",
+    },
+    {
+      name: "view-route-map",
+      args: { activity_id: "123" },
+      arrange: () => {
+        mockedIntervalsActivity.mockResolvedValueOnce(run());
+        mockedIntervalsStreams.mockResolvedValueOnce(routeMapStreamsFixture());
+      },
+      kind: "route map",
+      twin: "get-activity",
+    },
+    {
+      name: "view-compare-activities",
+      args: { activity_id_1: "i1", activity_id_2: "i2" },
+      arrange: () => {
+        mockedIntervalsActivity
+          .mockResolvedValueOnce(run({ id: "i1" }))
+          .mockResolvedValueOnce(run({ id: "i2", moving_time: 2900 }));
+      },
+      kind: "activity comparison",
+      twin: "compare-activities",
+    },
+  ];
+
+  it("covers every view-* tool the server advertises", async () => {
+    const { TOOL_DEFS } = await import("./server");
+    const advertised = TOOL_DEFS.map((tool) => tool.name)
+      .filter((name) => name.startsWith("view-"))
+      .sort();
+    expect(VIEW_TOOLS.map((tool) => tool.name).sort()).toEqual(advertised);
+  });
+
+  describe.each(VIEW_TOOLS)("$name", ({ name, args, arrange, kind, twin }) => {
+    it("claims a rendered chart to a host that renders MCP Apps", async () => {
+      arrange();
+
+      const result = await dispatchToolCall(name, args, {
+        client: { rendersApps: true },
+      });
+
+      expect(result.isError).toBeUndefined();
+      const text = result.content[0]?.text ?? "";
+      expect(text.endsWith(`[Interactive ${kind} rendered above]`)).toBe(true);
+      expect(text).not.toContain("This client cannot display");
+    });
+
+    it("says the client cannot display it and names the text twin otherwise", async () => {
+      arrange();
+
+      const result = await dispatchToolCall(name, args, {
+        client: { rendersApps: false },
+      });
+
+      expect(result.isError).toBeUndefined();
+      const text = result.content[0]?.text ?? "";
+      expect(text).not.toContain("rendered above");
+      expect(
+        text.endsWith(
+          `This client cannot display the interactive ${kind}. For detail, call ${twin}.`,
+        ),
+      ).toBe(true);
+    });
+
+    it("gives the honest text when the caller passes no client at all", async () => {
+      arrange();
+
+      const result = await dispatchToolCall(name, args);
+
+      const text = result.content[0]?.text ?? "";
+      expect(text).not.toContain("rendered above");
+      expect(text).toContain(`call ${twin}.`);
+    });
   });
 });

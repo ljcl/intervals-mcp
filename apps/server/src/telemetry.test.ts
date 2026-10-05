@@ -62,6 +62,34 @@ describe("recordToolCall", () => {
     expect(lastRecord().error_class).toBe("RateLimitError");
   });
 
+  it("records whether the client renders MCP Apps and what it calls itself", () => {
+    recordToolCall({
+      tool: "view-training-load",
+      duration_ms: 7,
+      outcome: "ok",
+      client_apps: true,
+      client_name: "claude-ai",
+    });
+
+    expect(lastRecord()).toMatchObject({
+      client_apps: true,
+      client_name: "claude-ai",
+    });
+  });
+
+  it("serialises client_apps: false rather than dropping it", () => {
+    recordToolCall({
+      tool: "view-training-load",
+      duration_ms: 7,
+      outcome: "ok",
+      client_apps: false,
+    });
+
+    const record = lastRecord();
+    expect(record.client_apps).toBe(false);
+    expect(record).not.toHaveProperty("client_name");
+  });
+
   it("attaches the rate-limit snapshot without spending a request", () => {
     recordToolCall({ tool: "get-best-efforts", duration_ms: 5, outcome: "ok" });
 

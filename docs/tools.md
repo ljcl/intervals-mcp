@@ -643,6 +643,24 @@ and `view-route-map`/`get-route-map-data` are all ported to intervals.icu.
 | `view-fitness-trend` | CTL/ATL/TSB over time with shaded fatigue/freshness/ramp bands and a dashed taper plan or rest projection past today; a Whole body/Runs only toggle switches scope, caching each side (MCP App) |
 | `get-fitness-trend-data` | Per-day CTL/ATL/TSB, the projection, the solved taper, and the dated warning bands for the fitness-trend UI; `runOnly` switches between whole-body (intervals.icu wellness) and run-only (computed) (app-only) |
 
+A `view-*` result says the chart was rendered only when the request's client
+capabilities advertise `io.modelcontextprotocol/ui` with
+`text/html;profile=mcp-app` (`clientSupportsMcpApps`, `clientCapabilities.ts`).
+Otherwise it has no "rendered above" line and ends with `This client cannot
+display the interactive <kind>. For detail, call <twin>.` A call with no client
+information is treated as a host that cannot render apps. Both footers come
+from `viewFooter`:
+
+| Tool | Footer kind | Text tool it names |
+| ---- | ----------- | ------------------ |
+| `view-activity-chart` | `activity chart` | `get-activity-streams` |
+| `view-cadence-trends` | `cadence trends chart` | `get-running-summary` |
+| `view-training-load` | `training load chart` | `get-training-load` |
+| `view-fitness-trend` | `fitness trend chart` | `get-fitness-trend` |
+| `view-activity-zones` | `zone distribution chart` | `get-activity-zones` |
+| `view-route-map` | `route map` | `get-activity` |
+| `view-compare-activities` | `activity comparison` | `compare-activities` |
+
 Every `*-data` app-only tool reads intervals.icu streams through
 `loadIntervalsStreams` (see docs/architecture.md#streams) and downsamples to
 about 1,000 points for the chart and route-map payloads. The gap-free axes

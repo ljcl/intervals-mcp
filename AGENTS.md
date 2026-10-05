@@ -81,7 +81,8 @@ breaking them has shipped bugs — do not work around them locally.
   Text tool and app reading different copies is the failure mode these prevent.
 - **Telemetry:** `dispatchToolCall` emits one JSON line per call; timer starts
   before token resolution (not-connected calls count); a returned `isError`
-  counts as an error; `recordToolCall` can never fail the call it describes.
+  counts as an error; `recordToolCall` can never fail the call it describes;
+  each line records `client_apps` and `client_name` from the request envelope.
 - **Progress:** every handler gets a `ReportProgress` closure (third arg,
   always present). Tick counter without `total` (spec demands monotonic
   increase; multi-phase calls can't carry two denominators); time-based

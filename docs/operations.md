@@ -79,6 +79,32 @@ stays `null` even after calls have been made, not just before the first one.
 Wiring monitoring: point an uptime check at the unauthenticated shape; send
 the secret only when you want the config and quota detail.
 
+## Per-call log line
+
+Every tool call writes one JSON line to stderr (`docker compose logs -f`),
+shown wrapped here:
+
+```json
+{
+  "event": "tool_call",
+  "tool": "view-training-load",
+  "duration_ms": 420,
+  "outcome": "ok",
+  "rate_limit": null,
+  "client_apps": true,
+  "client_name": "claude-ai"
+}
+```
+
+`outcome` is `ok`, `error`, `not_connected` or `invalid_args`; `error_class`
+appears when a call threw. `client_apps` is true when the request's client
+capabilities advertised MCP Apps (`io.modelcontextprotocol/ui` with
+`text/html;profile=mcp-app`), and `client_name` is the `clientInfo.name` the
+client sent, when it sent one. They exist to confirm which hosts advertise MCP
+Apps before the `view-*` tools are hidden from clients that do not. For
+example, `grep '"event":"tool_call"' | grep '"client_apps":false'` lists the
+calls from hosts that would lose them.
+
 ## Securing the endpoint
 
 A tunnel makes `/mcp` reachable by anyone who discovers the URL — including

@@ -3,6 +3,8 @@ import { createRequire } from "node:module";
 import { dominantBucket } from "@intervals-mcp/data";
 import {
   type CallToolResult,
+  CLIENT_CAPABILITIES_META_KEY,
+  CLIENT_INFO_META_KEY,
   type ListResourcesResult,
   type ListToolsResult,
   type ReadResourceResult,
@@ -31,6 +33,11 @@ import {
   buildCadenceTrendData,
   type CadenceTrendData,
 } from "./cadenceTrendData";
+import {
+  clientSupportsMcpApps,
+  MCP_APP_MIME_TYPE,
+  viewFooter,
+} from "./clientCapabilities";
 import { getIntervalsApiKey, getTimeZone } from "./config";
 import { taperTargetDateError } from "./fitnessTrend";
 import {
@@ -300,8 +307,6 @@ const ROUTE_MAP_CSP = {
   connectDomains: ["https://tiles.openfreemap.org"],
   resourceDomains: ["https://tiles.openfreemap.org"],
 } as const;
-
-const MCP_APP_MIME_TYPE = "text/html;profile=mcp-app";
 
 interface AppResource {
   uri: string;
@@ -678,6 +683,16 @@ function buildToolDefs(): ToolDef[] {
 export const TOOL_DEFS = buildToolDefs();
 
 /**
+ * What the request's client told the server about itself, handed to every
+ * handler as its fourth argument. Only the view-* handlers read it, to decide
+ * whether to claim a rendered chart (#77).
+ */
+export interface ToolCallContext {
+  /** The client advertised MCP Apps, so a view-* tool's chart is on screen. */
+  clientRendersApps: boolean;
+}
+
+/**
  * Tool name → the advertised input shape, for the dispatcher's alias fix-up
  * and unknown-key message (#78). Read from TOOL_DEFS so it matches exactly
  * what a host was shown.
@@ -692,7 +707,8 @@ const TOOL_ARG_SHAPES = new Map<string, ArgShape>(
  * The third argument is the call's progress reporter. It is always
  * supplied — {@link NO_PROGRESS} when the caller asked for none — so a handler
  * that reports progress needs no capability check, and one that does not can
- * keep its two-argument signature.
+ * keep its two-argument signature. The fourth is the call's
+ * {@link ToolCallContext}, likewise always supplied.
  */
 const TOOL_EXECUTORS = new Map<
   string,
@@ -700,6 +716,7 @@ const TOOL_EXECUTORS = new Map<
     args: Record<string, unknown>,
     token: string,
     progress: ReportProgress,
+    context: ToolCallContext,
   ) => Promise<{
     content: Array<{ type: string; text: string }>;
     structuredContent?: unknown;
@@ -781,6 +798,8 @@ const CHART_STREAM_TYPES: IntervalsStreamType[] = [
 async function handleViewActivityChart(
   args: Record<string, unknown>,
   token: string,
+  _progress: ReportProgress,
+  context: ToolCallContext,
 ): Promise<ToolCallResult> {
   const activityId = String(args.activity_id);
   // Same fetch options as `get-activity-streams-raw` (`intervals: true`): the
@@ -805,7 +824,14 @@ async function handleViewActivityChart(
     if (!(error instanceof IntervalsStreamsUnavailableError)) throw error;
     lines.push("No recorded streams; the chart has nothing to plot.");
   }
-  lines.push("", "[Interactive activity chart rendered above]");
+  lines.push(
+    "",
+    viewFooter(
+      "activity chart",
+      "get-activity-streams",
+      context.clientRendersApps,
+    ),
+  );
   return { content: [{ type: "text", text: lines.join("\n") }] };
 }
 
@@ -880,6 +906,8 @@ async function handleGetCadenceTrendData(
 async function handleViewCadenceTrends(
   args: Record<string, unknown>,
   token: string,
+  _progress: ReportProgress,
+  context: ToolCallContext,
 ): Promise<ToolCallResult> {
   const data = await loadCadenceTrendData(token, args);
   const runs = data.activities;
@@ -902,7 +930,11 @@ async function handleViewCadenceTrends(
       ? [`No pace recorded (cadence only): ${data.noPaceCount}`]
       : []),
     "",
-    "[Interactive cadence trends chart rendered above]",
+    viewFooter(
+      "cadence trends chart",
+      "get-running-summary",
+      context.clientRendersApps,
+    ),
   ];
   return { content: [{ type: "text", text: lines.join("\n") }] };
 }
@@ -948,6 +980,7 @@ async function handleViewTrainingLoad(
   args: Record<string, unknown>,
   token: string,
   progress: ReportProgress,
+  context: ToolCallContext,
 ): Promise<ToolCallResult> {
   const data = await loadTrainingLoadAppData(token, args, progress);
   const warningWeeks = data.weeks.filter((w) => w.warning).length;
@@ -976,7 +1009,11 @@ async function handleViewTrainingLoad(
       ? [`Week of ${inProgress.weekStarting} is in progress (partial).`]
       : []),
     "",
-    "[Interactive training load chart rendered above]",
+    viewFooter(
+      "training load chart",
+      "get-training-load",
+      context.clientRendersApps,
+    ),
   ];
   return { content: [{ type: "text", text: lines.join("\n") }] };
 }
@@ -1072,6 +1109,7 @@ async function handleViewFitnessTrend(
   args: Record<string, unknown>,
   token: string,
   progress: ReportProgress,
+  context: ToolCallContext,
 ): Promise<ToolCallResult> {
   const invalid = fitnessTrendTargetError(args);
   if (invalid) return invalid;
@@ -1108,7 +1146,14 @@ async function handleViewFitnessTrend(
     lines.push(`Flag: ${flag}`);
   }
 
-  lines.push("", "[Interactive fitness trend chart rendered above]");
+  lines.push(
+    "",
+    viewFooter(
+      "fitness trend chart",
+      "get-fitness-trend",
+      context.clientRendersApps,
+    ),
+  );
   return { content: [{ type: "text", text: lines.join("\n") }] };
 }
 
@@ -1139,6 +1184,8 @@ async function handleGetActivityZonesData(
 async function handleViewActivityZones(
   args: Record<string, unknown>,
   token: string,
+  _progress: ReportProgress,
+  context: ToolCallContext,
 ): Promise<ToolCallResult> {
   const data = await loadActivityZonesData(token, String(args.activity_id));
   const lines = [`Activity Zones: ${data.name} (${data.date})`];
@@ -1158,7 +1205,14 @@ async function handleViewActivityZones(
       );
     }
   }
-  lines.push("", "[Interactive zone distribution chart rendered above]");
+  lines.push(
+    "",
+    viewFooter(
+      "zone distribution chart",
+      "get-activity-zones",
+      context.clientRendersApps,
+    ),
+  );
   return { content: [{ type: "text", text: lines.join("\n") }] };
 }
 /** Stream types the route-map app needs: latlng plus the chartable metrics. */
@@ -1224,6 +1278,8 @@ async function handleGetRouteMapData(
 async function handleViewRouteMap(
   args: Record<string, unknown>,
   token: string,
+  _progress: ReportProgress,
+  context: ToolCallContext,
 ): Promise<ToolCallResult> {
   const data = await loadRouteMapData(args, token);
   const lines = [
@@ -1243,7 +1299,10 @@ async function handleViewRouteMap(
   for (const warning of data.waypointWarnings ?? []) {
     lines.push(`Warning: ${warning}`);
   }
-  lines.push("", "[Interactive route map rendered above]");
+  lines.push(
+    "",
+    viewFooter("route map", "get-activity", context.clientRendersApps),
+  );
   return { content: [{ type: "text", text: lines.join("\n") }] };
 }
 
@@ -1275,6 +1334,8 @@ async function handleGetCompareActivitiesData(
 async function handleViewCompareActivities(
   args: Record<string, unknown>,
   token: string,
+  _progress: ReportProgress,
+  context: ToolCallContext,
 ): Promise<ToolCallResult> {
   const data = await loadCompareActivitiesData(args, token);
   const lines = [
@@ -1294,7 +1355,14 @@ async function handleViewCompareActivities(
   for (const warning of data.warnings ?? []) {
     lines.push(`Warning: ${warning}`);
   }
-  lines.push("", "[Interactive activity comparison rendered above]");
+  lines.push(
+    "",
+    viewFooter(
+      "activity comparison",
+      "compare-activities",
+      context.clientRendersApps,
+    ),
+  );
   return { content: [{ type: "text", text: lines.join("\n") }] };
 }
 
@@ -1313,6 +1381,7 @@ const APP_TOOL_HANDLERS: Record<
     args: Record<string, unknown>,
     token: string,
     progress: ReportProgress,
+    context: ToolCallContext,
   ) => Promise<ToolCallResult>
 > = {
   "view-activity-chart": handleViewActivityChart,
@@ -1339,6 +1408,17 @@ export interface DispatchOptions {
    * unconditionally and a caller that asked for nothing pays nothing.
    */
   progress?: ReportProgress;
+  /**
+   * What the request's envelope said about the client. Absent means unknown,
+   * which reads as a host that cannot render MCP Apps: the honest text is the
+   * one that never claims a chart nobody is looking at (#77).
+   */
+  client?: {
+    /** The client advertised the MCP Apps extension with the app MIME type. */
+    rendersApps: boolean;
+    /** `clientInfo.name`, when the client sent one. */
+    name?: string;
+  };
 }
 
 /**
@@ -1355,8 +1435,11 @@ export interface DispatchOptions {
 export async function dispatchToolCall(
   name: string,
   rawArgs: Record<string, unknown> | undefined,
-  { progress = NO_PROGRESS }: DispatchOptions = {},
+  { progress = NO_PROGRESS, client }: DispatchOptions = {},
 ): Promise<ToolCallResult> {
+  const context: ToolCallContext = {
+    clientRendersApps: client?.rendersApps ?? false,
+  };
   // The timer starts here, before token resolution, so a not-connected call is
   // recorded too — it is a real call that cost the caller a round trip, and it
   // is exactly the failure an operator wants to see the rate of.
@@ -1371,6 +1454,8 @@ export async function dispatchToolCall(
       duration_ms: Math.round(performance.now() - startedAt),
       outcome,
       ...(errorClass ? { error_class: errorClass } : {}),
+      client_apps: context.clientRendersApps,
+      ...(client?.name ? { client_name: client.name } : {}),
     });
     return result;
   };
@@ -1433,7 +1518,7 @@ export async function dispatchToolCall(
     // error treatment as the handler's own reads.
     const idKeys = TOOL_ID_KEYS.get(name);
     if (idKeys) args = await resolveLatestIds(args, idKeys, token, progress);
-    const result = await handler(args, token, progress);
+    const result = await handler(args, token, progress, context);
     // A handler that returns `isError` failed as surely as one that threw; the
     // counters would flatter the server if only throws counted.
     return finish(result.isError ? "error" : "ok", result);
@@ -1535,6 +1620,11 @@ export function createServer(): Server {
 
   server.setRequestHandler("tools/call", async (request, ctx) => {
     const { name, arguments: args } = request.params;
+    // The shipped envelope type is `{}`, so the reserved keys are read by name.
+    const envelope = ctx.mcpReq.envelope as Record<string, unknown> | undefined;
+    const clientInfo = envelope?.[CLIENT_INFO_META_KEY] as
+      | { name?: unknown }
+      | undefined;
     const result = await dispatchToolCall(name, args, {
       // `ctx.mcpReq.notify` is already scoped to this request, which is what
       // lets the transport put the notification on the same SSE stream the
@@ -1543,6 +1633,13 @@ export function createServer(): Server {
         ctx.mcpReq._meta?.progressToken,
         (notification) => ctx.mcpReq.notify(notification),
       ),
+      client: {
+        rendersApps: clientSupportsMcpApps(
+          envelope?.[CLIENT_CAPABILITIES_META_KEY],
+        ),
+        name:
+          typeof clientInfo?.name === "string" ? clientInfo.name : undefined,
+      },
     });
     // The era-aware projection (SEP-2106 §4.3 text auto-append; identity for
     // this server's always-text, object-structured results) lives in the SDK

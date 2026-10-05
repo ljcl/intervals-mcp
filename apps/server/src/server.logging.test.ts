@@ -3,6 +3,7 @@
  * feeds (#72). The capability checks go over the real transport rather than
  * against the in-memory server object: what a host sees is what serializes.
  */
+import { CLIENT_CAPABILITIES_META_KEY } from "@modelcontextprotocol/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./config", async (importOriginal) => {
@@ -82,6 +83,78 @@ describe("dispatch telemetry", () => {
       tool: "no-such-tool",
       outcome: "error",
     });
+  });
+
+  /** The `tool_call` records written to stderr so far. */
+  function loggedRecords(): Array<Record<string, unknown>> {
+    return vi
+      .mocked(console.error)
+      .mock.calls.map(([line]) => String(line))
+      .filter((line) => line.startsWith("{"))
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+  }
+
+  it("records that the client renders MCP Apps, and its name, when told", async () => {
+    await dispatchToolCall(
+      "no-such-tool",
+      {},
+      { client: { rendersApps: true, name: "claude-ai" } },
+    );
+
+    expect(loggedRecords()).toEqual([
+      expect.objectContaining({ client_apps: true, client_name: "claude-ai" }),
+    ]);
+  });
+
+  it("records client_apps: false and no name when the client is not known", async () => {
+    await dispatchToolCall("no-such-tool", {});
+
+    const [record] = loggedRecords();
+    expect(record?.client_apps).toBe(false);
+    expect(record).not.toHaveProperty("client_name");
+  });
+
+  it("records the client on every outcome, not only a successful call", async () => {
+    await dispatchToolCall(
+      "get-activity-laps",
+      { id: "not-an-id" },
+      { client: { rendersApps: true, name: "claude-ai" } },
+    );
+
+    expect(loggedRecords()).toEqual([
+      expect.objectContaining({
+        outcome: "invalid_args",
+        client_apps: true,
+        client_name: "claude-ai",
+      }),
+    ]);
+  });
+
+  it("takes both from the request envelope over the wire", async () => {
+    const withApps = await connectTestClient("claude-ai");
+    await withApps.send("tools/call", {
+      name: "no-such-tool",
+      arguments: {},
+      _meta: {
+        [CLIENT_CAPABILITIES_META_KEY]: {
+          extensions: {
+            "io.modelcontextprotocol/ui": {
+              mimeTypes: ["text/html;profile=mcp-app"],
+            },
+          },
+        },
+      },
+    });
+    const plain = await connectTestClient("plain-host");
+    await plain.send("tools/call", { name: "no-such-tool", arguments: {} });
+
+    expect(loggedRecords()).toEqual([
+      expect.objectContaining({ client_apps: true, client_name: "claude-ai" }),
+      expect.objectContaining({
+        client_apps: false,
+        client_name: "plain-host",
+      }),
+    ]);
   });
 
   it("times the call, including the work before the handler runs", async () => {
