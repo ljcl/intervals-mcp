@@ -14,7 +14,9 @@ WORKDIR /app
 # fallback symlink to bun, so without this the shipped app.html files were
 # built under Bun while CI builds and tests them under Node. This is the Node
 # from .tool-versions (the one CI's setup action installs);
-# dockerRuntime.test.ts pins the tag to it.
+# dockerRuntime.test.ts pins the tag to it. Only the binary is copied, so a
+# Node major can need extra shared libraries here (docs/development.md,
+# "Upgrading Node").
 FROM node:24.21.0-trixie-slim@sha256:8ec5d7557396cfe32d21c3f9c13072355ceab22b584578ca4bb28af31120cffe AS node
 
 # turbo isolated here so it never reaches the runner; the version is derived
