@@ -265,11 +265,10 @@ at the cap so the limit is legible.
 `runIds` replaces the selection, in the order given, so overlay colours follow
 it. The model never sees the chart's runs, so the description points it at
 `list-activities` for ids. `resolveSetView` (`src/setView.ts`, unit-tested)
-matches ids with or without the `i` prefix, as the server's
-`intervalsActivityIdInput` does, and a refusal names ids the chart lacks apart
-from runs with no cadence, each once; a `runIds` or `xAxis`
-without a `view` moves to the overlay, while an empty `runIds` only clears the
-selection. The overlay x-axis and the legend's hidden runs are `App` state
+matches an id with or without the `i` prefix (not `"latest"`), and a refusal
+names ids the chart lacks apart from runs with no cadence, each once; a
+`runIds` or `xAxis` without a `view` moves to the overlay, while an empty
+`runIds` only clears the selection. The overlay x-axis and the legend's hidden runs are `App` state
 (`OverlayView` is controlled), and the context summary reports the axis while
 the overlay shows. Like `set-scope`, the reply claims "Showing" only for what
 is drawn: `overlayRunStatus` (`src/normalize.ts`, the reading the overlay
