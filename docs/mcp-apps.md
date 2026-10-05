@@ -33,10 +33,14 @@ Every app's `main.tsx` is the same four-branch state machine, so it lives in
 - **Host arguments are the model's raw arguments.** The server accepts old
   spellings through its aliases, so `toolArgs` may say `activity_id`,
   `activity_id_1`/`activity_id_2` or `weeks`. Each app's `parseToolInput`
-  (`src/toolArgs.ts`, unit-tested) normalises them first, to `id`,
-  `activityId1`/`activityId2` and `days` (`days ?? weeks * 7`), with
-  `toolArgId` from `packages/ui` reading an id; nothing else reads the raw
-  object, and the data feeds are called with the new names only.
+  normalises them first, to `id`, `activityId1`/`activityId2` and `days`
+  (`days ?? weeks * 7`); nothing else reads the raw object, and the data
+  feeds are called with the new names only. The id spellings have one home,
+  `packages/ui/src/toolArgs.ts` (`ID_ARG_KEYS`, `ACTIVITY_ID1_ARG_KEYS`,
+  `ACTIVITY_ID2_ARG_KEYS`, mirroring the server's `ALIAS_GROUPS` in
+  `argAliases.ts`): single-activity apps use its `parseIdToolArgs`, and
+  route-map, compare-activities and cadence-trends keep a small
+  `src/toolArgs.ts` for their extra fields.
 - **`"latest"` is pinned to the run the app first showed.** A view tool
   called with `id: "latest"` hands the app `toolArgs` holding the word, and
   its tool result names the run in `_meta["intervals-mcp/resolvedArgs"]`
@@ -48,7 +52,9 @@ Every app's `main.tsx` is the same four-branch state machine, so it lives in
   `pendingLatest` holds `AppRootView` on its waiting branch, so no app
   fetches the word moments before the pin lands; after `LATEST_PIN_WAIT_MS`
   (1,500 ms) with no result it lets go and the app fetches with `"latest"`,
-  so a host that never sends tool results still gets a chart.
+  so a host that never sends tool results still gets a chart. If resolution
+  takes longer than that wait, the app fetches with `"latest"` first and
+  refetches once the pinned id arrives: one extra fetch, then the same run.
 - **Fetching.** `useServerToolData` is the mount-time single fetch every app
   makes. Anything keyed and on-demand — a stream per selected run — goes
   through `useServerToolFetcher` instead of a hand-rolled effect. Its state

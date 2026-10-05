@@ -147,9 +147,10 @@ description is kept. (This is also the `annotate-last-run` prompt.)
   `i` (as `list-activities` returns them, e.g. `i189807578`), or pass id
   `"latest"` for the most recent run (not `update-activity`). Always pass ids
   as quoted strings, never bare numbers: some hosts round large numbers
-  through JSON, which silently corrupts the id. The result says which id
-  `"latest"` resolved to, and a chart or map opened with `"latest"` stays on
-  that run when the chat is reopened.
+  through JSON, which silently corrupts the id. A chart or map opened with
+  `"latest"` stays on that run when the chat is reopened; the resolved id is
+  in the result's `_meta`, which the host can read but usually does not pass
+  on, so call `list-activities` when you need the id itself.
 - **One input naming scheme.** CamelCase inputs: `id` for one activity,
   `activityId1`/`activityId2` for two, `days` for a look-back window
   (`view-cadence-trends`: 7-728, default 42). Older spellings

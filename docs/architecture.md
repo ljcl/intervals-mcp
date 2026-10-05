@@ -471,13 +471,14 @@ found, the tool returns an `isError` result naming the fix. `update-activity`
 cannot use `"latest"` because a write must name its specific target; it validates
 against digits only.
 
-The result names what `"latest"` resolved to: `dispatchToolCall` puts
-the keys it changed (`id`, or `activityId1`/`activityId2`) into the result's
+`dispatchToolCall` records what `"latest"` resolved to: the keys it
+changed (`id`, or `activityId1`/`activityId2`) go into the result's
 `_meta["intervals-mcp/resolvedArgs"]` (`RESOLVED_ARGS_META_KEY`,
-`latestActivity.ts`), only on a successful call that resolved one. The model and the
-host read the id that was meant, and an app pins its own arguments to it
-(`useHostRoot`, docs/mcp-apps.md), so a re-mounted view shows the same run
-rather than a newer one.
+`latestActivity.ts`), only on a successful call that resolved one. The id is
+not in the result text, and hosts do not generally pass `_meta` to the model.
+An app pins its own arguments to it (`useHostRoot`, docs/mcp-apps.md), so a
+re-mounted view stays on the same run rather than a newer one, and the host
+can read the resolved id from `_meta`.
 
 ## Structured output
 

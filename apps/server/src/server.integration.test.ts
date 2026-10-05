@@ -154,8 +154,8 @@ describe("result envelope", () => {
 
 /**
  * Every input field naming an intervals.icu activity id, in each spelling the
- * surface uses: `id`, `activityId1`, `activityId2`, and any `*_id`. The narrower `/(^|_)(id|Id)$/` this replaced matched only
- * the first two, skipping 28 of the 43 id arguments: the camelCase and
+ * surface uses: `id`, `activityId1`, `activityId2`, and any `*_id`. The
+ * narrower `/(^|_)(id|Id)$/` this replaced skipped the camelCase and
  * numbered ones, including all four tools that were still hand-rolling their
  * id schema.
  */
