@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { idJsonSchemaOverride, intervalsActivityIdInput } from "./_ids";
+import {
+  idJsonSchemaOverride,
+  intervalsActivityIdInput,
+  isActivityIdSchema,
+} from "./_ids";
 
 describe("intervalsActivityIdInput", () => {
   const schema = intervalsActivityIdInput("The id.");
@@ -78,8 +82,19 @@ describe("intervalsActivityIdInput", () => {
       const json = advertise(schema);
 
       expect(json.type).toBe("string");
-      expect(json.pattern).toBe("^i?\\d+$");
+      expect(json.pattern).toBe("^(?:i?\\d+|latest)$");
       expect(json.anyOf).toBeUndefined();
+      expect(json.description).toBe(
+        'The id. Pass the intervals.icu activity id as a quoted string exactly as shown in list-activities (e.g. "i189807578"), or "latest" for your most recent run.',
+      );
+    });
+
+    it("advertises the digits-only pattern and plain hint without latest", () => {
+      const json = advertise(
+        intervalsActivityIdInput("The id.", { allowLatest: false }),
+      );
+
+      expect(json.pattern).toBe("^i?\\d+$");
       expect(json.description).toBe(
         'The id. Pass the intervals.icu activity id as a quoted string exactly as shown in list-activities (e.g. "i189807578").',
       );
@@ -88,7 +103,7 @@ describe("intervalsActivityIdInput", () => {
     it("does not disturb another intervalsActivityIdInput schema's own advertised pattern", () => {
       const otherJson = advertise(intervalsActivityIdInput("Other id."));
 
-      expect(otherJson.pattern).toBe("^i?\\d+$");
+      expect(otherJson.pattern).toBe("^(?:i?\\d+|latest)$");
     });
 
     it("leaves schemas that are not intervals.icu ids alone", () => {
@@ -105,10 +120,30 @@ describe("intervalsActivityIdInput", () => {
 
       expect(json.properties.activity_id).toEqual({
         type: "string",
-        pattern: "^i?\\d+$",
+        pattern: "^(?:i?\\d+|latest)$",
         description:
-          'The id. Pass the intervals.icu activity id as a quoted string exactly as shown in list-activities (e.g. "i189807578").',
+          'The id. Pass the intervals.icu activity id as a quoted string exactly as shown in list-activities (e.g. "i189807578"), or "latest" for your most recent run.',
       });
     });
+  });
+});
+
+describe("intervalsActivityIdInput latest", () => {
+  it('accepts "latest" by default and keeps it as the word', () => {
+    expect(intervalsActivityIdInput("x").parse("latest")).toBe("latest");
+  });
+  it("rejects latest when allowLatest is false", () => {
+    expect(
+      intervalsActivityIdInput("x", { allowLatest: false }).safeParse("latest")
+        .success,
+    ).toBe(false);
+  });
+  it("still normalises ids", () => {
+    expect(intervalsActivityIdInput("x").parse("i123")).toBe("i123");
+    expect(intervalsActivityIdInput("x").parse(123)).toBe("123");
+  });
+  it("is recognised by isActivityIdSchema", () => {
+    expect(isActivityIdSchema(intervalsActivityIdInput("x"))).toBe(true);
+    expect(isActivityIdSchema(z.string())).toBe(false);
   });
 });

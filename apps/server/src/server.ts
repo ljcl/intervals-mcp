@@ -47,6 +47,7 @@ import {
   type IntervalsStreamType,
   loadIntervalsStreams,
 } from "./intervalsStreams";
+import { NoLatestRunError, resolveLatestIds } from "./latestActivity";
 import { loadFitnessTrend } from "./loadFitnessTrend";
 import { type WaypointInput } from "./mapAnchors";
 import {
@@ -59,7 +60,11 @@ import { buildRouteMapData, type RouteMapData } from "./routeMapData";
 import { recordToolCall, type ToolOutcome } from "./telemetry";
 import { READ_ONLY } from "./tools/_annotations";
 import { prefixedErrorText, toolErrorText } from "./tools/_errors";
-import { idJsonSchemaOverride, intervalsActivityIdInput } from "./tools/_ids";
+import {
+  idJsonSchemaOverride,
+  intervalsActivityIdInput,
+  isActivityIdSchema,
+} from "./tools/_ids";
 import {
   buildComparison,
   compareActivitiesTool,
@@ -725,6 +730,37 @@ for (const [name, schema] of Object.entries(APP_TOOL_INPUT_SCHEMAS)) {
   TOOL_INPUT_SCHEMAS.set(name, schema);
 }
 
+/**
+ * True when `field`, under any optional/default wrappers, is an activity id
+ * that accepts `"latest"` (so update-activity's `allowLatest: false` id is
+ * left out).
+ */
+function isLatestCapableIdField(field: z.core.$ZodType): boolean {
+  let inner = field;
+  while (!isActivityIdSchema(inner)) {
+    const unwrap = (inner as { unwrap?: () => z.core.$ZodType }).unwrap;
+    if (typeof unwrap !== "function") return false;
+    inner = unwrap.call(inner);
+  }
+  return z.safeParse(inner, "latest").success;
+}
+
+/**
+ * Tool name to the input keys built by intervalsActivityIdInput that accept
+ * `"latest"`, read from the zod object's shape (unwrapping optional/default),
+ * so resolution never relies on a list of key names. A schema with no
+ * `.shape` would be skipped; none of the current ones lacks it.
+ */
+const TOOL_ID_KEYS = new Map<string, string[]>();
+for (const [name, schema] of TOOL_INPUT_SCHEMAS) {
+  const shape = (schema as { shape?: Record<string, z.core.$ZodType> }).shape;
+  if (!shape) continue;
+  const keys = Object.entries(shape)
+    .filter(([, field]) => isLatestCapableIdField(field))
+    .map(([key]) => key);
+  if (keys.length > 0) TOOL_ID_KEYS.set(name, keys);
+}
+
 /** Stream types the activity-chart app can plot, including running dynamics. */
 const CHART_STREAM_TYPES: IntervalsStreamType[] = [
   "time",
@@ -1370,11 +1406,25 @@ export async function dispatchToolCall(
   }
 
   try {
+    // "latest" passed validation as the literal word; swap it for the newest
+    // run's id here, so no handler sees it and a failed lookup gets the same
+    // error treatment as the handler's own reads.
+    const idKeys = TOOL_ID_KEYS.get(name);
+    if (idKeys) args = await resolveLatestIds(args, idKeys, token, progress);
     const result = await handler(args, token, progress);
     // A handler that returns `isError` failed as surely as one that threw; the
     // counters would flatter the server if only throws counted.
     return finish(result.isError ? "error" : "ok", result);
   } catch (error) {
+    if (error instanceof NoLatestRunError)
+      return finish(
+        "error",
+        {
+          isError: true,
+          content: [{ type: "text", text: prefixedErrorText(error.message) }],
+        },
+        error.constructor.name,
+      );
     // The app data handlers throw rather than return `isError`, so this is
     // where their 404s and rate limits get the same typed treatment and
     // prefix the text tools give themselves.

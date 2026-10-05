@@ -85,7 +85,8 @@ descriptions.
 `list-activities` defaults to the last 28 days (today back to 27 days
 earlier) in the server's configured time zone, sorted newest first. Filter
 with `type` (`runs` for Run, TrailRun and VirtualRun, or a comma-separated
-list such as `Run, Hike`; the latest run is `type: "runs", limit: 1`) or
+list such as `Run, Hike`; for the most recent run, pass `id: "latest"` to
+the per-activity tool instead) or
 `nameContains` (case-insensitive substring), and cap the page with `limit`
 (1-200, default 30). `search` (a name substring or `#tag`) reaches all
 history through `search-full`, beyond the 366-day window, with `type`,
@@ -592,6 +593,19 @@ request with nothing left to change after diffing against the
 current activity reports "no change" and sends no PUT. Any field whose
 re-read value does not match what was sent (e.g. gear not applied) adds a
 warning rather than failing the call.
+
+## Activity ids
+
+Every activity-id input except `update-activity`'s accepts either a numeric id
+(from `list-activities`, e.g. `"i189807578"`) or the special value `"latest"`,
+including both ids of compare-activities and the app tools. The `"latest"` value
+means the newest Run, TrailRun, or VirtualRun in the last 366 days. It is
+resolved once per call by `resolveLatestIds` (`latestActivity.ts`) in
+`dispatchToolCall` after validation, walking 31-day windows newest first and
+stopping at the first run, from cached `listActivities` reads. If no run is found,
+the tool returns an `isError` result naming the fix. `update-activity` cannot use
+`"latest"` because a write must name its specific target; it validates against
+digits only.
 
 ## Visualization tools
 

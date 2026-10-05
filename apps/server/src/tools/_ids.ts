@@ -8,6 +8,12 @@ import { z } from "zod";
 const INTERVALS_DIGITS = /^i?\d+$/;
 
 /**
+ * Same, plus the literal word `latest`: `dispatchToolCall` swaps it for the
+ * newest run's id before any handler runs.
+ */
+const INTERVALS_DIGITS_OR_LATEST = /^(?:i?\d+|latest)$/;
+
+/**
  * Metadata recorded per id schema, so the shared JSON-schema override can
  * recognise a schema produced by `intervalsActivityIdInput` when the server
  * projects a tool's advertised input schema, and narrow it to the right
@@ -62,6 +68,21 @@ export function idJsonSchemaOverride(ctx: {
  */
 export const INTERVALS_ID_HINT =
   'Pass the intervals.icu activity id as a quoted string exactly as shown in list-activities (e.g. "i189807578").';
+
+/** Appended to the id hint where `"latest"` is accepted. */
+const LATEST_HINT = ' or "latest" for your most recent run.';
+
+/**
+ * The hint as it reads where `"latest"` is accepted: the `.` of
+ * `INTERVALS_ID_HINT` becomes `,` and `LATEST_HINT` follows. Exported for the
+ * same reason as `INTERVALS_ID_HINT`.
+ */
+export const INTERVALS_ID_HINT_LATEST = `${INTERVALS_ID_HINT.replace(/\.$/, ",")}${LATEST_HINT}`;
+
+/** True for a schema built by `intervalsActivityIdInput`. */
+export function isActivityIdSchema(schema: z.core.$ZodType): boolean {
+  return idSchemas.has(schema);
+}
 
 /**
  * Core of `intervalsActivityIdInput`: a string or safe-integer input,
@@ -135,13 +156,22 @@ function idInput(options: {
  * Ids are opaque identifiers, never used numerically, so coercing a safe
  * integer to its string loses nothing. The fetch layer reports ids as exact
  * strings (see `parseJsonWithLargeInts`), so string ids round-trip cleanly.
+ *
+ * `"latest"` passes validation as the literal word, and `dispatchToolCall`
+ * swaps it for the newest run's id (`latestActivity.ts`) before any handler
+ * runs. `update-activity` passes `allowLatest: false`, so a write never
+ * targets an activity it did not name.
  */
-export const intervalsActivityIdInput = (description: string) =>
+export const intervalsActivityIdInput = (
+  description: string,
+  { allowLatest = true }: { allowLatest?: boolean } = {},
+) =>
   idInput({
     description,
-    pattern: INTERVALS_DIGITS,
-    digitsMessage:
-      'id must be a string of digits, optionally prefixed with "i"',
-    hint: INTERVALS_ID_HINT,
+    pattern: allowLatest ? INTERVALS_DIGITS_OR_LATEST : INTERVALS_DIGITS,
+    digitsMessage: allowLatest
+      ? 'id must be a string of digits, optionally prefixed with "i", or "latest"'
+      : 'id must be a string of digits, optionally prefixed with "i"; "latest" is not accepted for a write: use the id shown by get-running-summary or list-activities',
+    hint: allowLatest ? INTERVALS_ID_HINT_LATEST : INTERVALS_ID_HINT,
     oversizedNumberHint: "returned by list-activities",
   });

@@ -18,9 +18,10 @@ import { getTimeZone } from "./config";
 import {
   getActivity,
   getAthletePaceCurves,
+  listActivities,
   searchActivities,
 } from "./intervalsClient";
-import { INTERVALS_ID_HINT } from "./tools/_ids";
+import { INTERVALS_ID_HINT, INTERVALS_ID_HINT_LATEST } from "./tools/_ids";
 
 vi.mock("./intervalsClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./intervalsClient")>();
@@ -28,6 +29,7 @@ vi.mock("./intervalsClient", async (importOriginal) => {
     ...actual,
     getActivity: vi.fn(),
     getAthletePaceCurves: vi.fn(),
+    listActivities: vi.fn(),
     searchActivities: vi.fn(),
   };
 });
@@ -63,6 +65,7 @@ const TOOL_NAME_MENTION =
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(listActivities).mockReset();
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
@@ -318,11 +321,17 @@ describe("tools/list", () => {
     for (const { tool, field, prop } of ids) {
       if (NON_NUMERIC_ID_FIELDS.has(field)) continue;
       const description = prop.description ?? "";
+      // update-activity alone refuses "latest" (a write must name its target).
+      const noLatest = tool === "update-activity" && field === "id";
       expect(
-        description.endsWith(INTERVALS_ID_HINT),
+        description.endsWith(
+          noLatest ? INTERVALS_ID_HINT : INTERVALS_ID_HINT_LATEST,
+        ),
         `${tool}.${field} must use intervalsActivityIdInput`,
       ).toBe(true);
-      expect(prop.pattern, `${tool}.${field} pattern`).toBe("^i?\\d+$");
+      expect(prop.pattern, `${tool}.${field} pattern`).toBe(
+        noLatest ? "^i?\\d+$" : "^(?:i?\\d+|latest)$",
+      );
     }
   });
 });
@@ -493,6 +502,79 @@ describe("tools/call forgiving arguments (#78)", () => {
       'Unknown argument "activity" (this tool takes: id, includeIntervals).',
     );
     expect(mockedIntervalsActivity).not.toHaveBeenCalled();
+  });
+});
+
+describe("tools/call id latest", () => {
+  it('resolves id "latest" to the newest run before the handler runs', async () => {
+    vi.mocked(listActivities).mockResolvedValueOnce([
+      { id: "i555", type: "Run", start_date_local: "2026-10-01T07:00:00" },
+    ] as never);
+    mockedIntervalsActivity.mockResolvedValueOnce({
+      id: "i555",
+      name: "Easy",
+      type: "Run",
+      start_date_local: "2026-10-01T07:00:00",
+    } as never);
+    const client = await connectTestClient();
+    await client.send("tools/call", {
+      name: "get-activity",
+      arguments: { id: "latest" },
+    });
+    expect(mockedIntervalsActivity.mock.calls[0]?.[1]).toBe("i555");
+  });
+
+  it('resolves activity_id "latest" for an app data feed', async () => {
+    vi.mocked(listActivities).mockResolvedValueOnce([
+      { id: "i556", type: "Run", start_date_local: "2026-10-01T07:00:00" },
+    ] as never);
+    mockedIntervalsActivity.mockResolvedValueOnce({
+      id: "i556",
+      name: "Hawk Hill",
+      type: "Run",
+    } as never);
+    const client = await connectTestClient();
+    await client.send("tools/call", {
+      name: "get-route-map-data",
+      arguments: { activity_id: "latest" },
+    });
+    expect(mockedIntervalsActivity.mock.calls[0]?.[1]).toBe("i556");
+  });
+
+  it("resolves both compare ids from one lookup", async () => {
+    vi.mocked(listActivities).mockResolvedValueOnce([
+      { id: "i557", type: "Run", start_date_local: "2026-10-01T07:00:00" },
+    ] as never);
+    mockedIntervalsActivity.mockResolvedValue({
+      id: "i557",
+      name: "Easy",
+      type: "Run",
+      start_date_local: "2026-10-01T07:00:00",
+    } as never);
+    const client = await connectTestClient();
+    await client.send("tools/call", {
+      name: "compare-activities",
+      arguments: { activityId1: "latest", activityId2: "latest" },
+    });
+    expect(vi.mocked(listActivities)).toHaveBeenCalledTimes(1);
+    const ids = mockedIntervalsActivity.mock.calls.map((call) => call[1]);
+    expect(ids.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(ids)).toEqual(new Set(["i557"]));
+  });
+
+  it('says so when there is no run to use for "latest"', async () => {
+    vi.mocked(listActivities).mockResolvedValue([]);
+    const client = await connectTestClient();
+    const { result } = await client.send("tools/call", {
+      name: "get-activity",
+      arguments: { id: "latest" },
+    });
+    expect(result?.isError).toBe(true);
+    expect(
+      (result?.content as Array<{ text: string }> | undefined)?.[0]?.text,
+    ).toBe(
+      '❌ No run in the last 366 days to use for "latest"; pass an id from list-activities.',
+    );
   });
 });
 

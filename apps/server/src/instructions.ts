@@ -13,7 +13,7 @@ export function serverInstructions(timeZone: string): string {
   return [
     "Intervals Extra reads one athlete's intervals.icu data. update-activity is its only write.",
     "",
-    'Get activity ids from list-activities (for example "i189807578"); for the most recent run use type "runs", limit 1. Always pass an id as a quoted string, never as a number: a large number can lose digits.',
+    'Get activity ids from list-activities (for example "i189807578"), or pass id "latest" for the most recent run. Always pass an id as a quoted string, never as a number: a large number can lose digits.',
     "",
     "For one run, call get-running-summary first. Then choose the analysis that fits the run: get-split-analysis for pacing, get-hill-analysis for climbs, get-interval-analysis for a workout, get-aerobic-analysis for decoupling on a steady run. To compare two runs, use compare-activities. For other sports, use get-activity.",
     "",
