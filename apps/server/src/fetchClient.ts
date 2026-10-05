@@ -903,6 +903,9 @@ export function intervalsCacheTtl(path: string): number | null {
   if (/^\/athlete\/[^/]+\/sport-settings\/[^/]+$/.test(path)) return HOUR_MS;
   // Activity listing: short, so a newly recorded activity shows up quickly.
   if (/^\/athlete\/[^/]+\/activities$/.test(path)) return MINUTE_MS;
+  // Activity search: same freshness as the listing it stands in for.
+  if (/^\/athlete\/[^/]+\/activities\/search-full$/.test(path))
+    return MINUTE_MS;
   // Wellness records: matched by prefix like streams above, so a date
   // sub-path (`/wellness/2026-09-24`) or an extension (`wellness.json`)
   // both count; these update through the day.

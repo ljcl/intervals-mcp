@@ -4,6 +4,7 @@ import { formatDuration, STRAVA_STUB_NOTE } from "../formatters";
 import {
   type IntervalsActivity,
   listActivities as listActivitiesClient,
+  searchActivities as searchActivitiesClient,
 } from "../intervalsClient";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
 import {
@@ -12,9 +13,13 @@ import {
   todayLocal,
   validateRange,
 } from "../utils/localDate";
-import { isPaceActivity, paceFromDistanceTime } from "../utils/running";
+import {
+  isPaceActivity,
+  matchesTypeFilter,
+  paceFromDistanceTime,
+} from "../utils/running";
 import { READ_ONLY } from "./_annotations";
-import { toolErrorText } from "./_errors";
+import { prefixedErrorText, toolErrorText } from "./_errors";
 import { RESPONSE_BUDGET_CHARS, responseSize } from "./_responseBudget";
 import { ActivityListOutputSchema, warnOnSchemaDrift } from "./outputs";
 
@@ -25,11 +30,16 @@ Lists intervals.icu activities in a local date range, newest first. Start
 here: each entry carries the activity id that every per-activity tool needs,
 plus distance, time, pace (runs only), heart rate and training load.
 
+For the most recent run, call it with type "runs" and limit 1.
+
+search finds activities by name or #tag across all history, beyond the
+366-day window (for example "when did I last run the club 10K?").
+
 For run totals (this week, month, year) use get-athlete-stats instead of
 adding up this list; for weekly volume trends, get-training-load.
 
 Notes:
-- Defaults to the last 28 days, ending today. A range cannot exceed 366 days.
+- Without search, defaults to the last 28 days ending today, and a range cannot exceed 366 days.
 - An activity synced from Strava (source STRAVA) is a stub: intervals.icu has
   no more detail for it through this API.
 `;
@@ -47,12 +57,20 @@ const inputSchema = z.object({
     .string()
     .optional()
     .describe(
-      'Exact intervals.icu activity type, case-insensitive (e.g. "Run", "WeightTraining").',
+      'Activity type filter, case-insensitive: "runs" for Run, TrailRun and VirtualRun, one type ("Ride"), or a comma-separated list ("Run, Hike").',
     ),
   nameContains: z
     .string()
     .optional()
     .describe("Case-insensitive substring match against the activity name."),
+  search: z
+    .string()
+    .min(1)
+    .max(100)
+    .optional()
+    .describe(
+      'Search all history instead of a date window: a name substring (case-insensitive), or "#tag" for an exact tag. type, oldest and newest still filter the matches.',
+    ),
   limit: z
     .number()
     .int()
@@ -65,6 +83,8 @@ const inputSchema = z.object({
 type ListActivitiesInput = z.infer<typeof inputSchema>;
 
 const MAX_RANGE_DAYS = 366;
+/** The most matches search-full is asked for, and the cap the text warns about. */
+const SEARCH_RESULT_CAP = 200;
 
 export interface ActivitySummaryEntry {
   id: string;
@@ -81,6 +101,8 @@ export interface ActivitySummaryEntry {
   gear_id: string | null;
   source: string | null;
   is_strava_stub: boolean;
+  tags: string[];
+  race: boolean;
 }
 
 /** Maps one raw intervals.icu activity to the compact list entry. Exported for direct testing. */
@@ -111,6 +133,8 @@ export function mapActivitySummary(a: IntervalsActivity): ActivitySummaryEntry {
     gear_id: a.gear?.id ?? null,
     source: a.source ?? null,
     is_strava_stub: a.source === "STRAVA",
+    tags: a.tags ?? [],
+    race: a.race ?? false,
   };
 }
 
@@ -120,6 +144,7 @@ interface ActivityListResponse {
   count: number;
   matched: number;
   truncated: boolean;
+  search: string | null;
   units: { distance: "km"; pace: "min/km"; time: "s"; hr: "bpm" };
   activities: ActivitySummaryEntry[];
 }
@@ -136,33 +161,55 @@ function formatActivityLine(entry: ActivitySummaryEntry): string {
   return `${entry.date} ${entry.type} ${entry.name}, ${parts.join(", ")} [${entry.id}]`;
 }
 
-/**
- * Builds the tool's text response. `budgetCut` says the page was cut below
- * `limit` to fit the response budget. Exported for direct testing.
- */
+interface ListTextOptions {
+  /** The page was cut below `limit` to fit the response budget. */
+  budgetCut?: boolean;
+  /** Scope shown in a search header; defaults to "all history". */
+  windowLabel?: string;
+  /** The caller gave `oldest` with a search, so a paging hint keeps it. */
+  keepOldest?: boolean;
+  /** The `type` filter in effect, repeated in the paging hint. */
+  typeFilter?: string;
+  /** Extra lines after the activities, before the budget and paging lines. */
+  notes?: string[];
+}
+
+/** Builds the tool's text response. Exported for direct testing. */
 export function formatActivityListText(
   response: ActivityListResponse,
-  budgetCut = false,
+  options: ListTextOptions = {},
 ): string {
   const { oldest, newest, count, matched, truncated } = response;
   const summary = truncated
     ? `showing ${count} of ${matched}, truncated`
     : `showing ${count} of ${matched}`;
-  const lines = [`Activities ${oldest} to ${newest}: ${summary}`];
+  const scope = response.search
+    ? `Activities matching ${JSON.stringify(response.search)} (${options.windowLabel ?? "all history"})`
+    : `Activities ${oldest} to ${newest}`;
+  const lines = [`${scope}: ${summary}`];
 
   for (const entry of response.activities)
     lines.push(formatActivityLine(entry));
 
-  if (budgetCut)
+  for (const note of options.notes ?? []) lines.push(note);
+
+  if (options.budgetCut)
     lines.push(
       "Fewer than limit were returned to stay under the response size limit.",
     );
   // Newest first, so what was cut is older; name the call that fetches it.
   const oldestShown = response.activities.at(-1)?.date;
-  if (truncated && oldestShown)
+  if (truncated && oldestShown) {
+    const typePart = options.typeFilter
+      ? `type: ${JSON.stringify(options.typeFilter)}, `
+      : "";
+    const call = response.search
+      ? `search: ${JSON.stringify(response.search)}, ${typePart}${options.keepOldest ? `oldest: ${oldest}, ` : ""}newest: ${oldestShown}`
+      : `${typePart}oldest: ${oldest}, newest: ${oldestShown}`;
     lines.push(
-      `For the ${matched - count} older matches, call again with oldest: ${oldest}, newest: ${oldestShown}.`,
+      `For the ${matched - count} older matches, call again with ${call}.`,
     );
+  }
 
   if (response.activities.some((entry) => entry.is_strava_stub)) {
     lines.push(STRAVA_STUB_NOTE);
@@ -184,39 +231,96 @@ export const listActivitiesTool = {
       newest: rawNewest,
       type,
       nameContains,
+      search,
       limit,
     }: ListActivitiesInput,
     apiKey: string,
     progress: ReportProgress = NO_PROGRESS,
   ) => {
     const tz = getTimeZone();
-    const newest = rawNewest ?? todayLocal(tz);
-    const oldest = rawOldest ?? addDays(newest, -27);
+    const today = todayLocal(tz);
+    const notes: string[] = [];
+    let oldest: string;
+    let newest: string;
+    let windowLabel: string | undefined;
 
-    const rangeError = validateRange(oldest, newest, MAX_RANGE_DAYS);
+    let rangeError: { message: string } | null;
+    if (!search) {
+      newest = rawNewest ?? today;
+      oldest = rawOldest ?? addDays(newest, -27);
+      rangeError = validateRange(oldest, newest, MAX_RANGE_DAYS);
+    } else {
+      // Provisional: a search sets the real span once the matches are known.
+      oldest = rawOldest ?? today;
+      newest = rawNewest ?? today;
+      // No length cap, but a reversed window is still an error.
+      rangeError =
+        rawOldest && rawNewest
+          ? validateRange(rawOldest, rawNewest, Number.POSITIVE_INFINITY)
+          : null;
+    }
     if (rangeError) {
       return {
-        content: [{ type: "text" as const, text: `❌ ${rangeError.message}` }],
+        content: [
+          {
+            type: "text" as const,
+            text: prefixedErrorText(rangeError.message),
+          },
+        ],
         isError: true,
       };
     }
 
     try {
-      progress(`Fetching activities ${oldest} to ${newest}`);
-      const activities = await listActivitiesClient(
-        apiKey,
-        { oldest, newest },
-        progress,
-      );
+      let activities: IntervalsActivity[];
+      if (search) {
+        // The window and nameContains do not apply: search reaches all
+        // history, and oldest/newest only filter what it found.
+        if (nameContains)
+          notes.push(
+            "nameContains is ignored with search; put the text in search.",
+          );
+        progress(`Searching activities for ${JSON.stringify(search)}`);
+        const found = await searchActivitiesClient(
+          apiKey,
+          search,
+          SEARCH_RESULT_CAP,
+        );
+        if (found.length >= SEARCH_RESULT_CAP)
+          notes.push(
+            `search returns at most ${SEARCH_RESULT_CAP} matches, the most recent first; narrow the query, or list a date window without search (oldest/newest, up to ${MAX_RANGE_DAYS} days) with nameContains to reach older ones.`,
+          );
+        activities = found.filter((a) => {
+          const date = a.start_date_local.slice(0, 10);
+          return (
+            (!rawOldest || date >= rawOldest) &&
+            (!rawNewest || date <= rawNewest)
+          );
+        });
+      } else {
+        progress(`Fetching activities ${oldest} to ${newest}`);
+        activities = await listActivitiesClient(
+          apiKey,
+          { oldest, newest },
+          progress,
+        );
+      }
 
       let filtered = activities;
       if (type) {
-        const wanted = type.toLowerCase();
-        filtered = filtered.filter(
-          (a) => (a.type ?? "").toLowerCase() === wanted,
+        filtered = filtered.filter((a) =>
+          matchesTypeFilter(a.type ?? "", type),
         );
       }
-      if (nameContains) {
+      if (search) {
+        // With no window given, the span is what the matches cover.
+        const dates = filtered.map((a) => a.start_date_local.slice(0, 10));
+        oldest = rawOldest ?? dates.at(-1) ?? today;
+        newest = rawNewest ?? dates[0] ?? today;
+        windowLabel =
+          rawOldest || rawNewest ? `${oldest} to ${newest}` : "all history";
+      }
+      if (nameContains && !search) {
         const needle = nameContains.toLowerCase();
         filtered = filtered.filter((a) =>
           (a.name ?? "").toLowerCase().includes(needle),
@@ -233,6 +337,7 @@ export const listActivitiesTool = {
           count: page.length,
           matched,
           truncated: matched > page.length,
+          search: search ?? null,
           units: { distance: "km", pace: "min/km", time: "s", hr: "bpm" },
           activities: page,
         };
@@ -243,7 +348,12 @@ export const listActivitiesTool = {
       // page by the measured overshoot.
       let size = limit;
       let response = build(size);
-      let text = formatActivityListText(response);
+      let text = formatActivityListText(response, {
+        windowLabel,
+        notes,
+        keepOldest: Boolean(rawOldest),
+        typeFilter: type,
+      });
       for (let pass = 0; pass < 5; pass += 1) {
         const chars = responseSize(text, response);
         if (chars <= RESPONSE_BUDGET_CHARS || size <= 1) break;
@@ -255,7 +365,13 @@ export const listActivitiesTool = {
           ),
         );
         response = build(size);
-        text = formatActivityListText(response, true);
+        text = formatActivityListText(response, {
+          budgetCut: true,
+          windowLabel,
+          notes,
+          keepOldest: Boolean(rawOldest),
+          typeFilter: type,
+        });
       }
 
       warnOnSchemaDrift(name, ActivityListOutputSchema, response);
@@ -270,7 +386,9 @@ export const listActivitiesTool = {
           {
             type: "text" as const,
             text: toolErrorText(error, {
-              context: `list activities from ${oldest} to ${newest}`,
+              context: search
+                ? `search activities for ${JSON.stringify(search)}`
+                : `list activities from ${oldest} to ${newest}`,
             }),
           },
         ],

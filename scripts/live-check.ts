@@ -265,6 +265,29 @@ async function checkListActivities(): Promise<void> {
   }
 }
 
+async function checkListActivitiesSearch(): Promise<void> {
+  const name = "list-activities (search)";
+  try {
+    const result = (await listActivitiesTool.execute(
+      { search: "run", limit: 5 },
+      apiKey,
+      NO_PROGRESS,
+    )) as {
+      structuredContent?: Record<string, unknown>;
+      isError?: boolean;
+      content?: Array<{ text?: unknown }>;
+    };
+    if (result.isError || !result.structuredContent) {
+      fail(name, errorSummary(result));
+      return;
+    }
+    const s = result.structuredContent;
+    ok(name, `count=${s.count} matched=${s.matched} oldest=${s.oldest}`);
+  } catch (error) {
+    fail(name, throwSummary(error));
+  }
+}
+
 async function checkGetActivity(): Promise<void> {
   const name = "get-activity";
   try {
@@ -1098,6 +1121,7 @@ async function checkGetFitnessTrendDataScope(runOnly: boolean): Promise<void> {
 }
 
 await checkListActivities();
+await checkListActivitiesSearch();
 await checkGetActivity();
 await checkGetActivityStreams();
 await checkListGear();

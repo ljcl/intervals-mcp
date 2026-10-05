@@ -130,6 +130,7 @@ per-tool. Path patterns and current TTLs (`fetchClient.ts`):
 | `/athlete/{id}/gear` | 10m | Rarely changes |
 | `/athlete/{id}/sport-settings/{sport}` | 1h | Rarely changes |
 | `/athlete/{id}/activities` | 1m | A newly recorded activity should show up quickly |
+| `/athlete/{id}/activities/search-full` | 1m | Same freshness as the listing |
 | `/athlete/{id}/wellness*` | 5m | intervals.icu updates wellness through the day |
 | `/athlete/{id}/pace-curves.json`, `/activity-pace-curves.json` | 10m | Recomputed from history a few times a day at most |
 

@@ -15,12 +15,21 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getTimeZone } from "./config";
-import { getActivity, getAthletePaceCurves } from "./intervalsClient";
+import {
+  getActivity,
+  getAthletePaceCurves,
+  searchActivities,
+} from "./intervalsClient";
 import { INTERVALS_ID_HINT } from "./tools/_ids";
 
 vi.mock("./intervalsClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./intervalsClient")>();
-  return { ...actual, getActivity: vi.fn(), getAthletePaceCurves: vi.fn() };
+  return {
+    ...actual,
+    getActivity: vi.fn(),
+    getAthletePaceCurves: vi.fn(),
+    searchActivities: vi.fn(),
+  };
 });
 
 // Dispatch resolves the key before any handler runs (ljcl/strava-mcp#240), so without this
@@ -319,6 +328,26 @@ describe("tools/list", () => {
 });
 
 describe("tools/call", () => {
+  it("searches activities over the wire", async () => {
+    vi.mocked(searchActivities).mockResolvedValueOnce([
+      {
+        id: "i700",
+        name: "Club 10K",
+        type: "Run",
+        start_date_local: "2024-09-26T07:00:00",
+      },
+    ] as never);
+    const client = await connectTestClient();
+    const { result } = await client.send("tools/call", {
+      name: "list-activities",
+      arguments: { search: "club 10k" },
+    });
+    expect(result?.structuredContent).toMatchObject({
+      search: "club 10k",
+      activities: [{ id: "i700", race: false, tags: [] }],
+    });
+  });
+
   it("round-trips a tool's content through the transport", async () => {
     mockedIntervalsActivity.mockResolvedValueOnce({
       id: "229781",

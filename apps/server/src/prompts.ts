@@ -47,13 +47,11 @@ function invalidParams(message: string): ProtocolError {
   return new ProtocolError(ProtocolErrorCode.InvalidParams, message);
 }
 
-const RUN_TYPES_TEXT = "Run, TrailRun or VirtualRun";
-
 /** The step that finds the activity: the given id, else the newest run. */
 function targetStep(id: string | undefined): string {
   return id
     ? `Use activity ${id}.`
-    : `Find my most recent run: call list-activities and take the newest activity whose type is ${RUN_TYPES_TEXT}. Skip any other type; a swim, ride or gym session is not a run.`;
+    : `Find my most recent run: call list-activities with type "runs" and limit 1 (Run, TrailRun or VirtualRun; never a swim, ride or gym session).`;
 }
 
 const MAX_REVIEW_WEEKS = 52;

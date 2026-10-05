@@ -121,6 +121,23 @@ export function isPaceActivity(type: string): boolean {
 }
 
 /**
+ * True when an activity `type` matches a `type` filter: `runs` (any case)
+ * means {@link PACE_ACTIVITY_TYPES}; otherwise a comma-separated list of
+ * types, each matched exactly but case-insensitively. The one home for this
+ * rule: `list-activities` filters with it and `id: "latest"` resolves with it.
+ */
+export function matchesTypeFilter(type: string, filter: string): boolean {
+  const wanted = filter
+    .split(",")
+    .map((part) => part.trim().toLowerCase())
+    .filter(Boolean);
+  const actual = type.toLowerCase();
+  return wanted.some((w) =>
+    w === "runs" ? PACE_ACTIVITY_TYPES.has(type) : w === actual,
+  );
+}
+
+/**
  * True when `type` reports cadence (and step-based dynamics) in steps/min,
  * doubled from strides/min: Run/TrailRun/VirtualRun/Walk/Hike.
  */

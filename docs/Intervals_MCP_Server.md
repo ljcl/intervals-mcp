@@ -31,7 +31,7 @@ rather than (or alongside) text.
 
 | Tool | Answers | Key params |
 | ---- | ------- | ---------- |
-| `list-activities` | What did I do recently? What's this activity's id? | `oldest`/`newest` (YYYY-MM-DD, default last 28 days), `type`, `nameContains`, `limit` |
+| `list-activities` | What did I do recently? What's this activity's id? When did I last do X? Each entry carries `tags` and `race` | `oldest`/`newest` (YYYY-MM-DD, default last 28 days), `type` (`runs` for Run/TrailRun/VirtualRun, one type, or a comma list; latest run is `type: "runs", limit: 1`), `nameContains`, `search` (all history: name substring or `#tag`), `limit` |
 | `get-activity` | Full detail on one activity | `id` |
 | `list-gear` | What shoes/bikes do I have, and their mileage? | `includeRetired` |
 | `get-wellness` | HRV, resting HR, sleep, weight, CTL/ATL/TSB for a day or range | `date`, or `oldest`/`newest` (max 90 days) |

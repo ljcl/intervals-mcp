@@ -31,6 +31,7 @@ vi.mock("../intervalsClient", async (importOriginal) => {
   return {
     ...actual,
     listActivities: vi.fn(),
+    searchActivities: vi.fn(),
     getActivity: vi.fn(),
     getActivityIntervals: vi.fn(),
     getActivityStreams: vi.fn(),
@@ -98,6 +99,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(client.listActivities).mockImplementation(async (_key, range) =>
     activitiesIn(range),
+  );
+  vi.mocked(client.searchActivities).mockImplementation(async () =>
+    activitiesIn({ oldest: "2024-10-05", newest: "2026-10-05" }).slice(0, 200),
   );
   vi.mocked(client.getActivity).mockImplementation(async (_key, id) => ({
     ...multilapActivity,
@@ -215,6 +219,7 @@ const CASES: Record<string, SizeCase[]> = {
       label: "366 days, limit 200",
       args: { oldest: "2025-09-28", newest: "2026-09-28", limit: 200 },
     },
+    { label: "search, limit 200", args: { search: "run", limit: 200 } },
   ],
   "get-activity": [{ label: "multi-lap", args: { id: ID } }],
   "get-activity-streams": [
