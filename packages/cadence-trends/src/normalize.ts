@@ -2,9 +2,11 @@ import { formatShortDate, isRunning, smooth } from "@intervals-mcp/data";
 import {
   COMPARISON_COLORS,
   type OverlayPoint,
+  type OverlayRunStatus,
   type OverlayStreamData,
   type OverlayXMode,
   type PaceZone,
+  type RunStreamState,
   type RunSummary,
 } from "./types";
 
@@ -373,4 +375,21 @@ export function overlayRunLabel(
   return shared
     ? `${run.name} · ${formatShortDate(run.date, "short")}`
     : run.name;
+}
+
+/**
+ * One selected run's place in the overlay, from its stream fetch and the
+ * legend. The overlay draws from the same reading, and the `set-view` reply
+ * and context summary claim only what it says is drawn. A run with no fetch
+ * yet counts as loading: its request goes out once the overlay mounts.
+ */
+export function overlayRunStatus(
+  state: RunStreamState | undefined,
+  hidden: boolean,
+): OverlayRunStatus {
+  if (!state || state.loading) return "loading";
+  if (state.error != null) return "failed";
+  if (state.noStreams) return "noStreams";
+  if (!state.points) return "loading";
+  return hidden ? "hidden" : "drawn";
 }

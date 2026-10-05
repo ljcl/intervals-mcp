@@ -131,7 +131,12 @@ export const OverlayRunWithoutStreams = meta.story({
  * switches view, replaces the overlay selection and picks the overlay axis.
  * Asserted through what the athlete would see (the active pill, the legend,
  * the drawn lines) and what the model is told (the reply and the context
- * summary). The fake app answers the stream fetches from `overlay-streams.ts`.
+ * summary). The fake app answers the stream fetches from `overlay-streams.ts`,
+ * and Threshold Run (i10006) as a run with no recorded streams.
+ *
+ * The reply is claimed only for what is drawn: it goes out before a new run's
+ * fetch starts, so it says the run is still loading; a stream-less run, and
+ * one the legend hides, are named as such.
  */
 function ModelDrivenCadence() {
   // Stable across renders: a registry rebuilt each render would have the
@@ -154,16 +159,21 @@ function ModelDrivenCadence() {
           arguments: args,
         }: {
           arguments?: Record<string, unknown>;
-        }) => ({
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                rawStreamsPayload(String(args?.activity_id)),
-              ),
-            },
-          ],
-        }),
+        }) => {
+          const id = String(args?.activity_id);
+          const payload =
+            id === "i10006"
+              ? {
+                  activityId: id,
+                  activityType: "Run",
+                  name: "Threshold Run",
+                  streams: { time: [] },
+                  laps: [],
+                  noStreams: true,
+                }
+              : rawStreamsPayload(id);
+          return { content: [{ type: "text", text: JSON.stringify(payload) }] };
+        },
       }) as unknown as McpApp,
   );
   const call = (args: Record<string, unknown>) => {
@@ -185,6 +195,20 @@ function ModelDrivenCadence() {
         onClick={() => call({ xAxis: "time" })}
       >
         call set-view with axis
+      </button>
+      <button
+        type="button"
+        data-testid="call-distance-axis"
+        onClick={() => call({ xAxis: "distance" })}
+      >
+        call set-view with the distance axis
+      </button>
+      <button
+        type="button"
+        data-testid="call-streamless-run"
+        onClick={() => call({ runIds: ["i10006", "i10003"] })}
+      >
+        call set-view with a run that has no streams
       </button>
       <button
         type="button"
@@ -217,12 +241,17 @@ export const ModelDrivenView = meta.story({
       "true",
     );
 
+    const summary = () =>
+      canvasElement.querySelector("[data-testid='context-summary']")
+        ?.textContent;
+
     // Runs without a view: the selection is replaced, in the order given, and
-    // the card moves to the overlay to show them.
+    // the card moves to the overlay to show them. Nothing is drawn when the
+    // reply goes out, so it claims nothing; the summary follows the lines.
     await click("call-overlay-runs");
     await waitFor(() =>
       expect(said()).toBe(
-        "Showing the overlay of Intervals 5x1k and Tempo Intervals by distance.",
+        "Showing the overlay by distance, with no run drawn. Intervals 5x1k and Tempo Intervals are still loading.",
       ),
     );
     await expect(
@@ -239,6 +268,11 @@ export const ModelDrivenView = meta.story({
         canvasElement.querySelectorAll("path.recharts-line-curve").length,
       ).toBe(2),
     );
+    await waitFor(() =>
+      expect(summary()).toContain(
+        "Comparing: Intervals 5x1k (178 spm), Tempo Intervals (172 spm).",
+      ),
+    );
 
     // The axis alone: the pills follow the tool, and the model's summary
     // carries the axis once the debounce has fired.
@@ -252,11 +286,60 @@ export const ModelDrivenView = meta.story({
       "aria-pressed",
       "true",
     );
+    await waitFor(() => expect(summary()).toContain("Overlay x-axis: time."));
+
+    // A run the athlete hid in the legend is named as hidden, not shown...
+    await userEvent.click(
+      canvas.getByRole("button", { name: /Toggle Tempo Intervals/ }),
+    );
+    await click("call-distance-axis");
+    await waitFor(() =>
+      expect(said()).toBe(
+        "Showing the overlay of Intervals 5x1k by distance. Tempo Intervals is hidden in the legend.",
+      ),
+    );
+    await waitFor(() =>
+      expect(summary()).toContain("Hidden in the legend: Tempo Intervals."),
+    );
+
+    // ...until the model selects it again, which shows it: both runs are
+    // loaded already, so both are drawn as the reply goes out.
+    await click("call-overlay-runs");
+    await waitFor(() =>
+      expect(said()).toBe(
+        "Showing the overlay of Intervals 5x1k and Tempo Intervals by distance.",
+      ),
+    );
+    await expect(
+      canvas.getByRole("button", { name: /Toggle Tempo Intervals/ }),
+    ).toHaveAttribute("aria-pressed", "true");
     await waitFor(() =>
       expect(
-        canvasElement.querySelector("[data-testid='context-summary']")
-          ?.textContent,
-      ).toContain("Overlay x-axis: time."),
+        canvasElement.querySelectorAll("path.recharts-line-curve").length,
+      ).toBe(2),
+    );
+
+    // A newly selected run is still loading when the reply goes out; once it
+    // arrives with no streams, the summary and the next reply say so.
+    await click("call-streamless-run");
+    await waitFor(() =>
+      expect(said()).toBe(
+        "Showing the overlay of Tempo Intervals by distance. Threshold Run is still loading.",
+      ),
+    );
+    await expect(
+      await canvas.findByText("No recorded streams for Threshold Run."),
+    ).toBeVisible();
+    await waitFor(() =>
+      expect(summary()).toContain(
+        "Comparing: Tempo Intervals (172 spm). No recorded streams: Threshold Run.",
+      ),
+    );
+    await click("call-distance-axis");
+    await waitFor(() =>
+      expect(said()).toBe(
+        "Showing the overlay of Tempo Intervals by distance. Threshold Run has no recorded streams.",
+      ),
     );
 
     // An id that is not in the chart is refused by name and changes nothing.
@@ -267,7 +350,7 @@ export const ModelDrivenView = meta.story({
       ),
     );
     await expect(
-      canvas.getByRole("button", { name: /Toggle Intervals 5x1k/ }),
+      canvas.getByRole("button", { name: /Toggle Tempo Intervals/ }),
     ).toBeVisible();
   },
 });

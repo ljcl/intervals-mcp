@@ -18,19 +18,45 @@ import { type OverlayXMode } from "./types";
 
 const noop = () => {};
 
-// The app owns the axis (the model sets it as well as the pills), so stories
-// that do not exercise it show the default and ignore changes.
+// The app owns the axis (the model sets it as well as the pills) and the
+// legend's hidden runs, so stories that do not exercise them show the
+// defaults and ignore changes.
 const meta = preview.meta({
   component: OverlayView,
-  args: { xMode: "distance" as const, onXModeChange: noop },
+  args: {
+    xMode: "distance" as const,
+    onXModeChange: noop,
+    hiddenRuns: new Set<string>(),
+    onToggleHidden: noop,
+  },
 });
 
-/** Holds the axis the way the app does, so the pills can be clicked through. */
-function WithAxisState(
-  props: Omit<ComponentProps<typeof OverlayView>, "xMode" | "onXModeChange">,
+/** Holds the axis and the hidden runs the way the app does, so the pills and
+ * the legend can be clicked through. */
+function WithAppState(
+  props: Omit<
+    ComponentProps<typeof OverlayView>,
+    "xMode" | "onXModeChange" | "hiddenRuns" | "onToggleHidden"
+  >,
 ) {
   const [xMode, setXMode] = useState<OverlayXMode>("distance");
-  return <OverlayView {...props} xMode={xMode} onXModeChange={setXMode} />;
+  const [hiddenRuns, setHiddenRuns] = useState<ReadonlySet<string>>(new Set());
+  const toggleHidden = (runId: string) =>
+    setHiddenRuns((prev) => {
+      const next = new Set(prev);
+      if (next.has(runId)) next.delete(runId);
+      else next.add(runId);
+      return next;
+    });
+  return (
+    <OverlayView
+      {...props}
+      xMode={xMode}
+      onXModeChange={setXMode}
+      hiddenRuns={hiddenRuns}
+      onToggleHidden={toggleHidden}
+    />
+  );
 }
 
 const bothRuns = new Set(["i10003", "i10013"]);
@@ -67,9 +93,13 @@ export const SwitchAxisAndHideRun = meta.story({
     requestStream: noop,
     retryStream: noop,
   },
-  render: ({ xMode: _xMode, onXModeChange: _onXModeChange, ...rest }) => (
-    <WithAxisState {...rest} />
-  ),
+  render: ({
+    xMode: _xMode,
+    onXModeChange: _onXModeChange,
+    hiddenRuns: _hiddenRuns,
+    onToggleHidden: _onToggleHidden,
+    ...rest
+  }) => <WithAppState {...rest} />,
   play: async ({ canvas, canvasElement, userEvent }) => {
     const curveCount = () =>
       canvasElement.querySelectorAll("path.recharts-line-curve").length;

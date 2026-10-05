@@ -9,12 +9,18 @@ import {
   dayTimestamp,
   linearRegression,
   overlayRunLabel,
+  overlayRunStatus,
   resampleOverlayRuns,
   rollingAverage,
   toOverlayPoints,
   trendTimeAxis,
 } from "./normalize";
-import { COMPARISON_COLORS, type OverlayPoint, type RunSummary } from "./types";
+import {
+  COMPARISON_COLORS,
+  type OverlayPoint,
+  type RunStreamState,
+  type RunSummary,
+} from "./types";
 
 const run = (overrides: Partial<RunSummary>): RunSummary => ({
   id: "1",
@@ -447,5 +453,44 @@ describe("overlayRunLabel", () => {
     );
     expect(overlayRunLabel(c, [a, b, c])).toBe("Tempo");
     expect(overlayRunLabel(a, [a, c])).toBe("Long Run");
+  });
+});
+
+describe("overlayRunStatus", () => {
+  const state = (over: Partial<RunStreamState> = {}): RunStreamState => ({
+    run: run({}),
+    points: [{ distance: 0, time: 0, cadence: 170 }],
+    loading: false,
+    error: null,
+    progress: null,
+    ...over,
+  });
+
+  it("counts a run with no fetch yet as loading, as the overlay does", () => {
+    expect(overlayRunStatus(undefined, false)).toBe("loading");
+  });
+
+  it("reads each fetch state", () => {
+    expect(
+      overlayRunStatus(state({ points: null, loading: true }), false),
+    ).toBe("loading");
+    expect(
+      overlayRunStatus(state({ points: null, error: "Error: boom" }), false),
+    ).toBe("failed");
+    expect(
+      overlayRunStatus(state({ points: [], noStreams: true }), false),
+    ).toBe("noStreams");
+    expect(overlayRunStatus(state(), false)).toBe("drawn");
+  });
+
+  it("calls a loaded run hidden only while the legend hides it", () => {
+    expect(overlayRunStatus(state(), true)).toBe("hidden");
+    // Hiding cannot make a run that is not drawn look drawn, or hidden.
+    expect(overlayRunStatus(state({ points: null, loading: true }), true)).toBe(
+      "loading",
+    );
+    expect(overlayRunStatus(state({ points: [], noStreams: true }), true)).toBe(
+      "noStreams",
+    );
   });
 });

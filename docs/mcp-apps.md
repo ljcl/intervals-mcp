@@ -268,8 +268,16 @@ matches ids with or without the `i` prefix, as the server's
 `intervalsActivityIdInput` does, and a refusal names ids the chart lacks apart
 from runs with no cadence, each once; a `runIds` or `xAxis`
 without a `view` moves to the overlay, while an empty `runIds` only clears the
-selection. The overlay x-axis is `App` state (`OverlayView` is controlled), and
-the context summary reports it while the overlay shows.
+selection. The overlay x-axis and the legend's hidden runs are `App` state
+(`OverlayView` is controlled), and the context summary reports the axis while
+the overlay shows. Like `set-scope`, the reply claims "Showing" only for what
+is drawn: `overlayRunStatus` (`src/normalize.ts`, the reading the overlay
+draws from) puts each selected run in one of drawn, hidden, loading,
+noStreams or failed, and the reply and the overlay's context summary name the
+rest by state ("Tempo is still loading.", "Hidden in the legend: Tempo."). The
+reply goes out before a new run's fetch starts, so it says such a run is still
+loading. `runIds` shows any run in it the legend had hidden; leaving the
+overlay shows every run again, as when the overlay owned that state.
 
 Trend uses a time axis (`dateTs`, UTC day), so gaps in running show as gaps. Zone
 whiskers run from min to max (`buildZoneRows`). Overlay colours follow selection

@@ -75,6 +75,18 @@ export interface RunStreamState {
   noStreams?: boolean;
 }
 
+/**
+ * What the overlay is doing with one selected run, which decides what the
+ * model may be told: only a `drawn` run is a line on screen (#68). `hidden`
+ * is a loaded run the legend has switched off.
+ */
+export type OverlayRunStatus =
+  | "drawn"
+  | "hidden"
+  | "loading"
+  | "noStreams"
+  | "failed";
+
 /** Pace zone definition */
 export interface PaceZone {
   label: string;

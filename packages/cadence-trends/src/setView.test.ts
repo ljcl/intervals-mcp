@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { mockRuns } from "./__fixtures__/runs";
 import { describeSetView, resolveSetView } from "./setView";
+import { type OverlayRunStatus } from "./types";
 
 const runs = [
   { id: "i1", name: "Long Run", date: "2026-01-11", averageCadence: 170 },
@@ -105,7 +106,17 @@ describe("resolveSetView", () => {
 });
 
 describe("describeSetView", () => {
-  const nothingSelected = { selectedRunIds: [], xAxis: "distance" } as const;
+  const drawn = (): OverlayRunStatus => "drawn";
+  const nothingSelected = {
+    selectedRunIds: [],
+    xAxis: "distance",
+    runStatus: drawn,
+  } as const;
+  /** Every run drawn except the ones given. */
+  const statuses =
+    (byId: Record<string, OverlayRunStatus>) =>
+    (id: string): OverlayRunStatus =>
+      byId[id] ?? "drawn";
 
   it("names the runs in the order they were given, and the axis", () => {
     expect(
@@ -155,7 +166,7 @@ describe("describeSetView", () => {
       describeSetView(
         { kind: "ok", view: "overlay", xAxis: "time" },
         mockRuns,
-        { selectedRunIds: ["i10003"], xAxis: "distance" },
+        { selectedRunIds: ["i10003"], xAxis: "distance", runStatus: drawn },
       ),
     ).toBe("Showing the overlay of Tempo Intervals by time.");
   });
@@ -165,6 +176,7 @@ describe("describeSetView", () => {
       describeSetView({ kind: "ok", view: "overlay" }, mockRuns, {
         selectedRunIds: ["i10003", "i10013"],
         xAxis: "time",
+        runStatus: drawn,
       }),
     ).toBe(
       "Showing the overlay of Tempo Intervals and Intervals 5x1k by time.",
@@ -208,6 +220,7 @@ describe("describeSetView", () => {
       describeSetView({ kind: "ok", view: "trend", runIds: [] }, mockRuns, {
         selectedRunIds: ["i10003"],
         xAxis: "distance",
+        runStatus: drawn,
       }),
     ).toBe("Showing the trend timeline. Cleared the overlay selection.");
   });
@@ -220,5 +233,87 @@ describe("describeSetView", () => {
         nothingSelected,
       ),
     ).toBe("Showing the pace zones. The overlay x-axis is now time.");
+  });
+  const overlayOf = (runIds: string[]) =>
+    ({ kind: "ok", view: "overlay", runIds }) as const;
+
+  it("claims only the drawn runs and names the ones still loading", () => {
+    expect(
+      describeSetView(overlayOf(["i10004", "i10003"]), mockRuns, {
+        ...nothingSelected,
+        runStatus: statuses({ i10003: "loading" }),
+      }),
+    ).toBe(
+      "Showing the overlay of Long Run by distance. Tempo Intervals is still loading.",
+    );
+  });
+
+  it("says nothing is drawn while every run is loading", () => {
+    expect(
+      describeSetView(overlayOf(["i10004", "i10003"]), mockRuns, {
+        ...nothingSelected,
+        runStatus: () => "loading",
+      }),
+    ).toBe(
+      "Showing the overlay by distance, with no run drawn. Long Run and Tempo Intervals are still loading.",
+    );
+  });
+
+  it("names a run with no recorded streams", () => {
+    expect(
+      describeSetView(overlayOf(["i10004", "i10003"]), mockRuns, {
+        ...nothingSelected,
+        runStatus: statuses({ i10003: "noStreams" }),
+      }),
+    ).toBe(
+      "Showing the overlay of Long Run by distance. Tempo Intervals has no recorded streams.",
+    );
+  });
+
+  it("names a run that failed to load", () => {
+    expect(
+      describeSetView(overlayOf(["i10004", "i10003"]), mockRuns, {
+        ...nothingSelected,
+        runStatus: statuses({ i10004: "failed" }),
+      }),
+    ).toBe(
+      "Showing the overlay of Tempo Intervals by distance. Long Run failed to load.",
+    );
+  });
+
+  it("names a run the legend hides", () => {
+    expect(
+      describeSetView(
+        { kind: "ok", view: "overlay", xAxis: "time" },
+        mockRuns,
+        {
+          selectedRunIds: ["i10004", "i10003"],
+          xAxis: "distance",
+          runStatus: statuses({ i10003: "hidden" }),
+        },
+      ),
+    ).toBe(
+      "Showing the overlay of Long Run by time. Tempo Intervals is hidden in the legend.",
+    );
+  });
+
+  it("groups several runs per state, in selection order", () => {
+    expect(
+      describeSetView(
+        overlayOf(["i10003", "i10004", "i10006", "i10013"]),
+        mockRuns,
+        {
+          ...nothingSelected,
+          runStatus: statuses({
+            i10003: "noStreams",
+            i10004: "loading",
+            i10006: "noStreams",
+            i10013: "loading",
+          }),
+        },
+      ),
+    ).toBe(
+      "Showing the overlay by distance, with no run drawn. Long Run and Intervals 5x1k are still loading. Tempo Intervals and Threshold Run have no recorded streams.",
+    );
   });
 });

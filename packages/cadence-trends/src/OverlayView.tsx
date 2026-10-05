@@ -12,7 +12,7 @@ import {
   TooltipEntry,
   Tooltip as UiTooltip,
 } from "@intervals-mcp/ui";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import {
   CartesianGrid,
   ComposedChart,
@@ -26,6 +26,7 @@ import { buildOverlayA11y } from "./a11y";
 import {
   assignOverlayColors,
   overlayRunLabel,
+  overlayRunStatus,
   resampleOverlayRuns,
 } from "./normalize";
 import styles from "./OverlayView.module.css";
@@ -45,6 +46,10 @@ interface OverlayViewProps {
   /** Owned by the app, so the model can set it as well as the pills. */
   xMode: OverlayXMode;
   onXModeChange: (xMode: OverlayXMode) => void;
+  /** Runs the legend has switched off. Owned by the app, so `set-view` can
+   * report them and show a run again when the model selects it. */
+  hiddenRuns: ReadonlySet<string>;
+  onToggleHidden: (runId: string) => void;
   mode?: "mobile" | "desktop";
 }
 
@@ -101,6 +106,8 @@ export function OverlayView({
   retryStream,
   xMode,
   onXModeChange,
+  hiddenRuns,
+  onToggleHidden,
   mode = "desktop",
 }: OverlayViewProps) {
   const isMobile = mode === "mobile";
@@ -113,8 +120,6 @@ export function OverlayView({
     // OverlayView stacks many streams; use the lighter secondary stroke.
     strokeWidth: chartTokens.secondaryStrokeWidth,
   };
-
-  const [hiddenRuns, setHiddenRuns] = useState<Set<string>>(new Set());
 
   // Request every selected run. The fetcher is idempotent per key and never
   // re-fires a failed one, so this effect cannot loop on a failure.
@@ -150,7 +155,8 @@ export function OverlayView({
     for (const id of selectedRunIds) {
       const state = streams.get(id);
       // A stream-less run has nothing to draw: it is named in a note below.
-      if (state?.points && !state.noStreams) {
+      // The legend's hidden runs stay here: their line is drawn hidden.
+      if (state?.points && overlayRunStatus(state, false) === "drawn") {
         entries.push({
           run: state.run,
           points: state.points,
@@ -166,7 +172,10 @@ export function OverlayView({
     () =>
       [...selectedRunIds]
         .map((id) => streams.get(id))
-        .filter((state): state is RunStreamState => state?.error != null),
+        .filter(
+          (state): state is RunStreamState =>
+            overlayRunStatus(state, false) === "failed",
+        ),
     [selectedRunIds, streams],
   );
 
@@ -176,7 +185,9 @@ export function OverlayView({
     () =>
       [...selectedRunIds].flatMap((id) => {
         const state = streams.get(id);
-        return state?.noStreams ? [state.run] : [];
+        return state && overlayRunStatus(state, false) === "noStreams"
+          ? [state.run]
+          : [];
       }),
     [selectedRunIds, streams],
   );
@@ -205,10 +216,9 @@ export function OverlayView({
 
   // A selected run with no entry yet counts as loading: the request effect
   // has not run for it, and a bare axis frame for one frame reads as a bug.
-  const isLoading = [...selectedRunIds].some((id) => {
-    const state = streams.get(id);
-    return state == null || state.loading;
-  });
+  const isLoading = [...selectedRunIds].some(
+    (id) => overlayRunStatus(streams.get(id), false) === "loading",
+  );
   // The latest progress line of the first selected run that is still loading.
   const progress =
     [...selectedRunIds]
@@ -384,14 +394,7 @@ export function OverlayView({
                 color={r.color}
                 label={label}
                 hidden={hiddenRuns.has(r.run.id)}
-                onClick={() => {
-                  setHiddenRuns((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(r.run.id)) next.delete(r.run.id);
-                    else next.add(r.run.id);
-                    return next;
-                  });
-                }}
+                onClick={() => onToggleHidden(r.run.id)}
               />
             );
           })}
