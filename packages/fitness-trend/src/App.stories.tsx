@@ -1,6 +1,11 @@
 import preview, { darkGlobals } from "@intervals-mcp/design-system/preview";
-import { MobileCardShell } from "@intervals-mcp/ui";
+import {
+  MobileCardShell,
+  ViewToolRegistry,
+  type ViewToolResult,
+} from "@intervals-mcp/ui";
 import { type useApp } from "@modelcontextprotocol/ext-apps/react";
+import { useState } from "react";
 import { expect, waitFor } from "storybook/test";
 import {
   mockBaseArgs,
@@ -220,6 +225,176 @@ export const SwitchingSlow = meta.story({
         "Listed 200 activities",
       ),
     );
+  },
+});
+
+/**
+ * `toggleApp` that also reports what the model is told, so the story can read
+ * the context summary the way a host would.
+ */
+function ModelDrivenFitness() {
+  // Stable across renders: a registry rebuilt each render would have the
+  // handler installed on an instance the buttons no longer hold.
+  const [registry] = useState(() => new ViewToolRegistry());
+  const [reply, setReply] = useState<ViewToolResult | null>(null);
+  const [summary, setSummary] = useState("");
+  const [app] = useState(
+    () =>
+      ({
+        callServerTool: (...call: Parameters<CallServerTool>) =>
+          toggleApp!.callServerTool(...call),
+        getHostCapabilities: () => ({ updateModelContext: {} }),
+        updateModelContext: async ({
+          content,
+        }: {
+          content: Array<{ type: string; text?: string }>;
+        }) => {
+          setSummary(content.map((c) => c.text ?? "").join(""));
+        },
+      }) as unknown as ReturnType<typeof useApp>["app"],
+  );
+  const call = (args: Record<string, unknown>) => {
+    void registry.invoke("set-scope", args).then(setReply);
+  };
+  const buttons: Array<[string, string, Record<string, unknown>]> = [
+    [
+      "call-runs-without-fatigue",
+      "call set-scope with runs only and fatigue hidden",
+      { scope: "runOnly", hide: ["fatigue"] },
+    ],
+    [
+      "call-form-both-ways",
+      "call set-scope showing and hiding form",
+      { show: ["form"], hide: ["form"] },
+    ],
+    [
+      "call-whole-body-with-fatigue",
+      "call set-scope with whole body and fatigue shown",
+      { scope: "wholeBody", show: ["fatigue"] },
+    ],
+    ["call-hide-plan", "call set-scope hiding the plan", { hide: ["plan"] }],
+  ];
+  return (
+    <>
+      <App
+        app={app}
+        data={mockFitnessTrendData}
+        baseArgs={mockBaseArgs}
+        initialRunOnly={false}
+        viewToolRegistry={registry}
+      />
+      {buttons.map(([testId, label, args]) => (
+        <button
+          key={testId}
+          type="button"
+          data-testid={testId}
+          onClick={() => call(args)}
+        >
+          {label}
+        </button>
+      ))}
+      <p data-testid="tool-said" data-error={reply?.isError || undefined}>
+        {reply?.text}
+      </p>
+      <p data-testid="context-summary">{summary}</p>
+    </>
+  );
+}
+
+/**
+ * The model switches the scope and hides a series. Asserted through what the
+ * athlete would see (the scope pill, the legend, the drawn lines, the plan
+ * list) and what the model is told (the reply and the context summary). The
+ * scope switch goes through the same keyed fetch as the pill, answered by
+ * `toggleApp`.
+ */
+export const ModelDrivenScope = meta.story({
+  tags: ["!autodocs"],
+  args: {
+    app: null,
+    data: mockFitnessTrendData,
+    baseArgs: mockBaseArgs,
+    initialRunOnly: false,
+  },
+  render: () => <ModelDrivenFitness />,
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const text = (testId: string) =>
+      canvasElement.querySelector(`[data-testid='${testId}']`)?.textContent;
+    const said = () => text("tool-said");
+    const isError = () =>
+      canvasElement
+        .querySelector("[data-testid='tool-said']")
+        ?.hasAttribute("data-error");
+    const click = (testId: string) =>
+      userEvent.click(
+        canvasElement.querySelector<HTMLButtonElement>(
+          `[data-testid='${testId}']`,
+        )!,
+      );
+    const curveCount = () =>
+      canvasElement.querySelectorAll("path.recharts-line-curve").length;
+    const pill = (name: string) => canvas.getByRole("button", { name });
+    const fatigue = () =>
+      canvas.getByRole("button", { name: "Toggle Fatigue" });
+
+    await expect(pill("Whole body")).toHaveAttribute("aria-pressed", "true");
+    await expect(fatigue()).toHaveAttribute("aria-pressed", "true");
+    // ResponsiveContainer needs a resize tick before the chart mounts.
+    await waitFor(() => expect(curveCount()).toBe(5));
+
+    // Runs only with fatigue hidden: the pill follows, the other scope is
+    // fetched by the keyed store, and the fatigue line and its dashed
+    // continuation leave the chart.
+    await click("call-runs-without-fatigue");
+    await waitFor(() =>
+      expect(said()).toBe("Showing runs only. Hidden: fatigue."),
+    );
+    expect(isError()).toBe(false);
+    await expect(pill("Runs only")).toHaveAttribute("aria-pressed", "true");
+    await waitFor(() =>
+      expect(canvas.getByText(/Computed locally/)).toBeVisible(),
+    );
+    await expect(fatigue()).toHaveAttribute("aria-pressed", "false");
+    await waitFor(() => expect(curveCount()).toBe(3));
+    // The model is told what the card now shows once the debounce fires.
+    await waitFor(
+      () => {
+        expect(text("context-summary")).toContain(
+          "Scope: runs only, computed locally.",
+        );
+        expect(text("context-summary")).toContain("Hidden series: fatigue.");
+      },
+      { timeout: 3000 },
+    );
+
+    // A series both shown and hidden is refused by name and changes nothing.
+    await click("call-form-both-ways");
+    await waitFor(() => expect(said()).toBe("Cannot both show and hide form."));
+    expect(isError()).toBe(true);
+    await expect(
+      canvas.getByRole("button", { name: "Toggle Form" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await expect(pill("Runs only")).toHaveAttribute("aria-pressed", "true");
+
+    // Back to whole body with fatigue shown: the mount data is held, so the
+    // switch is instant and the taper plan is back.
+    await click("call-whole-body-with-fatigue");
+    await waitFor(() =>
+      expect(said()).toBe("Showing whole body. Nothing hidden."),
+    );
+    await expect(pill("Whole body")).toHaveAttribute("aria-pressed", "true");
+    await expect(fatigue()).toHaveAttribute("aria-pressed", "true");
+    await expect(canvas.getByText(/From intervals.icu/)).toBeVisible();
+    await waitFor(() => expect(curveCount()).toBe(5));
+
+    // The plan answers to the name it carries on screen, and takes its week
+    // list with it.
+    await expect(canvas.getByText(/Plan to/)).toBeVisible();
+    await click("call-hide-plan");
+    await waitFor(() =>
+      expect(said()).toBe("Showing whole body. Hidden: plan (taper plan)."),
+    );
+    await waitFor(() => expect(canvas.queryByText(/Plan to/)).toBeNull());
   },
 });
 

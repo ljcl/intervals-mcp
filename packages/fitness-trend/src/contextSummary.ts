@@ -5,9 +5,13 @@ import { type FitnessTrendData } from "./types";
 /**
  * One-line summary of what the chart is showing, synced to the host so the
  * model can talk about the visible state without re-calling the data tool.
+ * `hiddenSeries` names the series turned off, by the values `set-scope`
+ * accepts, so the model can say what the athlete is not looking at and
+ * switch it back.
  */
 export function buildFitnessTrendContextSummary(
   data: FitnessTrendData,
+  hiddenSeries: readonly string[] = [],
 ): string | null {
   const current = data.current;
   if (!current) return null;
@@ -53,6 +57,10 @@ export function buildFitnessTrendContextSummary(
         ? "Scope: runs only, computed locally."
         : "Scope: whole body, from intervals.icu.",
     );
+  }
+
+  if (hiddenSeries.length > 0) {
+    parts.push(`Hidden series: ${hiddenSeries.join(", ")}.`);
   }
 
   if (data.warnings && data.warnings.length > 0) {

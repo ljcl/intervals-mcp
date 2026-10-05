@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   mockFitnessTrendData,
   mockRestProjectionData,
+  mockRunOnlyFitnessTrendData,
 } from "./__fixtures__/trend";
 import { buildFitnessTrendContextSummary } from "./contextSummary";
 
@@ -107,5 +108,32 @@ describe("buildFitnessTrendContextSummary", () => {
       warnings: [],
     })!;
     expect(summary).not.toContain("Notes:");
+  });
+
+  it("reports the series hidden, by the values set-scope accepts", () => {
+    const summary = buildFitnessTrendContextSummary(mockFitnessTrendData, [
+      "fatigue",
+      "plan (taper plan)",
+    ])!;
+    expect(summary).toContain("Hidden series: fatigue, plan (taper plan).");
+  });
+
+  it("says nothing about hidden series when every series shows", () => {
+    expect(buildFitnessTrendContextSummary(mockFitnessTrendData)).not.toContain(
+      "Hidden series",
+    );
+    expect(
+      buildFitnessTrendContextSummary(mockFitnessTrendData, []),
+    ).not.toContain("Hidden series");
+  });
+
+  it("states the scope beside the hidden series", () => {
+    const summary = buildFitnessTrendContextSummary(
+      mockRunOnlyFitnessTrendData,
+      ["form"],
+    )!;
+    expect(summary).toContain(
+      "Scope: runs only, computed locally. Hidden series: form.",
+    );
   });
 });

@@ -548,3 +548,13 @@ weeks take them. Calls `get-fitness-trend-data` on mount with `days`,
   rather than read from intervals.icu. While that fetch runs, the skeleton
   shows its progress line. If it fails, `ErrorState` shows the error and a
   retry that calls the tool again.
+- `set-scope` (`scope`, `show`, `hide`) lets the model switch the scope pills
+  and the legend toggles for `fitness`, `fatigue`, `form` and `plan`. It sets
+  the same state the pills do, so the other scope arrives through the keyed
+  fetcher above and there is no second fetch path. `resolveSetScope`
+  (`src/setScope.ts`, unit-tested) refuses a series named in both lists and a
+  `plan` the landing scope has no rows for (a scope still loading is given the
+  benefit of the doubt), naming series by the value the schema accepts. The
+  reply and the context summary list what is hidden the same way, noting what
+  the legend calls the plan ("taper plan" or "rest projection"). Band-kind
+  toggles are not exposed.
