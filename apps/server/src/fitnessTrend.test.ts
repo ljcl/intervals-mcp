@@ -519,7 +519,9 @@ describe("solveTaperPlan", () => {
       targetTsb: 10,
     });
     expect(plan.days).toHaveLength(300_000);
-  });
+  }, // 300,000 days is deliberately heavy: well under a second alone, but past
+  // the 5 s default on a CI runner busy with every package's coverage run.
+  30_000);
 
   it("omits pct_of_recent when there is no recent load to compare to", () => {
     const plan = solveTaperPlan(start, "2026-06-28", {
