@@ -1,4 +1,4 @@
-import { formatShortDate } from "@intervals-mcp/data";
+import { formatShortDate, windowShortLabel } from "@intervals-mcp/data";
 import {
   CardHeader,
   Pill,
@@ -19,7 +19,6 @@ import {
   overlayRunStatus,
   smoothOverlayPoints,
   toOverlayPoints,
-  windowShortLabel,
 } from "./normalize";
 import { OverlayView } from "./OverlayView";
 import { RunSelectList } from "./RunSelectList";

@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import { createRequire } from "node:module";
-import { dominantBucket } from "@intervals-mcp/data";
+import { dominantBucket, windowLabel } from "@intervals-mcp/data";
 import {
   type CallToolResult,
   CLIENT_CAPABILITIES_META_KEY,
@@ -903,13 +903,6 @@ async function loadCadenceTrendData(
   const activities = await listActivitiesFn(apiKey, { oldest, newest });
 
   return buildCadenceTrendData(activities, { days });
-}
-
-/** "4 weeks" for a whole number of weeks, else "30 days". */
-function windowLabel(days: number): string {
-  if (days % 7 !== 0) return `${days} days`;
-  const weeks = days / 7;
-  return weeks === 1 ? "1 week" : `${weeks} weeks`;
 }
 
 async function handleGetCadenceTrendData(

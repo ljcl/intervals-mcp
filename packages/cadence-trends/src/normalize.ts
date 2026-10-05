@@ -1,4 +1,9 @@
-import { formatShortDate, isRunning, smooth } from "@intervals-mcp/data";
+import {
+  formatShortDate,
+  isRunning,
+  smooth,
+  windowLabel,
+} from "@intervals-mcp/data";
 import {
   COMPARISON_COLORS,
   type OverlayPoint,
@@ -17,21 +22,6 @@ export const PACE_ZONES: PaceZone[] = [
   { label: "Moderate", minPace: 4.5, maxPace: 5.5 },
   { label: "Easy", minPace: 5.5, maxPace: 20 },
 ];
-
-/**
- * "6 weeks" for a whole number of weeks ("1 week" for 7 days), else
- * "30 days": the window as the server's view text names it.
- */
-export function windowLabel(days: number): string {
-  if (days % 7 !== 0) return `${days} days`;
-  const weeks = days / 7;
-  return weeks === 1 ? "1 week" : `${weeks} weeks`;
-}
-
-/** "6w" for a whole number of weeks, else "30d": the summary bar's form. */
-export function windowShortLabel(days: number): string {
-  return days % 7 === 0 ? `${days / 7}w` : `${days}d`;
-}
 
 /**
  * "18 runs · last 6 weeks" — the header subtitle. Counts every run in the

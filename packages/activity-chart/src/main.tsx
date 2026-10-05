@@ -4,7 +4,9 @@ import {
   AppShell,
   ErrorState,
   type HostCtx,
+  type IdToolArgs,
   LoadingState,
+  parseIdToolArgs,
   Skeleton,
   useServerToolData,
   type ViewToolRegistry,
@@ -14,7 +16,6 @@ import { StrictMode, useMemo } from "react";
 import { createRoot } from "react-dom/client";
 import { ActivityChart } from "./ActivityChart";
 import { extractMeta, toChartData, toLapData } from "./normalize";
-import { parseToolArgs, type ToolArgs } from "./toolArgs";
 import { type ActivityStreamData } from "./types";
 import { VIEW_TOOLS } from "./viewToolDeclarations";
 import "./global.css";
@@ -27,7 +28,7 @@ const LoadingSkeleton = () => (
 
 interface AppContentProps {
   app: ReturnType<typeof useApp>["app"];
-  toolArgs: ToolArgs;
+  toolArgs: IdToolArgs;
   hostCtx: HostCtx;
   mode: AppMode;
   viewToolRegistry: ViewToolRegistry | null;
@@ -86,9 +87,9 @@ function AppContent({
 
 function Root() {
   return (
-    <AppRoot<ToolArgs>
+    <AppRoot<IdToolArgs>
       appInfo={{ name: "Activity Chart", version: "1.0.0" }}
-      parseToolInput={parseToolArgs}
+      parseToolInput={parseIdToolArgs}
       missingArgsMessage="No activity id was provided to the chart view."
       viewTools={VIEW_TOOLS}
       loading={<LoadingSkeleton />}

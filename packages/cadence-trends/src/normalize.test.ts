@@ -15,8 +15,6 @@ import {
   runsByDay,
   toOverlayPoints,
   trendTimeAxis,
-  windowLabel,
-  windowShortLabel,
 } from "./normalize";
 import {
   COMPARISON_COLORS,
@@ -371,28 +369,6 @@ describe("buildCadenceSubtitle", () => {
 
   it("still names the window with no runs in it", () => {
     expect(buildCadenceSubtitle(0, 84)).toBe("0 runs · last 12 weeks");
-  });
-});
-
-describe("windowLabel", () => {
-  it.each([
-    [7, "1 week"],
-    [42, "6 weeks"],
-    [728, "104 weeks"],
-    [8, "8 days"],
-    [30, "30 days"],
-  ])("reads %i days as %s", (days, label) => {
-    expect(windowLabel(days)).toBe(label);
-  });
-});
-
-describe("windowShortLabel", () => {
-  it.each([
-    [7, "1w"],
-    [42, "6w"],
-    [30, "30d"],
-  ])("reads %i days as %s", (days, label) => {
-    expect(windowShortLabel(days)).toBe(label);
   });
 });
 

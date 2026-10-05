@@ -1,4 +1,5 @@
-import { overlayRunLabel, windowLabel } from "./normalize";
+import { windowLabel } from "@intervals-mcp/data";
+import { overlayRunLabel } from "./normalize";
 import {
   type OverlayRunStatus,
   type OverlayXMode,

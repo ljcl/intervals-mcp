@@ -6,14 +6,9 @@ describe("parseToolArgs", () => {
     expect(parseToolArgs({ id: "i189807578" })).toEqual({ id: "i189807578" });
   });
 
-  it("reads the legacy activity_id as id", () => {
+  // Every id spelling is tested once, with parseIdToolArgs in packages/ui.
+  it("reads an id alias", () => {
     expect(parseToolArgs({ activity_id: "latest" })).toEqual({ id: "latest" });
-  });
-
-  it("prefers id over activity_id", () => {
-    expect(parseToolArgs({ id: "i1", activity_id: "i2" })).toEqual({
-      id: "i1",
-    });
   });
 
   it("passes waypoints through", () => {

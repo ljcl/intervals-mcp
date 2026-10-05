@@ -98,3 +98,19 @@ export function formatPace(minPerUnit: number): string {
  * km/h needs no such floor, since 0 km/h is a true reading.
  */
 export const MIN_MOVING_SPEED_MPS = 0.3;
+
+/**
+ * "6 weeks" for a whole number of weeks ("1 week" for 7 days), else
+ * "30 days". The one home for a day window's label, so the server's
+ * `view-cadence-trends` text and the cadence app's subtitle agree.
+ */
+export function windowLabel(days: number): string {
+  if (days % 7 !== 0) return `${days} days`;
+  const weeks = days / 7;
+  return weeks === 1 ? "1 week" : `${weeks} weeks`;
+}
+
+/** "6w" for a whole number of weeks, else "30d": the compact form of {@link windowLabel}. */
+export function windowShortLabel(days: number): string {
+  return days % 7 === 0 ? `${days / 7}w` : `${days}d`;
+}

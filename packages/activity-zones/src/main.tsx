@@ -4,7 +4,9 @@ import {
   AppShell,
   ErrorState,
   type HostCtx,
+  type IdToolArgs,
   LoadingState,
+  parseIdToolArgs,
   Skeleton,
   useServerToolData,
 } from "@intervals-mcp/ui";
@@ -12,7 +14,6 @@ import { type useApp } from "@modelcontextprotocol/ext-apps/react";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
-import { parseToolArgs, type ToolArgs } from "./toolArgs";
 import { type ActivityZonesData } from "./types";
 import "./global.css";
 
@@ -25,7 +26,7 @@ const LoadingSkeleton = () => (
 
 interface AppContentProps {
   app: ReturnType<typeof useApp>["app"];
-  toolArgs: ToolArgs;
+  toolArgs: IdToolArgs;
   hostCtx: HostCtx;
   mode: AppMode;
 }
@@ -55,9 +56,9 @@ function AppContent({ app, toolArgs, hostCtx, mode }: AppContentProps) {
 
 function Root() {
   return (
-    <AppRoot<ToolArgs>
+    <AppRoot<IdToolArgs>
       appInfo={{ name: "Activity Zones", version: "1.0.0" }}
-      parseToolInput={parseToolArgs}
+      parseToolInput={parseIdToolArgs}
       missingArgsMessage="No activity id was provided to the zones view."
       loading={<LoadingSkeleton />}
     >

@@ -15,6 +15,13 @@ describe("parseToolArgs", () => {
     ).toEqual({ activityId1: "i1", activityId2: "latest" });
   });
 
+  it("reads the other server aliases, id1 and activity_id2", () => {
+    expect(parseToolArgs({ id1: "i1", activity_id2: "i2" })).toEqual({
+      activityId1: "i1",
+      activityId2: "i2",
+    });
+  });
+
   it("prefers the new names, slot by slot", () => {
     expect(
       parseToolArgs({

@@ -29,3 +29,39 @@ export function toolArgId(
   }
   return null;
 }
+
+/**
+ * Spellings of each activity-id input, the tool's own name first. They mirror
+ * `ALIAS_GROUPS` in `apps/server/src/argAliases.ts`, the server's aliases, so
+ * an app reads every spelling the server accepted from the model.
+ */
+export const ID_ARG_KEYS = ["id", "activity_id", "activityId"] as const;
+export const ACTIVITY_ID1_ARG_KEYS = [
+  "activityId1",
+  "activity_id_1",
+  "activity_id1",
+  "activityId_1",
+  "id1",
+] as const;
+export const ACTIVITY_ID2_ARG_KEYS = [
+  "activityId2",
+  "activity_id_2",
+  "activity_id2",
+  "activityId_2",
+  "id2",
+] as const;
+
+/** The arguments of an app that takes one activity id. */
+export interface IdToolArgs {
+  id: string;
+}
+
+/**
+ * `parseToolInput` for an app that takes one activity id: `{ id }` from any
+ * of {@link ID_ARG_KEYS}, or null without one, so the root shows the
+ * missing-id error.
+ */
+export function parseIdToolArgs(raw: unknown): IdToolArgs | null {
+  const id = toolArgId(toolArgRecord(raw), ...ID_ARG_KEYS);
+  return id === null ? null : { id };
+}

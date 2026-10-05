@@ -6,6 +6,8 @@ import {
   formatPace,
   formatShortDate,
   formatTime,
+  windowLabel,
+  windowShortLabel,
 } from "./formatting";
 
 describe("formatTime", () => {
@@ -128,5 +130,27 @@ describe("formatPace", () => {
   it("rolls 60 seconds over into the next minute", () => {
     // 4.9999 min → 4'60" without the rollover guard.
     expect(formatPace(4.9999)).toBe(`5'00"`);
+  });
+});
+
+describe("windowLabel", () => {
+  it.each([
+    [7, "1 week"],
+    [42, "6 weeks"],
+    [728, "104 weeks"],
+    [8, "8 days"],
+    [30, "30 days"],
+  ])("reads %i days as %s", (days, label) => {
+    expect(windowLabel(days)).toBe(label);
+  });
+});
+
+describe("windowShortLabel", () => {
+  it.each([
+    [7, "1w"],
+    [42, "6w"],
+    [30, "30d"],
+  ])("reads %i days as %s", (days, label) => {
+    expect(windowShortLabel(days)).toBe(label);
   });
 });
