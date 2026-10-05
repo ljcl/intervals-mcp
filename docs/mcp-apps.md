@@ -558,8 +558,9 @@ weeks take them. Calls `get-fitness-trend-data` on mount with `days`,
 - A "Whole body" / "Runs only" `PillGroup` (`App.tsx`) switches the `runOnly`
   scope. The scope not shown at mount is fetched on demand through the shared
   keyed `useServerToolFetcher` store and cached, so flipping back never
-  re-fetches; `sourceLabel` notes when a scope's numbers are computed locally
-  rather than read from intervals.icu. While that fetch runs, the skeleton
+  re-fetches; `fitnessSourceLabel` (`packages/data`, shared with
+  training-load) notes when a scope's numbers are computed locally rather than
+  read from intervals.icu. While that fetch runs, the skeleton
   shows its progress line. If it fails, `ErrorState` shows the error and a
   retry that calls the tool again.
 - `set-scope` (`scope`, `show`, `hide`) lets the model switch the scope pills
