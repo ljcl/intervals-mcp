@@ -815,20 +815,29 @@ async function handleViewActivityChart(
     `Distance: ${((activity.distance ?? 0) / 1000).toFixed(2)} km`,
     `Moving Time: ${Math.floor((activity.moving_time ?? 0) / 60)}min`,
   ];
-  // The app's own streams call hits the cache afterwards (same URL), so this
-  // read costs no extra upstream request. Only a genuinely stream-less
-  // activity degrades; a rate limit or auth failure must not read as "empty".
+  // The app's own streams call is usually a cache hit afterwards (same URL;
+  // a 404 is not cached), so this read rarely costs an extra upstream
+  // request. Only a genuinely stream-less activity degrades; a rate limit or
+  // auth failure must not read as "empty".
+  let noStreams = false;
   try {
     await loadIntervalsStreams(token, activityId, CHART_STREAM_TYPES);
   } catch (error) {
     if (!(error instanceof IntervalsStreamsUnavailableError)) throw error;
-    lines.push("No recorded streams; the chart has nothing to plot.");
+    noStreams = true;
+    // Only a host that renders the app has a chart to call empty (#77).
+    lines.push(
+      context.clientRendersApps
+        ? "No recorded streams; the chart has nothing to plot."
+        : "This activity has no recorded streams.",
+    );
   }
   lines.push(
     "",
     viewFooter(
       "activity chart",
-      "get-activity-streams",
+      // get-activity-streams would only repeat that there are none.
+      noStreams ? "get-activity" : "get-activity-streams",
       context.clientRendersApps,
     ),
   );
@@ -932,7 +941,8 @@ async function handleViewCadenceTrends(
     "",
     viewFooter(
       "cadence trends chart",
-      "get-running-summary",
+      // get-running-summary needs an id this text never gives.
+      "list-activities, then get-running-summary",
       context.clientRendersApps,
     ),
   ];
@@ -1011,7 +1021,8 @@ async function handleViewTrainingLoad(
     "",
     viewFooter(
       "training load chart",
-      "get-training-load",
+      // runOnly carries over: never mix whole-body and run-only numbers.
+      "get-training-load with the same arguments",
       context.clientRendersApps,
     ),
   ];
@@ -1150,7 +1161,8 @@ async function handleViewFitnessTrend(
     "",
     viewFooter(
       "fitness trend chart",
-      "get-fitness-trend",
+      // runOnly carries over: never mix whole-body and run-only numbers.
+      "get-fitness-trend with the same arguments",
       context.clientRendersApps,
     ),
   );
@@ -1287,13 +1299,20 @@ async function handleViewRouteMap(
     `Distance: ${(data.distance / 1000).toFixed(2)} km`,
     `Elevation gain: ${Math.round(data.elevationGain)} m`,
   ];
+  // The map and its legend exist only on a host that renders the app (#77).
   if (data.coordinates.length === 0) {
-    lines.push("No GPS track is available, so the map will be empty.");
+    lines.push(
+      context.clientRendersApps
+        ? "No GPS track is available, so the map will be empty."
+        : "No GPS track is recorded for this activity.",
+    );
   }
   const waypointCount = data.annotations?.waypoints?.length ?? 0;
   if (waypointCount > 0) {
     lines.push(
-      `Waypoints: ${waypointCount} pinned along the track (toggleable via the map legend).`,
+      context.clientRendersApps
+        ? `Waypoints: ${waypointCount} pinned along the track (toggleable via the map legend).`
+        : `Waypoints: ${waypointCount} placed along the track.`,
     );
   }
   for (const warning of data.waypointWarnings ?? []) {

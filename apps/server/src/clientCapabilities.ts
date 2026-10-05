@@ -30,7 +30,9 @@ export function clientSupportsMcpApps(capabilities: unknown): boolean {
 /**
  * The last line of every view-* text: a rendered chart is claimed only to a
  * host that said it renders MCP Apps; any other host is told it cannot see the
- * chart and which text tool carries the same numbers.
+ * chart and which text tool carries the same numbers. `twin` is the call to
+ * make instead, starting with a tool name ("get-training-load with the same
+ * arguments"); the app-handler tests check every name it gives is a real tool.
  */
 export function viewFooter(
   kind: string,

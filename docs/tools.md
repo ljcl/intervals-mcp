@@ -290,9 +290,12 @@ from `loadIntervalsStreams`, the one error these handlers degrade on, as
 `get-route-map-data` does) is not an error (#65). `get-activity-streams-raw`
 returns `emptyActivityChartData`: the usual `activityId`/`activityType`/`name`,
 `streams: { time: [] }`, `laps: []` and `noStreams: true`.
-`view-activity-chart` reads the streams itself (a cache hit for the app's own
-call afterwards) and adds "No recorded streams; the chart has nothing to
-plot." to its text. A rate limit or any other failure still propagates.
+`view-activity-chart` reads the streams itself (usually a cache hit for the
+app's own call afterwards; a 404 is not cached) and adds "No recorded streams;
+the chart has nothing to plot." to its text, or "This activity has no recorded
+streams." for a host that cannot render the app, whose footer then names
+`get-activity` instead of `get-activity-streams`. A rate limit or any other
+failure still propagates.
 
 `get-hill-analysis` and `get-split-analysis` both read their streams through
 the shared intervals.icu stream adapter (`distance`, `altitude`,
@@ -649,14 +652,17 @@ capabilities advertise `io.modelcontextprotocol/ui` with
 Otherwise it has no "rendered above" line and ends with `This client cannot
 display the interactive <kind>. For detail, call <twin>.` A call with no client
 information is treated as a host that cannot render apps. Both footers come
-from `viewFooter`:
+from `viewFooter`; a test checks every tool the twin names is advertised. The
+rest of the text never mentions on-screen UI to such a host: `view-route-map`
+says "No GPS track is recorded for this activity." rather than calling the map
+empty, and counts waypoints without the map legend.
 
 | Tool | Footer kind | Text tool it names |
 | ---- | ----------- | ------------------ |
-| `view-activity-chart` | `activity chart` | `get-activity-streams` |
-| `view-cadence-trends` | `cadence trends chart` | `get-running-summary` |
-| `view-training-load` | `training load chart` | `get-training-load` |
-| `view-fitness-trend` | `fitness trend chart` | `get-fitness-trend` |
+| `view-activity-chart` | `activity chart` | `get-activity-streams` (`get-activity` when the activity has no streams) |
+| `view-cadence-trends` | `cadence trends chart` | `list-activities, then get-running-summary` |
+| `view-training-load` | `training load chart` | `get-training-load with the same arguments` |
+| `view-fitness-trend` | `fitness trend chart` | `get-fitness-trend with the same arguments` |
 | `view-activity-zones` | `zone distribution chart` | `get-activity-zones` |
 | `view-route-map` | `route map` | `get-activity` |
 | `view-compare-activities` | `activity comparison` | `compare-activities` |

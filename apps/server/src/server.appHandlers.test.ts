@@ -185,6 +185,29 @@ describe("view-activity-chart", () => {
     );
   });
 
+  it("gives a host without MCP Apps the plain fact and no dead-end twin (#77)", async () => {
+    mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
+    mockedIntervalsStreams.mockResolvedValueOnce([]);
+
+    const result = await dispatchToolCall(
+      "view-activity-chart",
+      { activity_id: "i123" },
+      { client: { rendersApps: false } },
+    );
+
+    expect(result.isError).toBeUndefined();
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain("This activity has no recorded streams.");
+    expect(text).not.toContain("nothing to plot");
+    // get-activity-streams would only repeat that there are no streams.
+    expect(text).not.toContain("get-activity-streams");
+    expect(
+      text.endsWith(
+        "This client cannot display the interactive activity chart. For detail, call get-activity.",
+      ),
+    ).toBe(true);
+  });
+
   it("reports a stream fetch failure rather than calling the chart empty", async () => {
     mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
     mockedIntervalsStreams.mockRejectedValueOnce(new Error("Rate limited"));
@@ -1307,17 +1330,37 @@ describe("route map handlers", () => {
     expect(text).not.toContain("No GPS track");
   });
 
-  it("view-route-map flags an empty track", async () => {
+  it("view-route-map flags an empty track on a host that renders the map", async () => {
     mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
     // intervals.icu returns no streams for a manual/no-GPS entry.
     mockedIntervalsStreams.mockResolvedValueOnce([]);
 
-    const result = await dispatchToolCall("view-route-map", {
-      activity_id: "123",
-    });
+    const result = await dispatchToolCall(
+      "view-route-map",
+      { activity_id: "123" },
+      { client: { rendersApps: true } },
+    );
 
     expect(result.isError).toBeUndefined();
-    expect(result.content[0]?.text).toContain("No GPS track is available");
+    expect(result.content[0]?.text).toContain(
+      "No GPS track is available, so the map will be empty.",
+    );
+  });
+
+  it("view-route-map states a missing track plainly to a host without MCP Apps (#77)", async () => {
+    mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
+    mockedIntervalsStreams.mockResolvedValueOnce([]);
+
+    const result = await dispatchToolCall(
+      "view-route-map",
+      { activity_id: "123" },
+      { client: { rendersApps: false } },
+    );
+
+    expect(result.isError).toBeUndefined();
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain("No GPS track is recorded for this activity.");
+    expect(text).not.toContain("map will be empty");
   });
 
   it("get-route-map-data returns coordinates from the latlng stream with aligned metrics", async () => {
@@ -1460,24 +1503,38 @@ describe("route map handlers", () => {
     expect(parsed.waypointWarnings[0]).toContain("10.0 km");
   });
 
-  it("view-route-map reports pinned waypoints and warns about dropped ones", async () => {
-    mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
-    mockedIntervalsStreams.mockResolvedValueOnce(routeMapStreamsFixture());
+  it.each([
+    [
+      true,
+      "Waypoints: 1 pinned along the track (toggleable via the map legend).",
+    ],
+    [false, "Waypoints: 1 placed along the track."],
+  ])(
+    "view-route-map reports waypoints (renders apps: %s) and warns about dropped ones",
+    async (rendersApps, waypointLine) => {
+      mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
+      mockedIntervalsStreams.mockResolvedValueOnce(routeMapStreamsFixture());
 
-    const result = await dispatchToolCall("view-route-map", {
-      activity_id: "123",
-      waypoints: [
-        { km: 5, label: "Gel 1", kind: "fuel" },
-        { km: 42.2, label: "Finish gel", kind: "fuel" },
-      ],
-    });
+      const result = await dispatchToolCall(
+        "view-route-map",
+        {
+          activity_id: "123",
+          waypoints: [
+            { km: 5, label: "Gel 1", kind: "fuel" },
+            { km: 42.2, label: "Finish gel", kind: "fuel" },
+          ],
+        },
+        { client: { rendersApps } },
+      );
 
-    expect(result.isError).toBeUndefined();
-    const text = result.content[0]?.text ?? "";
-    expect(text).toContain("Waypoints: 1 pinned");
-    expect(text).toContain("Warning: Dropped 1 waypoint");
-    expect(text).toContain('"Finish gel" (42.2 km)');
-  });
+      expect(result.isError).toBeUndefined();
+      const text = result.content[0]?.text ?? "";
+      expect(text).toContain(waypointLine);
+      if (!rendersApps) expect(text).not.toContain("legend");
+      expect(text).toContain("Warning: Dropped 1 waypoint");
+      expect(text).toContain('"Finish gel" (42.2 km)');
+    },
+  );
 
   it("rejects malformed waypoints via the input schema", async () => {
     const result = await dispatchToolCall("view-route-map", {
@@ -1732,7 +1789,8 @@ describe("view tools and hosts that cannot render MCP Apps (#77)", () => {
         mockedIntervalsList.mockResolvedValueOnce([run()]);
       },
       kind: "cadence trends chart",
-      twin: "get-running-summary",
+      // get-running-summary needs an id the view text never gives.
+      twin: "list-activities, then get-running-summary",
     },
     {
       name: "view-training-load",
@@ -1744,7 +1802,8 @@ describe("view tools and hosts that cannot render MCP Apps (#77)", () => {
         mockedWellness.mockResolvedValueOnce([]);
       },
       kind: "training load chart",
-      twin: "get-training-load",
+      // runOnly must carry over: never mix whole-body and run-only numbers.
+      twin: "get-training-load with the same arguments",
     },
     {
       name: "view-fitness-trend",
@@ -1762,7 +1821,7 @@ describe("view tools and hosts that cannot render MCP Apps (#77)", () => {
         mockedIntervalsList.mockResolvedValueOnce([]);
       },
       kind: "fitness trend chart",
-      twin: "get-fitness-trend",
+      twin: "get-fitness-trend with the same arguments",
     },
     {
       name: "view-activity-zones",
@@ -1833,6 +1892,22 @@ describe("view tools and hosts that cannot render MCP Apps (#77)", () => {
           `This client cannot display the interactive ${kind}. For detail, call ${twin}.`,
         ),
       ).toBe(true);
+    });
+
+    it("names only tools the server advertises in its footer", async () => {
+      const { TOOL_DEFS } = await import("./server");
+      const advertised = new Set(TOOL_DEFS.map((tool) => tool.name));
+      arrange();
+
+      const result = await dispatchToolCall(name, args, {
+        client: { rendersApps: false },
+      });
+
+      const text = result.content[0]?.text ?? "";
+      const pointer = text.slice(text.lastIndexOf("For detail, call "));
+      const named = pointer.match(/\b[a-z]+(?:-[a-z]+)+\b/g) ?? [];
+      expect(named.length).toBeGreaterThan(0);
+      for (const tool of named) expect(advertised).toContain(tool);
     });
 
     it("gives the honest text when the caller passes no client at all", async () => {
