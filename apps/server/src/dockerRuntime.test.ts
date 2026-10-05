@@ -336,7 +336,7 @@ describe("Dockerfile base image", () => {
       .filter((image) => !stages.has(image))
       .filter((image) => !/@sha256:[0-9a-f]{64}$/.test(image));
     expect(unpinned).toEqual([]);
-    expect(dockerfile).not.toMatch(/^#\s*syntax=(?![^\n]*@sha256:)/m);
+    expect(dockerfile).not.toMatch(/^#\s*syntax\s*=(?![^\n]*@sha256:)/m);
   });
 });
 

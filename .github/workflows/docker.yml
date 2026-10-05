@@ -261,7 +261,7 @@ jobs:
           shopt -s failglob  # fail loudly if no digest files were downloaded
           docker buildx imagetools create \
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf "$REGISTRY_IMAGE@sha256:%s " *)
+            $(for d in *; do printf '%s@sha256:%s ' "$REGISTRY_IMAGE" "$d"; done)
 
       - name: Inspect image
         id: inspect

@@ -124,7 +124,10 @@ Dockerfile label to `name`.
 `mcp-publisher` is not version-pinned, because the registry rejects stale
 publishers. The workflow takes the latest release and verifies its Sigstore
 signature with `cosign verify-blob`, requiring the signer to be the registry
-repo's `release.yml` at that release tag, before running it.
+repo's `release.yml` at that release tag, before running it. A "none of the
+expected identities matched" failure after the registry reorganises its
+release workflow means the identity in `publish-mcp.yml` needs updating, not
+that the binary was tampered with; fix it and re-run the dispatch.
 
 A failed publish is recoverable without a new release: run **Publish MCP
 Registry** from the Actions tab (`workflow_dispatch`) with the existing
