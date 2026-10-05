@@ -323,6 +323,21 @@ describe("Dockerfile base image", () => {
       );
     expect(skewed).toEqual([]);
   });
+
+  it("pins every external image by digest, with no floating syntax frontend", () => {
+    // A tag can be re-pointed upstream; a digest cannot (#90). Stage names
+    // (`FROM base`, `FROM toolchain`) are local and need no pin.
+    const dockerfile = readFileSync(DOCKERFILE_URL, "utf8");
+    const stages = new Set(
+      [...dockerfile.matchAll(/^FROM\s.*\sAS\s+(\S+)/gim)].map((m) => m[1]),
+    );
+    const unpinned = [...dockerfile.matchAll(/^FROM\s+(?:--\S+\s+)*(\S+)/gm)]
+      .map((m) => m[1]!)
+      .filter((image) => !stages.has(image))
+      .filter((image) => !/@sha256:[0-9a-f]{64}$/.test(image));
+    expect(unpinned).toEqual([]);
+    expect(dockerfile).not.toMatch(/^#\s*syntax=(?![^\n]*@sha256:)/m);
+  });
 });
 
 function readToolVersions(): string {
