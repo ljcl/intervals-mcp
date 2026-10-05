@@ -243,7 +243,9 @@ describe("listActivitiesTool.execute", () => {
     expect(structured.truncated).toBe(true);
     expect(text).toContain("response size limit");
     const oldestShown = structured.activities.at(-1)!.date;
-    expect(text).toContain(`call again with oldest: 2025-09-28, newest: ${oldestShown}`);
+    expect(text).toContain(
+      `call again with oldest: 2025-09-28, newest: ${oldestShown}`,
+    );
   });
 
   it("does not truncate when matched equals or is under limit", async () => {

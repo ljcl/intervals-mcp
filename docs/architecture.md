@@ -462,6 +462,31 @@ and the chart cannot describe different zones. Empty results still emit a valid
 payload (`count: 0`), because a caller branching on `structuredContent` should
 not have to handle "absent" as a third case.
 
+## Response size budget
+
+Every model-visible tool response, text plus the `structuredContent` JSON,
+stays under `RESPONSE_BUDGET_CHARS` (40,000 characters, `tools/_responseBudget.ts`).
+Some hosts forward both copies to the model, and Claude Code refuses a result
+over 25,000 tokens: a 61 KB `get-activity-streams` payload and a 150 KB
+`get-race-prediction` one both shipped before the budget existed (#40, #41).
+
+- A tool whose input can ask for more than fits measures the built response
+  and shrinks it, rather than reject the call or change the schema:
+  `get-activity-streams` re-downsamples to fewer points, `list-activities`
+  returns a shorter page with `truncated: true`. The text says what was cut
+  and how to get the rest. Measuring beats a fixed cell cap because widths
+  differ (a `latlng` cell costs about four `heartrate` cells).
+- A text response never points at data the reader cannot reach. Some hosts
+  pass only the text, so "(N more)" names the call that returns the rest
+  ("get-activity-laps lists all 34"), or the cap is raised where no tool
+  does.
+- `responseSize.test.ts` runs every model-visible tool through
+  `dispatchToolCall` at its largest inputs against fixtures sized to fill
+  them, and fails on a tool with no case, so a new tool cannot skip it.
+  `scripts/live-check.ts` prints each response's size and flags one over
+  budget. App-only data feeds never reach the model and are not budgeted
+  (their payload size is #71).
+
 ## Input validation
 
 **`update-activity` validates against fresh reads, not cached ones.** Its

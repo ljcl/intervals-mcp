@@ -18,13 +18,13 @@ import {
   type IntervalsStreams,
   loadIntervalsStreams,
 } from "../intervalsStreams";
+import { RESPONSE_BUDGET_CHARS, responseSize } from "./_responseBudget";
 import {
   buildActivityStreamsResult,
   formatActivityStreamsText,
   getActivityStreamsTool,
   type StreamType,
 } from "./getActivityStreams";
-import { RESPONSE_BUDGET_CHARS, responseSize } from "./_responseBudget";
 
 vi.mock("../intervalsClient", async () => {
   const actual =

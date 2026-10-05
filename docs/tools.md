@@ -85,7 +85,11 @@ descriptions.
 `list-activities` defaults to the last 28 days (today back to 27 days
 earlier) in the server's configured time zone, sorted newest first. Filter
 with `type` (exact, case-insensitive) or `nameContains` (case-insensitive
-substring), and cap the page with `limit` (1-200, default 30). An activity
+substring), and cap the page with `limit` (1-200, default 30). A page that
+would overrun the response size budget (a year of daily activities at limit
+200) comes back shorter, with `truncated: true`; whenever the list is
+truncated, the text names the `oldest`/`newest` call that fetches the older
+matches. An activity
 synced into intervals.icu from Strava (`source: "STRAVA"`) is a stub: the
 intervals.icu API has no further detail for it, so the response flags it with
 `is_strava_stub` and the text response adds a trailing note. That detection
@@ -135,7 +139,11 @@ streams at all fails with a clear message naming the id. The text response
 repeats the returned columns as a CSV block (header row of `type_unit`
 column names, one row per point; `latlng` as two columns, `lat` and `lng`)
 after the summary lines, since some hosts pass only that text to the model
-and drop `structuredContent`.
+and drop `structuredContent`. The response is held to the size budget (see
+docs/architecture.md): a high `maxPoints` with many types returns fewer
+points than asked, `returned_points` says how many, and the text says it was
+reduced. A 4 h run at `maxPoints` 2000 returns about 600 points with the
+default types and 250 with all of them.
 
 `list-gear` returns each gear item's distance (km, including any starting
 distance entered in the UI when it was added, not just distance logged
@@ -189,8 +197,9 @@ Run sport settings group only when its `types` names this activity's type;
 it is `null` (with `hr_zone_note` explaining why) when no bounds match the
 recorded zone time count. Only Run, TrailRun, and VirtualRun are accepted;
 any other type is rejected with a message naming the type and pointing to
-`get-activity`. The text response caps the lap list at 20 lines;
-`structuredContent.laps` always has the full list.
+`get-activity`. The text response caps the lap list at 20 lines and names
+`get-activity-laps` for the rest; `structuredContent.laps` always has the
+full list.
 
 `get-running-dynamics` takes the `id` from `list-activities` plus an
 optional `includeIntervals` (default `true`) and returns one activity's
@@ -210,7 +219,8 @@ a two-step stride; it measures the same thing as `step_length_mm`
 `get-running-summary`, a non-step-cadence activity type or one whose device
 recorded no dynamics is not an error: `has_dynamics: false` with an
 explanatory `message` and empty `intervals`. The text response caps the
-interval list at 20 lines; `structuredContent.intervals` always has the
+interval list at 100 lines (no other tool returns per-interval dynamics, so
+it is generous rather than a pointer); `structuredContent.intervals` always has the
 full list. One `get-activity(..., { intervals: true })` call; no streams.
 
 `get-activity-zones` and the `view-activity-zones`/`get-activity-zones-data`
