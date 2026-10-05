@@ -12,7 +12,11 @@ import {
   todayLocal,
   validateRange,
 } from "../utils/localDate";
-import { isPaceActivity, paceFromDistanceTime } from "../utils/running";
+import {
+  isPaceActivity,
+  matchesTypeFilter,
+  paceFromDistanceTime,
+} from "../utils/running";
 import { READ_ONLY } from "./_annotations";
 import { toolErrorText } from "./_errors";
 import { RESPONSE_BUDGET_CHARS, responseSize } from "./_responseBudget";
@@ -24,6 +28,8 @@ const description = `
 Lists intervals.icu activities in a local date range, newest first. Start
 here: each entry carries the activity id that every per-activity tool needs,
 plus distance, time, pace (runs only), heart rate and training load.
+
+For the most recent run, call it with type "runs" and limit 1.
 
 For run totals (this week, month, year) use get-athlete-stats instead of
 adding up this list; for weekly volume trends, get-training-load.
@@ -47,7 +53,7 @@ const inputSchema = z.object({
     .string()
     .optional()
     .describe(
-      'Exact intervals.icu activity type, case-insensitive (e.g. "Run", "WeightTraining").',
+      'Activity type filter, case-insensitive: "runs" for Run, TrailRun and VirtualRun, one type ("Ride"), or a comma-separated list ("Run, Hike").',
     ),
   nameContains: z
     .string()
@@ -211,9 +217,8 @@ export const listActivitiesTool = {
 
       let filtered = activities;
       if (type) {
-        const wanted = type.toLowerCase();
-        filtered = filtered.filter(
-          (a) => (a.type ?? "").toLowerCase() === wanted,
+        filtered = filtered.filter((a) =>
+          matchesTypeFilter(a.type ?? "", type),
         );
       }
       if (nameContains) {

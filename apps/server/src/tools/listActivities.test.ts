@@ -351,4 +351,44 @@ describe("listActivitiesTool.execute", () => {
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain("rate limit");
   });
+
+  it('treats type "runs" as Run, TrailRun and VirtualRun', async () => {
+    const mixed = ["Run", "TrailRun", "VirtualRun", "Swim", "Ride"].map(
+      (type, i) => ({
+        ...fixture[0]!,
+        id: `i${900 + i}`,
+        type,
+        start_date_local: `2026-09-2${i}T07:00:00`,
+      }),
+    );
+    mockedListActivities.mockResolvedValueOnce(mixed);
+
+    const result = await listActivitiesTool.execute(
+      { type: "runs", limit: 30 },
+      "key",
+    );
+
+    expect(
+      result.structuredContent?.activities.map((a) => a.type).sort(),
+    ).toEqual(["Run", "TrailRun", "VirtualRun"]);
+  });
+
+  it("accepts a comma-separated type list", async () => {
+    const mixed = ["Run", "Hike", "Ride"].map((type, i) => ({
+      ...fixture[0]!,
+      id: `i${950 + i}`,
+      type,
+      start_date_local: `2026-09-2${i}T07:00:00`,
+    }));
+    mockedListActivities.mockResolvedValueOnce(mixed);
+
+    const result = await listActivitiesTool.execute(
+      { type: "run, hike", limit: 30 },
+      "key",
+    );
+
+    expect(
+      result.structuredContent?.activities.map((a) => a.type).sort(),
+    ).toEqual(["Hike", "Run"]);
+  });
 });

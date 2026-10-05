@@ -11,6 +11,7 @@ import {
   isPaceActivity,
   isRunningActivity,
   isStepCadenceActivity,
+  matchesTypeFilter,
   metersPerSecToPace,
   paceFromDistanceTime,
 } from "./running";
@@ -384,5 +385,21 @@ describe("assessRunningDynamics", () => {
         "high",
       );
     });
+  });
+});
+
+describe("matchesTypeFilter", () => {
+  it.each([
+    ["Run", "runs", true],
+    ["TrailRun", "Runs", true],
+    ["VirtualRun", "runs", true],
+    ["Swim", "runs", false],
+    ["Hike", "hike", true],
+    ["Run", "Run, Hike", true],
+    ["Hike", "Run,Hike", true],
+    ["Ride", "Run, Hike", false],
+    ["TrailRun", "Run", false],
+  ])("%s against %s is %s", (type, filter, expected) => {
+    expect(matchesTypeFilter(type, filter)).toBe(expected);
   });
 });
