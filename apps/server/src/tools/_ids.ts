@@ -156,6 +156,11 @@ function idInput(options: {
  * Ids are opaque identifiers, never used numerically, so coercing a safe
  * integer to its string loses nothing. The fetch layer reports ids as exact
  * strings (see `parseJsonWithLargeInts`), so string ids round-trip cleanly.
+ *
+ * `"latest"` passes validation as the literal word, and `dispatchToolCall`
+ * swaps it for the newest run's id (`latestActivity.ts`) before any handler
+ * runs. `update-activity` passes `allowLatest: false`, so a write never
+ * targets an activity it did not name.
  */
 export const intervalsActivityIdInput = (
   description: string,
