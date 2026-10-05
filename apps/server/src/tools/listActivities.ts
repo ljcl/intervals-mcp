@@ -15,6 +15,7 @@ import {
 import { isPaceActivity, paceFromDistanceTime } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
 import { toolErrorText } from "./_errors";
+import { RESPONSE_BUDGET_CHARS, responseSize } from "./_responseBudget";
 import { ActivityListOutputSchema, warnOnSchemaDrift } from "./outputs";
 
 const name = "list-activities";
@@ -135,8 +136,14 @@ function formatActivityLine(entry: ActivitySummaryEntry): string {
   return `${entry.date} ${entry.type} ${entry.name}, ${parts.join(", ")} [${entry.id}]`;
 }
 
-/** Builds the tool's text response. Exported for direct testing. */
-export function formatActivityListText(response: ActivityListResponse): string {
+/**
+ * Builds the tool's text response. `budgetCut` says the page was cut below
+ * `limit` to fit the response budget. Exported for direct testing.
+ */
+export function formatActivityListText(
+  response: ActivityListResponse,
+  budgetCut = false,
+): string {
   const { oldest, newest, count, matched, truncated } = response;
   const summary = truncated
     ? `showing ${count} of ${matched}, truncated`
@@ -145,6 +152,17 @@ export function formatActivityListText(response: ActivityListResponse): string {
 
   for (const entry of response.activities)
     lines.push(formatActivityLine(entry));
+
+  if (budgetCut)
+    lines.push(
+      "Fewer than limit were returned to stay under the response size limit.",
+    );
+  // Newest first, so what was cut is older; name the call that fetches it.
+  const oldestShown = response.activities.at(-1)?.date;
+  if (truncated && oldestShown)
+    lines.push(
+      `For the ${matched - count} older matches, call again with oldest: ${oldest}, newest: ${oldestShown}.`,
+    );
 
   if (response.activities.some((entry) => entry.is_strava_stub)) {
     lines.push(STRAVA_STUB_NOTE);
@@ -206,25 +224,44 @@ export const listActivitiesTool = {
       }
 
       const matched = filtered.length;
-      const truncated = matched > limit;
-      const page = filtered.slice(0, limit).map(mapActivitySummary);
-
-      const response: ActivityListResponse = {
-        oldest,
-        newest,
-        count: page.length,
-        matched,
-        truncated,
-        units: { distance: "km", pace: "min/km", time: "s", hr: "bpm" },
-        activities: page,
+      const entries = filtered.map(mapActivitySummary);
+      const build = (size: number): ActivityListResponse => {
+        const page = entries.slice(0, size);
+        return {
+          oldest,
+          newest,
+          count: page.length,
+          matched,
+          truncated: matched > page.length,
+          units: { distance: "km", pace: "min/km", time: "s", hr: "bpm" },
+          activities: page,
+        };
       };
+
+      // Held to the response budget like get-activity-streams: a year of
+      // daily activities at limit 200 was 72 KB (#40). Each pass scales the
+      // page by the measured overshoot.
+      let size = limit;
+      let response = build(size);
+      let text = formatActivityListText(response);
+      for (let pass = 0; pass < 5; pass += 1) {
+        const chars = responseSize(text, response);
+        if (chars <= RESPONSE_BUDGET_CHARS || size <= 1) break;
+        size = Math.max(
+          1,
+          Math.min(
+            response.count - 1,
+            Math.floor(response.count * (RESPONSE_BUDGET_CHARS / chars) * 0.95),
+          ),
+        );
+        response = build(size);
+        text = formatActivityListText(response, true);
+      }
 
       warnOnSchemaDrift(name, ActivityListOutputSchema, response);
 
       return {
-        content: [
-          { type: "text" as const, text: formatActivityListText(response) },
-        ],
+        content: [{ type: "text" as const, text }],
         structuredContent: response,
       };
     } catch (error) {

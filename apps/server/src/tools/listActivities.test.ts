@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { handledNotFound, handledRateLimit } from "../__fixtures__";
 import activitiesFixture from "../__fixtures__/intervals/activities.json";
 import { type IntervalsActivity, listActivities } from "../intervalsClient";
+import { addDays } from "../utils/localDate";
+import { RESPONSE_BUDGET_CHARS, responseSize } from "./_responseBudget";
 import {
   formatActivityListText,
   listActivitiesTool,
@@ -124,6 +126,11 @@ describe("formatActivityListText", () => {
     expect(text.split("\n")[0]).toBe(
       "Activities 2026-08-28 to 2026-09-24: showing 1 of 5, truncated",
     );
+    // The list is newest first, so what was cut is older: name the call
+    // that fetches it rather than leave the reader at a dead end.
+    expect(text).toContain(
+      "For the 4 older matches, call again with oldest: 2026-08-28, newest: 2026-09-24.",
+    );
     expect(text).not.toContain("stub:");
   });
 
@@ -208,6 +215,35 @@ describe("listActivitiesTool.execute", () => {
     expect(result.structuredContent?.count).toBe(3);
     expect(result.structuredContent?.matched).toBe(fixture.length);
     expect(result.structuredContent?.truncated).toBe(true);
+  });
+
+  it("returns fewer than limit, truncated, when limit would overrun the response budget", async () => {
+    // A year of daily activities at limit 200 made a 72 KB response (#40).
+    const year = Array.from({ length: 366 }, (_, i) => ({
+      ...fixture[i % fixture.length]!,
+      id: `i${300_000_000 + i}`,
+      start_date_local: `${addDays("2026-09-28", -i)}T07:00:00`,
+    }));
+    mockedListActivities.mockResolvedValueOnce(year);
+
+    const result = await listActivitiesTool.execute(
+      { oldest: "2025-09-28", newest: "2026-09-28", limit: 200 },
+      "key",
+    );
+
+    const text = result.content[0]!.text;
+    const structured = result.structuredContent!;
+    expect(responseSize(text, structured)).toBeLessThanOrEqual(
+      RESPONSE_BUDGET_CHARS,
+    );
+    expect(structured.count).toBeLessThan(200);
+    expect(structured.count).toBeGreaterThan(30);
+    expect(structured.activities).toHaveLength(structured.count);
+    expect(structured.matched).toBe(366);
+    expect(structured.truncated).toBe(true);
+    expect(text).toContain("response size limit");
+    const oldestShown = structured.activities.at(-1)!.date;
+    expect(text).toContain(`call again with oldest: 2025-09-28, newest: ${oldestShown}`);
   });
 
   it("does not truncate when matched equals or is under limit", async () => {
