@@ -70,18 +70,23 @@ export function indexRangeForValues(
   return { startIndex, endIndex };
 }
 
+/** The value axis a window is read on. */
+export type ZoomAxis = "distance" | "time";
+
 /**
- * How the current brush window reads in words, or null when the whole
- * activity is shown.
+ * How a brush window reads in words, or null when the whole activity is
+ * shown.
  *
- * Phrased on the axis the brush is actually controlling — distance for swims,
- * time otherwise — so it matches the tick labels under it. Shared by the
- * context summary the model reads, so a `set-brush-window` call and the state
- * reported back cannot describe different windows.
+ * Phrased on the axis the caller names. The context summary passes the axis
+ * the brush is actually controlling (distance for swims, time otherwise) so
+ * it matches the tick labels under it; `set-brush-window` passes the axis the
+ * model asked in, so a window given in seconds is answered in seconds even
+ * on a swim (#65). Both go through here, so a call and the state reported
+ * back cannot describe the same window in different units by accident.
  */
 export function describeZoomWindow(
   points: ReadonlyArray<{ time: number; distance?: number }>,
-  byDistance: boolean,
+  axis: ZoomAxis,
   range: { startIndex?: number; endIndex?: number },
   formatTime: (seconds: number) => string,
 ): string | null {
@@ -95,7 +100,7 @@ export function describeZoomWindow(
   const to = points[endIndex];
   if (!from || !to) return null;
 
-  if (byDistance) {
+  if (axis === "distance") {
     if (from.distance === undefined || to.distance === undefined) return null;
     return `${(from.distance / 1000).toFixed(2)}–${(to.distance / 1000).toFixed(2)} km`;
   }

@@ -16,6 +16,12 @@ export interface ActivityStreamData {
     grade_smooth?: (number | null)[];
     distance?: number[];
   };
+  /**
+   * `true` when the activity recorded no streams (`streams: { time: [] }`):
+   * the server sends that as data, not an error. The overlay then has nothing
+   * shared to draw and says so, while the delta tiles still load (#65).
+   */
+  noStreams?: boolean;
 }
 
 /** Running dynamics averages, present only for step-cadence types with device support. */

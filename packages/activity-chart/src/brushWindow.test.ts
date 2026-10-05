@@ -84,32 +84,51 @@ describe("describeZoomWindow", () => {
   }));
 
   it("says nothing when no window is set", () => {
-    expect(describeZoomWindow(points, false, {}, fmt)).toBeNull();
+    expect(describeZoomWindow(points, "time", {}, fmt)).toBeNull();
   });
 
   it("says nothing when the whole activity is shown", () => {
     // "Zoomed to 0:00–16:30" of a 16:30 run is noise in every turn.
     expect(
-      describeZoomWindow(points, false, { startIndex: 0, endIndex: 99 }, fmt),
+      describeZoomWindow(points, "time", { startIndex: 0, endIndex: 99 }, fmt),
     ).toBeNull();
   });
 
-  it("reads on the time axis by default", () => {
+  it("reads on the time axis when asked for time", () => {
     expect(
-      describeZoomWindow(points, false, { startIndex: 10, endIndex: 20 }, fmt),
+      describeZoomWindow(points, "time", { startIndex: 10, endIndex: 20 }, fmt),
     ).toBe("1:40–3:20");
   });
 
-  it("reads on the distance axis for a swim", () => {
+  it("reads on the distance axis when asked for distance", () => {
     expect(
-      describeZoomWindow(points, true, { startIndex: 10, endIndex: 20 }, fmt),
+      describeZoomWindow(
+        points,
+        "distance",
+        { startIndex: 10, endIndex: 20 },
+        fmt,
+      ),
     ).toBe("0.50–1.00 km");
+  });
+
+  it("reads seconds, not km, for a time window on a swim (#65)", () => {
+    // A swim's brush runs on distance, but a window asked for in seconds is
+    // described in seconds: the same samples, the axis the caller used.
+    const swim = points.map((p) => ({ ...p, distance: p.distance * 0.1 }));
+    expect(
+      describeZoomWindow(swim, "time", { startIndex: 6, endIndex: 12 }, fmt),
+    ).toBe("1:00–2:00");
   });
 
   it("says nothing on the distance axis with no distances recorded", () => {
     const timeOnly = points.map(({ time }) => ({ time }));
     expect(
-      describeZoomWindow(timeOnly, true, { startIndex: 10, endIndex: 20 }, fmt),
+      describeZoomWindow(
+        timeOnly,
+        "distance",
+        { startIndex: 10, endIndex: 20 },
+        fmt,
+      ),
     ).toBeNull();
   });
 });

@@ -146,7 +146,8 @@ export function OverlayView({
     }> = [];
     for (const id of selectedRunIds) {
       const state = streams.get(id);
-      if (state?.points) {
+      // A stream-less run has nothing to draw: it is named in a note below.
+      if (state?.points && !state.noStreams) {
         entries.push({
           run: state.run,
           points: state.points,
@@ -163,6 +164,17 @@ export function OverlayView({
       [...selectedRunIds]
         .map((id) => streams.get(id))
         .filter((state): state is RunStreamState => state?.error != null),
+    [selectedRunIds, streams],
+  );
+
+  // Selected runs that loaded but recorded no streams, in selection order.
+  // Not a failure: a retry cannot succeed, so they get a note, not a retry.
+  const streamless = useMemo(
+    () =>
+      [...selectedRunIds].flatMap((id) => {
+        const state = streams.get(id);
+        return state?.noStreams ? [state.run] : [];
+      }),
     [selectedRunIds, streams],
   );
 
@@ -216,6 +228,22 @@ export function OverlayView({
     for (const state of failed) retryStream(state.run.id);
   };
 
+  // Every selected run is stream-less: nothing is loading or failed either,
+  // since a run only becomes stream-less once its fetch has succeeded.
+  if (streamless.length === selectedRunIds.size) {
+    return (
+      <EmptyState>
+        None of the selected runs has recorded streams to overlay.
+      </EmptyState>
+    );
+  }
+
+  const streamlessNotes = streamless.map((run) => (
+    <p key={run.id} className={styles.note}>
+      No recorded streams for {overlayRunLabel(run, selectedRuns)}.
+    </p>
+  ));
+
   // Nothing to draw yet — replace the chart rather than framing empty axes.
   if (runs.length === 0 && isLoading) {
     return (
@@ -225,7 +253,12 @@ export function OverlayView({
     );
   }
   if (runs.length === 0 && failed.length > 0) {
-    return <ErrorState message={failureMessage} onRetry={retryFailed} />;
+    return (
+      <div>
+        <ErrorState message={failureMessage} onRetry={retryFailed} />
+        {streamlessNotes}
+      </div>
+    );
   }
 
   return (
@@ -243,6 +276,7 @@ export function OverlayView({
       {failed.length > 0 && (
         <ErrorState message={failureMessage} onRetry={retryFailed} />
       )}
+      {streamlessNotes}
       <div className={styles.container}>
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart

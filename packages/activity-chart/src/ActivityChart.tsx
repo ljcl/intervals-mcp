@@ -38,7 +38,11 @@ import {
   describeDynamicsSeries,
   seriesAverage,
 } from "./a11y";
-import { describeZoomWindow, indexRangeForValues } from "./brushWindow";
+import {
+  describeZoomWindow,
+  indexRangeForValues,
+  type ZoomAxis,
+} from "./brushWindow";
 import { buildChartContextSummary } from "./contextSummary";
 import { selectLapLabels } from "./lapLabels";
 import { type ChartLap, smoothData } from "./normalize";
@@ -391,6 +395,10 @@ export function ActivityChart({
     endIndex?: number;
   }>({});
 
+  // A chart with nothing to plot shows the EmptyState instead of axes: a
+  // manual entry (`data` empty), or a time stream with no metric on it.
+  const hasNothingToChart = data.length === 0 || availableMetrics.size === 0;
+
   /**
    * `set-brush-window`: the model zooms the chart to the part of the
    * run under discussion — "the surge in the last km" — instead of asking the
@@ -402,16 +410,33 @@ export function ActivityChart({
    * a dragged one does.
    */
   useViewTool(viewToolRegistry, "set-brush-window", (args) => {
+    // First, so reset on an empty chart answers the same error as any call:
+    // there is no brush on screen to move.
+    if (hasNothingToChart) {
+      return {
+        text: "This activity has no recorded streams to zoom.",
+        isError: true,
+      };
+    }
     if (args.reset === true) {
       setZoomRange({});
       return { text: `Showing all of ${meta.name}.` };
     }
 
-    const byDistance =
-      args.fromKm !== undefined || args.toKm !== undefined || meta.isSwimming;
-    const values = byDistance
-      ? data.map((p) => p.distance)
-      : data.map((p) => p.time);
+    const wantsKm = args.fromKm !== undefined || args.toKm !== undefined;
+    const wantsSeconds =
+      args.fromSeconds !== undefined || args.toSeconds !== undefined;
+    if (wantsKm && wantsSeconds) {
+      return {
+        text: "Pass either fromKm/toKm or fromSeconds/toSeconds, not both.",
+        isError: true,
+      };
+    }
+    // A time window maps through the time values on every sport, including a
+    // swim whose axis is distance: Brush is index-based (#65).
+    const byDistance = wantsKm || (!wantsSeconds && meta.isSwimming);
+    const axis: ZoomAxis = byDistance ? "distance" : "time";
+    const values = data.map((p) => p[axis]);
 
     if (byDistance && values.every((v) => v === undefined)) {
       return {
@@ -441,10 +466,14 @@ export function ActivityChart({
     }
 
     setZoomRange(range);
-    const shown = byDistance
-      ? `${((values[range.startIndex] ?? 0) / 1000).toFixed(2)}–${((values[range.endIndex] ?? 0) / 1000).toFixed(2)} km`
-      : `${formatTime(values[range.startIndex] ?? 0)}–${formatTime(values[range.endIndex] ?? 0)}`;
-    return { text: `Zoomed the chart to ${shown} of ${meta.name}.` };
+    // Read back on the axis the model asked in. A window that spans the whole
+    // activity is not a zoom, which `describeZoomWindow` reports as null.
+    const shown = describeZoomWindow(data, axis, range, formatTime);
+    return {
+      text: shown
+        ? `Zoomed the chart to ${shown} of ${meta.name}.`
+        : `Showing all of ${meta.name}.`,
+    };
   });
 
   // Running-dynamics averages for the model-facing context summary: the
@@ -473,9 +502,10 @@ export function ActivityChart({
         hidden,
         smooth,
         paceLabel: meta.speed.label.toLowerCase(),
+        // The brush's own axis, so the summary matches the tick labels.
         zoomWindow: describeZoomWindow(
           data,
-          meta.isSwimming === true,
+          meta.isSwimming ? "distance" : "time",
           zoomRange,
           formatTime,
         ),
@@ -966,12 +996,13 @@ export function ActivityChart({
     paceDomain,
   ]);
 
-  // Manual entries, treadmill uploads, and activities with device data
-  // stripped parse into a valid-but-plottable-nothing payload. Without this
-  // guard the card renders bare axes, an empty legend, and an empty preset
-  // selector, which reads as a broken app rather than "nothing to chart".
-  // Placed after the hooks above so the branch cannot reorder them.
-  if (data.length === 0 || availableMetrics.size === 0) {
+  // Manual entries (the server's `noStreams` payload), treadmill uploads, and
+  // activities with device data stripped parse into a valid-but-plottable-
+  // nothing payload. Without this guard the card renders bare axes, an empty
+  // legend, and an empty preset selector, which reads as a broken app rather
+  // than "nothing to chart". Placed after the hooks above so the branch
+  // cannot reorder them.
+  if (hasNothingToChart) {
     return (
       <div
         className={styles.activityChart}

@@ -4,8 +4,10 @@ import { expect, waitFor } from "storybook/test";
 import {
   baselineRun,
   compareData,
+  compareDataManualSide,
   gappyPair,
   hrOnlyPair,
+  manualRun,
   raceRun,
 } from "./__fixtures__/runs";
 import { CompareActivities } from "./CompareActivities";
@@ -95,6 +97,33 @@ export const GappyStreams = meta.story({
     a: gappyPair[0],
     b: gappyPair[1],
     compare: null,
+  },
+});
+
+/**
+ * #65: one side recorded no streams (a manual entry). The server sends that as
+ * a `noStreams` payload, not an error, so the delta tiles still load and the
+ * overlay says there is nothing to draw. Nothing here is an error, so there
+ * is no retry to offer: it could not succeed.
+ */
+export const OneSideNoStreams = meta.story({
+  args: {
+    a: baselineRun,
+    b: manualRun,
+    compare: compareDataManualSide,
+  },
+  play: async ({ canvas }) => {
+    // The summary tiles survive.
+    await expect(canvas.getByText("Distance")).toBeVisible();
+    await expect(canvas.getByText("Elevation")).toBeVisible();
+    // The overlay explains itself instead of drawing one lonely line.
+    await expect(
+      canvas.getByText(
+        "These activities have no overlapping streams to overlay.",
+      ),
+    ).toBeVisible();
+    expect(canvas.queryByRole("alert")).toBeNull();
+    expect(canvas.queryByRole("button", { name: "Try again" })).toBeNull();
   },
 });
 

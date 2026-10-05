@@ -53,6 +53,12 @@ export interface ActivityStreamData {
     step_length?: (number | null)[];
   };
   laps?: Lap[];
+  /**
+   * `true` when intervals.icu recorded no streams for the activity (a manual
+   * entry, a deleted recording): the server then sends `streams: { time: [] }`
+   * rather than an error, because a retry cannot succeed (#65).
+   */
+  noStreams?: boolean;
 }
 
 /** Running-dynamics metric keys (ground contact time, vertical oscillation,

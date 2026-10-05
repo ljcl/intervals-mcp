@@ -1,6 +1,7 @@
 import preview, { darkGlobals } from "@intervals-mcp/design-system/preview";
 import { MobileCardShell } from "@intervals-mcp/ui";
-import { expect, within } from "storybook/test";
+import { type App as McpApp } from "@modelcontextprotocol/ext-apps";
+import { expect, waitFor, within } from "storybook/test";
 import { mockRuns } from "./__fixtures__/runs";
 import { App } from "./App";
 import { buildCadenceSubtitle } from "./normalize";
@@ -59,6 +60,67 @@ export const KeyboardRunSelection = meta.story({
         name: "Remove Tempo Intervals",
       }),
     ).toBeNull();
+  },
+});
+
+/**
+ * #65, end to end through the keyed fetcher: the server answers a stream-less
+ * run with a `noStreams` payload, not an error. The overlay names that run
+ * and draws the other, and offers no retry.
+ */
+const streamlessApp = {
+  getHostCapabilities: () => undefined,
+  callServerTool: async ({
+    arguments: args,
+  }: {
+    arguments?: Record<string, unknown>;
+  }) => {
+    const id = String(args?.activity_id);
+    const payload =
+      id === "i10013"
+        ? {
+            activityId: id,
+            activityType: "Run",
+            name: "Intervals 5x1k",
+            streams: { time: [] },
+            laps: [],
+            noStreams: true,
+          }
+        : {
+            activityId: id,
+            activityType: "Run",
+            name: "Tempo Intervals",
+            streams: {
+              time: [0, 60, 120, 180, 240],
+              distance: [0, 220, 440, 660, 880],
+              cadence: [84, 86, 87, 86, 85],
+            },
+          };
+    return { content: [{ type: "text", text: JSON.stringify(payload) }] };
+  },
+} as unknown as McpApp;
+
+export const OverlayRunWithoutStreams = meta.story({
+  args: { app: streamlessApp, data: mockData },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const group = canvas.getByRole("group", { name: /compare runs/i });
+    await userEvent.click(
+      within(group).getByRole("button", { name: /Tempo Intervals/ }),
+    );
+    await userEvent.click(
+      within(group).getByRole("button", { name: /Intervals 5x1k/ }),
+    );
+    await userEvent.click(canvas.getByRole("button", { name: "Overlay" }));
+
+    await expect(
+      await canvas.findByText("No recorded streams for Intervals 5x1k."),
+    ).toBeVisible();
+    await waitFor(() =>
+      expect(
+        canvasElement.querySelectorAll("path.recharts-line-curve").length,
+      ).toBe(1),
+    );
+    expect(canvas.queryByRole("button", { name: "Try again" })).toBeNull();
   },
 });
 

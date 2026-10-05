@@ -3,9 +3,11 @@ import { MobileCardShell } from "@intervals-mcp/ui";
 import { expect, fn, waitFor } from "storybook/test";
 import {
   allFailedStreams,
+  allRunsWithoutStreams,
   duplicateNameStreams,
   gappyStreams,
   mockStreams,
+  oneRunWithoutStreams,
   partiallyFailedStreams,
   partiallyLoadedStreams,
   progressStreams,
@@ -177,6 +179,56 @@ export const AllRunsFailed = meta.story({
 
     await userEvent.click(canvas.getByRole("button", { name: "Try again" }));
     await expect(args.retryStream).toHaveBeenCalledTimes(2);
+  },
+});
+
+/**
+ * One selected run recorded no streams (#65). It is named in a note and left
+ * out of the lines, the other run stays drawn, and there is no retry: a retry
+ * cannot succeed, so the "Try again" an error would offer would be dead.
+ */
+export const RunWithoutStreams = meta.story({
+  args: {
+    selectedRunIds: bothRuns,
+    streams: oneRunWithoutStreams,
+    requestStream: noop,
+    retryStream: fn(),
+  },
+  play: async ({ canvas, canvasElement }) => {
+    await waitFor(() =>
+      expect(
+        canvasElement.querySelectorAll("path.recharts-line-curve").length,
+      ).toBe(1),
+    );
+    await expect(
+      canvas.getByText("No recorded streams for Intervals 5x1k."),
+    ).toBeVisible();
+    // Only the run with streams is in the legend.
+    expect(
+      canvas.queryByRole("button", { name: /Toggle Intervals 5x1k/ }),
+    ).toBeNull();
+    expect(canvas.queryByRole("button", { name: "Try again" })).toBeNull();
+    expect(canvas.queryByRole("alert")).toBeNull();
+  },
+});
+
+/** Every selected run is stream-less: an empty state, not bare axes. */
+export const NoSelectedRunHasStreams = meta.story({
+  args: {
+    selectedRunIds: bothRuns,
+    streams: allRunsWithoutStreams,
+    requestStream: noop,
+    retryStream: fn(),
+  },
+  play: async ({ canvas, canvasElement }) => {
+    await expect(
+      canvas.getByText(
+        "None of the selected runs has recorded streams to overlay.",
+      ),
+    ).toBeVisible();
+    expect(canvasElement.querySelector(".recharts-surface")).toBeNull();
+    expect(canvas.queryByRole("button", { name: "Try again" })).toBeNull();
+    expect(canvas.queryByRole("alert")).toBeNull();
   },
 });
 

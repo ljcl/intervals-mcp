@@ -107,6 +107,7 @@ export function App({ app, data, mode = "desktop" }: AppProps) {
         loading: entry.loading,
         error: entry.error,
         progress: entry.progress,
+        noStreams: entry.data?.noStreams === true,
       });
     }
     return map;

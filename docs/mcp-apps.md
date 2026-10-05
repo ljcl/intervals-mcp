@@ -223,6 +223,14 @@ altitude overlays; cadence and grade where recorded).
   recorded stream) draws as a break in the line rather than a fabricated
   zero, spike, or interpolated value; see the `gappyRun` fixture and stories
   for the intended rendering.
+- A stream-less activity arrives as `noStreams: true` with an empty `time`
+  stream and shows the EmptyState; there is no retry, because a retry cannot
+  succeed (#65). `set-brush-window` answers an empty chart with the same
+  no-streams error, reset included. A time window (`fromSeconds` / `toSeconds`)
+  zooms a swim through its `time` values, since Brush is index-based and the
+  swim's axis is distance; mixing km and seconds in one call is refused. The
+  reply describes the window on the axis it was asked in, the context summary
+  on the brush's own axis.
 
 ### Cadence Trends
 
@@ -243,9 +251,11 @@ at the cap so the limit is legible.
 Trend uses a time axis (`dateTs`, UTC day), so gaps in running show as gaps. Zone
 whiskers run from min to max (`buildZoneRows`). Overlay colours follow selection
 order (`assignOverlayColors`); runs sharing a name are labelled with their date
-(`overlayRunLabel`). The pace Scatter reads the chart's own data and Recharts skips
-a null pace; a Scatter-level `data` filter makes the shared tooltip show the wrong
-run for some dots.
+(`overlayRunLabel`). A selected run that loaded with `noStreams: true` (#65) is
+left out of the lines and named in a muted note, with no retry; if every
+selected run is stream-less the overlay shows an EmptyState. The pace Scatter
+reads the chart's own data and Recharts skips a null pace; a Scatter-level
+`data` filter makes the shared tooltip show the wrong run for some dots.
 
 ### Route Map
 
@@ -388,6 +398,8 @@ as pure `buildComparison` in `apps/server/src/tools/compareActivities.ts`.
   axis toggle, legend toggles per activity line (blue/orange).
 - Delta summary header degrades away if that fetch fails while the overlay
   still renders.
+- A stream-less side (`noStreams: true`, #65) is data, not an error: it keeps
+  the delta tiles and shows the overlay EmptyState, with no retry.
 
 ### Activity Zones
 

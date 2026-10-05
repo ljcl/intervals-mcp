@@ -236,3 +236,53 @@ export const hrOnlyPair: [ActivityStreamData, ActivityStreamData] = [
     },
   },
 ];
+
+/**
+ * A manual entry: intervals.icu knows its name, sport and totals but recorded
+ * no streams, so the server sends the degraded payload (`noStreams: true`,
+ * empty `time`) rather than an error (#65).
+ */
+export const manualRun: ActivityStreamData = {
+  activityId: "401",
+  activityType: "Run",
+  name: "Treadmill (manual entry)",
+  streams: { time: [] },
+  noStreams: true,
+};
+
+/**
+ * The summary the server builds for `baselineRun` against `manualRun`: totals
+ * only, because a manual entry has no heart rate, pace or cadence to compare.
+ * Distance, time and elevation tiles remain.
+ */
+export const compareDataManualSide: CompareData = {
+  ...compareData,
+  activity_2: {
+    ...compareData.activity_2,
+    id: "401",
+    name: "Treadmill (manual entry)",
+    distance_km: 8,
+    moving_time: "45:00",
+    moving_time_s: 2700,
+    pace_min_per_km: null,
+    gap_min_per_km: null,
+    average_hr: null,
+    max_hr: null,
+    cadence_spm: null,
+    elevation_gain_m: 0,
+    load: null,
+    decoupling_pct: null,
+    efficiency_factor: null,
+    running_dynamics: null,
+  },
+  differences: {
+    distance_km: -1.98,
+    pace_delta_sec_per_km: null,
+    pace_delta_min_per_km: null,
+    pace_delta_interpretation: null,
+    avg_hr: null,
+    cadence_spm: null,
+    elevation_gain_m: -84,
+  },
+  efficiency: null,
+};

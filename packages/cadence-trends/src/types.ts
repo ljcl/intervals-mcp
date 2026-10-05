@@ -40,6 +40,11 @@ export interface OverlayStreamData {
     distance?: number[];
     cadence?: (number | null)[];
   };
+  /**
+   * `true` when the run recorded no streams (`streams: { time: [] }`): the
+   * server sends that as data, not an error (#65).
+   */
+  noStreams?: boolean;
 }
 
 /** A single point in the overlay chart */
@@ -62,6 +67,12 @@ export interface RunStreamState {
   error: string | null;
   /** Latest progress message from the server while loading, else null. */
   progress: string | null;
+  /**
+   * The run loaded but recorded no streams. It is left out of the overlay
+   * lines and named in a note instead: a retry cannot succeed, so none is
+   * offered (#65).
+   */
+  noStreams?: boolean;
 }
 
 /** Pace zone definition */

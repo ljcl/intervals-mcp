@@ -165,3 +165,29 @@ export const allFailedStreams = new Map<string, RunStreamState>([
   ],
   ["i10013", partiallyFailedStreams.get("i10013")!],
 ]);
+
+/**
+ * A run that loaded but has no streams (a manual entry): the server's
+ * `noStreams` payload, so `points` is empty rather than null and `error` is
+ * unset. It must be named, not drawn, and offer no retry.
+ */
+const noStreamsRun = (run: RunSummary): RunStreamState => ({
+  run,
+  points: [],
+  loading: false,
+  error: null,
+  progress: null,
+  noStreams: true,
+});
+
+/** One run drawn, the other recorded no streams. */
+export const oneRunWithoutStreams = new Map<string, RunStreamState>([
+  ["i10003", mockStreams.get("i10003")!],
+  ["i10013", noStreamsRun(run10013)],
+]);
+
+/** Every selected run recorded no streams, so there is nothing to draw. */
+export const allRunsWithoutStreams = new Map<string, RunStreamState>([
+  ["i10003", noStreamsRun(run10003)],
+  ["i10013", noStreamsRun(run10013)],
+]);
