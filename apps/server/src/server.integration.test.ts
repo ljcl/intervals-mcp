@@ -20,7 +20,7 @@ import {
   getAthletePaceCurves,
   searchActivities,
 } from "./intervalsClient";
-import { INTERVALS_ID_HINT } from "./tools/_ids";
+import { INTERVALS_ID_HINT, INTERVALS_ID_HINT_LATEST } from "./tools/_ids";
 
 vi.mock("./intervalsClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./intervalsClient")>();
@@ -318,11 +318,17 @@ describe("tools/list", () => {
     for (const { tool, field, prop } of ids) {
       if (NON_NUMERIC_ID_FIELDS.has(field)) continue;
       const description = prop.description ?? "";
+      // update-activity alone refuses "latest" (a write must name its target).
+      const noLatest = tool === "update-activity" && field === "id";
       expect(
-        description.endsWith(INTERVALS_ID_HINT),
+        description.endsWith(
+          noLatest ? INTERVALS_ID_HINT : INTERVALS_ID_HINT_LATEST,
+        ),
         `${tool}.${field} must use intervalsActivityIdInput`,
       ).toBe(true);
-      expect(prop.pattern, `${tool}.${field} pattern`).toBe("^i?\\d+$");
+      expect(prop.pattern, `${tool}.${field} pattern`).toBe(
+        noLatest ? "^i?\\d+$" : "^(?:i?\\d+|latest)$",
+      );
     }
   });
 });

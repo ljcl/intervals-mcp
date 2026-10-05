@@ -173,7 +173,9 @@ describe("dispatchToolCall input validation", () => {
     expect(idSchemas.length).toBeGreaterThan(6);
     for (const { field, schema } of idSchemas) {
       expect(`${field}: ${schema.type}`).toBe(`${field}: string`);
-      expect(`${field}: ${schema.pattern}`).toBe(`${field}: ^i?\\d+$`);
+      const expected =
+        field === "update-activity.id" ? "^i?\\d+$" : "^(?:i?\\d+|latest)$";
+      expect(`${field}: ${schema.pattern}`).toBe(`${field}: ${expected}`);
     }
   });
 

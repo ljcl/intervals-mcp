@@ -50,7 +50,9 @@ Notes:
 
 const inputSchema = z
   .object({
-    id: intervalsActivityIdInput("The intervals.icu activity id to update."),
+    id: intervalsActivityIdInput("The intervals.icu activity id to update.", {
+      allowLatest: false,
+    }),
     name: z
       .string()
       .refine((value) => value.trim().length > 0, {
