@@ -448,12 +448,13 @@ digit string. `mcpEndpoint.ts` parses the inbound `/mcp` body with
 strings rather than parsing them back.
 
 Every activity-id input except `update-activity`'s accepts the special value
-`"latest"`, which resolves to the newest Run/TrailRun/VirtualRun in the last 366 days.
-Resolution happens once per call by `resolveLatestIds` (`latestActivity.ts`) in
-`dispatchToolCall` after validation, from a cached `listActivities` read. If no
-run is found, the tool returns an error naming the fix. `update-activity` cannot
-use `"latest"` because a write must name its specific target; it rejects with a
-validation error if sent `"latest"`.
+`"latest"`, which means the newest Run, TrailRun, or VirtualRun in the last
+366 days. Resolution happens once per call by `resolveLatestIds` (`latestActivity.ts`)
+in `dispatchToolCall` after validation, walking 31-day windows newest first and
+stopping at the first run, from cached `listActivities` reads. If no run is
+found, the tool returns an `isError` result naming the fix. `update-activity`
+cannot use `"latest"` because a write must name its specific target; it validates
+against digits only.
 
 ## Structured output
 

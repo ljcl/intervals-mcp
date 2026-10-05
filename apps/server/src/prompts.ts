@@ -143,7 +143,7 @@ const PROMPTS: PromptDefinition[] = [
         "1. Call get-running-summary for the activity (pace, HR zones, cadence, laps).",
         "2. Draft a 2-3 sentence coaching note: what the session shows, one thing to keep, one thing to adjust.",
         "3. Show me the draft and ask before writing anything.",
-        '4. On my confirmation, call update-activity with descriptionMode: "append" to add it below the existing description, not overwrite it.',
+        '4. On my confirmation, call update-activity with descriptionMode: "append" to add it below the existing description, not overwrite it, using the activity id from get-running-summary (update-activity does not accept "latest").',
       ].join("\n"),
   },
   {

@@ -78,6 +78,7 @@ describe("annotate-last-run", () => {
 
     expect(t).toContain('Use id "latest" (my most recent run).');
     expect(t).not.toContain("list-activities");
+    expect(t).toContain('update-activity does not accept "latest"');
   });
 
   it("does not fetch the laps twice", () => {
