@@ -52,6 +52,8 @@ jobs:
       image: ${{ steps.filter.outputs.image }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - id: filter
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
@@ -93,6 +95,7 @@ jobs:
           # Empty on pull_request/push (checks out the triggering ref); the
           # backfill dispatch builds the requested release tag's sources.
           ref: ${{ inputs.tag }}
+          persist-credentials: false
 
       - name: Prepare platform pair
         id: prep
@@ -163,17 +166,21 @@ jobs:
           # `imagetools create`.
           # mode=max records the full build definition; safe here because the
           # build takes no build-args and no secrets.
-          provenance: mode=max
-          sbom: true
+          # PR builds push nothing, so they skip both: the attestations would
+          # be thrown away, and the SBOM scanner image is an anonymous Docker
+          # Hub pull (see the rate-limit note in the merge job).
+          provenance: ${{ github.event_name == 'pull_request' && 'false' || 'mode=max' }}
+          sbom: ${{ github.event_name != 'pull_request' }}
           cache-from: type=gha,scope=${{ steps.prep.outputs.pair }}
           cache-to: type=gha,mode=max,scope=${{ steps.prep.outputs.pair }}
 
       - name: Export digest
         if: github.event_name != 'pull_request'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
         run: |
-          mkdir -p "${{ runner.temp }}/digests"
-          digest="${{ steps.build.outputs.digest }}"
-          touch "${{ runner.temp }}/digests/${digest#sha256:}"
+          mkdir -p "$RUNNER_TEMP/digests"
+          touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
 
       - name: Upload digest
         if: github.event_name != 'pull_request'
@@ -254,13 +261,15 @@ jobs:
           shopt -s failglob  # fail loudly if no digest files were downloaded
           docker buildx imagetools create \
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf '${{ env.REGISTRY_IMAGE }}@sha256:%s ' *)
+            $(printf "$REGISTRY_IMAGE@sha256:%s " *)
 
       - name: Inspect image
         id: inspect
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
         run: |
           set -euo pipefail
-          ref="$REGISTRY_IMAGE:${{ steps.meta.outputs.version }}"
+          ref="$REGISTRY_IMAGE:$VERSION"
           docker buildx imagetools inspect "$ref"
           # The index digest, which is what the attestation binds to. Taken from
           # the descriptor rather than a tag lookup: `docker manifest inspect -v`
