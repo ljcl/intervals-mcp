@@ -167,6 +167,24 @@ export function dayTimestamp(date: string): number {
   return Date.UTC(y!, m! - 1, d!);
 }
 
+/**
+ * Runs grouped by calendar day (`dayTimestamp`), each day's in the order
+ * given. The trend's day axis draws a day's runs at one x, so its tooltip
+ * reads the whole day from here.
+ */
+export function runsByDay<T extends Pick<RunSummary, "date">>(
+  runs: readonly T[],
+): Map<number, T[]> {
+  const byDay = new Map<number, T[]>();
+  for (const run of runs) {
+    const day = dayTimestamp(run.date);
+    const list = byDay.get(day);
+    if (list) list.push(run);
+    else byDay.set(day, [run]);
+  }
+  return byDay;
+}
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**

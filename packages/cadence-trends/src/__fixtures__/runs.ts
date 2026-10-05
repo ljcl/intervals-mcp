@@ -171,3 +171,22 @@ export const runsWithGap: RunSummary[] = mockRuns.filter(
 export const runsWithNullPace: RunSummary[] = mockRuns.map((r) =>
   r.id === "i10002" || r.id === "i10005" ? { ...r, averagePace: null } : r,
 );
+
+/**
+ * `mockRuns` plus a shakeout on 11 Jan, the same day as Long Run: the trend's
+ * day axis draws both at one x, so its tooltip must name both whichever dot
+ * is hovered.
+ */
+export const runsWithSameDay: RunSummary[] = [
+  ...mockRuns,
+  {
+    id: "i10020",
+    name: "Shakeout",
+    date: "2026-01-11",
+    distance: 3.0,
+    duration: 1080,
+    averageCadence: 174,
+    averagePace: 6.0,
+    type: "Run",
+  },
+];

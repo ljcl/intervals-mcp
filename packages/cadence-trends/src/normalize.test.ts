@@ -12,6 +12,7 @@ import {
   overlayRunStatus,
   resampleOverlayRuns,
   rollingAverage,
+  runsByDay,
   toOverlayPoints,
   trendTimeAxis,
 } from "./normalize";
@@ -492,5 +493,19 @@ describe("overlayRunStatus", () => {
     expect(overlayRunStatus(state({ points: [], noStreams: true }), true)).toBe(
       "noStreams",
     );
+  });
+});
+
+describe("runsByDay", () => {
+  it("groups runs on one calendar day, in the order given", () => {
+    const morning = run({ id: "a", date: "2026-01-11" });
+    const evening = run({ id: "b", date: "2026-01-11" });
+    const next = run({ id: "c", date: "2026-01-12" });
+
+    const byDay = runsByDay([morning, next, evening]);
+
+    expect(byDay.get(dayTimestamp("2026-01-11"))).toEqual([morning, evening]);
+    expect(byDay.get(dayTimestamp("2026-01-12"))).toEqual([next]);
+    expect(byDay.size).toBe(2);
   });
 });

@@ -279,7 +279,10 @@ reply goes out before a new run's fetch starts, so it says such a run is still
 loading. `runIds` shows any run in it the legend had hidden; leaving the
 overlay shows every run again, as when the overlay owned that state.
 
-Trend uses a time axis (`dateTs`, UTC day), so gaps in running show as gaps. Zone
+Trend uses a time axis (`dateTs`, UTC day), so gaps in running show as gaps.
+Runs on one day share an x, and Recharts' `ComposedChart` has only an axis
+tooltip, which picks one row for all of them; the trend tooltip therefore
+lists every run that day (`runsByDay`), name, cadence and pace each. Zone
 whiskers run from min to max (`buildZoneRows`). Overlay colours follow selection
 order (`assignOverlayColors`); runs sharing a name are labelled with their date
 (`overlayRunLabel`). A selected run that loaded with `noStreams: true` (#65) is

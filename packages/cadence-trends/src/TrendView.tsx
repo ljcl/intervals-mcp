@@ -1,7 +1,7 @@
 import { formatPace, formatShortDate } from "@intervals-mcp/data";
 import { GRID_DASHARRAY, getChartTokens } from "@intervals-mcp/design-system";
 import { EmptyState } from "@intervals-mcp/ui";
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import {
   CartesianGrid,
   Cell,
@@ -19,9 +19,10 @@ import {
   dayTimestamp,
   dotSize,
   rollingAverage,
+  runsByDay,
   trendTimeAxis,
 } from "./normalize";
-import { SharedTooltip } from "./SharedTooltip";
+import { SharedTooltip, type TooltipRun } from "./SharedTooltip";
 import { type RunSummary } from "./types";
 
 interface TrendViewProps {
@@ -73,6 +74,15 @@ export function TrendView({
         size: dotSize(a.distance, maxDistance) * tokens.dotScale,
       })),
     [sorted, trend, maxDistance, tokens.dotScale],
+  );
+
+  // Runs on one day share an x, and the axis tooltip picks one row for all of
+  // them, so the tooltip lists the whole day (#66).
+  const sameDay = useMemo(() => runsByDay(chartData), [chartData]);
+  const runsOnDay = useCallback(
+    (run: TooltipRun): TooltipRun[] =>
+      (run.date && sameDay.get(dayTimestamp(run.date))) || [run],
+    [sameDay],
   );
 
   const timeAxis = useMemo(
@@ -174,7 +184,7 @@ export function TrendView({
                   }
             }
           />
-          <RechartsTooltip content={<SharedTooltip />} />
+          <RechartsTooltip content={<SharedTooltip runsAt={runsOnDay} />} />
           <Line
             yAxisId="cadence"
             type="monotone"

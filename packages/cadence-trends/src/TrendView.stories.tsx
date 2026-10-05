@@ -2,7 +2,12 @@ import { formatPace, formatShortDate } from "@intervals-mcp/data";
 import preview, { darkGlobals } from "@intervals-mcp/design-system/preview";
 import { MobileCardShell } from "@intervals-mcp/ui";
 import { expect, fn, waitFor } from "storybook/test";
-import { mockRuns, runsWithGap, runsWithNullPace } from "./__fixtures__/runs";
+import {
+  mockRuns,
+  runsWithGap,
+  runsWithNullPace,
+  runsWithSameDay,
+} from "./__fixtures__/runs";
 import { TrendView } from "./TrendView";
 import { type RunSummary } from "./types";
 
@@ -214,6 +219,58 @@ export const WithNullPace = meta.story({
     // a run with no pace gets a tooltip without a pace line.
     await expectHoverNamesRuns(canvasElement, userEvent, 0, runsWithNullPace);
     await expectHoverNamesRuns(canvasElement, userEvent, 1, withPace);
+  },
+});
+
+/**
+ * Two runs on one day (Long Run and a Shakeout on 11 Jan) sit at one x on the
+ * day axis, and Recharts' axis tooltip picks one data row for both dots. The
+ * tooltip lists every run that day, so hovering either dot names both, each
+ * with its cadence and pace. Every other dot still names its own run.
+ */
+export const SameDayRuns = meta.story({
+  args: {
+    activities: runsWithSameDay,
+    onRunClick: noop,
+    selectedRunIds: new Set<string>(),
+  },
+  play: async ({ canvasElement, userEvent }) => {
+    const inPlotOrder = [...runsWithSameDay]
+      .filter((a) => a.averageCadence > 0)
+      .sort((a, b) => a.date.localeCompare(b.date));
+    await waitFor(() =>
+      expect(seriesMarks(canvasElement, 0).length).toBe(inPlotOrder.length),
+    );
+
+    const sameDay = inPlotOrder.filter((r) => r.date === "2026-01-11");
+    expect(sameDay.map((r) => r.name)).toEqual(["Long Run", "Shakeout"]);
+    for (const series of [0, 1] as const) {
+      for (const hovered of sameDay) {
+        await hoverMark(
+          userEvent,
+          seriesMarks(canvasElement, series)[inPlotOrder.indexOf(hovered)]!,
+        );
+        await waitFor(() =>
+          expect(tooltipOf(canvasElement)).toHaveTextContent("Shakeout"),
+        );
+        for (const run of sameDay) {
+          expect(tooltipOf(canvasElement)).toHaveTextContent(run.name);
+          expect(tooltipOf(canvasElement)).toHaveTextContent(
+            `${run.averageCadence} spm`,
+          );
+          expect(tooltipOf(canvasElement)).toHaveTextContent(
+            formatPace(run.averagePace!),
+          );
+        }
+        // Move off so the next hover starts from a closed tooltip.
+        await hoverMark(userEvent, seriesMarks(canvasElement, 0)[0]!);
+        await waitFor(() =>
+          expect(tooltipOf(canvasElement)).not.toHaveTextContent("Shakeout"),
+        );
+      }
+    }
+
+    await expectHoverNamesRuns(canvasElement, userEvent, 0, inPlotOrder);
   },
 });
 
