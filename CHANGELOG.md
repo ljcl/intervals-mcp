@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.3.0](https://github.com/ljcl/intervals-mcp/compare/v2.2.0...v2.3.0) (2026-10-05)
+
+
+### Features
+
+* accept id "latest" for the most recent run ([#139](https://github.com/ljcl/intervals-mcp/issues/139)) ([103437e](https://github.com/ljcl/intervals-mcp/commit/103437ee0f37aeb7b75f6643c502e3f532574b5c))
+* fix the two prompts, add race-readiness, run-debrief and injury-check, and complete prompt arguments ([#137](https://github.com/ljcl/intervals-mcp/issues/137)) ([8d15dcf](https://github.com/ljcl/intervals-mcp/commit/8d15dcf126571c466831217ddf963ff849ebc09b))
+* list-activities finds every run type, searches all history, and reports tags and race ([#138](https://github.com/ljcl/intervals-mcp/issues/138)) ([f70513b](https://github.com/ljcl/intervals-mcp/commit/f70513b67e812315b45d04d3758bc1a1133d9b19))
+* MCP Apps show the truth and can be driven by the model (epic [#115](https://github.com/ljcl/intervals-mcp/issues/115)) ([#142](https://github.com/ljcl/intervals-mcp/issues/142)) ([f0c42dc](https://github.com/ljcl/intervals-mcp/commit/f0c42dc460a96ffedbfff3bd0e8060ef8a026a55))
+* one naming scheme for tool inputs, and pin id "latest" in the apps ([#150](https://github.com/ljcl/intervals-mcp/issues/150)) ([8cd17d6](https://github.com/ljcl/intervals-mcp/commit/8cd17d662a28e3bf5a922f4fb905aa41670747fd))
+
+
+### Bug Fixes
+
+* accept common spellings of shared inputs, and name the unknown key when a call fails ([#136](https://github.com/ljcl/intervals-mcp/issues/136)) ([83f2627](https://github.com/ljcl/intervals-mcp/commit/83f2627cc583a1c185b27153a47e459119ff8f0f))
+* hold every tool response to a size budget, and point truncated text at the call that returns the rest ([#134](https://github.com/ljcl/intervals-mcp/issues/134)) ([27f19a1](https://github.com/ljcl/intervals-mcp/commit/27f19a1c4b3306b9c62e5c244238e54b29fda65c))
+
 ## [2.2.0](https://github.com/ljcl/intervals-mcp/compare/v2.1.1...v2.2.0) (2026-10-05)
 
 
