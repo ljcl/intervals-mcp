@@ -149,7 +149,6 @@ export function toOverlayPoints(data: OverlayStreamData): OverlayPoint[] {
   const timeArr = streams.time ?? [];
   const distArr = streams.distance ?? [];
   const cadenceArr = streams.cadence ?? [];
-  const velocityArr = streams.velocity_smooth ?? [];
   const len = timeArr.length;
   const running = isRunning(data.activityType);
   const points: OverlayPoint[] = [];
@@ -161,12 +160,6 @@ export function toOverlayPoints(data: OverlayStreamData): OverlayPoint[] {
     };
     if (cadenceArr[i] != null) {
       point.cadence = running ? cadenceArr[i]! * 2 : cadenceArr[i]!;
-    }
-    if (velocityArr[i] != null) {
-      const mps = velocityArr[i]!;
-      // null speed is a gap, not pace 15: only a non-null zero speed (stopped)
-      // clamps to the slow end of the scale.
-      point.pace = mps > 0 ? Math.min(1000 / mps / 60, 15) : 15;
     }
     points.push(point);
   }
@@ -279,7 +272,7 @@ export function smoothOverlayPoints(
   points: OverlayPoint[],
   windowSize = 30,
 ): OverlayPoint[] {
-  return smooth(points, ["cadence", "pace"], windowSize);
+  return smooth(points, ["cadence"], windowSize);
 }
 
 /** Dot size based on distance: min 4px, max 12px, scaled linearly */

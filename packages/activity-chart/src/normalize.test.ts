@@ -16,40 +16,80 @@ const streamData = (
 });
 
 describe("toChartData", () => {
-  it("converts velocity to min/km pace for runs, capped at 15", () => {
+  it("converts velocity to min/km pace for runs, with no cap", () => {
     const points = toChartData(
       streamData({
         activityType: "Run",
-        streams: { time: [0, 1, 2], velocity_smooth: [3.33, 0.5, 0] },
+        streams: { time: [0, 1, 2, 3], velocity_smooth: [4, 3.33, 0.2, 0] },
       }),
     );
 
-    expect(points[0]?.pace).toBeCloseTo(1000 / 3.33 / 60, 3); // ~5:00/km
-    expect(points[1]?.pace).toBe(15); // crawling → capped
-    expect(points[2]?.pace).toBe(15); // stopped → capped, not Infinity
+    expect(points[0]?.pace).toBeCloseTo(1000 / 4 / 60, 4); // 4'10"/km
+    expect(points[1]?.pace).toBeCloseTo(1000 / 3.33 / 60, 3);
+    // Under the 0.3 m/s moving floor, and stopped, are gaps, never capped.
+    expect(points[2]?.pace).toBeNull();
+    expect(points[3]?.pace).toBeNull();
   });
 
-  it("converts velocity to min/100m for swims, capped at 5", () => {
+  it("plots a walk's real pace instead of capping it at 15 min/km", () => {
+    const points = toChartData(
+      streamData({
+        activityType: "Walk",
+        streams: { time: [0], velocity_smooth: [1000 / 1200] },
+      }),
+    );
+
+    expect(points[0]?.pace).toBeCloseTo(20, 4);
+  });
+
+  it("converts velocity to min/100m for swims, with no cap", () => {
     const points = toChartData(
       streamData({
         activityType: "Swim",
-        streams: { time: [0, 1], velocity_smooth: [1.25, 0] },
+        streams: { time: [0, 1, 2], velocity_smooth: [1, 1.25, 0] },
       }),
     );
 
-    expect(points[0]?.pace).toBeCloseTo(100 / 1.25 / 60, 3); // 1:20/100m
-    expect(points[1]?.pace).toBe(5);
+    expect(points[0]?.pace).toBeCloseTo(100 / 1 / 60, 4); // 1'40"/100m
+    expect(points[1]?.pace).toBeCloseTo(100 / 1.25 / 60, 4); // 1'20"/100m
+    expect(points[2]?.pace).toBeNull();
   });
 
-  it("converts velocity to km/h for rides", () => {
+  it("treats open-water swims as swims, pace per 100 m", () => {
+    const points = toChartData(
+      streamData({
+        activityType: "OpenWaterSwim",
+        streams: { time: [0, 1], velocity_smooth: [1, 0] },
+      }),
+    );
+
+    expect(points[0]?.pace).toBeCloseTo(100 / 1 / 60, 4);
+    expect(points[1]?.pace).toBeNull();
+  });
+
+  it("converts velocity to km/h for rides, keeping a coasting 0 as 0", () => {
     const points = toChartData(
       streamData({
         activityType: "Ride",
-        streams: { time: [0], velocity_smooth: [10] },
+        streams: { time: [0, 1, 2], velocity_smooth: [10, 7.9, 0] },
       }),
     );
 
     expect(points[0]?.pace).toBeCloseTo(36);
+    expect(points[1]?.pace).toBeCloseTo(28.44, 2);
+    expect(points[2]?.pace).toBe(0);
+  });
+
+  it("keeps a null velocity sample as a gap for every sport", () => {
+    for (const activityType of ["Run", "Swim", "Ride"]) {
+      const points = toChartData(
+        streamData({
+          activityType,
+          streams: { time: [0, 1], velocity_smooth: [3, null] },
+        }),
+      );
+      expect(points[1]?.pace, activityType).toBeNull();
+    }
   });
 
   it("doubles running cadence (strides → steps) but not ride cadence", () => {
@@ -102,19 +142,7 @@ describe("toChartData", () => {
 
     expect(points).toHaveLength(tempoRun.streams.time!.length);
     expect(points[0]?.timeFormatted).toBe("00:00");
-    expect(points.every((p) => (p.pace ?? 0) <= 15)).toBe(true);
-  });
-
-  it("renders a null velocity sample as a gap, not a capped pace spike", () => {
-    const points = toChartData(
-      streamData({
-        activityType: "Run",
-        streams: { time: [0, 1, 2], velocity_smooth: [3.33, null, 3.33] },
-      }),
-    );
-
-    expect(points[1]?.pace).toBeNull();
-    expect(points[1]?.pace).not.toBe(15);
+    expect(points.some((p) => p.pace != null && p.pace > 0)).toBe(true);
   });
 
   it("renders a null cadence sample as null, not 0", () => {

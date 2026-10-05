@@ -1,3 +1,4 @@
+import { speedDisplay } from "@intervals-mcp/data";
 import { describe, expect, it } from "vitest";
 import { buildChartA11yDescription, buildChartA11yTitle } from "./a11y";
 import { type ActivityMeta, type ChartDataPoint } from "./types";
@@ -7,6 +8,7 @@ const runMeta: ActivityMeta = {
   activityType: "Run",
   isRunning: true,
   isSwimming: false,
+  speed: speedDisplay("Run"),
 };
 
 const rideMeta: ActivityMeta = {
@@ -14,6 +16,7 @@ const rideMeta: ActivityMeta = {
   activityType: "Ride",
   isRunning: false,
   isSwimming: false,
+  speed: speedDisplay("Ride"),
 };
 
 const swimMeta: ActivityMeta = {
@@ -21,6 +24,7 @@ const swimMeta: ActivityMeta = {
   activityType: "Swim",
   isRunning: false,
   isSwimming: true,
+  speed: speedDisplay("Swim"),
 };
 
 const runData: ChartDataPoint[] = [
@@ -125,6 +129,19 @@ describe("buildChartA11yDescription", () => {
     // Otherwise the same activity reads as having different data on mobile.
     expect(desc).toContain("not shown at this screen size");
     expect(desc).toContain("grade");
+  });
+
+  it("names the omitted pace metric per sport", () => {
+    const named = (meta: ActivityMeta) =>
+      buildChartA11yDescription({
+        meta,
+        data: runData,
+        visibleMetrics: [],
+        omittedMetrics: ["pace"],
+      });
+    expect(named(runMeta)).toContain("pace was recorded but is not shown");
+    expect(named(swimMeta)).toContain("pace was recorded but is not shown");
+    expect(named(rideMeta)).toContain("speed was recorded but is not shown");
   });
 
   it("says nothing about omissions when there are none", () => {

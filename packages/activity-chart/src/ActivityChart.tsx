@@ -1,4 +1,8 @@
-import { formatDistance, formatPace, formatTime } from "@intervals-mcp/data";
+import {
+  formatDistance,
+  formatTime,
+  percentileRange,
+} from "@intervals-mcp/data";
 import { GRID_DASHARRAY, getChartTokens } from "@intervals-mcp/design-system";
 import {
   CardHeader,
@@ -232,7 +236,12 @@ function PresetSelector({
 
 interface ChartTooltipProps {
   active?: boolean;
-  payload?: Array<{ name: string; value: number | null; color: string }>;
+  payload?: Array<{
+    name: string;
+    dataKey: string;
+    value: number | null;
+    color: string;
+  }>;
   label?: number;
   meta: ActivityMeta;
   xIsDistance?: boolean;
@@ -248,28 +257,26 @@ export function ChartTooltip({
   if (!active || !payload?.length) return null;
   // Keep zeros: 0 W (coasting), 0% grade, and cadence 0 are real readings.
   const filtered = payload.filter(
-    (e): e is { name: string; value: number; color: string } => e.value != null,
+    (e): e is { name: string; dataKey: string; value: number; color: string } =>
+      e.value != null,
   );
   if (!filtered.length) return null;
-
-  const paceUnit = meta.isRunning
-    ? "min/km"
-    : meta.isSwimming
-      ? "/100m"
-      : "km/h";
 
   const unitMap: Record<string, string> = {
     Altitude: "m",
     Cadence: meta.isRunning ? "spm" : "rpm",
     Grade: "%",
     "Heart Rate": "bpm",
-    Pace: paceUnit,
     Power: "W",
     "Ground Contact Time": "ms",
     "Vertical Oscillation": "mm",
     "Vertical Ratio": "%",
     "Step Length": "mm",
   };
+  // The pace entry is named "Pace" or "Speed" by sport, so it is found by
+  // its data key, not its name.
+  const unitFor = (entry: { name: string; dataKey: string }) =>
+    entry.dataKey === "pace" ? meta.speed.unit : unitMap[entry.name];
 
   const timestamp = xIsDistance
     ? formatDistance(label ?? 0)
@@ -283,11 +290,11 @@ export function ChartTooltip({
           color={entry.color}
           label={entry.name}
           value={
-            entry.name === "Pace" && (meta.isRunning || meta.isSwimming)
-              ? formatPace(entry.value)
+            entry.dataKey === "pace"
+              ? meta.speed.format(entry.value)
               : entry.value.toFixed(1)
           }
-          unit={unitMap[entry.name]}
+          unit={unitFor(entry)}
         />
       ))}
     </UiTooltip>
@@ -348,6 +355,14 @@ export function ActivityChart({
     }
     return s;
   }, [data]);
+
+  // Pace axis domain: the 2nd to 98th percentile, so a slow walking stretch or
+  // a sprint does not squash the rest of the run flat. Outliers clip at the
+  // plot edge (`allowDataOverflow`) rather than stretching the axis.
+  const paceDomain = useMemo(
+    () => percentileRange(data.map((p) => p.pace)),
+    [data],
+  );
 
   const presets = useMemo(
     () => getAvailablePresets(meta, availableMetrics),
@@ -457,6 +472,7 @@ export function ActivityChart({
         availableMetrics: [...availableMetrics],
         hidden,
         smooth,
+        paceLabel: meta.speed.label.toLowerCase(),
         zoomWindow: describeZoomWindow(
           data,
           meta.isSwimming === true,
@@ -543,7 +559,7 @@ export function ActivityChart({
     legendItems.push({
       key: "pace",
       color: COLORS.pace,
-      label: meta.isRunning ? "Pace" : "Speed",
+      label: meta.speed.label,
     });
   if (availableMetrics.has("altitude"))
     legendItems.push({
@@ -711,8 +727,9 @@ export function ActivityChart({
           <YAxis
             yAxisId="pace"
             hide
-            domain={["auto", "auto"]}
-            reversed={meta.isRunning || meta.isSwimming}
+            domain={paceDomain ?? ["auto", "auto"]}
+            allowDataOverflow
+            reversed={meta.speed.reversed}
           />
           {/* Hidden Y-axes for running dynamics: ground contact time (ms),
               vertical oscillation (mm), vertical ratio (%), and step length
@@ -813,7 +830,7 @@ export function ActivityChart({
               yAxisId="pace"
               type="monotone"
               dataKey="pace"
-              name="Pace"
+              name={meta.speed.label}
               className={SERIES_CLASS.pace}
               stroke={COLORS.pace}
               dot={false}
@@ -946,6 +963,7 @@ export function ActivityChart({
     hidden,
     a11yDescription,
     zoomRange,
+    paceDomain,
   ]);
 
   // Manual entries, treadmill uploads, and activities with device data

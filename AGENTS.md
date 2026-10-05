@@ -76,8 +76,9 @@ breaking them has shipped bugs — do not work around them locally.
   `aerobicAnalysis.ts` (shared by `get-aerobic-analysis` and
   `compare-activities`). Training-load weeks, warnings and trend:
   `trainingLoadWindow`/`aggregateWeeks`/`selectRunWeeks` in `trainingLoad.ts`
-  (shared by `get-training-load` and its app feed). Text tool and app reading
-  different copies is the failure mode these prevent.
+  (shared by `get-training-load` and its app feed). Speed to pace/speed, its
+  label and unit in the MCP Apps: `speedDisplay` in `packages/data/src/speed.ts`.
+  Text tool and app reading different copies is the failure mode these prevent.
 - **Telemetry:** `dispatchToolCall` emits one JSON line per call; timer starts
   before token resolution (not-connected calls count); a returned `isError`
   counts as an error; `recordToolCall` can never fail the call it describes.

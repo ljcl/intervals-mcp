@@ -16,12 +16,10 @@ function generateOverlayPoints(
     const frac = i / (count - 1);
     // Add some realistic variation
     const cadenceNoise = Math.sin(frac * 12) * 4 + Math.cos(frac * 7) * 2;
-    const paceNoise = Math.sin(frac * 8) * 0.3 + Math.cos(frac * 5) * 0.15;
     points.push({
       distance: frac * distanceKm,
       time: frac * distanceKm * basePace,
       cadence: Math.round(baseCadence + cadenceNoise),
-      pace: Math.round((basePace + paceNoise) * 100) / 100,
     });
   }
   return points;
@@ -29,9 +27,9 @@ function generateOverlayPoints(
 
 /**
  * Same shape as `generateOverlayPoints`, but a stretch in the middle has no
- * cadence/pace reading (a lost GPS/footpod segment): those points stay real
- * gaps (`cadence`/`pace` left undefined) rather than fabricated zeros, so
- * the overlay line must visibly break instead of bridging them.
+ * cadence reading (a lost footpod segment): those points stay real gaps
+ * (`cadence` left undefined) rather than fabricated zeros, so the overlay
+ * line must visibly break instead of bridging them.
  */
 function generateOverlayPointsWithGap(
   distanceKm: number,

@@ -1,4 +1,10 @@
-import { formatTime, isRunning, isSwimming, smooth } from "@intervals-mcp/data";
+import {
+  formatTime,
+  isRunning,
+  isSwimming,
+  smooth,
+  speedDisplay,
+} from "@intervals-mcp/data";
 import {
   type ActivityMeta,
   type ActivityStreamData,
@@ -56,12 +62,13 @@ export function extractMeta(data: ActivityStreamData): ActivityMeta {
     activityType: data.activityType,
     isRunning: isRunning(data.activityType),
     isSwimming: isSwimming(data.activityType),
+    speed: speedDisplay(data.activityType),
   };
 }
 
 /**
  * Convert raw stream data into ChartDataPoint array for Recharts.
- * - velocity_smooth → pace (min/km) for running, speed (km/h) for cycling
+ * - velocity_smooth → pace (min/km, min/100m) or speed (km/h) via `speedDisplay`
  * - cadence doubled for running (intervals.icu reports strides/min for
  *   running; see docs/api-notes.md)
  */
@@ -70,7 +77,7 @@ export function toChartData(data: ActivityStreamData): ChartDataPoint[] {
   const timeArr = streams.time ?? [];
   const len = timeArr.length;
   const running = isRunning(data.activityType);
-  const swimming = isSwimming(data.activityType);
+  const display = speedDisplay(data.activityType);
   const points: ChartDataPoint[] = [];
 
   for (let i = 0; i < len; i += 1) {
@@ -89,21 +96,9 @@ export function toChartData(data: ActivityStreamData): ChartDataPoint[] {
     }
 
     if (streams.velocity_smooth?.[i] !== undefined) {
-      const mps = streams.velocity_smooth[i];
-      if (mps == null) {
-        // A missing speed sample is a gap, not a "stopped" reading, so it
-        // must not be capped into a fake 15 min/km (run) / 5 min/100m (swim) spike.
-        point.pace = null;
-      } else if (running) {
-        // Convert m/s to min/km (pace). Cap at 15 min/km to avoid spikes when stopped.
-        point.pace = mps > 0 ? Math.min(1000 / mps / 60, 15) : 15;
-      } else if (swimming) {
-        // Convert m/s to min/100m (swim pace). Cap at 5 min/100m.
-        point.pace = mps > 0 ? Math.min(100 / mps / 60, 5) : 5;
-      } else {
-        // Convert m/s to km/h
-        point.pace = mps * 3.6;
-      }
+      // One conversion for every sport (#63): a stopped or missing pace
+      // sample is a gap, never a capped value.
+      point.pace = display.fromMps(streams.velocity_smooth[i]);
     }
 
     if (streams.distance?.[i] !== undefined) {

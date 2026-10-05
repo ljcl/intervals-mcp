@@ -271,6 +271,8 @@ describe("linearRegression", () => {
 });
 
 describe("toOverlayPoints", () => {
+  // The server's stream payload still carries velocity_smooth; the overlay
+  // ignores it (it plots cadence only).
   const overlayData = (activityType: string) => ({
     activityId: "1",
     activityType,
@@ -290,9 +292,8 @@ describe("toOverlayPoints", () => {
     expect(points[0]).toMatchObject({ distance: 0, time: 0, cadence: 170 });
     expect(points[2]?.distance).toBe(1); // km
     expect(points[2]?.time).toBe(2); // minutes
-    expect(points[0]?.pace).toBeCloseTo(1000 / 3.33 / 60, 3);
-    expect(points[1]?.pace).toBe(15); // capped
-    expect(points[2]?.pace).toBe(15); // stopped → capped
+    // Pace was a dead field here (no overlay line reads it), so it is gone.
+    for (const point of points) expect(point).not.toHaveProperty("pace");
   });
 
   it("keeps ride cadence as rpm", () => {
@@ -301,7 +302,7 @@ describe("toOverlayPoints", () => {
     expect(points[0]?.cadence).toBe(85);
   });
 
-  it("leaves cadence and pace undefined at null samples (leading, interior, trailing)", () => {
+  it("leaves cadence undefined at null samples (leading, interior, trailing)", () => {
     const points = toOverlayPoints({
       activityId: "1",
       activityType: "Run",
@@ -310,23 +311,18 @@ describe("toOverlayPoints", () => {
         time: [0, 60, 120, 180],
         distance: [0, 250, 500, 750],
         cadence: [null, 86, null, 87],
-        velocity_smooth: [null, 3.0, null, 3.5],
       },
     });
 
     expect(points).toHaveLength(4);
     // Leading null.
     expect(points[0]?.cadence).toBeUndefined();
-    expect(points[0]?.pace).toBeUndefined();
-    // Real values stay real (not coerced to 0 spm or pace 15).
+    // Real values stay real (not coerced to 0 spm).
     expect(points[1]?.cadence).toBe(172); // running cadence doubled
-    expect(points[1]?.pace).toBeCloseTo(1000 / 3.0 / 60, 3);
     // Interior null.
     expect(points[2]?.cadence).toBeUndefined();
-    expect(points[2]?.pace).toBeUndefined();
     // Trailing real value after a null still comes through.
     expect(points[3]?.cadence).toBe(174);
-    expect(points[3]?.pace).toBeCloseTo(1000 / 3.5 / 60, 3);
   });
 });
 

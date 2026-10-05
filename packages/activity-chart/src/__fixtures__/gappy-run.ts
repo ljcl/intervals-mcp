@@ -17,8 +17,8 @@ const heartrate: (number | null)[] = time.map((_, i) =>
   i >= 8 && i <= 11 ? null : 130 + i,
 );
 
-// Velocity: a GPS dropout for three samples, must not render as a 15
-// min/km pace spike.
+// Velocity: a GPS dropout for three samples, must render as a break in the
+// pace line, never a spike or a zero-speed reading.
 const velocity_smooth: (number | null)[] = time.map((_, i) =>
   i >= 5 && i <= 7 ? null : 3.2,
 );

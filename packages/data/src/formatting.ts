@@ -98,14 +98,3 @@ export function formatPace(minPerUnit: number): string {
  * km/h needs no such floor, since 0 km/h is a true reading.
  */
 export const MIN_MOVING_SPEED_MPS = 0.3;
-
-/** "4'10 /km" from metres per second, or "—" when the sample reads as paused. */
-export function formatSpeedAsPace(metresPerSecond: number): string {
-  if (metresPerSecond < MIN_MOVING_SPEED_MPS) return "—";
-  return `${formatPace(1000 / metresPerSecond / 60)} /km`;
-}
-
-/** "28.4 km/h" from metres per second. */
-export function formatSpeedAsKmh(metresPerSecond: number): string {
-  return `${(metresPerSecond * 3.6).toFixed(1)} km/h`;
-}

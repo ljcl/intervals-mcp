@@ -99,16 +99,14 @@ export const LegendFocusIsolatesSeries = meta.story({
   },
 });
 
+// The tempo streams re-typed as a ride: speed in km/h, not pace.
+const tempoRide = { ...tempoRun, activityType: "Ride" };
+
 export const CyclingRide = meta.story({
   args: {
-    data: toChartData(tempoRun),
-    meta: {
-      ...extractMeta(tempoRun),
-      activityType: "Ride",
-      isRunning: false,
-      isSwimming: false,
-    },
-    laps: toLapData(tempoRun),
+    data: toChartData(tempoRide),
+    meta: extractMeta(tempoRide),
+    laps: toLapData(tempoRide),
   },
 });
 

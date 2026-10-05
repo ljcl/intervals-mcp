@@ -148,6 +148,9 @@ never a per-story decorator.
 - Shared Recharts numeric tokens live in
   `packages/design-system/src/chart-tokens.ts`; use `getChartTokens(mode)` in
   any new chart view. MapLibre/canvas colours are concrete hex, not CSS vars.
+- Speed, pace and their labels come from `speedDisplay` in `packages/data`
+  (#63); a stopped pace sample is a gap. Pace axes take `percentileRange` as
+  their domain with `allowDataOverflow`.
 
 ## Headless primitives (Base UI)
 
@@ -372,8 +375,8 @@ as pure `buildComparison` in `apps/server/src/tools/compareActivities.ts`.
   resample onto one uniform grid over the shared distance or time axis
   (`alignSeries`, linear interpolation, light post-smoothing), so the tooltip
   shows a per-point activity2−activity1 delta and a shorter line simply ends.
-  Pace renders as pace (min/km, reversed axis) only when BOTH activities are
-  pace sports; mixed pairs fall back to km/h (`paceCategory`).
+  Pace renders as pace (reversed axis) only when both activities share a pace
+  sport (`speedSport`); mixed pairs fall back to km/h.
 - One metric at a time (intersection of what both recorded), distance/time
   axis toggle, legend toggles per activity line (blue/orange).
 - Delta summary header degrades away if that fetch fails while the overlay

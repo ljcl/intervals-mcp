@@ -39,7 +39,6 @@ export interface OverlayStreamData {
     time?: number[];
     distance?: number[];
     cadence?: (number | null)[];
-    velocity_smooth?: (number | null)[];
   };
 }
 
@@ -48,7 +47,6 @@ export interface OverlayPoint {
   distance: number;
   time: number;
   cadence?: number;
-  pace?: number;
 }
 
 /**
