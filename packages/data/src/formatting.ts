@@ -93,16 +93,15 @@ export function formatPace(minPerUnit: number): string {
 }
 
 /**
- * Slower than a walk: a pace derived from such a sample is a nonsense number
- * ("41'40 /km"), so it is rendered as paused instead. Speed in km/h needs no
- * such floor — zero is a true and useful reading — which is why
- * `formatSpeedAsKmh` has none.
+ * Below this speed a sample reads as stopped: a pace derived from it is a
+ * nonsense number ("41'40 /km"), so pace sports draw it as a gap. Speed in
+ * km/h needs no such floor, since 0 km/h is a true reading.
  */
-const MIN_PACE_SPEED = 0.3;
+export const MIN_MOVING_SPEED_MPS = 0.3;
 
 /** "4'10 /km" from metres per second, or "—" when the sample reads as paused. */
 export function formatSpeedAsPace(metresPerSecond: number): string {
-  if (metresPerSecond < MIN_PACE_SPEED) return "—";
+  if (metresPerSecond < MIN_MOVING_SPEED_MPS) return "—";
   return `${formatPace(1000 / metresPerSecond / 60)} /km`;
 }
 
