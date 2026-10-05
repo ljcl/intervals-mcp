@@ -312,6 +312,14 @@ grid fallback (no Recharts). Calls `get-route-map-data` (app-only) with
   the same colour binning (`buildColorRuns` in `src/basemapData.ts`). Native
   MapLibre zoom/pan behind `cooperativeGestures`; OSM attribution via control;
   scrub tooltip positioned via `map.project`.
+- `set-viewport` and reset frame the basemap camera through `BasemapView`'s
+  `frame` prop (`src/basemapCamera.ts`, padding 36, max zoom 17); a frame
+  sent before the style loads is applied on load. MapLibre's `moveend`
+  reports the zoom back, so the live region and the model context describe
+  the camera the user sees, including their own pans and zooms (#53). The
+  argument checks and their error texts live in `src/viewportRequest.ts`, so
+  both views give the same reply; `describeZoom` gives both the same zoom
+  wording.
 
 **Basemap tile source and CSP.** The route-map resource declares
 `_meta.ui.csp` on **both** descriptor and content response:

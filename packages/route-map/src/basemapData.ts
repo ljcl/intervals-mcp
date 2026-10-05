@@ -112,6 +112,42 @@ export function trackBounds(
   ];
 }
 
+/** Smallest box, in degrees, that fitBounds is given: a one-point stretch
+ * otherwise has no area to fit. ~55 m of latitude. */
+export const MIN_SPAN_DEG = 0.0005;
+
+/** Widening by exactly the shortfall can land a float ulp under the
+ * minimum (~3e-14 deg at 180 degrees of longitude); ~0.1 mm of slack keeps
+ * the widened box at or above it. */
+const ROUNDING_SLACK_DEG = 1e-9;
+
+/** Per-side padding that brings `span` up to `MIN_SPAN_DEG`. */
+function minSpanPad(span: number): number {
+  return span < MIN_SPAN_DEG
+    ? (MIN_SPAN_DEG - span) / 2 + ROUNDING_SLACK_DEG
+    : 0;
+}
+
+/**
+ * Bounding box of `coordinates[from..to]` for `map.fitBounds`, widened to at
+ * least `MIN_SPAN_DEG` on each axis, or null when the slice is empty. The
+ * basemap counterpart of `frameForIndexRange` in `viewport.ts`.
+ */
+export function frameBoundsForRange(
+  coordinates: Array<[number, number]>,
+  range: { from: number; to: number },
+): [[number, number], [number, number]] | null {
+  const bounds = trackBounds(coordinates.slice(range.from, range.to + 1));
+  if (!bounds) return null;
+  const [[w, s], [e, n]] = bounds;
+  const padLng = minSpanPad(e - w);
+  const padLat = minSpanPad(n - s);
+  return [
+    [w - padLng, s - padLat],
+    [e + padLng, n + padLat],
+  ];
+}
+
 /** Point features with a `title` property for the hover popup. Waypoint
  * features also carry a `color` for the per-kind circle paint. */
 export interface TitledPointFeatureCollection {

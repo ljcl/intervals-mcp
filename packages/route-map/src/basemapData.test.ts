@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { WAYPOINT_COLORS } from "./annotations";
 import {
+  frameBoundsForRange,
+  MIN_SPAN_DEG,
   nearestLatLngIndex,
   splitsToGeoJson,
   trackBounds,
@@ -54,6 +56,32 @@ describe("trackBounds", () => {
       [-122.51, 37.77],
       [-122.48, 37.785],
     ]);
+  });
+});
+
+describe("frameBoundsForRange", () => {
+  const coords: Array<[number, number]> = [
+    [-33.86, 151.2],
+    [-33.85, 151.21],
+    [-33.84, 151.23],
+    [-33.83, 151.22],
+  ];
+
+  it("bounds the slice in lng/lat order", () => {
+    expect(frameBoundsForRange(coords, { from: 1, to: 2 })).toEqual([
+      [151.21, -33.85],
+      [151.23, -33.84],
+    ]);
+  });
+
+  it("widens a single point so fitBounds has an area", () => {
+    const [[w, s], [e, n]] = frameBoundsForRange(coords, { from: 0, to: 0 })!;
+    expect(e - w).toBeGreaterThanOrEqual(MIN_SPAN_DEG);
+    expect(n - s).toBeGreaterThanOrEqual(MIN_SPAN_DEG);
+  });
+
+  it("returns null for an empty slice", () => {
+    expect(frameBoundsForRange([], { from: 0, to: 0 })).toBeNull();
   });
 });
 

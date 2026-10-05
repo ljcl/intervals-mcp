@@ -54,6 +54,20 @@ describe("buildRouteMapContextSummary", () => {
     );
   });
 
+  it("says how far the map is zoomed in", () => {
+    const summary = buildRouteMapContextSummary({
+      name: "Morning Run",
+      activityType: "Run",
+      distanceKm: 10,
+      elevationGain: 0,
+      hasGeometry: true,
+      zoom: "Zoomed to 3.2×",
+    });
+    expect(summary).toBe(
+      'Viewing the map for Run activity "Morning Run". Distance 10.0 km. Zoomed to 3.2×.',
+    );
+  });
+
   it("notes when there is no GPS track", () => {
     const summary = buildRouteMapContextSummary({
       name: "Treadmill",

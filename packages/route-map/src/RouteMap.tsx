@@ -34,6 +34,8 @@ import {
   WAYPOINT_COLORS,
 } from "./annotations";
 import { BasemapView } from "./BasemapView";
+import { type CameraFrame, describeZoom, isZoomedIn } from "./basemapCamera";
+import { frameBoundsForRange, trackBounds } from "./basemapData";
 import { buildRouteMapContextSummary } from "./contextSummary";
 import { buildElevationProfile, nearestXIndex } from "./elevationProfile";
 import {
@@ -59,7 +61,8 @@ import {
 } from "./panZoom";
 import styles from "./RouteMap.module.css";
 import { type RouteMapData } from "./types";
-import { frameForIndexRange, indexRangeForDistance } from "./viewport";
+import { frameForIndexRange } from "./viewport";
+import { resolveViewportRequest } from "./viewportRequest";
 
 interface RouteMapProps {
   data: RouteMapData;
@@ -281,19 +284,36 @@ export function RouteMap({
   }, [canZoom, base, svgEl]);
 
   // Polite screen-reader narration of zoom changes (the SVG's <desc> is static;
-  // this announces the button / keyboard zoom actions as they happen).
+  // this announces the button / keyboard zoom actions and the basemap's
+  // camera moves as they happen). Both views word it through `describeZoom`.
   const [zoomMessage, setZoomMessage] = useState("");
   const applyView = (next: ViewBox) => {
     setView(next);
-    setZoomMessage(
-      isZoomed(next, base)
-        ? `Zoomed to ${zoomLevel(next, base).toFixed(1)}×`
-        : "Showing the whole route",
-    );
+    setZoomMessage(describeZoom(zoomLevel(next, base)));
   };
   const zoomByCenter = (factor: number) =>
     applyView(zoomAboutCenter(viewRef.current, base, factor));
   const resetView = () => applyView(base);
+
+  // The basemap owns its camera: `set-viewport` hands it a frame to fit, and
+  // every move (the model's or the user's own) reports the zoom back here.
+  const [frame, setFrame] = useState<CameraFrame | undefined>();
+  const frameNonce = useRef(0);
+  const frameBasemap = (bounds: CameraFrame["bounds"]) => {
+    frameNonce.current += 1;
+    setFrame({ bounds, nonce: frameNonce.current });
+  };
+  const [basemapZoom, setBasemapZoom] = useState(1);
+
+  // The fallback grid starts from the whole route, so a camera the basemap
+  // reported (or a frame it never got to apply) must not outlive it.
+  const [cameraView, setCameraView] = useState(showBasemap);
+  if (cameraView !== showBasemap) {
+    setCameraView(showBasemap);
+    setZoomMessage("");
+    setBasemapZoom(1);
+    setFrame(undefined);
+  }
 
   /**
    * `set-viewport`: the model frames a stretch of the course by
@@ -301,26 +321,26 @@ export function RouteMap({
    * describing it. Installed here rather than declared here — the tool is
    * registered before `connect()`, which is long before this component exists.
    *
-   * It reuses `applyView`, so a model-driven move clamps, counter-scales, and
-   * announces itself exactly as the zoom buttons do.
+   * It moves whichever view is showing: the basemap's camera, or the grid
+   * through `applyView`, so a model-driven move clamps, counter-scales, and
+   * announces itself exactly as the zoom buttons do. Either way the reply is
+   * the same.
    */
   useViewTool(viewToolRegistry, "set-viewport", (args) => {
-    if (args.reset === true) {
-      resetView();
+    const request = resolveViewportRequest(
+      args,
+      data.streams?.distance,
+      distanceKm,
+    );
+    if (request.kind === "error") return { text: request.text, isError: true };
+
+    if (request.kind === "reset") {
+      const whole = showBasemap ? trackBounds(data.coordinates) : null;
+      if (whole) frameBasemap(whole);
+      else resetView();
       return { text: `Showing the whole route (${distanceKm.toFixed(1)} km).` };
     }
 
-    const distanceStream = data.streams?.distance;
-    if (!distanceStream || distanceStream.length === 0) {
-      // A track can have coordinates but no distance stream (the server
-      // didn't get one back), so there is nothing to measure a kilometre
-      // against. Say that rather than guess a position from the point
-      // index, which is only right at constant speed.
-      return {
-        text: "This track has no recorded distances, so the map cannot be positioned by kilometre. Ask to reset the view instead.",
-        isError: true,
-      };
-    }
     if (!projected) {
       return {
         text: "This track has no GPS geometry to frame.",
@@ -328,27 +348,27 @@ export function RouteMap({
       };
     }
 
-    const fromKm = typeof args.fromKm === "number" ? args.fromKm : 0;
-    const toKm = typeof args.toKm === "number" ? args.toKm : distanceKm;
-    const range = indexRangeForDistance(
-      distanceStream,
-      fromKm * 1000,
-      toKm * 1000,
-    );
-    if (!range) {
-      return {
-        text: `That stretch is not on this route, which is ${distanceKm.toFixed(1)} km long.`,
-        isError: true,
-      };
+    if (showBasemap) {
+      const bounds = frameBoundsForRange(data.coordinates, request.range);
+      if (!bounds) {
+        return {
+          text: "That stretch has no geometry to frame.",
+          isError: true,
+        };
+      }
+      frameBasemap(bounds);
+    } else {
+      const next = frameForIndexRange(projected.points, request.range, base);
+      if (!next) {
+        return {
+          text: "That stretch has no geometry to frame.",
+          isError: true,
+        };
+      }
+      applyView(next);
     }
-
-    const next = frameForIndexRange(projected.points, range, base);
-    if (!next) {
-      return { text: "That stretch has no geometry to frame.", isError: true };
-    }
-    applyView(next);
     return {
-      text: `Framed ${fromKm.toFixed(1)}–${Math.min(toKm, distanceKm).toFixed(1)} km of ${data.name}.`,
+      text: `Framed ${request.fromKm.toFixed(1)}–${request.toKm.toFixed(1)} km of ${data.name}.`,
     };
   });
 
@@ -541,6 +561,10 @@ export function RouteMap({
   const mapDescId = `${uid}-map-desc`;
   const stripDescId = `${uid}-strip-desc`;
 
+  // The zoom of whichever view is showing: the basemap's camera as it last
+  // reported, or the grid's viewBox (which wheel and pinch move too).
+  const visibleZoom = showBasemap ? basemapZoom : zoomLevel(view, base);
+
   useModelContextSync(
     app,
     () =>
@@ -551,9 +575,9 @@ export function RouteMap({
         elevationGain: data.elevationGain,
         hasGeometry: projected !== null,
         colorMetric: activeSeries?.label ?? null,
-        // `zoomMessage` is already the phrasing the screen reader hears, so
-        // the model and the narration cannot describe different views.
-        zoom: isZoomed(view, base) ? zoomMessage : null,
+        // `describeZoom` is the phrasing the screen reader hears, so the
+        // model and the narration cannot describe different views.
+        zoom: isZoomedIn(visibleZoom) ? describeZoom(visibleZoom) : null,
       }),
     [
       data.name,
@@ -562,9 +586,7 @@ export function RouteMap({
       data.elevationGain,
       projected !== null,
       activeSeries?.label,
-      zoomMessage,
-      view,
-      base,
+      visibleZoom,
     ],
   );
 
@@ -650,7 +672,16 @@ export function RouteMap({
             }}
             scrubTip={scrubTipContent}
             onFail={() => setBasemapFailed(true)}
+            frame={frame}
+            onCamera={({ zoomFactor }) => {
+              setBasemapZoom(zoomFactor);
+              setZoomMessage(describeZoom(zoomFactor));
+            }}
           />
+          {/* Polite narration of camera moves for screen-reader users. */}
+          <p className={styles.srOnly} aria-live="polite">
+            {zoomMessage}
+          </p>
         </div>
       )}
 
