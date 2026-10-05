@@ -666,6 +666,66 @@ describe("tools/call id latest", () => {
     expect(new Set(ids)).toEqual(new Set(["i557"]));
   });
 
+  it("reports the resolved id in _meta, for view-route-map", async () => {
+    vi.mocked(listActivities).mockResolvedValueOnce([
+      { id: "i558", type: "Run", start_date_local: "2026-10-01T07:00:00" },
+    ] as never);
+    mockedIntervalsActivity.mockResolvedValueOnce({
+      id: "i558",
+      name: "Hawk Hill",
+      type: "Run",
+    } as never);
+    mockedIntervalsStreams.mockResolvedValueOnce([]);
+    const client = await connectTestClient();
+    const { result } = await client.send("tools/call", {
+      name: "view-route-map",
+      arguments: { id: "latest" },
+    });
+    expect(result?._meta).toMatchObject({
+      "intervals-mcp/resolvedArgs": { id: "i558" },
+    });
+  });
+
+  it("reports both resolved ids in _meta, for view-compare-activities", async () => {
+    vi.mocked(listActivities).mockResolvedValueOnce([
+      { id: "i559", type: "Run", start_date_local: "2026-10-01T07:00:00" },
+    ] as never);
+    mockedIntervalsActivity.mockResolvedValue({
+      id: "i559",
+      name: "Easy",
+      type: "Run",
+      start_date_local: "2026-10-01T07:00:00",
+    } as never);
+    const client = await connectTestClient();
+    const { result } = await client.send("tools/call", {
+      name: "view-compare-activities",
+      arguments: { activityId1: "latest", activityId2: "latest" },
+    });
+    expect(result?._meta).toMatchObject({
+      "intervals-mcp/resolvedArgs": {
+        activityId1: "i559",
+        activityId2: "i559",
+      },
+    });
+  });
+
+  it("has no resolvedArgs when no id was latest", async () => {
+    mockedIntervalsActivity.mockResolvedValueOnce({
+      id: "229781",
+      name: "Hawk Hill",
+      type: "Run",
+    } as never);
+    mockedIntervalsStreams.mockResolvedValueOnce([]);
+    const client = await connectTestClient();
+    const { result } = await client.send("tools/call", {
+      name: "view-route-map",
+      arguments: { id: "229781" },
+    });
+    expect(result?._meta ?? {}).not.toHaveProperty(
+      "intervals-mcp/resolvedArgs",
+    );
+  });
+
   it('says so when there is no run to use for "latest"', async () => {
     vi.mocked(listActivities).mockResolvedValue([]);
     const client = await connectTestClient();

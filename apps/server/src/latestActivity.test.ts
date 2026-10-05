@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { listActivities } from "./intervalsClient";
-import { NoLatestRunError, resolveLatestIds } from "./latestActivity";
+import {
+  NoLatestRunError,
+  RESOLVED_ARGS_META_KEY,
+  resolvedArgsOf,
+  resolveLatestIds,
+  withResolvedArgs,
+} from "./latestActivity";
 import { addDays, daysBetween, todayLocal } from "./utils/localDate";
 
 vi.mock("./intervalsClient", async (importOriginal) => ({
@@ -120,5 +126,49 @@ describe("resolveLatestIds", () => {
       expect(progress).toHaveBeenCalledTimes(1);
       expect(progress.mock.calls[0]![0]).toContain(addDays(today(), -61));
     });
+  });
+});
+
+describe("RESOLVED_ARGS_META_KEY", () => {
+  // packages/ui mirrors this string (it cannot import the server).
+  it("is the published literal", () => {
+    expect(RESOLVED_ARGS_META_KEY).toBe("intervals-mcp/resolvedArgs");
+  });
+});
+
+describe("resolvedArgsOf", () => {
+  it("lists only the keys whose value changed", () => {
+    expect(
+      resolvedArgsOf(
+        { activityId1: "latest", activityId2: "i1" },
+        { activityId1: "i9", activityId2: "i1" },
+      ),
+    ).toEqual({ activityId1: "i9" });
+  });
+
+  it("is empty when nothing changed", () => {
+    const args = { id: "i1" };
+    expect(resolvedArgsOf(args, args)).toEqual({});
+  });
+});
+
+describe("withResolvedArgs", () => {
+  const ok = { content: [{ type: "text", text: "x" }] };
+
+  it("merges into existing _meta rather than replacing it", () => {
+    const out = withResolvedArgs({ ...ok, _meta: { other: 1 } }, { id: "i9" });
+    expect(out._meta).toEqual({
+      other: 1,
+      [RESOLVED_ARGS_META_KEY]: { id: "i9" },
+    });
+  });
+
+  it("returns the result untouched when nothing was resolved", () => {
+    expect(withResolvedArgs(ok, {})).toBe(ok);
+  });
+
+  it("returns an error result untouched", () => {
+    const failed = { ...ok, isError: true };
+    expect(withResolvedArgs(failed, { id: "i9" })).toBe(failed);
   });
 });

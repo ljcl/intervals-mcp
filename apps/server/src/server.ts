@@ -55,7 +55,12 @@ import {
   type IntervalsStreamType,
   loadIntervalsStreams,
 } from "./intervalsStreams";
-import { NoLatestRunError, resolveLatestIds } from "./latestActivity";
+import {
+  NoLatestRunError,
+  resolvedArgsOf,
+  resolveLatestIds,
+  withResolvedArgs,
+} from "./latestActivity";
 import { loadFitnessTrend } from "./loadFitnessTrend";
 import { type WaypointInput } from "./mapAnchors";
 import {
@@ -1394,6 +1399,7 @@ interface ToolCallResult {
   content: Array<{ type: string; text: string }>;
   structuredContent?: unknown;
   isError?: boolean;
+  _meta?: Record<string, unknown>;
 }
 
 /** MCP App tool name to handler (same dispatch path as the text tools). */
@@ -1540,8 +1546,14 @@ export async function dispatchToolCall(
     // run's id here, so no handler sees it and a failed lookup gets the same
     // error treatment as the handler's own reads.
     const idKeys = TOOL_ID_KEYS.get(name);
+    const asked = args;
     if (idKeys) args = await resolveLatestIds(args, idKeys, token, progress);
-    const result = await handler(args, token, progress, context);
+    // Reported on the result so an app can pin the run it first showed.
+    const resolved = resolvedArgsOf(asked, args);
+    const result = withResolvedArgs(
+      await handler(args, token, progress, context),
+      resolved,
+    );
     // A handler that returns `isError` failed as surely as one that threw; the
     // counters would flatter the server if only throws counted.
     return finish(result.isError ? "error" : "ok", result);

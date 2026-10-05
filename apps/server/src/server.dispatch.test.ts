@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { handledNotFound, handledRateLimit } from "./__fixtures__";
 import { intervalsApi } from "./fetchClient";
 import {
+  getActivityStreams,
   getAthletePaceCurves,
   getActivity as getIntervalsActivity,
   getWellness as getIntervalsWellness,
@@ -20,6 +21,7 @@ vi.mock("./intervalsClient", async (importOriginal) => {
   return {
     ...actual,
     getActivity: vi.fn(),
+    getActivityStreams: vi.fn(),
     getAthletePaceCurves: vi.fn(),
     listActivities: vi.fn(),
     getWellness: vi.fn(),
@@ -41,6 +43,7 @@ const mockedIntervalsList = vi.mocked(listIntervalsActivities);
 const mockedIntervalsWellness = vi.mocked(getIntervalsWellness);
 const mockedIntervalsActivity = vi.mocked(getIntervalsActivity);
 const mockedAthleteCurves = vi.mocked(getAthletePaceCurves);
+const mockedStreams = vi.mocked(getActivityStreams);
 
 /** Inclusive day count of a listing window's oldest..newest dates. */
 function windowDays(params: { oldest?: string; newest?: string } | undefined) {
@@ -460,6 +463,70 @@ describe('dispatchToolCall id "latest"', () => {
     mockedToken.mockReturnValue("test-token");
     mockedIntervalsList.mockReset();
     mockedIntervalsActivity.mockReset();
+  });
+
+  describe("resolved ids in _meta", () => {
+    const KEY = "intervals-mcp/resolvedArgs";
+    const run = { id: "i999", type: "Run", start_date_local: "2026-10-01" };
+
+    beforeEach(() => {
+      // No streams: the route map still renders from the activity alone.
+      mockedStreams.mockReset();
+      mockedStreams.mockResolvedValue([]);
+    });
+
+    it("reports the id a latest resolved to", async () => {
+      mockedIntervalsList.mockResolvedValue([run] as never);
+      mockedIntervalsActivity.mockResolvedValue({
+        id: "i999",
+        name: "Easy",
+        type: "Run",
+      } as never);
+
+      const result = await dispatchToolCall("view-route-map", { id: "latest" });
+
+      expect(result.isError).toBeUndefined();
+      expect(result._meta).toEqual({ [KEY]: { id: "i999" } });
+    });
+
+    it("reports every key that said latest, and only those", async () => {
+      mockedIntervalsList.mockResolvedValue([run] as never);
+      mockedIntervalsActivity.mockResolvedValue({
+        id: "i999",
+        name: "Easy",
+        type: "Run",
+      } as never);
+
+      const result = await dispatchToolCall("view-compare-activities", {
+        activityId1: "latest",
+        activityId2: "i1",
+      });
+
+      expect(result._meta).toEqual({ [KEY]: { activityId1: "i999" } });
+    });
+
+    it("leaves the result alone when nothing was latest", async () => {
+      mockedIntervalsActivity.mockResolvedValue({
+        id: "i1",
+        name: "Easy",
+        type: "Run",
+      } as never);
+
+      const result = await dispatchToolCall("view-route-map", { id: "i1" });
+
+      expect(result.isError).toBeUndefined();
+      expect(result).not.toHaveProperty("_meta");
+    });
+
+    it("never attaches it to an error result", async () => {
+      mockedIntervalsList.mockResolvedValue([run] as never);
+      mockedIntervalsActivity.mockRejectedValue(handledNotFound);
+
+      const result = await dispatchToolCall("get-activity", { id: "latest" });
+
+      expect(result.isError).toBe(true);
+      expect(result).not.toHaveProperty("_meta");
+    });
   });
 
   it("refuses latest for update-activity with a message naming the fix", async () => {
