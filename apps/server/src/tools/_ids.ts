@@ -171,7 +171,7 @@ export const intervalsActivityIdInput = (
     pattern: allowLatest ? INTERVALS_DIGITS_OR_LATEST : INTERVALS_DIGITS,
     digitsMessage: allowLatest
       ? 'id must be a string of digits, optionally prefixed with "i", or "latest"'
-      : 'id must be a string of digits, optionally prefixed with "i"',
+      : 'id must be a string of digits, optionally prefixed with "i"; "latest" is not accepted for a write: use the id shown by get-running-summary or list-activities',
     hint: allowLatest ? INTERVALS_ID_HINT_LATEST : INTERVALS_ID_HINT,
     oversizedNumberHint: "returned by list-activities",
   });

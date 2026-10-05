@@ -85,7 +85,8 @@ descriptions.
 `list-activities` defaults to the last 28 days (today back to 27 days
 earlier) in the server's configured time zone, sorted newest first. Filter
 with `type` (`runs` for Run, TrailRun and VirtualRun, or a comma-separated
-list such as `Run, Hike`; the latest run is `type: "runs", limit: 1`) or
+list such as `Run, Hike`; for the most recent run, pass `id: "latest"` to
+the per-activity tool instead) or
 `nameContains` (case-insensitive substring), and cap the page with `limit`
 (1-200, default 30). `search` (a name substring or `#tag`) reaches all
 history through `search-full`, beyond the 366-day window, with `type`,

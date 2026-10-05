@@ -5,6 +5,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { handledNotFound, handledRateLimit } from "./__fixtures__";
+import { intervalsApi } from "./fetchClient";
 import {
   getAthletePaceCurves,
   getActivity as getIntervalsActivity,
@@ -32,7 +33,7 @@ vi.mock("./config", async (importOriginal) => {
 });
 
 // Import after the mock so server.ts's tool modules see the mocked client.
-const { dispatchToolCall } = await import("./server");
+const { dispatchToolCall, TOOL_DEFS } = await import("./server");
 const { getIntervalsApiKey, MissingApiKeyError } = await import("./config");
 const mockedToken = vi.mocked(getIntervalsApiKey);
 
@@ -332,5 +333,84 @@ describe("dispatchToolCall input validation", () => {
     expect(result.content[0]?.text).toBe(
       "❌ Failed to run get-training-load-data: boom",
     );
+  });
+});
+
+/** The advertised pattern of an id input that accepts "latest". */
+const LATEST_PATTERN = "^(?:i?\\d+|latest)$";
+
+describe('dispatchToolCall id "latest"', () => {
+  beforeEach(() => {
+    mockedToken.mockReset();
+    mockedToken.mockReturnValue("test-token");
+    mockedIntervalsList.mockReset();
+    mockedIntervalsActivity.mockReset();
+  });
+
+  it("refuses latest for update-activity with a message naming the fix", async () => {
+    const result = await dispatchToolCall("update-activity", {
+      id: "latest",
+      name: "Easy",
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain(
+      '"latest" is not accepted for a write',
+    );
+    expect(mockedIntervalsList).not.toHaveBeenCalled();
+  });
+
+  // Behavioural rather than reading the private key map: every advertised
+  // latest field, sent "latest", must reach intervals.icu as the newest run's
+  // id. Per-activity reads go through the mocked getActivity or, for the
+  // unmocked client functions, `intervalsApi.get` with the id in the path.
+  it("resolves every advertised latest field before the handler's reads", async () => {
+    const latestFields = TOOL_DEFS.flatMap((tool) => {
+      const props = (tool.inputSchema.properties ?? {}) as Record<
+        string,
+        { pattern?: string }
+      >;
+      const fields = Object.entries(props)
+        .filter(([, prop]) => prop.pattern === LATEST_PATTERN)
+        .map(([key]) => key);
+      return fields.map((field) => ({ tool: tool.name, field, fields }));
+    });
+    // Every per-activity tool but update-activity; a regression to zero
+    // would make the loop below vacuous.
+    expect(latestFields.length).toBeGreaterThanOrEqual(20);
+
+    const get = vi.spyOn(intervalsApi, "get");
+    try {
+      for (const { tool, field, fields } of latestFields) {
+        mockedIntervalsList.mockReset();
+        mockedIntervalsActivity.mockReset();
+        get.mockReset();
+        mockedIntervalsList.mockResolvedValue([
+          { id: "i999", type: "Run", start_date_local: "2026-10-01T07:00:00" },
+        ] as never);
+        mockedIntervalsActivity.mockRejectedValue(handledNotFound);
+        get.mockRejectedValue(handledNotFound);
+
+        const args = Object.fromEntries(
+          fields.map((key) => [key, key === field ? "latest" : "i1"]),
+        );
+        await dispatchToolCall(tool, args);
+
+        const seen = [
+          ...mockedIntervalsActivity.mock.calls.map((call) => String(call[1])),
+          ...get.mock.calls.map((call) => String(call[0])),
+        ];
+        expect(
+          seen.some((value) => value.includes("i999")),
+          `${tool}.${field} reached intervals.icu as the resolved id`,
+        ).toBe(true);
+        expect(
+          seen.some((value) => value.includes("latest")),
+          `${tool}.${field} never reached intervals.icu as the word`,
+        ).toBe(false);
+      }
+    } finally {
+      get.mockRestore();
+    }
   });
 });

@@ -30,6 +30,12 @@ Every app's `main.tsx` is the same four-branch state machine, so it lives in
   classification is pure and unit-tested (`classifyToolInput`); the branches
   are storied on `AppRootView`, since a live host is not reachable from
   Storybook.
+- **`"latest"` reaches the app as the word.** A view tool called with
+  `id: "latest"` hands the app `toolArgs` holding `"latest"`, not the resolved
+  id; the app forwards it to its data feeds, and the dispatcher resolves it
+  again each time the app mounts. A view re-mounted later (the chat reopened)
+  can therefore show a newer run than the one first described. Pinning the
+  resolved id in the app is planned with the naming-scheme change.
 - **Fetching.** `useServerToolData` is the mount-time single fetch every app
   makes. Anything keyed and on-demand — a stream per selected run — goes
   through `useServerToolFetcher` instead of a hand-rolled effect. Its state

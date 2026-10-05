@@ -30,7 +30,8 @@ Lists intervals.icu activities in a local date range, newest first. Start
 here: each entry carries the activity id that every per-activity tool needs,
 plus distance, time, pace (runs only), heart rate and training load.
 
-For the most recent run, call it with type "runs" and limit 1.
+For the most recent run, pass id "latest" to the per-activity tool instead
+of listing first; type "runs" lists runs only.
 
 search finds activities by name or #tag across all history, beyond the
 366-day window (for example "when did I last run the club 10K?").
