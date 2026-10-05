@@ -758,10 +758,24 @@ const ActivitySummarySchema = z.object({
     .describe(
       "True when source is STRAVA: details are unavailable through the API",
     ),
+  tags: z.array(z.string()).describe("intervals.icu tags; empty when none"),
+  race: z.boolean().describe("Marked as a race in intervals.icu"),
 });
 export const ActivityListOutputSchema = z.object({
-  oldest: z.string().describe("ISO date YYYY-MM-DD, inclusive lower bound"),
-  newest: z.string().describe("ISO date YYYY-MM-DD, inclusive upper bound"),
+  oldest: z
+    .string()
+    .describe(
+      "ISO date YYYY-MM-DD, inclusive lower bound: the window, or with search and no window the span the matches cover",
+    ),
+  newest: z
+    .string()
+    .describe(
+      "ISO date YYYY-MM-DD, inclusive upper bound: the window, or with search and no window the span the matches cover",
+    ),
+  search: z
+    .string()
+    .nullable()
+    .describe("The search query, or null for a date-window listing"),
   count: z.number().int().describe("Activities included in this response"),
   matched: z
     .number()

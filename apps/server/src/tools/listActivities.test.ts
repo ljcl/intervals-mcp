@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { handledNotFound, handledRateLimit } from "../__fixtures__";
 import activitiesFixture from "../__fixtures__/intervals/activities.json";
-import { type IntervalsActivity, listActivities } from "../intervalsClient";
+import {
+  type IntervalsActivity,
+  listActivities,
+  searchActivities,
+} from "../intervalsClient";
 import { addDays } from "../utils/localDate";
 import { RESPONSE_BUDGET_CHARS, responseSize } from "./_responseBudget";
 import {
@@ -15,7 +19,7 @@ vi.mock("../intervalsClient", async () => {
     await vi.importActual<typeof import("../intervalsClient")>(
       "../intervalsClient",
     );
-  return { ...actual, listActivities: vi.fn() };
+  return { ...actual, listActivities: vi.fn(), searchActivities: vi.fn() };
 });
 vi.mock("../config", async () => {
   const actual = await vi.importActual<typeof import("../config")>("../config");
@@ -23,6 +27,7 @@ vi.mock("../config", async () => {
 });
 
 const mockedListActivities = vi.mocked(listActivities);
+const mockedSearch = vi.mocked(searchActivities);
 
 const fixture = activitiesFixture as unknown as IntervalsActivity[];
 const byId = (id: string): IntervalsActivity => {
@@ -69,6 +74,28 @@ describe("mapActivitySummary", () => {
     expect(entry.pace_min_per_km).toBeNull();
   });
 
+  it("passes tags and race through", () => {
+    const entry = mapActivitySummary({
+      ...byId("i189807578"),
+      tags: ["a"],
+      race: true,
+    } as IntervalsActivity);
+
+    expect(entry.tags).toEqual(["a"]);
+    expect(entry.race).toBe(true);
+  });
+
+  it("defaults tags to [] and race to false", () => {
+    const entry = mapActivitySummary({
+      ...byId("i189807578"),
+      tags: null,
+      race: null,
+    } as IntervalsActivity);
+
+    expect(entry.tags).toEqual([]);
+    expect(entry.race).toBe(false);
+  });
+
   it("flags an activity sourced from Strava as a stub", () => {
     const stub = {
       ...byId("i189757177"),
@@ -94,6 +121,7 @@ describe("formatActivityListText", () => {
       count: 2,
       matched: 2,
       truncated: false,
+      search: null,
       units: { distance: "km", pace: "min/km", time: "s", hr: "bpm" },
       activities: [run, stub],
     });
@@ -119,6 +147,7 @@ describe("formatActivityListText", () => {
       count: 1,
       matched: 5,
       truncated: true,
+      search: null,
       units: { distance: "km", pace: "min/km", time: "s", hr: "bpm" },
       activities: [run],
     });
@@ -141,6 +170,7 @@ describe("formatActivityListText", () => {
       count: 0,
       matched: 0,
       truncated: false,
+      search: null,
       units: { distance: "km", pace: "min/km", time: "s", hr: "bpm" },
       activities: [],
     });
@@ -270,6 +300,7 @@ describe("listActivitiesTool.execute", () => {
       count: 0,
       matched: 0,
       truncated: false,
+      search: null,
       units: { distance: "km", pace: "min/km", time: "s", hr: "bpm" },
       activities: [],
     });
@@ -390,5 +421,113 @@ describe("listActivitiesTool.execute", () => {
     expect(
       result.structuredContent?.activities.map((a) => a.type).sort(),
     ).toEqual(["Hike", "Run"]);
+  });
+});
+
+describe("listActivitiesTool.execute search", () => {
+  const twoYearsAgo = {
+    ...fixture[0]!,
+    id: "i700",
+    name: "Club 10K",
+    type: "Run",
+    start_date_local: "2024-09-26T07:00:00",
+    race: true,
+    tags: ["club"],
+  } as IntervalsActivity;
+  const lastWeek = {
+    ...fixture[0]!,
+    id: "i701",
+    name: "Club 10K recce",
+    type: "Ride",
+    start_date_local: "2026-09-28T07:00:00",
+    race: null,
+    tags: null,
+  } as IntervalsActivity;
+
+  beforeEach(() => {
+    mockedListActivities.mockReset();
+    mockedSearch.mockReset();
+  });
+
+  it("searches all history and reports tags and race", async () => {
+    mockedSearch.mockResolvedValueOnce([lastWeek, twoYearsAgo]);
+
+    const result = await listActivitiesTool.execute(
+      { search: "club 10k", limit: 30 },
+      "key",
+    );
+
+    expect(mockedSearch).toHaveBeenCalledWith("key", "club 10k", 200);
+    expect(mockedListActivities).not.toHaveBeenCalled();
+    const s = result.structuredContent!;
+    expect(s.search).toBe("club 10k");
+    expect(s.activities.map((a) => a.id)).toEqual(["i701", "i700"]);
+    expect(s.activities[1]).toMatchObject({ race: true, tags: ["club"] });
+    expect(s.activities[0]).toMatchObject({ race: false, tags: [] });
+    expect(s.oldest).toBe("2024-09-26");
+    expect(s.newest).toBe("2026-09-28");
+    expect(result.content[0]!.text.split("\n")[0]).toBe(
+      'Activities matching "club 10k" (all history): showing 2 of 2',
+    );
+  });
+
+  it("post-filters a search by type and window", async () => {
+    mockedSearch.mockResolvedValueOnce([lastWeek, twoYearsAgo]);
+
+    const result = await listActivitiesTool.execute(
+      {
+        search: "club",
+        type: "runs",
+        oldest: "2024-01-01",
+        newest: "2025-01-01",
+        limit: 30,
+      },
+      "key",
+    );
+
+    expect(result.structuredContent!.activities.map((a) => a.id)).toEqual([
+      "i700",
+    ]);
+    expect(result.structuredContent!.oldest).toBe("2024-01-01");
+    expect(result.structuredContent!.newest).toBe("2025-01-01");
+  });
+
+  it("ignores the 366-day range cap for a search", async () => {
+    mockedSearch.mockResolvedValueOnce([twoYearsAgo]);
+
+    const result = await listActivitiesTool.execute(
+      { search: "club", oldest: "2020-01-01", newest: "2026-10-05", limit: 30 },
+      "key",
+    );
+
+    expect(result.isError).toBeUndefined();
+  });
+
+  it("says nameContains is ignored with a search", async () => {
+    mockedSearch.mockResolvedValueOnce([twoYearsAgo]);
+
+    const result = await listActivitiesTool.execute(
+      { search: "club", nameContains: "10k", limit: 30 },
+      "key",
+    );
+
+    expect(result.content[0]!.text).toContain(
+      "nameContains is ignored with search",
+    );
+  });
+
+  it("returns a valid empty payload when a search matches nothing", async () => {
+    mockedSearch.mockResolvedValueOnce([]);
+
+    const result = await listActivitiesTool.execute(
+      { search: "nope", limit: 30 },
+      "key",
+    );
+
+    expect(result.structuredContent).toMatchObject({
+      count: 0,
+      matched: 0,
+      search: "nope",
+    });
   });
 });

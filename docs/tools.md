@@ -84,8 +84,13 @@ descriptions.
 
 `list-activities` defaults to the last 28 days (today back to 27 days
 earlier) in the server's configured time zone, sorted newest first. Filter
-with `type` (exact, case-insensitive) or `nameContains` (case-insensitive
-substring), and cap the page with `limit` (1-200, default 30). A page that
+with `type` (`runs` for Run, TrailRun and VirtualRun, or a comma-separated
+list such as `Run, Hike`; the latest run is `type: "runs", limit: 1`) or
+`nameContains` (case-insensitive substring), and cap the page with `limit`
+(1-200, default 30). `search` (a name substring or `#tag`) reaches all
+history through `search-full`, beyond the 366-day window, with `type`,
+`oldest` and `newest` as post-filters and `nameContains` ignored. Every
+entry carries `tags` and `race`. A page that
 would overrun the response size budget (a year of daily activities at limit
 200) comes back shorter, with `truncated: true`; whenever the list is
 truncated, the text names the `oldest`/`newest` call that fetches the older
