@@ -26,10 +26,26 @@ export const NOTHING_TO_CHOOSE =
 const keyLabel: MetricLabel = (metric) => metric;
 
 /**
+ * A metric as the model can send it, with the name the view shows beside it
+ * where that differs ("heartrate" shows as "heart rate", pace as "speed" for a
+ * mixed pair). `note` shapes the parenthesised part.
+ */
+function sendable(
+  metric: MetricKey,
+  label: MetricLabel,
+  note: (shown: string) => string,
+): string {
+  const shown = label(metric).toLowerCase();
+  return shown === metric ? metric : `${metric} (${note(shown)})`;
+}
+
+/**
  * Settle a `set-metric` call against what both activities recorded, before
  * anything on screen changes: either part being unavailable refuses the whole
- * call, so a half-applied change never needs explaining. Refusals name the
- * metrics by their displayed labels, since that is what the athlete sees.
+ * call, so a half-applied change never needs explaining. Refusals name each
+ * metric by the value the schema accepts, adding the displayed label only
+ * where it differs: the model must be able to send what it is told, and the
+ * strict enum rejects "speed" or "heart rate".
  *
  * A side that recorded no streams leaves both lists empty, so there is
  * nothing to list, and the same is true of two sides with no metric in common.
@@ -49,9 +65,11 @@ export function resolveSetMetric(
 
   const problems: string[] = [];
   if (args.metric !== undefined && !metrics.includes(args.metric)) {
-    const available = metrics.map((m) => label(m).toLowerCase()).join(", ");
+    const available = metrics
+      .map((m) => sendable(m, label, (shown) => `shown as ${shown}`))
+      .join(", ");
     problems.push(
-      `These activities did not both record ${label(args.metric).toLowerCase()}. Available metrics: ${available}.`,
+      `These activities did not both record ${sendable(args.metric, label, (shown) => shown)}. Available metrics: ${available}.`,
     );
   }
   if (args.axis !== undefined && !axes.includes(args.axis)) {

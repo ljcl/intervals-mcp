@@ -230,8 +230,9 @@ function modelDrivenProbes(canvasElement: HTMLElement) {
 
 /**
  * One side recorded no power: the model can pick any other shared metric and
- * either axis, keeps the axis when it names only a metric, and is refused,
- * by the labels the pills carry, a metric the pair does not share.
+ * either axis, keeps the axis when it names only a metric, and is refused a
+ * metric the pair does not share, with the ones left listed as values it can
+ * send.
  */
 export const ModelDrivenMetric = meta.story({
   tags: ["!autodocs"],
@@ -268,7 +269,7 @@ export const ModelDrivenMetric = meta.story({
     await userEvent.click(button("call-power"));
     await waitFor(() =>
       expect(said()).toBe(
-        "These activities did not both record power. Available metrics: pace, heart rate, cadence, altitude.",
+        "These activities did not both record power. Available metrics: pace, heartrate (shown as heart rate), cadence, altitude.",
       ),
     );
     expect(isError()).toBe(true);
@@ -279,7 +280,8 @@ export const ModelDrivenMetric = meta.story({
 
 /**
  * A run against a ride is a mixed pair, so the card calls pace "Speed": the
- * model's reply and the metrics it is offered read the same way.
+ * model's reply says so, and the metrics it is offered still name the value
+ * it must send.
  */
 export const ModelDrivenMetricMixedSport = meta.story({
   tags: ["!autodocs"],
@@ -305,7 +307,7 @@ export const ModelDrivenMetricMixedSport = meta.story({
     await userEvent.click(button("call-power"));
     await waitFor(() =>
       expect(said()).toBe(
-        "These activities did not both record power. Available metrics: speed, heart rate, cadence, altitude.",
+        "These activities did not both record power. Available metrics: pace (shown as speed), heartrate (shown as heart rate), cadence, altitude.",
       ),
     );
     expect(isError()).toBe(true);

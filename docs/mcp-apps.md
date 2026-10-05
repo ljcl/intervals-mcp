@@ -467,11 +467,14 @@ as pure `buildComparison` in `apps/server/src/tools/compareActivities.ts`.
   the delta tiles and shows the overlay EmptyState, with no retry.
 - `set-metric` (`metric`, `axis`) lets the model choose the overlay. A metric
   or axis the pair did not both record is refused with the available ones listed
-  by their displayed labels (`resolveSetMetric`, `src/setMetric.ts`, unit-tested),
-  so a mixed-sport pair reads "speed" where a run pair reads "pace". Either part
-  being unavailable refuses the whole call, and a stream-less side gets a plain
-  "nothing to choose" answer rather than an empty list. The reply and the
-  context summary's `Overlay:` line use the same labels as the pills.
+  (`resolveSetMetric`, `src/setMetric.ts`, unit-tested). The list names the value
+  the strict enum accepts, with the displayed label beside it only where it
+  differs (`pace (shown as speed)` for a mixed-sport pair, `heartrate (shown as
+  heart rate)`), so a model following the list never sends a value the schema
+  rejects. Either part being unavailable refuses the whole call, and a
+  stream-less side gets a plain "nothing to choose" answer rather than an empty
+  list. The success reply and the context summary's `Overlay:` line use the
+  displayed label, as the pills do.
 
 ### Activity Zones
 

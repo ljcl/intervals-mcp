@@ -35,7 +35,7 @@ describe("resolveSetMetric", () => {
     expect((r as { text: string }).text).toContain("pace, heartrate");
   });
 
-  it("lists metrics and names the one asked for by their displayed labels", () => {
+  it("lists the values it accepts, noting the label the view shows where it differs", () => {
     const labels: Record<MetricKey, string> = {
       pace: "Speed",
       heartrate: "Heart Rate",
@@ -46,13 +46,43 @@ describe("resolveSetMetric", () => {
     expect(
       resolveSetMetric(
         { metric: "power" },
-        metrics,
+        [...metrics, "cadence"],
         axes,
         (metric) => labels[metric],
       ),
     ).toEqual({
       kind: "error",
-      text: "These activities did not both record power. Available metrics: speed, heart rate.",
+      text: "These activities did not both record power. Available metrics: pace (shown as speed), heartrate (shown as heart rate), cadence.",
+    });
+  });
+
+  it("names a requested metric by its value, with the label beside it where it differs", () => {
+    expect(
+      resolveSetMetric({ metric: "pace" }, ["heartrate"], axes, (metric) =>
+        metric === "pace" ? "Speed" : "Heart Rate",
+      ),
+    ).toEqual({
+      kind: "error",
+      text: "These activities did not both record pace (speed). Available metrics: heartrate (shown as heart rate).",
+    });
+  });
+
+  it("adds no note where the label is the value in other case", () => {
+    const shown: Partial<Record<MetricKey, string>> = {
+      pace: "Pace",
+      power: "Power",
+      cadence: "Cadence",
+    };
+    expect(
+      resolveSetMetric(
+        { metric: "power" },
+        ["pace", "cadence"],
+        axes,
+        (metric) => shown[metric] ?? metric,
+      ),
+    ).toEqual({
+      kind: "error",
+      text: "These activities did not both record power. Available metrics: pace, cadence.",
     });
   });
 
