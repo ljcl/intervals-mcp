@@ -7,6 +7,7 @@ import {
 import {
   buildDataArgs,
   buildLoadBreakdown,
+  buildLoadRows,
   buildLoadSubtitle,
   buildScopeNote,
   buildTotalsStats,
@@ -188,6 +189,65 @@ describe("formatCurrentFitness", () => {
         "computed",
       ),
     ).toBe("CTL 41, ATL 37.5, TSB +3.5 (computed locally)");
+  });
+});
+
+describe("buildLoadRows", () => {
+  const complete: WeekSummary = {
+    weekStarting: "2026-06-01",
+    runs: 3,
+    distanceKm: 30,
+    timeHours: 3,
+    elevationM: 100,
+    trendKm: 30,
+    warning: true,
+    warningReasons: ["spike"],
+    load: 240,
+    loadByType: { Run: 240 },
+  };
+  const partial: WeekSummary = {
+    ...complete,
+    weekStarting: "2026-06-08",
+    distanceKm: 6,
+    trendKm: null,
+    inProgress: true,
+    warning: false,
+    warningReasons: [],
+    load: 50,
+    loadByType: { Run: 50 },
+  };
+
+  it("plots a complete week's load on the solid line", () => {
+    const [row] = buildLoadRows([complete]);
+    expect(row).toMatchObject({
+      weekLabel: formatShortDate("2026-06-01"),
+      load: 240,
+      loadComplete: 240,
+      loadSoFar: null,
+    });
+  });
+
+  it("keeps the week in progress off the solid line and marks it apart", () => {
+    // Its load is only the days so far: on the solid line it would read as
+    // a plunge next to the dashed partial bar, as trendKm null avoids for
+    // distance.
+    const rows = buildLoadRows([complete, partial]);
+    expect(rows[1]).toMatchObject({
+      load: 50,
+      loadComplete: null,
+      loadSoFar: 50,
+    });
+    expect(rows.map((r) => r.loadComplete)).toEqual([240, null]);
+  });
+
+  it("keeps the week's own fields for the tooltip", () => {
+    const [row] = buildLoadRows([complete]);
+    expect(row).toMatchObject({
+      warning: true,
+      warningReasons: ["spike"],
+      loadByType: { Run: 240 },
+      distanceKm: 30,
+    });
   });
 });
 

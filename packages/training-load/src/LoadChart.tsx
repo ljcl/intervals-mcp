@@ -1,4 +1,3 @@
-import { formatShortDate } from "@intervals-mcp/data";
 import { GRID_DASHARRAY, getChartTokens } from "@intervals-mcp/design-system";
 import { EmptyState } from "@intervals-mcp/ui";
 import { useMemo } from "react";
@@ -16,7 +15,22 @@ import {
 import { buildLoadA11y } from "./a11y";
 import styles from "./chartView.module.css";
 import { LoadTooltip } from "./LoadTooltip";
+import { buildLoadRows } from "./normalize";
 import { type TrainingLoadData } from "./types";
+
+/**
+ * The right axis lists load ticks from the axis line outward, so its title
+ * needs a gutter of its own past the widest tick or it lands on the ticks.
+ * Tick width is estimated from the tick font (a digit is about 0.62em) for
+ * four digits, so a 1,000+ load still clears the title.
+ */
+const LOAD_TICK_CHARS = 4;
+const DIGIT_EM = 0.62;
+/** The rotated title (about 13px), its inset from the edge, and a gap. */
+const LOAD_TITLE_GUTTER = 24;
+
+/** The "This week so far" fill, as on the legend key and the partial bar. */
+const PARTIAL_FILL = "color-mix(in srgb, var(--chart-power) 35%, transparent)";
 
 interface LoadChartProps {
   data: TrainingLoadData;
@@ -49,14 +63,12 @@ export function LoadChart({
     marginBottom: 24,
   };
 
-  const chartData = useMemo(
-    () =>
-      weeks.map((week) => ({
-        ...week,
-        weekLabel: formatShortDate(week.weekStarting),
-      })),
-    [weeks],
-  );
+  const loadAxisWidth =
+    Math.ceil(LOAD_TICK_CHARS * DIGIT_EM * tokens.axisFont) +
+    (isMobile ? 0 : LOAD_TITLE_GUTTER);
+
+  const chartData = useMemo(() => buildLoadRows(weeks), [weeks]);
+  const hasWeekInProgress = chartData.some((row) => row.inProgress);
 
   const a11y = useMemo(
     () => buildLoadA11y(data, { showTrend, showWarnings, showLoad }),
@@ -136,7 +148,7 @@ export function LoadChart({
             }}
             tickLine={false}
             axisLine={false}
-            width={isMobile ? 34 : 40}
+            width={loadAxisWidth}
             hide={!showLoad}
             label={
               isMobile
@@ -184,11 +196,12 @@ export function LoadChart({
           )}
           {showLoad && (
             // Linear, not a spline: weeks are discrete points, and a curve
-            // would overshoot between a hard week and a rest week.
+            // would overshoot between a hard week and a rest week. Complete
+            // weeks only: the week in progress is drawn apart, below.
             <Line
               yAxisId="load"
               type="linear"
-              dataKey="load"
+              dataKey="loadComplete"
               stroke="var(--chart-power)"
               strokeWidth={tokens.secondaryStrokeWidth}
               dot={{
@@ -197,6 +210,31 @@ export function LoadChart({
                 stroke: "var(--chart-power)",
               }}
               activeDot={{ r: 4 * tokens.dotScale }}
+            />
+          )}
+          {showLoad && hasWeekInProgress && (
+            // The week in progress holds only the days so far, so its load is
+            // a hollow point beside the light dashed bar, not the line's last
+            // point plunging. A line with one point draws no stroke, only its
+            // dot, and none is wanted (`stroke="none"`: the dot carries its
+            // own colors).
+            <Line
+              yAxisId="load"
+              type="linear"
+              dataKey="loadSoFar"
+              stroke="none"
+              dot={{
+                r: 3.5 * tokens.dotScale,
+                fill: PARTIAL_FILL,
+                stroke: "var(--chart-power)",
+                strokeWidth: 1.5,
+              }}
+              activeDot={{
+                r: 4.5 * tokens.dotScale,
+                fill: PARTIAL_FILL,
+                stroke: "var(--chart-power)",
+                strokeWidth: 1.5,
+              }}
             />
           )}
         </ComposedChart>

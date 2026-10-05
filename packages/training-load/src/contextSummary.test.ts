@@ -61,7 +61,7 @@ describe("buildTrainingLoadContextSummary", () => {
       "Training load from 2026-03-16 to 2026-06-10. 12 runs, 120 km over 2 weeks. " +
         "Total training load 900, whole body (Ride, Run); runs, distance and volume-spike warnings count runs only. " +
         "As of 2026-06-10: CTL 52, ATL 61, TSB -9 (from intervals.icu). " +
-        "The week of 2026-06-08 is still in progress, so its volume is only the days so far. " +
+        "The week of 2026-06-08 is still in progress, so its volume and load are only the days so far. " +
         "No volume-spike warnings.",
     );
   });

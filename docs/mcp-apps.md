@@ -403,6 +403,15 @@ run-based; load and CTL/ATL/TSB follow `runOnly`.
   first), runs, time, elevation, warnings. Footer `Legend` toggles trend line,
   load line (the right axis hides with it) and warning highlighting; mobile
   drops the axis titles.
+- The week in progress holds only the days so far, so `buildLoadRows` keeps its
+  load off the solid line (the way `trendKm` is null for it) and the chart
+  draws it as a hollow point of its own beside the dashed partial bar. On the
+  line it would read as a plunge in load. The tooltip still reads its `load`,
+  and the narration ranges the load line over complete weeks.
+- A right-hand axis lists ticks from the axis line outward, so the "Load"
+  title needs a gutter past the widest tick (sized from the axis font for four
+  digits, so a 1,000+ load clears it). The `LoadChart` stories assert that no
+  axis title's box meets a tick label's, including a four-digit story.
 - The `SummaryBar` reads Runs, Distance, Load, Fitness, Fatigue, Form; the
   three fitness tiles are dashes when `current` is null. A scope note under it
   (`buildScopeNote`: "Whole-body load (Run, Ride) · from intervals.icu as of 5

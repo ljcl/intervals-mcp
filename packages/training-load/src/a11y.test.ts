@@ -83,7 +83,21 @@ describe("buildLoadA11y", () => {
       ]),
     );
     expect(a11y.desc).toContain(
-      "The week of 8 Jun 2026 is still in progress, so its distance is only the days so far.",
+      "The week of 8 Jun 2026 is still in progress, so its distance and load are only the days so far.",
+    );
+  });
+
+  it("ranges the load line over complete weeks and names the hollow point for the week in progress", () => {
+    // The partial week's few days of load would otherwise read as the low.
+    const a11y = buildLoadA11y(
+      data([
+        week("2026-06-01", 20),
+        week("2026-06-08", 30),
+        week("2026-06-15", 2, { inProgress: true, trendKm: null }),
+      ]),
+    );
+    expect(a11y.desc).toContain(
+      "from 200 to 300 across complete weeks; a hollow point marks the week in progress.",
     );
   });
 

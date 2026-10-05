@@ -64,8 +64,12 @@ export const RunOnly = meta.story({
 export const LegendToggleHidesTrend = meta.story({
   args: { app: null, data: mockTrainingLoadData },
   play: async ({ canvas, canvasElement, userEvent }) => {
+    // The week in progress's hollow load point rides on a stroke-less line
+    // (`stroke="none"`) that is not a curve anyone sees.
     const curveCount = () =>
-      canvasElement.querySelectorAll("path.recharts-line-curve").length;
+      canvasElement.querySelectorAll(
+        'path.recharts-line-curve:not([stroke="none"])',
+      ).length;
     const barCount = () =>
       canvasElement.querySelectorAll(".recharts-bar-rectangle").length;
     // ResponsiveContainer needs a resize tick before the chart mounts. Two

@@ -103,6 +103,32 @@ export function formatCurrentFitness(
   return `CTL ${current.ctl}, ATL ${current.atl}, TSB ${formatSignedTsb(current.tsb)} (${fitnessSourceLabel(source).toLowerCase()})`;
 }
 
+/** A week as the chart plots it: the week itself plus its label and load series. */
+export interface LoadRow extends WeekSummary {
+  /** X-axis tick, "22 Jun". */
+  weekLabel: string;
+  /** Load for the solid line: complete weeks only. */
+  loadComplete: number | null;
+  /** Load of the week in progress, for its own hollow point. */
+  loadSoFar: number | null;
+}
+
+/**
+ * One chart row per week. The week in progress holds only the days so far,
+ * so its load stays off the solid line (as `trendKm` is null for it) and is
+ * drawn as a hollow point of its own, beside the dashed partial bar: on the
+ * line it would read as a plunge in load. `load` itself is kept for the
+ * tooltip.
+ */
+export function buildLoadRows(weeks: WeekSummary[]): LoadRow[] {
+  return weeks.map((week) => ({
+    ...week,
+    weekLabel: formatShortDate(week.weekStarting),
+    loadComplete: week.inProgress ? null : week.load,
+    loadSoFar: week.inProgress ? week.load : null,
+  }));
+}
+
 /**
  * A week's load by activity type, largest first. Equal loads fall back to
  * the type name so the tooltip rows do not reorder between renders.

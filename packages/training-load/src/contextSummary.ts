@@ -34,7 +34,7 @@ export function buildTrainingLoadContextSummary(
   const inProgress = data.weeks.find((w) => w.inProgress);
   if (inProgress) {
     parts.push(
-      `The week of ${inProgress.weekStarting} is still in progress, so its volume is only the days so far.`,
+      `The week of ${inProgress.weekStarting} is still in progress, so its volume and load are only the days so far.`,
     );
   }
 

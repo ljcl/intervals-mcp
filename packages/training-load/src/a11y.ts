@@ -55,14 +55,18 @@ export function buildLoadA11y(
   const last = weeks[weeks.length - 1]!;
   let min = Infinity;
   let max = -Infinity;
-  let minLoad = Infinity;
-  let maxLoad = -Infinity;
   for (const week of weeks) {
     if (week.distanceKm < min) min = week.distanceKm;
     if (week.distanceKm > max) max = week.distanceKm;
-    if (week.load < minLoad) minLoad = week.load;
-    if (week.load > maxLoad) maxLoad = week.load;
   }
+  // The solid load line stops at the last complete week: a few days of load
+  // is not a low for the range to quote.
+  const completeWeeks = weeks.filter((w) => !w.inProgress);
+  const loads = (completeWeeks.length > 0 ? completeWeeks : weeks).map(
+    (w) => w.load,
+  );
+  const minLoad = Math.min(...loads);
+  const maxLoad = Math.max(...loads);
 
   const parts = [
     `${weeks.length} week${weeks.length === 1 ? "" : "s"} of running volume from ${fullDate(first.weekStarting)} to ${fullDate(last.weekStarting)}.`,
@@ -70,13 +74,13 @@ export function buildLoadA11y(
   ];
   if (last.inProgress) {
     parts.push(
-      `The week of ${fullDate(last.weekStarting)} is still in progress, so its distance is only the days so far.`,
+      `The week of ${fullDate(last.weekStarting)} is still in progress, so its distance and load are only the days so far.`,
     );
   }
 
   if (visibility.showLoad) {
     parts.push(
-      `A second line shows weekly training load on the right axis, from ${minLoad} to ${maxLoad}.`,
+      `A second line shows weekly training load on the right axis, from ${minLoad} to ${maxLoad}${completeWeeks.length > 0 && last.inProgress ? " across complete weeks" : ""}${last.inProgress ? "; a hollow point marks the week in progress" : ""}.`,
     );
   }
   parts.push(
