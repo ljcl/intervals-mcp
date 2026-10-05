@@ -64,7 +64,7 @@ rather than (or alongside) text.
 | `get-fitness-trend` | Am I fresh or fatigued? What if I taper for a race? | `days`, `runOnly`, `projectDays`/`plannedLoads`, `targetDate`/`targetTsb` |
 | `get-training-load` | Weekly volume, volume-spike flags, weekly load | `days`, `runOnly` |
 | `get-best-efforts` | My best 5K/10K/half/marathon times | `distances`, `window`, `topN` |
-| `get-race-prediction` | What could I run for X? What pace do I need for a goal time? | `raceDistance`, `goalTime` |
+| `get-race-prediction` | What could I run for X? What pace do I need for a goal time? | `raceDistance` (`5km`, `10km`, `15km`, `10 mile`, `half marathon`, `marathon`, `50km`), `goalTime` |
 
 ### Writes
 
@@ -147,7 +147,13 @@ description is kept. (This is also the `annotate-last-run` prompt.)
   `i` (as `list-activities` returns them, e.g. `i189807578`), or pass id
   `"latest"` for the most recent run (not `update-activity`). Always pass ids
   as quoted strings, never bare numbers: some hosts round large numbers
-  through JSON, which silently corrupts the id.
+  through JSON, which silently corrupts the id. The result says which id
+  `"latest"` resolved to, and a chart or map opened with `"latest"` stays on
+  that run when the chat is reopened.
+- **One input naming scheme.** CamelCase inputs: `id` for one activity,
+  `activityId1`/`activityId2` for two, `days` for a look-back window
+  (`view-cadence-trends`: 7-728, default 42). Older spellings
+  (`activity_id`, `weeks`) still work.
 - **Whole-body vs runs-only fitness.** `get-fitness-trend` and
   `get-training-load` default to whole-body CTL/ATL/TSB, read straight from
   intervals.icu's own wellness record and covering every activity type.
