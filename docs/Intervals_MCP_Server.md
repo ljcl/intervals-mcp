@@ -100,7 +100,18 @@ same numbers as text use the matching read tool (e.g. `get-fitness-trend`,
 **Single-run analysis.** `get-running-summary` first for the overall picture,
 then drill into `get-activity-laps`, `get-hill-analysis`, `get-split-analysis`,
 `get-aerobic-analysis`, or `get-interval-analysis` depending on what the run
-was (hilly course, workout, long steady run).
+was (hilly course, workout, long steady run). (This is also the `run-debrief`
+prompt.)
+
+**Race readiness.** `get-fitness-trend` with `targetDate`/`targetTsb` for
+race-day form and the taper, `get-race-prediction` for the time, the last 7
+days of `get-wellness`, and `get-training-load` for recent load. (This is the
+`race-readiness` prompt.)
+
+**Injury check.** `get-training-load` warnings, the HRV and resting-HR trend
+from `get-wellness`, `get-fitness-trend` flags, and shoe mileage from
+`list-gear`. Training-load guidance, not a diagnosis. (This is the
+`injury-check` prompt.)
 
 **Race prediction.** `get-race-prediction` alone. Pass `raceDistance` for a
 km split table, or `goalTime` to pace splits to a target instead of a
@@ -114,7 +125,7 @@ forward under an assumed plan), or `view-fitness-trend` for the same thing as
 a chart with a Whole body / Runs only toggle. `targetDate` must be after today
 and at most 180 days ahead.
 
-**Updating an activity.** `get-running-summary` and `get-activity-laps` for
+**Updating an activity.** `get-running-summary` (it includes the laps) for
 context, draft a short note, show it to the athlete and get confirmation,
 then `update-activity` with `descriptionMode: "append"` so the existing
 description is kept. (This is also the `annotate-last-run` prompt.)

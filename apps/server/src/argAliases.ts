@@ -82,7 +82,12 @@ function labelKey(value: string): string {
     .replace(/miles$/, "mile");
 }
 
-function matchEnum(value: unknown, options: readonly string[]): unknown {
+/**
+ * `value` in the option's own spelling when exactly one option matches it
+ * by {@link labelKey}, else `value` unchanged. Exported for the prompts,
+ * which match a typed race distance the same way.
+ */
+export function matchEnum(value: unknown, options: readonly string[]): unknown {
   if (typeof value !== "string" || options.includes(value)) return value;
   const wanted = labelKey(value);
   const matches = options.filter((option) => labelKey(option) === wanted);

@@ -510,8 +510,9 @@ re-approve once:
 
 - Inputs are camelCase. A single activity id is `id`; a pair is
   `activityId1`/`activityId2`. The break renames the app tools'
-  `activity_id`, `activity_id_1`/`activity_id_2` and the
-  `annotate-last-run` prompt argument.
+  `activity_id` and `activity_id_1`/`activity_id_2`. Prompts are outside
+  the lock and already follow it (`annotate-last-run` takes `id`, still
+  accepting `activity_id`).
 - Outputs (`structuredContent`) stay snake_case.
 - Distance labels are one set across tools, lowercase with explicit units:
   `400m`, `1km`, `5km`, `10km`, `15km`, `10 mile`, `half marathon`,
