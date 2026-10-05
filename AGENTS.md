@@ -166,7 +166,10 @@ breaking them has shipped bugs — do not work around them locally.
   `FROM oven/bun:<tag>` lines to the same x.y.z, because Dependabot bumps the
   base image but never `packageManager`, and the lockfile must be resolved and
   installed by the same Bun. The same test pins `.tool-versions` (mise/asdf)
-  so a local install cannot resolve the lockfile with a stale Bun.
+  so a local install cannot resolve the lockfile with a stale Bun. Node's
+  home is the `.tool-versions` `nodejs` line (full x.y.z): CI's setup action
+  installs it, and the test pins the Dockerfile's `FROM node:<tag> AS node`
+  (the Node that builds the MCP Apps) to it.
 
 ## Key Directories
 
@@ -262,7 +265,7 @@ Non-negotiables:
 ```bash
 bun install               # Install all deps (workspace-aware)
 bun run check             # Full verification: lint + test + typecheck + build + boundaries
-bun run check:affected    # Same, but only packages changed since main
+bun run check:affected    # Same, but only packages changed since main (root lint + typecheck:root always run)
 bun run build             # Build all packages (via Turborepo)
 bun run build:affected    # Build only changed packages
 bun run test              # Run all tests (via Turborepo)
@@ -271,7 +274,7 @@ bun run test:stories:coverage # Same, plus render-path coverage into coverage-st
 bun run test:coverage     # Tests with coverage (per-package coverage/ output)
 bun run coverage:summary  # Aggregate coverage into one markdown table (CI job summary)
 bun run shots --list      # List story ids; `bun run shots <id>…` screenshots them to story-shots/
-bun run typecheck         # Typecheck all packages (via Turborepo)
+bun run typecheck         # Typecheck all packages plus root scripts/configs (via Turborepo)
 bun run typecheck:affected # Typecheck only changed packages
 bun run lint              # Lint all packages (Biome, root task)
 bun run lint:fix          # Auto-fix lint issues

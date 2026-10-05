@@ -53,7 +53,9 @@
       "inputs": ["$TURBO_DEFAULT$", "!**/*.stories.{ts,tsx,mdx}"],
       "env": ["INPUT"]
     },
-    "build:storybook": {},
+    "build:storybook": {
+      "dependsOn": ["^build:storybook"]
+    },
     "test": {
       "dependsOn": ["topo"]
     },
@@ -64,6 +66,7 @@
     "typecheck": {
       "dependsOn": ["topo"]
     },
+    "//#typecheck:root": {},
     "//#lint": {
       "inputs": [
         "$TURBO_DEFAULT$",

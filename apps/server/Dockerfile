@@ -5,6 +5,14 @@
 FROM oven/bun:1.4.2 AS base
 WORKDIR /app
 
+# Node for the MCP App builds only; it never reaches the runner. Vite and the
+# other build tools start from a Node shebang, and oven/bun's only `node` is a
+# fallback symlink to bun, so without this the shipped app.html files were
+# built under Bun while CI builds and tests them under Node. This is the Node
+# from .tool-versions (the one CI's setup action installs);
+# dockerRuntime.test.ts pins the tag to it.
+FROM node:24.21.0-trixie-slim AS node
+
 # turbo isolated here so it never reaches the runner; the version is derived
 # from the root package.json devDependency so a Dependabot turbo bump can
 # never drift from the image (previously a hardcoded ARG guarded by CI, #120).
@@ -28,6 +36,7 @@ RUN turbo prune @intervals-mcp/server --docker
 #    vite-config's peers, Vite and Rolldown native binaries (#89), none of
 #    which the server runs.
 FROM toolchain AS builder
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=pruner /app/out/json/ ./
 COPY --from=pruner /app/out/bun.lock ./bun.lock
 RUN --mount=type=cache,target=/root/.bun/install/cache bun install --frozen-lockfile

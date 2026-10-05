@@ -1,0 +1,4 @@
+{
+  "extends": "@intervals-mcp/tsconfig/base.json",
+  "include": ["*.ts"]
+}
