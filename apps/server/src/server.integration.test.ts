@@ -523,8 +523,46 @@ describe("tools/call id latest", () => {
     expect(mockedIntervalsActivity.mock.calls[0]?.[1]).toBe("i555");
   });
 
+  it('resolves activity_id "latest" for an app data feed', async () => {
+    vi.mocked(listActivities).mockResolvedValueOnce([
+      { id: "i556", type: "Run", start_date_local: "2026-10-01T07:00:00" },
+    ] as never);
+    mockedIntervalsActivity.mockResolvedValueOnce({
+      id: "i556",
+      name: "Hawk Hill",
+      type: "Run",
+    } as never);
+    const client = await connectTestClient();
+    await client.send("tools/call", {
+      name: "get-route-map-data",
+      arguments: { activity_id: "latest" },
+    });
+    expect(mockedIntervalsActivity.mock.calls[0]?.[1]).toBe("i556");
+  });
+
+  it("resolves both compare ids from one lookup", async () => {
+    vi.mocked(listActivities).mockResolvedValueOnce([
+      { id: "i557", type: "Run", start_date_local: "2026-10-01T07:00:00" },
+    ] as never);
+    mockedIntervalsActivity.mockResolvedValue({
+      id: "i557",
+      name: "Easy",
+      type: "Run",
+      start_date_local: "2026-10-01T07:00:00",
+    } as never);
+    const client = await connectTestClient();
+    await client.send("tools/call", {
+      name: "compare-activities",
+      arguments: { activityId1: "latest", activityId2: "latest" },
+    });
+    expect(vi.mocked(listActivities)).toHaveBeenCalledTimes(1);
+    const ids = mockedIntervalsActivity.mock.calls.map((call) => call[1]);
+    expect(ids.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(ids)).toEqual(new Set(["i557"]));
+  });
+
   it('says so when there is no run to use for "latest"', async () => {
-    vi.mocked(listActivities).mockResolvedValueOnce([]);
+    vi.mocked(listActivities).mockResolvedValue([]);
     const client = await connectTestClient();
     const { result } = await client.send("tools/call", {
       name: "get-activity",

@@ -1410,7 +1410,7 @@ export async function dispatchToolCall(
     // run's id here, so no handler sees it and a failed lookup gets the same
     // error treatment as the handler's own reads.
     const idKeys = TOOL_ID_KEYS.get(name);
-    if (idKeys) args = await resolveLatestIds(args, idKeys, token);
+    if (idKeys) args = await resolveLatestIds(args, idKeys, token, progress);
     const result = await handler(args, token, progress);
     // A handler that returns `isError` failed as surely as one that threw; the
     // counters would flatter the server if only throws counted.
