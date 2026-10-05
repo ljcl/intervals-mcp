@@ -1,12 +1,15 @@
 import { type TrainingLoadData, type WeekSummary } from "../types";
 
+/** A week's run volume, before any load is attached to it. */
+type VolumeWeek = Omit<WeekSummary, "load" | "loadByType">;
+
 /**
  * 12 weeks of build with one skipped week and one volume-spike week (over
  * 1.5 times the average of the 4 weeks before it, as the server flags it),
  * then the current week in progress: exercises the trend line, the
  * zero-fill row, the warning, and the partial bar.
  */
-export const mockWeeks: WeekSummary[] = [
+const volumeWeeks: VolumeWeek[] = [
   {
     weekStarting: "2026-03-30",
     runs: 3,
@@ -144,6 +147,39 @@ export const mockWeeks: WeekSummary[] = [
   },
 ];
 
+/**
+ * Run load per week, aligned with `volumeWeeks`. Load tracks effort rather
+ * than distance, so it is not a multiple of the km.
+ */
+const RUN_LOAD = [
+  210, 240, 265, 270, 0, 280, 300, 305, 480, 360, 270, 295, 130,
+];
+
+/**
+ * Cross-training load per week (rides). The skipped run week still carries
+ * 150 of it, which is what the whole-body line shows and a run-only one
+ * cannot.
+ */
+const RIDE_LOAD = [60, 0, 80, 0, 150, 70, 0, 90, 0, 100, 0, 75, 40];
+
+/** `loadByType` for the given type loads; a type with no load is absent, as the server omits it. */
+const byType = (loads: Record<string, number>): Record<string, number> =>
+  Object.fromEntries(Object.entries(loads).filter(([, load]) => load > 0));
+
+/** Whole-body weeks: runs plus rides, load split by type. */
+export const mockWeeks: WeekSummary[] = volumeWeeks.map((week, i) => ({
+  ...week,
+  load: RUN_LOAD[i]! + RIDE_LOAD[i]!,
+  loadByType: byType({ Run: RUN_LOAD[i]!, Ride: RIDE_LOAD[i]! }),
+}));
+
+/** The same weeks counting runs only: the rides drop out of load. */
+export const mockRunOnlyWeeks: WeekSummary[] = volumeWeeks.map((week, i) => ({
+  ...week,
+  load: RUN_LOAD[i]!,
+  loadByType: byType({ Run: RUN_LOAD[i]! }),
+}));
+
 const layoffWeek = (
   weekStarting: string,
   distanceKm: number,
@@ -158,6 +194,8 @@ const layoffWeek = (
   inProgress: trendKm === null,
   warning: false,
   warningReasons: [],
+  load: distanceKm * 5,
+  loadByType: distanceKm > 0 ? { Run: distanceKm * 5 } : {},
 });
 
 /**
@@ -173,21 +211,46 @@ export const layoffWeeks: WeekSummary[] = [
   layoffWeek("2026-06-29", 0, null),
 ];
 
-/** Full data payload matching the mock weeks, for App-level stories. */
-export const mockTrainingLoadData: TrainingLoadData = {
+/** The server's payload shape around a set of weeks. */
+const payloadFor = (
+  weeks: WeekSummary[],
+  scope: Pick<
+    TrainingLoadData,
+    "runOnly" | "activityTypesIncluded" | "current" | "source"
+  >,
+): TrainingLoadData => ({
   // 12 complete weeks plus Monday to Wednesday of the current one.
   days: 87,
   startDate: "2026-03-30",
   endDate: "2026-06-24",
   totals: {
-    runs: mockWeeks.reduce((sum, w) => sum + w.runs, 0),
+    runs: weeks.reduce((sum, w) => sum + w.runs, 0),
     distanceKm:
-      Math.round(mockWeeks.reduce((sum, w) => sum + w.distanceKm, 0) * 100) /
-      100,
+      Math.round(weeks.reduce((sum, w) => sum + w.distanceKm, 0) * 100) / 100,
     timeHours:
-      Math.round(mockWeeks.reduce((sum, w) => sum + w.timeHours, 0) * 100) /
-      100,
-    elevationM: mockWeeks.reduce((sum, w) => sum + w.elevationM, 0),
+      Math.round(weeks.reduce((sum, w) => sum + w.timeHours, 0) * 100) / 100,
+    elevationM: weeks.reduce((sum, w) => sum + w.elevationM, 0),
+    load: weeks.reduce((sum, w) => sum + w.load, 0),
   },
-  weeks: mockWeeks,
-};
+  weeks,
+  ...scope,
+});
+
+/** Full data payload matching the mock weeks, for App-level stories: whole-body load, CTL/ATL read from intervals.icu. */
+export const mockTrainingLoadData: TrainingLoadData = payloadFor(mockWeeks, {
+  runOnly: false,
+  activityTypesIncluded: ["Ride", "Run"],
+  current: { date: "2026-06-24", ctl: 52, atl: 61, tsb: -9 },
+  source: "intervals.icu",
+});
+
+/** The run-only scope: load over runs, CTL/ATL computed locally. */
+export const mockRunOnlyTrainingLoadData: TrainingLoadData = payloadFor(
+  mockRunOnlyWeeks,
+  {
+    runOnly: true,
+    activityTypesIncluded: ["Run", "TrailRun", "VirtualRun"],
+    current: { date: "2026-06-24", ctl: 41, atl: 47.5, tsb: -6.5 },
+    source: "computed",
+  },
+);

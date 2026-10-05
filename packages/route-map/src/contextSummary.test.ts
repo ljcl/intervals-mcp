@@ -54,6 +54,20 @@ describe("buildRouteMapContextSummary", () => {
     );
   });
 
+  it("says which stretch of the route is in view", () => {
+    const summary = buildRouteMapContextSummary({
+      name: "Morning Run",
+      activityType: "Run",
+      distanceKm: 20,
+      elevationGain: 0,
+      hasGeometry: true,
+      visible: "Showing 12.0–16.0 km of the route",
+    });
+    expect(summary).toBe(
+      'Viewing the map for Run activity "Morning Run". Distance 20.0 km. Showing 12.0–16.0 km of the route.',
+    );
+  });
+
   it("notes when there is no GPS track", () => {
     const summary = buildRouteMapContextSummary({
       name: "Treadmill",

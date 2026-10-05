@@ -1,7 +1,7 @@
-import { formatShortDate } from "@intervals-mcp/data";
+import { formatPace, formatShortDate } from "@intervals-mcp/data";
 import { GRID_DASHARRAY, getChartTokens } from "@intervals-mcp/design-system";
 import { EmptyState } from "@intervals-mcp/ui";
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import {
   CartesianGrid,
   Cell,
@@ -15,8 +15,14 @@ import {
 } from "recharts";
 import { buildTrendA11y } from "./a11y";
 import styles from "./chartView.module.css";
-import { dotSize, rollingAverage } from "./normalize";
-import { SharedTooltip } from "./SharedTooltip";
+import {
+  dayTimestamp,
+  dotSize,
+  rollingAverage,
+  runsByDay,
+  trendTimeAxis,
+} from "./normalize";
+import { SharedTooltip, type TooltipRun } from "./SharedTooltip";
 import { type RunSummary } from "./types";
 
 interface TrendViewProps {
@@ -63,12 +69,25 @@ export function TrendView({
     () =>
       sorted.map((a, i) => ({
         ...a,
-        dateFormatted: formatShortDate(a.date),
-        dateTs: new Date(a.date).getTime(),
+        dateTs: dayTimestamp(a.date),
         trendCadence: trend[i]?.cadence ?? null,
         size: dotSize(a.distance, maxDistance) * tokens.dotScale,
       })),
     [sorted, trend, maxDistance, tokens.dotScale],
+  );
+
+  // Runs on one day share an x, and the axis tooltip picks one row for all of
+  // them, so the tooltip lists the whole day (#66).
+  const sameDay = useMemo(() => runsByDay(chartData), [chartData]);
+  const runsOnDay = useCallback(
+    (run: TooltipRun): TooltipRun[] =>
+      (run.date && sameDay.get(dayTimestamp(run.date))) || [run],
+    [sameDay],
+  );
+
+  const timeAxis = useMemo(
+    () => trendTimeAxis(chartData.map((r) => r.dateTs)),
+    [chartData],
   );
 
   const a11y = useMemo(() => buildTrendA11y(sorted), [sorted]);
@@ -97,7 +116,14 @@ export function TrendView({
             stroke="var(--color-border-tertiary)"
           />
           <XAxis
-            dataKey="dateFormatted"
+            dataKey="dateTs"
+            type="number"
+            scale="time"
+            domain={timeAxis.domain}
+            ticks={timeAxis.ticks}
+            tickFormatter={(ts: number) =>
+              formatShortDate(new Date(ts).toISOString().slice(0, 10))
+            }
             tick={{
               fontSize: tokens.axisFont,
               fill: "var(--color-text-tertiary)",
@@ -136,13 +162,14 @@ export function TrendView({
             orientation="right"
             reversed
             domain={["auto", "auto"]}
+            tickFormatter={(v: number) => formatPace(v)}
             tick={{
               fontSize: tokens.axisFont,
               fill: "var(--color-text-tertiary)",
             }}
             tickLine={false}
             axisLine={false}
-            width={isMobile ? 34 : 44}
+            width={isMobile ? 40 : 58}
             label={
               isMobile
                 ? undefined
@@ -157,7 +184,7 @@ export function TrendView({
                   }
             }
           />
-          <RechartsTooltip content={<SharedTooltip />} />
+          <RechartsTooltip content={<SharedTooltip runsAt={runsOnDay} />} />
           <Line
             yAxisId="cadence"
             type="monotone"
@@ -194,6 +221,10 @@ export function TrendView({
               />
             ))}
           </Scatter>
+          {/* A run with no recorded speed has a null pace: Recharts skips it,
+              so it keeps its cadence dot and draws no pace symbol. Do not
+              filter it out with a Scatter-level `data` prop: that makes the
+              shared tooltip show the wrong run for some dots. */}
           <Scatter
             yAxisId="pace"
             dataKey="averagePace"

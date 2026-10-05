@@ -1,5 +1,12 @@
+import { formatTime } from "@intervals-mcp/data";
 import preview, { darkGlobals } from "@intervals-mcp/design-system/preview";
-import { MobileCardShell } from "@intervals-mcp/ui";
+import {
+  MobileCardShell,
+  type ModelContextApp,
+  ViewToolRegistry,
+  type ViewToolResult,
+} from "@intervals-mcp/ui";
+import { type ComponentProps, useState } from "react";
 import { expect, waitFor } from "storybook/test";
 import { dynamicsRun } from "./__fixtures__/dynamics-run";
 import { gappyRun } from "./__fixtures__/gappy-run";
@@ -99,16 +106,14 @@ export const LegendFocusIsolatesSeries = meta.story({
   },
 });
 
+// The tempo streams re-typed as a ride: speed in km/h, not pace.
+const tempoRide = { ...tempoRun, activityType: "Ride" };
+
 export const CyclingRide = meta.story({
   args: {
-    data: toChartData(tempoRun),
-    meta: {
-      ...extractMeta(tempoRun),
-      activityType: "Ride",
-      isRunning: false,
-      isSwimming: false,
-    },
-    laps: toLapData(tempoRun),
+    data: toChartData(tempoRide),
+    meta: extractMeta(tempoRide),
+    laps: toLapData(tempoRide),
   },
 });
 
@@ -315,10 +320,11 @@ export const DenseIntervalLabels = meta.story({
 });
 
 /**
- * A manual entry has no streams at all. The card keeps its title and says
- * so, instead of rendering bare axes with an empty legend and an empty
- * preset selector — which read as a broken app rather than "nothing to
- * chart" (ljcl/strava-mcp#248).
+ * A manual entry has no streams at all. The server sends the degraded payload
+ * (`noStreams: true`, empty `time`) instead of an error, so the card keeps its
+ * title and says so, with no retry: a retry cannot succeed (#65). Before, it
+ * rendered bare axes with an empty legend and an empty preset selector, which
+ * read as a broken app rather than "nothing to chart" (ljcl/strava-mcp#248).
  */
 export const NoStreams = meta.story({
   args: {
@@ -336,6 +342,9 @@ export const NoStreams = meta.story({
     // No axis frame, and none of the controls that imply plottable series.
     expect(canvasElement.querySelector(".recharts-surface")).toBeNull();
     expect(canvas.queryByRole("button", { name: "Form" })).toBeNull();
+    // The ErrorState's retry control is what a dead retry looked like.
+    expect(canvas.queryByRole("button", { name: "Try again" })).toBeNull();
+    expect(canvas.queryByRole("alert")).toBeNull();
   },
 });
 
@@ -375,6 +384,14 @@ export const MobileNoStreams = meta.story({
       </MobileCardShell>
     ),
   ],
+  play: async ({ canvas }) => {
+    await expect(
+      canvas.getByText(
+        "This activity has no recorded streams, so there is nothing to chart.",
+      ),
+    ).toBeVisible();
+    expect(canvas.queryByRole("button", { name: "Try again" })).toBeNull();
+  },
 });
 
 export const BrushZoom = meta.story({
@@ -500,5 +517,195 @@ export const RunningDynamicsFormMobile = meta.story({
     expect(legendGroup!.scrollWidth).toBeLessThanOrEqual(
       legendGroup!.clientWidth + 1,
     );
+  },
+});
+
+/**
+ * `set-brush-window` driven the way the host drives it: through a real
+ * `ViewToolRegistry`, with a stub app that records the model context the chart
+ * reports back. One button per call, so each play function reads the tool's
+ * reply and the state the chart then describes.
+ */
+function ModelDriven({
+  calls,
+  ...props
+}: ComponentProps<typeof ActivityChart> & {
+  calls: Record<string, Record<string, unknown>>;
+}) {
+  // Stable across renders: a registry rebuilt each render would have the
+  // handler installed on an instance the buttons no longer hold.
+  const [registry] = useState(() => new ViewToolRegistry());
+  const [said, setSaid] = useState<ViewToolResult | null>(null);
+  const [context, setContext] = useState("");
+  const [app] = useState<ModelContextApp>(() => ({
+    getHostCapabilities: () => ({ updateModelContext: {} }),
+    updateModelContext: async ({ content }) => {
+      setContext(content[0]?.text ?? "");
+    },
+  }));
+  return (
+    <>
+      <ActivityChart {...props} viewToolRegistry={registry} app={app} />
+      {Object.entries(calls).map(([id, args]) => (
+        <button
+          key={id}
+          type="button"
+          data-testid={id}
+          onClick={() =>
+            void registry.invoke("set-brush-window", args).then(setSaid)
+          }
+        >
+          {id}
+        </button>
+      ))}
+      <p data-testid="tool-said">{said?.text}</p>
+      <p data-testid="tool-error">
+        {said ? String(said.isError === true) : ""}
+      </p>
+      <p data-testid="model-context">{context}</p>
+    </>
+  );
+}
+
+function toolOutput(canvasElement: HTMLElement) {
+  const read = (id: string) =>
+    canvasElement.querySelector(`[data-testid='${id}']`)?.textContent ?? "";
+  return {
+    said: () => read("tool-said"),
+    isError: () => read("tool-error") === "true",
+    context: () => read("model-context"),
+    click: (id: string) =>
+      canvasElement
+        .querySelector<HTMLButtonElement>(`[data-testid='${id}']`)!
+        .click(),
+  };
+}
+
+const swimCalls = {
+  "call-time-window": { fromSeconds: 60, toSeconds: 120 },
+  "call-km-window": { fromKm: 0.1, toKm: 0.2 },
+  "call-mixed": { fromKm: 1, toSeconds: 60 },
+};
+
+/**
+ * #65: a time window on a swim. The swim's axis is distance and Brush is
+ * index-based, so the window maps through the time values to indices. The
+ * reply describes seconds, not km, and the zoom lands on the samples inside
+ * [60 s, 120 s], which the context summary then reports on the brush's own
+ * distance axis.
+ */
+export const SwimTimeWindowZoom = meta.story({
+  args: {
+    data: toChartData(poolSwim),
+    meta: extractMeta(poolSwim),
+    laps: toLapData(poolSwim),
+  },
+  render: (args) => <ModelDriven {...args} calls={swimCalls} />,
+  play: async ({ canvasElement }) => {
+    const out = toolOutput(canvasElement);
+    const data = toChartData(poolSwim);
+    const inWindow = data.filter((p) => p.time >= 60 && p.time <= 120);
+    const first = inWindow[0]!;
+    const last = inWindow[inWindow.length - 1]!;
+    await waitFor(() =>
+      expect(
+        canvasElement.querySelector("[data-testid='call-time-window']"),
+      ).not.toBeNull(),
+    );
+
+    out.click("call-time-window");
+    await waitFor(() => expect(out.said()).toMatch(/^Zoomed the chart to /));
+    expect(out.isError()).toBe(false);
+    expect(out.said()).toContain(
+      `${formatTime(first.time)}–${formatTime(last.time)}`,
+    );
+    expect(out.said()).not.toContain("km");
+    // The chart really zoomed to those samples, in the brush's own units.
+    await waitFor(
+      () =>
+        expect(out.context()).toContain(
+          `Zoomed to ${(first.distance! / 1000).toFixed(2)}–${(last.distance! / 1000).toFixed(2)} km.`,
+        ),
+      { timeout: 3000 },
+    );
+  },
+});
+
+/** A distance window on a swim still reads in km, as before. */
+export const SwimDistanceWindowZoom = meta.story({
+  args: {
+    data: toChartData(poolSwim),
+    meta: extractMeta(poolSwim),
+    laps: toLapData(poolSwim),
+  },
+  render: (args) => <ModelDriven {...args} calls={swimCalls} />,
+  play: async ({ canvasElement }) => {
+    const out = toolOutput(canvasElement);
+    await waitFor(() =>
+      expect(
+        canvasElement.querySelector("[data-testid='call-km-window']"),
+      ).not.toBeNull(),
+    );
+    out.click("call-km-window");
+    await waitFor(() => expect(out.said()).toMatch(/km of Pool Swim\.$/));
+    expect(out.isError()).toBe(false);
+  },
+});
+
+/** Mixing the two forms is a mistake worth naming, not a silent pick. */
+export const MixedZoomAxesRefused = meta.story({
+  args: {
+    data: toChartData(poolSwim),
+    meta: extractMeta(poolSwim),
+    laps: toLapData(poolSwim),
+  },
+  render: (args) => <ModelDriven {...args} calls={swimCalls} />,
+  play: async ({ canvasElement }) => {
+    const out = toolOutput(canvasElement);
+    await waitFor(() =>
+      expect(
+        canvasElement.querySelector("[data-testid='call-mixed']"),
+      ).not.toBeNull(),
+    );
+    out.click("call-mixed");
+    await waitFor(() => expect(out.isError()).toBe(true));
+    expect(out.said()).toBe(
+      "Pass either fromKm/toKm or fromSeconds/toSeconds, not both.",
+    );
+    // Refused means untouched: no zoom reached the model context.
+    expect(out.context()).not.toContain("Zoomed to");
+  },
+});
+
+/**
+ * #65: a stream-less activity has nothing to zoom, and reset is no exception.
+ * Every call, reset included, answers the same no-streams error.
+ */
+export const EmptyChartZoomRefused = meta.story({
+  args: {
+    data: toChartData(manualEntry),
+    meta: extractMeta(manualEntry),
+    laps: toLapData(manualEntry),
+  },
+  render: (args) => (
+    <ModelDriven
+      {...args}
+      calls={{
+        "call-window": { fromSeconds: 0, toSeconds: 60 },
+        "call-reset": { reset: true },
+      }}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const out = toolOutput(canvasElement);
+    const noStreams = "This activity has no recorded streams to zoom.";
+
+    out.click("call-window");
+    await waitFor(() => expect(out.said()).toBe(noStreams));
+    expect(out.isError()).toBe(true);
+
+    out.click("call-reset");
+    await waitFor(() => expect(out.isError()).toBe(true));
+    expect(out.said()).toBe(noStreams);
   },
 });

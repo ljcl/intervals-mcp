@@ -42,6 +42,19 @@ describe("RouteMap accessibility wiring", () => {
     );
   });
 
+  it("announces camera moves through a polite live region in both views", () => {
+    // set-viewport, reset and the user's own zoom are narrated on the
+    // basemap too, not only on the grid (#53).
+    for (const basemapEnabled of [true, false]) {
+      const markup = renderToStaticMarkup(
+        <RouteMap data={loopActivity} basemapEnabled={basemapEnabled} />,
+      );
+      expect(markup).toMatch(
+        /<p class="[^"]*srOnly[^"]*" aria-live="polite"><\/p>/,
+      );
+    }
+  });
+
   it("labels and describes the elevation strip", () => {
     const withAltitude = {
       ...loopActivity,

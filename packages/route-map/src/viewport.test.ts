@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { type ViewBox } from "./panZoom";
-import { frameForIndexRange, indexRangeForDistance } from "./viewport";
+import {
+  describeView,
+  frameForIndexRange,
+  indexRangeForDistance,
+  visibleRoute,
+} from "./viewport";
 
 /** A 10 km course sampled every 100 m. */
 const distance = Array.from({ length: 101 }, (_, i) => i * 100);
@@ -100,5 +105,133 @@ describe("frameForIndexRange", () => {
   it("framing the whole course comes back to the base frame", () => {
     const view = frameForIndexRange(points, { from: 0, to: 100 }, base)!;
     expect(view.w).toBeCloseTo(base.w, 5);
+  });
+});
+
+describe("visibleRoute", () => {
+  /** Six points 1 km apart. */
+  const km6 = [0, 1000, 2000, 3000, 4000, 5000];
+  const only =
+    (...indices: number[]) =>
+    (i: number) =>
+      indices.includes(i);
+
+  it("is the whole route exactly when every point is in view", () => {
+    expect(visibleRoute(6, () => true, km6)).toEqual({
+      whole: true,
+      stretches: [{ fromKm: 0, toKm: 5 }],
+    });
+    expect(visibleRoute(6, only(0, 1, 2, 3, 4), km6).whole).toBe(false);
+  });
+
+  it("names the stretch in view by km", () => {
+    expect(visibleRoute(6, only(2, 3, 4), km6)).toEqual({
+      whole: false,
+      stretches: [{ fromKm: 2, toKm: 4 }],
+    });
+  });
+
+  it("splits points in view into runs, in route order", () => {
+    // Zoomed onto the start of a loop: its first and last kilometres are
+    // both in view, the middle is not.
+    expect(visibleRoute(6, only(0, 1, 4, 5), km6).stretches).toEqual([
+      { fromKm: 0, toKm: 1 },
+      { fromKm: 4, toKm: 5 },
+    ]);
+  });
+
+  it("has no stretches when the route is out of view", () => {
+    expect(visibleRoute(6, () => false, km6)).toEqual({
+      whole: false,
+      stretches: [],
+    });
+  });
+
+  it("cannot measure stretches without a matching distance stream", () => {
+    expect(visibleRoute(6, only(1), undefined)).toEqual({
+      whole: false,
+      stretches: null,
+    });
+    expect(visibleRoute(6, only(1), [0, 1000])).toEqual({
+      whole: false,
+      stretches: null,
+    });
+    expect(visibleRoute(6, () => true, undefined).whole).toBe(true);
+  });
+});
+
+describe("describeView", () => {
+  const stretch = (fromKm: number, toKm: number) => ({ fromKm, toKm });
+
+  it("says whole route exactly when every point is in view, at any zoom", () => {
+    const whole = { whole: true, stretches: [stretch(0, 10)] };
+    expect(describeView(whole, 1)).toBe("Showing the whole route");
+    // Reset after the frame was resized: zoomed relative to the load-time
+    // fit, but still everything in view.
+    expect(describeView(whole, 1.2)).toBe("Showing the whole route");
+  });
+
+  it("names the stretch in view", () => {
+    expect(
+      describeView({ whole: false, stretches: [stretch(12, 16)] }, 3.2),
+    ).toBe("Showing 12.0–16.0 km of the route");
+  });
+
+  it("names a panned stretch at the whole-route zoom too", () => {
+    expect(
+      describeView({ whole: false, stretches: [stretch(0, 7.43)] }, 1),
+    ).toBe("Showing 0.0–7.4 km of the route");
+  });
+
+  it("lists up to three stretches", () => {
+    expect(
+      describeView(
+        { whole: false, stretches: [stretch(0, 0.5), stretch(9.5, 10)] },
+        4,
+      ),
+    ).toBe("Showing 0.0–0.5 km and 9.5–10.0 km of the route");
+    expect(
+      describeView(
+        {
+          whole: false,
+          stretches: [stretch(1, 2), stretch(4, 5), stretch(8, 9)],
+        },
+        2,
+      ),
+    ).toBe("Showing 1.0–2.0 km, 4.0–5.0 km and 8.0–9.0 km of the route");
+  });
+
+  it("summarises more stretches than that", () => {
+    // A track session: the same oval lapped over and over.
+    const laps = Array.from({ length: 6 }, (_, i) =>
+      stretch(i * 0.4, i * 0.4 + 0.1),
+    );
+    expect(describeView({ whole: false, stretches: laps }, 2)).toBe(
+      "Showing 6 stretches of the route between 0.0 and 2.1 km",
+    );
+  });
+
+  it("names a stretch too short to show a range as one point", () => {
+    expect(
+      describeView({ whole: false, stretches: [stretch(3.21, 3.24)] }, 8),
+    ).toBe("Showing 3.2 km of the route");
+  });
+
+  it("says when the route is out of view", () => {
+    expect(describeView({ whole: false, stretches: [] }, 2)).toBe(
+      "The route is out of view",
+    );
+  });
+
+  it("falls back to the zoom factor without a distance stream", () => {
+    expect(describeView({ whole: false, stretches: null }, 3.2)).toBe(
+      "Zoomed to 3.2×",
+    );
+    expect(describeView({ whole: false, stretches: null }, 1)).toBe(
+      "Showing part of the route",
+    );
+    expect(describeView({ whole: true, stretches: null }, 1)).toBe(
+      "Showing the whole route",
+    );
   });
 });

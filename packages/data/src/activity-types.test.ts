@@ -16,8 +16,9 @@ describe("isRunning", () => {
 });
 
 describe("isSwimming", () => {
-  it("matches Swim only", () => {
+  it("matches every swim type", () => {
     expect(isSwimming("Swim")).toBe(true);
+    expect(isSwimming("OpenWaterSwim")).toBe(true);
     expect(isSwimming("Run")).toBe(false);
     expect(isSwimming("VirtualSwim")).toBe(false);
   });

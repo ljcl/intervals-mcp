@@ -1,19 +1,24 @@
-import { isPlanned, isPositiveToday, planDays, signedTsb } from "./normalize";
+import { formatSignedTsb } from "@intervals-mcp/data";
+import { isPlanned, isPositiveToday, planDays } from "./normalize";
 import { type FitnessTrendData } from "./types";
 
 /**
  * One-line summary of what the chart is showing, synced to the host so the
  * model can talk about the visible state without re-calling the data tool.
+ * `hiddenSeries` names the series turned off, by the values `set-scope`
+ * accepts, so the model can say what the athlete is not looking at and
+ * switch it back.
  */
 export function buildFitnessTrendContextSummary(
   data: FitnessTrendData,
+  hiddenSeries: readonly string[] = [],
 ): string | null {
   const current = data.current;
   if (!current) return null;
 
   const parts = [
     `Fitness trend, last ${data.days} day${data.days === 1 ? "" : "s"}.`,
-    `On ${current.date}: fitness (CTL) ${current.ctl}, fatigue (ATL) ${current.atl}, form (TSB) ${signedTsb(current.tsb)}.`,
+    `On ${current.date}: fitness (CTL) ${current.ctl}, fatigue (ATL) ${current.atl}, form (TSB) ${formatSignedTsb(current.tsb)}.`,
   ];
 
   const plan = planDays(data);
@@ -21,7 +26,7 @@ export function buildFitnessTrendContextSummary(
   if (data.taper && landing) {
     const taper = data.taper;
     parts.push(
-      `Taper plan of ${taper.weeks.length} week${taper.weeks.length === 1 ? "" : "s"} to ${taper.targetDate}, targeting form ${signedTsb(taper.targetTsb)} and landing on ${signedTsb(taper.achievedTsb)}.`,
+      `Taper plan of ${taper.weeks.length} week${taper.weeks.length === 1 ? "" : "s"} to ${taper.targetDate}, targeting form ${formatSignedTsb(taper.targetTsb)} and landing on ${formatSignedTsb(taper.achievedTsb)}.`,
     );
     if (!taper.feasible && taper.note) parts.push(taper.note);
   } else if (landing && !isPlanned(data)) {
@@ -30,7 +35,7 @@ export function buildFitnessTrendContextSummary(
         ? `Rest projection to ${landing.date}; form is already positive today (${data.tsbPositiveDate}).`
         : data.tsbPositiveDate
           ? `Rest projection to ${landing.date}; form turns positive on ${data.tsbPositiveDate}.`
-          : `Rest projection to ${landing.date}, reaching form ${signedTsb(landing.tsb)}.`,
+          : `Rest projection to ${landing.date}, reaching form ${formatSignedTsb(landing.tsb)}.`,
     );
   }
 
@@ -52,6 +57,10 @@ export function buildFitnessTrendContextSummary(
         ? "Scope: runs only, computed locally."
         : "Scope: whole body, from intervals.icu.",
     );
+  }
+
+  if (hiddenSeries.length > 0) {
+    parts.push(`Hidden series: ${hiddenSeries.join(", ")}.`);
   }
 
   if (data.warnings && data.warnings.length > 0) {

@@ -2,16 +2,24 @@
  * MapLibre basemap renderer: OpenFreeMap's Liberty style behind the
  * track, the default view when tiles are reachable (the offline SVG grid is
  * the silent fallback). Owns its own camera — MapLibre's native zoom/pan with
- * cooperative gestures so the conversation keeps scrolling — and renders the
- * full feature set as map layers: the metric-colored track (GeoJSON line
- * features per color run), lap/km split dots, and the scrub marker + value
- * tooltip shared with the elevation strip through the scrub index.
+ * cooperative gestures so the conversation keeps scrolling — which the caller
+ * can also frame (`set-viewport`) and which reports every move back, so the
+ * caller describes the camera the user actually sees. Renders the full
+ * feature set as map layers: the metric-colored track (GeoJSON line features
+ * per color run), lap/km split dots, and the scrub marker + value tooltip
+ * shared with the elevation strip through the scrub index.
  */
 
 import * as maplibregl from "maplibre-gl";
 import workerCode from "maplibre-gl/dist/maplibre-gl-worker.mjs?bundled-raw";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { type SplitMarker, type WaypointMarker } from "./annotations";
+import {
+  BASEMAP_PADDING,
+  type CameraFrame,
+  type CameraReport,
+  createBasemapCamera,
+} from "./basemapCamera";
 import {
   BASEMAP_COLORS,
   nearestLatLngIndex,
@@ -81,6 +89,11 @@ interface BasemapViewProps {
   scrubTip?: ReactNode;
   /** Tiles failed to load — the caller falls back to the offline grid. */
   onFail: () => void;
+  /** Bounds to fit the camera to; a new nonce moves it again. */
+  frame?: CameraFrame;
+  /** Every camera move, the user's own included: the bounds in view and the
+   * zoom relative to the whole-route fit. */
+  onCamera?: (camera: CameraReport) => void;
 }
 
 function scrubPointGeoJson(
@@ -114,9 +127,12 @@ export function BasemapView({
   onScrub,
   scrubTip,
   onFail,
+  frame,
+  onCamera,
 }: BasemapViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
+  const cameraRef = useRef<ReturnType<typeof createBasemapCamera> | null>(null);
   const [loaded, setLoaded] = useState(false);
   const loadedRef = useRef(false);
   // Tooltip anchor in container pixels, recomputed on scrub and camera moves.
@@ -134,6 +150,8 @@ export function BasemapView({
   onScrubRef.current = onScrub;
   const onFailRef = useRef(onFail);
   onFailRef.current = onFail;
+  const onCameraRef = useRef(onCamera);
+  onCameraRef.current = onCamera;
   const coordinatesRef = useRef(coordinates);
   coordinatesRef.current = coordinates;
   const trackRef = useRef(track);
@@ -153,13 +171,18 @@ export function BasemapView({
       container,
       style: STYLE_URL,
       bounds,
-      fitBoundsOptions: { padding: 36 },
+      fitBoundsOptions: { padding: BASEMAP_PADDING },
       // Two-finger pan on touch, ctrl/cmd+wheel zoom on desktop: the map sits
       // inside a scrollable conversation and must not trap the scroll.
       cooperativeGestures: true,
       attributionControl: { compact: true },
     });
     mapRef.current = map;
+    // Registered ahead of the layer setup below, so its load listener reads
+    // the whole-route fit zoom before anything else runs on load.
+    cameraRef.current = createBasemapCamera(map, (camera) =>
+      onCameraRef.current?.(camera),
+    );
 
     const failTimer = setTimeout(() => {
       if (!loadedRef.current) onFailRef.current();
@@ -388,12 +411,19 @@ export function BasemapView({
     return () => {
       clearTimeout(failTimer);
       mapRef.current = null;
+      cameraRef.current = null;
       loadedRef.current = false;
       popup.remove();
       map.remove();
     };
     // The map is created once per mount; data changes remount via key.
   }, []);
+
+  // Declared after the map-creation effect so the camera exists on mount; a
+  // frame that arrives before the style loads is held until it does.
+  useEffect(() => {
+    if (frame) cameraRef.current?.frame(frame);
+  }, [frame]);
 
   // MapLibre exposes the canvas as a region labelled just "Map"; give it the
   // route's name instead (the visually-hidden narration sits alongside).

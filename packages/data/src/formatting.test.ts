@@ -5,8 +5,6 @@ import {
   formatDurationShort,
   formatPace,
   formatShortDate,
-  formatSpeedAsKmh,
-  formatSpeedAsPace,
   formatTime,
 } from "./formatting";
 
@@ -130,28 +128,5 @@ describe("formatPace", () => {
   it("rolls 60 seconds over into the next minute", () => {
     // 4.9999 min → 4'60" without the rollover guard.
     expect(formatPace(4.9999)).toBe(`5'00"`);
-  });
-});
-
-describe("formatSpeedAsPace", () => {
-  it("converts metres per second to a per-kilometre pace", () => {
-    expect(formatSpeedAsPace(4)).toBe(`4'10" /km`);
-    expect(formatSpeedAsPace(3.125)).toBe(`5'20" /km`);
-  });
-
-  it("reads anything slower than a walk as paused", () => {
-    // 0.2 m/s formats as 83'20" /km, which describes nothing.
-    expect(formatSpeedAsPace(0.2)).toBe("—");
-    expect(formatSpeedAsPace(0)).toBe("—");
-  });
-});
-
-describe("formatSpeedAsKmh", () => {
-  it("converts metres per second to km/h at one decimal", () => {
-    expect(formatSpeedAsKmh(7.9)).toBe("28.4 km/h");
-  });
-
-  it("has no paused floor — zero is a true speed reading", () => {
-    expect(formatSpeedAsKmh(0)).toBe("0.0 km/h");
   });
 });

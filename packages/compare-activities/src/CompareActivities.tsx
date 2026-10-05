@@ -1,4 +1,10 @@
-import { formatPace, formatTime } from "@intervals-mcp/data";
+import {
+  formatTime,
+  percentileRange,
+  type SpeedDisplay,
+  type SpeedSport,
+  speedDisplayForSport,
+} from "@intervals-mcp/data";
 import { GRID_DASHARRAY, getChartTokens } from "@intervals-mcp/design-system";
 import {
   CardHeader,
@@ -11,6 +17,8 @@ import {
   TooltipEntry,
   Tooltip as UiTooltip,
   useModelContextSync,
+  useViewTool,
+  type ViewToolRegistry,
 } from "@intervals-mcp/ui";
 import { useMemo, useState } from "react";
 import {
@@ -26,16 +34,19 @@ import { buildCompareA11yDescription, buildCompareA11yTitle } from "./a11y";
 import {
   alignedKey,
   alignSeries,
-  type PaceCategory,
   paceCategory,
-  paceMetricLabel,
-  paceMetricUnit,
   sharedAxes,
   sharedMetrics,
   toMetricSeries,
 } from "./align";
 import styles from "./CompareActivities.module.css";
 import { buildCompareContextSummary } from "./contextSummary";
+import {
+  describeSetMetric,
+  NOTHING_TO_CHOOSE,
+  resolveSetMetric,
+  type SetMetricArgs,
+} from "./setMetric";
 import {
   type ActivityStreamData,
   type AxisKey,
@@ -47,10 +58,10 @@ import {
 const COLOR_A = "var(--chart-pace)";
 const COLOR_B = "var(--chart-cadence)";
 
-function metricLabel(metric: MetricKey, category: PaceCategory): string {
+function metricLabel(metric: MetricKey, display: SpeedDisplay): string {
   switch (metric) {
     case "pace":
-      return paceMetricLabel(category);
+      return display.label;
     case "heartrate":
       return "Heart Rate";
     case "power":
@@ -64,12 +75,12 @@ function metricLabel(metric: MetricKey, category: PaceCategory): string {
 
 function metricUnit(
   metric: MetricKey,
-  category: PaceCategory,
+  display: SpeedDisplay,
   bothRunning: boolean,
 ): string {
   switch (metric) {
     case "pace":
-      return paceMetricUnit(category);
+      return display.unit;
     case "heartrate":
       return "bpm";
     case "power":
@@ -84,9 +95,9 @@ function metricUnit(
 function formatMetricValue(
   value: number,
   metric: MetricKey,
-  category: PaceCategory,
+  display: SpeedDisplay,
 ): string {
-  if (metric === "pace" && category !== "speed") return formatPace(value);
+  if (metric === "pace") return display.format(value);
   if (metric === "heartrate" || metric === "cadence") {
     return String(Math.round(value));
   }
@@ -113,7 +124,7 @@ interface CompareTooltipProps {
   payload?: TooltipPayloadEntry[];
   label?: number;
   metric: MetricKey;
-  category: PaceCategory;
+  category: SpeedSport;
   bothRunning: boolean;
   axis: AxisKey;
 }
@@ -133,20 +144,21 @@ export function CompareTooltip({
   );
   if (!entries.length) return null;
 
-  const unit = metricUnit(metric, category, bothRunning);
+  const display = speedDisplayForSport(category);
+  const unit = metricUnit(metric, display, bothRunning);
   const aEntry = entries.find((e) => e.dataKey === alignedKey("a", metric));
   const bEntry = entries.find((e) => e.dataKey === alignedKey("b", metric));
 
   // Δ = activity 2 − activity 1 at this point. Pace deltas read best in
-  // seconds; everything else in the metric's own unit.
+  // seconds per km or per 100 m; everything else in the metric's own unit.
   let delta: { value: string; unit: string } | null = null;
   if (aEntry && bEntry) {
     const diff = bEntry.value - aEntry.value;
     delta =
-      metric === "pace" && category !== "speed"
+      metric === "pace" && display.reversed
         ? {
             value: `${diff > 0 ? "+" : ""}${Math.round(diff * 60)}`,
-            unit: `s ${unit}`,
+            unit: display.unit === "min/km" ? "s/km" : "s/100m",
           }
         : {
             value: `${diff > 0 ? "+" : ""}${
@@ -169,7 +181,7 @@ export function CompareTooltip({
           key={entry.dataKey}
           color={entry.color}
           label={entry.name}
-          value={formatMetricValue(entry.value, metric, category)}
+          value={formatMetricValue(entry.value, metric, display)}
           unit={unit}
         />
       ))}
@@ -300,6 +312,7 @@ interface CompareActivitiesProps {
   compare: CompareData | null;
   mode?: "mobile" | "desktop";
   app?: ModelContextApp;
+  viewToolRegistry?: ViewToolRegistry | null;
 }
 
 export function CompareActivities({
@@ -308,6 +321,7 @@ export function CompareActivities({
   compare,
   mode = "desktop",
   app,
+  viewToolRegistry = null,
 }: CompareActivitiesProps) {
   const isMobile = mode === "mobile";
   const isCompact = isMobile;
@@ -324,6 +338,7 @@ export function CompareActivities({
   );
 
   const category = paceCategory(a.activityType, b.activityType);
+  const display = speedDisplayForSport(category);
   const bothRunning = category === "run";
 
   const seriesA = useMemo(() => toMetricSeries(a, category), [a, category]);
@@ -346,6 +361,33 @@ export function CompareActivities({
     [seriesA, seriesB, axis],
   );
 
+  /**
+   * `set-metric`: the model chooses the overlay metric and axis from what
+   * both activities recorded. Installed here rather than declared here (see
+   * `viewToolDeclarations.ts`).
+   */
+  useViewTool(viewToolRegistry, "set-metric", (args) => {
+    const labelOf = (key: MetricKey) => metricLabel(key, display);
+    const result = resolveSetMetric(
+      args as SetMetricArgs,
+      metrics,
+      axes,
+      labelOf,
+    );
+    if (result.kind === "error") return { text: result.text, isError: true };
+
+    // What the call left alone stays as it is, and is described as such.
+    const nextMetric = result.metric ?? metric;
+    const nextAxis = result.axis ?? axis;
+    // Unreachable once `resolveSetMetric` has accepted: it refuses a pair
+    // with no shared metric, which is the only way `metric` starts null.
+    if (!nextMetric) return { text: NOTHING_TO_CHOOSE, isError: true };
+
+    setMetric(nextMetric);
+    setAxis(nextAxis);
+    return { text: describeSetMetric(nextMetric, nextAxis, labelOf) };
+  });
+
   useModelContextSync(
     app,
     () =>
@@ -353,9 +395,9 @@ export function CompareActivities({
         compare,
         metric,
         axis,
-        paceLabel: category === "speed" ? "speed" : undefined,
+        paceLabel: display.label.toLowerCase(),
       }),
-    [compare, metric, axis, category],
+    [compare, metric, axis, display],
   );
 
   const tiles = useMemo(
@@ -385,9 +427,19 @@ export function CompareActivities({
     [a.name, b.name, metric, axis, category, bothRunning, aligned, hidden],
   );
 
+  // Pace axis domain: 2nd to 98th percentile across both lines, so a stop or
+  // a sprint does not squash the rest flat. Outliers clip at the plot edge.
+  const paceDomain = useMemo(
+    () =>
+      metric === "pace"
+        ? percentileRange(aligned.flatMap((p) => [p.aPace, p.bPace]))
+        : null,
+    [aligned, metric],
+  );
+
   const chart = useMemo(() => {
     if (!metric || aligned.length === 0) return null;
-    const reversed = metric === "pace" && category !== "speed";
+    const reversed = metric === "pace" && display.reversed;
     return (
       <ResponsiveContainer width="100%" aspect={tokens.chartAspect}>
         <ComposedChart
@@ -421,14 +473,15 @@ export function CompareActivities({
             tickLine={false}
           />
           <YAxis
-            domain={["auto", "auto"]}
+            domain={paceDomain ?? ["auto", "auto"]}
+            allowDataOverflow={paceDomain !== null}
             reversed={reversed}
             stroke="var(--color-text-tertiary)"
             fontSize={tokens.axisFont}
             tickCount={isMobile ? 4 : 5}
             tickFormatter={(v: number) =>
-              metric === "pace" && category !== "speed"
-                ? formatPace(v)
+              metric === "pace" && display.reversed
+                ? display.format(v)
                 : String(Math.round(v))
             }
             axisLine={false}
@@ -478,9 +531,11 @@ export function CompareActivities({
     metric,
     axis,
     category,
+    display,
     bothRunning,
     hidden,
     isMobile,
+    paceDomain,
     tokens,
     a.name,
     b.name,
@@ -548,7 +603,7 @@ export function CompareActivities({
                   active={key === metric}
                   onClick={() => setMetric(key)}
                 >
-                  {metricLabel(key, category)}
+                  {metricLabel(key, display)}
                 </Pill>
               ))}
             </PillGroup>

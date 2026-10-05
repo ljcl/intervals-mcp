@@ -11,6 +11,13 @@
   color: var(--color-text-secondary);
 }
 
+.note {
+  margin: var(--space-1) 0;
+  font-family: var(--font-sans);
+  font-size: var(--font-text-xs-size);
+  color: var(--color-text-secondary);
+}
+
 .footer {
   display: flex;
   flex-wrap: wrap;

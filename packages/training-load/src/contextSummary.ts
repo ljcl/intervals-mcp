@@ -1,4 +1,8 @@
-import { countWarningWeeks } from "./normalize";
+import {
+  countWarningWeeks,
+  describeLoadScope,
+  formatCurrentFitness,
+} from "./normalize";
 import { type TrainingLoadData } from "./types";
 
 /**
@@ -15,12 +19,22 @@ export function buildTrainingLoadContextSummary(
       ? `Training load from ${data.startDate} to ${data.endDate}.`
       : `Training load, last ${data.days} day${data.days === 1 ? "" : "s"}.`,
     `${data.totals.runs} run${data.totals.runs === 1 ? "" : "s"}, ${data.totals.distanceKm} km over ${data.weeks.length} week${data.weeks.length === 1 ? "" : "s"}.`,
+    data.runOnly
+      ? `Total training load ${data.totals.load}, ${describeLoadScope(data)}.`
+      : // Load covers every sport; volume and warnings never do, so say so.
+        `Total training load ${data.totals.load}, ${describeLoadScope(data)}; runs, distance and volume-spike warnings count runs only.`,
   ];
+
+  if (data.current) {
+    parts.push(
+      `As of ${data.current.date}: ${formatCurrentFitness(data.current, data.source)}.`,
+    );
+  }
 
   const inProgress = data.weeks.find((w) => w.inProgress);
   if (inProgress) {
     parts.push(
-      `The week of ${inProgress.weekStarting} is still in progress, so its volume is only the days so far.`,
+      `The week of ${inProgress.weekStarting} is still in progress, so its volume and load are only the days so far.`,
     );
   }
 

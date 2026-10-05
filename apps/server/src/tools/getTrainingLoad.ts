@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { RUN_ONLY_RUNWAY_DAYS } from "../fitnessTrend";
-import { formatDuration } from "../formatters";
+import { formatDuration, formatSigned } from "../formatters";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
 import {
   aggregateWeeks,
@@ -288,7 +288,7 @@ export const getTrainingLoadTool = {
         output += `Current (as of ${current.date})\n`;
         output += `  Fitness (CTL): ${current.ctl}\n`;
         output += `  Fatigue (ATL): ${current.atl}\n`;
-        output += `  Form (TSB): ${current.tsb >= 0 ? "+" : ""}${current.tsb}\n\n`;
+        output += `  Form (TSB): ${formatSigned(current.tsb)}\n\n`;
       }
 
       const averagedOver =

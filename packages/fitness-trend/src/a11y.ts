@@ -1,5 +1,5 @@
-import { formatShortDate } from "@intervals-mcp/data";
-import { BAND_LABELS, isPlanned, planDays, signedTsb } from "./normalize";
+import { formatShortDate, formatSignedTsb } from "@intervals-mcp/data";
+import { BAND_LABELS, isPlanned, planDays } from "./normalize";
 import { type FitnessTrendData, type TrendBand } from "./types";
 
 /**
@@ -59,7 +59,7 @@ export function buildTrendA11y(
   const latest = [
     ...(visibility.showCtl ? [`fitness (CTL) ${last.ctl}`] : []),
     ...(visibility.showAtl ? [`fatigue (ATL) ${last.atl}`] : []),
-    ...(visibility.showTsb ? [`form (TSB) ${signedTsb(last.tsb)}`] : []),
+    ...(visibility.showTsb ? [`form (TSB) ${formatSignedTsb(last.tsb)}`] : []),
   ];
   if (latest.length > 0) {
     const joined = latest.join(", ");
@@ -88,8 +88,8 @@ export function buildTrendA11y(
     const landing = plan[plan.length - 1]!;
     parts.push(
       isPlanned(data)
-        ? `A dashed ${plan.length}-day taper plan continues the curves to ${fullDate(landing.date)}, landing on form ${signedTsb(landing.tsb)}.`
-        : `A dashed ${plan.length}-day rest projection continues the curves to ${fullDate(landing.date)}, reaching form ${signedTsb(landing.tsb)}.`,
+        ? `A dashed ${plan.length}-day taper plan continues the curves to ${fullDate(landing.date)}, landing on form ${formatSignedTsb(landing.tsb)}.`
+        : `A dashed ${plan.length}-day rest projection continues the curves to ${fullDate(landing.date)}, reaching form ${formatSignedTsb(landing.tsb)}.`,
     );
   }
 

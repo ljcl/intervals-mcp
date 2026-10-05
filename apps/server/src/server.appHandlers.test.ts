@@ -130,6 +130,9 @@ describe("app handlers with no key configured", () => {
 describe("view-activity-chart", () => {
   it("summarises the activity for the model", async () => {
     mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
+    mockedIntervalsStreams.mockResolvedValueOnce([
+      { type: "time", data: [0, 1, 2] },
+    ]);
 
     const result = await dispatchToolCall("view-activity-chart", {
       activity_id: "i123",
@@ -139,6 +142,7 @@ describe("view-activity-chart", () => {
     const text = result.content[0]?.text ?? "";
     expect(text).toContain("Activity: Morning Run");
     expect(text).toContain("Distance: 10.00 km");
+    expect(text).not.toContain("No recorded streams");
     // Same fetch options as get-activity-streams-raw (intervals: true), so
     // the two share one cache entry.
     expect(mockedIntervalsActivity).toHaveBeenCalledWith("test-token", "i123", {
@@ -157,6 +161,64 @@ describe("view-activity-chart", () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain("Record Not Found");
+  });
+
+  it("says so when the activity has no recorded streams", async () => {
+    mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
+    // intervals.icu returns no streams for a manual entry.
+    mockedIntervalsStreams.mockResolvedValueOnce([]);
+
+    const result = await dispatchToolCall(
+      "view-activity-chart",
+      { activity_id: "i123" },
+      { client: { rendersApps: true } },
+    );
+
+    expect(result.isError).toBeUndefined();
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain("Activity: Morning Run");
+    expect(text).toContain(
+      "No recorded streams; the chart has nothing to plot.",
+    );
+    expect(text.endsWith("[Interactive activity chart rendered above]")).toBe(
+      true,
+    );
+  });
+
+  it("gives a host without MCP Apps the plain fact and no dead-end twin (#77)", async () => {
+    mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
+    mockedIntervalsStreams.mockResolvedValueOnce([]);
+
+    const result = await dispatchToolCall(
+      "view-activity-chart",
+      { activity_id: "i123" },
+      { client: { rendersApps: false } },
+    );
+
+    expect(result.isError).toBeUndefined();
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain("This activity has no recorded streams.");
+    expect(text).not.toContain("nothing to plot");
+    // get-activity-streams would only repeat that there are no streams.
+    expect(text).not.toContain("get-activity-streams");
+    expect(
+      text.endsWith(
+        "This client cannot display the interactive activity chart. For detail, call get-activity.",
+      ),
+    ).toBe(true);
+  });
+
+  it("reports a stream fetch failure rather than calling the chart empty", async () => {
+    mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
+    mockedIntervalsStreams.mockRejectedValueOnce(new Error("Rate limited"));
+
+    const result = await dispatchToolCall("view-activity-chart", {
+      activity_id: "i123",
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("Rate limited");
+    expect(result.content[0]?.text).not.toContain("No recorded streams");
   });
 });
 
@@ -209,6 +271,30 @@ describe("get-activity-streams-raw", () => {
     ]);
     expect(mockedIntervalsActivity).toHaveBeenCalledWith("test-token", "i123", {
       intervals: true,
+    });
+  });
+
+  it("returns a valid empty payload for an activity with no streams", async () => {
+    mockedIntervalsActivity.mockResolvedValueOnce(
+      intervalsActivity({
+        icu_intervals: [{ type: "WORK", start_time: 0, end_time: 60 }],
+      }),
+    );
+    // intervals.icu returns no streams for a manual/no-GPS entry (#65).
+    mockedIntervalsStreams.mockResolvedValueOnce([]);
+
+    const result = await dispatchToolCall("get-activity-streams-raw", {
+      activity_id: "i123",
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect(JSON.parse(result.content[0]?.text ?? "")).toEqual({
+      activityId: "i123",
+      activityType: "Run",
+      name: "Morning Run",
+      streams: { time: [] },
+      laps: [],
+      noStreams: true,
     });
   });
 
@@ -387,6 +473,77 @@ describe("training load handlers", () => {
     expect(text).toContain("Runs: 1");
     expect(text).toContain("Distance: 8 km");
     expect(text).toContain("Week of 2026-06-01 is in progress (partial).");
+  });
+
+  it("view-training-load prints the whole-body scope and the current fitness line", async () => {
+    mockedIntervalsList.mockResolvedValueOnce([
+      intervalsRun(),
+      intervalsRun({
+        id: "2",
+        type: "Ride",
+        icu_training_load: 30,
+        distance: 20000,
+      }),
+    ]);
+    mockedWellness.mockResolvedValueOnce([
+      {
+        id: TL_TODAY,
+        ctl: 52,
+        atl: 61,
+        ctlLoad: 0,
+        atlLoad: 0,
+      } as IntervalsWellness,
+    ]);
+
+    const result = await dispatchToolCall("view-training-load", {});
+
+    expect(result.isError).toBeUndefined();
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain(
+      "Scope: whole-body load (Ride, Run), CTL/ATL from intervals.icu.",
+    );
+    expect(text).toContain(
+      `Current (as of ${TL_TODAY}): CTL 52 / ATL 61 / TSB -9`,
+    );
+    // The ride counts toward load but not toward the run totals.
+    expect(text).toContain("Runs: 1");
+    expect(text).toContain("Load: 80");
+  });
+
+  it("view-training-load prints the run-only scope and the locally computed current", async () => {
+    const run = intervalsRun();
+    mockedIntervalsList.mockResolvedValueOnce([run]);
+    const viewResult = await dispatchToolCall("view-training-load", {
+      runOnly: true,
+    });
+    mockedIntervalsList.mockResolvedValueOnce([run]);
+    const dataResult = await dispatchToolCall("get-training-load-data", {
+      runOnly: true,
+    });
+
+    expect(viewResult.isError).toBeUndefined();
+    const text = viewResult.content[0]?.text ?? "";
+    const data = JSON.parse(dataResult.content[0]?.text ?? "");
+    expect(text).toContain("Scope: run-only load, CTL/ATL computed locally.");
+    // The text prints the numbers the app draws: same total, same current.
+    expect(text).toContain(`Load: ${data.totals.load}`);
+    const { date, ctl, atl, tsb } = data.current;
+    expect(text).toContain(
+      `Current (as of ${date}): CTL ${ctl} / ATL ${atl} / TSB ${tsb >= 0 ? "+" : ""}${tsb}`,
+    );
+  });
+
+  it("view-training-load leaves the Current line out when there is no fitness to read", async () => {
+    mockedIntervalsList.mockResolvedValueOnce([intervalsRun()]);
+    mockedWellness.mockResolvedValueOnce([]);
+
+    const result = await dispatchToolCall("view-training-load", {});
+
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain(
+      "Scope: whole-body load (Run), CTL/ATL from intervals.icu.",
+    );
+    expect(text).not.toContain("Current (as of");
   });
 
   it("get-training-load-data returns the weekly aggregation, whole-body by default", async () => {
@@ -766,9 +923,11 @@ describe("fitness trend handlers", () => {
     mockedIntervalsList.mockResolvedValueOnce([]);
     const targetDate = inDays(14);
 
-    const result = await dispatchToolCall("view-fitness-trend", {
-      targetDate,
-    });
+    const result = await dispatchToolCall(
+      "view-fitness-trend",
+      { targetDate },
+      { client: { rendersApps: true } },
+    );
 
     expect(result.isError).toBeUndefined();
     const text = result.content[0]?.text ?? "";
@@ -1171,17 +1330,37 @@ describe("route map handlers", () => {
     expect(text).not.toContain("No GPS track");
   });
 
-  it("view-route-map flags an empty track", async () => {
+  it("view-route-map flags an empty track on a host that renders the map", async () => {
     mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
     // intervals.icu returns no streams for a manual/no-GPS entry.
     mockedIntervalsStreams.mockResolvedValueOnce([]);
 
-    const result = await dispatchToolCall("view-route-map", {
-      activity_id: "123",
-    });
+    const result = await dispatchToolCall(
+      "view-route-map",
+      { activity_id: "123" },
+      { client: { rendersApps: true } },
+    );
 
     expect(result.isError).toBeUndefined();
-    expect(result.content[0]?.text).toContain("No GPS track is available");
+    expect(result.content[0]?.text).toContain(
+      "No GPS track is available, so the map will be empty.",
+    );
+  });
+
+  it("view-route-map states a missing track plainly to a host without MCP Apps (#77)", async () => {
+    mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
+    mockedIntervalsStreams.mockResolvedValueOnce([]);
+
+    const result = await dispatchToolCall(
+      "view-route-map",
+      { activity_id: "123" },
+      { client: { rendersApps: false } },
+    );
+
+    expect(result.isError).toBeUndefined();
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain("No GPS track is recorded for this activity.");
+    expect(text).not.toContain("map will be empty");
   });
 
   it("get-route-map-data returns coordinates from the latlng stream with aligned metrics", async () => {
@@ -1324,24 +1503,38 @@ describe("route map handlers", () => {
     expect(parsed.waypointWarnings[0]).toContain("10.0 km");
   });
 
-  it("view-route-map reports pinned waypoints and warns about dropped ones", async () => {
-    mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
-    mockedIntervalsStreams.mockResolvedValueOnce(routeMapStreamsFixture());
+  it.each([
+    [
+      true,
+      "Waypoints: 1 pinned along the track (toggleable via the map legend).",
+    ],
+    [false, "Waypoints: 1 placed along the track."],
+  ])(
+    "view-route-map reports waypoints (renders apps: %s) and warns about dropped ones",
+    async (rendersApps, waypointLine) => {
+      mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
+      mockedIntervalsStreams.mockResolvedValueOnce(routeMapStreamsFixture());
 
-    const result = await dispatchToolCall("view-route-map", {
-      activity_id: "123",
-      waypoints: [
-        { km: 5, label: "Gel 1", kind: "fuel" },
-        { km: 42.2, label: "Finish gel", kind: "fuel" },
-      ],
-    });
+      const result = await dispatchToolCall(
+        "view-route-map",
+        {
+          activity_id: "123",
+          waypoints: [
+            { km: 5, label: "Gel 1", kind: "fuel" },
+            { km: 42.2, label: "Finish gel", kind: "fuel" },
+          ],
+        },
+        { client: { rendersApps } },
+      );
 
-    expect(result.isError).toBeUndefined();
-    const text = result.content[0]?.text ?? "";
-    expect(text).toContain("Waypoints: 1 pinned");
-    expect(text).toContain("Warning: Dropped 1 waypoint");
-    expect(text).toContain('"Finish gel" (42.2 km)');
-  });
+      expect(result.isError).toBeUndefined();
+      const text = result.content[0]?.text ?? "";
+      expect(text).toContain(waypointLine);
+      if (!rendersApps) expect(text).not.toContain("legend");
+      expect(text).toContain("Warning: Dropped 1 waypoint");
+      expect(text).toContain('"Finish gel" (42.2 km)');
+    },
+  );
 
   it("rejects malformed waypoints via the input schema", async () => {
     const result = await dispatchToolCall("view-route-map", {
@@ -1467,9 +1660,11 @@ describe("activity zones handlers", () => {
   it("view-activity-zones summarises the dominant zone for the model", async () => {
     mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
 
-    const result = await dispatchToolCall("view-activity-zones", {
-      activity_id: "123",
-    });
+    const result = await dispatchToolCall(
+      "view-activity-zones",
+      { activity_id: "123" },
+      { client: { rendersApps: true } },
+    );
 
     expect(result.isError).toBeUndefined();
     const text = result.content[0]?.text ?? "";
@@ -1542,5 +1737,187 @@ describe("activity zones handlers", () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain("Record Not Found");
+  });
+});
+
+describe("view tools and hosts that cannot render MCP Apps (#77)", () => {
+  const TODAY = "2026-06-01";
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(`${TODAY}T12:00:00Z`));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const run = (overrides: Partial<IntervalsActivity> = {}) =>
+    intervalsActivity({
+      icu_hr_zones: [130, 155, 190],
+      icu_hr_zone_times: [600, 1800, 600],
+      average_cadence: 42.5,
+      average_speed: 3.33,
+      icu_training_load: 50,
+      ...overrides,
+    });
+
+  /** Each view tool, its mocks, and the footer pair the twin table fixes. */
+  const VIEW_TOOLS: Array<{
+    name: string;
+    args: Record<string, unknown>;
+    arrange: () => void;
+    kind: string;
+    twin: string;
+  }> = [
+    {
+      name: "view-activity-chart",
+      args: { activity_id: "123" },
+      arrange: () => {
+        mockedIntervalsActivity.mockResolvedValueOnce(run());
+        mockedIntervalsStreams.mockResolvedValueOnce([
+          { type: "time", data: [0, 1, 2] },
+        ]);
+      },
+      kind: "activity chart",
+      twin: "get-activity-streams",
+    },
+    {
+      name: "view-cadence-trends",
+      args: {},
+      arrange: () => {
+        mockedIntervalsList.mockResolvedValueOnce([run()]);
+      },
+      kind: "cadence trends chart",
+      // get-running-summary needs an id the view text never gives.
+      twin: "list-activities, then get-running-summary",
+    },
+    {
+      name: "view-training-load",
+      args: {},
+      arrange: () => {
+        mockedIntervalsList.mockResolvedValueOnce([
+          run({ start_date_local: `${TODAY}T07:00:00` }),
+        ]);
+        mockedWellness.mockResolvedValueOnce([]);
+      },
+      kind: "training load chart",
+      // runOnly must carry over: never mix whole-body and run-only numbers.
+      twin: "get-training-load with the same arguments",
+    },
+    {
+      name: "view-fitness-trend",
+      args: {},
+      arrange: () => {
+        mockedWellness.mockResolvedValueOnce(
+          Array.from({ length: 91 }, (_, i) => ({
+            id: addDays(TODAY, i - 90),
+            ctl: 50,
+            atl: 40,
+            ctlLoad: 0,
+            atlLoad: 0,
+          })),
+        );
+        mockedIntervalsList.mockResolvedValueOnce([]);
+      },
+      kind: "fitness trend chart",
+      twin: "get-fitness-trend with the same arguments",
+    },
+    {
+      name: "view-activity-zones",
+      args: { activity_id: "123" },
+      arrange: () => {
+        mockedIntervalsActivity.mockResolvedValueOnce(run());
+      },
+      kind: "zone distribution chart",
+      twin: "get-activity-zones",
+    },
+    {
+      name: "view-route-map",
+      args: { activity_id: "123" },
+      arrange: () => {
+        mockedIntervalsActivity.mockResolvedValueOnce(run());
+        mockedIntervalsStreams.mockResolvedValueOnce(routeMapStreamsFixture());
+      },
+      kind: "route map",
+      twin: "get-activity",
+    },
+    {
+      name: "view-compare-activities",
+      args: { activity_id_1: "i1", activity_id_2: "i2" },
+      arrange: () => {
+        mockedIntervalsActivity
+          .mockResolvedValueOnce(run({ id: "i1" }))
+          .mockResolvedValueOnce(run({ id: "i2", moving_time: 2900 }));
+      },
+      kind: "activity comparison",
+      twin: "compare-activities",
+    },
+  ];
+
+  it("covers every view-* tool the server advertises", async () => {
+    const { TOOL_DEFS } = await import("./server");
+    const advertised = TOOL_DEFS.map((tool) => tool.name)
+      .filter((name) => name.startsWith("view-"))
+      .sort();
+    expect(VIEW_TOOLS.map((tool) => tool.name).sort()).toEqual(advertised);
+  });
+
+  describe.each(VIEW_TOOLS)("$name", ({ name, args, arrange, kind, twin }) => {
+    it("claims a rendered chart to a host that renders MCP Apps", async () => {
+      arrange();
+
+      const result = await dispatchToolCall(name, args, {
+        client: { rendersApps: true },
+      });
+
+      expect(result.isError).toBeUndefined();
+      const text = result.content[0]?.text ?? "";
+      expect(text.endsWith(`[Interactive ${kind} rendered above]`)).toBe(true);
+      expect(text).not.toContain("This client cannot display");
+    });
+
+    it("says the client cannot display it and names the text twin otherwise", async () => {
+      arrange();
+
+      const result = await dispatchToolCall(name, args, {
+        client: { rendersApps: false },
+      });
+
+      expect(result.isError).toBeUndefined();
+      const text = result.content[0]?.text ?? "";
+      expect(text).not.toContain("rendered above");
+      expect(
+        text.endsWith(
+          `This client cannot display the interactive ${kind}. For detail, call ${twin}.`,
+        ),
+      ).toBe(true);
+    });
+
+    it("names only tools the server advertises in its footer", async () => {
+      const { TOOL_DEFS } = await import("./server");
+      const advertised = new Set(TOOL_DEFS.map((tool) => tool.name));
+      arrange();
+
+      const result = await dispatchToolCall(name, args, {
+        client: { rendersApps: false },
+      });
+
+      const text = result.content[0]?.text ?? "";
+      const pointer = text.slice(text.lastIndexOf("For detail, call "));
+      const named = pointer.match(/\b[a-z]+(?:-[a-z]+)+\b/g) ?? [];
+      expect(named.length).toBeGreaterThan(0);
+      for (const tool of named) expect(advertised).toContain(tool);
+    });
+
+    it("gives the honest text when the caller passes no client at all", async () => {
+      arrange();
+
+      const result = await dispatchToolCall(name, args);
+
+      const text = result.content[0]?.text ?? "";
+      expect(text).not.toContain("rendered above");
+      expect(text).toContain(`call ${twin}.`);
+    });
   });
 });

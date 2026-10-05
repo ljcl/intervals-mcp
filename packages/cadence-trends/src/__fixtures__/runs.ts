@@ -153,3 +153,40 @@ export const mockRuns: RunSummary[] = [
     type: "Run",
   },
 ];
+
+/**
+ * `mockRuns` with a three-week break (8 to 28 Jan), as after an injury: runs
+ * either side of it sit 24 days apart, and a time axis must show that as a
+ * stretch of empty chart rather than butting the two runs together.
+ */
+export const runsWithGap: RunSummary[] = mockRuns.filter(
+  (r) => r.date < "2026-01-08" || r.date > "2026-01-28",
+);
+
+/**
+ * `mockRuns` where two runs (Recovery Jog, Easy 6k on 14 Jan) recorded no
+ * speed: they stay cadence dots but have no pace to plot, and every pace dot
+ * after them must still belong to its own run.
+ */
+export const runsWithNullPace: RunSummary[] = mockRuns.map((r) =>
+  r.id === "i10002" || r.id === "i10005" ? { ...r, averagePace: null } : r,
+);
+
+/**
+ * `mockRuns` plus a shakeout on 11 Jan, the same day as Long Run: the trend's
+ * day axis draws both at one x, so its tooltip must name both whichever dot
+ * is hovered.
+ */
+export const runsWithSameDay: RunSummary[] = [
+  ...mockRuns,
+  {
+    id: "i10020",
+    name: "Shakeout",
+    date: "2026-01-11",
+    distance: 3.0,
+    duration: 1080,
+    averageCadence: 174,
+    averagePace: 6.0,
+    type: "Run",
+  },
+];

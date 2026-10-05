@@ -378,14 +378,29 @@ rules, including the stricter test for 1 km or 1 mile auto-laps.
 ## Per-call telemetry
 
 `dispatchToolCall` is timed end to end and emits one structured JSON line per
-call via `telemetry.ts`: tool name, duration, outcome, error class, and the
-rate-limit snapshot. The timer starts **before token resolution**, so a
+call via `telemetry.ts`: tool name, duration, outcome, error class, the
+rate-limit snapshot, and which client made the call (`client_apps`,
+`client_name`). The timer starts **before token resolution**, so a
 not-connected call is recorded too — it cost the caller a round trip. A
 handler returning `isError` counts as an error alongside a throw, or the
 counters would flatter the server. `recordToolCall` can never fail the call it
 describes: the snapshot read and the serialize are both guarded, because a
 logging fault turning a successful call into an error is worse than a missing
 log line. The rolling counters back the authed half of `/health`.
+
+The client fields come from the request envelope. The `tools/call` handler
+reads the `io.modelcontextprotocol/clientCapabilities` and
+`io.modelcontextprotocol/clientInfo` keys off `ctx.mcpReq.envelope` (the
+shipped envelope type is `{}`, so by key, with a cast) and passes
+`client: { rendersApps, name }` to `dispatchToolCall`. `client_apps` is
+`clientSupportsMcpApps(capabilities)`: the client advertised
+`io.modelcontextprotocol/ui` with `text/html;profile=mcp-app`. The same
+boolean reaches each handler as the fourth argument (`ToolCallContext`), and the
+`view-*` handlers use it to choose their footer, so a result never claims a
+rendered chart to a host that does not render one (#77). A call dispatched
+without client information records `client_apps: false`. A host that renders
+apps without advertising them gets the "cannot display" text too; the log
+field is how an operator sees how many calls that affects.
 
 The records stay with the operator: the stderr line and the `/health`
 counters. The server does not advertise the `logging` capability, because

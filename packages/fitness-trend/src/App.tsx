@@ -1,3 +1,4 @@
+import { fitnessSourceLabel } from "@intervals-mcp/data";
 import { getChartTokens } from "@intervals-mcp/design-system";
 import {
   CardHeader,
@@ -11,6 +12,8 @@ import {
   SummaryBar,
   useModelContextSync,
   useServerToolFetcher,
+  useViewTool,
+  type ViewToolRegistry,
 } from "@intervals-mcp/ui";
 import { type useApp } from "@modelcontextprotocol/ext-apps/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -24,8 +27,18 @@ import {
   countBandKinds,
   isPlanned,
   planDays,
-  sourceLabel,
 } from "./normalize";
+import {
+  describeSetScope,
+  hiddenSeriesNames,
+  landingFor,
+  planInfo,
+  resolveSetScope,
+  type Scope,
+  type SeriesKey,
+  type SeriesVisibility,
+  type SetScopeArgs,
+} from "./setScope";
 import { TaperPlanList } from "./TaperPlanList";
 import { TrendChart } from "./TrendChart";
 import {
@@ -33,9 +46,6 @@ import {
   type FitnessTrendData,
   type TrendBand,
 } from "./types";
-
-/** Which fitness scope is on screen. */
-type Scope = "wholeBody" | "runOnly";
 
 const scopeOf = (runOnly: boolean): Scope =>
   runOnly ? "runOnly" : "wholeBody";
@@ -49,6 +59,7 @@ interface AppProps {
   /** Which scope `data` belongs to: the toggle's starting position. */
   initialRunOnly: boolean;
   mode?: "mobile" | "desktop";
+  viewToolRegistry?: ViewToolRegistry | null;
 }
 
 export function App({
@@ -57,6 +68,7 @@ export function App({
   baseArgs,
   initialRunOnly,
   mode = "desktop",
+  viewToolRegistry = null,
 }: AppProps) {
   const isMobile = mode === "mobile";
   const initialScope = scopeOf(initialRunOnly);
@@ -86,8 +98,9 @@ export function App({
   }, [scope, otherScope, request]);
 
   const otherEntry = fetcher.entries.get(otherScope);
-  const data: FitnessTrendData | null =
-    scope === initialScope ? initialData : (otherEntry?.data ?? null);
+  const scopeData = (which: Scope): FitnessTrendData | null =>
+    which === initialScope ? initialData : (otherEntry?.data ?? null);
+  const data = scopeData(scope);
   // Read the entry's own state. "No data yet" is not loading: a failed fetch
   // has no data either, and reading it as loading kept the skeleton up
   // forever. No entry at all means the request effect has not run yet.
@@ -114,10 +127,70 @@ export function App({
         : [...hidden, kind],
     );
 
+  // Named by the values `set-scope` accepts, so the model's summary says what
+  // it can switch back. Memoised: the array is a dependency of the context sync, and one
+  // rebuilt each render would restart the debounce on every render.
+  const hiddenSeries = useMemo(
+    () =>
+      hiddenSeriesNames(
+        { fitness: showCtl, fatigue: showAtl, form: showTsb, plan: showPlan },
+        planInfo(data),
+      ),
+    [showCtl, showAtl, showTsb, showPlan, data],
+  );
+
+  /**
+   * The model's way into the scope pills and the legend toggles (declared in
+   * `viewToolDeclarations.ts`). Switching scope sets the same state the pills
+   * do, so the effect above requests the other scope through the keyed
+   * fetcher; nothing here fetches. The plan and what the card renders are
+   * read from the scope the call lands on, since the scope the model is
+   * switching to may differ from the one on screen: the reply says "showing"
+   * only for a chart that is drawn, and a scope still loading or failed to
+   * load is reported as such.
+   */
+  useViewTool(viewToolRegistry, "set-scope", (args) => {
+    const call = args as SetScopeArgs;
+    const nextScope = call.scope ?? scope;
+    const nextData = scopeData(nextScope);
+    const plan = planInfo(nextData);
+    // The initial scope is never fetched, so only the other one can have failed.
+    const landing = landingFor(
+      nextScope,
+      nextData,
+      nextScope === initialScope ? null : (otherEntry?.error ?? null),
+    );
+    const result = resolveSetScope(call, plan, landing);
+    if (result.kind === "error") return { text: result.text, isError: true };
+
+    const setters: Record<SeriesKey, (shown: boolean) => void> = {
+      fitness: setShowCtl,
+      fatigue: setShowAtl,
+      form: setShowTsb,
+      plan: setShowPlan,
+    };
+    const entries = Object.entries(result.visible) as [SeriesKey, boolean][];
+    for (const [series, shown] of entries) setters[series](shown);
+    setScope(nextScope);
+
+    // What the call left alone stays as it is, and is described as such.
+    const next: SeriesVisibility = {
+      fitness: showCtl,
+      fatigue: showAtl,
+      form: showTsb,
+      plan: showPlan,
+      ...result.visible,
+    };
+    return {
+      text: describeSetScope(landing, next, plan),
+      ...(landing.status === "failed" ? { isError: true } : {}),
+    };
+  });
+
   useModelContextSync(
     app ?? undefined,
-    () => (data ? buildFitnessTrendContextSummary(data) : null),
-    [data],
+    () => (data ? buildFitnessTrendContextSummary(data, hiddenSeries) : null),
+    [data, hiddenSeries],
   );
 
   return (
@@ -146,7 +219,7 @@ export function App({
         </PillGroup>
         {data && (
           <span className={styles.sourceNote}>
-            {sourceLabel(data)}
+            {fitnessSourceLabel(data.source)}
             {data.current ? ` · as of ${data.current.date}` : ""}
           </span>
         )}

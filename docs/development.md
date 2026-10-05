@@ -142,7 +142,7 @@ component floor is the story render-path report
 commit the rewrite, don't hand-edit. `packages/ui` is hybrid: its coverage
 `include` lists only hooks/stores/helpers no story reaches (`useServerToolData`,
 `useServerToolFetcher`, `keyedFetchStore`, `useModelContextSync`,
-`useMobileMode`, `serverToolResult`, `standardSchema`), while components stay
+`useMobileMode`, `serverToolResult`), while components stay
 with the render-path report. "No story reaches it" is the entry test, not "it
 is logic": `viewTools.ts` is logic and deliberately out, because stories already
 floor it. Listing a module in both reports drags the aggregate — and therefore

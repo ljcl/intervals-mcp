@@ -47,10 +47,26 @@ describe("buildCompareA11yDescription", () => {
     expect(text).toContain('"Steady" ranges from 5\'00" to 5\'30" min/km.');
   });
 
+  it("narrates swim pace per 100 m", () => {
+    const text = buildCompareA11yDescription({
+      ...base,
+      category: "swim",
+      bothRunning: false,
+      data: [
+        { x: 0, aPace: 1.5, bPace: 1.75 },
+        { x: 100, aPace: 1.75, bPace: 2 },
+      ],
+      metric: "pace",
+      axis: "time",
+    });
+    expect(text).toContain("Overlay of pace over 01:40, by time.");
+    expect(text).toContain('"Steady" ranges from 1\'30" to 1\'45" per 100 m.');
+  });
+
   it("calls pace speed in km/h for mixed pairs", () => {
     const text = buildCompareA11yDescription({
       ...base,
-      category: "speed",
+      category: "other",
       bothRunning: false,
       metric: "pace",
       axis: "time",

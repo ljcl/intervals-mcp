@@ -1,21 +1,29 @@
 export { isRunning, isSwimming } from "./activity-types";
+export { fitnessSourceLabel, formatSignedTsb } from "./fitness";
 export {
   formatClock,
   formatDistance,
   formatDurationShort,
   formatPace,
   formatShortDate,
-  formatSpeedAsKmh,
-  formatSpeedAsPace,
   formatTime,
+  MIN_MOVING_SPEED_MPS,
   type ShortDateYear,
 } from "./formatting";
 export {
   colorForValue,
   normalizeValue,
   percentileDomain,
+  percentileRange,
   RAMP_GRADIENT_CSS,
   rampColor,
 } from "./ramp";
 export { smooth } from "./smoothing";
+export {
+  type SpeedDisplay,
+  type SpeedSport,
+  speedDisplay,
+  speedDisplayForSport,
+  speedSport,
+} from "./speed";
 export { dominantBucket, type ZoneBucket, type ZoneSet } from "./zones";

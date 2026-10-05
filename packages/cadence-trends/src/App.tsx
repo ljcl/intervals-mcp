@@ -6,6 +6,8 @@ import {
   SummaryBar,
   useModelContextSync,
   useServerToolFetcher,
+  useViewTool,
+  type ViewToolRegistry,
 } from "@intervals-mcp/ui";
 import { type useApp } from "@modelcontextprotocol/ext-apps/react";
 import { useCallback, useMemo, useState } from "react";
@@ -14,20 +16,27 @@ import { buildCadenceContextSummary } from "./contextSummary";
 import {
   buildCadenceSubtitle,
   computeSummaryStats,
+  overlayRunStatus,
   smoothOverlayPoints,
   toOverlayPoints,
 } from "./normalize";
 import { OverlayView } from "./OverlayView";
 import { RunSelectList } from "./RunSelectList";
 import { ScatterView } from "./ScatterView";
+import { describeSetView, resolveSetView, type SetViewArgs } from "./setView";
 import { TrendView } from "./TrendView";
 import {
   type CadenceTrendData,
+  MAX_COMPARE_RUNS,
+  type OverlayRunStatus,
   type OverlayStreamData,
+  type OverlayXMode,
   type RunStreamState,
   type ViewId,
 } from "./types";
 import { ZonesView } from "./ZonesView";
+
+const NONE: ReadonlySet<string> = new Set();
 
 const VIEWS: Array<{ id: ViewId; label: string }> = [
   { id: "trend", label: "Trend" },
@@ -36,19 +45,43 @@ const VIEWS: Array<{ id: ViewId; label: string }> = [
   { id: "overlay", label: "Overlay" },
 ];
 
-/** Overlay comparison cap, shared by the dot-click toggle and the run picker. */
-const MAX_COMPARE_RUNS = 4;
-
 interface AppProps {
   app: ReturnType<typeof useApp>["app"];
   data: CadenceTrendData;
   mode?: "mobile" | "desktop";
+  viewToolRegistry?: ViewToolRegistry | null;
 }
 
-export function App({ app, data, mode = "desktop" }: AppProps) {
+export function App({
+  app,
+  data,
+  mode = "desktop",
+  viewToolRegistry = null,
+}: AppProps) {
   const isMobile = mode === "mobile";
   const [activeView, setActiveView] = useState<ViewId>("trend");
   const [selectedRunIds, setSelectedRunIds] = useState<Set<string>>(new Set());
+  // Lifted out of the overlay so `set-view` can choose it as well as the pills.
+  const [xMode, setXMode] = useState<OverlayXMode>("distance");
+  // The overlay legend's switched-off runs, lifted so `set-view` can report
+  // them and show a run again when the model selects it.
+  const [hiddenRuns, setHiddenRuns] = useState<ReadonlySet<string>>(NONE);
+
+  // Hidden runs belong to one visit to the overlay, as they did when the
+  // overlay owned them: leaving it shows every run again next time.
+  const showView = useCallback((view: ViewId) => {
+    setActiveView(view);
+    if (view !== "overlay") setHiddenRuns(NONE);
+  }, []);
+
+  const toggleHidden = useCallback((runId: string) => {
+    setHiddenRuns((prev) => {
+      const next = new Set(prev);
+      if (next.has(runId)) next.delete(runId);
+      else next.add(runId);
+      return next;
+    });
+  }, []);
 
   // Per-run stream fetches go through the shared keyed fetcher so each run
   // carries its own loading, error, and retry — the hand-rolled
@@ -107,15 +140,31 @@ export function App({ app, data, mode = "desktop" }: AppProps) {
         loading: entry.loading,
         error: entry.error,
         progress: entry.progress,
+        noStreams: entry.data?.noStreams === true,
       });
     }
     return map;
   }, [data.activities, entries]);
 
-  const selectedRuns = useMemo(
-    () => data.activities.filter((a) => selectedRunIds.has(a.id)),
-    [data.activities, selectedRunIds],
-  );
+  // Each selected run's place in the overlay, read the way the overlay
+  // reads it, so the model is told only about lines that are drawn.
+  const overlayStatus = useMemo(() => {
+    const map = new Map<string, OverlayRunStatus>();
+    for (const id of selectedRunIds) {
+      map.set(id, overlayRunStatus(streams.get(id), hiddenRuns.has(id)));
+    }
+    return map;
+  }, [selectedRunIds, streams, hiddenRuns]);
+
+  // In selection order, so the context summary lists runs in the same order
+  // the overlay colours them.
+  const selectedRuns = useMemo(() => {
+    const byId = new Map(data.activities.map((a) => [a.id, a]));
+    return [...selectedRunIds].flatMap((id) => {
+      const run = byId.get(id);
+      return run ? [run] : [];
+    });
+  }, [data.activities, selectedRunIds]);
 
   // Runs the overlay can plot (it needs a cadence stream); the same pool the
   // Trend/Scatter dots draw from, offered as a keyboard/touch picker.
@@ -126,6 +175,42 @@ export function App({ app, data, mode = "desktop" }: AppProps) {
 
   const showRunPicker = activeView === "trend" || activeView === "scatter";
 
+  /**
+   * `set-view`: the model switches the view, chooses the runs to overlay, or
+   * picks the overlay axis. Installed here rather than declared here (see
+   * `viewToolDeclarations.ts`). `runIds` replaces the selection, in the order
+   * given, so the overlay colours follow it, and shows any of those runs the
+   * legend had hidden: the model asked to see them.
+   */
+  useViewTool(viewToolRegistry, "set-view", (args) => {
+    const result = resolveSetView(
+      args as SetViewArgs,
+      data.activities,
+      activeView,
+    );
+    if (result.kind === "error") return { text: result.text, isError: true };
+
+    const chosen = new Set(result.runIds);
+    const hiddenAfter = new Set(
+      [...hiddenRuns].filter((id) => !chosen.has(id)),
+    );
+    const text = describeSetView(result, data.activities, {
+      selectedRunIds,
+      xAxis: xMode,
+      runStatus: (id) => overlayRunStatus(streams.get(id), hiddenAfter.has(id)),
+    });
+    showView(result.view);
+    if (result.runIds) {
+      setSelectedRunIds(new Set(result.runIds));
+      // Leaving the overlay has already shown every run again.
+      if (result.view === "overlay" && hiddenAfter.size !== hiddenRuns.size) {
+        setHiddenRuns(hiddenAfter);
+      }
+    }
+    if (result.xAxis) setXMode(result.xAxis);
+    return { text };
+  });
+
   useModelContextSync(
     app ?? undefined,
     () =>
@@ -133,6 +218,8 @@ export function App({ app, data, mode = "desktop" }: AppProps) {
         weeks: data.weeks,
         activeView,
         selectedRuns,
+        overlayAxis: xMode,
+        overlayStatus,
         excludedNoCadence: data.excludedNoCadence,
         noPaceCount: data.noPaceCount,
       }),
@@ -140,6 +227,8 @@ export function App({ app, data, mode = "desktop" }: AppProps) {
       data.weeks,
       activeView,
       selectedRuns,
+      xMode,
+      overlayStatus,
       data.excludedNoCadence,
       data.noPaceCount,
     ],
@@ -177,7 +266,7 @@ export function App({ app, data, mode = "desktop" }: AppProps) {
             <Pill
               key={v.id}
               active={activeView === v.id}
-              onClick={() => setActiveView(v.id)}
+              onClick={() => showView(v.id)}
             >
               {v.label}
             </Pill>
@@ -210,6 +299,10 @@ export function App({ app, data, mode = "desktop" }: AppProps) {
             streams={streams}
             requestStream={requestStream}
             retryStream={retryStream}
+            xMode={xMode}
+            onXModeChange={setXMode}
+            hiddenRuns={hiddenRuns}
+            onToggleHidden={toggleHidden}
             mode={mode}
           />
         )}

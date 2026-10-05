@@ -1,8 +1,12 @@
-import { isRunning, smooth } from "@intervals-mcp/data";
+import { formatShortDate, isRunning, smooth } from "@intervals-mcp/data";
 import {
+  COMPARISON_COLORS,
   type OverlayPoint,
+  type OverlayRunStatus,
   type OverlayStreamData,
+  type OverlayXMode,
   type PaceZone,
+  type RunStreamState,
   type RunSummary,
 } from "./types";
 
@@ -90,14 +94,16 @@ export function computeSummaryStats(
   };
 }
 
-/** Group activities by pace zone and compute per-zone stats */
-export function computeZoneStats(activities: RunSummary[]): Array<{
+export interface ZoneStat {
   zone: PaceZone;
   mean: number;
   min: number;
   max: number;
   count: number;
-}> {
+}
+
+/** Group activities by pace zone and compute per-zone stats */
+export function computeZoneStats(activities: RunSummary[]): ZoneStat[] {
   return PACE_ZONES.map((zone) => {
     const inZone = activities.filter(
       (a) =>
@@ -118,6 +124,83 @@ export function computeZoneStats(activities: RunSummary[]): Array<{
       count: inZone.length,
     };
   });
+}
+
+/** One drawn bar of the pace-zone chart. */
+export interface ZoneRow {
+  zone: string;
+  mean: number;
+  min: number;
+  max: number;
+  count: number;
+  /** Position in PACE_ZONES, so a zone keeps its shade when another is empty. */
+  zoneIndex: number;
+  /** [mean - min, max - mean]: Recharts draws an asymmetric whisker from a pair. */
+  error: [number, number];
+}
+
+/** The non-empty zones as bars, each keeping its own index into PACE_ZONES. */
+export function buildZoneRows(stats: ZoneStat[]): ZoneRow[] {
+  return stats.flatMap((s, zoneIndex) =>
+    s.count > 0
+      ? [
+          {
+            zone: s.zone.label,
+            mean: s.mean,
+            min: s.min,
+            max: s.max,
+            count: s.count,
+            zoneIndex,
+            error: [s.mean - s.min, s.max - s.mean] as [number, number],
+          },
+        ]
+      : [],
+  );
+}
+
+/**
+ * A run's day as a UTC timestamp, read from the leading YYYY-MM-DD so the
+ * viewer's time zone cannot move it.
+ */
+export function dayTimestamp(date: string): number {
+  const [y, m, d] = date.slice(0, 10).split("-").map(Number);
+  return Date.UTC(y!, m! - 1, d!);
+}
+
+/**
+ * Runs grouped by calendar day (`dayTimestamp`), each day's in the order
+ * given. The trend's day axis draws a day's runs at one x, so its tooltip
+ * reads the whole day from here.
+ */
+export function runsByDay<T extends Pick<RunSummary, "date">>(
+  runs: readonly T[],
+): Map<number, T[]> {
+  const byDay = new Map<number, T[]>();
+  for (const run of runs) {
+    const day = dayTimestamp(run.date);
+    const list = byDay.get(day);
+    if (list) list.push(run);
+    else byDay.set(day, [run]);
+  }
+  return byDay;
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * X-axis domain (and ticks) for the trend timeline. Normally the span of the
+ * runs. When every run falls on one day that span is empty and the time
+ * scale invents sub-day ticks that all read as the same date, so the span
+ * widens by a day each side with one tick on the day.
+ */
+export function trendTimeAxis(timestamps: number[]): {
+  domain: ["dataMin", "dataMax"] | [number, number];
+  ticks?: number[];
+} {
+  const min = Math.min(...timestamps);
+  const max = Math.max(...timestamps);
+  if (min !== max) return { domain: ["dataMin", "dataMax"] };
+  return { domain: [min - DAY_MS, max + DAY_MS], ticks: [min] };
 }
 
 /** Simple linear regression: y = slope * x + intercept */
@@ -149,7 +232,6 @@ export function toOverlayPoints(data: OverlayStreamData): OverlayPoint[] {
   const timeArr = streams.time ?? [];
   const distArr = streams.distance ?? [];
   const cadenceArr = streams.cadence ?? [];
-  const velocityArr = streams.velocity_smooth ?? [];
   const len = timeArr.length;
   const running = isRunning(data.activityType);
   const points: OverlayPoint[] = [];
@@ -162,18 +244,10 @@ export function toOverlayPoints(data: OverlayStreamData): OverlayPoint[] {
     if (cadenceArr[i] != null) {
       point.cadence = running ? cadenceArr[i]! * 2 : cadenceArr[i]!;
     }
-    if (velocityArr[i] != null) {
-      const mps = velocityArr[i]!;
-      // null speed is a gap, not pace 15: only a non-null zero speed (stopped)
-      // clamps to the slow end of the scale.
-      point.pace = mps > 0 ? Math.min(1000 / mps / 60, 15) : 15;
-    }
     points.push(point);
   }
   return points;
 }
-
-export type OverlayXMode = "distance" | "time";
 
 /**
  * Split a run's points into contiguous segments of defined cadence, breaking
@@ -279,7 +353,7 @@ export function smoothOverlayPoints(
   points: OverlayPoint[],
   windowSize = 30,
 ): OverlayPoint[] {
-  return smooth(points, ["cadence", "pace"], windowSize);
+  return smooth(points, ["cadence"], windowSize);
 }
 
 /** Dot size based on distance: min 4px, max 12px, scaled linearly */
@@ -287,4 +361,53 @@ export function dotSize(distanceKm: number, maxDistanceKm: number): number {
   if (maxDistanceKm <= 0) return 6;
   const ratio = Math.min(distanceKm / maxDistanceKm, 1);
   return 4 + ratio * 8;
+}
+
+/**
+ * Overlay colour per selected run, by selection order. Colours never depend
+ * on which streams have loaded, so a run keeps its colour as others arrive.
+ */
+export function assignOverlayColors(
+  selectedIds: Iterable<string>,
+): Map<string, string> {
+  const colors = new Map<string, string>();
+  let i = 0;
+  for (const id of selectedIds) {
+    colors.set(id, COMPARISON_COLORS[i % COMPARISON_COLORS.length]!);
+    i += 1;
+  }
+  return colors;
+}
+
+/**
+ * A selected run's display name: its date is added only when another
+ * selected run shares the name, so two "Long Run"s can be told apart.
+ */
+export function overlayRunLabel(
+  run: Pick<RunSummary, "id" | "name" | "date">,
+  selected: ReadonlyArray<Pick<RunSummary, "id" | "name">>,
+): string {
+  const shared = selected.some(
+    (other) => other.id !== run.id && other.name === run.name,
+  );
+  return shared
+    ? `${run.name} · ${formatShortDate(run.date, "short")}`
+    : run.name;
+}
+
+/**
+ * One selected run's place in the overlay, from its stream fetch and the
+ * legend. The overlay draws from the same reading, and the `set-view` reply
+ * and context summary claim only what it says is drawn. A run with no fetch
+ * yet counts as loading: its request goes out once the overlay mounts.
+ */
+export function overlayRunStatus(
+  state: RunStreamState | undefined,
+  hidden: boolean,
+): OverlayRunStatus {
+  if (!state || state.loading) return "loading";
+  if (state.error != null) return "failed";
+  if (state.noStreams) return "noStreams";
+  if (!state.points) return "loading";
+  return hidden ? "hidden" : "drawn";
 }

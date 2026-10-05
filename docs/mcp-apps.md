@@ -148,6 +148,9 @@ never a per-story decorator.
 - Shared Recharts numeric tokens live in
   `packages/design-system/src/chart-tokens.ts`; use `getChartTokens(mode)` in
   any new chart view. MapLibre/canvas colours are concrete hex, not CSS vars.
+- Speed, pace and their labels come from `speedDisplay` in `packages/data`
+  (#63); a stopped pace sample is a gap. Pace axes take `percentileRange` as
+  their domain with `allowDataOverflow`.
 
 ## Headless primitives (Base UI)
 
@@ -177,7 +180,8 @@ while the state a tool acts on (map viewBox, brush window) only exists after.
 So the declaration registers up front against a stable shim in `onAppCreated` —
 the one pre-connect seam `useApp` offers — and the component installs the live
 implementation with `useViewTool`. A call landing before the view mounts
-answers "still loading", not an SDK throw.
+answers "still loading, or it failed to load" (a card showing its ErrorState
+never mounts the handler either), not an SDK throw.
 
 **There is deliberately no host-capability gate**: `McpUiHostCapabilities` has
 no key meaning "the host calls tools the *app* exposes", a gate could not work
@@ -185,12 +189,24 @@ anyway (capabilities arrive after registration must have happened), and none is
 needed — registering pre-connect sends nothing, so an unsupporting host sees
 one extra key it already ignores.
 
-Schemas come from `optionalObjectSchema` (`packages/ui/src/standardSchema.ts`),
-a small Standard Schema rather than a zod dependency in single-file bundles;
-take the dependency instead of growing it. Every field is optional because a
+Schemas are zod objects (`.strict()`, every field `.nullish()`): zod 4
+implements Standard JSON Schema, which `registerTool` needs, and already ships
+in every app through ext-apps. The registry drops null-valued arguments before
+the handler runs, so null means not given. Every field is optional because a
 view tool is a nudge. View tools carry `readOnlyHint: true` **with
 `destructiveHint: false` stated explicitly**. Each tool echoes its effect back
 through the existing `useModelContextSync` summary.
+
+An app declares its tools in `src/viewToolDeclarations.ts` (exporting
+`VIEW_TOOLS`; `main.tsx` renders on import, so a test cannot reach a
+declaration there). Its `viewToolDeclarations.test.ts` calls
+`expectViewToolContract(VIEW_TOOLS)` from `@intervals-mcp/ui/testing`, which
+drives the declarations through a real `App` the way a host does: strict object
+with nothing required, read-only annotations, every field accepts `null`, an
+unknown key is rejected. The same test pins the tool's field names, bounds and
+prose with `advertisedViewTools` and `viewToolFields`. A field missing
+`.nullish()` or an object missing `.strict()` otherwise fails only when a host
+calls the tool.
 
 ---
 
@@ -220,6 +236,14 @@ altitude overlays; cadence and grade where recorded).
   recorded stream) draws as a break in the line rather than a fabricated
   zero, spike, or interpolated value; see the `gappyRun` fixture and stories
   for the intended rendering.
+- A stream-less activity arrives as `noStreams: true` with an empty `time`
+  stream and shows the EmptyState; there is no retry, because a retry cannot
+  succeed (#65). `set-brush-window` answers an empty chart with the same
+  no-streams error, reset included. A time window (`fromSeconds` / `toSeconds`)
+  zooms a swim through its `time` values, since Brush is index-based and the
+  swim's axis is distance; mixing km and seconds in one call is refused. The
+  reply describes the window on the axis it was asked in, the context summary
+  on the brush's own axis.
 
 ### Cadence Trends
 
@@ -236,6 +260,36 @@ at 4): clicking Trend/Scatter dots, and `RunSelectList.tsx` — a Base UI
 Recharts `Cell` dots carry no tabindex/role/key handling, so the picker is the
 accessible alternative rather than fighting SVG focus. Unselected chips disable
 at the cap so the limit is legible.
+
+`set-view` (`view`, `runIds` up to 4, `xAxis`) lets the model drive the view;
+`runIds` replaces the selection, in the order given, so overlay colours follow
+it. The model never sees the chart's runs, so the description points it at
+`list-activities` for ids. `resolveSetView` (`src/setView.ts`, unit-tested)
+matches an id with or without the `i` prefix (not `"latest"`), and a refusal
+names ids the chart lacks apart from runs with no cadence, each once; a
+`runIds` or `xAxis` without a `view` moves to the overlay, while an empty
+`runIds` only clears the selection. The overlay x-axis and the legend's hidden runs are `App` state
+(`OverlayView` is controlled), and the context summary reports the axis while
+the overlay shows. Like `set-scope`, the reply claims "Showing" only for what
+is drawn: `overlayRunStatus` (`src/normalize.ts`, the reading the overlay
+draws from) puts each selected run in one of drawn, hidden, loading,
+noStreams or failed, and the reply and the overlay's context summary name the
+rest by state ("Tempo is still loading.", "Hidden in the legend: Tempo."). The
+reply goes out before a new run's fetch starts, so it says such a run is still
+loading. `runIds` shows any run in it the legend had hidden; leaving the
+overlay shows every run again, as when the overlay owned that state.
+
+Trend uses a time axis (`dateTs`, UTC day), so gaps in running show as gaps.
+Runs on one day share an x, and Recharts' `ComposedChart` has only an axis
+tooltip, which picks one row for all of them; the trend tooltip therefore
+lists every run that day (`runsByDay`), name, cadence and pace each. Zone
+whiskers run from min to max (`buildZoneRows`). Overlay colours follow selection
+order (`assignOverlayColors`); runs sharing a name are labelled with their date
+(`overlayRunLabel`). A selected run that loaded with `noStreams: true` (#65) is
+left out of the lines and named in a muted note, with no retry; if every
+selected run is stream-less the overlay shows an EmptyState. The pace Scatter
+reads the chart's own data and Recharts skips a null pace; a Scatter-level
+`data` filter makes the shared tooltip show the wrong run for some dots.
 
 ### Route Map
 
@@ -292,6 +346,22 @@ grid fallback (no Recharts). Calls `get-route-map-data` (app-only) with
   the same colour binning (`buildColorRuns` in `src/basemapData.ts`). Native
   MapLibre zoom/pan behind `cooperativeGestures`; OSM attribution via control;
   scrub tooltip positioned via `map.project`.
+- `set-viewport` and reset frame the basemap camera through `BasemapView`'s
+  `frame` prop (`src/basemapCamera.ts`, padding 36, max zoom 17); a frame
+  sent before the style loads is applied on load. The argument checks and
+  their error texts live in `src/viewportRequest.ts`, so both views give the
+  same reply.
+- The live region and the model context say which stretch of the route is
+  in view, in one wording for both views (`visibleRoute` and `describeView`
+  in `src/viewport.ts`, #53): "Showing the whole route" exactly when every
+  track point is in view, otherwise the stretches in view by km ("Showing
+  12.0–16.0 km of the route"; a loop's start reads as its first and last
+  kilometres). A point is in view inside the grid's viewBox, or inside the
+  basemap bounds MapLibre reports on every `moveend` (the model's frame, the
+  user's own pan, zoom or resize). With no distance stream the wording falls
+  back to the zoom factor. The grid announces only button, keyboard (zoom
+  and arrow-key pan, all through `applyView`) and model moves; wheel, pinch
+  and drag reach the model context without an announcement.
 
 **Basemap tile source and CSP.** The route-map resource declares
 `_meta.ui.csp` on **both** descriptor and content response:
@@ -333,8 +403,13 @@ exercise the real default view.
 ### Training Load
 
 Weekly running-volume bars with rolling trend line and volume-spike warning
-weeks. Calls `get-training-load-data` with the `days` window (default 84,
-max 365).
+weeks, a weekly load line, and Fitness/Fatigue/Form tiles. Calls
+`get-training-load-data` with the `days` window (default 84, max 365) and the
+`runOnly` scope the view tool was called with (default false). `runOnly` has
+to travel: the data tool defaults to whole-body, so dropping it would draw a
+whole-body chart under a run-only request. `buildDataArgs` (`normalize.ts`)
+builds the arguments, unit-tested. Volume and spike warnings are always
+run-based; load and CTL/ATL/TSB follow `runOnly`.
 
 - Server-side aggregation is pure and unit-tested in
   `apps/server/src/trainingLoad.ts` (`buildTrainingLoadData`): Monday-start
@@ -355,9 +430,33 @@ max 365).
   ends at the last complete week, and the tooltip, narration and model
   context all say the week is in progress.
 - `ComposedChart`: weekly distance bars (warning weeks recoloured in the
-  danger hue) plus trend `Line`; the shared scrub tooltip lists distance, runs,
-  time, elevation, warnings. Footer `Legend` toggles trend line and warning
-  highlighting; totals render in the shared `SummaryBar`.
+  danger hue) plus trend `Line` on the `distance` axis, and weekly `load` as a
+  linear `Line` on its own right-hand `load` axis (load runs to the hundreds
+  against tens of km, so one shared axis would flatten both). The shared scrub
+  tooltip lists distance, trend, load and its per-type breakdown (largest
+  first), runs, time, elevation, warnings. Footer `Legend` toggles trend line,
+  load line (the right axis hides with it) and warning highlighting; mobile
+  drops the axis titles.
+- The week in progress holds only the days so far, so `buildLoadRows` keeps its
+  load off the solid line (the way `trendKm` is null for it) and the chart
+  draws it as a hollow point of its own beside the dashed partial bar. On the
+  line it would read as a plunge in load. The tooltip still reads its `load`,
+  and the narration ranges the load line over complete weeks.
+- A right-hand axis lists ticks from the axis line outward, so the "Load"
+  title needs a gutter past the widest tick (sized from the axis font for four
+  digits, so a 1,000+ load clears it). The `LoadChart` stories assert that no
+  axis title's box meets a tick label's, including a four-digit story.
+- The `SummaryBar` reads Runs, Distance, Load, Fitness, Fatigue, Form; the
+  three fitness tiles are dashes when `current` is null. A scope note under it
+  (`buildScopeNote`: "Whole-body load (Run, Ride) · from intervals.icu as of 5
+  Oct" or "Run-only load · computed locally as of 5 Oct") says what the load
+  and the tiles add up. The narration and model context carry the total load,
+  the scope and CTL/ATL/TSB with its source. Form is signed by
+  `formatSignedTsb` and the source by `fitnessSourceLabel`, both in
+  `packages/data` and shared with fitness-trend.
+- The `view-training-load` text prints the same numbers: a `Scope:` line and a
+  `Current (as of DATE): CTL x / ATL y / TSB +z` line, with its `Load:` total
+  equal to the payload's `totals.load`.
 
 ### Compare Activities
 
@@ -372,12 +471,24 @@ as pure `buildComparison` in `apps/server/src/tools/compareActivities.ts`.
   resample onto one uniform grid over the shared distance or time axis
   (`alignSeries`, linear interpolation, light post-smoothing), so the tooltip
   shows a per-point activity2−activity1 delta and a shorter line simply ends.
-  Pace renders as pace (min/km, reversed axis) only when BOTH activities are
-  pace sports; mixed pairs fall back to km/h (`paceCategory`).
+  Pace renders as pace (reversed axis) only when both activities share a pace
+  sport (`speedSport`); mixed pairs fall back to km/h.
 - One metric at a time (intersection of what both recorded), distance/time
   axis toggle, legend toggles per activity line (blue/orange).
 - Delta summary header degrades away if that fetch fails while the overlay
   still renders.
+- A stream-less side (`noStreams: true`, #65) is data, not an error: it keeps
+  the delta tiles and shows the overlay EmptyState, with no retry.
+- `set-metric` (`metric`, `axis`) lets the model choose the overlay. A metric
+  or axis the pair did not both record is refused with the available ones listed
+  (`resolveSetMetric`, `src/setMetric.ts`, unit-tested). The list names the value
+  the strict enum accepts, with the displayed label beside it only where it
+  differs (`pace (shown as speed)` for a mixed-sport pair, `heartrate (shown as
+  heart rate)`), so a model following the list never sends a value the schema
+  rejects. Either part being unavailable refuses the whole call, and a
+  stream-less side gets a plain "nothing to choose" answer rather than an empty
+  list. The success reply and the context summary's `Overlay:` line use the
+  displayed label, as the pills do.
 
 ### Activity Zones
 
@@ -447,7 +558,24 @@ weeks take them. Calls `get-fitness-trend-data` on mount with `days`,
 - A "Whole body" / "Runs only" `PillGroup` (`App.tsx`) switches the `runOnly`
   scope. The scope not shown at mount is fetched on demand through the shared
   keyed `useServerToolFetcher` store and cached, so flipping back never
-  re-fetches; `sourceLabel` notes when a scope's numbers are computed locally
-  rather than read from intervals.icu. While that fetch runs, the skeleton
+  re-fetches; `fitnessSourceLabel` (`packages/data`, shared with
+  training-load) notes when a scope's numbers are computed locally rather than
+  read from intervals.icu. While that fetch runs, the skeleton
   shows its progress line. If it fails, `ErrorState` shows the error and a
   retry that calls the tool again.
+- `set-scope` (`scope`, `show`, `hide`) lets the model switch the scope pills
+  and the legend toggles for `fitness`, `fatigue`, `form` and `plan`. It sets
+  the same state the pills do, so the other scope arrives through the keyed
+  fetcher above and there is no second fetch path. `resolveSetScope`
+  (`src/setScope.ts`, unit-tested) refuses a series named in both lists and a
+  `plan` the landing scope has no rows for (a scope still loading is given the
+  benefit of the doubt), naming series by the value the schema accepts. The
+  reply and the context summary list what is hidden the same way, noting what
+  the legend calls the plan ("taper plan" or "rest projection"). The reply
+  claims "Showing" only for a chart that is drawn (`landingFor` reads the
+  landing scope's render state): a scope still loading is "Switching to ...;
+  it is still loading", a failed fetch is an error carrying what the card
+  shows, and a loaded scope with no recorded load is refused with nothing
+  changed, because the legend would still render over an EmptyState. The state
+  change is kept while a scope loads or fails. Band-kind toggles are not
+  exposed.

@@ -13,6 +13,7 @@ import { buildTrainingLoadContextSummary } from "./contextSummary";
 import { LoadChart } from "./LoadChart";
 import {
   buildLoadSubtitle,
+  buildScopeNote,
   buildTotalsStats,
   countWarningWeeks,
 } from "./normalize";
@@ -28,8 +29,13 @@ export function App({ app, data, mode = "desktop" }: AppProps) {
   const isMobile = mode === "mobile";
   const [showTrend, setShowTrend] = useState(true);
   const [showWarnings, setShowWarnings] = useState(true);
+  const [showLoad, setShowLoad] = useState(true);
 
-  const totalsStats = useMemo(() => buildTotalsStats(data.totals), [data]);
+  const totalsStats = useMemo(
+    () => buildTotalsStats(data.totals, data.current),
+    [data],
+  );
+  const scopeNote = useMemo(() => buildScopeNote(data), [data]);
   const warningWeeks = useMemo(() => countWarningWeeks(data.weeks), [data]);
   const hasWeekInProgress = data.weeks.some((w) => w.inProgress);
 
@@ -47,11 +53,13 @@ export function App({ app, data, mode = "desktop" }: AppProps) {
         compact={isMobile}
       />
       <SummaryBar compact={isMobile} stats={totalsStats} />
+      <span className={styles.scopeNote}>{scopeNote}</span>
       <div className={styles.viewContainer}>
         <LoadChart
-          weeks={data.weeks}
+          data={data}
           showTrend={showTrend}
           showWarnings={showWarnings}
+          showLoad={showLoad}
           mode={mode}
         />
       </div>
@@ -81,6 +89,12 @@ export function App({ app, data, mode = "desktop" }: AppProps) {
               label="Trend"
               hidden={!showTrend}
               onClick={() => setShowTrend((v) => !v)}
+            />
+            <LegendItem
+              color="var(--chart-power)"
+              label="Load"
+              hidden={!showLoad}
+              onClick={() => setShowLoad((v) => !v)}
             />
             {warningWeeks > 0 && (
               <LegendItem

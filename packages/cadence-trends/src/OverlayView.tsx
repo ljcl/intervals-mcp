@@ -12,7 +12,7 @@ import {
   TooltipEntry,
   Tooltip as UiTooltip,
 } from "@intervals-mcp/ui";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import {
   CartesianGrid,
   ComposedChart,
@@ -23,11 +23,16 @@ import {
   YAxis,
 } from "recharts";
 import { buildOverlayA11y } from "./a11y";
-import { resampleOverlayRuns } from "./normalize";
+import {
+  assignOverlayColors,
+  overlayRunLabel,
+  overlayRunStatus,
+  resampleOverlayRuns,
+} from "./normalize";
 import styles from "./OverlayView.module.css";
 import {
-  COMPARISON_COLORS,
   type OverlayPoint,
+  type OverlayXMode,
   type RunStreamState,
   type RunSummary,
 } from "./types";
@@ -38,10 +43,15 @@ interface OverlayViewProps {
   streams: Map<string, RunStreamState>;
   requestStream: (runId: string) => void;
   retryStream: (runId: string) => void;
+  /** Owned by the app, so the model can set it as well as the pills. */
+  xMode: OverlayXMode;
+  onXModeChange: (xMode: OverlayXMode) => void;
+  /** Runs the legend has switched off. Owned by the app, so `set-view` can
+   * report them and show a run again when the model selects it. */
+  hiddenRuns: ReadonlySet<string>;
+  onToggleHidden: (runId: string) => void;
   mode?: "mobile" | "desktop";
 }
-
-type XMode = "distance" | "time";
 
 interface OverlayTooltipProps {
   active?: boolean;
@@ -52,7 +62,7 @@ interface OverlayTooltipProps {
     color?: string;
   }>;
   label?: number | string;
-  xMode: XMode;
+  xMode: OverlayXMode;
 }
 
 /**
@@ -94,6 +104,10 @@ export function OverlayView({
   streams,
   requestStream,
   retryStream,
+  xMode,
+  onXModeChange,
+  hiddenRuns,
+  onToggleHidden,
   mode = "desktop",
 }: OverlayViewProps) {
   const isMobile = mode === "mobile";
@@ -107,41 +121,74 @@ export function OverlayView({
     strokeWidth: chartTokens.secondaryStrokeWidth,
   };
 
-  const [xMode, setXMode] = useState<XMode>("distance");
-  const [hiddenRuns, setHiddenRuns] = useState<Set<string>>(new Set());
-
   // Request every selected run. The fetcher is idempotent per key and never
   // re-fires a failed one, so this effect cannot loop on a failure.
   useEffect(() => {
     for (const id of selectedRunIds) requestStream(id);
   }, [selectedRunIds, requestStream]);
 
+  // Colours follow selection order, fixed before any stream has loaded, so a
+  // run never changes colour as the others arrive.
+  const colors = useMemo(
+    () => assignOverlayColors(selectedRunIds),
+    [selectedRunIds],
+  );
+
+  // The selected runs the overlay knows about, in selection order. A run
+  // with no stream state yet cannot be named, and is not shown.
+  const selectedRuns = useMemo(
+    () =>
+      [...selectedRunIds].flatMap((id) => {
+        const run = streams.get(id)?.run;
+        return run ? [run] : [];
+      }),
+    [selectedRunIds, streams],
+  );
+
   const runs = useMemo(() => {
     const entries: Array<{
       run: RunSummary;
       points: OverlayPoint[];
       color: string;
+      label: string;
     }> = [];
-    let colorIdx = 0;
     for (const id of selectedRunIds) {
       const state = streams.get(id);
-      if (state?.points) {
+      // A stream-less run has nothing to draw: it is named in a note below.
+      // The legend's hidden runs stay here: their line is drawn hidden.
+      if (state?.points && overlayRunStatus(state, false) === "drawn") {
         entries.push({
           run: state.run,
           points: state.points,
-          color: COMPARISON_COLORS[colorIdx % COMPARISON_COLORS.length]!,
+          color: colors.get(id)!,
+          label: overlayRunLabel(state.run, selectedRuns),
         });
-        colorIdx += 1;
       }
     }
     return entries;
-  }, [selectedRunIds, streams]);
+  }, [selectedRunIds, streams, colors, selectedRuns]);
 
   const failed = useMemo(
     () =>
       [...selectedRunIds]
         .map((id) => streams.get(id))
-        .filter((state): state is RunStreamState => state?.error != null),
+        .filter(
+          (state): state is RunStreamState =>
+            overlayRunStatus(state, false) === "failed",
+        ),
+    [selectedRunIds, streams],
+  );
+
+  // Selected runs that loaded but recorded no streams, in selection order.
+  // Not a failure: a retry cannot succeed, so they get a note, not a retry.
+  const streamless = useMemo(
+    () =>
+      [...selectedRunIds].flatMap((id) => {
+        const state = streams.get(id);
+        return state && overlayRunStatus(state, false) === "noStreams"
+          ? [state.run]
+          : [];
+      }),
     [selectedRunIds, streams],
   );
 
@@ -169,10 +216,9 @@ export function OverlayView({
 
   // A selected run with no entry yet counts as loading: the request effect
   // has not run for it, and a bare axis frame for one frame reads as a bug.
-  const isLoading = [...selectedRunIds].some((id) => {
-    const state = streams.get(id);
-    return state == null || state.loading;
-  });
+  const isLoading = [...selectedRunIds].some(
+    (id) => overlayRunStatus(streams.get(id), false) === "loading",
+  );
   // The latest progress line of the first selected run that is still loading.
   const progress =
     [...selectedRunIds]
@@ -189,11 +235,27 @@ export function OverlayView({
 
   const failureMessage =
     failed.length === 1
-      ? `Could not load stream data for ${failed[0]!.run.name}.`
+      ? `Could not load stream data for ${overlayRunLabel(failed[0]!.run, selectedRuns)}.`
       : `Could not load stream data for ${failed.length} of the selected runs.`;
   const retryFailed = () => {
     for (const state of failed) retryStream(state.run.id);
   };
+
+  // Every selected run is stream-less: nothing is loading or failed either,
+  // since a run only becomes stream-less once its fetch has succeeded.
+  if (streamless.length === selectedRunIds.size) {
+    return (
+      <EmptyState>
+        None of the selected runs has recorded streams to overlay.
+      </EmptyState>
+    );
+  }
+
+  const streamlessNotes = streamless.map((run) => (
+    <p key={run.id} className={styles.note}>
+      No recorded streams for {overlayRunLabel(run, selectedRuns)}.
+    </p>
+  ));
 
   // Nothing to draw yet — replace the chart rather than framing empty axes.
   if (runs.length === 0 && isLoading) {
@@ -204,7 +266,12 @@ export function OverlayView({
     );
   }
   if (runs.length === 0 && failed.length > 0) {
-    return <ErrorState message={failureMessage} onRetry={retryFailed} />;
+    return (
+      <div>
+        <ErrorState message={failureMessage} onRetry={retryFailed} />
+        {streamlessNotes}
+      </div>
+    );
   }
 
   return (
@@ -222,6 +289,7 @@ export function OverlayView({
       {failed.length > 0 && (
         <ErrorState message={failureMessage} onRetry={retryFailed} />
       )}
+      {streamlessNotes}
       <div className={styles.container}>
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart
@@ -297,7 +365,7 @@ export function OverlayView({
                 strokeWidth={tokens.strokeWidth}
                 dot={false}
                 hide={hiddenRuns.has(r.run.id)}
-                name={r.run.name}
+                name={r.label}
               />
             ))}
           </ComposedChart>
@@ -307,18 +375,18 @@ export function OverlayView({
         <PillGroup>
           <Pill
             active={xMode === "distance"}
-            onClick={() => setXMode("distance")}
+            onClick={() => onXModeChange("distance")}
           >
             km
           </Pill>
-          <Pill active={xMode === "time"} onClick={() => setXMode("time")}>
+          <Pill active={xMode === "time"} onClick={() => onXModeChange("time")}>
             min
           </Pill>
         </PillGroup>
         <Legend size={isMobile ? "touch" : "default"}>
           {runs.map((r) => {
             const label = isMobile
-              ? r.run.name
+              ? r.label
               : `${r.run.name} · ${formatShortDate(r.run.date, "short")}`;
             return (
               <LegendItem
@@ -326,14 +394,7 @@ export function OverlayView({
                 color={r.color}
                 label={label}
                 hidden={hiddenRuns.has(r.run.id)}
-                onClick={() => {
-                  setHiddenRuns((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(r.run.id)) next.delete(r.run.id);
-                    else next.add(r.run.id);
-                    return next;
-                  });
-                }}
+                onClick={() => onToggleHidden(r.run.id)}
               />
             );
           })}

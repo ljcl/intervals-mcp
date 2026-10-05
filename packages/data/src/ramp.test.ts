@@ -3,6 +3,7 @@ import {
   colorForValue,
   normalizeValue,
   percentileDomain,
+  percentileRange,
   rampColor,
 } from "./ramp";
 
@@ -62,5 +63,24 @@ describe("colorForValue", () => {
 
   it("returns the ramp midpoint for a collapsed domain", () => {
     expect(colorForValue({ min: 5, max: 5 }, 5)).toBe(rampColor(0.5));
+  });
+});
+
+describe("percentileRange", () => {
+  const ramp = Array.from({ length: 100 }, (_, i) => i + 1);
+  it("returns the 2nd to 98th percentile, ignoring null and non-finite", () => {
+    expect(percentileRange([null, undefined, Number.NaN, ...ramp])).toEqual([
+      3, 98,
+    ]);
+  });
+  it("honours custom percentiles", () => {
+    expect(percentileRange(ramp, 0, 100)).toEqual([1, 100]);
+  });
+  it("widens a single value so the axis is not degenerate", () => {
+    expect(percentileRange([5, 5, 5])).toEqual([4.5, 5.5]);
+  });
+  it("returns null without finite values", () => {
+    expect(percentileRange([])).toBeNull();
+    expect(percentileRange([null, Number.POSITIVE_INFINITY])).toBeNull();
   });
 });

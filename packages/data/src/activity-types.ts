@@ -6,7 +6,7 @@ const RUNNING_TYPES = new Set([
   "Hike",
 ]);
 
-const SWIMMING_TYPES = new Set(["Swim"]);
+const SWIMMING_TYPES = new Set(["Swim", "OpenWaterSwim"]);
 
 export function isRunning(activityType: string): boolean {
   return RUNNING_TYPES.has(activityType);

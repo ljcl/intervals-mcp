@@ -41,6 +41,68 @@ describe("buildCadenceContextSummary", () => {
     );
   });
 
+  it("dates runs that share a name so they can be told apart", () => {
+    const text = buildCadenceContextSummary({
+      weeks: 6,
+      activeView: "overlay",
+      selectedRuns: [
+        run({
+          id: "1",
+          name: "Long Run",
+          date: "2026-01-11",
+          averageCadence: 168,
+        }),
+        run({
+          id: "2",
+          name: "Long Run",
+          date: "2026-01-25",
+          averageCadence: 170,
+        }),
+        run({
+          id: "3",
+          name: "Tempo",
+          date: "2026-01-09",
+          averageCadence: 172,
+        }),
+      ],
+      overlayStatus: new Map([
+        ["1", "drawn"],
+        ["2", "drawn"],
+        ["3", "drawn"],
+      ]),
+    });
+    expect(text).toBe(
+      "Cadence trends, last 6 weeks. View: per-run overlay. Comparing: Long Run · 11 Jan 26 (168 spm), Long Run · 25 Jan 26 (170 spm), Tempo (172 spm).",
+    );
+  });
+
+  it("reports the overlay x-axis while the overlay shows", () => {
+    expect(
+      buildCadenceContextSummary({
+        weeks: 6,
+        activeView: "overlay",
+        selectedRuns: [
+          run({ id: "1", name: "Tempo Run", averageCadence: 181 }),
+        ],
+        overlayAxis: "time",
+        overlayStatus: new Map([["1", "drawn"]]),
+      }),
+    ).toBe(
+      "Cadence trends, last 6 weeks. View: per-run overlay. Overlay x-axis: time. Comparing: Tempo Run (181 spm).",
+    );
+  });
+
+  it("leaves the overlay x-axis out of every other view", () => {
+    expect(
+      buildCadenceContextSummary({
+        weeks: 6,
+        activeView: "scatter",
+        selectedRuns: [],
+        overlayAxis: "distance",
+      }),
+    ).not.toContain("x-axis");
+  });
+
   it("mentions runs excluded for missing cadence", () => {
     const text = buildCadenceContextSummary({
       weeks: 6,
@@ -103,5 +165,61 @@ describe("buildCadenceContextSummary", () => {
         noPaceCount: 0,
       }),
     ).not.toContain("no recorded pace");
+  });
+
+  describe("in the overlay, only drawn runs are compared", () => {
+    const selectedRuns = [
+      run({ id: "1", name: "Tempo", averageCadence: 181 }),
+      run({ id: "2", name: "Long Run", averageCadence: 170 }),
+      run({ id: "3", name: "Treadmill", averageCadence: 176 }),
+      run({ id: "4", name: "Hills", averageCadence: 174 }),
+      run({ id: "5", name: "Easy", averageCadence: 168 }),
+    ];
+
+    it("names every run by what the overlay is doing with it", () => {
+      expect(
+        buildCadenceContextSummary({
+          weeks: 6,
+          activeView: "overlay",
+          selectedRuns,
+          overlayAxis: "distance",
+          overlayStatus: new Map([
+            ["1", "drawn"],
+            ["2", "loading"],
+            ["3", "noStreams"],
+            ["4", "failed"],
+            ["5", "hidden"],
+          ]),
+        }),
+      ).toBe(
+        "Cadence trends, last 6 weeks. View: per-run overlay. Overlay x-axis: distance. Comparing: Tempo (181 spm). Still loading: Long Run. No recorded streams: Treadmill. Failed to load: Hills. Hidden in the legend: Easy.",
+      );
+    });
+
+    it("says no run is drawn, and counts a run with no state as loading", () => {
+      expect(
+        buildCadenceContextSummary({
+          weeks: 6,
+          activeView: "overlay",
+          selectedRuns: selectedRuns.slice(0, 2),
+          overlayStatus: new Map([["2", "noStreams"]]),
+        }),
+      ).toBe(
+        "Cadence trends, last 6 weeks. View: per-run overlay. No run is drawn in the overlay. Still loading: Tempo. No recorded streams: Long Run.",
+      );
+    });
+
+    it("keeps listing the selection in the other views", () => {
+      expect(
+        buildCadenceContextSummary({
+          weeks: 6,
+          activeView: "trend",
+          selectedRuns: selectedRuns.slice(0, 2),
+          overlayStatus: new Map([["2", "loading"]]),
+        }),
+      ).toBe(
+        "Cadence trends, last 6 weeks. View: trend timeline. Comparing: Tempo (181 spm), Long Run (170 spm).",
+      );
+    });
   });
 });

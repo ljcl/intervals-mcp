@@ -8,12 +8,10 @@
  */
 
 import {
-  formatSpeedAsKmh,
-  formatSpeedAsPace,
-  isRunning,
   normalizeValue,
   percentileDomain,
   rampColor,
+  speedDisplay,
 } from "@intervals-mcp/data";
 import { type Point } from "./normalize";
 import { type RouteMapData } from "./types";
@@ -70,18 +68,18 @@ export function buildMetricSeries(data: RouteMapData): MetricSeries[] {
   ): Array<number | null> | null =>
     values && values.length === pointCount ? values : null;
 
-  const running = data.activityType ? isRunning(data.activityType) : false;
+  const display = speedDisplay(data.activityType);
   const series: MetricSeries[] = [];
 
   const velocity = aligned(streams.velocity_smooth);
   if (velocity) {
     series.push({
       key: "pace",
-      label: running ? "Pace" : "Speed",
-      shortLabel: running ? "Pace" : "Speed",
+      label: display.label,
+      shortLabel: display.label,
       values: velocity,
       ...domainOf(velocity),
-      format: running ? formatSpeedAsPace : formatSpeedAsKmh,
+      format: display.formatMps,
     });
   }
 

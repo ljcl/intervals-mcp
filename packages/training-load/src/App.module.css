@@ -10,6 +10,13 @@
   --chart-height: 260px;
 }
 
+.scopeNote {
+  padding: var(--space-2) 0 0;
+  font-family: var(--font-sans);
+  font-size: var(--font-text-xs-size);
+  color: var(--color-text-secondary);
+}
+
 .viewContainer {
   flex: 1;
   padding: var(--space-4) 0 0;

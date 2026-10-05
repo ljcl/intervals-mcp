@@ -1,5 +1,5 @@
-import { formatPace, formatTime } from "@intervals-mcp/data";
-import { METRIC_LABELS } from "./contextSummary";
+import { formatTime } from "@intervals-mcp/data";
+import { metricLabel } from "./contextSummary";
 import {
   type ActivityMeta,
   type ChartDataPoint,
@@ -113,13 +113,15 @@ function describeSeries(
       return `Heart rate ranges from ${Math.round(range.min)} to ${Math.round(range.max)} bpm.`;
     case "power":
       return `Power ranges from ${Math.round(range.min)} to ${Math.round(range.max)} W.`;
-    case "pace":
-      if (meta.isRunning || meta.isSwimming) {
-        const unit = meta.isSwimming ? "per 100 m" : "min/km";
+    case "pace": {
+      const { speed } = meta;
+      const unit = speed.unit === "/100m" ? "per 100 m" : speed.unit;
+      if (speed.reversed) {
         // min is the fastest split; narrate fastest-to-slowest.
-        return `Pace ranges between ${formatPace(range.min)} and ${formatPace(range.max)} ${unit}.`;
+        return `Pace ranges between ${speed.format(range.min)} and ${speed.format(range.max)} ${unit}.`;
       }
-      return `Speed ranges from ${range.min.toFixed(1)} to ${range.max.toFixed(1)} km/h.`;
+      return `Speed ranges from ${speed.format(range.min)} to ${speed.format(range.max)} ${unit}.`;
+    }
     case "altitude":
       return `Altitude ranges from ${Math.round(range.min)} to ${Math.round(range.max)} m.`;
     case "cadence":
@@ -163,7 +165,8 @@ export function buildChartA11yDescription(input: ChartA11yInput): string {
   }
 
   if (omittedMetrics?.length) {
-    const names = omittedMetrics.map((key) => METRIC_LABELS[key] ?? key);
+    const paceLabel = meta.speed.label.toLowerCase();
+    const names = omittedMetrics.map((key) => metricLabel(key, paceLabel));
     parts.push(
       `${names.join(" and ")} ${names.length === 1 ? "was" : "were"} recorded but ${names.length === 1 ? "is" : "are"} not shown at this screen size.`,
     );

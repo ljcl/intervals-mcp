@@ -1,4 +1,10 @@
-import { isRunning, isSwimming, smooth } from "@intervals-mcp/data";
+import {
+  isRunning,
+  type SpeedSport,
+  smooth,
+  speedDisplayForSport,
+  speedSport,
+} from "@intervals-mcp/data";
 import {
   type ActivityStreamData,
   type AlignedPoint,
@@ -9,22 +15,11 @@ import {
 /**
  * Unit family for the pace metric. Pace (min/km, min/100m) is only meaningful
  * when BOTH activities are in the same pace sport; any mixed pair falls back
- * to speed (km/h) so the two lines share one y-axis unit.
+ * to speed (km/h), the "other" display, so the two lines share one y-axis unit.
  */
-export type PaceCategory = "run" | "swim" | "speed";
-
-export function paceCategory(typeA: string, typeB: string): PaceCategory {
-  if (isRunning(typeA) && isRunning(typeB)) return "run";
-  if (isSwimming(typeA) && isSwimming(typeB)) return "swim";
-  return "speed";
-}
-
-export function paceMetricLabel(category: PaceCategory): string {
-  return category === "speed" ? "Speed" : "Pace";
-}
-
-export function paceMetricUnit(category: PaceCategory): string {
-  return category === "run" ? "min/km" : category === "swim" ? "/100m" : "km/h";
+export function paceCategory(typeA: string, typeB: string): SpeedSport {
+  const sport = speedSport(typeA);
+  return sport === speedSport(typeB) ? sport : "other";
 }
 
 /** Per-sample metric values, index-aligned with the `time`/`distance` axes.
@@ -37,14 +32,14 @@ export interface MetricSeries {
 
 /**
  * Convert one activity's raw streams into chartable metric arrays:
- * - velocity_smooth → pace (min/km or min/100m, capped to avoid stopped
- *   spikes) or speed (km/h), per the shared pace category
+ * - velocity_smooth → pace (min/km or min/100m; a stop is a gap) or speed
+ *   (km/h), per the shared pace category (`speedDisplayForSport`)
  * - cadence doubled for running (Strava reports strides/min for runs)
  * - all-zero altitude dropped (common for treadmill/trainer activities)
  */
 export function toMetricSeries(
   data: ActivityStreamData,
-  category: PaceCategory,
+  category: SpeedSport,
 ): MetricSeries {
   const { streams } = data;
   const time = streams.time ?? [];
@@ -57,18 +52,10 @@ export function toMetricSeries(
   }
 
   if (streams.velocity_smooth?.length === len) {
-    series.values.pace = streams.velocity_smooth.map((mps) => {
-      // A missing speed sample is a gap, not a "stopped" reading, so it
-      // must not be capped into a fake pace/speed spike.
-      if (mps == null) return null;
-      if (category === "run") {
-        return mps > 0 ? Math.min(1000 / mps / 60, 15) : 15;
-      }
-      if (category === "swim") {
-        return mps > 0 ? Math.min(100 / mps / 60, 5) : 5;
-      }
-      return mps * 3.6;
-    });
+    const display = speedDisplayForSport(category);
+    series.values.pace = streams.velocity_smooth.map((mps) =>
+      display.fromMps(mps),
+    );
   }
 
   if (streams.heartrate?.length === len) {

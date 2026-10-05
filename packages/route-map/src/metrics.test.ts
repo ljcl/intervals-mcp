@@ -70,12 +70,48 @@ describe("buildMetricSeries", () => {
     const run = buildMetricSeries(makeData({ streams }))[0]!;
     expect(run.label).toBe("Pace");
     expect(run.format(2.5)).toBe("6'40\" /km");
+    expect(run.format(4)).toBe("4'10\" /km");
 
     const ride = buildMetricSeries(
       makeData({ streams, activityType: "Ride" }),
     )[0]!;
     expect(ride.label).toBe("Speed");
     expect(ride.format(10)).toBe("36.0 km/h");
+    expect(ride.format(7.9)).toBe("28.4 km/h");
+  });
+
+  it("labels a swim's metric Pace and reads it per 100 m", () => {
+    const swim = buildMetricSeries(
+      makeData({
+        activityType: "Swim",
+        streams: { velocity_smooth: [1, 1, 1, 1] },
+      }),
+    )[0]!;
+    expect(swim.label).toBe("Pace");
+    expect(swim.shortLabel).toBe("Pace");
+    expect(swim.format(1)).toBe("1'40\" /100m");
+  });
+
+  it("reads a walk as pace per km", () => {
+    const walk = buildMetricSeries(
+      makeData({
+        activityType: "Walk",
+        streams: { velocity_smooth: [1, 1, 1, 1] },
+      }),
+    )[0]!;
+    expect(walk.label).toBe("Pace");
+    expect(walk.format(1)).toBe("16'40\" /km");
+  });
+
+  it("reads speed in km/h when the activity type is unknown", () => {
+    const series = buildMetricSeries(
+      makeData({
+        activityType: null,
+        streams: { velocity_smooth: [1, 1, 1, 1] },
+      }),
+    )[0]!;
+    expect(series.label).toBe("Speed");
+    expect(series.format(7.9)).toBe("28.4 km/h");
   });
 
   it("formats near-zero speed as a pause instead of a huge pace", () => {

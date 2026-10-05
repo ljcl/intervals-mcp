@@ -1,4 +1,4 @@
-import { formatShortDate } from "@intervals-mcp/data";
+import { formatShortDate, formatSignedTsb } from "@intervals-mcp/data";
 import { type SummaryStat } from "@intervals-mcp/ui";
 import {
   type FitnessTrendData,
@@ -6,12 +6,6 @@ import {
   type TrendBand,
   type TrendDay,
 } from "./types";
-
-/** "+12" / "-4" / "0" — form only reads correctly with its sign. */
-export function signedTsb(value: number): string {
-  const rounded = Math.round(value * 10) / 10;
-  return rounded > 0 ? `+${rounded}` : `${rounded}`;
-}
 
 /**
  * One chart row per date. Recorded days carry `ctl`/`atl`/`tsb`; projected
@@ -155,13 +149,13 @@ export function buildSummaryStats(data: FitnessTrendData): SummaryStat[] {
   const stats: SummaryStat[] = [
     { label: "Fitness", value: current ? `${current.ctl}` : "—" },
     { label: "Fatigue", value: current ? `${current.atl}` : "—" },
-    { label: "Form", value: current ? signedTsb(current.tsb) : "—" },
+    { label: "Form", value: current ? formatSignedTsb(current.tsb) : "—" },
   ];
 
   if (data.taper) {
     stats.push({
       label: `Form on ${formatShortDate(data.taper.targetDate)}`,
-      value: signedTsb(data.taper.achievedTsb),
+      value: formatSignedTsb(data.taper.achievedTsb),
     });
   } else if (data.tsbPositiveDate) {
     stats.push({
@@ -194,14 +188,6 @@ export function buildTrendSubtitle(data: FitnessTrendData): string {
   return data.taper
     ? `${base} · taper to ${formatShortDate(data.taper.targetDate)}`
     : base;
-}
-
-/**
- * "From intervals.icu" / "Computed locally": where `current`/`series` came
- * from, next to the whole-body/runs-only toggle.
- */
-export function sourceLabel(data: FitnessTrendData): string {
-  return data.source === "computed" ? "Computed locally" : "From intervals.icu";
 }
 
 /** "35/day, 28% of recent" — one week of the plan, for the plan list. */

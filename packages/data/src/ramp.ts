@@ -37,6 +37,30 @@ export function percentileDomain(values: number[]): {
   return { min: at(0.05), max: at(0.95) };
 }
 
+/** Axis domain from the given percentiles of the finite values, so one
+ * outlying sample (a walk break in a run) does not squash the chart. A
+ * single repeated value widens by 0.5 either side. Null without data. */
+export function percentileRange(
+  values: ReadonlyArray<number | null | undefined>,
+  lowPct = 2,
+  highPct = 98,
+): [number, number] | null {
+  const sorted = values
+    .filter((v): v is number => typeof v === "number" && Number.isFinite(v))
+    .sort((a, b) => a - b);
+  if (sorted.length === 0) return null;
+  const at = (pct: number) =>
+    sorted[
+      Math.min(
+        sorted.length - 1,
+        Math.max(0, Math.round((pct / 100) * (sorted.length - 1))),
+      )
+    ]!;
+  const lo = at(lowPct);
+  const hi = at(highPct);
+  return lo === hi ? [lo - 0.5, hi + 0.5] : [lo, hi];
+}
+
 /** Clamp + scale a value into 0..1 within [min,max]; 0.5 for a degenerate domain. */
 export function normalizeValue(
   value: number,

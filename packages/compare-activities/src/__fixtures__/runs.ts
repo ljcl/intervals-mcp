@@ -83,6 +83,31 @@ export const raceRun = synthRun({
   wattsBase: 272,
 });
 
+const { watts: _powerMeter, ...streamsWithoutPower } = raceRun.streams;
+
+/**
+ * `raceRun` recorded without a power meter: it shares pace, heart rate,
+ * cadence and altitude with `baselineRun`, but not power, so the overlay
+ * offers one metric fewer than for `raceRun` itself.
+ */
+export const noPowerRun: ActivityStreamData = {
+  ...raceRun,
+  activityId: "501",
+  name: "Bay Run • Race Pace (no power meter)",
+  streams: streamsWithoutPower,
+};
+
+/**
+ * The same session as `noPowerRun`, filed as a ride: against a run it is a
+ * mixed pair, so pace is drawn and named as speed.
+ */
+export const noPowerRide: ActivityStreamData = {
+  ...noPowerRun,
+  activityId: "502",
+  name: "Bay Ride • Steady (no power meter)",
+  activityType: "Ride",
+};
+
 export const compareData: CompareData = {
   units: {
     distance: "km",
@@ -236,3 +261,53 @@ export const hrOnlyPair: [ActivityStreamData, ActivityStreamData] = [
     },
   },
 ];
+
+/**
+ * A manual entry: intervals.icu knows its name, sport and totals but recorded
+ * no streams, so the server sends the degraded payload (`noStreams: true`,
+ * empty `time`) rather than an error (#65).
+ */
+export const manualRun: ActivityStreamData = {
+  activityId: "401",
+  activityType: "Run",
+  name: "Treadmill (manual entry)",
+  streams: { time: [] },
+  noStreams: true,
+};
+
+/**
+ * The summary the server builds for `baselineRun` against `manualRun`: totals
+ * only, because a manual entry has no heart rate, pace or cadence to compare.
+ * Distance, time and elevation tiles remain.
+ */
+export const compareDataManualSide: CompareData = {
+  ...compareData,
+  activity_2: {
+    ...compareData.activity_2,
+    id: "401",
+    name: "Treadmill (manual entry)",
+    distance_km: 8,
+    moving_time: "45:00",
+    moving_time_s: 2700,
+    pace_min_per_km: null,
+    gap_min_per_km: null,
+    average_hr: null,
+    max_hr: null,
+    cadence_spm: null,
+    elevation_gain_m: 0,
+    load: null,
+    decoupling_pct: null,
+    efficiency_factor: null,
+    running_dynamics: null,
+  },
+  differences: {
+    distance_km: -1.98,
+    pace_delta_sec_per_km: null,
+    pace_delta_min_per_km: null,
+    pace_delta_interpretation: null,
+    avg_hr: null,
+    cadence_spm: null,
+    elevation_gain_m: -84,
+  },
+  efficiency: null,
+};

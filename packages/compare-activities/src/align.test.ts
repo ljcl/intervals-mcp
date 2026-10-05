@@ -1,10 +1,9 @@
+import { speedDisplayForSport } from "@intervals-mcp/data";
 import { describe, expect, it } from "vitest";
 import {
   alignSeries,
   type MetricSeries,
   paceCategory,
-  paceMetricLabel,
-  paceMetricUnit,
   sharedAxes,
   sharedMetrics,
   toMetricSeries,
@@ -24,43 +23,59 @@ function streamData(
 }
 
 describe("paceCategory", () => {
-  it("is run only when both activities are running sports", () => {
+  it("is run only when both activities are pace-per-km sports", () => {
     expect(paceCategory("Run", "TrailRun")).toBe("run");
-    expect(paceCategory("Run", "Ride")).toBe("speed");
-    expect(paceCategory("Ride", "Ride")).toBe("speed");
+    expect(paceCategory("Run", "Walk")).toBe("run");
+    expect(paceCategory("Run", "Ride")).toBe("other");
+    expect(paceCategory("Ride", "Ride")).toBe("other");
   });
 
   it("is swim only when both are swims", () => {
     expect(paceCategory("Swim", "Swim")).toBe("swim");
-    expect(paceCategory("Swim", "Run")).toBe("speed");
+    expect(paceCategory("Swim", "OpenWaterSwim")).toBe("swim");
+    expect(paceCategory("Swim", "Run")).toBe("other");
   });
 
   it("labels and units follow the category", () => {
-    expect(paceMetricLabel("run")).toBe("Pace");
-    expect(paceMetricLabel("speed")).toBe("Speed");
-    expect(paceMetricUnit("run")).toBe("min/km");
-    expect(paceMetricUnit("swim")).toBe("/100m");
-    expect(paceMetricUnit("speed")).toBe("km/h");
+    const run = speedDisplayForSport(paceCategory("Run", "TrailRun"));
+    expect([run.label, run.unit]).toEqual(["Pace", "min/km"]);
+    const swim = speedDisplayForSport(paceCategory("Swim", "Swim"));
+    expect([swim.label, swim.unit]).toEqual(["Pace", "/100m"]);
+    const mixed = speedDisplayForSport(paceCategory("Run", "Ride"));
+    expect([mixed.label, mixed.unit]).toEqual(["Speed", "km/h"]);
   });
 });
 
 describe("toMetricSeries", () => {
-  it("converts velocity to min/km pace for runs, capped when stopped", () => {
+  it("converts velocity to min/km pace for runs, with a stop as a gap", () => {
     const series = toMetricSeries(
-      streamData({ velocity_smooth: [3.3333, 0, 5, 0.5] }),
+      streamData({ velocity_smooth: [3.3333, 0, 5, 0.2] }),
       "run",
     );
     expect(series.values.pace?.[0]).toBeCloseTo(5, 2);
-    expect(series.values.pace?.[1]).toBe(15);
-    expect(series.values.pace?.[3]).toBe(15);
+    expect(series.values.pace?.[1]).toBeNull();
+    expect(series.values.pace?.[2]).toBeCloseTo(1000 / 5 / 60, 4);
+    expect(series.values.pace?.[3]).toBeNull();
   });
 
-  it("converts velocity to km/h for the speed category", () => {
+  it("converts velocity to min/100m for swims, with no cap", () => {
     const series = toMetricSeries(
-      streamData({ velocity_smooth: [10, 10, 10, 10] }, "Ride"),
-      "speed",
+      streamData({ velocity_smooth: [1, 0.3, 0, 1.25] }, "Swim"),
+      "swim",
+    );
+    expect(series.values.pace?.[0]).toBeCloseTo(100 / 1 / 60, 4);
+    // Slower than the old 5 min/100m cap, and still plotted at its real value.
+    expect(series.values.pace?.[1]).toBeCloseTo(100 / 0.3 / 60, 4);
+    expect(series.values.pace?.[2]).toBeNull();
+  });
+
+  it("converts velocity to km/h for the other category", () => {
+    const series = toMetricSeries(
+      streamData({ velocity_smooth: [10, 10, 10, 0] }, "Ride"),
+      "other",
     );
     expect(series.values.pace?.[0]).toBeCloseTo(36, 5);
+    expect(series.values.pace?.[3]).toBe(0);
   });
 
   it("doubles cadence for runs but not rides", () => {
@@ -72,7 +87,7 @@ describe("toMetricSeries", () => {
 
     const ride = toMetricSeries(
       streamData({ cadence: [80, 82, 84, 86] }, "Ride"),
-      "speed",
+      "other",
     );
     expect(ride.values.cadence?.[0]).toBe(80);
   });
@@ -92,7 +107,6 @@ describe("toMetricSeries", () => {
       "run",
     );
     expect(series.values.pace?.[1]).toBeNull();
-    expect(series.values.pace?.[1]).not.toBe(15);
   });
 
   it("keeps a null cadence sample as null, not 0", () => {

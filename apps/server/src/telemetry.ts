@@ -26,6 +26,10 @@ export interface ToolCallRecord {
   /** intervals.icu quota as of the most recent response, when known
    * (currently always null: intervals.icu sends no rate-limit headers). */
   rate_limit?: RateLimitSnapshot | null;
+  /** Whether the request's client advertised MCP Apps (#77). */
+  client_apps?: boolean;
+  /** clientInfo.name from the request envelope, when sent. */
+  client_name?: string;
 }
 
 /** Rolling per-tool counters, the shape `/health` exposes. */

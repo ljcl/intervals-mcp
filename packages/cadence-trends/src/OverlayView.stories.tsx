@@ -1,21 +1,66 @@
 import preview, { darkGlobals } from "@intervals-mcp/design-system/preview";
 import { MobileCardShell } from "@intervals-mcp/ui";
+import { type ComponentProps, useState } from "react";
 import { expect, fn, waitFor } from "storybook/test";
 import {
   allFailedStreams,
+  allRunsWithoutStreams,
+  duplicateNameStreams,
   gappyStreams,
   mockStreams,
+  oneRunWithoutStreams,
   partiallyFailedStreams,
   partiallyLoadedStreams,
   progressStreams,
 } from "./__fixtures__/overlay-streams";
 import { OverlayView } from "./OverlayView";
+import { type OverlayXMode } from "./types";
 
 const noop = () => {};
 
-const meta = preview.meta({ component: OverlayView });
+// The app owns the axis (the model sets it as well as the pills) and the
+// legend's hidden runs, so stories that do not exercise them show the
+// defaults and ignore changes.
+const meta = preview.meta({
+  component: OverlayView,
+  args: {
+    xMode: "distance" as const,
+    onXModeChange: noop,
+    hiddenRuns: new Set<string>(),
+    onToggleHidden: noop,
+  },
+});
+
+/** Holds the axis and the hidden runs the way the app does, so the pills and
+ * the legend can be clicked through. */
+function WithAppState(
+  props: Omit<
+    ComponentProps<typeof OverlayView>,
+    "xMode" | "onXModeChange" | "hiddenRuns" | "onToggleHidden"
+  >,
+) {
+  const [xMode, setXMode] = useState<OverlayXMode>("distance");
+  const [hiddenRuns, setHiddenRuns] = useState<ReadonlySet<string>>(new Set());
+  const toggleHidden = (runId: string) =>
+    setHiddenRuns((prev) => {
+      const next = new Set(prev);
+      if (next.has(runId)) next.delete(runId);
+      else next.add(runId);
+      return next;
+    });
+  return (
+    <OverlayView
+      {...props}
+      xMode={xMode}
+      onXModeChange={setXMode}
+      hiddenRuns={hiddenRuns}
+      onToggleHidden={toggleHidden}
+    />
+  );
+}
 
 const bothRuns = new Set(["i10003", "i10013"]);
+const twoLongRuns = new Set(["i10004", "i10009"]);
 
 export const EmptyState = meta.story({
   args: {
@@ -48,6 +93,13 @@ export const SwitchAxisAndHideRun = meta.story({
     requestStream: noop,
     retryStream: noop,
   },
+  render: ({
+    xMode: _xMode,
+    onXModeChange: _onXModeChange,
+    hiddenRuns: _hiddenRuns,
+    onToggleHidden: _onToggleHidden,
+    ...rest
+  }) => <WithAppState {...rest} />,
   play: async ({ canvas, canvasElement, userEvent }) => {
     const curveCount = () =>
       canvasElement.querySelectorAll("path.recharts-line-curve").length;
@@ -179,6 +231,56 @@ export const AllRunsFailed = meta.story({
 });
 
 /**
+ * One selected run recorded no streams (#65). It is named in a note and left
+ * out of the lines, the other run stays drawn, and there is no retry: a retry
+ * cannot succeed, so the "Try again" an error would offer would be dead.
+ */
+export const RunWithoutStreams = meta.story({
+  args: {
+    selectedRunIds: bothRuns,
+    streams: oneRunWithoutStreams,
+    requestStream: noop,
+    retryStream: fn(),
+  },
+  play: async ({ canvas, canvasElement }) => {
+    await waitFor(() =>
+      expect(
+        canvasElement.querySelectorAll("path.recharts-line-curve").length,
+      ).toBe(1),
+    );
+    await expect(
+      canvas.getByText("No recorded streams for Intervals 5x1k."),
+    ).toBeVisible();
+    // Only the run with streams is in the legend.
+    expect(
+      canvas.queryByRole("button", { name: /Toggle Intervals 5x1k/ }),
+    ).toBeNull();
+    expect(canvas.queryByRole("button", { name: "Try again" })).toBeNull();
+    expect(canvas.queryByRole("alert")).toBeNull();
+  },
+});
+
+/** Every selected run is stream-less: an empty state, not bare axes. */
+export const NoSelectedRunHasStreams = meta.story({
+  args: {
+    selectedRunIds: bothRuns,
+    streams: allRunsWithoutStreams,
+    requestStream: noop,
+    retryStream: fn(),
+  },
+  play: async ({ canvas, canvasElement }) => {
+    await expect(
+      canvas.getByText(
+        "None of the selected runs has recorded streams to overlay.",
+      ),
+    ).toBeVisible();
+    expect(canvasElement.querySelector(".recharts-surface")).toBeNull();
+    expect(canvas.queryByRole("button", { name: "Try again" })).toBeNull();
+    expect(canvas.queryByRole("alert")).toBeNull();
+  },
+});
+
+/**
  * A run with a mid-run cadence/pace dropout: the line for that run breaks
  * across the gap instead of bridging it or dipping to a fake zero, while
  * the intact run keeps drawing normally.
@@ -207,6 +309,48 @@ export const WithGaps = meta.story({
   },
 });
 
+/**
+ * Two selected runs are both named "Long Run". Each is labelled with its own
+ * date (11 Jan, 25 Jan) so the legend, and the tooltip it shares a name
+ * with, can tell them apart; a run with a unique name stays bare.
+ */
+export const DuplicateNames = meta.story({
+  args: {
+    selectedRunIds: twoLongRuns,
+    streams: duplicateNameStreams,
+    requestStream: noop,
+    retryStream: noop,
+  },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    await waitFor(() =>
+      expect(
+        canvasElement.querySelectorAll("path.recharts-line-curve").length,
+      ).toBe(2),
+    );
+    await expect(
+      canvas.getByRole("button", { name: "Toggle Long Run · 11 Jan 26" }),
+    ).toBeVisible();
+    await expect(
+      canvas.getByRole("button", { name: "Toggle Long Run · 25 Jan 26" }),
+    ).toBeVisible();
+
+    const surface = canvasElement.querySelector(".recharts-wrapper")!;
+    const box = surface.getBoundingClientRect();
+    await userEvent.pointer({
+      target: surface,
+      coords: {
+        clientX: box.left + box.width / 2,
+        clientY: box.top + box.height / 3,
+      },
+    });
+    await waitFor(() => {
+      const tooltip = canvasElement.querySelector(".recharts-tooltip-wrapper");
+      expect(tooltip).toHaveTextContent("Long Run · 11 Jan 26");
+      expect(tooltip).toHaveTextContent("Long Run · 25 Jan 26");
+    });
+  },
+});
+
 export const Mobile = meta.story({
   args: {
     selectedRunIds: bothRuns,
@@ -215,6 +359,23 @@ export const Mobile = meta.story({
     retryStream: noop,
     mode: "mobile",
   },
+  globals: {
+    viewport: { value: "claudeIosCard" },
+  },
+  parameters: { layout: "fullscreen" },
+  decorators: [
+    (StoryFn) => (
+      <MobileCardShell>
+        <div style={{ height: 260 }}>
+          <StoryFn />
+        </div>
+      </MobileCardShell>
+    ),
+  ],
+});
+
+export const DuplicateNamesMobile = DuplicateNames.extend({
+  args: { mode: "mobile" },
   globals: {
     viewport: { value: "claudeIosCard" },
   },

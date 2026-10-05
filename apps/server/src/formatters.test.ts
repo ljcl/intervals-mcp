@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { activityDisplayName, formatDuration, round } from "./formatters";
+import {
+  activityDisplayName,
+  formatDuration,
+  formatSigned,
+  round,
+} from "./formatters";
 
 describe("formatDuration", () => {
   it("formats seconds to HH:MM:SS with hours", () => {
@@ -72,5 +77,13 @@ describe("activityDisplayName", () => {
 
   it("keeps an empty-string name as-is (only null/undefined fall through)", () => {
     expect(activityDisplayName({ name: "", type: "Ride" })).toBe("");
+  });
+});
+
+describe("formatSigned", () => {
+  it("signs zero and positive values, leaves a negative one alone", () => {
+    expect(formatSigned(4.2)).toBe("+4.2");
+    expect(formatSigned(0)).toBe("+0");
+    expect(formatSigned(-9)).toBe("-9");
   });
 });

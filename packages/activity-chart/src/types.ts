@@ -1,3 +1,5 @@
+import { type SpeedDisplay } from "@intervals-mcp/data";
+
 /**
  * Lap/interval-band data from the server's get-activity-streams-raw tool.
  * One entry per intervals.icu `icu_intervals` entry (WORK/RECOVERY, not a
@@ -51,6 +53,12 @@ export interface ActivityStreamData {
     step_length?: (number | null)[];
   };
   laps?: Lap[];
+  /**
+   * `true` when intervals.icu recorded no streams for the activity (a manual
+   * entry, a deleted recording): the server then sends `streams: { time: [] }`
+   * rather than an error, because a retry cannot succeed (#65).
+   */
+  noStreams?: boolean;
 }
 
 /** Running-dynamics metric keys (ground contact time, vertical oscillation,
@@ -104,4 +112,6 @@ export interface ActivityMeta {
   activityType: string;
   isRunning: boolean;
   isSwimming: boolean;
+  /** How this sport's pace/speed is converted, labelled and formatted. */
+  speed: SpeedDisplay;
 }

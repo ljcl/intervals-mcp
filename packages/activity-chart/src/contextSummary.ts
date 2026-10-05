@@ -1,6 +1,4 @@
-/** Human names for the metric keys, shared with the a11y narration
- * so the legend, the model context, and the screen reader agree. */
-export const METRIC_LABELS: Record<string, string> = {
+const METRIC_LABELS: Record<string, string> = {
   heartrate: "heart rate",
   power: "power",
   pace: "pace",
@@ -13,11 +11,20 @@ export const METRIC_LABELS: Record<string, string> = {
   stepLength: "step length",
 };
 
+/** Human name for a metric key, shared with the a11y narration so the
+ * model context and the screen reader agree. The pace key reads "pace" or
+ * "speed" by sport, so the caller supplies it (`meta.speed.label`, lowercased). */
+export function metricLabel(key: string, paceLabel: string): string {
+  return key === "pace" ? paceLabel : (METRIC_LABELS[key] ?? key);
+}
+
 export interface ChartContextInput {
   activityName: string | null;
   availableMetrics: string[];
   hidden: Set<string>;
   smooth: boolean;
+  /** "pace" or "speed" (lowercased `meta.speed.label`), per the sport. */
+  paceLabel: string;
   /**
    * The x-axis window currently shown, when zoomed. Echoed back so a
    * model that called `set-brush-window` — or a user who dragged the handles —
@@ -42,12 +49,13 @@ export function buildChartContextSummary(
     availableMetrics,
     hidden,
     smooth,
+    paceLabel,
     zoomWindow,
     dynamicsSummary,
   } = input;
   if (!activityName || availableMetrics.length === 0) return null;
 
-  const label = (k: string) => METRIC_LABELS[k] ?? k;
+  const label = (k: string) => metricLabel(k, paceLabel);
   const shown = availableMetrics.filter((m) => !hidden.has(m)).map(label);
   const off = availableMetrics.filter((m) => hidden.has(m)).map(label);
 

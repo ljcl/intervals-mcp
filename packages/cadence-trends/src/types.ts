@@ -39,8 +39,12 @@ export interface OverlayStreamData {
     time?: number[];
     distance?: number[];
     cadence?: (number | null)[];
-    velocity_smooth?: (number | null)[];
   };
+  /**
+   * `true` when the run recorded no streams (`streams: { time: [] }`): the
+   * server sends that as data, not an error (#65).
+   */
+  noStreams?: boolean;
 }
 
 /** A single point in the overlay chart */
@@ -48,7 +52,6 @@ export interface OverlayPoint {
   distance: number;
   time: number;
   cadence?: number;
-  pace?: number;
 }
 
 /**
@@ -64,7 +67,25 @@ export interface RunStreamState {
   error: string | null;
   /** Latest progress message from the server while loading, else null. */
   progress: string | null;
+  /**
+   * The run loaded but recorded no streams. It is left out of the overlay
+   * lines and named in a note instead: a retry cannot succeed, so none is
+   * offered (#65).
+   */
+  noStreams?: boolean;
 }
+
+/**
+ * What the overlay is doing with one selected run, which decides what the
+ * model may be told: only a `drawn` run is a line on screen (#68). `hidden`
+ * is a loaded run the legend has switched off.
+ */
+export type OverlayRunStatus =
+  | "drawn"
+  | "hidden"
+  | "loading"
+  | "noStreams"
+  | "failed";
 
 /** Pace zone definition */
 export interface PaceZone {
@@ -75,6 +96,15 @@ export interface PaceZone {
 
 /** View identifiers */
 export type ViewId = "trend" | "scatter" | "zones" | "overlay";
+
+/** What the overlay's x-axis measures. */
+export type OverlayXMode = "distance" | "time";
+
+/**
+ * Overlay comparison cap, shared by the dot-click toggle, the run picker and
+ * the `set-view` tool's `runIds` bound.
+ */
+export const MAX_COMPARE_RUNS = 4;
 
 /** Palette for overlay comparison lines — distinct from metric colors */
 export const COMPARISON_COLORS = [

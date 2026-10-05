@@ -1,5 +1,9 @@
-import { formatPace, formatTime } from "@intervals-mcp/data";
-import { alignedKey, type PaceCategory } from "./align";
+import {
+  formatTime,
+  type SpeedSport,
+  speedDisplayForSport,
+} from "@intervals-mcp/data";
+import { alignedKey } from "./align";
 import { type AlignedPoint, type AxisKey, type MetricKey } from "./types";
 
 /**
@@ -15,7 +19,7 @@ export interface CompareA11yInput {
   nameB: string;
   metric: MetricKey;
   axis: AxisKey;
-  category: PaceCategory;
+  category: SpeedSport;
   /** Cadence unit switch: spm when both activities are runs, rpm otherwise. */
   bothRunning: boolean;
   data: AlignedPoint[];
@@ -42,17 +46,15 @@ function sideRange(
 function formatRange(
   range: { min: number; max: number },
   metric: MetricKey,
-  category: PaceCategory,
+  category: SpeedSport,
   bothRunning: boolean,
 ): string {
   switch (metric) {
-    case "pace":
-      if (category === "speed") {
-        return `${range.min.toFixed(1)} to ${range.max.toFixed(1)} km/h`;
-      }
-      return `${formatPace(range.min)} to ${formatPace(range.max)} ${
-        category === "swim" ? "per 100 m" : "min/km"
-      }`;
+    case "pace": {
+      const display = speedDisplayForSport(category);
+      const unit = display.unit === "/100m" ? "per 100 m" : display.unit;
+      return `${display.format(range.min)} to ${display.format(range.max)} ${unit}`;
+    }
     case "heartrate":
       return `${Math.round(range.min)} to ${Math.round(range.max)} bpm`;
     case "power":
@@ -82,7 +84,9 @@ export function buildCompareA11yDescription(input: CompareA11yInput): string {
   const parts: string[] = [];
 
   const metricName =
-    metric === "pace" && category === "speed" ? "speed" : METRIC_NAMES[metric];
+    metric === "pace"
+      ? speedDisplayForSport(category).label.toLowerCase()
+      : METRIC_NAMES[metric];
 
   const lastX = data[data.length - 1]?.x;
   if (lastX !== undefined) {

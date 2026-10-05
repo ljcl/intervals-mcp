@@ -107,8 +107,36 @@ export const GridZoomControls = meta.story({
     map.focus();
     await userEvent.keyboard("+");
     await waitFor(() => expect(viewWidth()).toBeLessThan(640));
+
     await userEvent.keyboard("0");
     await waitFor(() => expect(viewWidth()).toBe(640));
+  },
+});
+
+/**
+ * An arrow-key pan is announced like a zoom: it goes through the same path,
+ * so the live region names the stretch of the route now in view. (A route
+ * with a distance stream, so the wording is by km rather than the zoom factor,
+ * which a pan does not change.)
+ */
+export const KeyboardPanAnnounced = meta.story({
+  args: { data: streamLoopActivity, basemapEnabled: false },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const map = canvas.getByRole("img", { name: /^Map of Harbour Tempo/ });
+    const viewX = () => Number(map.getAttribute("viewBox")?.split(" ")[0]);
+    const announced = () =>
+      canvasElement.querySelector("[aria-live='polite']")?.textContent ?? "";
+
+    map.focus();
+    await userEvent.keyboard("++");
+    await waitFor(() => expect(announced()).toMatch(/km of the route/));
+    const afterZoom = announced();
+    const xAfterZoom = viewX();
+
+    await userEvent.keyboard("{ArrowRight}");
+    await waitFor(() => expect(viewX()).toBeGreaterThan(xAfterZoom));
+    await waitFor(() => expect(announced()).not.toBe(afterZoom));
+    expect(announced()).toMatch(/km of the route/);
   },
 });
 

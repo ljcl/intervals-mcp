@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import streamsFixture from "./__fixtures__/intervals/streams.json";
-import { buildActivityChartData, MAX_CHART_POINTS } from "./activityChartData";
+import {
+  buildActivityChartData,
+  emptyActivityChartData,
+  MAX_CHART_POINTS,
+} from "./activityChartData";
 import {
   type IntervalsActivity,
   type IntervalsInterval,
@@ -189,5 +193,32 @@ describe("buildActivityChartData", () => {
     expect(data.streams.distance?.every((d) => d != null)).toBe(true);
     expect(data.streams.stance_time).toHaveLength(600);
     expect(data.streams.stance_time?.some((v) => v === null)).toBe(true);
+  });
+});
+
+describe("emptyActivityChartData", () => {
+  it("has nothing to plot and says so", () => {
+    expect(emptyActivityChartData(activity())).toEqual({
+      activityId: "i189807578",
+      activityType: "Run",
+      name: "Run 1",
+      streams: { time: [] },
+      laps: [],
+      noStreams: true,
+    });
+  });
+
+  it("carries the same identity fields as buildActivityChartData", () => {
+    const unnamed = activity({ name: null, type: undefined });
+    const built = buildActivityChartData(
+      unnamed,
+      { time: [0, 1], moving: [], length: 2 },
+      [],
+    );
+    const empty = emptyActivityChartData(unnamed);
+
+    expect(empty.activityId).toBe(built.activityId);
+    expect(empty.activityType).toBe(built.activityType);
+    expect(empty.name).toBe(built.name);
   });
 });

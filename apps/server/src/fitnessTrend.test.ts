@@ -512,7 +512,11 @@ describe("solveTaperPlan", () => {
     expect(plan.achieved_tsb).toBe(-15);
   });
 
-  it("solves a very long plan without overflowing the call stack", () => {
+  // 300,000 days is deliberately heavy: well under a second alone, but past
+  // the 5 s default on a CI runner busy with every package's coverage run.
+  it("solves a very long plan without overflowing the call stack", {
+    timeout: 30_000,
+  }, () => {
     // `Math.max(...shape)` threw RangeError for a far-future date (#44).
     const plan = solveTaperPlan(start, "2026-06-28", {
       targetDate: addDays("2026-06-28", 300_000),

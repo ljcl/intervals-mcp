@@ -13,10 +13,12 @@
  * finished surface — the output schemas and the progress plumbing — rather
  * than being amended three times on the way.
  */
+import { CLIENT_CAPABILITIES_META_KEY } from "@modelcontextprotocol/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getTimeZone } from "./config";
 import {
   getActivity,
+  getActivityStreams,
   getAthletePaceCurves,
   listActivities,
   searchActivities,
@@ -28,6 +30,7 @@ vi.mock("./intervalsClient", async (importOriginal) => {
   return {
     ...actual,
     getActivity: vi.fn(),
+    getActivityStreams: vi.fn(),
     getAthletePaceCurves: vi.fn(),
     listActivities: vi.fn(),
     searchActivities: vi.fn(),
@@ -45,6 +48,7 @@ const { connectTestClient } = await import("./mcpTestClient");
 const { TOOL_DEFS } = await import("./server");
 
 const mockedIntervalsActivity = vi.mocked(getActivity);
+const mockedIntervalsStreams = vi.mocked(getActivityStreams);
 const mockedAthleteCurves = vi.mocked(getAthletePaceCurves);
 
 /**
@@ -435,6 +439,9 @@ describe("tools/call", () => {
       distance: 10000,
       moving_time: 3000,
     } as never);
+    mockedIntervalsStreams.mockResolvedValueOnce([
+      { type: "time", data: [0, 1, 2] },
+    ]);
 
     const client = await connectTestClient();
     await client.send("tools/call", {
@@ -447,6 +454,74 @@ describe("tools/call", () => {
     // ...992 with the true digits unrecoverable.
     const [, id] = mockedIntervalsActivity.mock.calls[0]!;
     expect(String(id)).toBe("9007199254740993");
+  });
+});
+
+describe("tools/call on a view-* tool", () => {
+  const MCP_APPS_CAPABILITIES = {
+    extensions: {
+      "io.modelcontextprotocol/ui": {
+        mimeTypes: ["text/html;profile=mcp-app"],
+      },
+    },
+  };
+
+  function mockZonesActivity() {
+    mockedIntervalsActivity.mockResolvedValueOnce({
+      id: "123",
+      name: "Morning Run",
+      type: "Run",
+      start_date_local: "2026-06-01T07:00:00",
+      icu_hr_zones: [130, 155, 190],
+      icu_hr_zone_times: [600, 1800, 600],
+    } as never);
+  }
+
+  async function viewText(clientCapabilities?: unknown): Promise<string> {
+    mockZonesActivity();
+    const client = await connectTestClient();
+    const { result, error } = await client.send("tools/call", {
+      name: "view-activity-zones",
+      arguments: { activity_id: "123" },
+      ...(clientCapabilities === undefined
+        ? {}
+        : { _meta: { [CLIENT_CAPABILITIES_META_KEY]: clientCapabilities } }),
+    });
+    expect(error).toBeUndefined();
+    expect(result?.isError).toBeUndefined();
+    const content = result?.content as Array<{ type: string; text: string }>;
+    return content[0]?.text ?? "";
+  }
+
+  it("claims a rendered chart when the request advertises MCP Apps", async () => {
+    const text = await viewText(MCP_APPS_CAPABILITIES);
+
+    expect(
+      text.endsWith("[Interactive zone distribution chart rendered above]"),
+    ).toBe(true);
+    expect(text).not.toContain("This client cannot display");
+  });
+
+  it("names the text twin when the request advertises no capabilities", async () => {
+    const text = await viewText();
+
+    expect(text).not.toContain("rendered above");
+    expect(
+      text.endsWith(
+        "This client cannot display the interactive zone distribution chart. For detail, call get-activity-zones.",
+      ),
+    ).toBe(true);
+  });
+
+  it("names the text twin when the extension lacks the MCP App mime type", async () => {
+    const text = await viewText({
+      extensions: {
+        "io.modelcontextprotocol/ui": { mimeTypes: ["text/html"] },
+      },
+    });
+
+    expect(text).not.toContain("rendered above");
+    expect(text).toContain("call get-activity-zones.");
   });
 });
 

@@ -285,6 +285,18 @@ nullable) alongside the existing display `name` ("Recovery" for an unlabeled
 RECOVERY interval, else "Lap N"). Cadence stays raw strides/min on the wire;
 the app doubles it client-side for step-cadence activity types.
 
+An activity with no streams (a manual entry; `IntervalsStreamsUnavailableError`
+from `loadIntervalsStreams`, the one error these handlers degrade on, as
+`get-route-map-data` does) is not an error (#65). `get-activity-streams-raw`
+returns `emptyActivityChartData`: the usual `activityId`/`activityType`/`name`,
+`streams: { time: [] }`, `laps: []` and `noStreams: true`.
+`view-activity-chart` reads the streams itself (usually a cache hit for the
+app's own call afterwards; a 404 is not cached) and adds "No recorded streams;
+the chart has nothing to plot." to its text, or "This activity has no recorded
+streams." for a host that cannot render the app, whose footer then names
+`get-activity` instead of `get-activity-streams`. A rate limit or any other
+failure still propagates.
+
 `get-hill-analysis` and `get-split-analysis` both read their streams through
 the shared intervals.icu stream adapter (`distance`, `altitude`,
 `grade_smooth`, `heartrate`, `velocity_smooth`, `cadence`, plus a derived
@@ -625,14 +637,35 @@ and `view-route-map`/`get-route-map-data` are all ported to intervals.icu.
 | `get-cadence-trend-data` | Summary cadence/pace data for the cadence trends UI (app-only) |
 | `view-route-map` | Interactive map of an activity's GPS track, fit to bounds with start/finish markers; optional distance-anchored waypoints (MCP App) |
 | `get-route-map-data` | `[lat, lng]` coordinates from the activity's latlng stream plus index-aligned metric streams and WORK-interval end markers for the route map UI (app-only) |
-| `view-training-load` | Weekly running-volume bars with a rolling trend line and volume-spike warning weeks (MCP App) |
-| `get-training-load-data` | Per-week volume, trend value, warning flags, weekly load, and current CTL/ATL/TSB for the training-load UI (app-only) |
+| `view-training-load` | Weekly running-volume bars with a rolling trend line, volume-spike warning weeks, a weekly load line, and Fitness/Fatigue/Form tiles; `runOnly` picks the scope load and CTL/ATL/TSB cover. Its text adds a `Scope:` line (whole-body with the activity types, or run-only, and where CTL/ATL came from) and a `Current (as of DATE): CTL x / ATL y / TSB +z` line when fitness is known; its `Load:` total is the payload's `totals.load` (MCP App) |
+| `get-training-load-data` | Per-week volume, trend value, warning flags, weekly load, and current CTL/ATL/TSB for the training-load UI; `runOnly` (default false) switches load and CTL/ATL/TSB between whole-body and run-only, while volume and spike warnings stay run-based (app-only) |
 | `view-compare-activities` | Interactive overlay of two activities' streams on a shared distance/time axis with a delta summary (MCP App) |
 | `get-compare-activities-data` | Aggregate comparison (summaries, activity2−activity1 differences, efficiency) for the compare-activities UI (app-only) |
 | `view-activity-zones` | Time-in-zone bar chart for one activity's HR zones with an easy/moderate/hard split (power zones dropped for now; see docs/api-notes.md) (MCP App) |
 | `get-activity-zones-data` | Per-zone time distributions (bucket bounds, seconds, percentages) for the activity-zones UI (app-only) |
 | `view-fitness-trend` | CTL/ATL/TSB over time with shaded fatigue/freshness/ramp bands and a dashed taper plan or rest projection past today; a Whole body/Runs only toggle switches scope, caching each side (MCP App) |
 | `get-fitness-trend-data` | Per-day CTL/ATL/TSB, the projection, the solved taper, and the dated warning bands for the fitness-trend UI; `runOnly` switches between whole-body (intervals.icu wellness) and run-only (computed) (app-only) |
+
+A `view-*` result says the chart was rendered only when the request's client
+capabilities advertise `io.modelcontextprotocol/ui` with
+`text/html;profile=mcp-app` (`clientSupportsMcpApps`, `clientCapabilities.ts`).
+Otherwise it has no "rendered above" line and ends with `This client cannot
+display the interactive <kind>. For detail, call <twin>.` A call with no client
+information is treated as a host that cannot render apps. Both footers come
+from `viewFooter`; a test checks every tool the twin names is advertised. The
+rest of the text never mentions on-screen UI to such a host: `view-route-map`
+says "No GPS track is recorded for this activity." rather than calling the map
+empty, and counts waypoints without the map legend.
+
+| Tool | Footer kind | Text tool it names |
+| ---- | ----------- | ------------------ |
+| `view-activity-chart` | `activity chart` | `get-activity-streams` (`get-activity` when the activity has no streams) |
+| `view-cadence-trends` | `cadence trends chart` | `list-activities, then get-running-summary` |
+| `view-training-load` | `training load chart` | `get-training-load with the same arguments` |
+| `view-fitness-trend` | `fitness trend chart` | `get-fitness-trend with the same arguments` |
+| `view-activity-zones` | `zone distribution chart` | `get-activity-zones` |
+| `view-route-map` | `route map` | `get-activity` |
+| `view-compare-activities` | `activity comparison` | `compare-activities` |
 
 Every `*-data` app-only tool reads intervals.icu streams through
 `loadIntervalsStreams` (see docs/architecture.md#streams) and downsamples to

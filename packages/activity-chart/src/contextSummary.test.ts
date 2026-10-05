@@ -9,6 +9,7 @@ describe("buildChartContextSummary", () => {
         availableMetrics: [],
         hidden: new Set(),
         smooth: false,
+        paceLabel: "pace",
       }),
     ).toBeNull();
   });
@@ -19,9 +20,23 @@ describe("buildChartContextSummary", () => {
       availableMetrics: ["heartrate", "pace", "cadence"],
       hidden: new Set(["cadence"]),
       smooth: true,
+      paceLabel: "pace",
     });
     expect(text).toBe(
       'Viewing activity "Tempo Run". Showing: heart rate, pace. Hidden: cadence. Smoothing: on.',
+    );
+  });
+
+  it("names the pace metric by the label the caller passes", () => {
+    const text = buildChartContextSummary({
+      activityName: "Sunday Spin",
+      availableMetrics: ["heartrate", "pace"],
+      hidden: new Set(["heartrate"]),
+      smooth: false,
+      paceLabel: "speed",
+    });
+    expect(text).toBe(
+      'Viewing activity "Sunday Spin". Showing: speed. Hidden: heart rate. Smoothing: off.',
     );
   });
 
@@ -31,6 +46,7 @@ describe("buildChartContextSummary", () => {
       availableMetrics: ["heartrate", "stanceTime"],
       hidden: new Set(),
       smooth: false,
+      paceLabel: "pace",
       dynamicsSummary: "Ground contact time averages 245 ms.",
     });
     expect(text).toBe(
@@ -45,6 +61,7 @@ describe("buildChartContextSummary", () => {
       availableMetrics: ["heartrate"],
       hidden: new Set(),
       smooth: false,
+      paceLabel: "pace",
       dynamicsSummary: null,
     });
     expect(text).not.toContain("averages");

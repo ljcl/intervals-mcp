@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { WAYPOINT_COLORS } from "./annotations";
 import {
+  boundsContain,
+  frameBoundsForRange,
+  MIN_SPAN_DEG,
   nearestLatLngIndex,
   splitsToGeoJson,
   trackBounds,
@@ -54,6 +57,68 @@ describe("trackBounds", () => {
       [-122.51, 37.77],
       [-122.48, 37.785],
     ]);
+  });
+});
+
+describe("frameBoundsForRange", () => {
+  const coords: Array<[number, number]> = [
+    [-33.86, 151.2],
+    [-33.85, 151.21],
+    [-33.84, 151.23],
+    [-33.83, 151.22],
+  ];
+
+  it("bounds the slice in lng/lat order", () => {
+    expect(frameBoundsForRange(coords, { from: 1, to: 2 })).toEqual([
+      [151.21, -33.85],
+      [151.23, -33.84],
+    ]);
+  });
+
+  it("widens a single point so fitBounds has an area", () => {
+    const [[w, s], [e, n]] = frameBoundsForRange(coords, { from: 0, to: 0 })!;
+    expect(e - w).toBeGreaterThanOrEqual(MIN_SPAN_DEG);
+    expect(n - s).toBeGreaterThanOrEqual(MIN_SPAN_DEG);
+  });
+
+  it("returns null for an empty slice", () => {
+    expect(frameBoundsForRange([], { from: 0, to: 0 })).toBeNull();
+  });
+});
+
+describe("boundsContain", () => {
+  const sydney: [[number, number], [number, number]] = [
+    [151.2, -33.87],
+    [151.22, -33.85],
+  ];
+
+  it("tests a [lat, lng] pair against [[west, south], [east, north]]", () => {
+    expect(boundsContain(sydney, [-33.86, 151.21])).toBe(true);
+    expect(boundsContain(sydney, [-33.86, 151.25])).toBe(false);
+    expect(boundsContain(sydney, [-33.8, 151.21])).toBe(false);
+  });
+
+  it("matches longitude on the world copy the bounds sit in", () => {
+    // MapLibre's bounds run past 180 when the camera straddles the
+    // antimeridian, and by whole turns on another world copy.
+    expect(
+      boundsContain(
+        [
+          [179, -18],
+          [181, -17],
+        ],
+        [-17.5, -179.5],
+      ),
+    ).toBe(true);
+    expect(
+      boundsContain(
+        [
+          [511.2, -33.87],
+          [511.22, -33.85],
+        ],
+        [-33.86, 151.21],
+      ),
+    ).toBe(true);
   });
 });
 

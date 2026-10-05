@@ -17,10 +17,10 @@ export default defineConfig({
       // than hand-editing the numbers.
       thresholds: {
         autoUpdate: (newThreshold: number) => Math.floor(newThreshold - 5),
-        statements: 91,
+        statements: 93,
         branches: 88,
-        functions: 89,
-        lines: 92,
+        functions: 92,
+        lines: 94,
       },
       // The presentational components are covered by the story render-path
       // report, not here; thresholding them twice would just double-count.
@@ -31,15 +31,6 @@ export default defineConfig({
         "src/useMobileMode.ts",
         "src/keyedFetchStore.ts",
         "src/serverToolResult.ts",
-        // The schema helper is only ever called from an app's `main.tsx`,
-        // which has no story — so the render-path report measures it at 0%
-        // and it needs a floor here. Its sibling `viewTools.ts` is
-        // deliberately NOT here: `useViewTool` runs inside RouteMap and
-        // ActivityChart, both storied, so the render-path report already
-        // floors it. Listing it again would double-count and pull this
-        // report's aggregate (and therefore its ratchet) down ~4 points on
-        // the hooks this floor exists to guard.
-        "src/standardSchema.ts",
       ],
     },
   },
