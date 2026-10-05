@@ -41,10 +41,10 @@ export default defineConfig({
       // these numbers in place; commit the rewrite, don't hand-edit.
       thresholds: {
         autoUpdate: (newThreshold: number) => Math.floor(newThreshold - 5),
-        statements: 68,
-        branches: 59,
-        functions: 71,
-        lines: 71,
+        statements: 71,
+        branches: 62,
+        functions: 74,
+        lines: 73,
       },
       // The storybookTest addon pins the project root to apps/storybook, so
       // every packages/* source is "external" to coverage; without this the
