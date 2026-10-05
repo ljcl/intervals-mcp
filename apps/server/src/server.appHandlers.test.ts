@@ -75,18 +75,18 @@ beforeEach(() => {
 
 /** Every app tool with args that pass its input schema. */
 const APP_TOOL_CALLS: Array<[string, Record<string, unknown>]> = [
-  ["view-activity-chart", { activity_id: "123" }],
-  ["get-activity-streams-raw", { activity_id: "123" }],
+  ["view-activity-chart", { id: "123" }],
+  ["get-activity-streams-raw", { id: "123" }],
   ["view-cadence-trends", {}],
   ["get-cadence-trend-data", {}],
-  ["view-route-map", { activity_id: "123" }],
-  ["get-route-map-data", { activity_id: "123" }],
+  ["view-route-map", { id: "123" }],
+  ["get-route-map-data", { id: "123" }],
   ["view-training-load", {}],
   ["get-training-load-data", {}],
-  ["view-activity-zones", { activity_id: "123" }],
-  ["get-activity-zones-data", { activity_id: "123" }],
-  ["view-compare-activities", { activity_id_1: "1", activity_id_2: "2" }],
-  ["get-compare-activities-data", { activity_id_1: "1", activity_id_2: "2" }],
+  ["view-activity-zones", { id: "123" }],
+  ["get-activity-zones-data", { id: "123" }],
+  ["view-compare-activities", { activityId1: "1", activityId2: "2" }],
+  ["get-compare-activities-data", { activityId1: "1", activityId2: "2" }],
 ];
 
 describe("app handlers with no key configured", () => {
@@ -108,7 +108,7 @@ describe("app handlers with no key configured", () => {
   it("resolves the key once per call and hands it to the handler", async () => {
     mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
 
-    await dispatchToolCall("view-activity-chart", { activity_id: "i123" });
+    await dispatchToolCall("view-activity-chart", { id: "i123" });
 
     expect(mockedToken).toHaveBeenCalledTimes(1);
     expect(mockedIntervalsActivity).toHaveBeenCalledWith("test-token", "i123", {
@@ -121,7 +121,7 @@ describe("app handlers with no key configured", () => {
       throw new MissingApiKeyError();
     });
 
-    await dispatchToolCall("view-activity-chart", { activity_id: "i123" });
+    await dispatchToolCall("view-activity-chart", { id: "i123" });
 
     expect(mockedIntervalsActivity).not.toHaveBeenCalled();
   });
@@ -135,7 +135,7 @@ describe("view-activity-chart", () => {
     ]);
 
     const result = await dispatchToolCall("view-activity-chart", {
-      activity_id: "i123",
+      id: "i123",
     });
 
     expect(result.isError).toBeUndefined();
@@ -156,7 +156,7 @@ describe("view-activity-chart", () => {
     );
 
     const result = await dispatchToolCall("view-activity-chart", {
-      activity_id: "i123",
+      id: "i123",
     });
 
     expect(result.isError).toBe(true);
@@ -170,7 +170,7 @@ describe("view-activity-chart", () => {
 
     const result = await dispatchToolCall(
       "view-activity-chart",
-      { activity_id: "i123" },
+      { id: "i123" },
       { client: { rendersApps: true } },
     );
 
@@ -191,7 +191,7 @@ describe("view-activity-chart", () => {
 
     const result = await dispatchToolCall(
       "view-activity-chart",
-      { activity_id: "i123" },
+      { id: "i123" },
       { client: { rendersApps: false } },
     );
 
@@ -213,7 +213,7 @@ describe("view-activity-chart", () => {
     mockedIntervalsStreams.mockRejectedValueOnce(new Error("Rate limited"));
 
     const result = await dispatchToolCall("view-activity-chart", {
-      activity_id: "i123",
+      id: "i123",
     });
 
     expect(result.isError).toBe(true);
@@ -247,7 +247,7 @@ describe("get-activity-streams-raw", () => {
     ]);
 
     const result = await dispatchToolCall("get-activity-streams-raw", {
-      activity_id: "i123",
+      id: "i123",
     });
 
     expect(result.isError).toBeUndefined();
@@ -284,7 +284,7 @@ describe("get-activity-streams-raw", () => {
     mockedIntervalsStreams.mockResolvedValueOnce([]);
 
     const result = await dispatchToolCall("get-activity-streams-raw", {
-      activity_id: "i123",
+      id: "i123",
     });
 
     expect(result.isError).toBeUndefined();
@@ -303,7 +303,7 @@ describe("get-activity-streams-raw", () => {
     mockedIntervalsStreams.mockRejectedValueOnce(new Error("Rate limited"));
 
     const result = await dispatchToolCall("get-activity-streams-raw", {
-      activity_id: "i123",
+      id: "i123",
     });
 
     expect(result.isError).toBe(true);
@@ -318,13 +318,21 @@ describe("cadence trends handlers", () => {
       intervalsActivity({ id: "i2", type: "Ride" }), // filtered out
     ]);
 
-    const result = await dispatchToolCall("view-cadence-trends", { weeks: 4 });
+    const result = await dispatchToolCall("view-cadence-trends", { days: 28 });
 
     expect(result.isError).toBeUndefined();
     const text = result.content[0]?.text ?? "";
     expect(text).toContain("Cadence Trends (last 4 weeks)");
     expect(text).toContain("Runs: 1");
     expect(text).toContain("Average cadence: 85 spm");
+  });
+
+  it("view-cadence-trends names a window that is not whole weeks in days", async () => {
+    mockedIntervalsList.mockResolvedValueOnce([]);
+
+    const result = await dispatchToolCall("view-cadence-trends", { days: 30 });
+
+    expect(result.content[0]?.text).toContain("Cadence Trends (last 30 days)");
   });
 
   it("get-cadence-trend-data maps runs to per-activity summaries with string ids", async () => {
@@ -341,7 +349,8 @@ describe("cadence trends handlers", () => {
 
     expect(result.isError).toBeUndefined();
     const parsed = JSON.parse(result.content[0]?.text ?? "");
-    expect(parsed.weeks).toBe(6);
+    expect(parsed.days).toBe(42);
+    expect(parsed).not.toHaveProperty("weeks");
     expect(parsed.activities).toHaveLength(1);
     expect(parsed.activities[0]).toMatchObject({
       id: "i189807578",
@@ -392,9 +401,9 @@ describe("cadence trends handlers", () => {
       vi.setSystemTime(new Date("2026-08-19T10:00:05Z"));
       mockedIntervalsList.mockResolvedValue([]);
 
-      await dispatchToolCall("view-cadence-trends", { weeks: 4 });
+      await dispatchToolCall("view-cadence-trends", { days: 28 });
       vi.setSystemTime(new Date("2026-08-19T10:00:35Z")); // 30 s later
-      await dispatchToolCall("get-cadence-trend-data", { weeks: 4 });
+      await dispatchToolCall("get-cadence-trend-data", { days: 28 });
 
       const [viewCall, dataCall] = mockedIntervalsList.mock.calls.slice(-2);
       expect(viewCall?.[1]).toEqual(dataCall?.[1]);
@@ -1320,7 +1329,7 @@ describe("route map handlers", () => {
     mockedIntervalsStreams.mockResolvedValueOnce(routeMapStreamsFixture());
 
     const result = await dispatchToolCall("view-route-map", {
-      activity_id: "123",
+      id: "123",
     });
 
     expect(result.isError).toBeUndefined();
@@ -1337,7 +1346,7 @@ describe("route map handlers", () => {
 
     const result = await dispatchToolCall(
       "view-route-map",
-      { activity_id: "123" },
+      { id: "123" },
       { client: { rendersApps: true } },
     );
 
@@ -1353,7 +1362,7 @@ describe("route map handlers", () => {
 
     const result = await dispatchToolCall(
       "view-route-map",
-      { activity_id: "123" },
+      { id: "123" },
       { client: { rendersApps: false } },
     );
 
@@ -1368,7 +1377,7 @@ describe("route map handlers", () => {
     mockedIntervalsStreams.mockResolvedValueOnce(routeMapStreamsFixture());
 
     const result = await dispatchToolCall("get-route-map-data", {
-      activity_id: "123",
+      id: "123",
     });
 
     expect(result.isError).toBeUndefined();
@@ -1394,7 +1403,7 @@ describe("route map handlers", () => {
     );
 
     const result = await dispatchToolCall("get-route-map-data", {
-      activity_id: "123",
+      id: "123",
     });
 
     expect(result.isError).toBeUndefined();
@@ -1414,7 +1423,7 @@ describe("route map handlers", () => {
     mockedIntervalsStreams.mockResolvedValueOnce(routeMapStreamsFixture());
 
     const result = await dispatchToolCall("get-route-map-data", {
-      activity_id: "123",
+      id: "123",
     });
 
     expect(result.isError).toBeUndefined();
@@ -1436,7 +1445,7 @@ describe("route map handlers", () => {
     mockedIntervalsStreams.mockResolvedValueOnce(routeMapStreamsFixture());
 
     const result = await dispatchToolCall("get-route-map-data", {
-      activity_id: "123",
+      id: "123",
     });
 
     expect(result.isError).toBeUndefined();
@@ -1451,7 +1460,7 @@ describe("route map handlers", () => {
     mockedIntervalsStreams.mockResolvedValueOnce([]);
 
     const result = await dispatchToolCall("get-route-map-data", {
-      activity_id: "123",
+      id: "123",
     });
 
     expect(result.isError).toBeUndefined();
@@ -1472,7 +1481,7 @@ describe("route map handlers", () => {
     );
 
     const result = await dispatchToolCall("get-route-map-data", {
-      activity_id: "123",
+      id: "123",
     });
 
     expect(result.isError).toBe(true);
@@ -1484,7 +1493,7 @@ describe("route map handlers", () => {
     mockedIntervalsStreams.mockResolvedValueOnce(routeMapStreamsFixture());
 
     const result = await dispatchToolCall("get-route-map-data", {
-      activity_id: "123",
+      id: "123",
       waypoints: [
         { km: 4, label: "Gel 1", kind: "fuel" },
         { km: 42, label: "Botanic Gardens climb", kind: "climb" },
@@ -1518,7 +1527,7 @@ describe("route map handlers", () => {
       const result = await dispatchToolCall(
         "view-route-map",
         {
-          activity_id: "123",
+          id: "123",
           waypoints: [
             { km: 5, label: "Gel 1", kind: "fuel" },
             { km: 42.2, label: "Finish gel", kind: "fuel" },
@@ -1538,7 +1547,7 @@ describe("route map handlers", () => {
 
   it("rejects malformed waypoints via the input schema", async () => {
     const result = await dispatchToolCall("view-route-map", {
-      activity_id: "123",
+      id: "123",
       waypoints: [{ km: -2, label: "" }],
     });
 
@@ -1548,7 +1557,7 @@ describe("route map handlers", () => {
     );
   });
 
-  it("get-route-map-data errors when activity_id is not provided", async () => {
+  it("get-route-map-data errors when id is not provided", async () => {
     const result = await dispatchToolCall("get-route-map-data", {});
 
     expect(result.isError).toBe(true);
@@ -1592,8 +1601,8 @@ describe("compare activities handlers", () => {
     );
 
     const result = await dispatchToolCall("view-compare-activities", {
-      activity_id_1: "i1",
-      activity_id_2: "i2",
+      activityId1: "i1",
+      activityId2: "i2",
     });
 
     expect(result.isError).toBeUndefined();
@@ -1609,8 +1618,8 @@ describe("compare activities handlers", () => {
     );
 
     const result = await dispatchToolCall("get-compare-activities-data", {
-      activity_id_1: "i1",
-      activity_id_2: "i2",
+      activityId1: "i1",
+      activityId2: "i2",
     });
 
     expect(result.isError).toBe(true);
@@ -1636,7 +1645,7 @@ describe("activity zones handlers", () => {
     mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
 
     const result = await dispatchToolCall("get-activity-zones-data", {
-      activity_id: "123",
+      id: "123",
     });
 
     expect(result.isError).toBeUndefined();
@@ -1662,7 +1671,7 @@ describe("activity zones handlers", () => {
 
     const result = await dispatchToolCall(
       "view-activity-zones",
-      { activity_id: "123" },
+      { id: "123" },
       { client: { rendersApps: true } },
     );
 
@@ -1681,7 +1690,7 @@ describe("activity zones handlers", () => {
     );
 
     const result = await dispatchToolCall("view-activity-zones", {
-      activity_id: "123",
+      id: "123",
     });
 
     expect(result.isError).toBeUndefined();
@@ -1697,7 +1706,7 @@ describe("activity zones handlers", () => {
     );
 
     const result = await dispatchToolCall("view-activity-zones", {
-      activity_id: "123",
+      id: "123",
     });
 
     expect(result.isError).toBeUndefined();
@@ -1716,7 +1725,7 @@ describe("activity zones handlers", () => {
       .mockResolvedValueOnce(mismatched);
 
     const data = await dispatchToolCall("get-activity-zones-data", {
-      activity_id: "123",
+      id: "123",
     });
     const text = await dispatchToolCall("get-activity-zones", { id: "123" });
 
@@ -1732,7 +1741,7 @@ describe("activity zones handlers", () => {
     );
 
     const result = await dispatchToolCall("get-activity-zones-data", {
-      activity_id: "123",
+      id: "123",
     });
 
     expect(result.isError).toBe(true);
@@ -1772,7 +1781,7 @@ describe("view tools and hosts that cannot render MCP Apps (#77)", () => {
   }> = [
     {
       name: "view-activity-chart",
-      args: { activity_id: "123" },
+      args: { id: "123" },
       arrange: () => {
         mockedIntervalsActivity.mockResolvedValueOnce(run());
         mockedIntervalsStreams.mockResolvedValueOnce([
@@ -1825,7 +1834,7 @@ describe("view tools and hosts that cannot render MCP Apps (#77)", () => {
     },
     {
       name: "view-activity-zones",
-      args: { activity_id: "123" },
+      args: { id: "123" },
       arrange: () => {
         mockedIntervalsActivity.mockResolvedValueOnce(run());
       },
@@ -1834,7 +1843,7 @@ describe("view tools and hosts that cannot render MCP Apps (#77)", () => {
     },
     {
       name: "view-route-map",
-      args: { activity_id: "123" },
+      args: { id: "123" },
       arrange: () => {
         mockedIntervalsActivity.mockResolvedValueOnce(run());
         mockedIntervalsStreams.mockResolvedValueOnce(routeMapStreamsFixture());
@@ -1844,7 +1853,7 @@ describe("view tools and hosts that cannot render MCP Apps (#77)", () => {
     },
     {
       name: "view-compare-activities",
-      args: { activity_id_1: "i1", activity_id_2: "i2" },
+      args: { activityId1: "i1", activityId2: "i2" },
       arrange: () => {
         mockedIntervalsActivity
           .mockResolvedValueOnce(run({ id: "i1" }))

@@ -13,14 +13,10 @@ import { type useApp } from "@modelcontextprotocol/ext-apps/react";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { CompareActivities } from "./CompareActivities";
+import { parseToolArgs, type ToolArgs } from "./toolArgs";
 import { type ActivityStreamData, type CompareData } from "./types";
 import { VIEW_TOOLS } from "./viewToolDeclarations";
 import "./global.css";
-
-interface ToolArgs {
-  activity_id_1: string;
-  activity_id_2: string;
-}
 
 const LoadingSkeleton = () => (
   <LoadingState label="Loading activity comparison">
@@ -47,12 +43,12 @@ function AppContent({
   const streamsA = useServerToolData<ActivityStreamData>(
     app,
     "get-activity-streams-raw",
-    { activity_id: toolArgs.activity_id_1 },
+    { id: toolArgs.activityId1 },
   );
   const streamsB = useServerToolData<ActivityStreamData>(
     app,
     "get-activity-streams-raw",
-    { activity_id: toolArgs.activity_id_2 },
+    { id: toolArgs.activityId2 },
   );
   // The aggregate summary is an enhancement: the overlay renders without it,
   // so a failed compare fetch only drops the delta bar.
@@ -60,8 +56,8 @@ function AppContent({
     app,
     "get-compare-activities-data",
     {
-      activity_id_1: toolArgs.activity_id_1,
-      activity_id_2: toolArgs.activity_id_2,
+      activityId1: toolArgs.activityId1,
+      activityId2: toolArgs.activityId2,
     },
   );
 
@@ -99,10 +95,7 @@ function Root() {
   return (
     <AppRoot<ToolArgs>
       appInfo={{ name: "Compare Activities", version: "1.0.0" }}
-      parseToolInput={(args) => {
-        const next = args as ToolArgs | undefined;
-        return next?.activity_id_1 && next?.activity_id_2 ? next : null;
-      }}
+      parseToolInput={parseToolArgs}
       missingArgsMessage="Two activity ids are needed to compare activities; the host provided fewer."
       viewTools={VIEW_TOOLS}
       loading={<LoadingSkeleton />}

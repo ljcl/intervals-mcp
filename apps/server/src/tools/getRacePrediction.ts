@@ -34,7 +34,7 @@ import { RacePredictionOutputSchema, warnOnSchemaDrift } from "./outputs";
 const name = "get-race-prediction";
 
 const description = `
-Predicts race times at 5K, 10K, half marathon and marathon (plus the race
+Predicts race times at 5km, 10km, half marathon and marathon (plus the race
 you name) from intervals.icu's pace curves, and builds even and
 negative-split km tables for that race, paced to the prediction or to your
 goal time. Use it for "what could I run?" or "is my goal realistic, and what

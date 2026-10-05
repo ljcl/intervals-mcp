@@ -4,7 +4,9 @@ import {
   AppShell,
   ErrorState,
   type HostCtx,
+  type IdToolArgs,
   LoadingState,
+  parseIdToolArgs,
   Skeleton,
   useServerToolData,
 } from "@intervals-mcp/ui";
@@ -15,10 +17,6 @@ import { App } from "./App";
 import { type ActivityZonesData } from "./types";
 import "./global.css";
 
-interface ToolArgs {
-  activity_id?: string | number;
-}
-
 const LoadingSkeleton = () => (
   <LoadingState label="Loading activity zones">
     <Skeleton variant="bar" />
@@ -28,7 +26,7 @@ const LoadingSkeleton = () => (
 
 interface AppContentProps {
   app: ReturnType<typeof useApp>["app"];
-  toolArgs: ToolArgs;
+  toolArgs: IdToolArgs;
   hostCtx: HostCtx;
   mode: AppMode;
 }
@@ -37,7 +35,7 @@ function AppContent({ app, toolArgs, hostCtx, mode }: AppContentProps) {
   const { data, loading, error, retry } = useServerToolData<ActivityZonesData>(
     app,
     "get-activity-zones-data",
-    { activity_id: toolArgs.activity_id },
+    { id: toolArgs.id },
   );
 
   return (
@@ -58,12 +56,9 @@ function AppContent({ app, toolArgs, hostCtx, mode }: AppContentProps) {
 
 function Root() {
   return (
-    <AppRoot<ToolArgs>
+    <AppRoot<IdToolArgs>
       appInfo={{ name: "Activity Zones", version: "1.0.0" }}
-      parseToolInput={(args) => {
-        const next = args as ToolArgs | undefined;
-        return next?.activity_id != null ? next : null;
-      }}
+      parseToolInput={parseIdToolArgs}
       missingArgsMessage="No activity id was provided to the zones view."
       loading={<LoadingSkeleton />}
     >

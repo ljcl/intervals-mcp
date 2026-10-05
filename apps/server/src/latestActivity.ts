@@ -74,3 +74,37 @@ export async function resolveLatestIds(
   for (const key of keys) out[key] = id;
   return out;
 }
+
+/**
+ * Tool-result `_meta` key reporting which ids a call's `"latest"` resolved to,
+ * as `{ [argName]: id }`. An MCP App reads it to pin the run it first showed.
+ * `packages/ui` declares the same string (packages cannot import the server);
+ * `latestActivity.test.ts` asserts the literal.
+ */
+export const RESOLVED_ARGS_META_KEY = "intervals-mcp/resolvedArgs";
+
+/** The keys whose value `resolveLatestIds` changed, with their new values. */
+export function resolvedArgsOf(
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(after).filter(([key, value]) => before[key] !== value),
+  );
+}
+
+/**
+ * `result` with `resolved` merged into its `_meta` under
+ * {@link RESOLVED_ARGS_META_KEY}. Returns `result` itself when nothing was
+ * resolved or the call failed (an error carries no pin).
+ */
+export function withResolvedArgs<
+  T extends { content: unknown; isError?: boolean; _meta?: unknown },
+>(result: T, resolved: Record<string, unknown>): T {
+  if (result.isError || Object.keys(resolved).length === 0) return result;
+  const meta =
+    typeof result._meta === "object" && result._meta !== null
+      ? (result._meta as Record<string, unknown>)
+      : {};
+  return { ...result, _meta: { ...meta, [RESOLVED_ARGS_META_KEY]: resolved } };
+}

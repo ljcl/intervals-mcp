@@ -1,6 +1,6 @@
 import { type RunSummary } from "../types";
 
-/** ~15 runs over 6 weeks with gradual cadence improvement (166→176 spm) */
+/** ~15 runs over 42 days (6 weeks) with gradual cadence improvement (166→176 spm) */
 export const mockRuns: RunSummary[] = [
   {
     id: "i10001",

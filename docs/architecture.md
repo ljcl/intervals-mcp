@@ -471,6 +471,15 @@ found, the tool returns an `isError` result naming the fix. `update-activity`
 cannot use `"latest"` because a write must name its specific target; it validates
 against digits only.
 
+`dispatchToolCall` records what `"latest"` resolved to: the keys it
+changed (`id`, or `activityId1`/`activityId2`) go into the result's
+`_meta["intervals-mcp/resolvedArgs"]` (`RESOLVED_ARGS_META_KEY`,
+`latestActivity.ts`), only on a successful call that resolved one. The id is
+not in the result text, and hosts do not generally pass `_meta` to the model.
+An app pins its own arguments to it (`useHostRoot`, docs/mcp-apps.md), so a
+re-mounted view stays on the same run rather than a newer one, and the host
+can read the resolved id from `_meta`.
+
 ## Structured output
 
 A tool that returns data publishes an `outputSchema` and a matching
@@ -528,23 +537,28 @@ still fails validation gets `unknownArgsText` appended, naming each key the
 tool does not take and the keys it does; a call that passes still drops
 unknown keys silently.
 
-**Naming scheme for the next deliberate lock break.** Today's spellings are
-historical; the alias layer covers them until a release that changes
-`tool-surface.lock.json` anyway, which then applies this scheme so athletes
-re-approve once:
+**One naming scheme for inputs.** The alias layer above exists for models and
+hosts that still use older spellings; the advertised schemas follow this
+scheme:
 
 - Inputs are camelCase. A single activity id is `id`; a pair is
-  `activityId1`/`activityId2`. The break renames the app tools'
-  `activity_id` and `activity_id_1`/`activity_id_2`. Prompts are outside
-  the lock and already follow it (`annotate-last-run` takes `id`, still
-  accepting `activity_id`).
+  `activityId1`/`activityId2`. The app tools and their data feeds take them
+  (`activity_id` and `activity_id_1`/`activity_id_2` are accepted, never
+  advertised). Prompts are outside the lock and follow it too
+  (`annotate-last-run` takes `id`, still accepting `activity_id`).
 - Outputs (`structuredContent`) stay snake_case.
 - Distance labels are one set across tools, lowercase with explicit units:
   `400m`, `1km`, `5km`, `10km`, `15km`, `10 mile`, `half marathon`,
-  `marathon`, `50km`. `get-race-prediction`'s "5K"/"Half Marathon" style
-  moves to it.
+  `marathon`, `50km`. `get-race-prediction` uses `5km`, `10km`, `15km`,
+  `10 mile`, `half marathon`, `marathon`, `50km`; "5K"/"Half Marathon" still
+  match through the alias layer.
 - Windows: `oldest`/`newest` for an explicit range, `days` for a look-back.
-  `view-cadence-trends`' `weeks` becomes `days`.
+  `view-cadence-trends` and `get-cadence-trend-data` take `days` (7-728,
+  default 42) and the payload carries `days`; a `weeks` argument becomes
+  `days: weeks * 7` through the alias layer.
+
+Changing an advertised name changes `tool-surface.lock.json` (see the
+tool-identity invariant in CLAUDE.md), so it is a deliberate release note.
 
 **`update-activity` validates against fresh reads, not cached ones.** Its
 input schema (`superRefine`, `tools/updateActivity.ts`) rejects a `name`

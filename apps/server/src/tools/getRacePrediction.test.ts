@@ -111,10 +111,10 @@ describe("getRacePredictionTool.execute", () => {
     const result = await run();
 
     const labels = payload(result).predictions.map((p) => p.distance);
-    expect(labels).toEqual(["5K", "10K", "Half Marathon", "Marathon"]);
+    expect(labels).toEqual(["5km", "10km", "half marathon", "marathon"]);
 
     // The 10K prediction is the source time itself.
-    const tenK = prediction(result, "10K");
+    const tenK = prediction(result, "10km");
     expect(tenK.predicted_seconds).toBe(2400);
     expect(tenK.predicted_formatted).toBe("40:00");
     expect(tenK.pace_min_per_km).toBe("4:00");
@@ -123,6 +123,9 @@ describe("getRacePredictionTool.execute", () => {
 
     expect(result.content[0]?.text).toContain("Race prediction");
     expect(result.content[0]?.text).toContain("Equivalent performances");
+    // The text table uses the same labels as the structured output.
+    expect(result.content[0]?.text).toMatch(/^ {2}half marathon +\d/m);
+    expect(result.content[0]?.text).toMatch(/^ {2}10km +40:00/m);
   });
 
   it("excludes pace-curve points shorter than the Riegel floor from the inputs", async () => {
@@ -173,10 +176,10 @@ describe("getRacePredictionTool.execute", () => {
   it("builds km even and negative-split tables for the requested race, no mile splits", async () => {
     mockedAthleteCurves.mockResolvedValueOnce(curvesWithPoint(10000, 2400));
 
-    const result = await run({ raceDistance: "Half Marathon" });
+    const result = await run({ raceDistance: "half marathon" });
 
     const race = target(result);
-    expect(race.distance).toBe("Half Marathon");
+    expect(race.distance).toBe("half marathon");
     expect(race.basis).toBe("predicted");
     expect(race.goal_vs_predicted_seconds).toBeNull();
 
@@ -195,7 +198,7 @@ describe("getRacePredictionTool.execute", () => {
     mockedAthleteCurves.mockResolvedValueOnce(curvesWithPoint(10000, 2400));
 
     const result = await run({
-      raceDistance: "Half Marathon",
+      raceDistance: "half marathon",
       goalTime: "1:45:00",
     });
 
@@ -213,7 +216,7 @@ describe("getRacePredictionTool.execute", () => {
     mockedAthleteCurves.mockResolvedValueOnce(curvesWithPoint(10000, 2400));
 
     // 40:00 for 10K predicts 40:00 for 10K, so 40:20 is 0.8% slower.
-    const result = await run({ raceDistance: "10K", goalTime: "40:20" });
+    const result = await run({ raceDistance: "10km", goalTime: "40:20" });
 
     const race = target(result);
     expect(race.goal_vs_predicted_seconds).toBe(20);
@@ -225,7 +228,7 @@ describe("getRacePredictionTool.execute", () => {
     mockedAthleteCurves.mockResolvedValueOnce(curvesWithPoint(10000, 2400));
 
     const result = await run({
-      raceDistance: "Half Marathon",
+      raceDistance: "half marathon",
       goalTime: "1:15:00",
     });
 
@@ -235,7 +238,7 @@ describe("getRacePredictionTool.execute", () => {
   });
 
   it("rejects an unparseable goal time before fetching pace curves", async () => {
-    const result = await run({ raceDistance: "10K", goalTime: "soon" });
+    const result = await run({ raceDistance: "10km", goalTime: "soon" });
 
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain("Could not read");
@@ -245,11 +248,17 @@ describe("getRacePredictionTool.execute", () => {
   it("adds a non-standard requested race to the prediction table", async () => {
     mockedAthleteCurves.mockResolvedValueOnce(curvesWithPoint(10000, 2400));
 
-    const result = await run({ raceDistance: "15K" });
+    const result = await run({ raceDistance: "15km" });
 
     const labels = payload(result).predictions.map((p) => p.distance);
     // Inserted in distance order, not appended.
-    expect(labels).toEqual(["5K", "10K", "15K", "Half Marathon", "Marathon"]);
+    expect(labels).toEqual([
+      "5km",
+      "10km",
+      "15km",
+      "half marathon",
+      "marathon",
+    ]);
   });
 
   it("prompts for raceDistance when only predictions were asked for", async () => {
@@ -287,7 +296,7 @@ describe("getRacePredictionTool.execute", () => {
 
     const result = await run();
 
-    const tenK = prediction(result, "10K");
+    const tenK = prediction(result, "10km");
     expect(tenK.primary_source.activity_id).toBe("i2");
     // The stale PR still contributes, so the consensus sits between them.
     expect(tenK.predicted_seconds).toBeLessThan(2500);
@@ -300,7 +309,7 @@ describe("getRacePredictionTool.execute", () => {
 
     const result = await run();
 
-    const marathon = prediction(result, "Marathon");
+    const marathon = prediction(result, "marathon");
     expect(marathon.confidence).toBe("low");
     expect(marathon.confidence_notes.join(" ")).toContain(
       "beyond your longest",
@@ -339,12 +348,12 @@ describe("getRacePredictionTool.execute", () => {
     expect(model?.r2).toBe(0.995);
     expect(model?.source).toBe("all");
 
-    const tenK = prediction(result, "10K");
+    const tenK = prediction(result, "10km");
     // (10000 - 120) / 3.6 = 2744.4...
     expect(tenK.critical_speed?.predicted_seconds).toBe(2744);
     expect(tenK.critical_speed?.within_model_range).toBe(true);
 
-    const marathon = prediction(result, "Marathon");
+    const marathon = prediction(result, "marathon");
     // (42195 - 120) / 3.6 is well over an hour: outside the model's window.
     expect(marathon.critical_speed?.within_model_range).toBe(false);
     expect(result.content[0]?.text).toContain("critical speed");
@@ -396,7 +405,7 @@ describe("getRacePredictionTool.execute", () => {
     const result = await run();
 
     expect(payload(result).critical_speed_model).toBeNull();
-    const tenK = prediction(result, "10K");
+    const tenK = prediction(result, "10km");
     expect(tenK.critical_speed).toBeNull();
   });
 
@@ -477,7 +486,7 @@ describe("getRacePredictionTool.execute", () => {
     for (const p of payload(result).predictions) {
       expect(p.contributions).toHaveLength(5);
     }
-    expect(prediction(result, "5K").primary_source.activity_id).toBe("i3");
+    expect(prediction(result, "5km").primary_source.activity_id).toBe("i3");
     expect(text).toContain("from 5000 m (race) in");
     expect(text).toContain("5000 m (race): 20:00");
     expect(text).not.toContain("Run i1");
@@ -507,7 +516,7 @@ describe("getRacePredictionTool.execute", () => {
     };
 
     it("predicts from one point per run and lists at most five contributions", async () => {
-      const result = await runFixture("Half Marathon");
+      const result = await runFixture("half marathon");
 
       const sources = payload(result).sources;
       expect(sources).toHaveLength(6);
@@ -527,11 +536,11 @@ describe("getRacePredictionTool.execute", () => {
       });
 
       // #41's reproduction case, measured the way the issue measured it.
-      expect(size(await runFixture("Half Marathon")).structured).toBeLessThan(
+      expect(size(await runFixture("half marathon")).structured).toBeLessThan(
         20_000,
       );
       // The largest call: two 43-row split tables.
-      expect(size(await runFixture("Marathon")).total).toBeLessThan(40_000);
+      expect(size(await runFixture("marathon")).total).toBeLessThan(40_000);
     });
   });
 });

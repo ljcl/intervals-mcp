@@ -454,7 +454,8 @@ estimate it reports intervals.icu's own critical-speed model fit to the same
 pace curve (`time = (distance - dPrime) / criticalSpeed`), stated as valid for
 roughly 3 to 60 minute efforts; a prediction outside that window, a marathon
 for instance, is still returned and flagged rather than hidden. `raceDistance`
-(optional) adds a km split table (even and negative-split) for that race, and
+(optional; `5km`, `10km`, `15km`, `10 mile`, `half marathon`, `marathon` or
+`50km`, "5K" style still accepted) adds a km split table (even and negative-split) for that race, and
 `goalTime` paces it to a goal instead of the prediction. Output is km only, no
 mile paces or splits. Pace is a flat `pace_sec_per_km`/`pace_min_per_km` pair
 (bare `m:ss`), matching every other tool, wherever a prediction, the goal
@@ -617,7 +618,9 @@ resolved once per call by `resolveLatestIds` (`latestActivity.ts`) in
 stopping at the first run, from cached `listActivities` reads. If no run is found,
 the tool returns an `isError` result naming the fix. `update-activity` cannot use
 `"latest"` because a write must name its specific target; it validates against
-digits only.
+digits only. The result's `_meta["intervals-mcp/resolvedArgs"]` carries the
+ids a `"latest"` resolved to (`id`, or `activityId1`/`activityId2`); the apps
+pin their arguments to it (docs/mcp-apps.md).
 
 ## Visualization tools
 
@@ -628,6 +631,14 @@ the UI renders. `view-compare-activities`/`get-compare-activities-data`,
 `view-training-load`/`get-training-load-data`, `view-activity-chart`/
 `get-activity-streams-raw`, `view-cadence-trends`/`get-cadence-trend-data`,
 and `view-route-map`/`get-route-map-data` are all ported to intervals.icu.
+
+App tool inputs follow the one scheme (docs/architecture.md, Input validation):
+`id` for a single activity (`view-activity-chart`, `view-route-map`,
+`view-activity-zones` and their feeds), `activityId1`/`activityId2` for
+`view-compare-activities` and `get-compare-activities-data`, and `days` (7-728,
+default 42) for `view-cadence-trends` and `get-cadence-trend-data`. The old
+`activity_id`, `activity_id_1`/`activity_id_2` and `weeks` are still accepted
+through the alias layer.
 
 | Tool | Description |
 | ---- | ----------- |

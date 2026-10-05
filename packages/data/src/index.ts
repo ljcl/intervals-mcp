@@ -9,6 +9,8 @@ export {
   formatTime,
   MIN_MOVING_SPEED_MPS,
   type ShortDateYear,
+  windowLabel,
+  windowShortLabel,
 } from "./formatting";
 export {
   colorForValue,

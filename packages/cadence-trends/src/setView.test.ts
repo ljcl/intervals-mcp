@@ -78,7 +78,7 @@ describe("resolveSetView", () => {
       resolveSetView({ runIds: ["i9", "9", "i3", "i9", "3"] }, runs, "trend"),
     ).toEqual({
       kind: "error",
-      text: 'Not runs in this chart: i9. Run ids come from list-activities (for example "i189807578") and must fall within the chart\'s weeks. No recorded cadence, so nothing to overlay: i3. Nothing was changed.',
+      text: 'Not runs in this chart: i9. Run ids come from list-activities (for example "i189807578") and must fall within the chart\'s window. No recorded cadence, so nothing to overlay: i3. Nothing was changed.',
     });
   });
 
@@ -86,7 +86,7 @@ describe("resolveSetView", () => {
     const r = resolveSetView({ runIds: ["i1", "i9"] }, runs, "trend");
     expect(r).toEqual({
       kind: "error",
-      text: 'Not runs in this chart: i9. Run ids come from list-activities (for example "i189807578") and must fall within the chart\'s weeks. Nothing was changed.',
+      text: 'Not runs in this chart: i9. Run ids come from list-activities (for example "i189807578") and must fall within the chart\'s window. Nothing was changed.',
     });
   });
 

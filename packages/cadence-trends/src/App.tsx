@@ -1,4 +1,4 @@
-import { formatShortDate } from "@intervals-mcp/data";
+import { formatShortDate, windowShortLabel } from "@intervals-mcp/data";
 import {
   CardHeader,
   Pill,
@@ -89,11 +89,11 @@ export function App({
   const streamFetcher = useServerToolFetcher<OverlayStreamData>(
     app,
     "get-activity-streams-raw",
-    (runId) => ({ activity_id: runId }),
+    (runId) => ({ id: runId }),
   );
 
   const stats = useMemo(
-    () => computeSummaryStats(data.activities, data.weeks),
+    () => computeSummaryStats(data.activities, data.days),
     [data],
   );
 
@@ -215,7 +215,7 @@ export function App({
     app ?? undefined,
     () =>
       buildCadenceContextSummary({
-        weeks: data.weeks,
+        days: data.days,
         activeView,
         selectedRuns,
         overlayAxis: xMode,
@@ -224,7 +224,7 @@ export function App({
         noPaceCount: data.noPaceCount,
       }),
     [
-      data.weeks,
+      data.days,
       activeView,
       selectedRuns,
       xMode,
@@ -238,7 +238,7 @@ export function App({
     <div className={styles.container} data-compact={isMobile || undefined}>
       <CardHeader
         title="Cadence trends"
-        subtitle={buildCadenceSubtitle(stats.runCount, data.weeks)}
+        subtitle={buildCadenceSubtitle(stats.runCount, data.days)}
         compact={isMobile}
       />
       <SummaryBar
@@ -257,7 +257,10 @@ export function App({
             direction:
               stats.delta > 0 ? "up" : stats.delta < 0 ? "down" : "flat",
           },
-          { label: "Runs", value: `${stats.runCount} in ${data.weeks}w` },
+          {
+            label: "Runs",
+            value: `${stats.runCount} in ${windowShortLabel(data.days)}`,
+          },
         ]}
       />
       <div className={styles.nav}>

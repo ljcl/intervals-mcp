@@ -11,7 +11,7 @@ import {
   type McpUiHostContext,
 } from "@modelcontextprotocol/ext-apps";
 import { act } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { useHostRoot } from "./AppShell";
 import { renderHook } from "./renderHook";
 
@@ -136,5 +136,132 @@ describe("useHostRoot host context", () => {
     await harness.unmount();
 
     expect(host.listenerCount()).toBe(0);
+  });
+});
+
+/** The app stand-in with the tool-input and tool-result setters `useHostRoot` assigns. */
+type ToolApp = App & {
+  ontoolinput?: (params: { arguments?: Record<string, unknown> }) => void;
+  ontoolresult?: (params: Record<string, unknown>) => void;
+};
+
+interface IdArgs {
+  id: string;
+}
+
+const ID_OPTIONS = {
+  appInfo: { name: "test-app", version: "1.0.0" },
+  parseToolInput: (raw: unknown): IdArgs | null => {
+    const id = (raw as { id?: unknown } | undefined)?.id;
+    return typeof id === "string" && id ? { id } : null;
+  },
+  missingArgsMessage: "No activity id.",
+};
+
+async function connectWithIds() {
+  const host = fakeApp(PHONE);
+  connection.app = host.app;
+  const harness = await renderHook(() => useHostRoot(ID_OPTIONS), undefined);
+  const app = host.app as ToolApp;
+  return {
+    harness,
+    sendInput: async (args: Record<string, unknown>) => {
+      await act(async () => app.ontoolinput?.({ arguments: args }));
+    },
+    sendResult: async (result: Record<string, unknown>) => {
+      await act(async () => app.ontoolresult?.(result));
+    },
+  };
+}
+
+describe('useHostRoot pins "latest"', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("turns toolArgs.id from latest into the id the tool result resolved", async () => {
+    const { harness, sendInput, sendResult } = await connectWithIds();
+    await sendInput({ id: "latest" });
+    expect(harness.current().toolArgs).toEqual({ id: "latest" });
+
+    await sendResult({
+      content: [],
+      _meta: { "intervals-mcp/resolvedArgs": { id: "i9" } },
+    });
+
+    expect(harness.current().toolArgs).toEqual({ id: "i9" });
+    expect(harness.current().pendingLatest).toBe(false);
+    await harness.unmount();
+  });
+
+  it("leaves toolArgs unchanged for a result without resolved ids", async () => {
+    const { harness, sendInput, sendResult } = await connectWithIds();
+    await sendInput({ id: "latest" });
+
+    await sendResult({ content: [{ type: "text", text: "ok" }] });
+
+    expect(harness.current().toolArgs).toEqual({ id: "latest" });
+    // The result has arrived, so there is nothing left to wait for.
+    expect(harness.current().pendingLatest).toBe(false);
+    await harness.unmount();
+  });
+
+  it("pins input that arrives after its result", async () => {
+    const { harness, sendInput, sendResult } = await connectWithIds();
+    await sendResult({
+      content: [],
+      _meta: { "intervals-mcp/resolvedArgs": { id: "i9" } },
+    });
+
+    await sendInput({ id: "latest" });
+
+    expect(harness.current().toolArgs).toEqual({ id: "i9" });
+    expect(harness.current().pendingLatest).toBe(false);
+    await harness.unmount();
+  });
+
+  it("keeps an earlier pin when a later result carries none", async () => {
+    const { harness, sendInput, sendResult } = await connectWithIds();
+    await sendInput({ id: "latest" });
+    await sendResult({
+      content: [],
+      _meta: { "intervals-mcp/resolvedArgs": { id: "i9" } },
+    });
+
+    await sendResult({ content: [] });
+
+    expect(harness.current().toolArgs).toEqual({ id: "i9" });
+    await harness.unmount();
+  });
+
+  it("reports pending while an id is latest, until 1,500 ms pass with no result", async () => {
+    vi.useFakeTimers();
+    const { harness, sendInput } = await connectWithIds();
+    expect(harness.current().pendingLatest).toBe(false);
+
+    await sendInput({ id: "latest" });
+    expect(harness.current().pendingLatest).toBe(true);
+
+    await act(async () => {
+      vi.advanceTimersByTime(1_499);
+    });
+    expect(harness.current().pendingLatest).toBe(true);
+
+    await act(async () => {
+      vi.advanceTimersByTime(1);
+    });
+    // A host that never sends tool results still gets a chart, of "latest".
+    expect(harness.current().pendingLatest).toBe(false);
+    expect(harness.current().toolArgs).toEqual({ id: "latest" });
+    await harness.unmount();
+  });
+
+  it("is never pending for a concrete id", async () => {
+    const { harness, sendInput } = await connectWithIds();
+    await sendInput({ id: "i5" });
+
+    expect(harness.current().toolArgs).toEqual({ id: "i5" });
+    expect(harness.current().pendingLatest).toBe(false);
+    await harness.unmount();
   });
 });

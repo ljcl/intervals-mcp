@@ -18,7 +18,7 @@ export default defineConfig({
       thresholds: {
         autoUpdate: (newThreshold: number) => Math.floor(newThreshold - 5),
         statements: 93,
-        branches: 88,
+        branches: 90,
         functions: 92,
         lines: 94,
       },
@@ -30,7 +30,9 @@ export default defineConfig({
         "src/useModelContextSync.ts",
         "src/useMobileMode.ts",
         "src/keyedFetchStore.ts",
+        "src/latestPin.ts",
         "src/serverToolResult.ts",
+        "src/toolArgs.ts",
       ],
     },
   },

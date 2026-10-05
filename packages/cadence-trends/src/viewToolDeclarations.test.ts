@@ -19,7 +19,7 @@ describe("cadence trends view tools", () => {
     expect(tool).toMatchObject({
       title: "Change the cadence view",
       description:
-        'Switch the cadence chart between trend, scatter, zones and overlay, choose up to 4 runs to overlay, and pick the overlay x-axis. runIds are activity ids from list-activities (for example "i189807578") for runs within the chart\'s weeks, and replace the current selection.',
+        'Switch the cadence chart between trend, scatter, zones and overlay, choose up to 4 runs to overlay, and pick the overlay x-axis. runIds are activity ids from list-activities (for example "i189807578") for runs within the chart\'s window, and replace the current selection.',
     });
     expect(viewToolFields(tool!)).toEqual({
       view: {

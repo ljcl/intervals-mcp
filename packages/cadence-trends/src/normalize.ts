@@ -1,4 +1,9 @@
-import { formatShortDate, isRunning, smooth } from "@intervals-mcp/data";
+import {
+  formatShortDate,
+  isRunning,
+  smooth,
+  windowLabel,
+} from "@intervals-mcp/data";
 import {
   COMPARISON_COLORS,
   type OverlayPoint,
@@ -23,9 +28,9 @@ export const PACE_ZONES: PaceZone[] = [
  * window, including the cadence-less ones the charts drop, because it is
  * describing the window rather than the plotted series.
  */
-export function buildCadenceSubtitle(runCount: number, weeks: number): string {
+export function buildCadenceSubtitle(runCount: number, days: number): string {
   const runLabel = `${runCount} ${runCount === 1 ? "run" : "runs"}`;
-  return `${runLabel} · last ${weeks} ${weeks === 1 ? "week" : "weeks"}`;
+  return `${runLabel} · last ${windowLabel(days)}`;
 }
 
 /** Compute a rolling average over the activities array (sorted by date ascending) */
@@ -60,7 +65,7 @@ export function rollingAverage(
  */
 export function computeSummaryStats(
   activities: RunSummary[],
-  weeks: number,
+  days: number,
   now = Date.now(),
 ): {
   currentAvg: number;
@@ -68,7 +73,7 @@ export function computeSummaryStats(
   delta: number;
   runCount: number;
 } {
-  const halfWindow = (weeks / 2) * 7 * 24 * 60 * 60 * 1000;
+  const halfWindow = (days / 2) * 24 * 60 * 60 * 1000;
 
   const recent = activities.filter(
     (a) =>

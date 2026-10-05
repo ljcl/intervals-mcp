@@ -36,6 +36,15 @@ export {
 } from "./SummaryBar";
 export { Tooltip, TooltipEntry } from "./Tooltip";
 export {
+  ACTIVITY_ID1_ARG_KEYS,
+  ACTIVITY_ID2_ARG_KEYS,
+  ID_ARG_KEYS,
+  type IdToolArgs,
+  parseIdToolArgs,
+  toolArgId,
+  toolArgRecord,
+} from "./toolArgs";
+export {
   detectMobile,
   type HostCtx,
   MOBILE_BREAKPOINT_PX,

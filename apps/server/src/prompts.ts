@@ -114,7 +114,7 @@ const PROMPTS: PromptDefinition[] = [
         `1. Call get-training-load with days=${days} for volume, trend, and any overtraining warnings.`,
         `2. Call list-activities with oldest=${oldest}, newest=${today} and limit=200 to identify the standout sessions (longest run, hardest effort).`,
         "3. For the 1-2 standout runs, call get-running-summary (and compare-activities if two are directly comparable).",
-        `4. Render view-cadence-trends with weeks=${weeks} so I can explore cadence patterns interactively.`,
+        `4. Render view-cadence-trends with days=${days} so I can explore cadence patterns interactively.`,
         "",
         "Finish with: what went well, what to watch, and 2-3 concrete focus points for next week. Keep it grounded in the numbers you fetched.",
       ].join("\n");

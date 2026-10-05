@@ -1,9 +1,10 @@
 /**
  * Forgiving argument names and enum values (#78). The same input is spelled
  * several ways across tools (`id`, `activity_id`, `activityId1`,
- * `activity_id_1`; "5K" vs "5km"), and a model reuses the spelling from the
- * last tool it called, so each mismatch used to cost a failed call and a
- * retry. The dispatcher runs `normalizeArgs` before validation.
+ * `activity_id_1`; "5K" vs "5km"; `weeks` vs `days`), and a model reuses
+ * the spelling from the last tool it called, so each mismatch used to cost
+ * a failed call and a retry. The dispatcher runs `normalizeArgs` before
+ * validation.
  *
  * Driven by the advertised JSON schema, not a per-tool table, so a new tool
  * gets it for free. It never changes what a host sees: the advertised
@@ -110,6 +111,7 @@ export function normalizeArgs(
     if (target && target !== key && !(target in args)) out[target] = value;
     else out[key] = value;
   }
+  weeksToDays(out, shape);
   for (const [key, options] of shape.enums) {
     const value = out[key];
     if (value === undefined) continue;
@@ -118,6 +120,24 @@ export function normalizeArgs(
       : matchEnum(value, options);
   }
   return out;
+}
+
+/**
+ * `weeks: n` read as `days: n * 7`, in place, for a tool that takes `days`
+ * and not `weeks` when the caller sent no `days`: the windowed tools all
+ * take days, and a model asked for "the last 6 weeks" often says so. Unit
+ * aware, so unlike a key rename the value changes; a non-numeric `weeks` is
+ * left for validation to report.
+ */
+function weeksToDays(out: Record<string, unknown>, shape: ArgShape): void {
+  if (!("weeks" in out) || out.days !== undefined) return;
+  if (!shape.keys.includes("days") || shape.keys.includes("weeks")) return;
+  const raw = out.weeks;
+  if (typeof raw !== "number" && typeof raw !== "string") return;
+  const weeks = Number(raw);
+  if (raw === "" || !Number.isFinite(weeks)) return;
+  out.days = weeks * 7;
+  delete out.weeks;
 }
 
 /**

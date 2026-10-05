@@ -212,7 +212,7 @@ const CASES: Record<string, SizeCase[]> = {
     },
   ],
   "get-race-prediction": [
-    { label: "Marathon", args: { raceDistance: "Marathon" } },
+    { label: "marathon", args: { raceDistance: "marathon" } },
   ],
   "list-activities": [
     {
@@ -236,14 +236,14 @@ const CASES: Record<string, SizeCase[]> = {
       args: { oldest: "2026-07-01", newest: "2026-09-28" },
     },
   ],
-  "view-activity-chart": [{ label: "default", args: { activity_id: ID } }],
-  "view-cadence-trends": [{ label: "104 weeks", args: { weeks: 104 } }],
-  "view-route-map": [{ label: "default", args: { activity_id: ID } }],
+  "view-activity-chart": [{ label: "default", args: { id: ID } }],
+  "view-cadence-trends": [{ label: "728 days", args: { days: 728 } }],
+  "view-route-map": [{ label: "default", args: { id: ID } }],
   "view-training-load": [{ label: "365 days", args: { days: 365 } }],
   "view-fitness-trend": [{ label: "365 days", args: { days: 365 } }],
-  "view-activity-zones": [{ label: "default", args: { activity_id: ID } }],
+  "view-activity-zones": [{ label: "default", args: { id: ID } }],
   "view-compare-activities": [
-    { label: "default", args: { activity_id_1: ID, activity_id_2: ID_2 } },
+    { label: "default", args: { activityId1: ID, activityId2: ID_2 } },
   ],
 };
 

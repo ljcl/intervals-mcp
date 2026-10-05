@@ -13,13 +13,10 @@ import { type useApp } from "@modelcontextprotocol/ext-apps/react";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import { parseToolArgs, type ToolArgs } from "./toolArgs";
 import { type CadenceTrendData } from "./types";
 import { VIEW_TOOLS } from "./viewToolDeclarations";
 import "./global.css";
-
-interface ToolArgs {
-  weeks?: number;
-}
 
 const LoadingSkeleton = ({ progress }: { progress?: string | null }) => (
   <LoadingState label="Loading cadence trends" progress={progress}>
@@ -46,7 +43,7 @@ function AppContent({
 }: AppContentProps) {
   const { data, loading, error, progress, retry } =
     useServerToolData<CadenceTrendData>(app, "get-cadence-trend-data", {
-      weeks: toolArgs.weeks ?? 6,
+      days: toolArgs.days,
     });
 
   return (
@@ -76,7 +73,7 @@ function Root() {
       appInfo={{ name: "Cadence Trends", version: "1.0.0" }}
       // Every argument is optional, so no input can be unusable and no
       // `missingArgsMessage` applies — the window falls back to a default.
-      parseToolInput={(args) => (args as ToolArgs | undefined) ?? {}}
+      parseToolInput={parseToolArgs}
       viewTools={VIEW_TOOLS}
       loading={<LoadingSkeleton />}
     >

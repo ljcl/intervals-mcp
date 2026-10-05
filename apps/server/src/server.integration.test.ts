@@ -154,9 +154,8 @@ describe("result envelope", () => {
 
 /**
  * Every input field naming an intervals.icu activity id, in each spelling the
- * surface uses: `id`, `activity_id`, `activity_id_1`, `activityId`,
- * `activityId2`. The narrower `/(^|_)(id|Id)$/` this replaced matched only
- * the first two, skipping 28 of the 43 id arguments: the camelCase and
+ * surface uses: `id`, `activityId1`, `activityId2`, and any `*_id`. The
+ * narrower `/(^|_)(id|Id)$/` this replaced skipped the camelCase and
  * numbered ones, including all four tools that were still hand-rolling their
  * id schema.
  */
@@ -446,7 +445,7 @@ describe("tools/call", () => {
     const client = await connectTestClient();
     await client.send("tools/call", {
       name: "view-activity-chart",
-      arguments: { activity_id: "9007199254740993" },
+      arguments: { id: "9007199254740993" },
     });
 
     // 2^53 + 1 survives only because ids travel as strings and the body is
@@ -482,7 +481,7 @@ describe("tools/call on a view-* tool", () => {
     const client = await connectTestClient();
     const { result, error } = await client.send("tools/call", {
       name: "view-activity-zones",
-      arguments: { activity_id: "123" },
+      arguments: { id: "123" },
       ...(clientCapabilities === undefined
         ? {}
         : { _meta: { [CLIENT_CAPABILITIES_META_KEY]: clientCapabilities } }),
@@ -525,11 +524,41 @@ describe("tools/call on a view-* tool", () => {
   });
 });
 
+describe("tools/list input naming scheme (#141)", () => {
+  it("advertises id, activityId1/activityId2 and days on the app tools", async () => {
+    const client = await connectTestClient();
+    const { result } = await client.send("tools/list");
+    const tools = result?.tools as Array<{
+      name: string;
+      inputSchema: { properties?: Record<string, Record<string, unknown>> };
+    }>;
+    const keys = (name: string) =>
+      Object.keys(
+        tools.find((t) => t.name === name)?.inputSchema.properties ?? {},
+      );
+
+    expect(keys("view-route-map")).toEqual(["id", "waypoints"]);
+    expect(keys("get-activity-streams-raw")).toEqual(["id"]);
+    expect(keys("view-compare-activities")).toEqual([
+      "activityId1",
+      "activityId2",
+    ]);
+    const days = tools.find((t) => t.name === "view-cadence-trends")
+      ?.inputSchema.properties?.days;
+    expect(days).toMatchObject({
+      type: "integer",
+      minimum: 7,
+      maximum: 728,
+      default: 42,
+    });
+  });
+});
+
 describe("tools/call forgiving arguments (#78)", () => {
   const callText = (result: Record<string, unknown> | undefined) =>
     (result?.content as Array<{ text: string }> | undefined)?.[0]?.text ?? "";
 
-  it("accepts id where an app tool takes activity_id", async () => {
+  it("accepts activity_id, the app tools' old spelling of id", async () => {
     mockedIntervalsActivity.mockResolvedValueOnce({
       id: "229781",
       name: "Hawk Hill",
@@ -539,7 +568,7 @@ describe("tools/call forgiving arguments (#78)", () => {
     const client = await connectTestClient();
     const { result } = await client.send("tools/call", {
       name: "view-route-map",
-      arguments: { id: "229781" },
+      arguments: { activity_id: "229781" },
     });
 
     expect(callText(result)).not.toContain("Invalid arguments");
@@ -599,7 +628,7 @@ describe("tools/call id latest", () => {
     expect(mockedIntervalsActivity.mock.calls[0]?.[1]).toBe("i555");
   });
 
-  it('resolves activity_id "latest" for an app data feed', async () => {
+  it('resolves id "latest" for an app data feed', async () => {
     vi.mocked(listActivities).mockResolvedValueOnce([
       { id: "i556", type: "Run", start_date_local: "2026-10-01T07:00:00" },
     ] as never);
@@ -611,7 +640,7 @@ describe("tools/call id latest", () => {
     const client = await connectTestClient();
     await client.send("tools/call", {
       name: "get-route-map-data",
-      arguments: { activity_id: "latest" },
+      arguments: { id: "latest" },
     });
     expect(mockedIntervalsActivity.mock.calls[0]?.[1]).toBe("i556");
   });
@@ -635,6 +664,66 @@ describe("tools/call id latest", () => {
     const ids = mockedIntervalsActivity.mock.calls.map((call) => call[1]);
     expect(ids.length).toBeGreaterThanOrEqual(2);
     expect(new Set(ids)).toEqual(new Set(["i557"]));
+  });
+
+  it("reports the resolved id in _meta, for view-route-map", async () => {
+    vi.mocked(listActivities).mockResolvedValueOnce([
+      { id: "i558", type: "Run", start_date_local: "2026-10-01T07:00:00" },
+    ] as never);
+    mockedIntervalsActivity.mockResolvedValueOnce({
+      id: "i558",
+      name: "Hawk Hill",
+      type: "Run",
+    } as never);
+    mockedIntervalsStreams.mockResolvedValueOnce([]);
+    const client = await connectTestClient();
+    const { result } = await client.send("tools/call", {
+      name: "view-route-map",
+      arguments: { id: "latest" },
+    });
+    expect(result?._meta).toMatchObject({
+      "intervals-mcp/resolvedArgs": { id: "i558" },
+    });
+  });
+
+  it("reports both resolved ids in _meta, for view-compare-activities", async () => {
+    vi.mocked(listActivities).mockResolvedValueOnce([
+      { id: "i559", type: "Run", start_date_local: "2026-10-01T07:00:00" },
+    ] as never);
+    mockedIntervalsActivity.mockResolvedValue({
+      id: "i559",
+      name: "Easy",
+      type: "Run",
+      start_date_local: "2026-10-01T07:00:00",
+    } as never);
+    const client = await connectTestClient();
+    const { result } = await client.send("tools/call", {
+      name: "view-compare-activities",
+      arguments: { activityId1: "latest", activityId2: "latest" },
+    });
+    expect(result?._meta).toMatchObject({
+      "intervals-mcp/resolvedArgs": {
+        activityId1: "i559",
+        activityId2: "i559",
+      },
+    });
+  });
+
+  it("has no resolvedArgs when no id was latest", async () => {
+    mockedIntervalsActivity.mockResolvedValueOnce({
+      id: "229781",
+      name: "Hawk Hill",
+      type: "Run",
+    } as never);
+    mockedIntervalsStreams.mockResolvedValueOnce([]);
+    const client = await connectTestClient();
+    const { result } = await client.send("tools/call", {
+      name: "view-route-map",
+      arguments: { id: "229781" },
+    });
+    expect(result?._meta ?? {}).not.toHaveProperty(
+      "intervals-mcp/resolvedArgs",
+    );
   });
 
   it('says so when there is no run to use for "latest"', async () => {
@@ -850,7 +939,7 @@ describe("prompts", () => {
     });
 
     expect(error).toBeUndefined();
-    expect(result?.completion).toMatchObject({ values: ["Half Marathon"] });
+    expect(result?.completion).toMatchObject({ values: ["half marathon"] });
   });
 
   it("completes nothing for a resource template reference", async () => {
