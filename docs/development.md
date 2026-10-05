@@ -169,6 +169,32 @@ action (`.github/actions/setup`) installs that Node with `actions/setup-node`
 rather than letting the runner image choose. `dockerRuntime.test.ts` fails if
 the line is not a full version or the setup action stops reading it.
 
+### Upgrading Node
+
+`.tool-versions` is the one home; CI and the Docker builder follow it. A
+Dependabot minor or patch PR for the `node` image changes only the
+Dockerfile, so its `check` fails until you bump the `nodejs` line on the same
+branch (the same rule as Bun). Dependabot ignores Node majors; do a major as
+one PR:
+
+1. Wait for the new major's LTS date (see the
+   [release schedule](https://github.com/nodejs/release#release-schedule));
+   odd majors never get LTS.
+2. Bump the `nodejs` line in `.tool-versions` to the full x.y.z. CI's Node
+   moves with it.
+3. Update the Dockerfile's `FROM node:<x.y.z>-trixie-slim@sha256:<digest>`
+   stage: same version, a freshly fetched index digest, and keep the Debian
+   release in step with the `oven/bun` base.
+4. Check the binary's shared libraries. The builder copies only
+   `/usr/local/bin/node` into the `oven/bun` stage, so any library the new
+   Node links that the base lacks must come too. Node 26 needs
+   `libatomic.so.1`, which `oven/bun` does not ship (the first Node 26 PR
+   failed on exactly this). List them with
+   `docker run --rm node:<tag> ldd /usr/local/bin/node`, then copy the
+   missing `.so` files from the `node` stage or install them in the builder.
+5. Run `bun run check`, `bun run test:stories` and `docker compose build`,
+   then confirm the PR's docker.yml build passes on both arches.
+
 ## Workflow security
 
 `workflow-lint.yml` runs [zizmor](https://docs.zizmor.sh) on any change under

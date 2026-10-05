@@ -84,5 +84,11 @@ updates:
         update-types:
           - minor
           - patch
+    # A Node major moves CI's Node too and can change the system libraries
+    # the copied binary needs, so it is a deliberate upgrade, not a bump
+    # (docs/development.md, "Upgrading Node").
+    ignore:
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
     reviewers:
       - ljcl
