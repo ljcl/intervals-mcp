@@ -37,6 +37,9 @@ if (sepIndex <= 0 || sepIndex === args.length - 1) {
 }
 
 const configPath = args[0];
+if (configPath === undefined) {
+  usageError("expected a config path, `--`, then a command to run");
+}
 const command = args.slice(sepIndex + 1);
 
 const beforeSource = readFileSync(configPath, "utf-8");

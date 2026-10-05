@@ -1,1 +1,4 @@
-{ "extends": "@intervals-mcp/tsconfig/base.json", "include": ["src", "vitest.config.ts"] }
+{
+  "extends": "@intervals-mcp/tsconfig/base.json",
+  "include": ["src", "vitest.config.ts"]
+}

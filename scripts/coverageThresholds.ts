@@ -40,14 +40,12 @@ export type Thresholds = Partial<Record<ThresholdKey, number>>;
  * four keys appear inside it.
  */
 export function parseThresholds(source: string): Thresholds | null {
-  const block = source.match(/thresholds:\s*{([^}]*)}/s);
-  if (!block) return null;
+  const body = source.match(/thresholds:\s*{([^}]*)}/s)?.[1];
+  if (body === undefined) return null;
 
   const result: Thresholds = {};
   for (const key of THRESHOLD_KEYS) {
-    const match = block[1].match(
-      new RegExp(`\\b${key}:\\s*(-?\\d+(?:\\.\\d+)?)`),
-    );
+    const match = body.match(new RegExp(`\\b${key}:\\s*(-?\\d+(?:\\.\\d+)?)`));
     if (match) result[key] = Number(match[1]);
   }
   return Object.keys(result).length > 0 ? result : null;
