@@ -384,7 +384,6 @@ async function checkGetActivityZones(): Promise<void> {
     const result = (await getActivityZonesTool.execute(
       { id: activityId },
       apiKey,
-      NO_PROGRESS,
     )) as {
       structuredContent?: Record<string, unknown>;
       isError?: boolean;

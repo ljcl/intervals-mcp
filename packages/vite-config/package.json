@@ -6,9 +6,16 @@
     "./mcp-app": "./mcp-app.ts",
     "./maplibre-worker": "./maplibre-worker.ts"
   },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
   "dependencies": {
     "@vitejs/plugin-react": "6.1.1",
     "vite-plugin-singlefile": "2.3.3"
+  },
+  "devDependencies": {
+    "@intervals-mcp/tsconfig": "workspace:*",
+    "typescript": "7.0.2"
   },
   "peerDependencies": {
     "vite": "^8.0.0"

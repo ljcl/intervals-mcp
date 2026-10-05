@@ -1,0 +1,12 @@
+{
+  "extends": "@intervals-mcp/tsconfig/base.json",
+  "compilerOptions": {
+    "types": ["bun"]
+  },
+  "include": [
+    "scripts",
+    ".claude/hooks",
+    "knip.config.ts",
+    "vitest.stories.config.ts"
+  ]
+}

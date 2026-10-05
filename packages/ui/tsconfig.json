@@ -1,4 +1,4 @@
 {
   "extends": "@intervals-mcp/tsconfig/react.json",
-  "include": ["src"]
+  "include": ["src", "vitest.config.ts"]
 }

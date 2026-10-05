@@ -325,16 +325,65 @@ describe("Dockerfile base image", () => {
   });
 });
 
+function readToolVersions(): string {
+  return readFileSync(new URL(".tool-versions", REPO_ROOT), "utf8");
+}
+
+/**
+ * The `nodejs` line of .tool-versions, which must be a full x.y.z. CI's setup
+ * action installs Node from this file (`node-version-file`), and a major-only
+ * `nodejs 24` lets setup-node take whatever 24.x the runner image caches, so
+ * an image update would change the Node that runs vitest, vite, knip and
+ * Storybook without a commit (#87).
+ */
+function toolVersionsNode(): string {
+  const pinned = /^nodejs\s+(\S+)\s*$/m.exec(readToolVersions())?.[1];
+  expect(
+    pinned,
+    `.tool-versions nodejs must be a pinned x.y.z, got ${JSON.stringify(pinned)}`,
+  ).toMatch(/^\d+\.\d+\.\d+$/);
+  return pinned!;
+}
+
 describe("local toolchain pin", () => {
   it("pins .tool-versions to the same Bun as root packageManager", () => {
     // mise/asdf read .tool-versions. A loose `bun 1` resolves to whatever
     // 1.x is already installed, so a local `bun install` can rewrite
     // bun.lock with a different Bun than CI and the image use.
-    const toolVersions = readFileSync(
-      new URL(".tool-versions", REPO_ROOT),
+    const pinned = /^bun\s+(\S+)\s*$/m.exec(readToolVersions())?.[1];
+    expect(pinned).toBe(packageManagerVersion());
+  });
+
+  it("installs the .tool-versions Node in CI", () => {
+    // Asserts the line is a full x.y.z; the setup action reads it as-is.
+    toolVersionsNode();
+    const action = readFileSync(
+      new URL(".github/actions/setup/action.yml", REPO_ROOT),
       "utf8",
     );
-    const pinned = /^bun\s+(\S+)\s*$/m.exec(toolVersions)?.[1];
-    expect(pinned).toBe(packageManagerVersion());
+    expect(action).toMatch(/^\s*node-version-file:\s*\.tool-versions\s*$/m);
+  });
+
+  it("builds the MCP Apps in the image with the .tool-versions Node", () => {
+    // The builder copies `node` from this stage so Vite runs under the same
+    // Node as CI's build and tests, not under the base image's bun fallback.
+    // Same drift as the Bun pin above: Dependabot bumps this tag and never
+    // .tool-versions.
+    const expected = toolVersionsNode();
+    const dockerfile = readFileSync(DOCKERFILE_URL, "utf8");
+    const tag = /^FROM\s+(?:--\S+\s+)*node:(\S+)\s+AS\s+node\b/m.exec(
+      dockerfile,
+    )?.[1];
+    expect(tag, "no `FROM node:<tag> AS node` stage").toBeDefined();
+    // Tolerates variant suffixes (`-trixie-slim`) and a digest.
+    const version = /^(\d+\.\d+\.\d+)(?:-[\w.-]+)?(?:@sha256:[0-9a-f]+)?$/.exec(
+      tag!,
+    )?.[1];
+    expect(version, `node:${tag} carries no pinned x.y.z version`).toBe(
+      expected,
+    );
+    expect(dockerfile).toMatch(
+      /^COPY --from=node \/usr\/local\/bin\/node \/usr\/local\/bin\/node$/m,
+    );
   });
 });

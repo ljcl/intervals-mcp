@@ -32,6 +32,29 @@ server has no build step. Biome (`//#lint`) and Knip (`//#knip`) run as root
 tasks — Knip is a whole-graph analyzer that cannot decompose per-package; Biome
 is fast enough to run at root per Turborepo docs.
 
+Root tasks and `--affected`: turbo maps changed files to the workspaces that
+own them, and the root package enters scope only when a root-owned file
+changes. So `--affected` silently drops `//#lint`, `//#knip` and
+`//#typecheck:root` on a PR that touches only `apps/` or `packages/`. Anything
+that filters with `--affected` names the root tasks in a separate, unfiltered
+`turbo run` (`check:affected`, `typecheck:affected`, and ci.yml's PR check
+step). Root tasks hash the whole repository by default, so running them
+unfiltered is correct and costs a cache hit when nothing changed.
+
+### Typecheck coverage
+
+Each workspace's `typecheck` is `tsc --noEmit` over its tsconfig `include`:
+`src` plus the package's own `vite.config.ts` or `vitest.config.ts`, and
+`stories` in `design-system`. `packages/vite-config` has its own tsconfig.
+Files outside every workspace (`scripts/`, `.claude/hooks/`,
+`knip.config.ts`, `vitest.stories.config.ts`) are covered by the root
+`tsconfig.json` through the root task `typecheck:root`, which `bun run
+typecheck` runs beside the package tasks. It is its own task rather than a
+`dependsOn` of `typecheck` because a root task's hash covers the whole repo,
+and depending on it would invalidate every package's typecheck cache on any
+change. `scripts/live-check.ts` imports server tools by name, so a server
+rename fails `typecheck:root`.
+
 **Do NOT change root `lint` to `turbo run lint`** (infinite loop). Biome runs
 directly via root `lint`; turbo dispatches it only through `bun run check` or
 `turbo run lint`. In CI, `ci.yml` runs Biome as a dedicated step
@@ -64,7 +87,7 @@ step is a hard requirement.
 
 ```bash
 bun run check             # Lint + test + typecheck + build + boundaries (cached)
-bun run check:affected    # Same, only packages changed since main
+bun run check:affected    # Same, only packages changed since main (root lint + typecheck:root always run)
 bun run test:stories      # Every story renders in headless Chromium (needs Playwright browsers)
 docker compose build      # Server container builds from current sources
 ```
@@ -72,7 +95,7 @@ docker compose build      # Server container builds from current sources
 Individual steps if needed:
 
 ```bash
-bun run typecheck         # TS across every workspace package
+bun run typecheck         # TS across every workspace package plus typecheck:root
 bun run lint              # Biome (root task, not per-package)
 bun run test              # Vitest (server + any package with tests)
 bun run build             # Produces MCP App single-file HTML bundles
@@ -130,10 +153,21 @@ the repo has no React testing library and needs none.
 CI's check job runs specs once, in the `test:coverage` step — `test` is absent
 from the `turbo run` line on purpose (adding it doubles every spec), and that
 step is deliberately not `--affected` (turbo restores cached `coverage/**` for
-unchanged packages, keeping every row of the summary table populated). Only
-jobs that run turbo tasks take the `.turbo` cache, and the key is namespaced
+unchanged packages, keeping every row of the summary table populated). Knip
+runs on every PR (see root tasks above), so its green result is real; the
+"Knip summary" step re-runs it with the JSON reporter for the job summary.
+Only jobs that run turbo tasks take the `.turbo` cache, and the key is namespaced
 `<os>-turbo-<workflow>-<job>-<sha>` — otherwise an early-finishing job reserves
 the key and later jobs cannot save, or same-SHA jobs collide.
+
+## Toolchain versions
+
+Bun comes from root `packageManager`; Node comes from the `nodejs` line of
+`.tool-versions`, pinned to a full x.y.z. `bun run` hands Node-shebang tools
+(vitest, vite, knip, Storybook) to whatever `node` is on PATH, so the setup
+action (`.github/actions/setup`) installs that Node with `actions/setup-node`
+rather than letting the runner image choose. `dockerRuntime.test.ts` fails if
+the line is not a full version or the setup action stops reading it.
 
 ## Refreshing the intervals.icu API spec
 
@@ -177,7 +211,11 @@ silently stops fragment flattening).
 
 Storybook (`apps/storybook`) renders the UI packages. The `main` build publishes
 to GitHub Pages (`storybook.yml`); there is no per-PR hosted build, so review a
-branch's UI by checking it out and running `bun run storybook`.
+branch's UI by checking it out and running `bun run storybook`. The root
+`build:storybook` task depends on `^build:storybook`, so a change in any
+package the stories reach, including `packages/data` (reached only through
+the apps), changes the hash and the deploy rebuilds instead of restoring a
+stale `storybook-static`.
 
 A running dev server also exposes an MCP endpoint (`@storybook/addon-mcp`) with
 story, docs, and test tools, pre-wired in `.mcp.json` as `storybook` at
@@ -274,6 +312,18 @@ Built via `turbo prune @intervals-mcp/server --docker`; the builder stage uses
 (the MCP App packages), excluding the JIT server itself. The prune stage
 derives the package set from the workspace graph — no edit per package needed
 there.
+
+**Which runtime builds the MCP Apps: Node, the `.tool-versions` one.** The
+builder copies the `node` binary from a `FROM node:<x.y.z>-trixie-slim AS
+node` stage (it never reaches the runner). Vite starts from a Node shebang,
+and `oven/bun` ships only a fallback `node` symlinked to bun, so before this
+the shipped `dist/app.html` files were built under Bun while CI builds, tests
+and renders them under Node. The output is byte-identical today; the pin
+exists so a Bun or Vite change cannot make the image diverge from what CI
+checked. Bun still installs, runs turbo, and bundles the server.
+`dockerRuntime.test.ts` pins the stage's tag to `.tool-versions`, the same way
+it pins the `oven/bun` tags to `packageManager` (Dependabot bumps the image,
+never the file).
 
 The builder then bundles the server with `bun build --target=bun` into
 `apps/server/dist/index.js` (plus a linked source map, so stack traces name the
