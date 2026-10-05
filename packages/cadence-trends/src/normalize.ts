@@ -3,6 +3,7 @@ import {
   COMPARISON_COLORS,
   type OverlayPoint,
   type OverlayStreamData,
+  type OverlayXMode,
   type PaceZone,
   type RunSummary,
 } from "./types";
@@ -227,8 +228,6 @@ export function toOverlayPoints(data: OverlayStreamData): OverlayPoint[] {
   }
   return points;
 }
-
-export type OverlayXMode = "distance" | "time";
 
 /**
  * Split a run's points into contiguous segments of defined cadence, breaking

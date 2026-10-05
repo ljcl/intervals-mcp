@@ -71,6 +71,32 @@ describe("buildCadenceContextSummary", () => {
     );
   });
 
+  it("reports the overlay x-axis while the overlay shows", () => {
+    expect(
+      buildCadenceContextSummary({
+        weeks: 6,
+        activeView: "overlay",
+        selectedRuns: [
+          run({ id: "1", name: "Tempo Run", averageCadence: 181 }),
+        ],
+        overlayAxis: "time",
+      }),
+    ).toBe(
+      "Cadence trends, last 6 weeks. View: per-run overlay. Overlay x-axis: time. Comparing: Tempo Run (181 spm).",
+    );
+  });
+
+  it("leaves the overlay x-axis out of every other view", () => {
+    expect(
+      buildCadenceContextSummary({
+        weeks: 6,
+        activeView: "scatter",
+        selectedRuns: [],
+        overlayAxis: "distance",
+      }),
+    ).not.toContain("x-axis");
+  });
+
   it("mentions runs excluded for missing cadence", () => {
     const text = buildCadenceContextSummary({
       weeks: 6,

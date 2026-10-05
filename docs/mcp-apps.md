@@ -260,6 +260,14 @@ Recharts `Cell` dots carry no tabindex/role/key handling, so the picker is the
 accessible alternative rather than fighting SVG focus. Unselected chips disable
 at the cap so the limit is legible.
 
+`set-view` (`view`, `runIds` up to 4, `xAxis`) lets the model drive the view;
+`runIds` replaces the selection, in the order given, so overlay colours follow
+it. `resolveSetView` (`src/setView.ts`, unit-tested) checks the ids against the
+chart's runs with cadence and names any it rejects; a `runIds` or `xAxis`
+without a `view` moves to the overlay, while an empty `runIds` only clears the
+selection. The overlay x-axis is `App` state (`OverlayView` is controlled), and
+the context summary reports it while the overlay shows.
+
 Trend uses a time axis (`dateTs`, UTC day), so gaps in running show as gaps. Zone
 whiskers run from min to max (`buildZoneRows`). Overlay colours follow selection
 order (`assignOverlayColors`); runs sharing a name are labelled with their date

@@ -31,6 +31,7 @@ import {
 import styles from "./OverlayView.module.css";
 import {
   type OverlayPoint,
+  type OverlayXMode,
   type RunStreamState,
   type RunSummary,
 } from "./types";
@@ -41,10 +42,11 @@ interface OverlayViewProps {
   streams: Map<string, RunStreamState>;
   requestStream: (runId: string) => void;
   retryStream: (runId: string) => void;
+  /** Owned by the app, so the model can set it as well as the pills. */
+  xMode: OverlayXMode;
+  onXModeChange: (xMode: OverlayXMode) => void;
   mode?: "mobile" | "desktop";
 }
-
-type XMode = "distance" | "time";
 
 interface OverlayTooltipProps {
   active?: boolean;
@@ -55,7 +57,7 @@ interface OverlayTooltipProps {
     color?: string;
   }>;
   label?: number | string;
-  xMode: XMode;
+  xMode: OverlayXMode;
 }
 
 /**
@@ -97,6 +99,8 @@ export function OverlayView({
   streams,
   requestStream,
   retryStream,
+  xMode,
+  onXModeChange,
   mode = "desktop",
 }: OverlayViewProps) {
   const isMobile = mode === "mobile";
@@ -110,7 +114,6 @@ export function OverlayView({
     strokeWidth: chartTokens.secondaryStrokeWidth,
   };
 
-  const [xMode, setXMode] = useState<XMode>("distance");
   const [hiddenRuns, setHiddenRuns] = useState<Set<string>>(new Set());
 
   // Request every selected run. The fetcher is idempotent per key and never
@@ -362,11 +365,11 @@ export function OverlayView({
         <PillGroup>
           <Pill
             active={xMode === "distance"}
-            onClick={() => setXMode("distance")}
+            onClick={() => onXModeChange("distance")}
           >
             km
           </Pill>
-          <Pill active={xMode === "time"} onClick={() => setXMode("time")}>
+          <Pill active={xMode === "time"} onClick={() => onXModeChange("time")}>
             min
           </Pill>
         </PillGroup>

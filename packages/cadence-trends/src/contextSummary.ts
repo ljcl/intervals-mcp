@@ -1,7 +1,7 @@
 import { overlayRunLabel } from "./normalize";
-import { type RunSummary, type ViewId } from "./types";
+import { type OverlayXMode, type RunSummary, type ViewId } from "./types";
 
-const VIEW_LABELS: Record<ViewId, string> = {
+export const VIEW_LABELS: Record<ViewId, string> = {
   trend: "trend timeline",
   scatter: "cadence vs pace scatter",
   zones: "pace zones",
@@ -12,6 +12,8 @@ export interface CadenceContextInput {
   weeks: number;
   activeView: ViewId;
   selectedRuns: RunSummary[];
+  /** The overlay's x-axis; reported only while the overlay is showing. */
+  overlayAxis?: OverlayXMode;
   /** Run-type activities in the window with no recorded cadence, left out
    * of the chart entirely; mentioned so the model knows the average isn't
    * silently missing them. */
@@ -24,14 +26,23 @@ export interface CadenceContextInput {
 export function buildCadenceContextSummary(
   input: CadenceContextInput,
 ): string | null {
-  const { weeks, activeView, selectedRuns, excludedNoCadence, noPaceCount } =
-    input;
+  const {
+    weeks,
+    activeView,
+    selectedRuns,
+    overlayAxis,
+    excludedNoCadence,
+    noPaceCount,
+  } = input;
   if (!weeks) return null;
 
   const parts = [
     `Cadence trends, last ${weeks} week${weeks === 1 ? "" : "s"}.`,
     `View: ${VIEW_LABELS[activeView] ?? activeView}.`,
   ];
+  if (activeView === "overlay" && overlayAxis) {
+    parts.push(`Overlay x-axis: ${overlayAxis}.`);
+  }
   if (selectedRuns.length) {
     const runs = selectedRuns
       .map(

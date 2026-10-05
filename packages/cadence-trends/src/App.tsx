@@ -6,6 +6,8 @@ import {
   SummaryBar,
   useModelContextSync,
   useServerToolFetcher,
+  useViewTool,
+  type ViewToolRegistry,
 } from "@intervals-mcp/ui";
 import { type useApp } from "@modelcontextprotocol/ext-apps/react";
 import { useCallback, useMemo, useState } from "react";
@@ -20,10 +22,13 @@ import {
 import { OverlayView } from "./OverlayView";
 import { RunSelectList } from "./RunSelectList";
 import { ScatterView } from "./ScatterView";
+import { describeSetView, resolveSetView, type SetViewArgs } from "./setView";
 import { TrendView } from "./TrendView";
 import {
   type CadenceTrendData,
+  MAX_COMPARE_RUNS,
   type OverlayStreamData,
+  type OverlayXMode,
   type RunStreamState,
   type ViewId,
 } from "./types";
@@ -36,19 +41,24 @@ const VIEWS: Array<{ id: ViewId; label: string }> = [
   { id: "overlay", label: "Overlay" },
 ];
 
-/** Overlay comparison cap, shared by the dot-click toggle and the run picker. */
-const MAX_COMPARE_RUNS = 4;
-
 interface AppProps {
   app: ReturnType<typeof useApp>["app"];
   data: CadenceTrendData;
   mode?: "mobile" | "desktop";
+  viewToolRegistry?: ViewToolRegistry | null;
 }
 
-export function App({ app, data, mode = "desktop" }: AppProps) {
+export function App({
+  app,
+  data,
+  mode = "desktop",
+  viewToolRegistry = null,
+}: AppProps) {
   const isMobile = mode === "mobile";
   const [activeView, setActiveView] = useState<ViewId>("trend");
   const [selectedRunIds, setSelectedRunIds] = useState<Set<string>>(new Set());
+  // Lifted out of the overlay so `set-view` can choose it as well as the pills.
+  const [xMode, setXMode] = useState<OverlayXMode>("distance");
 
   // Per-run stream fetches go through the shared keyed fetcher so each run
   // carries its own loading, error, and retry — the hand-rolled
@@ -132,6 +142,30 @@ export function App({ app, data, mode = "desktop" }: AppProps) {
 
   const showRunPicker = activeView === "trend" || activeView === "scatter";
 
+  /**
+   * `set-view`: the model switches the view, chooses the runs to overlay, or
+   * picks the overlay axis. Installed here rather than declared here (see
+   * `viewToolDeclarations.ts`). `runIds` replaces the selection, in the order
+   * given, so the overlay colours follow it.
+   */
+  useViewTool(viewToolRegistry, "set-view", (args) => {
+    const result = resolveSetView(
+      args as SetViewArgs,
+      data.activities,
+      activeView,
+    );
+    if (result.kind === "error") return { text: result.text, isError: true };
+
+    const text = describeSetView(result, data.activities, {
+      selectedRunIds,
+      xAxis: xMode,
+    });
+    setActiveView(result.view);
+    if (result.runIds) setSelectedRunIds(new Set(result.runIds));
+    if (result.xAxis) setXMode(result.xAxis);
+    return { text };
+  });
+
   useModelContextSync(
     app ?? undefined,
     () =>
@@ -139,6 +173,7 @@ export function App({ app, data, mode = "desktop" }: AppProps) {
         weeks: data.weeks,
         activeView,
         selectedRuns,
+        overlayAxis: xMode,
         excludedNoCadence: data.excludedNoCadence,
         noPaceCount: data.noPaceCount,
       }),
@@ -146,6 +181,7 @@ export function App({ app, data, mode = "desktop" }: AppProps) {
       data.weeks,
       activeView,
       selectedRuns,
+      xMode,
       data.excludedNoCadence,
       data.noPaceCount,
     ],
@@ -216,6 +252,8 @@ export function App({ app, data, mode = "desktop" }: AppProps) {
             streams={streams}
             requestStream={requestStream}
             retryStream={retryStream}
+            xMode={xMode}
+            onXModeChange={setXMode}
             mode={mode}
           />
         )}

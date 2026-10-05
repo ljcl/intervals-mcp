@@ -85,6 +85,15 @@ export interface PaceZone {
 /** View identifiers */
 export type ViewId = "trend" | "scatter" | "zones" | "overlay";
 
+/** What the overlay's x-axis measures. */
+export type OverlayXMode = "distance" | "time";
+
+/**
+ * Overlay comparison cap, shared by the dot-click toggle, the run picker and
+ * the `set-view` tool's `runIds` bound.
+ */
+export const MAX_COMPARE_RUNS = 4;
+
 /** Palette for overlay comparison lines — distinct from metric colors */
 export const COMPARISON_COLORS = [
   "#e11d48", // rose

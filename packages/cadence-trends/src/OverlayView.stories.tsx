@@ -1,5 +1,6 @@
 import preview, { darkGlobals } from "@intervals-mcp/design-system/preview";
 import { MobileCardShell } from "@intervals-mcp/ui";
+import { type ComponentProps, useState } from "react";
 import { expect, fn, waitFor } from "storybook/test";
 import {
   allFailedStreams,
@@ -13,10 +14,24 @@ import {
   progressStreams,
 } from "./__fixtures__/overlay-streams";
 import { OverlayView } from "./OverlayView";
+import { type OverlayXMode } from "./types";
 
 const noop = () => {};
 
-const meta = preview.meta({ component: OverlayView });
+// The app owns the axis (the model sets it as well as the pills), so stories
+// that do not exercise it show the default and ignore changes.
+const meta = preview.meta({
+  component: OverlayView,
+  args: { xMode: "distance" as const, onXModeChange: noop },
+});
+
+/** Holds the axis the way the app does, so the pills can be clicked through. */
+function WithAxisState(
+  props: Omit<ComponentProps<typeof OverlayView>, "xMode" | "onXModeChange">,
+) {
+  const [xMode, setXMode] = useState<OverlayXMode>("distance");
+  return <OverlayView {...props} xMode={xMode} onXModeChange={setXMode} />;
+}
 
 const bothRuns = new Set(["i10003", "i10013"]);
 const twoLongRuns = new Set(["i10004", "i10009"]);
@@ -52,6 +67,9 @@ export const SwitchAxisAndHideRun = meta.story({
     requestStream: noop,
     retryStream: noop,
   },
+  render: ({ xMode: _xMode, onXModeChange: _onXModeChange, ...rest }) => (
+    <WithAxisState {...rest} />
+  ),
   play: async ({ canvas, canvasElement, userEvent }) => {
     const curveCount = () =>
       canvasElement.querySelectorAll("path.recharts-line-curve").length;

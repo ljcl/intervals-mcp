@@ -1,7 +1,9 @@
 import preview, { darkGlobals } from "@intervals-mcp/design-system/preview";
-import { MobileCardShell } from "@intervals-mcp/ui";
+import { MobileCardShell, ViewToolRegistry } from "@intervals-mcp/ui";
 import { type App as McpApp } from "@modelcontextprotocol/ext-apps";
+import { useState } from "react";
 import { expect, waitFor, within } from "storybook/test";
+import { rawStreamsPayload } from "./__fixtures__/overlay-streams";
 import { mockRuns } from "./__fixtures__/runs";
 import { App } from "./App";
 import { buildCadenceSubtitle } from "./normalize";
@@ -121,6 +123,152 @@ export const OverlayRunWithoutStreams = meta.story({
       ).toBe(1),
     );
     expect(canvas.queryByRole("button", { name: "Try again" })).toBeNull();
+  },
+});
+
+/**
+ * Host-driven view tool (#68): the model calls `set-view` and the card
+ * switches view, replaces the overlay selection and picks the overlay axis.
+ * Asserted through what the athlete would see (the active pill, the legend,
+ * the drawn lines) and what the model is told (the reply and the context
+ * summary). The fake app answers the stream fetches from `overlay-streams.ts`.
+ */
+function ModelDrivenCadence() {
+  // Stable across renders: a registry rebuilt each render would have the
+  // handler installed on an instance the button no longer holds.
+  const [registry] = useState(() => new ViewToolRegistry());
+  const [said, setSaid] = useState("");
+  const [summary, setSummary] = useState("");
+  const [app] = useState(
+    () =>
+      ({
+        getHostCapabilities: () => ({ updateModelContext: {} }),
+        updateModelContext: async ({
+          content,
+        }: {
+          content: Array<{ type: string; text?: string }>;
+        }) => {
+          setSummary(content.map((c) => c.text ?? "").join(""));
+        },
+        callServerTool: async ({
+          arguments: args,
+        }: {
+          arguments?: Record<string, unknown>;
+        }) => ({
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                rawStreamsPayload(String(args?.activity_id)),
+              ),
+            },
+          ],
+        }),
+      }) as unknown as McpApp,
+  );
+  const call = (args: Record<string, unknown>) => {
+    void registry.invoke("set-view", args).then((r) => setSaid(r.text));
+  };
+  return (
+    <>
+      <App app={app} data={mockData} viewToolRegistry={registry} />
+      <button
+        type="button"
+        data-testid="call-overlay-runs"
+        onClick={() => call({ runIds: ["i10013", "i10003"] })}
+      >
+        call set-view with runs
+      </button>
+      <button
+        type="button"
+        data-testid="call-time-axis"
+        onClick={() => call({ xAxis: "time" })}
+      >
+        call set-view with axis
+      </button>
+      <button
+        type="button"
+        data-testid="call-unknown-run"
+        onClick={() => call({ runIds: ["i99999"] })}
+      >
+        call set-view with an unknown run
+      </button>
+      <p data-testid="tool-said">{said}</p>
+      <p data-testid="context-summary">{summary}</p>
+    </>
+  );
+}
+
+export const ModelDrivenView = meta.story({
+  args: { app: null, data: mockData },
+  render: () => <ModelDrivenCadence />,
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const said = () =>
+      canvasElement.querySelector("[data-testid='tool-said']")?.textContent;
+    const click = (testId: string) =>
+      userEvent.click(
+        canvasElement.querySelector<HTMLButtonElement>(
+          `[data-testid='${testId}']`,
+        )!,
+      );
+
+    await expect(canvas.getByRole("button", { name: "Trend" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    // Runs without a view: the selection is replaced, in the order given, and
+    // the card moves to the overlay to show them.
+    await click("call-overlay-runs");
+    await waitFor(() =>
+      expect(said()).toBe(
+        "Showing the overlay of Intervals 5x1k and Tempo Intervals by distance.",
+      ),
+    );
+    await expect(
+      canvas.getByRole("button", { name: "Overlay" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      await canvas.findByRole("button", { name: /Toggle Intervals 5x1k/ }),
+    ).toBeVisible();
+    await expect(
+      canvas.getByRole("button", { name: /Toggle Tempo Intervals/ }),
+    ).toBeVisible();
+    await waitFor(() =>
+      expect(
+        canvasElement.querySelectorAll("path.recharts-line-curve").length,
+      ).toBe(2),
+    );
+
+    // The axis alone: the pills follow the tool, and the model's summary
+    // carries the axis once the debounce has fired.
+    await click("call-time-axis");
+    await waitFor(() =>
+      expect(said()).toBe(
+        "Showing the overlay of Intervals 5x1k and Tempo Intervals by time.",
+      ),
+    );
+    await expect(canvas.getByRole("button", { name: "min" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await waitFor(() =>
+      expect(
+        canvasElement.querySelector("[data-testid='context-summary']")
+          ?.textContent,
+      ).toContain("Overlay x-axis: time."),
+    );
+
+    // An id that is not in the chart is refused by name and changes nothing.
+    await click("call-unknown-run");
+    await waitFor(() =>
+      expect(said()).toBe(
+        "These runs are not in this chart or have no cadence: i99999.",
+      ),
+    );
+    await expect(
+      canvas.getByRole("button", { name: /Toggle Intervals 5x1k/ }),
+    ).toBeVisible();
   },
 });
 

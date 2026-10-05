@@ -7,12 +7,14 @@ import {
   LoadingState,
   Skeleton,
   useServerToolData,
+  type ViewToolRegistry,
 } from "@intervals-mcp/ui";
 import { type useApp } from "@modelcontextprotocol/ext-apps/react";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { type CadenceTrendData } from "./types";
+import { VIEW_TOOLS } from "./viewToolDeclarations";
 import "./global.css";
 
 interface ToolArgs {
@@ -32,9 +34,16 @@ interface AppContentProps {
   toolArgs: ToolArgs;
   hostCtx: HostCtx;
   mode: AppMode;
+  viewToolRegistry: ViewToolRegistry | null;
 }
 
-function AppContent({ app, toolArgs, hostCtx, mode }: AppContentProps) {
+function AppContent({
+  app,
+  toolArgs,
+  hostCtx,
+  mode,
+  viewToolRegistry,
+}: AppContentProps) {
   const { data, loading, error, progress, retry } =
     useServerToolData<CadenceTrendData>(app, "get-cadence-trend-data", {
       weeks: toolArgs.weeks ?? 6,
@@ -50,7 +59,12 @@ function AppContent({ app, toolArgs, hostCtx, mode }: AppContentProps) {
           onRetry={retry}
         />
       ) : (
-        <App app={app} data={data} mode={mode} />
+        <App
+          app={app}
+          data={data}
+          mode={mode}
+          viewToolRegistry={viewToolRegistry}
+        />
       )}
     </AppShell>
   );
@@ -63,14 +77,16 @@ function Root() {
       // Every argument is optional, so no input can be unusable and no
       // `missingArgsMessage` applies — the window falls back to a default.
       parseToolInput={(args) => (args as ToolArgs | undefined) ?? {}}
+      viewTools={VIEW_TOOLS}
       loading={<LoadingSkeleton />}
     >
-      {({ app, toolArgs, hostCtx, mode }) => (
+      {({ app, toolArgs, hostCtx, mode, viewToolRegistry }) => (
         <AppContent
           app={app}
           toolArgs={toolArgs}
           hostCtx={hostCtx}
           mode={mode}
+          viewToolRegistry={viewToolRegistry}
         />
       )}
     </AppRoot>

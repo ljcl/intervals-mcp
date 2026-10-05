@@ -1,5 +1,6 @@
 import {
   type OverlayPoint,
+  type OverlayStreamData,
   type RunStreamState,
   type RunSummary,
 } from "../types";
@@ -74,6 +75,28 @@ export const mockStreams = new Map<string, RunStreamState>([
     loaded(run10013, generateOverlayPoints(run10013.distance, 178, 4.0, 50)),
   ],
 ]);
+
+/**
+ * The `get-activity-streams-raw` payload for a run `mockStreams` draws, for a
+ * story whose fake app answers the keyed fetcher the way the server does:
+ * time in seconds, distance in metres, and cadence as strides per minute,
+ * which the app doubles for a run.
+ */
+export function rawStreamsPayload(runId: string): OverlayStreamData {
+  const state = mockStreams.get(runId);
+  if (!state?.points) throw new Error(`no overlay stream for ${runId}`);
+  const withCadence = state.points.filter((p) => p.cadence !== undefined);
+  return {
+    activityId: runId,
+    activityType: state.run.type,
+    name: state.run.name,
+    streams: {
+      time: withCadence.map((p) => Math.round(p.time * 60)),
+      distance: withCadence.map((p) => Math.round(p.distance * 1000)),
+      cadence: withCadence.map((p) => p.cadence! / 2),
+    },
+  };
+}
 
 /**
  * Two runs both named "Long Run" (10004 on 11 Jan, 10009 on 25 Jan): the
