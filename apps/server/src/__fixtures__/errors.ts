@@ -4,13 +4,11 @@ import { HttpError, RateLimitError } from "../fetchClient";
  * The rate-limit error an intervals.icu client call actually throws.
  *
  * Every client function funnels its failures through `handleApiError`, which
- * rethrows a 429 with the context prefixed onto the message. A tool test that
- * rejects with a raw `RateLimitError` straight off the fetch layer is mocking a
- * shape production cannot produce — which is how the scan tools' rate-limit
- * abort passed its tests while being dead in the server (the client used to
- * flatten the error into a plain `Error`, so `instanceof RateLimitError` was
- * never true). Building it here keeps the three scan tools testing against one
- * definition of that shape; `intervalsClient.test.ts`'s own error-translation
+ * rethrows a 429 as the same `RateLimitError`, unmodified. The client used to
+ * flatten it into a plain `Error`, so `instanceof RateLimitError` was never
+ * true and the scan tools' rate-limit abort passed its tests while being dead
+ * in the server. Building it here keeps the three scan tools testing against
+ * one definition of that shape (its message wording is illustrative); `intervalsClient.test.ts`'s own error-translation
  * test pins the translation itself.
  */
 export function handledRateLimit(
