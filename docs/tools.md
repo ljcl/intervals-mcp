@@ -596,13 +596,15 @@ warning rather than failing the call.
 ## Activity ids
 
 Every activity-id input except `update-activity`'s accepts either a numeric id
-(from `list-activities`, e.g. `"i189807578"`) or the special value `"latest"`.
-The `"latest"` value means the newest Run, TrailRun, or VirtualRun in the last
-366 days. It is resolved once per call by `resolveLatestIds` (`latestActivity.ts`)
-in `dispatchToolCall` after validation, walking 31-day windows newest first and
+(from `list-activities`, e.g. `"i189807578"`) or the special value `"latest"`,
+including both ids of compare-activities and the app tools. The `"latest"` value
+means the newest Run, TrailRun, or VirtualRun in the last 366 days. It is
+resolved once per call by `resolveLatestIds` (`latestActivity.ts`) in
+`dispatchToolCall` after validation, walking 31-day windows newest first and
 stopping at the first run, from cached `listActivities` reads. If no run is found,
-the tool returns an error naming the fix. `update-activity` cannot use `"latest"`
-because a write must name its specific target; it validates against digits only.
+the tool returns an `isError` result naming the fix. `update-activity` cannot use
+`"latest"` because a write must name its specific target; it validates against
+digits only.
 
 ## Visualization tools
 
