@@ -16,6 +16,7 @@ import { cadenceSpm, isStepCadenceActivity } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
 import { toolErrorText } from "./_errors";
 import { intervalsActivityIdInput } from "./_ids";
+import { RESPONSE_BUDGET_CHARS, responseSize } from "./_responseBudget";
 import { ActivityStreamsOutputSchema, warnOnSchemaDrift } from "./outputs";
 
 const name = "get-activity-streams";
@@ -55,8 +56,9 @@ repeats the data as a CSV block.
 Use it only when you need the raw series: the analysis tools already turn
 streams into answers (get-split-analysis for km splits, get-hill-analysis for
 climbs, get-interval-analysis for reps, get-aerobic-analysis for decoupling),
-and view-activity-chart shows them. Ask only for the types you need: a high
-maxPoints with many types makes a very large response.
+and view-activity-chart shows them. Ask only for the types you need: the
+response has a size budget, so a high maxPoints with many types returns fewer
+points than asked (returned_points says how many, and the text says so).
 
 Notes:
 - Each downsampled point is its bucket's mean, except time, distance and
@@ -318,10 +320,15 @@ function buildCsvLines(result: ActivityStreamsResult): string[] {
  */
 export function formatActivityStreamsText(
   result: ActivityStreamsResult,
+  reducedFrom?: number,
 ): string {
   const lines = [
     `${result.activity_id} ${result.type}: ${result.returned_points} of ${result.original_points} points, ${result.requested.length} types`,
   ];
+  if (reducedFrom !== undefined)
+    lines.push(
+      `Reduced to ${result.returned_points} of the ${reducedFrom} points requested to stay under the response size limit; ask for fewer types to get more points.`,
+    );
 
   for (const t of result.requested) {
     const values = result.streams[t];
@@ -339,6 +346,55 @@ export function formatActivityStreamsText(
   }
 
   return lines.join("\n");
+}
+
+/** Smallest point count the budget loop will shrink to (the schema's min). */
+const MIN_POINTS = 10;
+
+/**
+ * {@link buildActivityStreamsResult} held to `budget` (text plus structured
+ * JSON, see {@link RESPONSE_BUDGET_CHARS}). Over budget, it rebuilds with
+ * proportionally fewer points until the response fits, and the text then
+ * names the reduction. Measuring the built response, rather than capping
+ * points times columns, is what keeps it honest: a latlng cell costs about
+ * four times a heartrate cell. Pure; exported for direct testing.
+ */
+export function fitActivityStreams(
+  activity: IntervalsActivity,
+  loaded: IntervalsStreams,
+  requestedTypes: StreamType[],
+  maxPoints: number,
+  budget: number = RESPONSE_BUDGET_CHARS,
+): { result: ActivityStreamsResult; text: string } {
+  let points = maxPoints;
+  let result = buildActivityStreamsResult(
+    activity,
+    loaded,
+    requestedTypes,
+    points,
+  );
+  let text = formatActivityStreamsText(result);
+  // Each pass scales by the measured overshoot, so two or three passes fit;
+  // the bound only guards against a pathological non-converging input.
+  for (let pass = 0; pass < 5; pass += 1) {
+    const size = responseSize(text, result);
+    if (size <= budget || points <= MIN_POINTS) break;
+    points = Math.max(
+      MIN_POINTS,
+      Math.min(
+        points - 1,
+        Math.floor(result.returned_points * (budget / size) * 0.95),
+      ),
+    );
+    result = buildActivityStreamsResult(
+      activity,
+      loaded,
+      requestedTypes,
+      points,
+    );
+    text = formatActivityStreamsText(result, maxPoints);
+  }
+  return { result, text };
 }
 
 export const getActivityStreamsTool = {
@@ -379,7 +435,7 @@ export const getActivityStreamsTool = {
         throw error;
       }
 
-      const result = buildActivityStreamsResult(
+      const { result, text } = fitActivityStreams(
         activity,
         streams,
         types,
@@ -388,9 +444,7 @@ export const getActivityStreamsTool = {
       warnOnSchemaDrift(name, ActivityStreamsOutputSchema, result);
 
       return {
-        content: [
-          { type: "text" as const, text: formatActivityStreamsText(result) },
-        ],
+        content: [{ type: "text" as const, text }],
         structuredContent: result,
       };
     } catch (error) {

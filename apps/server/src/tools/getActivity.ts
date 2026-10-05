@@ -417,7 +417,10 @@ export function formatActivityDetailText(d: ActivityDetail): string {
     for (const [i, entry] of shown.entries())
       lines.push(formatIntervalLine(entry, i));
     const remaining = d.intervals.length - shown.length;
-    if (remaining > 0) lines.push(`(${remaining} more)`);
+    if (remaining > 0)
+      lines.push(
+        `(${remaining} more: get-activity-laps lists all ${d.intervals.length})`,
+      );
   }
 
   return lines.join("\n");

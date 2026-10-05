@@ -8,8 +8,9 @@
  * with explicit user approval (see docs/api-notes.md's "update-activity
  * live write check").
  *
- * Prints only a short summary per tool (ok/error plus a handful of numbers)
- * so this is safe to run and paste output from in a public repo. It never
+ * Prints only a short summary per tool (ok/error, a handful of numbers, and
+ * the response size against the budget) so this is safe to run and paste
+ * output from in a public repo. It never
  * prints the API key, and never prints a raw tool payload (names,
  * descriptions, comments, coordinates, or any id other than the activity id
  * argument) since those are the athlete's data, not ours to publish. A
@@ -83,7 +84,65 @@ const { getRunningDynamicsTool } = await import(
   "../apps/server/src/tools/getRunningDynamics"
 );
 const { NO_PROGRESS } = await import("../apps/server/src/progress");
-const { dispatchToolCall } = await import("../apps/server/src/server");
+const { dispatchToolCall: dispatchUnmeasured } = await import(
+  "../apps/server/src/server"
+);
+const { RESPONSE_BUDGET_CHARS, responseSize } = await import(
+  "../apps/server/src/tools/_responseBudget"
+);
+
+/**
+ * Size of the most recent tool response, printed on the next ok line so the
+ * next outlier shows up in a live run (#40). Model-visible tools are held to
+ * RESPONSE_BUDGET_CHARS and flagged over it; app data feeds (called through
+ * dispatch) never reach the model, so their size is informational.
+ */
+let lastSize: { chars: number; budgeted: boolean } | null = null;
+
+function measure(
+  result: { content?: Array<{ text?: unknown }>; structuredContent?: unknown },
+  budgeted: boolean,
+): void {
+  const text = (result.content ?? [])
+    .map((part) => (typeof part.text === "string" ? part.text : ""))
+    .join("");
+  lastSize = { chars: responseSize(text, result.structuredContent), budgeted };
+}
+
+for (const tool of [
+  getActivityTool,
+  getActivityStreamsTool,
+  getWellnessTool,
+  listActivitiesTool,
+  listGearTool,
+  getActivityLapsTool,
+  getRunningSummaryTool,
+  getActivityZonesTool,
+  compareActivitiesTool,
+  getHillAnalysisTool,
+  getSplitAnalysisTool,
+  getAerobicAnalysisTool,
+  getIntervalAnalysisTool,
+  getBestEffortsTool,
+  getRacePredictionTool,
+  getAthleteStatsTool,
+  getFitnessTrendTool,
+  getTrainingLoadTool,
+  getRunningDynamicsTool,
+] as Array<{ execute: (...args: never[]) => Promise<unknown> }>) {
+  const execute = tool.execute;
+  tool.execute = async (...args) => {
+    const result = await execute(...args);
+    measure(result as Parameters<typeof measure>[0], true);
+    return result;
+  };
+}
+
+const dispatchToolCall: typeof dispatchUnmeasured = async (...args) => {
+  const result = await dispatchUnmeasured(...args);
+  measure(result, false);
+  return result;
+};
 
 const activityId = process.argv[2] ?? "i189807578";
 const apiKey = getIntervalsApiKey();
@@ -91,7 +150,13 @@ const apiKey = getIntervalsApiKey();
 let failures = 0;
 
 function ok(name: string, detail: string): void {
-  console.log(`${name}: ok - ${detail}`);
+  let size = "";
+  if (lastSize) {
+    const over = lastSize.budgeted && lastSize.chars > RESPONSE_BUDGET_CHARS;
+    size = ` size_kb=${(lastSize.chars / 1000).toFixed(1)}${over ? " OVER BUDGET" : ""}`;
+    lastSize = null;
+  }
+  console.log(`${name}: ok - ${detail}${size}`);
 }
 
 function fail(name: string, detail: string): void {

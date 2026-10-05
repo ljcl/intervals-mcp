@@ -547,6 +547,45 @@ describe("get-fitness-trend execute (whole-body, default)", () => {
     expect(structured.warnings.join(" ")).toContain("training block");
   });
 
+  it("lists earlier days weekly in the text, so a text-only host sees the whole window", async () => {
+    mockedWellness.mockResolvedValueOnce(
+      wellnessWindow(TODAY, 90, (daysAgo) => ({
+        ctl: 100 - daysAgo / 2,
+        atl: 50,
+      })),
+    );
+    mockedListActivities.mockResolvedValueOnce([]);
+
+    const result = await getFitnessTrendTool.execute(DEFAULT_INPUT, "test-key");
+    const text = result.content[0]!.text;
+
+    expect(text).not.toContain("structured output");
+    expect(text).toContain("**Last 14 days**");
+    expect(text).toContain("**Earlier, weekly**");
+    // 76 earlier days, every 7th counting back from the day before the last
+    // 14: 11 rows, oldest first, ending 15 days ago.
+    const earlier = text
+      .split("**Earlier, weekly**")[1]!
+      .split("**Last 14 days**")[0]!;
+    const rows = earlier.split("\n").filter((l) => l.startsWith("  20"));
+    expect(rows).toHaveLength(11);
+    expect(rows.at(-1)).toContain(inDays(-14));
+    expect(rows[0]).toContain(inDays(-84));
+  });
+
+  it("has no weekly block when the window is 14 days or shorter", async () => {
+    mockedWellness.mockResolvedValueOnce(
+      wellnessWindow(TODAY, 14, () => ({ ctl: 60, atl: 50 })),
+    );
+    mockedListActivities.mockResolvedValueOnce([]);
+
+    const result = await getFitnessTrendTool.execute(
+      { ...DEFAULT_INPUT, days: 14 },
+      "test-key",
+    );
+    expect(result.content[0]!.text).not.toContain("Earlier, weekly");
+  });
+
   it("surfaces API failures as tool errors", async () => {
     mockedWellness.mockRejectedValueOnce(new Error("intervals.icu blew up"));
 

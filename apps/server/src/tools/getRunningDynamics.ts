@@ -27,7 +27,9 @@ import { RunningDynamicsOutputSchema, warnOnSchemaDrift } from "./outputs";
 
 const name = "get-running-dynamics";
 
-const MAX_INTERVAL_LINES = 20;
+// No other tool returns per-interval dynamics, so the cap is generous rather
+// than a pointer elsewhere; it only bounds a pathological activity.
+const MAX_INTERVAL_LINES = 100;
 
 const description = `
 Returns one activity's running dynamics: ground contact time (GCT), vertical
@@ -47,7 +49,7 @@ Notes:
 - Accepts any activity type. A type without step cadence (not Run, TrailRun,
   VirtualRun, Walk or Hike), or a device that recorded no dynamics, returns
   has_dynamics: false with a message, not an error.
-- The text lists at most 20 intervals; structuredContent.intervals has all.
+- The text lists at most 100 intervals; structuredContent.intervals has all.
 `;
 
 const inputSchema = z.object({
@@ -346,7 +348,8 @@ export function formatRunningDynamicsText(d: RunningDynamicsResponse): string {
     const shown = d.intervals.slice(0, MAX_INTERVAL_LINES);
     for (const row of shown) lines.push(formatIntervalRow(row));
     const remaining = d.intervals.length - shown.length;
-    if (remaining > 0) lines.push(`(${remaining} more)`);
+    if (remaining > 0)
+      lines.push(`(${remaining} more WORK intervals not listed)`);
   }
 
   return lines.join("\n");
