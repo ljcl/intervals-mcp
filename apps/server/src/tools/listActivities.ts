@@ -19,7 +19,7 @@ import {
   paceFromDistanceTime,
 } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
-import { toolErrorText } from "./_errors";
+import { prefixedErrorText, toolErrorText } from "./_errors";
 import { RESPONSE_BUDGET_CHARS, responseSize } from "./_responseBudget";
 import { ActivityListOutputSchema, warnOnSchemaDrift } from "./outputs";
 
@@ -168,6 +168,8 @@ interface ListTextOptions {
   windowLabel?: string;
   /** The caller gave `oldest` with a search, so a paging hint keeps it. */
   keepOldest?: boolean;
+  /** The `type` filter in effect, repeated in the paging hint. */
+  typeFilter?: string;
   /** Extra lines after the activities, before the budget and paging lines. */
   notes?: string[];
 }
@@ -182,7 +184,7 @@ export function formatActivityListText(
     ? `showing ${count} of ${matched}, truncated`
     : `showing ${count} of ${matched}`;
   const scope = response.search
-    ? `Activities matching "${response.search}" (${options.windowLabel ?? "all history"})`
+    ? `Activities matching ${JSON.stringify(response.search)} (${options.windowLabel ?? "all history"})`
     : `Activities ${oldest} to ${newest}`;
   const lines = [`${scope}: ${summary}`];
 
@@ -198,9 +200,12 @@ export function formatActivityListText(
   // Newest first, so what was cut is older; name the call that fetches it.
   const oldestShown = response.activities.at(-1)?.date;
   if (truncated && oldestShown) {
+    const typePart = options.typeFilter
+      ? `type: ${JSON.stringify(options.typeFilter)}, `
+      : "";
     const call = response.search
-      ? `search: "${response.search}", ${options.keepOldest ? `oldest: ${oldest}, ` : ""}newest: ${oldestShown}`
-      : `oldest: ${oldest}, newest: ${oldestShown}`;
+      ? `search: ${JSON.stringify(response.search)}, ${typePart}${options.keepOldest ? `oldest: ${oldest}, ` : ""}newest: ${oldestShown}`
+      : `${typePart}oldest: ${oldest}, newest: ${oldestShown}`;
     lines.push(
       `For the ${matched - count} older matches, call again with ${call}.`,
     );
@@ -239,36 +244,31 @@ export const listActivitiesTool = {
     let newest: string;
     let windowLabel: string | undefined;
 
+    let rangeError: { message: string } | null;
     if (!search) {
       newest = rawNewest ?? today;
       oldest = rawOldest ?? addDays(newest, -27);
-
-      const rangeError = validateRange(oldest, newest, MAX_RANGE_DAYS);
-      if (rangeError) {
-        return {
-          content: [
-            { type: "text" as const, text: `❌ ${rangeError.message}` },
-          ],
-          isError: true,
-        };
-      }
+      rangeError = validateRange(oldest, newest, MAX_RANGE_DAYS);
     } else {
       // Provisional: a search sets the real span once the matches are known.
       oldest = rawOldest ?? today;
       newest = rawNewest ?? today;
       // No length cap, but a reversed window is still an error.
-      const rangeError =
+      rangeError =
         rawOldest && rawNewest
           ? validateRange(rawOldest, rawNewest, Number.POSITIVE_INFINITY)
           : null;
-      if (rangeError) {
-        return {
-          content: [
-            { type: "text" as const, text: `❌ ${rangeError.message}` },
-          ],
-          isError: true,
-        };
-      }
+    }
+    if (rangeError) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: prefixedErrorText(rangeError.message),
+          },
+        ],
+        isError: true,
+      };
     }
 
     try {
@@ -280,7 +280,7 @@ export const listActivitiesTool = {
           notes.push(
             "nameContains is ignored with search; put the text in search.",
           );
-        progress(`Searching activities for "${search}"`);
+        progress(`Searching activities for ${JSON.stringify(search)}`);
         const found = await searchActivitiesClient(
           apiKey,
           search,
@@ -288,7 +288,7 @@ export const listActivitiesTool = {
         );
         if (found.length >= SEARCH_RESULT_CAP)
           notes.push(
-            `search returns at most ${SEARCH_RESULT_CAP} matches; narrow the query or add oldest/newest to reach older ones.`,
+            `search returns at most ${SEARCH_RESULT_CAP} matches, the most recent first; narrow the query, or list a date window without search (oldest/newest, up to ${MAX_RANGE_DAYS} days) with nameContains to reach older ones.`,
           );
         activities = found.filter((a) => {
           const date = a.start_date_local.slice(0, 10);
@@ -352,6 +352,7 @@ export const listActivitiesTool = {
         windowLabel,
         notes,
         keepOldest: Boolean(rawOldest),
+        typeFilter: type,
       });
       for (let pass = 0; pass < 5; pass += 1) {
         const chars = responseSize(text, response);
@@ -369,6 +370,7 @@ export const listActivitiesTool = {
           windowLabel,
           notes,
           keepOldest: Boolean(rawOldest),
+          typeFilter: type,
         });
       }
 
@@ -385,7 +387,7 @@ export const listActivitiesTool = {
             type: "text" as const,
             text: toolErrorText(error, {
               context: search
-                ? `search activities for "${search}"`
+                ? `search activities for ${JSON.stringify(search)}`
                 : `list activities from ${oldest} to ${newest}`,
             }),
           },

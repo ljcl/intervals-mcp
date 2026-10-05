@@ -584,7 +584,7 @@ describe("listActivitiesTool.execute search", () => {
     );
 
     expect(result.content[0]!.text).toContain(
-      "search returns at most 200 matches; narrow the query or add oldest/newest to reach older ones.",
+      "search returns at most 200 matches, the most recent first; narrow the query, or list a date window without search (oldest/newest, up to 366 days) with nameContains to reach older ones.",
     );
   });
 
@@ -609,5 +609,74 @@ describe("listActivitiesTool.execute search", () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0]!.text.startsWith("❌")).toBe(true);
+  });
+
+  it("quotes a search query containing a double quote", async () => {
+    const many = Array.from({ length: 3 }, (_, n) => ({
+      ...twoYearsAgo,
+      id: `i70${n}`,
+      start_date_local: `2026-09-2${5 - n}T07:00:00`,
+    })) as IntervalsActivity[];
+    mockedSearch.mockResolvedValueOnce(many);
+
+    const result = await listActivitiesTool.execute(
+      { search: 'the "big" one', limit: 1 },
+      "key",
+    );
+
+    const text = result.content[0]!.text;
+    expect(text.split("\n")[0]).toBe(
+      'Activities matching "the \\"big\\" one" (all history): showing 1 of 3, truncated',
+    );
+    expect(text).toContain('search: "the \\"big\\" one", newest: 2026-09-25.');
+  });
+
+  it("carries the type filter into the paging hint on a search", async () => {
+    const many = Array.from({ length: 3 }, (_, n) => ({
+      ...twoYearsAgo,
+      id: `i71${n}`,
+      start_date_local: `2026-09-2${5 - n}T07:00:00`,
+    })) as IntervalsActivity[];
+    mockedSearch.mockResolvedValueOnce(many);
+
+    const result = await listActivitiesTool.execute(
+      { search: "club", type: "runs", limit: 1 },
+      "key",
+    );
+
+    expect(result.content[0]!.text).toContain(
+      'call again with search: "club", type: "runs", newest: 2026-09-25.',
+    );
+  });
+});
+
+describe("listActivitiesTool.execute paging hint with type", () => {
+  beforeEach(() => {
+    mockedListActivities.mockReset();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-24T12:00:00Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("carries the type filter into a list paging hint", async () => {
+    const runs = Array.from({ length: 3 }, (_, n) => ({
+      ...fixture[0]!,
+      id: `i72${n}`,
+      type: "Run",
+      start_date_local: `2026-09-2${4 - n}T07:00:00`,
+    })) as IntervalsActivity[];
+    mockedListActivities.mockResolvedValueOnce(runs);
+
+    const result = await listActivitiesTool.execute(
+      { type: "runs", limit: 1 },
+      "key",
+    );
+
+    expect(result.content[0]!.text).toContain(
+      'call again with type: "runs", oldest: 2026-08-28, newest: 2026-09-24.',
+    );
   });
 });

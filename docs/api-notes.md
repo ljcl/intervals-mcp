@@ -273,6 +273,7 @@ strongest feeling and 5 the weakest, as `update-activity`'s tool description say
 - `search-full` returns full Activity rows (185 keys) so the list mapper applies.
 - Name match is case-insensitive and not bounded by date ("RUN" matched 78 activities back to 2024-09-26).
 - Without `limit` it returns 30.
+- `search-full` returns the most recent matches first: a `limit=5` probe returned the 5 newest runs (2026-10-01 back to 2026-09-10), and `limit=200` returned all 78 newest first.
 - `/activities/search` returns light rows (`id,name,start_date_local,type,race,distance,moving_time,tags,description`).
 - `race` (boolean) and `tags` (null or string array) appear on both `search-full` rows and `GET /athlete/0/activities` rows.
-- `GET /athlete/0/activity-tags` returned `[]` and `q=#race` returned `[]` on an account with no tags, so tag search is verified against fixtures only.
+- `GET /athlete/0/activity-tags` returned `[]` and `q=#race` returned `[]` on an account with no tags, so tag search is unverified live (no tags on the probe account); the client test checks `#` is sent encoded.

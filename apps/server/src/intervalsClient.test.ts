@@ -181,6 +181,14 @@ describe("intervalsClient", () => {
     expect(found[1]?.tags).toBeNull();
   });
 
+  it("sends a # tag query percent-encoded in the raw URL", async () => {
+    const calls = mockJson([]);
+
+    await searchActivities("k", "#race", 200);
+
+    expect(calls[0]!.url).toContain("q=%23race");
+  });
+
   it("types the fields the read tools use from a detailed activity", async () => {
     mockJson(activity);
     const result = await getActivity("k", "i189807578");
