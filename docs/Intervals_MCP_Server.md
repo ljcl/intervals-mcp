@@ -89,6 +89,17 @@ same numbers as text use the matching read tool (e.g. `get-fitness-trend`,
 | `view-activity-zones` | `get-activity-zones-data` | Time-in-zone bar chart for HR |
 | `view-fitness-trend` | `get-fitness-trend-data` | CTL/ATL/TSB over time with fatigue/freshness bands and a taper plan; toggles whole-body vs runs-only |
 
+Once a chart is open, the model can adjust it with that chart's own tool:
+`set-brush-window` (activity chart: zoom to a stretch), `set-viewport` (route
+map: frame a stretch by km), `set-view` (cadence trends: view, runs to
+overlay by `list-activities` id, axis), `set-metric` (compare activities:
+metric and axis) and `set-scope` (fitness trend: whole body or runs only, and
+which series show). Each reply says what the card now draws.
+
+A host that does not render MCP Apps shows no chart. The view tool's text then
+says the client cannot display it and names the text tool to call instead
+(for example `get-fitness-trend` for `view-fitness-trend`).
+
 ## Typical workflows
 
 **Weekly review.** `get-training-load` for volume/trend/warnings, then

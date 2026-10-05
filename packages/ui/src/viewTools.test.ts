@@ -101,7 +101,11 @@ describe("ViewToolRegistry", () => {
     // Not an SDK throw: "not ready yet" is recoverable and the model should
     // be told to retry, not handed a stack trace.
     expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toMatch(/still loading/i);
+    // A card whose data failed shows its ErrorState and never installs a
+    // handler either, so the text must be true for that card too.
+    expect(result.content[0]?.text).toBe(
+      "The view is still loading, or it failed to load, so it cannot be adjusted yet.",
+    );
   });
 
   it("routes a call to the handler the view installed", async () => {

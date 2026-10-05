@@ -413,13 +413,14 @@ export function RouteMap({
 
   // Arrow keys pan (only meaningful when zoomed), +/- zoom about the centre,
   // 0 resets — reusing the same clamping/counter-scaling as the pointer paths.
+  // Every key move goes through `applyView`, so a pan is announced as a zoom is.
   const handleMapKeyDown = (e: KeyboardEvent<SVGSVGElement>) => {
     if (!canZoom) return;
     const panIfZoomed = (fx: number, fy: number) => {
       // At base zoom there is nothing to pan; let the arrow scroll the page.
       if (!isZoomed(viewRef.current, base)) return;
       e.preventDefault();
-      setView((v) => panByFraction(v, base, fx, fy));
+      applyView(panByFraction(viewRef.current, base, fx, fy));
     };
     switch (e.key) {
       case "ArrowUp":

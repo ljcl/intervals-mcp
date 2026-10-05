@@ -25,7 +25,8 @@ import { useEffect, useRef } from "react";
  * So the declaration (name, description, schema) is registered up front against
  * a stable shim, and the component installs the live implementation when it
  * mounts. A call that lands before an implementation is installed reports that
- * the view is still loading rather than throwing an opaque SDK error.
+ * the view is still loading (or failed to load) rather than throwing an opaque
+ * SDK error.
  *
  * ## Why there is no host-capability gate
  *
@@ -83,9 +84,12 @@ export type ViewToolHandler = (
 /**
  * Shown when the host calls a tool before the view has mounted its handler.
  * Deliberately not an SDK error: "not ready yet" is a real, recoverable state
- * and the model should be told to retry, not handed a stack trace.
+ * and the model should be told to retry, not handed a stack trace. A card
+ * whose data failed to load shows its ErrorState and never mounts the handler
+ * either, so the text covers that too.
  */
-const NOT_READY = "The view is still loading and cannot be adjusted yet.";
+const NOT_READY =
+  "The view is still loading, or it failed to load, so it cannot be adjusted yet.";
 
 /** A view tool is a nudge: null from a model means "not given" (#68). */
 function withoutNulls(args: Record<string, unknown>): Record<string, unknown> {

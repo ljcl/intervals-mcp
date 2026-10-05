@@ -180,7 +180,8 @@ while the state a tool acts on (map viewBox, brush window) only exists after.
 So the declaration registers up front against a stable shim in `onAppCreated` —
 the one pre-connect seam `useApp` offers — and the component installs the live
 implementation with `useViewTool`. A call landing before the view mounts
-answers "still loading", not an SDK throw.
+answers "still loading, or it failed to load" (a card showing its ErrorState
+never mounts the handler either), not an SDK throw.
 
 **There is deliberately no host-capability gate**: `McpUiHostCapabilities` has
 no key meaning "the host calls tools the *app* exposes", a gate could not work
@@ -359,9 +360,9 @@ grid fallback (no Recharts). Calls `get-route-map-data` (app-only) with
   kilometres). A point is in view inside the grid's viewBox, or inside the
   basemap bounds MapLibre reports on every `moveend` (the model's frame, the
   user's own pan, zoom or resize). With no distance stream the wording falls
-  back to the zoom factor. The grid announces only button, keyboard and
-  model moves; wheel, pinch and drag reach the model context without an
-  announcement.
+  back to the zoom factor. The grid announces only button, keyboard (zoom
+  and arrow-key pan, all through `applyView`) and model moves; wheel, pinch
+  and drag reach the model context without an announcement.
 
 **Basemap tile source and CSP.** The route-map resource declares
 `_meta.ui.csp` on **both** descriptor and content response:
