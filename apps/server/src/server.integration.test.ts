@@ -15,12 +15,12 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getTimeZone } from "./config";
-import { getActivity } from "./intervalsClient";
+import { getActivity, getAthletePaceCurves } from "./intervalsClient";
 import { INTERVALS_ID_HINT } from "./tools/_ids";
 
 vi.mock("./intervalsClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./intervalsClient")>();
-  return { ...actual, getActivity: vi.fn() };
+  return { ...actual, getActivity: vi.fn(), getAthletePaceCurves: vi.fn() };
 });
 
 // Dispatch resolves the key before any handler runs (ljcl/strava-mcp#240), so without this
@@ -34,6 +34,7 @@ const { connectTestClient } = await import("./mcpTestClient");
 const { TOOL_DEFS } = await import("./server");
 
 const mockedIntervalsActivity = vi.mocked(getActivity);
+const mockedAthleteCurves = vi.mocked(getAthletePaceCurves);
 
 /**
  * Claude Code cuts a tool description at 2,048 characters, so the end of a
@@ -407,6 +408,61 @@ describe("tools/call", () => {
     // ...992 with the true digits unrecoverable.
     const [, id] = mockedIntervalsActivity.mock.calls[0]!;
     expect(String(id)).toBe("9007199254740993");
+  });
+});
+
+describe("tools/call forgiving arguments (#78)", () => {
+  const callText = (result: Record<string, unknown> | undefined) =>
+    (result?.content as Array<{ text: string }> | undefined)?.[0]?.text ?? "";
+
+  it("accepts id where an app tool takes activity_id", async () => {
+    mockedIntervalsActivity.mockResolvedValueOnce({
+      id: "229781",
+      name: "Hawk Hill",
+      type: "Run",
+    } as never);
+
+    const client = await connectTestClient();
+    const { result } = await client.send("tools/call", {
+      name: "view-route-map",
+      arguments: { id: "229781" },
+    });
+
+    expect(callText(result)).not.toContain("Invalid arguments");
+    expect(mockedIntervalsActivity.mock.calls[0]?.[1]).toBe("229781");
+  });
+
+  it('accepts "Half Marathon" where get-best-efforts spells it "half marathon"', async () => {
+    mockedAthleteCurves.mockResolvedValue({
+      list: [],
+      activities: {},
+    } as never);
+
+    const client = await connectTestClient();
+    const { result } = await client.send("tools/call", {
+      name: "get-best-efforts",
+      arguments: { distances: ["Half Marathon", "5K"] },
+    });
+
+    expect(callText(result)).not.toContain("Invalid arguments");
+    expect(mockedAthleteCurves).toHaveBeenCalled();
+  });
+
+  it("names the unknown key and the expected ones when a call still fails", async () => {
+    const client = await connectTestClient();
+    const { result, error } = await client.send("tools/call", {
+      name: "get-activity",
+      arguments: { activity: "229781" },
+    });
+
+    expect(error).toBeUndefined();
+    expect(result?.isError).toBe(true);
+    const text = callText(result);
+    expect(text).toMatch(/^❌ Invalid arguments for get-activity: /);
+    expect(text).toContain(
+      'Unknown argument "activity" (this tool takes: id, includeIntervals).',
+    );
+    expect(mockedIntervalsActivity).not.toHaveBeenCalled();
   });
 });
 

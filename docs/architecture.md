@@ -489,6 +489,37 @@ over 25,000 tokens: a 61 KB `get-activity-streams` payload and a 150 KB
 
 ## Input validation
 
+**Another tool's spelling of a shared input is accepted, never advertised.**
+`dispatchToolCall` runs `normalizeArgs` (`argAliases.ts`) before `safeParse`,
+driven by each tool's advertised JSON schema rather than a per-tool table
+(#78). It renames an activity-id spelling (`id`, `activity_id`, `activityId`;
+`activityId1`, `activity_id_1`, `id1` and the same for 2) to the one the tool
+takes, and a camelCase/snake_case variant (`max_points`) to the tool's key,
+only when the tool's own key is absent. It matches an enum value ignoring
+case, spaces, hyphens and underscores, with a trailing "k" read as "km"
+("Half Marathon", "5K"), only when exactly one option matches. The
+advertised schemas and `tool-surface.lock.json` do not change. A call that
+still fails validation gets `unknownArgsText` appended, naming each key the
+tool does not take and the keys it does; a call that passes still drops
+unknown keys silently.
+
+**Naming scheme for the next deliberate lock break.** Today's spellings are
+historical; the alias layer covers them until a release that changes
+`tool-surface.lock.json` anyway, which then applies this scheme so athletes
+re-approve once:
+
+- Inputs are camelCase. A single activity id is `id`; a pair is
+  `activityId1`/`activityId2`. The break renames the app tools'
+  `activity_id`, `activity_id_1`/`activity_id_2` and the
+  `annotate-last-run` prompt argument.
+- Outputs (`structuredContent`) stay snake_case.
+- Distance labels are one set across tools, lowercase with explicit units:
+  `400m`, `1km`, `5km`, `10km`, `15km`, `10 mile`, `half marathon`,
+  `marathon`, `50km`. `get-race-prediction`'s "5K"/"Half Marathon" style
+  moves to it.
+- Windows: `oldest`/`newest` for an explicit range, `days` for a look-back.
+  `view-cadence-trends`' `weeks` becomes `days`.
+
 **`update-activity` validates against fresh reads, not cached ones.** Its
 input schema (`superRefine`, `tools/updateActivity.ts`) rejects a `name`
 that is empty or whitespace-only, and rejects `descriptionMode` without
