@@ -143,6 +143,7 @@ const IntervalsActivitySchema = z
     icu_zone_times: z.array(IntervalsZoneTimeSchema).nullable().optional(),
     pace_zones: z.array(z.number()).nullable().optional(),
     race: z.boolean().nullable().optional(),
+    tags: z.array(z.string()).nullable().optional(),
     sub_type: z.string().nullable().optional(),
     icu_lap_count: z.number().nullable().optional(),
     /** True when the device's laps were edited/merged in the intervals.icu UI
@@ -575,6 +576,39 @@ export async function listActivities(
       : a.start_date_local > b.start_date_local
         ? -1
         : 0,
+  );
+}
+
+/**
+ * Searches every activity in the athlete's history by name, or by exact tag
+ * when `query` starts with `#`, via `GET /athlete/{id}/activities/search-full`
+ * (full Activity rows, case-insensitive name match, not bounded by date;
+ * verified 2026-10-05, docs/api-notes.md). Sorted newest first.
+ */
+export async function searchActivities(
+  apiKey: string,
+  query: string,
+  limit: number,
+): Promise<IntervalsActivity[]> {
+  requireApiKey(apiKey);
+  const context = `searchActivities for "${query}"`;
+  let data: unknown;
+  try {
+    const response = await intervalsApi.get<unknown>(
+      athletePath("/activities/search-full"),
+      { headers: authHeaders(apiKey), params: { q: query, limit } },
+    );
+    data = response.data;
+  } catch (error) {
+    handleApiError(error, context);
+  }
+  return parseOrThrow(IntervalsActivitiesResponseSchema, data, context).sort(
+    (a, b) =>
+      a.start_date_local < b.start_date_local
+        ? 1
+        : a.start_date_local > b.start_date_local
+          ? -1
+          : 0,
   );
 }
 

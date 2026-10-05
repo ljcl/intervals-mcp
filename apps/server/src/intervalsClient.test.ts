@@ -27,6 +27,7 @@ import {
   listActivities,
   listGear,
   resolveNumericAthleteId,
+  searchActivities,
   updateActivity,
 } from "./intervalsClient";
 
@@ -152,6 +153,32 @@ describe("intervalsClient", () => {
     expect(
       (await getActivityStreams("k", activityHilly.id, ["time"])).length,
     ).toBe(streamsHilly.length);
+  });
+
+  it("searches all history through search-full, newest first, with tags", async () => {
+    const older = {
+      ...activities[0],
+      id: "i1",
+      start_date_local: "2024-09-26T07:00:00",
+      tags: null,
+    };
+    const newer = {
+      ...activities[0],
+      id: "i2",
+      start_date_local: "2026-09-26T07:00:00",
+      tags: ["race", "club"],
+    };
+    const calls = mockJson([older, newer]);
+
+    const found = await searchActivities("k", "club 10k", 200);
+
+    const url = new URL(calls[0]!.url);
+    expect(url.pathname).toBe("/api/v1/athlete/0/activities/search-full");
+    expect(url.searchParams.get("q")).toBe("club 10k");
+    expect(url.searchParams.get("limit")).toBe("200");
+    expect(found.map((a) => a.id)).toEqual(["i2", "i1"]);
+    expect(found[0]?.tags).toEqual(["race", "club"]);
+    expect(found[1]?.tags).toBeNull();
   });
 
   it("types the fields the read tools use from a detailed activity", async () => {

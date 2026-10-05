@@ -1301,6 +1301,7 @@ describe("intervalsCacheTtl", () => {
     ["/athlete/0/gear", 600_000],
     ["/athlete/0/sport-settings/Run", 3_600_000],
     ["/athlete/0/activities", 60_000],
+    ["/athlete/0/activities/search-full", 60_000],
     ["/athlete/0/wellness", 300_000],
     ["/athlete/0/wellness/2026-09-24", 300_000],
     ["/athlete/0/wellness.json", 300_000],

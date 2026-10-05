@@ -266,3 +266,13 @@ was restored to its original value afterward. Also confirmed: setting `descripti
 `feel` was not exercised by this write check. Its scale was verified separately (2026-09-26):
 setting Feel to "Strong" in the intervals.icu web UI reads back as `feel: 1`, so 1 is the
 strongest feeling and 5 the weakest, as `update-activity`'s tool description says.
+
+## Activity search probe (2026-10-05, live read-only)
+
+- Athlete id `0` works on `GET /athlete/0/activities/search-full?q=&limit=` and `/activities/search`.
+- `search-full` returns full Activity rows (185 keys) so the list mapper applies.
+- Name match is case-insensitive and not bounded by date ("RUN" matched 78 activities back to 2024-09-26).
+- Without `limit` it returns 30.
+- `/activities/search` returns light rows (`id,name,start_date_local,type,race,distance,moving_time,tags,description`).
+- `race` (boolean) and `tags` (null or string array) appear on both `search-full` rows and `GET /athlete/0/activities` rows.
+- `GET /athlete/0/activity-tags` returned `[]` and `q=#race` returned `[]` on an account with no tags, so tag search is verified against fixtures only.
