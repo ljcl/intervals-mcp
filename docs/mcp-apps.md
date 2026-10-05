@@ -196,6 +196,17 @@ view tool is a nudge. View tools carry `readOnlyHint: true` **with
 `destructiveHint: false` stated explicitly**. Each tool echoes its effect back
 through the existing `useModelContextSync` summary.
 
+An app declares its tools in `src/viewToolDeclarations.ts` (exporting
+`VIEW_TOOLS`; `main.tsx` renders on import, so a test cannot reach a
+declaration there). Its `viewToolDeclarations.test.ts` calls
+`expectViewToolContract(VIEW_TOOLS)` from `@intervals-mcp/ui/testing`, which
+drives the declarations through a real `App` the way a host does: strict object
+with nothing required, read-only annotations, every field accepts `null`, an
+unknown key is rejected. The same test pins the tool's field names, bounds and
+prose with `advertisedViewTools` and `viewToolFields`. A field missing
+`.nullish()` or an object missing `.strict()` otherwise fails only when a host
+calls the tool.
+
 ---
 
 ## Per-app notes

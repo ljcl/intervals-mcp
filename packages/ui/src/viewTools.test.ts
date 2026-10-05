@@ -11,7 +11,10 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { type ViewToolDefinition, ViewToolRegistry } from "./viewTools";
 
-/** The shape every view tool declares: strict, every field nullish. */
+/**
+ * The shape every view tool declares: strict, every field nullish. The shipped
+ * declarations are held to that by `expectViewToolContract` (see testing.ts).
+ */
 const SCHEMA = z
   .object({
     fromKm: z.number().min(0).nullish().describe("Start, km."),
@@ -24,9 +27,6 @@ const DEFINITION: ViewToolDefinition = {
   description: "Frame a stretch of the course.",
   inputSchema: SCHEMA,
 };
-
-/** What `registerTool` does with the schema it is handed. */
-const standard = (schema: unknown) => (schema as typeof SCHEMA)["~standard"];
 
 /** An App stand-in capturing what registerTool was handed. */
 function fakeApp() {
@@ -143,53 +143,6 @@ describe("ViewToolRegistry", () => {
       isError: true,
       content: [{ text: "This route has no recorded distances." }],
     });
-  });
-
-  it("hands the host a strict JSON Schema built from the zod schema", () => {
-    const { app, registered } = fakeApp();
-    new ViewToolRegistry().register(app, [DEFINITION]);
-
-    // Without `jsonSchema` the SDK throws rather than falling back; zod 4
-    // supplies it, so this is the document the host actually receives.
-    const json = standard(registered[0]?.config.inputSchema).jsonSchema.input({
-      target: "draft-2020-12",
-    }) as {
-      type: string;
-      additionalProperties: boolean;
-      required?: string[];
-      properties: Record<string, Record<string, unknown>>;
-    };
-
-    expect(json).toMatchObject({ type: "object", additionalProperties: false });
-    // Nothing required: a view tool is a nudge, not a form.
-    expect(json.required).toBeUndefined();
-    expect(Object.keys(json.properties)).toEqual(["fromKm", "reset"]);
-    expect(json.properties.fromKm).toMatchObject({
-      description: "Start, km.",
-      anyOf: [{ type: "number", minimum: 0 }, { type: "null" }],
-    });
-    expect(json.properties.reset).toMatchObject({
-      description: "Show the whole route.",
-    });
-  });
-
-  it("rejects an unknown argument rather than ignoring it", async () => {
-    // Silently dropping it would make a model's mistake look like success.
-    const result = await standard(SCHEMA).validate({ toKm: 5 });
-
-    expect(result).toMatchObject({
-      issues: [{ code: "unrecognized_keys", keys: ["toKm"] }],
-    });
-  });
-
-  it("accepts a null field and still enforces a minimum", async () => {
-    expect(
-      await standard(SCHEMA).validate({ fromKm: null, reset: null }),
-    ).toEqual({ value: { fromKm: null, reset: null } });
-    expect(await standard(SCHEMA).validate({})).toEqual({ value: {} });
-
-    const tooSmall = await standard(SCHEMA).validate({ fromKm: -4 });
-    expect(tooSmall).toMatchObject({ issues: [{ path: ["fromKm"] }] });
   });
 
   it("hands a handler null-valued arguments as absent", async () => {
