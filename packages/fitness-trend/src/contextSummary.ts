@@ -1,4 +1,5 @@
-import { isPlanned, isPositiveToday, planDays, signedTsb } from "./normalize";
+import { formatSignedTsb } from "@intervals-mcp/data";
+import { isPlanned, isPositiveToday, planDays } from "./normalize";
 import { type FitnessTrendData } from "./types";
 
 /**
@@ -13,7 +14,7 @@ export function buildFitnessTrendContextSummary(
 
   const parts = [
     `Fitness trend, last ${data.days} day${data.days === 1 ? "" : "s"}.`,
-    `On ${current.date}: fitness (CTL) ${current.ctl}, fatigue (ATL) ${current.atl}, form (TSB) ${signedTsb(current.tsb)}.`,
+    `On ${current.date}: fitness (CTL) ${current.ctl}, fatigue (ATL) ${current.atl}, form (TSB) ${formatSignedTsb(current.tsb)}.`,
   ];
 
   const plan = planDays(data);
@@ -21,7 +22,7 @@ export function buildFitnessTrendContextSummary(
   if (data.taper && landing) {
     const taper = data.taper;
     parts.push(
-      `Taper plan of ${taper.weeks.length} week${taper.weeks.length === 1 ? "" : "s"} to ${taper.targetDate}, targeting form ${signedTsb(taper.targetTsb)} and landing on ${signedTsb(taper.achievedTsb)}.`,
+      `Taper plan of ${taper.weeks.length} week${taper.weeks.length === 1 ? "" : "s"} to ${taper.targetDate}, targeting form ${formatSignedTsb(taper.targetTsb)} and landing on ${formatSignedTsb(taper.achievedTsb)}.`,
     );
     if (!taper.feasible && taper.note) parts.push(taper.note);
   } else if (landing && !isPlanned(data)) {
@@ -30,7 +31,7 @@ export function buildFitnessTrendContextSummary(
         ? `Rest projection to ${landing.date}; form is already positive today (${data.tsbPositiveDate}).`
         : data.tsbPositiveDate
           ? `Rest projection to ${landing.date}; form turns positive on ${data.tsbPositiveDate}.`
-          : `Rest projection to ${landing.date}, reaching form ${signedTsb(landing.tsb)}.`,
+          : `Rest projection to ${landing.date}, reaching form ${formatSignedTsb(landing.tsb)}.`,
     );
   }
 

@@ -1,4 +1,4 @@
-import { formatShortDate } from "@intervals-mcp/data";
+import { formatShortDate, formatSignedTsb } from "@intervals-mcp/data";
 import { describe, expect, it } from "vitest";
 import {
   mockFitnessTrendData,
@@ -17,23 +17,7 @@ import {
   hasRecordedLoad,
   isPlanned,
   planDays,
-  signedTsb,
 } from "./normalize";
-
-describe("signedTsb", () => {
-  it("signs a positive value and leaves a negative one alone", () => {
-    expect(signedTsb(12)).toBe("+12");
-    expect(signedTsb(-8.4)).toBe("-8.4");
-  });
-
-  it("prints zero without a sign", () => {
-    expect(signedTsb(0)).toBe("0");
-  });
-
-  it("rounds to one decimal", () => {
-    expect(signedTsb(4.06)).toBe("+4.1");
-  });
-});
 
 describe("planDays / isPlanned", () => {
   it("prefers the taper over the rest projection", () => {
@@ -150,7 +134,7 @@ describe("buildSummaryStats", () => {
     ]);
     const current = mockFitnessTrendData.current!;
     expect(stats[0]!.value).toBe(`${current.ctl}`);
-    expect(stats[2]!.value).toBe(signedTsb(current.tsb));
+    expect(stats[2]!.value).toBe(formatSignedTsb(current.tsb));
   });
 
   it("closes with the taper's landing form when one was solved", () => {
@@ -159,7 +143,7 @@ describe("buildSummaryStats", () => {
     expect(stats[3]!.label).toBe(
       `Form on ${formatShortDate(taper.targetDate)}`,
     );
-    expect(stats[3]!.value).toBe(signedTsb(taper.achievedTsb));
+    expect(stats[3]!.value).toBe(formatSignedTsb(taper.achievedTsb));
   });
 
   it("closes with the fresh date when only resting", () => {

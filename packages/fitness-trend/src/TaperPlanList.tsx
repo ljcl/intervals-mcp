@@ -1,5 +1,4 @@
-import { formatShortDate } from "@intervals-mcp/data";
-import { signedTsb } from "./normalize";
+import { formatShortDate, formatSignedTsb } from "@intervals-mcp/data";
 import styles from "./TaperPlanList.module.css";
 import { type TaperPlan } from "./types";
 
@@ -21,9 +20,9 @@ export function TaperPlanList({ plan, compact }: TaperPlanListProps) {
           Plan to {formatShortDate(plan.targetDate)}
         </span>
         <span className={styles.target}>
-          target form {signedTsb(plan.targetTsb)}
+          target form {formatSignedTsb(plan.targetTsb)}
           {Math.abs(plan.achievedTsb - plan.targetTsb) >= 0.1 &&
-            ` · lands ${signedTsb(plan.achievedTsb)}`}
+            ` · lands ${formatSignedTsb(plan.achievedTsb)}`}
         </span>
       </div>
       <ol className={styles.weeks}>

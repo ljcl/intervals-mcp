@@ -1,4 +1,5 @@
 export { isRunning, isSwimming } from "./activity-types";
+export { fitnessSourceLabel, formatSignedTsb } from "./fitness";
 export {
   formatClock,
   formatDistance,

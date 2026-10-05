@@ -1,5 +1,6 @@
+import { formatSignedTsb } from "@intervals-mcp/data";
 import { Tooltip, TooltipEntry } from "@intervals-mcp/ui";
-import { type ChartRow, signedTsb } from "./normalize";
+import { type ChartRow } from "./normalize";
 import styles from "./TrendTooltip.module.css";
 
 interface TrendTooltipPayloadItem {
@@ -56,7 +57,7 @@ export function TrendTooltip({ active, payload, planned }: TrendTooltipProps) {
         <TooltipEntry
           color="var(--chart-power)"
           label="Form"
-          value={signedTsb(tsb)}
+          value={formatSignedTsb(tsb)}
           unit=""
         />
       )}

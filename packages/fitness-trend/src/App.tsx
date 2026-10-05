@@ -1,3 +1,4 @@
+import { fitnessSourceLabel } from "@intervals-mcp/data";
 import { getChartTokens } from "@intervals-mcp/design-system";
 import {
   CardHeader,
@@ -24,7 +25,6 @@ import {
   countBandKinds,
   isPlanned,
   planDays,
-  sourceLabel,
 } from "./normalize";
 import { TaperPlanList } from "./TaperPlanList";
 import { TrendChart } from "./TrendChart";
@@ -146,7 +146,7 @@ export function App({
         </PillGroup>
         {data && (
           <span className={styles.sourceNote}>
-            {sourceLabel(data)}
+            {fitnessSourceLabel(data.source)}
             {data.current ? ` · as of ${data.current.date}` : ""}
           </span>
         )}
