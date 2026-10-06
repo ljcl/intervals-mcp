@@ -1135,7 +1135,7 @@ async function handleViewFitnessTrend(
 
   if (current) {
     lines.push(
-      `Fitness (CTL) ${current.ctl}, fatigue (ATL) ${current.atl}, form (TSB) ${current.tsb >= 0 ? "+" : ""}${current.tsb}`,
+      `Fitness (CTL) ${current.ctl}, fatigue (ATL) ${current.atl}, form (TSB) ${formatSigned(current.tsb)}`,
     );
   }
   if (data.taper) {
@@ -1143,9 +1143,7 @@ async function handleViewFitnessTrend(
     lines.push(
       `Taper to ${taper.targetDate}: ${taper.weeks
         .map((week) => `week ${week.week} ${week.dailyLoad}/day`)
-        .join(
-          ", ",
-        )}; lands TSB ${taper.achievedTsb >= 0 ? "+" : ""}${taper.achievedTsb}`,
+        .join(", ")}; lands TSB ${formatSigned(taper.achievedTsb)}`,
     );
     if (!taper.feasible && taper.note) lines.push(`Warning: ${taper.note}`);
   } else if (data.tsbPositiveDate && data.tsbPositiveDate === data.endDate) {
@@ -1369,9 +1367,7 @@ async function handleViewCompareActivities(
     );
   }
   if (data.differences.avg_hr != null) {
-    lines.push(
-      `Avg HR delta: ${data.differences.avg_hr > 0 ? "+" : ""}${data.differences.avg_hr} bpm`,
-    );
+    lines.push(`Avg HR delta: ${formatSigned(data.differences.avg_hr)} bpm`);
   }
   for (const warning of data.warnings ?? []) {
     lines.push(`Warning: ${warning}`);

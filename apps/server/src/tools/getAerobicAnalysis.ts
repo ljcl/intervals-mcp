@@ -6,6 +6,7 @@ import {
   computeAerobicAnalysis,
   interpretDecoupling,
 } from "../aerobicAnalysis";
+import { formatSigned } from "../formatters";
 import { gradeAdjustedSpeeds } from "../hillAnalysis";
 import { getActivity, getSportSettings } from "../intervalsClient";
 import {
@@ -114,8 +115,6 @@ const EF_UNITS: Record<Basis, string> = {
 const round = (value: number, dp = 2) =>
   Math.round(value * 10 ** dp) / 10 ** dp;
 const toMinutes = (seconds: number) => Math.round(seconds / 60);
-const signed = (value: number) =>
-  `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`;
 /** Bare `m:ss`, no unit suffix; the structured field name (`*_min_per_km`)
  * carries the unit, `formatPaceSeconds` is the one home for the rendering. */
 const paceMinPerKm = (metersPerSecond: number) =>
@@ -325,7 +324,7 @@ export const getAerobicAnalysisTool = {
           ? `Basis: ${BASIS_LABELS[basis]}`
           : "Basis: not reported (intervals.icu's own values)",
         "",
-        `Decoupling: ${signed(structured.decoupling_pct)}: ${interpretation} [${source}]`,
+        `Decoupling: ${formatSigned(structured.decoupling_pct, 1)}%: ${interpretation} [${source}]`,
       ];
       if (structured.breakdown) {
         const b = structured.breakdown;
@@ -371,7 +370,7 @@ export const getAerobicAnalysisTool = {
         if (icu) {
           const parts = [
             icu.decoupling_pct != null
-              ? `decoupling ${signed(icu.decoupling_pct)}`
+              ? `decoupling ${formatSigned(icu.decoupling_pct, 1)}%`
               : null,
             icu.efficiency_factor != null
               ? `efficiency factor ${icu.efficiency_factor}`

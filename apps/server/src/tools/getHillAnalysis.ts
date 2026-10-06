@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { formatSigned } from "../formatters";
 import {
   computeHillAnalysis,
   HillAnalysisError,
@@ -90,7 +91,7 @@ function segmentLine(s: ReturnType<typeof segmentOut>): string {
   const parts = [
     `km ${s.start_km}-${s.end_km}`,
     `${s.length_m} m @ ${s.avg_grade_pct}%`,
-    `${s.elevation_change_m >= 0 ? "+" : ""}${s.elevation_change_m} m`,
+    `${formatSigned(s.elevation_change_m)} m`,
     s.pace_min_per_km ? `pace ${s.pace_min_per_km} /km` : null,
     s.gap_pace_min_per_km ? `GAP ${s.gap_pace_min_per_km} /km` : null,
     s.avg_hr != null ? `${s.avg_hr} bpm` : null,
@@ -209,9 +210,8 @@ export const getHillAnalysisTool = {
           d.basis === "hr_per_gap"
             ? "HR per grade-adjusted speed"
             : "grade-adjusted pace (no HR)";
-        const sign = d.drift_pct >= 0 ? "+" : "";
         lines.push(
-          `Late-vs-early climb drift: ${sign}${d.drift_pct}% (${basisLabel})`,
+          `Late-vs-early climb drift: ${formatSigned(d.drift_pct)}% (${basisLabel})`,
           `  Early climbs (${d.early_climbs}): ${d.early_value}, late climbs (${d.late_climbs}): ${d.late_value}`,
           d.drift_pct > 5
             ? `  Climbing cost noticeably more late in the run: late-race hill fatigue.`

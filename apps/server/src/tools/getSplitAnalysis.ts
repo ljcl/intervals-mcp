@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { formatSigned } from "../formatters";
 import { getActivity } from "../intervalsClient";
 import {
   IntervalsStreamsUnavailableError,
@@ -95,7 +96,7 @@ function splitLine(s: ReturnType<typeof splitOut>): string {
       ? `GAP ${s.gap_pace_min_per_km} /km`
       : null,
     s.elevation_change_m != null
-      ? `${s.elevation_change_m >= 0 ? "+" : ""}${s.elevation_change_m} m`
+      ? `${formatSigned(s.elevation_change_m)} m`
       : null,
     s.avg_hr != null ? `${s.avg_hr} bpm` : null,
     s.avg_watts != null ? `${s.avg_watts} W` : null,
@@ -240,16 +241,15 @@ export const getSplitAnalysisTool = {
 
       const verdict = structured.verdict;
       if (verdict) {
-        const sign = (value: number) => (value >= 0 ? "+" : "");
         lines.push(
           verdict.gap_shape
             ? `Verdict: ${verdict.shape} split on the clock, ${verdict.gap_shape} grade-adjusted`
             : `Verdict: ${verdict.shape} split on the clock (no elevation data, so no grade-adjusted verdict)`,
-          `  First half ${verdict.first_half_pace_min_per_km} min/km, second half ${verdict.second_half_pace_min_per_km} min/km (${sign(verdict.delta_pct)}${verdict.delta_pct}%)`,
+          `  First half ${verdict.first_half_pace_min_per_km} min/km, second half ${verdict.second_half_pace_min_per_km} min/km (${formatSigned(verdict.delta_pct)}%)`,
         );
         if (verdict.gap_delta_pct != null) {
           lines.push(
-            `  Grade-adjusted: ${sign(verdict.gap_delta_pct)}${verdict.gap_delta_pct}% (terrain accounts for ${sign(verdict.terrain_pct ?? 0)}${verdict.terrain_pct} points)`,
+            `  Grade-adjusted: ${formatSigned(verdict.gap_delta_pct)}% (terrain accounts for ${formatSigned(verdict.terrain_pct ?? 0)} points)`,
           );
         }
         lines.push(`  ${verdict.interpretation}`, "");

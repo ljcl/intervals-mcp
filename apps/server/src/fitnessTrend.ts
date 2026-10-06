@@ -12,6 +12,8 @@
  * exactly requires exactly this split. Callers own how load is measured
  * (relative effort, TRIMP, or anything else) and how it maps to each series.
  */
+
+import { formatSigned } from "./formatters";
 import { addDays, daysBetween, isValidCalendarDate } from "./utils/localDate";
 import { PACE_ACTIVITY_TYPES } from "./utils/running";
 
@@ -521,7 +523,7 @@ export function solveTaperPlan(
   if (scale <= 0) {
     scale = 0;
     feasible = false;
-    note = `Even complete rest only reaches TSB ${signedRound1(restTsb)} by ${targetDate}, short of the ${signedRound1(targetTsb)} target: the target date is too soon, or the target too high.`;
+    note = `Even complete rest only reaches TSB ${formatSigned(round1(restTsb))} by ${targetDate}, short of the ${formatSigned(round1(targetTsb))} target: the target date is too soon, or the target too high.`;
   }
 
   // A loop, not `Math.max(...shape)`: spreading a long array overflows the
@@ -532,7 +534,7 @@ export function solveTaperPlan(
   if (peakLoad > MAX_TAPER_DAILY_LOAD) {
     scale = MAX_TAPER_DAILY_LOAD / peakWeight;
     feasible = false;
-    note = `Reaching TSB ${signedRound1(targetTsb)} by ${targetDate} would take more than ${MAX_TAPER_DAILY_LOAD} training load a day; the plan is capped there.`;
+    note = `Reaching TSB ${formatSigned(round1(targetTsb))} by ${targetDate} would take more than ${MAX_TAPER_DAILY_LOAD} training load a day; the plan is capped there.`;
   }
 
   const loads = shape.map((weight) => weight * scale);
@@ -710,11 +712,6 @@ export function projectFromWellness(
   };
 }
 
-const signedRound1 = (value: number) => {
-  const rounded = round1(value);
-  return `${rounded >= 0 ? "+" : ""}${rounded}`;
-};
-
 /** A dated stretch of the series worth annotating on a chart. */
 export interface TrendBand {
   kind: "deep-fatigue" | "fresh" | "steep-ramp";
@@ -839,8 +836,8 @@ export function trendBands(series: FitnessTrendDay[]): TrendBand[] {
         start,
         end,
         end === lastIndex
-          ? `TSB at ${signedRound1(series[end]!.tsb)} (fresh since ${startDate}, peak ${signedRound1(peak)}): fresh and race-ready now, but fitness decays if this holds for long.`
-          : `Fresh from ${startDate} to ${series[end]!.date} (${days} days, TSB peak ${signedRound1(peak)}).`,
+          ? `TSB at ${formatSigned(round1(series[end]!.tsb))} (fresh since ${startDate}, peak ${formatSigned(round1(peak))}): fresh and race-ready now, but fitness decays if this holds for long.`
+          : `Fresh from ${startDate} to ${series[end]!.date} (${days} days, TSB peak ${formatSigned(round1(peak))}).`,
       ),
     );
   }

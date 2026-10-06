@@ -44,12 +44,22 @@ export function formatFeel(feel: number): string {
 }
 
 /**
- * `value` with an explicit "+" when it is zero or above: "+4.2", "+0", "-9".
- * Form (TSB) only reads correctly with its sign. The one home for the
- * signed TSB `get-training-load` and `view-training-load` print.
+ * `value` with an explicit "+" when it is above zero: "+4.2", "0", "-9".
+ * With `fractionDigits` it is fixed to that many decimals and the sign
+ * follows what is shown, so 0.04 prints "0.0", never "+0.0" or "-0.0".
+ * Zero has no sign, as in the apps' `formatSignedTsb`, so a text tool and
+ * its app agree. The one home for a signed number in the server's texts
+ * (#146); a delta, form (TSB) or drift only reads correctly with its sign.
  */
-export function formatSigned(value: number): string {
-  return `${value >= 0 ? "+" : ""}${value}`;
+export function formatSigned(value: number, fractionDigits?: number): string {
+  const text =
+    fractionDigits === undefined
+      ? String(value)
+      : value.toFixed(fractionDigits);
+  const shown = Number(text);
+  if (shown === 0)
+    return fractionDigits === undefined ? "0" : (0).toFixed(fractionDigits);
+  return shown > 0 ? `+${text}` : text;
 }
 
 /**

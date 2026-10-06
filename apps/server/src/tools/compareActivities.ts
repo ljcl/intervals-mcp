@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { speedEfficiencyFactor } from "../aerobicAnalysis";
-import { formatDuration, round } from "../formatters";
+import { formatDuration, formatSigned, round } from "../formatters";
 import { getActivity, type IntervalsActivity } from "../intervalsClient";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
 import {
@@ -331,30 +331,23 @@ export const compareActivitiesTool = {
       lines.push(`  Elevation: ${summary2.elevation_gain_m} m`);
 
       lines.push("Differences (Activity 2 vs Activity 1):");
-      lines.push(
-        `  Distance: ${distanceDiff > 0 ? "+" : ""}${distanceDiff} km`,
-      );
+      lines.push(`  Distance: ${formatSigned(distanceDiff)} km`);
       if (paceDeltaSecPerKm != null) {
         lines.push(
-          `  Pace: ${paceDeltaMinPerKm} /km (${paceDeltaSecPerKm > 0 ? "+" : ""}${paceDeltaSecPerKm} s/km, ${paceDeltaInterpretation})`,
+          `  Pace: ${paceDeltaMinPerKm} /km (${formatSigned(paceDeltaSecPerKm)} s/km, ${paceDeltaInterpretation})`,
         );
       }
-      if (hrDiff !== null)
-        lines.push(`  Avg HR: ${hrDiff > 0 ? "+" : ""}${hrDiff} bpm`);
+      if (hrDiff !== null) lines.push(`  Avg HR: ${formatSigned(hrDiff)} bpm`);
       if (cadenceDiff !== null)
-        lines.push(
-          `  Cadence: ${cadenceDiff > 0 ? "+" : ""}${cadenceDiff} spm`,
-        );
-      lines.push(
-        `  Elevation: ${elevationDiff > 0 ? "+" : ""}${elevationDiff} m`,
-      );
+        lines.push(`  Cadence: ${formatSigned(cadenceDiff)} spm`);
+      lines.push(`  Elevation: ${formatSigned(elevationDiff)} m`);
 
       if (efficiency) {
         lines.push("Efficiency Analysis:");
         lines.push(`  Activity 1: ${efficiency.activity_1} m/min per beat`);
         lines.push(`  Activity 2: ${efficiency.activity_2} m/min per beat`);
         lines.push(
-          `  Change: ${efficiency.change_percent > 0 ? "+" : ""}${efficiency.change_percent}% (${efficiency.interpretation})`,
+          `  Change: ${formatSigned(efficiency.change_percent)}% (${efficiency.interpretation})`,
         );
         lines.push(`  ${efficiency.note}`);
       }
