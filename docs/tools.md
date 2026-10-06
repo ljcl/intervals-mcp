@@ -48,7 +48,9 @@ The server sends a short orientation as its MCP `instructions` in
 which tool to call first, how to route fitness questions, the whole-body
 versus run-only rule, units and time zone, and how to use `update-activity`
 safely. The text lives in `apps/server/src/instructions.ts`. Keep it under
-1,800 characters. When you rename, add or remove a tool, check the routing
+1,800 characters with the longest time zone name it can carry (32 characters,
+`America/Argentina/ComodRivadavia`); the integration test measures both the
+configured zone and that one. When you rename, add or remove a tool, check the routing
 there too: `server.integration.test.ts` fails if the text names a tool that
 does not exist.
 
