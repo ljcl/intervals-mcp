@@ -100,6 +100,25 @@ describe("buildTrainingLoadContextSummary", () => {
     expect(summary).not.toContain("CTL");
   });
 
+  it("reports the series hidden, by the values set-scope accepts", () => {
+    const summary = buildTrainingLoadContextSummary(
+      data([
+        week("2026-06-01"),
+        week("2026-06-08", { warning: true, warningReasons: ["spike"] }),
+      ]),
+      ["trend", "warnings"],
+    );
+    expect(summary).toMatch(
+      /Volume-spike warnings on week of 2026-06-08\. Hidden series: trend, warnings\.$/,
+    );
+  });
+
+  it("says nothing about hidden series when every series shows", () => {
+    expect(
+      buildTrainingLoadContextSummary(data([week("2026-06-01")]), []),
+    ).not.toContain("Hidden series");
+  });
+
   it("returns null when there is no period", () => {
     expect(
       buildTrainingLoadContextSummary({ ...data([]), days: 0 }),
