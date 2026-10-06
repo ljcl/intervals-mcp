@@ -3,6 +3,7 @@ import { type ViewBox } from "./panZoom";
 import {
   describeView,
   frameForIndexRange,
+  gridViewForRange,
   indexRangeForDistance,
   visibleRoute,
 } from "./viewport";
@@ -105,6 +106,26 @@ describe("frameForIndexRange", () => {
   it("framing the whole course comes back to the base frame", () => {
     const view = frameForIndexRange(points, { from: 0, to: 100 }, base)!;
     expect(view.w).toBeCloseTo(base.w, 5);
+  });
+});
+
+describe("gridViewForRange", () => {
+  const base: ViewBox = { x: 0, y: 0, w: 400, h: 200 };
+  const points = Array.from({ length: 101 }, (_, i) => ({ x: i * 4, y: 100 }));
+
+  it("frames a stretch as frameForIndexRange does", () => {
+    const range = { from: 20, to: 30 };
+    expect(gridViewForRange(points, range, base)).toEqual(
+      frameForIndexRange(points, range, base),
+    );
+  });
+
+  it("maps a whole-route frame (no range) to the base view", () => {
+    expect(gridViewForRange(points, null, base)).toEqual(base);
+  });
+
+  it("falls back to the base view when the range selects nothing", () => {
+    expect(gridViewForRange([], { from: 0, to: 5 }, base)).toEqual(base);
   });
 });
 

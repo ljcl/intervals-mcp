@@ -11,14 +11,15 @@ import {
   ViewToolRegistry,
   type ViewToolResult,
 } from "@intervals-mcp/ui";
-import { act } from "react";
+import { act, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { streamLoopActivity } from "./__fixtures__/routes";
 import { type BasemapView } from "./BasemapView";
 import { frameBoundsForRange, trackBounds } from "./basemapData";
+import { projectRoute } from "./normalize";
 import { RouteMap } from "./RouteMap";
-import { indexRangeForDistance } from "./viewport";
+import { frameForIndexRange, indexRangeForDistance } from "./viewport";
 
 type BasemapProps = Parameters<typeof BasemapView>[0];
 
@@ -67,6 +68,18 @@ async function render(basemapEnabled = true) {
   });
 }
 
+/** As the app mounts it (`main.tsx`): the flip to the grid runs during
+ * render, so it must hold up to StrictMode's double render. */
+async function renderStrict() {
+  await act(async () => {
+    root.render(
+      <StrictMode>
+        <RouteMap data={data} app={app} viewToolRegistry={registry} />
+      </StrictMode>,
+    );
+  });
+}
+
 async function setViewport(
   args: Record<string, unknown>,
 ): Promise<ViewToolResult> {
@@ -102,6 +115,10 @@ const stretchBounds = frameBoundsForRange(
   data.coordinates,
   indexRangeForDistance(distance, 1000, 1200)!,
 )!;
+
+/** The grid's viewBox, once the basemap has fallen back. */
+const gridViewBox = () =>
+  container.querySelector("svg[aria-keyshortcuts]")?.getAttribute("viewBox");
 
 beforeEach(() => {
   (
@@ -187,6 +204,42 @@ describe("RouteMap on the basemap", () => {
     expect(container.querySelector("svg[aria-keyshortcuts]")).not.toBeNull();
     expect(liveRegion()).toBe("");
     expect(await lastContext()).not.toContain("Showing");
+  });
+});
+
+describe("RouteMap when the basemap fails before it loads (#144)", () => {
+  it("frames a stretch sent before the failure on the grid instead", async () => {
+    await renderStrict();
+    await setViewport({ fromKm: 1, toKm: 1.2 });
+
+    await act(async () => basemap.props!.onFail());
+
+    // The desktop grid's geometry, as RouteMap projects it.
+    const points = projectRoute(data.coordinates, {
+      width: 640,
+      height: 380,
+      padding: 28,
+    })!.points;
+    const want = frameForIndexRange(
+      points,
+      indexRangeForDistance(distance, 1000, 1200)!,
+      { x: 0, y: 0, w: 640, h: 380 },
+    )!;
+    expect(gridViewBox()).toBe(`${want.x} ${want.y} ${want.w} ${want.h}`);
+    const said = liveRegion();
+    expect(said).toMatch(/^Showing .*km of the route$/);
+    expect(await lastContext()).toContain(` ${said}.`);
+  });
+
+  it("opens a reset sent before the failure on the whole route, and says so", async () => {
+    await renderStrict();
+    await setViewport({ fromKm: 1, toKm: 1.2 });
+    await setViewport({ reset: true });
+
+    await act(async () => basemap.props!.onFail());
+
+    expect(gridViewBox()).toBe("0 0 640 380");
+    expect(liveRegion()).toBe("Showing the whole route");
   });
 });
 
