@@ -416,7 +416,9 @@ and the signal makes no call and does not change the verdict.
 10km, half marathon, marathon by default, or a subset via `distances`) from
 intervals.icu's pace curves rather than scanning activities. `window` picks
 `all`, `1y` (default), `90d`, or a custom `YYYY-MM-DD..YYYY-MM-DD` range,
-mapped to the matching pace-curve id. `topN` (1-5, default 1) picks how many
+mapped to the matching pace-curve id; with no `window`, the other windowed
+tools' `oldest`/`newest`/`days` are read as a range (see docs/architecture.md,
+Input validation). `topN` (1-5, default 1) picks how many
 distinct activities to report per distance: the default makes one call to the
 athlete's own pace curve, whose `activities` map already carries the name,
 date, and race flag; above 1 fetches per-activity pace curves for the window
