@@ -1,4 +1,5 @@
 import { formatPace, formatShortDate } from "@intervals-mcp/data";
+import { TREND_WINDOW_DAYS } from "./normalize";
 import { type RunSummary } from "./types";
 
 /**
@@ -57,7 +58,7 @@ export function buildTrendA11y(sortedRuns: RunSummary[]): ChartA11y {
   const desc =
     `${runCount(sortedRuns.length)} from ${fullDate(first.date)} to ${fullDate(last.date)}. ` +
     `Average cadence ranges from ${Math.round(cadence.min)} to ${Math.round(cadence.max)} spm; ` +
-    `a line shows the 5-run rolling average. ` +
+    `a line shows the ${TREND_WINDOW_DAYS}-day rolling average, broken across gaps of more than ${TREND_WINDOW_DAYS} days. ` +
     `Dot size reflects run distance. Pace dots are plotted on a secondary axis.`;
   return { title, desc };
 }

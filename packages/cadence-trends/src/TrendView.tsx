@@ -18,8 +18,9 @@ import styles from "./chartView.module.css";
 import {
   dayTimestamp,
   dotSize,
-  rollingAverage,
   runsByDay,
+  TREND_WINDOW_DAYS,
+  timeRollingAverage,
   trendTimeAxis,
 } from "./normalize";
 import { SharedTooltip, type TooltipRun } from "./SharedTooltip";
@@ -63,16 +64,33 @@ export function TrendView({
     [sorted],
   );
 
-  const trend = useMemo(() => rollingAverage(sorted, 5), [sorted]);
+  const trend = useMemo(
+    () =>
+      new Map(
+        timeRollingAverage(sorted, TREND_WINDOW_DAYS).map((p) => [p.id, p]),
+      ),
+    [sorted],
+  );
 
+  // The average line breaks across a gap longer than its window. Each row
+  // stays one run (the scatter Cells and the shared tooltip index rows), so
+  // the break comes from alternating stretches between two Lines: each Line
+  // is null on the other's stretches, and without connectNulls it stops
+  // there instead of bridging the gap.
   const chartData = useMemo(
     () =>
-      sorted.map((a, i) => ({
-        ...a,
-        dateTs: dayTimestamp(a.date),
-        trendCadence: trend[i]?.cadence ?? null,
-        size: dotSize(a.distance, maxDistance) * tokens.dotScale,
-      })),
+      sorted.map((a) => {
+        const avg = trend.get(a.id);
+        const cadence = avg?.cadence ?? null;
+        const even = (avg?.segment ?? 0) % 2 === 0;
+        return {
+          ...a,
+          dateTs: dayTimestamp(a.date),
+          trendEven: even ? cadence : null,
+          trendOdd: even ? null : cadence,
+          size: dotSize(a.distance, maxDistance) * tokens.dotScale,
+        };
+      }),
     [sorted, trend, maxDistance, tokens.dotScale],
   );
 
@@ -185,16 +203,19 @@ export function TrendView({
             }
           />
           <RechartsTooltip content={<SharedTooltip runsAt={runsOnDay} />} />
-          <Line
-            yAxisId="cadence"
-            type="monotone"
-            dataKey="trendCadence"
-            stroke="var(--chart-cadence)"
-            strokeWidth={tokens.trendStrokeWidth}
-            dot={false}
-            connectNulls
-            strokeOpacity={0.5}
-          />
+          {(["trendEven", "trendOdd"] as const).map((dataKey) => (
+            <Line
+              key={dataKey}
+              yAxisId="cadence"
+              type="monotone"
+              dataKey={dataKey}
+              stroke="var(--chart-cadence)"
+              strokeWidth={tokens.trendStrokeWidth}
+              dot={false}
+              connectNulls={false}
+              strokeOpacity={0.5}
+            />
+          ))}
           {/* Animation off on both scatters: Recharts interpolates symbol
               size up from 0 and rekeys each symbol per frame, so for the
               ~400ms after mount the dots have no hit area and are remounted

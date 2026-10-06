@@ -11,8 +11,9 @@ import {
   overlayRunLabel,
   overlayRunStatus,
   resampleOverlayRuns,
-  rollingAverage,
   runsByDay,
+  TREND_WINDOW_DAYS,
+  timeRollingAverage,
   toOverlayPoints,
   trendTimeAxis,
 } from "./normalize";
@@ -171,24 +172,82 @@ describe("resampleOverlayRuns", () => {
   });
 });
 
-describe("rollingAverage", () => {
-  it("averages over the centred window sorted by date, skipping zero cadence", () => {
-    const result = rollingAverage(
-      [
-        run({ id: "3", date: "2026-07-03", averageCadence: 180 }),
-        run({ id: "1", date: "2026-07-01", averageCadence: 160 }),
-        run({ id: "2", date: "2026-07-02", averageCadence: 0 }), // dropout
-      ],
-      3,
-    );
+describe("timeRollingAverage", () => {
+  const avg = (runs: RunSummary[]) =>
+    timeRollingAverage(runs, TREND_WINDOW_DAYS);
 
-    // Sorted ascending; the middle entry averages its neighbours only.
-    expect(result.map((r) => r.date)).toEqual([
-      "2026-07-01",
-      "2026-07-02",
-      "2026-07-03",
+  it("uses a 14-day window", () => {
+    expect(TREND_WINDOW_DAYS).toBe(14);
+  });
+
+  it("averages the trailing window by day, sorted by date, skipping zero cadence", () => {
+    const result = avg([
+      run({ id: "3", date: "2026-07-03", averageCadence: 180 }),
+      run({ id: "1", date: "2026-07-01", averageCadence: 160 }),
+      run({ id: "2", date: "2026-07-02", averageCadence: 0 }), // dropout
     ]);
-    expect(result[1]?.cadence).toBe(170); // (160 + 180) / 2, zero skipped
+
+    expect(result.map((r) => r.id)).toEqual(["1", "2", "3"]);
+    // Trailing, not centred: the first run averages itself only.
+    expect(result.map((r) => r.cadence)).toEqual([160, 160, 170]);
+  });
+
+  it("counts the 14 days up to and including the run's own day", () => {
+    const result = avg([
+      run({ id: "a", date: "2026-07-01", averageCadence: 160 }),
+      // 13 days later: 1 Jul is still inside the window.
+      run({ id: "b", date: "2026-07-14", averageCadence: 170 }),
+      // 14 days after 1 Jul: it has dropped out, 14 Jul has not.
+      run({ id: "c", date: "2026-07-15", averageCadence: 180 }),
+    ]);
+
+    expect(result.map((r) => r.cadence)).toEqual([160, 165, 175]);
+  });
+
+  it("follows time rather than run count", () => {
+    // Five runs in a cluster, then one run three weeks on: a five-run
+    // window would still average the cluster into it.
+    const result = avg([
+      run({ id: "1", date: "2026-07-01", averageCadence: 160 }),
+      run({ id: "2", date: "2026-07-02", averageCadence: 160 }),
+      run({ id: "3", date: "2026-07-03", averageCadence: 160 }),
+      run({ id: "4", date: "2026-07-04", averageCadence: 160 }),
+      run({ id: "5", date: "2026-07-25", averageCadence: 180 }),
+    ]);
+
+    expect(result.at(-1)?.cadence).toBe(180);
+  });
+
+  it("gives every run on one day the same average, whatever its order", () => {
+    const result = avg([
+      run({ id: "1", date: "2026-07-01T06:00:00Z", averageCadence: 160 }),
+      run({ id: "2", date: "2026-07-02T06:00:00Z", averageCadence: 170 }),
+      run({ id: "3", date: "2026-07-02T18:00:00Z", averageCadence: 180 }),
+    ]);
+
+    expect(result.map((r) => r.cadence)).toEqual([160, 170, 170]);
+  });
+
+  it("starts a new segment after a break longer than the window", () => {
+    const result = avg([
+      run({ id: "1", date: "2026-07-01", averageCadence: 160 }),
+      // 14 days on: not longer than the window, so the line continues.
+      run({ id: "2", date: "2026-07-15", averageCadence: 170 }),
+      // 15 days on: the line breaks.
+      run({ id: "3", date: "2026-07-30", averageCadence: 180 }),
+      run({ id: "4", date: "2026-07-31", averageCadence: 176 }),
+    ]);
+
+    expect(result.map((r) => r.segment)).toEqual([0, 0, 1, 1]);
+    expect(result.map((r) => r.cadence)).toEqual([160, 170, 180, 178]);
+  });
+
+  it("has no average for a run with nothing to average", () => {
+    const result = avg([
+      run({ id: "1", date: "2026-07-01", averageCadence: 0 }),
+    ]);
+    expect(result[0]?.cadence).toBeNull();
+    expect(avg([])).toEqual([]);
   });
 });
 
@@ -424,26 +483,48 @@ describe("dayTimestamp", () => {
 
 describe("trendTimeAxis", () => {
   const day = 24 * 60 * 60 * 1000;
-
-  it("spans the runs when they fall on more than one day", () => {
-    expect(
-      trendTimeAxis([dayTimestamp("2026-01-01"), dayTimestamp("2026-01-20")]),
-    ).toEqual({
-      domain: ["dataMin", "dataMax"],
-    });
-  });
+  const start = dayTimestamp("2026-01-01");
+  const label = (ts: number) =>
+    formatShortDate(new Date(ts).toISOString().slice(0, 10));
 
   it("widens a one-day span by a day each side with a single tick on it", () => {
-    const ts = dayTimestamp("2026-01-01");
-    expect(trendTimeAxis([ts])).toEqual({
-      domain: [ts - day, ts + day],
-      ticks: [ts],
+    expect(trendTimeAxis([start])).toEqual({
+      domain: [start - day, start + day],
+      ticks: [start],
     });
-    expect(trendTimeAxis([ts, ts])).toEqual({
-      domain: [ts - day, ts + day],
-      ticks: [ts],
+    expect(trendTimeAxis([start, start])).toEqual({
+      domain: [start - day, start + day],
+      ticks: [start],
     });
   });
+
+  it.each([
+    [1, [0, 1]],
+    [2, [0, 1, 2]],
+    [3, [0, 1, 2, 3]],
+    [21, [0, 6, 12, 18]],
+    [84, [0, 21, 42, 63, 84]],
+  ])(
+    "ticks whole days, at most five, across a %i-day span",
+    (span, offsets) => {
+      const end = start + span * day;
+      const axis = trendTimeAxis([start, start + day, end]);
+
+      expect(axis.domain).toEqual([start, end]);
+      expect(axis.ticks).toEqual(offsets.map((d) => start + d * day));
+    },
+  );
+
+  it.each([0, 1, 2, 3, 21, 84])(
+    "puts every tick of a %i-day span on its own UTC day",
+    (span) => {
+      const { ticks = [] } = trendTimeAxis([start, start + span * day]);
+
+      expect(ticks.length).toBeGreaterThan(0);
+      for (const tick of ticks) expect(tick % day).toBe(0);
+      expect(new Set(ticks.map(label)).size).toBe(ticks.length);
+    },
+  );
 });
 
 describe("assignOverlayColors", () => {

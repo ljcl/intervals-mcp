@@ -33,32 +33,6 @@ export function buildCadenceSubtitle(runCount: number, days: number): string {
   return `${runLabel} · last ${windowLabel(days)}`;
 }
 
-/** Compute a rolling average over the activities array (sorted by date ascending) */
-export function rollingAverage(
-  activities: RunSummary[],
-  window: number,
-): Array<{ date: string; cadence: number }> {
-  const sorted = [...activities].sort(
-    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
-  );
-  return sorted.map((_, i) => {
-    const lo = Math.max(0, i - Math.floor(window / 2));
-    const hi = Math.min(sorted.length - 1, i + Math.floor(window / 2));
-    let sum = 0;
-    let count = 0;
-    for (let j = lo; j <= hi; j += 1) {
-      if (sorted[j]!.averageCadence > 0) {
-        sum += sorted[j]!.averageCadence;
-        count += 1;
-      }
-    }
-    return {
-      date: sorted[i]!.date,
-      cadence: count > 0 ? Math.round(sum / count) : 0,
-    };
-  });
-}
-
 /**
  * Compute summary stats: current period avg, previous period avg, delta.
  * `now` is injectable so tests are deterministic.
@@ -192,20 +166,86 @@ export function runsByDay<T extends Pick<RunSummary, "date">>(
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/** Days the trend's rolling average reaches back, the run's own day included. */
+export const TREND_WINDOW_DAYS = 14;
+
+/** One run's point on the trend's rolling-average line. */
+export interface TrendAveragePoint {
+  id: string;
+  date: string;
+  /** Mean cadence over the window; null when no run in it has cadence. */
+  cadence: number | null;
+  /**
+   * Which unbroken stretch of line the point belongs to. It goes up by one
+   * after a break of more than `windowDays` between consecutive runs, where
+   * the line stops instead of joining the runs either side.
+   */
+  segment: number;
+}
+
 /**
- * X-axis domain (and ticks) for the trend timeline. Normally the span of the
- * runs. When every run falls on one day that span is empty and the time
- * scale invents sub-day ticks that all read as the same date, so the span
+ * Trailing rolling average of cadence by time, not run count: each run
+ * averages every run whose UTC day (`dayTimestamp`) falls in the
+ * `windowDays` days up to and including its own, ignoring cadence of 0 or
+ * below. Runs on one day share a window, so they share an average. Sorted
+ * oldest first, keeping the given order within a day.
+ */
+export function timeRollingAverage(
+  runs: readonly RunSummary[],
+  windowDays: number,
+): TrendAveragePoint[] {
+  const sorted = [...runs].sort(
+    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
+  );
+  const days = sorted.map((r) => dayTimestamp(r.date));
+  const reach = (windowDays - 1) * DAY_MS;
+  let segment = 0;
+  return sorted.map((run, i) => {
+    const day = days[i]!;
+    if (i > 0 && day - days[i - 1]! > windowDays * DAY_MS) segment += 1;
+    let sum = 0;
+    let count = 0;
+    sorted.forEach((other, j) => {
+      const otherDay = days[j]!;
+      if (otherDay > day || otherDay < day - reach) return;
+      if (other.averageCadence <= 0) return;
+      sum += other.averageCadence;
+      count += 1;
+    });
+    return {
+      id: run.id,
+      date: run.date,
+      cadence: count > 0 ? Math.round(sum / count) : null,
+      segment,
+    };
+  });
+}
+
+/** At most this many intervals between trend axis ticks, so five ticks. */
+const TREND_TICK_INTERVALS = 4;
+
+/**
+ * X-axis domain and ticks for the trend timeline, every tick on a UTC day
+ * boundary. Left to Recharts, the axis ticks every run's x, so two runs on
+ * one day repeat its label and the ticks space unevenly (#145). These step
+ * whole days, `ceil(span / 4)` at a time, from the first run's day to the
+ * last. When every run falls on one day the span is empty, so it
  * widens by a day each side with one tick on the day.
  */
 export function trendTimeAxis(timestamps: number[]): {
-  domain: ["dataMin", "dataMax"] | [number, number];
-  ticks?: number[];
+  domain: [number, number];
+  ticks: number[];
 } {
-  const min = Math.min(...timestamps);
-  const max = Math.max(...timestamps);
-  if (min !== max) return { domain: ["dataMin", "dataMax"] };
-  return { domain: [min - DAY_MS, max + DAY_MS], ticks: [min] };
+  const first = Math.floor(Math.min(...timestamps) / DAY_MS) * DAY_MS;
+  const last = Math.max(...timestamps);
+  if (last - first < DAY_MS) {
+    return { domain: [first - DAY_MS, first + DAY_MS], ticks: [first] };
+  }
+  const spanDays = Math.floor((last - first) / DAY_MS);
+  const step = Math.ceil(spanDays / TREND_TICK_INTERVALS) * DAY_MS;
+  const ticks: number[] = [];
+  for (let tick = first; tick <= last; tick += step) ticks.push(tick);
+  return { domain: [first, last], ticks };
 }
 
 /** Simple linear regression: y = slope * x + intercept */

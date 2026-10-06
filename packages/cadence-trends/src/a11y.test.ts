@@ -43,7 +43,7 @@ describe("buildTrendA11y", () => {
     expect(desc).toBe(
       "2 runs from 2 Mar 2026 to 18 Apr 2026. " +
         "Average cadence ranges from 164 to 178 spm; " +
-        "a line shows the 5-run rolling average. " +
+        "a line shows the 14-day rolling average, broken across gaps of more than 14 days. " +
         "Dot size reflects run distance. Pace dots are plotted on a secondary axis.",
     );
   });

@@ -4,6 +4,7 @@ import { MobileCardShell } from "@intervals-mcp/ui";
 import { expect, fn, waitFor } from "storybook/test";
 import {
   mockRuns,
+  runsOverThreeDays,
   runsWithGap,
   runsWithNullPace,
   runsWithSameDay,
@@ -187,6 +188,97 @@ export const WithGap = meta.story({
   },
 });
 
+/** The x axis's tick labels, left to right. */
+const tickLabels = (root: HTMLElement) =>
+  Array.from(
+    root.querySelectorAll(
+      ".recharts-xAxis-tick-labels .recharts-cartesian-axis-tick-value",
+    ),
+    (tick) => tick.textContent ?? "",
+  );
+
+/**
+ * Four runs over three days, two of them on 1 Jan. The axis ticks whole
+ * days, so no day's label repeats; left to Recharts it ticked every run's x
+ * and read "1 Jan, 1 Jan, 2 Jan, 4 Jan" (#145).
+ */
+export const ThreeDaySpan = meta.story({
+  args: {
+    activities: runsOverThreeDays,
+    onRunClick: noop,
+    selectedRunIds: new Set<string>(),
+  },
+  play: async ({ canvasElement }) => {
+    await waitFor(() =>
+      expect(tickLabels(canvasElement).length).toBeGreaterThan(1),
+    );
+
+    const labels = tickLabels(canvasElement);
+    expect(new Set(labels).size).toBe(labels.length);
+    expect(labels[0]).toBe("1 Jan");
+    expect(labels.at(-1)).toBe("4 Jan");
+  },
+});
+
+/** Each drawn stretch of the rolling-average line, as its x extent. */
+const trendStretches = (root: HTMLElement) =>
+  Array.from(root.querySelectorAll(".recharts-line-curve")).flatMap((path) =>
+    (path.getAttribute("d") ?? "")
+      .split(/(?=M)/)
+      .filter(Boolean)
+      .map((stretch) => {
+        // Every command's arguments are x,y pairs: the even numbers are x.
+        const xs = (stretch.match(/-?[\d.]+(?:e[-+]?\d+)?/g) ?? [])
+          .map(Number)
+          .filter((_, i) => i % 2 === 0);
+        return { from: Math.min(...xs), to: Math.max(...xs) };
+      }),
+  );
+
+/**
+ * The 14-day rolling average breaks across the 24 days without running
+ * (7 to 31 Jan) instead of joining the runs either side (#148): two
+ * stretches of line, neither crossing the gap. The break must not cost the
+ * dots their runs, so every dot still hovers and clicks as its own run.
+ */
+export const AverageBreaksAtGap = meta.story({
+  args: {
+    activities: runsWithGap,
+    onRunClick: fn(),
+    selectedRunIds: new Set<string>(),
+  },
+  play: async ({ args, canvasElement, userEvent }) => {
+    const inPlotOrder = [...runsWithGap].sort((a, b) =>
+      a.date.localeCompare(b.date),
+    );
+    await waitFor(() =>
+      expect(seriesMarks(canvasElement, 0).length).toBe(inPlotOrder.length),
+    );
+    await waitFor(() => expect(trendStretches(canvasElement)).toHaveLength(2));
+
+    const xs = seriesMarks(canvasElement, 0).map(markX);
+    const [before, after] = trendStretches(canvasElement);
+    expect(before!.from).toBeCloseTo(xs[0]!, 0);
+    expect(before!.to).toBeCloseTo(xs[2]!, 0);
+    expect(after!.from).toBeCloseTo(xs[3]!, 0);
+    expect(after!.to).toBeCloseTo(xs.at(-1)!, 0);
+
+    await expectHoverNamesRuns(canvasElement, userEvent, 0, inPlotOrder);
+    await expectHoverNamesRuns(canvasElement, userEvent, 1, inPlotOrder);
+
+    await userEvent.click(seriesMarks(canvasElement, 0)[2]!);
+    await userEvent.click(seriesMarks(canvasElement, 1)[3]!);
+    await expect(args.onRunClick).toHaveBeenNthCalledWith(
+      1,
+      inPlotOrder[2]!.id,
+    );
+    await expect(args.onRunClick).toHaveBeenNthCalledWith(
+      2,
+      inPlotOrder[3]!.id,
+    );
+  },
+});
+
 /**
  * Two runs recorded no speed. They keep their cadence dot but draw no pace
  * symbol, and the pace dots after them still belong to their own runs:
@@ -340,6 +432,40 @@ export const HoverNamesRunMobile = HoverNamesRun.extend({
 });
 
 export const WithNullPaceMobile = WithNullPace.extend({
+  args: { mode: "mobile" },
+  globals: {
+    viewport: { value: "claudeIosCard" },
+  },
+  parameters: { layout: "fullscreen" },
+  decorators: [
+    (StoryFn) => (
+      <MobileCardShell>
+        <div style={{ height: 260 }}>
+          <StoryFn />
+        </div>
+      </MobileCardShell>
+    ),
+  ],
+});
+
+export const ThreeDaySpanMobile = ThreeDaySpan.extend({
+  args: { mode: "mobile" },
+  globals: {
+    viewport: { value: "claudeIosCard" },
+  },
+  parameters: { layout: "fullscreen" },
+  decorators: [
+    (StoryFn) => (
+      <MobileCardShell>
+        <div style={{ height: 260 }}>
+          <StoryFn />
+        </div>
+      </MobileCardShell>
+    ),
+  ],
+});
+
+export const AverageBreaksAtGapMobile = AverageBreaksAtGap.extend({
   args: { mode: "mobile" },
   globals: {
     viewport: { value: "claudeIosCard" },
