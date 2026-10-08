@@ -13,9 +13,16 @@ on:
   schedule:
     - cron: "23 15 * * 1" # weekly audit run, surfaces new advisories between PRs
 
+# A PR run never cancels another: each one keys its own group by run id.
+# Pushing a stack starts every PR above the bottom twice for one commit (its
+# head moved, and so did its base), and GitHub takes a required check from the
+# newest run on the commit. When the race left that newer run cancelled, the
+# PR stayed blocked behind a passing check until someone re-ran it. The cost
+# is that a superseded commit's run now finishes. main pushes and the weekly
+# audit still queue on main's ref.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-run-{0}', github.run_id) || github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
