@@ -16,6 +16,7 @@
 import { CLIENT_CAPABILITIES_META_KEY } from "@modelcontextprotocol/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getTimeZone } from "./config";
+import { serverInstructions } from "./instructions";
 import {
   getActivity,
   getActivityStreams,
@@ -62,6 +63,14 @@ const MAX_TOOL_DESCRIPTION_CHARS = 1800;
  * get the same budget as one tool description (#38).
  */
 const MAX_INSTRUCTIONS_CHARS = 1800;
+
+/**
+ * The instructions name the configured zone, so their length varies with it.
+ * This 32-character IANA link is the longest name `TZ` accepts;
+ * `Intl.supportedValuesOf("timeZone")` lists canonical zones only, so its
+ * longest would pass a text that overflows here (#147).
+ */
+const LONGEST_TIME_ZONE = "America/Argentina/ComodRivadavia";
 
 /** A tool name as a description mentions one, e.g. "use get-fitness-trend". */
 const TOOL_NAME_MENTION =
@@ -117,6 +126,12 @@ describe("server/discover", () => {
     for (const name of mentioned) {
       expect(names.has(name), `instructions mention ${name}`).toBe(true);
     }
+  });
+
+  it("keeps the instructions within budget for the longest time zone name", () => {
+    expect(serverInstructions(LONGEST_TIME_ZONE).length).toBeLessThanOrEqual(
+      MAX_INSTRUCTIONS_CHARS,
+    );
   });
 });
 
