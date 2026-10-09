@@ -17,4 +17,5 @@ services:
       - TZ=${TZ:-UTC}
       - PUBLIC_URL=${PUBLIC_URL:-}
       - MCP_AUTH_TOKEN=${MCP_AUTH_TOKEN:-}
+      # Keep in step with ports; the image's healthcheck reads PORT.
       - PORT=3000

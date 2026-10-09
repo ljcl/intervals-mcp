@@ -1,10 +1,10 @@
 import path from "node:path";
 import * as dotenv from "dotenv";
 import {
-  apiKeyConfigured,
+  checkConfig,
   getIntervalsAthleteId,
+  getPort,
   getTimeZone,
-  MissingApiKeyError,
 } from "./config";
 import { createShutdown, serveOptions } from "./httpServer";
 import { warnIfMcpUnprotected } from "./mcpAuth";
@@ -17,15 +17,18 @@ dotenv.config({
   quiet: true,
 });
 
-if (!apiKeyConfigured()) {
-  console.error(new MissingApiKeyError().message);
+// Every bad variable gets its own line, then the process stops.
+const { errors, warnings } = checkConfig();
+for (const warning of warnings) console.error(`WARNING: ${warning}`);
+if (errors.length > 0) {
+  for (const error of errors) console.error(error);
   process.exit(1);
 }
 console.error(
   `intervals.icu athlete ${getIntervalsAthleteId()}, time zone ${getTimeZone()}`,
 );
 
-const PORT = Number(process.env.PORT ?? 3000);
+const PORT = getPort();
 const HOST = "0.0.0.0";
 
 const mcp = createMcpEndpoint(createServer);

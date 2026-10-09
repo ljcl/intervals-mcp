@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Starts a built server image and checks it the way a user would meet it:
-# healthy, serving the MCP surface, and stopping cleanly. docker.yml runs it on
-# every build leg before anything is published; dockerRuntime.test.ts only
-# reads the repo tree, so it cannot see what the build context left out, a
-# runtime import of a devDependency, a broken CMD or HEALTHCHECK, or a
-# permission problem under uid 65534.
+# healthy, serving the MCP surface, refusing bad config, and stopping cleanly.
+# docker.yml runs it on every build leg before anything is published;
+# dockerRuntime.test.ts only reads the repo tree, so it cannot see what the
+# build context left out, a runtime import of a devDependency, a broken CMD or
+# HEALTHCHECK, or a permission problem under uid 65534. The container listens
+# on a non-default PORT, which proves the image's HEALTHCHECK reads PORT.
 #
 # Usage: scripts/docker-smoke.sh <image-ref>
 # Needs docker, curl and jq. Run from the repo root (it reads package.json and
@@ -29,18 +30,21 @@ cleanup() {
     echo "--- container logs ---" >&2
     docker logs "$NAME" >&2 || true
   fi
-  docker rm -f "$NAME" >/dev/null 2>&1 || true
+  docker rm -f "$NAME" "$NAME-config" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
 # The healthcheck overrides only shorten the timing; the image's own
-# HEALTHCHECK command is what runs. A dummy key passes startup, which only
-# checks that one is set, and the smoke checks never call intervals.icu.
+# HEALTHCHECK command is what runs. A dummy key passes startup, because
+# startup checks only that a key is set, not that intervals.icu accepts it,
+# and the smoke checks never call intervals.icu. The short token only logs a
+# startup WARNING.
 docker run -d --name "$NAME" \
   -e INTERVALS_API_KEY=smoke-dummy \
   -e MCP_AUTH_TOKEN="$TOKEN" \
+  -e PORT=8080 \
   --health-interval=1s --health-start-period=30s --health-retries=3 \
-  -p 127.0.0.1::3000 \
+  -p 127.0.0.1::8080 \
   "$IMAGE" >/dev/null
 
 health=""
@@ -83,7 +87,7 @@ else
   fail "the image carries installed packages:"
   echo "$installed" >&2
 fi
-BASE="http://$(docker port "$NAME" 3000/tcp | head -1)"
+BASE="http://$(docker port "$NAME" 8080/tcp | head -1)"
 
 expected_version="$(jq -r .version package.json)"
 version="$(curl -fsS "$BASE/health" | jq -r .version)"
@@ -181,6 +185,35 @@ if [ "$init_status" = 400 ] && [ "$init_code" = -32022 ]; then
   pass "initialize rejected with 400 / -32022"
 else
   fail "initialize returned HTTP $init_status, code $init_code"
+fi
+
+# Bad config stops startup with exit 1 and one line per bad variable. Vitest
+# never runs index.ts, so this is the check that the startup gate runs on the
+# image's Bun. The wait polls like the health wait above, so it needs no GNU
+# timeout. cleanup removes the container.
+docker run -d --name "$NAME-config" \
+  -e INTERVALS_API_KEY=smoke-dummy \
+  -e TZ=Australia/Sydny \
+  -e PORT=abc \
+  "$IMAGE" >/dev/null
+for _ in $(seq 30); do
+  [ "$(docker inspect -f '{{.State.Running}}' "$NAME-config")" = true ] || break
+  sleep 1
+done
+bad="$(docker logs "$NAME-config" 2>&1)"
+if [ "$(docker inspect -f '{{.State.Running}}' "$NAME-config")" = true ]; then
+  fail "bad TZ and PORT: the server still runs after 30 s, output:"
+  echo "$bad" >&2
+else
+  bad_status="$(docker inspect -f '{{.State.ExitCode}}' "$NAME-config")"
+  if [ "$bad_status" = 1 ] &&
+    grep -qF 'TZ is "Australia/Sydny"' <<<"$bad" &&
+    grep -qF 'PORT is "abc"' <<<"$bad"; then
+    pass "bad TZ and PORT stop startup with exit 1, naming both"
+  else
+    fail "bad TZ and PORT: exit $bad_status, output:"
+    echo "$bad" >&2
+  fi
 fi
 
 # SIGTERM drains and exits 0 well inside docker's 10 s default, which is what

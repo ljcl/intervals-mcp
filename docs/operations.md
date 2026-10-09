@@ -9,11 +9,20 @@ rate limits, and endpoint security. For the code behind these see
 | Variable | Required | Description |
 | -------- | -------- | ----------- |
 | `INTERVALS_API_KEY` | Yes | intervals.icu personal API key (Settings, Developer Settings) |
-| `INTERVALS_ATHLETE_ID` | No | Athlete id; default `0` means the API key's own athlete |
-| `TZ` | No | IANA time zone for local dates, e.g. `Australia/Sydney` |
-| `MCP_AUTH_TOKEN` | No | Shared secret; when set, `/mcp` and the detailed half of `/health` require `Authorization: Bearer <token>` (or `?token=` for `/health`) |
-| `PORT` | No | Server port (default: `3000`) |
+| `INTERVALS_ATHLETE_ID` | No | Athlete id: `0` (default, the API key's own athlete), a number, or i-prefixed such as `i12345` |
+| `TZ` | No | IANA time zone for local dates, e.g. `Australia/Sydney`; an unknown zone stops startup |
+| `MCP_AUTH_TOKEN` | No | Shared secret; when set, `/mcp` and the detailed half of `/health` require `Authorization: Bearer <token>` (or `?token=` for `/health`). Use at least 32 characters; a shorter one logs a startup `WARNING`, and surrounding whitespace stops startup |
+| `PORT` | No | Server port, 1-65535; blank or unset means `3000`. The image's `HEALTHCHECK` reads it |
 | `PUBLIC_URL` | No | Public URL, used only to warn when `/mcp` is exposed without `MCP_AUTH_TOKEN` |
+
+### Startup checks
+
+The server checks its configuration before it listens. Each of these prints
+one line that names the variable: a missing `INTERVALS_API_KEY`, a `TZ` that
+`Intl` does not know, a `PORT` outside 1-65535, a malformed
+`INTERVALS_ATHLETE_ID`, and an `MCP_AUTH_TOKEN` with surrounding whitespace.
+The server reports all of them at once and exits with code 1. A token shorter
+than 32 characters only logs a `WARNING`.
 
 ## intervals.icu API key
 
@@ -166,6 +175,10 @@ which is `null` today since intervals.icu sends none.
 The image is distroless and runs as non-root **UID 65534**. There is no
 persistent state to mount: credentials come from `INTERVALS_API_KEY` on every
 start.
+
+The image's `HEALTHCHECK` reads `PORT`, so a non-default port stays healthy:
+`docker run -e PORT=8080 -p 8080:8080 …`. `docker-compose.yml` pins
+`PORT=3000`. If you change it there, change the `ports` mapping to match.
 
 On `docker stop` (SIGTERM), the server stops accepting connections and gives
 calls already running up to 8 seconds to finish, then aborts the rest and

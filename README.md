@@ -8,8 +8,9 @@ A single-user remote MCP server for intervals.icu run data and analysis, with in
 
 All text tools and every MCP App talk to intervals.icu directly and
 are verified against a real account; see [docs/tools.md](docs/tools.md) for
-the full catalog. The presence of `INTERVALS_API_KEY` is checked at startup
-and reported on `/health`.
+the full catalog. Configuration is checked at startup: a bad variable stops
+the server with a message naming it, and the key's presence is reported on
+`/health`.
 
 **History.** This project began as [strava-mcp](https://github.com/ljcl/strava-mcp)
 and was migrated to intervals.icu as its data source; nothing in the server
@@ -205,6 +206,8 @@ App's data handler talk to intervals.icu directly.
 PRs are squash-merged and the **PR title becomes the commit on `main`**, so write it as a [Conventional Commit](https://www.conventionalcommits.org/) (`fix:` patch, `feat:` minor, any `!` or `BREAKING CHANGE:` footer major; `chore:`/`docs:`/`refactor:`/`ci:` release nothing). A CI check rejects non-conforming titles; see [docs/releasing.md](docs/releasing.md).
 
 ## Troubleshooting
+
+**Server exits at startup:** The message names the variable to fix, one line per bad variable. See [operations.md](docs/operations.md#environment-variables).
 
 **AI tool can't reach the server** — MCP requires an HTTPS URL. Use a tunnel (Tailscale Funnel or Cloudflare Tunnel) to expose your local server. See [Connecting to AI Tools](#connecting-to-ai-tools).
 

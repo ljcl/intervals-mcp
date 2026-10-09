@@ -1,17 +1,30 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   basicAuthHeader,
+  checkConfig,
   getIntervalsApiKey,
   getIntervalsAthleteId,
+  getPort,
   getTimeZone,
   MissingApiKeyError,
 } from "./config";
 
 const ORIGINAL = { ...process.env };
 
-afterEach(() => {
-  process.env = { ...ORIGINAL };
-});
+/**
+ * Restores the live process.env in place. Replacing it with a plain object
+ * (`process.env = { ...ORIGINAL }`) would cut later TZ writes off from
+ * Node's Intl. Never assign undefined: process.env stores it as the string
+ * "undefined".
+ */
+function restoreEnv(): void {
+  for (const key of Object.keys(process.env)) {
+    if (!(key in ORIGINAL)) delete process.env[key];
+  }
+  Object.assign(process.env, ORIGINAL);
+}
+
+afterEach(restoreEnv);
 
 describe("getIntervalsApiKey", () => {
   it("returns the trimmed key", () => {
@@ -61,6 +74,165 @@ describe("getTimeZone", () => {
     expect(getTimeZone()).toBe(
       Intl.DateTimeFormat().resolvedOptions().timeZone,
     );
+  });
+});
+
+describe("getPort", () => {
+  it.each([
+    [undefined, 3000],
+    ["", 3000],
+    [" 8080 ", 8080],
+    ["65535", 65535],
+  ])("PORT=%j listens on %i", (raw, expected) => {
+    if (raw === undefined) delete process.env.PORT;
+    else process.env.PORT = raw;
+    expect(getPort()).toBe(expected);
+  });
+
+  it.each(["0", "65536", "abc", "80.5", "-1", "1e3"])(
+    "throws naming PORT for %j",
+    (raw) => {
+      process.env.PORT = raw;
+      expect(() => getPort()).toThrow(/PORT/);
+    },
+  );
+});
+
+describe("checkConfig", () => {
+  /** A valid environment; each test then changes one or more variables. */
+  function setValidEnv(): void {
+    process.env.INTERVALS_API_KEY = "k-secret-value";
+    process.env.TZ = "Australia/Sydney";
+    process.env.PORT = "3000";
+    process.env.INTERVALS_ATHLETE_ID = "i12345";
+    process.env.MCP_AUTH_TOKEN = "t".repeat(64);
+  }
+
+  it("passes a valid environment", () => {
+    setValidEnv();
+    expect(checkConfig()).toEqual({ errors: [], warnings: [] });
+  });
+
+  it("reports a missing API key once, naming the variable", () => {
+    setValidEnv();
+    delete process.env.INTERVALS_API_KEY;
+    const { errors } = checkConfig();
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatch(/INTERVALS_API_KEY/);
+  });
+
+  it("reports an unknown time zone, quoting it", () => {
+    setValidEnv();
+    process.env.TZ = "Australia/Sydny";
+    const { errors } = checkConfig();
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatch(/^TZ is "Australia\/Sydny"/);
+  });
+
+  it.each([undefined, "", "   ", " Australia/Sydney "])(
+    "accepts TZ=%j",
+    (raw) => {
+      setValidEnv();
+      if (raw === undefined) delete process.env.TZ;
+      else process.env.TZ = raw;
+      expect(checkConfig().errors).toEqual([]);
+    },
+  );
+
+  it("accepts a blank PORT as the default", () => {
+    setValidEnv();
+    process.env.PORT = "";
+    expect(checkConfig().errors).toEqual([]);
+  });
+
+  it.each(["abc", "0", "70000"])("reports PORT=%j", (raw) => {
+    setValidEnv();
+    process.env.PORT = raw;
+    const { errors } = checkConfig();
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatch(/^PORT is /);
+  });
+
+  it.each(["", "0", "123", "i123", " i123 "])(
+    "accepts INTERVALS_ATHLETE_ID=%j",
+    (raw) => {
+      setValidEnv();
+      process.env.INTERVALS_ATHLETE_ID = raw;
+      expect(checkConfig().errors).toEqual([]);
+    },
+  );
+
+  it.each(["abc", "i12x", "12 34", "I123"])(
+    "reports INTERVALS_ATHLETE_ID=%j",
+    (raw) => {
+      setValidEnv();
+      process.env.INTERVALS_ATHLETE_ID = raw;
+      const { errors } = checkConfig();
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toMatch(/^INTERVALS_ATHLETE_ID is /);
+    },
+  );
+
+  it("reports every bad variable, not just the first", () => {
+    setValidEnv();
+    process.env.TZ = "Australia/Sydny";
+    process.env.PORT = "abc";
+    process.env.INTERVALS_ATHLETE_ID = "abc";
+    const { errors } = checkConfig();
+    expect(errors).toHaveLength(3);
+    expect(errors[0]).toMatch(/^TZ /);
+    expect(errors[1]).toMatch(/^PORT /);
+    expect(errors[2]).toMatch(/^INTERVALS_ATHLETE_ID /);
+  });
+
+  it("cuts a long value to 64 characters in the message", () => {
+    setValidEnv();
+    process.env.TZ = `Australia/${"x".repeat(100)}`;
+    const [error] = checkConfig().errors;
+    expect(error).toContain(`"Australia/${"x".repeat(54)}"…`);
+    expect(error).not.toContain("x".repeat(55));
+  });
+
+  it("warns about a short token without quoting it", () => {
+    setValidEnv();
+    process.env.MCP_AUTH_TOKEN = "s3cret";
+    const { errors, warnings } = checkConfig();
+    expect(errors).toEqual([]);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("MCP_AUTH_TOKEN");
+    expect(warnings[0]).toContain("6 characters");
+    expect(warnings[0]).not.toContain("s3cret");
+  });
+
+  it("stops on a whitespace-padded token, without a length warning", () => {
+    setValidEnv();
+    // Shorter than 32 characters, so the whitespace error must replace the length warning.
+    process.env.MCP_AUTH_TOKEN = " s3cret";
+    const { errors, warnings } = checkConfig();
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatch(/^MCP_AUTH_TOKEN /);
+    expect(errors[0]).not.toContain("s3cret");
+    expect(warnings).toEqual([]);
+  });
+
+  it("does not warn about a 64-character token or an unset one", () => {
+    setValidEnv();
+    expect(checkConfig().warnings).toEqual([]);
+    delete process.env.MCP_AUTH_TOKEN;
+    expect(checkConfig().warnings).toEqual([]);
+  });
+
+  it("never puts the API key in a message", () => {
+    setValidEnv();
+    process.env.TZ = "Australia/Sydny";
+    process.env.PORT = "abc";
+    process.env.INTERVALS_ATHLETE_ID = "abc";
+    process.env.MCP_AUTH_TOKEN = "short";
+    const { errors, warnings } = checkConfig();
+    expect(errors.length + warnings.length).toBe(4);
+    for (const message of [...errors, ...warnings]) {
+      expect(message).not.toContain("k-secret-value");
+    }
   });
 });
 

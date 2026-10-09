@@ -399,13 +399,16 @@ copies as content, and it is sound only while COPYs are directories — narrowin
 one to a single file outruns the test.
 
 Each `docker.yml` build leg (amd64 and arm64) then starts the image before
-anything is published: `scripts/docker-smoke.sh` waits for the image's own
-`HEALTHCHECK` to report healthy, checks `/health` against `package.json`,
+anything is published: `scripts/docker-smoke.sh` runs it on `PORT=8080`,
+waits for the image's own `HEALTHCHECK` to report healthy (which proves the
+check reads `PORT`), checks `/health` against `package.json`,
 that the image carries no `node_modules` install tree, the bearer gate, that
 `tools/list` matches `tool-surface.lock.json`, that every `ui://` app resource
 returns HTML, that a bad-argument `tools/call` comes back as `isError`, that a
-2025-era `initialize` gets `-32022`, and that `docker stop` exits 0 promptly. A failing leg keeps the merge job from
-publishing any tag. Run it locally against any build:
+2025-era `initialize` gets `-32022`, that `TZ=Australia/Sydny` with `PORT=abc`
+exits 1 naming both variables, and that `docker stop` exits 0 promptly. A
+failing leg keeps the merge job from publishing any tag. Run it locally
+against any build:
 
 ```bash
 docker build -f apps/server/Dockerfile -t intervals-mcp:smoke .

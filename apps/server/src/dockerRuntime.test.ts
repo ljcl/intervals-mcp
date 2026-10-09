@@ -257,6 +257,80 @@ describe("Dockerfile runner stage", () => {
 });
 
 /**
+ * The HEALTHCHECK's exec-form argv. Line continuations are folded first,
+ * because the instruction wraps its CMD onto a second line.
+ */
+function healthcheckArgv(): string[] {
+  const dockerfile = readFileSync(DOCKERFILE_URL, "utf8").replace(
+    /\\\r?\n\s*/g,
+    " ",
+  );
+  const argv = /^HEALTHCHECK\b.*?\bCMD\s+(\[.*\])\s*$/m.exec(dockerfile)?.[1];
+  expect(argv, "no exec-form `HEALTHCHECK ... CMD [...]`").toBeDefined();
+  return JSON.parse(argv!) as string[];
+}
+
+/**
+ * Runs the healthcheck script in-process with a fake `fetch` and `process`.
+ * Resolves with the URL it fetched and the code it passed to `exit`.
+ */
+async function runHealthcheck(
+  env: Record<string, string>,
+  respond: () => Promise<{ ok: boolean }>,
+): Promise<{ url: string | undefined; code: number }> {
+  const script = healthcheckArgv()[2]!;
+  let url: string | undefined;
+  const fakeFetch = (input: string) => {
+    url = input;
+    return respond();
+  };
+  const code = await new Promise<number>((exit) => {
+    new Function("fetch", "process", script)(fakeFetch, { env, exit });
+  });
+  return { url, code };
+}
+
+describe("Dockerfile healthcheck", () => {
+  it("runs a script under the image's bun, with no shell", () => {
+    const argv = healthcheckArgv();
+    expect(argv.slice(0, 2)).toEqual(["/usr/local/bin/bun", "--eval"]);
+    expect(argv).toHaveLength(3);
+  });
+
+  // The server reads PORT through getPort() (config.ts): blank or unset
+  // means 3000, and surrounding spaces are ignored. The check must agree.
+  it.each<[string, Record<string, string>, number]>([
+    ["8080", { PORT: "8080" }, 8080],
+    ["unset", {}, 3000],
+    ["blank", { PORT: "" }, 3000],
+    ["padded", { PORT: " 9000 " }, 9000],
+  ])(
+    "fetches the port the server listens on (PORT %s)",
+    async (_label, env, port) => {
+      const { url } = await runHealthcheck(env, async () => ({ ok: true }));
+      expect(url).toBe(`http://localhost:${port}/health`);
+    },
+  );
+
+  it("exits 0 for an ok response", async () => {
+    const { code } = await runHealthcheck({}, async () => ({ ok: true }));
+    expect(code).toBe(0);
+  });
+
+  it("exits 1 for a response that is not ok", async () => {
+    const { code } = await runHealthcheck({}, async () => ({ ok: false }));
+    expect(code).toBe(1);
+  });
+
+  it("exits 1 when the fetch fails", async () => {
+    const { code } = await runHealthcheck({}, async () => {
+      throw new TypeError("fetch failed");
+    });
+    expect(code).toBe(1);
+  });
+});
+
+/**
  * The `packageManager` version. It must be a fully pinned `bun@x.y.z`: a
  * range or a bare `bun` would let CI float while the FROM tags stay fixed,
  * which is the drift this guard exists to stop.

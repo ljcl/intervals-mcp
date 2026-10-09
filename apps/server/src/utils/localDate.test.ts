@@ -4,7 +4,7 @@ import {
   dateInputSchema,
   daysBetween,
   isValidCalendarDate,
-  resolveWindowEnd,
+  isValidTimeZone,
   startOfWeekMonday,
   todayLocal,
   validateRange,
@@ -26,6 +26,29 @@ describe("todayLocal", () => {
     // 02:25 UTC is still the previous local day in New York.
     const now = new Date("2026-09-24T02:25:25Z");
     expect(todayLocal("America/New_York", now)).toBe("2026-09-23");
+  });
+});
+
+describe("isValidTimeZone", () => {
+  it.each([
+    "Australia/Sydney",
+    "australia/sydney",
+    "UTC",
+    "Etc/GMT+10",
+    "America/Argentina/ComodRivadavia",
+  ])("accepts %j", (tz) => {
+    expect(isValidTimeZone(tz)).toBe(true);
+  });
+
+  it.each([
+    "Australia/Sydny",
+    "",
+    " Australia/Sydney ",
+    ":Australia/Sydney",
+    "GMT+10",
+    "AEST-10AEDT,M10.1.0,M4.1.0/3",
+  ])("rejects %j", (tz) => {
+    expect(isValidTimeZone(tz)).toBe(false);
   });
 });
 
