@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.1](https://github.com/ljcl/intervals-mcp/compare/v2.5.0...v2.5.1) (2026-10-09)
+
+
+### Bug Fixes
+
+* **deps:** bump MCP SDK to server/client 2.3.1 and ext-apps 2.0.3 ([#170](https://github.com/ljcl/intervals-mcp/issues/170)) ([348885e](https://github.com/ljcl/intervals-mcp/commit/348885e4803aea401f5359c138cf5c61bb0c0604))
+
 ## [2.5.0](https://github.com/ljcl/intervals-mcp/compare/v2.4.0...v2.5.0) (2026-10-09)
 
 
