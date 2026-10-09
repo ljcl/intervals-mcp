@@ -70,6 +70,8 @@ never per-tool.
 - The body read is part of the attempt: the timeout signal covers it, a GET
   whose body stalls or is cut off retries, and a timeout during the read is a
   `RequestTimeoutError` like one during the connect (#52).
+- `FetchClient` stops the upstream work of a cancelled call scope; see
+  "Cancellation".
 - An error body goes into `HttpError.message` only as a one-line summary
   (`summarizeErrorBody`): an HTML page becomes its `<title>`, anything else
   is cut to 200 characters. `handleApiError` uses the same summary. The raw
@@ -114,6 +116,9 @@ concurrent callers via a single next-available-slot clock, not a per-caller
 delay. Draft limits (go-live unconfirmed): 5,000 requests/day and 2,500 per
 rolling 15 minutes per key, about 10/s per IP; 200ms spacing stays well under
 that ceiling without needing header feedback.
+
+A caller whose call is cancelled leaves the queue at once. It passes its turn
+on when it would have come, and it gives its slot back.
 
 The slot clock is `performance.now()` (monotonic), bound and captured when
 the client is built. A wall-clock step back (VM resume, NTP) therefore cannot
@@ -199,6 +204,11 @@ Everything else is left uncached.
   drops matching in-flight entries too, and an entry that was dropped mid
   flight never stores its (pre-write) result. `skipCache` reads bypass the map
   as well as the cache; paths the policy declines are never coalesced.
+  The shared read runs on its own `AbortController`, never a caller's signal.
+  A cancelled waiter detaches and the read carries on for the others. The
+  last waiter to leave abandons the read, and nobody joins an abandoned
+  entry. The promise has a no-op `catch`, because every waiter may have left
+  and nobody is then sure to observe a rejection.
 
 ## Streams
 
@@ -537,6 +547,35 @@ for.
   `progressCallOptions`. It sets `resetTimeoutOnProgress` (so a live sweep is
   not killed by the host's default timeout), and each hook exposes the latest
   message for `LoadingState` to render.
+
+## Cancellation
+
+`callScope.ts` holds the per-call state below the handler: an
+`AsyncLocalStorage` with the call's abort signal. Facts a handler needs to see
+stay in `ToolCallContext`. `FetchClient` is the only ambient reader so far;
+nothing opens a scope yet, and `dispatchToolCall` will (#70). Work meant to
+outlive a call must not start inside one.
+
+`FetchClient` reads the signal once per request and stops a cancelled call's
+upstream work:
+
+- A caller's own read combines the call signal with the per-attempt timeout
+  (`AbortSignal.any`), so a cancel aborts an attempt on the wire.
+- The timeout is created when the attempt starts, never while the attempt
+  waits in the pacing queue. A queued request therefore cannot time out
+  before it is sent.
+- After a cancel, no attempt, retry, backoff or pacing wait starts. A queued
+  caller leaves and gives its slot back.
+- `CallCancelledError` is classified before the timeout check, so a cancel is
+  never a `RequestTimeoutError`. Its `cause` is the abort reason.
+- Coalescing: a cancelled waiter detaches. The last waiter to leave abandons
+  the shared read. Its waits and retries stop. An attempt already on the wire
+  runs to its outcome and may fill the cache, because intervals.icu already
+  has the request. An abandoned read is never joined.
+- Writes: a write that has not started never starts. A write that has
+  started is never interrupted. A `CallCancelledError` from a write
+  therefore means it was not sent.
+- A cache hit is still served to a cancelled call.
 
 ## API key access
 

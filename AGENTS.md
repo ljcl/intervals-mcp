@@ -38,6 +38,8 @@ breaking them has shipped bugs — do not work around them locally.
   GET/HEAD only, never writes. The body read is inside the attempt, so its
   timeout retries and is a `RequestTimeoutError`. Error bodies reach a
   message only through `summarizeErrorBody` (an HTML page becomes its title).
+  A cancelled call starts no new attempt, retry or wait; a started write is
+  never interrupted (docs/architecture.md#cancellation).
 - **Error types survive translation.** `handleApiError` rethrows
   `RateLimitError` unmodified (its `detail` is the bare window description a
   tool can quote) and wraps everything else in `IntervalsApiError extends HttpError`
@@ -174,7 +176,8 @@ breaking them has shipped bugs — do not work around them locally.
   GETs.** Every value `FetchClient` hands out (hit, populating miss, coalesced
   awaiter) is a `structuredClone`; concurrent identical cacheable GETs share
   one upstream promise (failures never cached, write invalidation drops
-  in-flight entries, `skipCache` bypasses both). Never return a cached object
+  in-flight entries, `skipCache` bypasses both). The shared read runs on its
+  own controller, never a caller's signal. Never return a cached object
   by reference or add a per-tool in-flight map.
 - **The Bun version has one home: root `packageManager`.** CI reads it via
   `bun-version-file`; `dockerRuntime.test.ts` pins the Dockerfile's
