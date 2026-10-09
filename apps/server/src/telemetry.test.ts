@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { intervalsApi } from "./fetchClient";
 import {
   parseTraceparent,
+  recordRejectedRequest,
   recordToolCall,
   resetToolCallStats,
   toolCallStats,
@@ -413,4 +414,100 @@ describe("parseTraceparent", () => {
       expect(parseTraceparent(value)).toBeUndefined();
     },
   );
+});
+
+describe("recordRejectedRequest", () => {
+  let stderr: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    resetToolCallStats();
+    stderr = vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    stderr.mockRestore();
+  });
+
+  function lastRecord(): Record<string, unknown> {
+    const [line] = stderr.mock.calls[stderr.mock.calls.length - 1] ?? [];
+    return JSON.parse(String(line));
+  }
+
+  it("writes one JSON line with the event and a timestamp", () => {
+    recordRejectedRequest({
+      status: 400,
+      code: -32022,
+      reason: "unsupported",
+      http_method: "POST",
+      rpc_method: "initialize",
+      client_name: "test-client",
+    });
+
+    expect(stderr).toHaveBeenCalledTimes(1);
+    const line = lastRecord();
+    expect(line).toMatchObject({
+      event: "mcp_rejected",
+      status: 400,
+      code: -32022,
+      reason: "unsupported",
+      http_method: "POST",
+      rpc_method: "initialize",
+      client_name: "test-client",
+    });
+    expect(new Date(String(line.ts)).toISOString()).toBe(line.ts);
+  });
+
+  it("bounds its fields and keeps the newlines of a stack", () => {
+    recordRejectedRequest({
+      status: 500,
+      reason: "r".repeat(500),
+      stack: `Error: boom\n    at x (y.ts:1:1)\n${"s".repeat(5000)}`,
+      http_method: "POST",
+      client_name: "c".repeat(500),
+    });
+
+    const line = lastRecord();
+    expect(Array.from(String(line.reason))).toHaveLength(200);
+    expect(String(line.stack).length).toBe(4000);
+    expect(String(line.stack)).toContain("Error: boom\n    at x");
+    expect(Array.from(String(line.client_name))).toHaveLength(64);
+    expect(stderr).toHaveBeenCalledTimes(1);
+  });
+
+  it("strips control and format characters from a stack", () => {
+    recordRejectedRequest({
+      status: 500,
+      stack: "a\u0007b\u202Ec\r\nd",
+      http_method: "POST",
+    });
+
+    expect(lastRecord().stack).toBe("abc\nd");
+  });
+
+  it("omits fields that are not set", () => {
+    recordRejectedRequest({ status: 405, http_method: "GET" });
+
+    expect(Object.keys(lastRecord())).toEqual([
+      "event",
+      "ts",
+      "status",
+      "http_method",
+    ]);
+  });
+
+  it("does not throw when writing the line throws", () => {
+    stderr.mockImplementation(() => {
+      throw new Error("stderr closed");
+    });
+
+    expect(() =>
+      recordRejectedRequest({ status: 400, http_method: "POST" }),
+    ).not.toThrow();
+  });
+
+  it("leaves the per-tool counters unchanged", () => {
+    recordRejectedRequest({ status: 401, http_method: "POST" });
+
+    expect(toolCallStats()).toEqual({});
+  });
 });

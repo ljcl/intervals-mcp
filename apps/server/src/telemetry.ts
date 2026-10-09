@@ -26,6 +26,12 @@ export const ERROR_RESULT_CLASS = "ToolErrorResult";
 /** Longest `tool`, `client_name` or `client_version` the log line keeps. */
 const MAX_FIELD_CHARS = 64;
 
+/** Longest `reason` an `mcp_rejected` line keeps. */
+const MAX_REASON_CHARS = 200;
+
+/** Longest `stack` an `mcp_rejected` line keeps. */
+const MAX_STACK_CHARS = 4_000;
+
 /** The `tool` logged when a name is empty after bounding. */
 const UNKNOWN_TOOL = "unknown";
 
@@ -116,6 +122,31 @@ export interface ToolCallRecord {
   /** From a valid W3C `traceparent` in the request's `_meta`. */
   trace_id?: string;
   /** The `traceparent`'s parent-id. */
+  parent_id?: string;
+}
+
+/** One refused /mcp request. */
+export interface RejectedRequestRecord {
+  event: "mcp_rejected";
+  /** When the request was refused, as an ISO timestamp. */
+  ts: string;
+  /** The HTTP status of the answer. */
+  status: number;
+  /** The JSON-RPC error code in the answer's body, when it has one. */
+  code?: number;
+  /** Why the request was refused. Bounded when logged. */
+  reason?: string;
+  /** The stack of a 5xx's error. Bounded when logged. */
+  stack?: string;
+  http_method: string;
+  /** The `Mcp-Method` header. */
+  mcp_method?: string;
+  /** The `method` in the request body. */
+  rpc_method?: string;
+  protocol_version?: string;
+  client_name?: string;
+  client_version?: string;
+  trace_id?: string;
   parent_id?: string;
 }
 
@@ -217,6 +248,61 @@ export function recordToolCall(
   });
 
   return line;
+}
+
+/**
+ * An error stack made safe for one log line: cut to {@link MAX_STACK_CHARS},
+ * well-formed and stripped of control and format characters. Newlines and
+ * tabs stay; `JSON.stringify` escapes them, so the line stays one line.
+ */
+function boundedStack(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const cleaned = value
+    .slice(0, MAX_STACK_CHARS)
+    .replace(/[\uD800-\uDBFF]$/, "")
+    .toWellFormed()
+    .replace(/[\p{Cf}\p{Zl}\p{Zp}]|(?![\n\t])\p{Cc}/gu, "");
+  return cleaned === "" ? undefined : cleaned;
+}
+
+/**
+ * Emit one `mcp_rejected` line for a refused /mcp request. Unset fields are
+ * left out. The line never fails the request it describes, and it does not
+ * touch the per-tool counters.
+ */
+export function recordRejectedRequest(
+  record: Omit<RejectedRequestRecord, "event" | "ts">,
+): void {
+  try {
+    const reason = boundedLogField(record.reason, MAX_REASON_CHARS);
+    const stack = boundedStack(record.stack);
+    const mcpMethod = boundedLogField(record.mcp_method);
+    const rpcMethod = boundedLogField(record.rpc_method);
+    const protocolVersion = boundedLogField(record.protocol_version);
+    const clientName = boundedLogField(record.client_name);
+    const clientVersion = boundedLogField(record.client_version);
+    const traceId = boundedLogField(record.trace_id);
+    const parentId = boundedLogField(record.parent_id);
+    const line: RejectedRequestRecord = {
+      event: "mcp_rejected",
+      ts: new Date().toISOString(),
+      status: record.status,
+      ...(record.code !== undefined ? { code: record.code } : {}),
+      ...(reason ? { reason } : {}),
+      ...(stack ? { stack } : {}),
+      http_method: boundedLogField(record.http_method) ?? "unknown",
+      ...(mcpMethod ? { mcp_method: mcpMethod } : {}),
+      ...(rpcMethod ? { rpc_method: rpcMethod } : {}),
+      ...(protocolVersion ? { protocol_version: protocolVersion } : {}),
+      ...(clientName ? { client_name: clientName } : {}),
+      ...(clientVersion ? { client_version: clientVersion } : {}),
+      ...(traceId ? { trace_id: traceId } : {}),
+      ...(parentId ? { parent_id: parentId } : {}),
+    };
+    console.error(JSON.stringify(line));
+  } catch {
+    // A refused request is already answered; a log line cannot change that.
+  }
 }
 
 /** Snapshot of the counters, busiest tool first, for `/health`. */

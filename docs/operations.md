@@ -200,6 +200,56 @@ hosts that would lose them.
 is a valid W3C trace context value. Use them to match a line to the client's
 own trace. The server ignores `tracestate` and `baggage`.
 
+### Rejected requests
+
+Every refused `/mcp` request writes one `mcp_rejected` line to stderr, shown
+wrapped here:
+
+```json
+{
+  "event": "mcp_rejected",
+  "ts": "2026-10-08T01:03:00.120Z",
+  "status": 400,
+  "code": -32022,
+  "reason": "Rejected 2025-era request on a modern-only endpoint (modern-only-missing-envelope): Unsupported protocol version: 2025-06-18",
+  "http_method": "POST",
+  "rpc_method": "initialize",
+  "protocol_version": "2025-06-18",
+  "client_name": "claude-desktop",
+  "client_version": "0.9.0"
+}
+```
+
+The server writes the line for every answer of HTTP 400 or above, and for
+every 401. It writes exactly one line per request. The one exception is 499,
+which means the client closed the request. The `tool_call` line records that
+as `cancelled`. A JSON-RPC error inside an HTTP 200 answer is not a rejected
+request, so it gets no line.
+
+`status` is the HTTP status. `code` is the JSON-RPC error code in the answer.
+`reason` is the SDK's error message when it reported one, or else the message
+in the answer. `rpc_method` is the `method` in the request body, and
+`mcp_method` is the `Mcp-Method` header. The client, protocol version and
+trace fields come from the request envelope. A 2025-era `initialize` has no
+envelope, so its line takes them from the `initialize` params and from the
+`Mcp-Protocol-Version` header. The server bounds every string like the
+`tool_call` line does.
+
+A 5xx adds a `stack` field, cut to 4,000 characters, instead of a second
+line. The server never logs the `Authorization` header.
+
+A 401 has one of three reasons: `no Authorization header`,
+`Authorization is not a Bearer token`, or
+`bearer token does not match MCP_AUTH_TOKEN`. The server does not read the
+body of an unauthenticated request. A 401 line therefore carries only
+`status`, `code`, `reason`, `http_method`, `mcp_method` and `protocol_version`.
+
+To find clients that still speak the 2025 revision:
+
+```bash
+docker compose logs | grep mcp_rejected | grep '"code":-32022'
+```
+
 ## Securing the endpoint
 
 A tunnel makes `/mcp` reachable by anyone who discovers the URL — including

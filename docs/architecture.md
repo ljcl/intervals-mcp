@@ -563,6 +563,28 @@ the caller does not already know (#72). A request that carries the
 `io.modelcontextprotocol/logLevel` envelope key gets its normal response and
 no `notifications/message`.
 
+### Rejected requests
+
+`mcpEndpoint.ts` writes one `mcp_rejected` line for each answer of HTTP 400 or
+above, except a client-closed 499 (#69). The SDK reports a handler failure
+through `onerror` while it builds the response. A private, exchange-scoped
+`AsyncLocalStorage` (unrelated to `callScope.ts`) collects those reports for
+the exchange that caused them. `handleRequest` reads them once the response
+is known and folds them into the one line, so a rejected exchange never
+prints a second `MCP handler error:` line. The first report is the `reason`.
+A 5xx keeps its stack inside the line, bounded by `telemetry.ts`.
+
+A report that arrives after the response, such as a stream that fails
+mid-body, finds `answered` set and prints as `MCP handler error:`, as does a
+report for an exchange that was served. The endpoint reads the JSON-RPC code
+from a clone of the response. It describes the request from the parsed body
+(a batch by its first element) and never reads the `Authorization` header.
+
+`mcpAuth.ts` writes the line for a 401, because that answer never reaches the
+endpoint. It does not parse the body, so that line has header-derived fields
+only. `/health` and the HEALTHCHECK use `requestHasValidSecret`, which does not
+log.
+
 ## Progress notifications
 
 A caller's `progressToken` becomes a `ReportProgress` closure (`progress.ts`),

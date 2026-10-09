@@ -207,6 +207,22 @@ else
   fail "initialize returned HTTP $init_status, code $init_code"
 fi
 
+# Each refused /mcp request wrote one mcp_rejected line: the 401 from the
+# bearer gate and the -32022 from the endpoint, which proves the endpoint's
+# exchange-scoped storage on the image's Bun. No line may hold the token.
+rejected="$(docker logs "$NAME" 2>&1 | grep '"event":"mcp_rejected"' || true)"
+if jq -e 'select(.status == 401 and .code == -32001)' <<<"$rejected" >/dev/null 2>&1 &&
+  jq -e 'select(.status == 400 and .code == -32022 and .client_name == "docker-smoke")' <<<"$rejected" >/dev/null 2>&1; then
+  pass "the 401 and -32022 rejections each wrote an mcp_rejected line"
+else
+  fail "mcp_rejected lines: $rejected"
+fi
+if docker logs "$NAME" 2>&1 | grep -qF "$TOKEN"; then
+  fail "a log line holds the MCP auth token"
+else
+  pass "no log line holds the MCP auth token"
+fi
+
 # Bad config stops startup with exit 1 and one line per bad variable. Vitest
 # never runs index.ts, so this is the check that the startup gate runs on the
 # image's Bun. The wait polls like the health wait above, so it needs no GNU

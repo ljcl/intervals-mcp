@@ -217,6 +217,8 @@ PRs are squash-merged and the **PR title becomes the commit on `main`**, so writ
 
 **"Cloudflare … answered with a challenge":** Cloudflare, in front of intervals.icu, stopped the request before it reached intervals.icu, so this is not an API key problem. Wait a few minutes and retry. See [operations.md](docs/operations.md#rate-limits-and-resilience).
 
+**Client can't connect (401 or unsupported protocol version):** Each refused `/mcp` request writes one `mcp_rejected` line to the server log with its status, JSON-RPC code and, when the client sent it, its name. A 401 means the bearer token is missing or wrong. Code `-32022` means the client speaks an older MCP revision. See [operations.md](docs/operations.md#rejected-requests).
+
 **Is the server up and reachable?** `curl https://your-public-url/health`. It answers without touching the intervals.icu API, so it works even when your rate limit is exhausted.
 
 **Client re-prompts for read tools after I granted them** — A release likely renamed a tool or changed its input schema; grants are stored per tool identity, so that drops the grant. Releases say so in the changelog. Otherwise persistence lives in the client — check both connector-level and per-tool settings. See [docs/tools.md](docs/tools.md#tool-permissions).

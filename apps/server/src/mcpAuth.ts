@@ -1,4 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
+import { recordRejectedRequest } from "./telemetry";
 
 /**
  * Optional bearer-token gate for the /mcp endpoint.
@@ -10,6 +11,9 @@ import { timingSafeEqual } from "node:crypto";
  * when unset, behaviour is unchanged (open), with a startup warning if
  * `PUBLIC_URL` suggests the server is internet-facing.
  */
+
+/** The JSON-RPC code of the 401 body and of its log line. */
+const UNAUTHORIZED_CODE = -32001;
 
 function constantTimeEquals(a: string, b: string): boolean {
   const bufA = Buffer.from(a);
@@ -54,10 +58,26 @@ export function unauthorizedMcpResponse(req: Request): Response | null {
   const presented = header?.match(/^Bearer\s+(.+)$/i)?.[1];
   if (presented && constantTimeEquals(presented, expected)) return null;
 
+  // The header value is never logged, and the body of an unauthenticated
+  // request is never parsed, so this line carries only header-derived fields.
+  recordRejectedRequest({
+    status: 401,
+    code: UNAUTHORIZED_CODE,
+    reason:
+      header === null
+        ? "no Authorization header"
+        : presented === undefined
+          ? "Authorization is not a Bearer token"
+          : "bearer token does not match MCP_AUTH_TOKEN",
+    http_method: req.method,
+    mcp_method: req.headers.get("mcp-method") ?? undefined,
+    protocol_version: req.headers.get("mcp-protocol-version") ?? undefined,
+  });
+
   return new Response(
     JSON.stringify({
       jsonrpc: "2.0",
-      error: { code: -32001, message: "Unauthorized" },
+      error: { code: UNAUTHORIZED_CODE, message: "Unauthorized" },
       id: null,
     }),
     {

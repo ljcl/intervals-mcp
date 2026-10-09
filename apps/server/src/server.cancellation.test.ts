@@ -161,6 +161,12 @@ describe("cancellation over the wire", () => {
     expect(loggedRecords()).toEqual([
       expect.objectContaining({ tool: "get-activity", outcome: "cancelled" }),
     ]);
+    // A 499 is the client leaving, not a refused request.
+    expect(
+      vi
+        .mocked(console.error)
+        .mock.calls.some(([line]) => String(line).includes("mcp_rejected")),
+    ).toBe(false);
 
     // The listing lands empty. An uncancelled call would walk to the next
     // 31-day window now; this one must not.

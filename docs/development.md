@@ -409,10 +409,11 @@ that the image carries no `node_modules` install tree, the bearer gate, that
 returns HTML, that a bad-argument `tools/call` comes back as `isError` and
 writes a `tool_call` line with `ts` and the client's name and version (proof
 that the call scope works on Bun), that a 2025-era `initialize` gets
-`-32022`, that `TZ=Australia/Sydny` with `PORT=abc`
-exits 1 naming both variables, and that `docker stop` exits 0 promptly. A
-failing leg keeps the merge job from publishing any tag. Run it locally
-against any build:
+`-32022`, that `TZ=Australia/Sydny` with `PORT=abc` exits 1 naming both
+variables, and that `docker stop` exits 0 promptly. It also checks that the
+401 and the `-32022` rejection each wrote an `mcp_rejected` line, and that no
+log line holds the token. A failing leg keeps the merge job from publishing
+any tag. Run it locally against any build:
 
 ```bash
 docker build -f apps/server/Dockerfile -t intervals-mcp:smoke .
