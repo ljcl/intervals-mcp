@@ -133,6 +133,8 @@ per-tool. Path patterns and current TTLs (`fetchClient.ts`):
 | `/athlete/{id}/hr-curves.json` | 10m | Recomputed from history, like the pace curves |
 | `/athlete/{id}/activities` | 1m | A newly recorded activity should show up quickly |
 | `/athlete/{id}/activities/search-full` | 1m | Same freshness as the listing |
+| `/athlete/{id}/activities/interval-search` | 1m | Same freshness as the listing |
+| `/athlete/{id}/activities/{ids}` (`i`-prefixed, comma-separated) | 10m | The same rows as `/activity/{id}`; dropped with the activities list on `update-activity` |
 | `/athlete/{id}/wellness*` | 5m | intervals.icu updates wellness through the day |
 | `/athlete/{id}/pace-curves.json` | 10m | Recomputed from history a few times a day at most |
 
@@ -405,7 +407,18 @@ athlete's max HR (`athlete_max_hr`, else the top `icu_hr_zones` bound), never
 the run's own peak, which made an easy run read as hard. The lap path drops
 sliver laps rather than the whole lap set, and needs 2 blocks of consecutive
 fast laps with slower laps between; `selectCleanWorkLaps` holds the lap
-rules, including the stricter test for 1 km or 1 mile auto-laps.
+rules, including the stricter test for 1 km or 1 mile auto-laps and the cut
+of a slow warm-up or cool-down lap at the edge of the first or last block.
+
+**Similar sessions have one definition.** `intervalSimilarity.ts` holds the
+typical reps (within 20% of the median rep time), the interval-search band
+and the same-structure test. `get-interval-analysis` reads each candidate's
+reps with `repsFromLaps` (`intervalAnalysis.ts`), the lap rules of its own
+analysis, so a candidate is measured with the lap rules of the main analysis
+(a stream-sourced session is compared with candidates' laps). The search and the bulk read are optional reads: when one
+fails, the main analysis still comes back, `similar.status` is
+`unavailable`, `unavailableReason` (`tools/_errors.ts`) words the cause, and
+the raw message goes to the operator log.
 
 ## Per-call telemetry
 

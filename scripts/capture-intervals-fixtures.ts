@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import * as dotenv from "dotenv";
+import { PACE_ACTIVITY_TYPES } from "../apps/server/src/utils/running";
 
 const root = path.resolve(import.meta.dirname, "..");
 dotenv.config({ path: path.join(root, ".env"), quiet: true });
@@ -115,6 +116,38 @@ function scrubHeartRateProfile(r: Rec): Rec {
       zones.map((_, i) =>
         Math.round(SYNTHETIC_HR.max * (0.7 + (0.3 * (i + 1)) / zones.length)),
       );
+  }
+  return out;
+}
+
+/**
+ * Rewrites the threshold-derived fields of an interval breakdown (the
+ * `/intervals` response, or an activity read with `?intervals=true`).
+ * On runs, interval `intensity` is heart rate over the real LTHR
+ * (docs/api-notes.md), so the real LTHR can be worked out from it: it is
+ * rewritten against the synthetic LTHR. On other sports it can be pace over
+ * the real threshold pace, so it is nulled. `zone` places each interval and
+ * group in the real zones, and no tool reads it, so it is nulled too.
+ */
+function scrubIntervalIntensity(r: Rec, activityType: unknown): Rec {
+  const isRun =
+    typeof activityType === "string" && PACE_ACTIVITY_TYPES.has(activityType);
+  const scrubOne = (interval: Rec): Rec => {
+    const hr = interval.average_heartrate;
+    const out: Rec = { ...interval };
+    if (typeof out.intensity === "number") {
+      out.intensity =
+        isRun && typeof hr === "number"
+          ? Math.floor((hr * 100) / SYNTHETIC_HR.lthr)
+          : null;
+    }
+    if ("zone" in out) out.zone = null;
+    return out;
+  };
+  const out: Rec = { ...r };
+  for (const k of ["icu_intervals", "icu_groups"]) {
+    const list = out[k];
+    if (Array.isArray(list)) out[k] = (list as Rec[]).map(scrubOne);
   }
   return out;
 }
@@ -320,12 +353,13 @@ const activities = (await get(
   "/athlete/0/activities?oldest=2026-09-01&newest=2026-09-24",
 )) as Rec[];
 write("activities.json", activities.map(scrubActivity));
-write(
-  "activity.json",
-  scrubActivity((await get(`/activity/${ACTIVITY}`)) as Rec, 0),
-);
+const activity = (await get(`/activity/${ACTIVITY}`)) as Rec;
+write("activity.json", scrubActivity(activity, 0));
 const intervals = (await get(`/activity/${ACTIVITY}/intervals`)) as Rec;
-write("activity-intervals.json", { ...intervals });
+write(
+  "activity-intervals.json",
+  scrubIntervalIntensity(intervals, activity.type),
+);
 write(
   "streams.json",
   scrubStreams(
@@ -340,15 +374,16 @@ const wellness = (await get(
 write("wellness.json", synthesizeWellness(wellness));
 
 for (const capture of namedCaptures) {
-  write(
-    `activity-${capture.name}.json`,
-    scrubActivity((await get(`/activity/${capture.id}`)) as Rec, 0),
-  );
+  const captured = (await get(`/activity/${capture.id}`)) as Rec;
+  write(`activity-${capture.name}.json`, scrubActivity(captured, 0));
   if (capture.captureIntervals) {
     const capturedIntervals = (await get(
       `/activity/${capture.id}/intervals`,
     )) as Rec;
-    write(`activity-${capture.name}-intervals.json`, { ...capturedIntervals });
+    write(
+      `activity-${capture.name}-intervals.json`,
+      scrubIntervalIntensity(capturedIntervals, captured.type),
+    );
   }
   write(
     `streams-${capture.name}.json`,

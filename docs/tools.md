@@ -77,7 +77,7 @@ descriptions.
 | `get-hill-analysis` | Climb/descent detection with GAP and early-vs-late climb effort drift |
 | `get-split-analysis` | Even km splits with a two-halves pacing verdict stated on the clock and grade-adjusted |
 | `get-aerobic-analysis` | Aerobic decoupling and efficiency factor on a grade-adjusted, pace or power basis from streams, with intervals.icu's own values labelled apart |
-| `get-interval-analysis` | Interval detection with urban-stop-aware rest classification and rep fade |
+| `get-interval-analysis` | Interval detection with urban-stop-aware rest classification and rep fade; with findSimilar, earlier sessions with the same reps |
 | `get-best-efforts` | Best times at standard running distances: over your history from intervals.icu's pace curves, or inside one run with where each started |
 | `get-race-prediction` | Predicted race times from intervals.icu pace-curve points (Riegel) alongside intervals.icu's own critical-speed model, with confidence, source point, and km goal-pace splits |
 | `get-athlete-stats` | Run totals and totals for every sport (count, moving time, distance and whole-body load per activity type) for this week, the last 4 weeks, this month and YTD, aggregated from list-activities data |
@@ -451,6 +451,16 @@ laps 1 km or 1 mile) a fast lap is often a downhill km, so the laps count
 only when intervals.icu's labels match (every fast lap WORK, every lap
 between RECOVERY) or there are 3 reps each at least 1.15 times the speed of
 the laps between. Labels that do not match the fast laps lower confidence.
+At the outer edge of the first and the last fast block, a lap slower than
+80% of the other blocks' median speed (about 25% slower pace) is a warm-up or
+cool-down lap, not part of a rep. This happens when the recoveries are walks: the median lap is
+slow, so a steady lap reads as fast. With 3 or more blocks such laps are
+dropped before the consistency check, and the reasoning says so (#84). A
+first or last rep that slow is dropped the same way, so the fade then reads
+only the other reps. Each rep from laps also carries
+intervals.icu's interval `intensity` (`intensity_pct`, time-weighted across
+its laps): a percent of the sport's threshold, heart rate or pace per the
+athlete's settings (docs/api-notes.md).
 Work reps are reconstructed between
 recoveries, merging straight through traffic lights, and reported with
 per-rep pace (`pace_min_per_km`, bare `m:ss`), HR, cadence, and power; fade compares the last rep
@@ -461,6 +471,32 @@ the activity's `athlete_max_hr`, else the top `icu_hr_zones` bound
 the peak is low, so an easy zone 2 run read as "a hard workout" (#47). When
 the activity has neither, the peak is a last resort: the response warns,
 and the signal makes no call and does not change the verdict.
+
+With `findSimilar: true`, `get-interval-analysis` also finds earlier
+sessions with the same reps, to track progress on a repeated workout. It
+takes this session's typical reps: the reps within 20% of the median rep
+time. With fewer than 2 (a pyramid) it returns `mixed_reps`, and a
+non-interval session returns `not_intervals`; neither makes a request. It
+asks intervals.icu's interval search for activities with reps of that time
+(widened by 15%) and intensity (the reps' own intervals.icu intensity,
+widened by 5 points; any intensity when the reps have none), and a rep count
+within 40% (at least 2 either way). The search covers every sport, but it returns only the 100 newest matches
+(a full page of later sessions or other sports leaves no candidate, and the
+reason says so), also matches recovery intervals, and its count rule does not
+follow the current laps (docs/api-notes.md), so its rows are only
+candidates. The tool keeps earlier sessions of the same sport (Run,
+TrailRun and VirtualRun count as one), reads the 20 newest in one bulk
+request with their intervals, and checks each one from its own laps with
+the lap rules above. A candidate matches when its typical rep time is
+within 15% of this session's and its typical rep count is within the same
+tolerance. Up to 5 matches come back, newest first, with rep count, typical
+rep distance and time, mean rep pace (total time over total distance),
+time-weighted HR and intensity, fade (last typical rep against the first),
+and the change in pace and HR against this session. A session whose laps
+show no clean reps is skipped and counted, so a workout with no lap per rep is
+never found. If the search or the bulk read fails, the analysis still comes
+back, with `similar.status: "unavailable"` and the cause. The cost is up to two
+more requests.
 
 `get-best-efforts` reports best times at standard distances (400m, 1km, 5km,
 10km, half marathon, marathon by default, or a subset via `distances`).
@@ -881,3 +917,4 @@ These examples assume you already have an activity id to pass to a tool.
 - "Am I fresh enough to race this weekend? Check my CTL, ATL, and TSB"
 - "My race is on 13 September — what should the next three weeks look like so I arrive at TSB +10?"
 - "Did I decouple on that marathon-pace effort?"
+- "Am I getting faster at my 1 km repeats?"

@@ -612,8 +612,10 @@ async function checkGetAerobicAnalysis(): Promise<void> {
 async function checkGetIntervalAnalysis(): Promise<void> {
   const name = "get-interval-analysis";
   try {
+    // findSimilar adds the interval search and one bulk read on an interval
+    // session, and no request on any other run.
     const result = (await getIntervalAnalysisTool.execute(
-      { id: activityId },
+      { id: activityId, findSimilar: true },
       apiKey,
       NO_PROGRESS,
     )) as {
@@ -629,10 +631,11 @@ async function checkGetIntervalAnalysis(): Promise<void> {
       reps: unknown[];
       source: string;
       confidence: string;
+      similar?: { status: string; sessions: unknown[] };
     };
     ok(
       name,
-      `reps=${d.reps.length} source=${d.source} confidence=${d.confidence}`,
+      `reps=${d.reps.length} source=${d.source} confidence=${d.confidence} similar=${d.similar?.status} sessions=${d.similar?.sessions.length ?? 0}`,
     );
   } catch (error) {
     fail(name, throwSummary(error));

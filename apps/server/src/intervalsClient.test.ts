@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import activities from "./__fixtures__/intervals/activities.json";
+import activitiesSimilar from "./__fixtures__/intervals/activities-similar.json";
 import activity from "./__fixtures__/intervals/activity.json";
 import activityHilly from "./__fixtures__/intervals/activity-hilly.json";
 import intervals from "./__fixtures__/intervals/activity-intervals.json";
@@ -17,6 +18,7 @@ import streamsMultilap from "./__fixtures__/intervals/streams-multilap.json";
 import wellness from "./__fixtures__/intervals/wellness.json";
 import { intervalsApi, RateLimitError } from "./fetchClient";
 import {
+  getActivitiesByIds,
   getActivity,
   getActivityIntervals,
   getActivityStreams,
@@ -30,6 +32,7 @@ import {
   listGear,
   listSportSettings,
   searchActivities,
+  searchActivitiesByIntervals,
   updateActivity,
 } from "./intervalsClient";
 
@@ -189,6 +192,95 @@ describe("intervalsClient", () => {
     await searchActivities("k", "#race", 200);
 
     expect(calls[0]!.url).toContain("q=%23race");
+  });
+
+  describe("searchActivitiesByIntervals", () => {
+    it("sends exactly the seven band fields and sorts newest first", async () => {
+      const older = {
+        ...activities[0],
+        id: "i1",
+        start_date_local: "2025-11-14T18:54:16",
+      };
+      const newer = {
+        ...activities[0],
+        id: "i2",
+        start_date_local: "2026-05-10T08:09:41",
+      };
+      const calls = mockJson([older, newer]);
+
+      // The tool passes its search band, which also carries intensityUsed.
+      const found = await searchActivitiesByIntervals("k", {
+        minSecs: 225,
+        maxSecs: 309,
+        minIntensity: 92,
+        maxIntensity: 107,
+        minReps: 3,
+        maxReps: 7,
+        limit: 100,
+        intensityUsed: true,
+      } as Parameters<typeof searchActivitiesByIntervals>[1]);
+
+      const url = new URL(calls[0]!.url);
+      expect(url.pathname).toBe("/api/v1/athlete/0/activities/interval-search");
+      expect(Object.fromEntries(url.searchParams)).toEqual({
+        minSecs: "225",
+        maxSecs: "309",
+        minIntensity: "92",
+        maxIntensity: "107",
+        minReps: "3",
+        maxReps: "7",
+        limit: "100",
+      });
+      expect(found.map((a) => a.id)).toEqual(["i2", "i1"]);
+    });
+
+    it("keeps a 422 status, such as a limit over 100", async () => {
+      mockJson({ status: 422, error: "limit must be <= 100" }, 422);
+      const error = await searchActivitiesByIntervals("k", {
+        minSecs: 1,
+        maxSecs: 2,
+        minIntensity: 0,
+        maxIntensity: 300,
+        minReps: 2,
+        maxReps: 4,
+        limit: 400,
+      }).catch((e) => e);
+      expect(error).toBeInstanceOf(IntervalsApiError);
+      expect(error.response.status).toBe(422);
+    });
+  });
+
+  describe("getActivitiesByIds", () => {
+    it("reads comma-separated ids in one request, with intervals when asked", async () => {
+      const calls = mockJson(activitiesSimilar);
+
+      const rows = await getActivitiesByIds("k", ["i1", "i2"], {
+        intervals: true,
+      });
+
+      const url = new URL(calls[0]!.url);
+      expect(url.pathname).toBe("/api/v1/athlete/0/activities/i1,i2");
+      expect(Object.fromEntries(url.searchParams)).toEqual({
+        intervals: "true",
+      });
+      // Rows come back as the API sends them (oldest first), not sorted.
+      expect(rows.map((a) => a.id)).toEqual(activitiesSimilar.map((a) => a.id));
+      expect(rows[0]?.icu_intervals?.[0]?.intensity).toBe(
+        activitiesSimilar[0]!.icu_intervals[0]!.intensity,
+      );
+    });
+
+    it("sends no query without intervals", async () => {
+      const calls = mockJson([]);
+      await getActivitiesByIds("k", ["i1"]);
+      expect(new URL(calls[0]!.url).search).toBe("");
+    });
+
+    it("makes no request for no ids", async () => {
+      const calls = mockJson([]);
+      expect(await getActivitiesByIds("k", [])).toEqual([]);
+      expect(calls).toHaveLength(0);
+    });
   });
 
   it("types the fields the read tools use from a detailed activity", async () => {
@@ -386,6 +478,33 @@ describe("intervalsClient", () => {
       await getAthletePaceCurves("k", { type: "Run", curves: ["1y"] });
       expect(calls).toHaveLength(2);
     });
+
+    it("invalidates the interval search and the bulk read too: both sit under the activities list", async () => {
+      const band = {
+        minSecs: 225,
+        maxSecs: 309,
+        minIntensity: 92,
+        maxIntensity: 107,
+        minReps: 3,
+        maxReps: 7,
+        limit: 100,
+      };
+      let calls = mockJson([]);
+      await searchActivitiesByIntervals("k", band);
+      await getActivitiesByIds("k", ["i1", "i2"], { intervals: true });
+      await searchActivitiesByIntervals("k", band);
+      await getActivitiesByIds("k", ["i1", "i2"], { intervals: true });
+      // The second pair came from the cache.
+      expect(calls).toHaveLength(2);
+
+      calls = mockJson(activity);
+      await updateActivity("k", "i189807578", { name: "x" });
+
+      calls = mockJson([]);
+      await searchActivitiesByIntervals("k", band);
+      await getActivitiesByIds("k", ["i1", "i2"], { intervals: true });
+      expect(calls).toHaveLength(2);
+    });
   });
 
   it("parses the multi-lap fixture and types the widened activity fields", async () => {
@@ -422,7 +541,8 @@ describe("intervalsClient", () => {
     expect(firstInterval?.gap).toBeCloseTo(3.427648);
     expect(firstInterval?.total_elevation_gain).toBeCloseTo(4.2);
     expect(firstInterval?.average_gradient).toBeCloseTo(0.0039488245);
-    expect(firstInterval?.intensity).toBe(77);
+    // Rewritten against the synthetic LTHR: floor(139 x 100 / 172).
+    expect(firstInterval?.intensity).toBe(80);
     expect(firstInterval?.decoupling).toBeNull();
     expect(firstInterval?.group_id).toBe("311s@139bpm81rpm");
     expect(firstInterval?.start_time).toBe(0);

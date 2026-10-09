@@ -709,7 +709,120 @@ const IntervalRepSchema = z.object({
     .nullable()
     .describe("spm (doubled) for runs, rpm for rides"),
   avg_watts: z.number().nullable(),
+  intensity_pct: z
+    .number()
+    .int()
+    .nullable()
+    .describe(
+      "intervals.icu interval intensity: % of the sport's threshold (HR or pace, per the athlete's settings). Null for reps from streams or laps with no intensity",
+    ),
 });
+const RepStructureSchema = z.object({
+  rep_count: z
+    .number()
+    .int()
+    .describe("Number of typical reps (within 20% of the median rep time)"),
+  rep_time_s: z
+    .number()
+    .int()
+    .describe("Median moving time of the typical reps"),
+  rep_distance_m: z
+    .number()
+    .int()
+    .describe("Median distance of the typical reps"),
+  pace_sec_per_km: z
+    .number()
+    .int()
+    .nullable()
+    .describe("Total time over total distance of the typical reps"),
+  pace_min_per_km: z.string().nullable(),
+  avg_hr: z
+    .number()
+    .int()
+    .nullable()
+    .describe("Time-weighted across the typical reps"),
+  intensity_pct: z
+    .number()
+    .int()
+    .nullable()
+    .describe(
+      "Time-weighted intervals.icu interval intensity; null for reps from streams",
+    ),
+  pace_drift_pct: z
+    .number()
+    .nullable()
+    .describe("Last typical rep against the first; positive = slower"),
+  hr_drift_bpm: z
+    .number()
+    .nullable()
+    .describe("Last typical rep against the first"),
+});
+const SimilarSessionSchema = RepStructureSchema.extend({
+  activity_id: z.string(),
+  name: z.string(),
+  date: z.string().describe("Local start time"),
+  type: z.string(),
+  pace_delta_sec_per_km: z
+    .number()
+    .int()
+    .nullable()
+    .describe("pace_sec_per_km minus this_session's; positive = slower"),
+  hr_delta_bpm: z
+    .number()
+    .int()
+    .nullable()
+    .describe("avg_hr minus this_session's; positive = higher"),
+});
+const SimilarSessionsSchema = z.object({
+  status: z
+    .enum(["found", "none_found", "not_intervals", "mixed_reps", "unavailable"])
+    .describe(
+      "not_intervals and mixed_reps make no search; unavailable: the search or the read of the candidates failed, and the rest of the response is still complete",
+    ),
+  reason: z
+    .string()
+    .nullable()
+    .describe("Why sessions is empty; null when status is found"),
+  this_session: RepStructureSchema.nullable().describe(
+    "This activity's typical reps, the basis of every comparison",
+  ),
+  search: z
+    .object({
+      rep_time_min_s: z.number().int(),
+      rep_time_max_s: z.number().int(),
+      intensity_min_pct: z
+        .number()
+        .int()
+        .nullable()
+        .describe(
+          "null: the reps carry no intensity, so any intensity was searched",
+        ),
+      intensity_max_pct: z.number().int().nullable(),
+      rep_count_min: z.number().int(),
+      rep_count_max: z.number().int(),
+    })
+    .nullable()
+    .describe(
+      "The band sent to intervals.icu's interval search; null when no search ran",
+    ),
+  candidates: z
+    .number()
+    .int()
+    .describe("Earlier sessions of the same sport the search returned"),
+  checked: z
+    .number()
+    .int()
+    .describe("Candidates read and checked from their own laps, newest first"),
+  skipped: z.object({
+    no_clean_reps: z.number().int().describe("Laps show no clean reps"),
+    different_reps: z
+      .number()
+      .int()
+      .describe("Typical rep time or count differs"),
+  }),
+  sessions: z.array(SimilarSessionSchema).describe("Up to 5, newest first"),
+});
+export type SimilarSessionsOutput = z.infer<typeof SimilarSessionsSchema>;
 export const IntervalAnalysisOutputSchema = z.object({
   activity_id: z.union([z.string(), z.number()]),
   name: z.string(),
@@ -769,6 +882,9 @@ export const IntervalAnalysisOutputSchema = z.object({
     power: z.literal("W"),
   }),
   warnings: z.array(z.string()),
+  similar: SimilarSessionsSchema.optional().describe(
+    "Present only with findSimilar: true",
+  ),
 });
 
 // ---------- intervals.icu reads ----------

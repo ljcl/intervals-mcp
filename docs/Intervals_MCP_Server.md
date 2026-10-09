@@ -53,7 +53,7 @@ rather than (or alongside) text.
 | `get-hill-analysis` | How did the climbs go, and did I fade on them late? | `id` |
 | `get-split-analysis` | Did I positive-split, or was that the hills? | `id` |
 | `get-aerobic-analysis` | Did I decouple? What's my efficiency factor? | `id`, `basis` (gap, pace or power; gap corrects for hills) |
-| `get-interval-analysis` | Interval workout breakdown: pace/HR per rep, did reps fade? | `id` |
+| `get-interval-analysis` | Interval workout breakdown: pace/HR per rep, did reps fade? Am I faster than the last times I did this workout? | `id`, `findSimilar` |
 | `compare-activities` | How does this run compare to that one? | `activityId1`, `activityId2` |
 
 ### Fitness, load, and performance
@@ -216,6 +216,12 @@ description is kept. (This is also the `annotate-last-run` prompt.)
 - **Strava-stub activities.** An activity synced into intervals.icu from
   Strava with no further detail is flagged (`is_strava_stub`); don't expect
   streams or laps for it.
+- **Similar sessions are found from laps.** `get-interval-analysis` with
+  `findSimilar: true` compares only earlier sessions whose laps show clean
+  reps. A workout with no lap per rep (1 km auto-laps only) is skipped and
+  counted in `skipped`, not found. An empty `sessions` list always comes
+  with a `reason`; quote it rather than saying the athlete never did the
+  workout.
 
 ## Units
 

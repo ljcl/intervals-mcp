@@ -644,6 +644,103 @@ export async function searchActivities(
   );
 }
 
+/** Query for {@link searchActivitiesByIntervals}; every field is sent. */
+export interface IntervalsIntervalSearchQuery {
+  /** Shortest matching interval, s. */
+  minSecs: number;
+  /** Longest matching interval, s. */
+  maxSecs: number;
+  /** Lowest interval `intensity`, whole %. */
+  minIntensity: number;
+  /** Highest interval `intensity`, whole %. */
+  maxIntensity: number;
+  /** Fewest matching intervals. */
+  minReps: number;
+  /** Most matching intervals. */
+  maxReps: number;
+  /** At most 100 (a larger value is a 422). */
+  limit: number;
+}
+
+/**
+ * Finds activities with intervals in a time and intensity band, across the
+ * athlete's whole history and every sport, via
+ * `GET /athlete/{id}/activities/interval-search`. Full Activity rows, newest
+ * first, without `icu_intervals`. It also matches recovery intervals, and
+ * its count rule does not follow the current intervals, so treat the rows
+ * as candidates (verified 2026-10-08, docs/api-notes.md). Sends no `type`:
+ * on the verified account only no type (or `HR`) returned rows.
+ */
+export async function searchActivitiesByIntervals(
+  apiKey: string,
+  query: IntervalsIntervalSearchQuery,
+): Promise<IntervalsActivity[]> {
+  requireApiKey(apiKey);
+  const context = `searchActivitiesByIntervals for ${query.minSecs}-${query.maxSecs} s`;
+  // The seven named fields only: a caller's wider object (the search band
+  // also carries `intensityUsed`) must not leak extra query keys.
+  const params = {
+    minSecs: query.minSecs,
+    maxSecs: query.maxSecs,
+    minIntensity: query.minIntensity,
+    maxIntensity: query.maxIntensity,
+    minReps: query.minReps,
+    maxReps: query.maxReps,
+    limit: query.limit,
+  };
+  let data: unknown;
+  try {
+    const response = await intervalsApi.get<unknown>(
+      athletePath("/activities/interval-search"),
+      { headers: authHeaders(apiKey), params },
+    );
+    data = response.data;
+  } catch (error) {
+    handleApiError(error, context);
+  }
+  return parseOrThrow(IntervalsActivitiesResponseSchema, data, context).sort(
+    (a, b) =>
+      a.start_date_local < b.start_date_local
+        ? 1
+        : a.start_date_local > b.start_date_local
+          ? -1
+          : 0,
+  );
+}
+
+/**
+ * Reads several activities in one request via
+ * `GET /athlete/{athleteId}/activities/{ids}` (comma-separated). Pass the
+ * `i`-prefixed ids the API returns: a bare numeric id is dropped. Unknown
+ * and repeated ids are dropped with no error, and the rows do not come
+ * back in request order, so key the result by `id`.
+ * `options.intervals: true` adds `icu_intervals` and `icu_groups` to every
+ * row. An empty `ids` returns `[]` with no request.
+ */
+export async function getActivitiesByIds(
+  apiKey: string,
+  ids: readonly string[],
+  options: { intervals?: boolean } = {},
+): Promise<IntervalsActivity[]> {
+  requireApiKey(apiKey);
+  if (ids.length === 0) return [];
+  const context = `getActivitiesByIds for ${ids.length} ids`;
+  const params: Record<string, string | number | boolean> = {};
+  if (options.intervals) params.intervals = true;
+
+  let data: unknown;
+  try {
+    const response = await intervalsApi.get<unknown>(
+      athletePath(`/activities/${ids.join(",")}`),
+      { headers: authHeaders(apiKey), params },
+    );
+    data = response.data;
+  } catch (error) {
+    handleApiError(error, context);
+  }
+  return parseOrThrow(IntervalsActivitiesResponseSchema, data, context);
+}
+
 /**
  * Fetches a single activity. `options.intervals: true` adds
  * `?intervals=true`, which populates the activity's `icu_intervals` field

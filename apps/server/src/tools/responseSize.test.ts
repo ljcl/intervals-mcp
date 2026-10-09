@@ -16,10 +16,13 @@ import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { syntheticAllTypesStreams } from "../__fixtures__";
 import activitiesFixture from "../__fixtures__/intervals/activities.json";
+import activitiesSimilarFixture from "../__fixtures__/intervals/activities-similar.json";
 import activityMultilapFixture from "../__fixtures__/intervals/activity-multilap.json";
 import activityMultilapIntervalsFixture from "../__fixtures__/intervals/activity-multilap-intervals.json";
+import activityRepeatsFixture from "../__fixtures__/intervals/activity-repeats.json";
 import gearFixture from "../__fixtures__/intervals/gear.json";
 import hrCurvesFixture from "../__fixtures__/intervals/hr-curves.json";
+import intervalSearchFixture from "../__fixtures__/intervals/interval-search.json";
 import paceCurvesFixture from "../__fixtures__/intervals/pace-curves.json";
 import paceCurvesSubmaxFixture from "../__fixtures__/intervals/pace-curves-submax.json";
 import sportSettingsListFixture from "../__fixtures__/intervals/sport-settings.json";
@@ -36,6 +39,8 @@ vi.mock("../intervalsClient", async (importOriginal) => {
     ...actual,
     listActivities: vi.fn(),
     searchActivities: vi.fn(),
+    searchActivitiesByIntervals: vi.fn(),
+    getActivitiesByIds: vi.fn(),
     getActivity: vi.fn(),
     getActivityIntervals: vi.fn(),
     getActivityStreams: vi.fn(),
@@ -107,6 +112,8 @@ beforeEach(() => {
   vi.mocked(client.searchActivities).mockImplementation(async () =>
     activitiesIn({ oldest: "2024-10-05", newest: "2026-10-05" }).slice(0, 200),
   );
+  vi.mocked(client.searchActivitiesByIntervals).mockResolvedValue([]);
+  vi.mocked(client.getActivitiesByIds).mockResolvedValue([]);
   vi.mocked(client.getActivity).mockImplementation(async (_key, id) => ({
     ...multilapActivity,
     id,
@@ -146,6 +153,8 @@ interface SizeCase {
   args: Record<string, unknown>;
   /** Swap a mock before the call, for a case needing different data. */
   setup?: () => void;
+  /** Extra assertions on the result, to prove the case reached its largest path. */
+  check?: (result: { structuredContent?: unknown }) => void;
 }
 
 const ALL_STREAM_TYPES = [
@@ -165,6 +174,20 @@ const ALL_STREAM_TYPES = [
 
 const longRunStreams = () =>
   vi.mocked(client.getActivityStreams).mockResolvedValue(LONG_RUN);
+
+/** A 5 x 1 km session whose search finds 5 earlier sessions with the same reps. */
+const similarSessions = () => {
+  vi.mocked(client.getActivity).mockImplementation(async (_key, id) => ({
+    ...(activityRepeatsFixture as unknown as client.IntervalsActivity),
+    id,
+  }));
+  vi.mocked(client.searchActivitiesByIntervals).mockResolvedValue(
+    intervalSearchFixture as unknown as client.IntervalsActivity[],
+  );
+  vi.mocked(client.getActivitiesByIds).mockResolvedValue(
+    activitiesSimilarFixture as unknown as client.IntervalsActivity[],
+  );
+};
 
 /**
  * Every activity type intervals.icu has: the 60-value type enum in
@@ -247,7 +270,20 @@ const CASES: Record<string, SizeCase[]> = {
   "get-split-analysis": [
     { label: "4 h run", args: { id: ID }, setup: longRunStreams },
   ],
-  "get-interval-analysis": [{ label: "multi-lap", args: { id: ID } }],
+  "get-interval-analysis": [
+    { label: "multi-lap", args: { id: ID } },
+    {
+      label: "repeats, findSimilar",
+      args: { id: "i189757858", findSimilar: true },
+      setup: similarSessions,
+      check: (result) => {
+        const similar = (
+          result.structuredContent as { similar?: { sessions: unknown[] } }
+        ).similar;
+        expect(similar?.sessions).toHaveLength(5);
+      },
+    },
+  ],
   "get-training-load": [{ label: "365 days", args: { days: 365 } }],
   "get-fitness-trend": [
     {
@@ -334,7 +370,7 @@ describe("response size budget", () => {
 
   it.each(rows)(
     "$name ($label) stays under the budget",
-    async ({ name, args, setup }) => {
+    async ({ name, args, setup, check }) => {
       setup?.();
       const result = await dispatchToolCall(name, args);
       const text = result.content
@@ -342,6 +378,7 @@ describe("response size budget", () => {
         .join("");
       // A size check on an error message proves nothing.
       expect(result.isError, text).toBeUndefined();
+      check?.(result);
       expect(responseSize(text, result.structuredContent)).toBeLessThanOrEqual(
         RESPONSE_BUDGET_CHARS,
       );

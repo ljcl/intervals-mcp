@@ -32,6 +32,8 @@ Paths below are relative to the base URL above (spec lists them as `/api/v1/...`
 | Wellness | `GET /athlete/{id}/wellness{ext}` (date range; `.csv` for CSV), `POST`/`PUT /athlete/{id}/wellness` |
 | Wellness/{date} | `GET /athlete/{id}/wellness/{date}`, `PUT /athlete/{id}/wellness/{date}` |
 | Gear | `GET /athlete/{id}/gear{ext}` (list; `.csv` for CSV), `POST /athlete/{id}/gear` (create); per-item `PUT`/`DELETE /athlete/{id}/gear/{gearId}` |
+| Interval search | `GET /athlete/{id}/activities/interval-search` |
+| Activities by id | `GET /athlete/{athleteId}/activities/{ids}` (comma-separated) |
 
 ## Writes
 - `PUT /activity/{id}` takes only the fields to change. To clear a numeric field send `-1`.
@@ -439,3 +441,39 @@ HR curves:
   and `message` reads "1h at N bpm" (1 of 1). `get-athlete-zones` uses this
   rule on the 90-day curve (`lthrEstimate` in `athleteZones.ts`). Not
   verified: whether an `LTHR_UP` also changes the settings by itself.
+## Interval search and bulk activity reads (2026-10-08, #84, live read-only)
+
+29 read-only GETs against one account. Its runs are Apple Watch runs with device laps.
+
+`GET /athlete/{id}/activities/interval-search?minSecs&maxSecs&minIntensity&maxIntensity&minReps&maxReps&type&limit`:
+
+- Athlete id `0` works.
+- `minSecs`, `maxSecs`, `minIntensity` and `maxIntensity` are required. A missing one returns 422 with a JSON body `{status, error}` that names the parameter.
+- `limit` must be 100 or less. `limit=400` returns 422 "limit must be <= 100".
+- It returns full Activity rows (185 keys, the same as `search-full`), newest first, with no `icu_intervals`.
+- It searches all history, not a date window: results went back 16 months.
+- It searches every sport. A wide band returned Run, Ride, Swim, OpenWaterSwim, Pilates, WeightTraining and Workout rows. Filter the sport on the client.
+- The activity whose reps define the band is in the results.
+- It matches RECOVERY intervals too. A band that fits only the 90 s jog recoveries of a 5 x 1 km session returned that session.
+- `type` is a workout target (`AUTO`, `POWER`, `HR`, `PACE`), not the interval label and not the sport. Another value returns 422. On this account `type=HR` returned the same rows as no `type`. `AUTO`, `PACE` and `POWER` returned `[]`, also with intensity 0-300. `get-interval-analysis` sends no `type`.
+- The match rule cannot be reproduced from an activity's current `icu_intervals`. With `minReps=5&maxReps=5`, 1 of the 4 returned runs had only 1 interval in the band, and 2 runs with 5 such intervals were not returned. Treat the result as candidates, and check each candidate from its own intervals.
+
+Interval `intensity`:
+
+- An interval's `intensity` is a whole percent of the sport's threshold: heart rate or pace, per the athlete's settings.
+- On this account's runs it is `floor(average_heartrate * 100 / lthr)`, with the activity's own `lthr`, for all 341 intervals with heart rate across 30 runs. So it is heart rate as a percent of LTHR, although the Run sport settings also have a threshold pace.
+- On this account's swims it is pace: `floor(average_speed * 100 / threshold_pace)` on all 6 WORK intervals of a pool swim and all 23 of an open-water swim (from the saved #86 probes, no new request). The pool swim's RECOVERY intervals have a null `intensity`.
+- The activity's `icu_intensity` is a different number. For runs it is within 1 point of `gap` as a percent of the activity's `threshold_pace` (100 of 108 runs in 2026). Do not compare it with an interval's `intensity`.
+- The Run sport settings have `interval_display: "POWER_HR_PACE"` and `load_order: "POWER_PACE_HR"`, and there is no power data. So interval intensity probably uses the first metric with data in the display order, and activity intensity the first in the load order. This is an inference from one account.
+- `get-interval-analysis` builds its search band from the intervals' own `intensity` values, so the band does not depend on which metric they use.
+- The three #84 fixtures (`activity-repeats`, `activities-similar`, `interval-search`) are trimmed by hand from live reads: fields kept, intensity recomputed against the synthetic LTHR, names `<Type> N`.
+- An interval's `zone` places it in the athlete's real zones. No tool reads it. The fixture capture nulls it, and it rewrites a run interval's `intensity` against the synthetic LTHR (any other sport's to null), because both give away the real thresholds.
+
+`GET /athlete/{athleteId}/activities/{ids}`:
+
+- Athlete id `0` works. `ids` is a comma-separated list of `i`-prefixed ids. A bare numeric id is dropped.
+- A repeated id and an unknown id are dropped with no error: 21 ids with one repeat and one unknown id returned 19 rows.
+- Rows do not come back in request order. On 4 reads they came back oldest first by `start_date_local`. Key the result by `id`.
+- `?intervals=true` adds `icu_intervals` and `icu_groups` to every row, the same as `GET /activity/{id}?intervals=true`. Without it, the rows have no `icu_intervals` key at all (absent, not null), the same as list and search rows.
+- `fields=` is ignored: full rows come back.
+- Size: 19 runs with intervals were 430 KB to 709 KB, read in about 1 s.

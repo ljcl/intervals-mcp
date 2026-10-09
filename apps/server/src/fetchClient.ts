@@ -912,6 +912,13 @@ export function intervalsCacheTtl(path: string): number | null {
   // Activity search: same freshness as the listing it stands in for.
   if (/^\/athlete\/[^/]+\/activities\/search-full$/.test(path))
     return MINUTE_MS;
+  // Interval search: same freshness as the listing it searches.
+  if (/^\/athlete\/[^/]+\/activities\/interval-search$/.test(path))
+    return MINUTE_MS;
+  // Activities by id (one or more `i`-prefixed ids, comma-separated): the
+  // same rows as a detailed activity.
+  if (/^\/athlete\/[^/]+\/activities\/i\d+(,i\d+)*$/.test(path))
+    return 10 * MINUTE_MS;
   // Wellness records: matched by prefix like streams above, so a date
   // sub-path (`/wellness/2026-09-24`) or an extension (`wellness.json`)
   // both count; these update through the day.
