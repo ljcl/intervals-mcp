@@ -4,6 +4,7 @@ import {
   dateInputSchema,
   daysBetween,
   isValidCalendarDate,
+  resolveWindowEnd,
   startOfWeekMonday,
   todayLocal,
   validateRange,
@@ -157,5 +158,38 @@ describe("validateRange", () => {
     const result = validateRange(oldest, newest, 90);
     expect(result?.message).toContain("91 days");
     expect(result?.message).toContain("max range is 90 days");
+  });
+});
+
+describe("resolveWindowEnd", () => {
+  const today = "2026-10-08";
+
+  it("ends the window today when newest is omitted", () => {
+    expect(resolveWindowEnd(undefined, today)).toEqual({
+      endDate: today,
+      today,
+      endsToday: true,
+    });
+  });
+
+  it("resolves newest equal to today exactly as an omitted newest", () => {
+    expect(resolveWindowEnd(today, today)).toEqual(
+      resolveWindowEnd(undefined, today),
+    );
+  });
+
+  it("ends a past window on newest", () => {
+    expect(resolveWindowEnd("2026-04-12", today)).toEqual({
+      endDate: "2026-04-12",
+      today,
+      endsToday: false,
+    });
+  });
+
+  it("refuses a newest after today", () => {
+    expect(resolveWindowEnd("2026-10-09", today)).toEqual({
+      error:
+        "newest 2026-10-09 is after today (2026-10-08). Use today or an earlier date, or leave newest out to end the window today.",
+    });
   });
 });

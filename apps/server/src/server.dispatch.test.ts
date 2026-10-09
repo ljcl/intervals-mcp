@@ -287,6 +287,7 @@ describe("dispatchToolCall input validation", () => {
       days: lookback.spanDays,
       startDate: lookback.startDate,
       endDate: lookback.endDate,
+      endsToday: true,
       activityTypesIncluded: [],
       runOnly: false,
       current: null,
@@ -299,6 +300,22 @@ describe("dispatchToolCall input validation", () => {
     expect(params?.oldest).toBe(lookback.baselineStartDate);
     expect(params?.newest).toBe(lookback.endDate);
   });
+
+  it.each(["get-fitness-trend", "get-training-load-data"])(
+    "rejects a newest that is not a real calendar date for %s (#80)",
+    async (tool) => {
+      mockedIntervalsWellness.mockClear();
+      const result = await dispatchToolCall(tool, { newest: "2026-02-30" });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain(
+        `Invalid arguments for ${tool}`,
+      );
+      expect(result.content[0]?.text).toContain("must be a real calendar date");
+      expect(mockedIntervalsList).not.toHaveBeenCalled();
+      expect(mockedIntervalsWellness).not.toHaveBeenCalled();
+    },
+  );
 
   it("rejects days above the documented bound for view-training-load", async () => {
     const result = await dispatchToolCall("view-training-load", { days: 900 });

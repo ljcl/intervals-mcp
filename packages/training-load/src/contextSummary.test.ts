@@ -66,6 +66,21 @@ describe("buildTrainingLoadContextSummary", () => {
     );
   });
 
+  it("calls a past window's last week partial, not in progress (#80)", () => {
+    const summary = buildTrainingLoadContextSummary({
+      ...data([
+        week("2026-04-06", { distanceKm: 12, inProgress: true, trendKm: null }),
+      ]),
+      startDate: "2026-01-12",
+      endDate: "2026-04-08",
+      endsToday: false,
+    });
+    expect(summary).toContain(
+      "The week of 2026-04-06 is partial: the window ends on 2026-04-08, so its volume and load count only the days up to then.",
+    );
+    expect(summary).not.toContain("in progress");
+  });
+
   it("names the flagged weeks", () => {
     const summary = buildTrainingLoadContextSummary(
       data([

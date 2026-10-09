@@ -16,6 +16,7 @@ import {
   addDays,
   dateInputSchema,
   daysBetween,
+  resolveWindowEnd,
   todayLocal,
 } from "../utils/localDate";
 import { READ_ONLY } from "./_annotations";
@@ -51,6 +52,8 @@ Notes:
   on or before today, or past the projection, are ignored with a warning.
 - as_of is the latest date CTL/ATL is known for; on the default path it can
   lag today until wellness syncs.
+- newest reviews a past block such as a race build; a warning says the
+  window has no projection or taper.
 `;
 
 const plannedLoadEntrySchema = z.object({
@@ -73,6 +76,14 @@ const inputSchema = z.object({
       "Compute CTL/ATL/TSB from Run/TrailRun/VirtualRun training load only, " +
         "computed locally (intervals.icu has no per-sport CTL/ATL). Default " +
         "false reads whole-body CTL/ATL directly from intervals.icu wellness.",
+    ),
+  newest: dateInputSchema
+    .optional()
+    .describe(
+      "Last day of the window (YYYY-MM-DD), today or earlier. Default: " +
+        "today. days counts back from it. When newest is before today, " +
+        "there is no projection and no taper: projectDays, plannedLoads " +
+        "and targetDate are ignored.",
     ),
   projectDays: z
     .number()
@@ -184,6 +195,7 @@ export const getFitnessTrendTool = {
     {
       days,
       runOnly,
+      newest,
       projectDays,
       plannedLoads,
       targetDate,
@@ -196,11 +208,24 @@ export const getFitnessTrendTool = {
 
     try {
       const tz = getTimeZone();
-      const endDate = todayLocal(tz);
+      // Refused before any fetch: wellness past today is a projection.
+      const end = resolveWindowEnd(newest, todayLocal(tz));
+      if ("error" in end) {
+        return {
+          content: [
+            { type: "text" as const, text: prefixedErrorText(end.error) },
+          ],
+          isError: true,
+        };
+      }
+      const { endDate, endsToday } = end;
       const windowStart = addDays(endDate, -(days - 1));
-      const targetError = targetDate
-        ? taperTargetDateError(targetDate, endDate)
-        : null;
+      // A past window solves no taper, so its targetDate is ignored, not
+      // checked: the series already shows form on that day.
+      const targetError =
+        endsToday && targetDate
+          ? taperTargetDateError(targetDate, endDate)
+          : null;
       if (targetError) {
         return {
           content: [
@@ -209,16 +234,15 @@ export const getFitnessTrendTool = {
           isError: true,
         };
       }
-      const resolvedProjectDays = resolveProjectDays(
-        projectDays,
-        typedPlannedLoads,
-        endDate,
-      );
+      const resolvedProjectDays = endsToday
+        ? resolveProjectDays(projectDays, typedPlannedLoads, endDate)
+        : 0;
 
       const loaded = await loadFitnessTrend(
         apiKey,
         {
           days,
+          end,
           runOnly,
           projectDays: resolvedProjectDays,
           plannedLoads: typedPlannedLoads,
@@ -241,8 +265,12 @@ export const getFitnessTrendTool = {
         flags,
       } = loaded;
 
+      // A past window uses no plannedLoads, so there is nothing to warn
+      // about them; the loader's past-window note comes first instead.
       const warnings: string[] = [
-        ...plannedLoadWarnings(typedPlannedLoads, endDate, resolvedProjectDays),
+        ...(endsToday
+          ? plannedLoadWarnings(typedPlannedLoads, endDate, resolvedProjectDays)
+          : []),
         ...loaded.warnings,
       ];
 
@@ -260,6 +288,7 @@ export const getFitnessTrendTool = {
           days,
           start_date: windowStart,
           end_date: endDate,
+          ends_today: endsToday,
         },
         source,
         as_of: current?.date ?? null,
@@ -287,18 +316,24 @@ export const getFitnessTrendTool = {
         },
       };
 
+      // A past window is history: its labels name the window's end, not
+      // "current" or "last" days.
+      const pastWindow = !endsToday;
       let output = `**Fitness Trend (CTL/ATL/TSB)**\n`;
-      output += `${result.period.start_date} to ${result.period.end_date} (${days} days, source: ${source})\n\n`;
+      output += `${result.period.start_date} to ${result.period.end_date} (${days} days${pastWindow ? ", a past window" : ""}, source: ${source})\n\n`;
 
       if (current) {
-        output += `**Current (as of ${current.date})**\n`;
+        output += `**${pastWindow ? "End of window" : "Current"} (as of ${current.date})**\n`;
         output += `  Fitness (CTL): ${current.ctl}\n`;
         output += `  Fatigue (ATL): ${current.atl}\n`;
         output += `  Form (TSB): ${formatSigned(current.tsb)}\n\n`;
       }
 
       if (trendSummary) {
-        output += `**Last 7 days**: CTL ${formatSigned(trendSummary.ctl_7d_delta)}, TSB ${formatSigned(trendSummary.tsb_7d_delta)}\n\n`;
+        // The delta runs to the last series day, so a past window names it.
+        const lastWeek =
+          pastWindow && current ? `7 days to ${current.date}` : "Last 7 days";
+        output += `**${lastWeek}**: CTL ${formatSigned(trendSummary.ctl_7d_delta)}, TSB ${formatSigned(trendSummary.tsb_7d_delta)}\n\n`;
       }
 
       if (flags.length > 0) {
@@ -361,7 +396,7 @@ export const getFitnessTrendTool = {
         output += `\n`;
       }
       if (recent.length > 0) {
-        output += `**Last ${recent.length} days**\n`;
+        output += `**Last ${recent.length} days${pastWindow ? " of the window" : ""}**\n`;
         for (const day of recent) {
           output += `${formatDay(day)}\n`;
         }
@@ -384,7 +419,7 @@ export const getFitnessTrendTool = {
           {
             type: "text" as const,
             text: toolErrorText(error, {
-              context: `compute fitness trend for ${days} days`,
+              context: `compute fitness trend for ${days} days${newest ? ` to ${newest}` : ""}`,
             }),
           },
         ],

@@ -11,7 +11,10 @@ export interface WeekSummary {
    * Null for the week in progress, so the line ends at the last complete week.
    */
   trendKm: number | null;
-  /** The current week: its volume is only the days so far. */
+  /**
+   * The partial last week: in progress when the window ends today, else cut
+   * off at `endDate` (a past window). Its volume is only the days read.
+   */
   inProgress?: boolean;
   warning: boolean;
   warningReasons: string[];
@@ -31,11 +34,16 @@ export interface TrainingLoadCurrent {
 
 /** Response from the get-training-load-data tool. */
 export interface TrainingLoadData {
-  /** Calendar days read: whole weeks plus the current week so far. */
+  /** Calendar days read: whole weeks plus the partial last week, if any. */
   days: number;
-  /** First day read (a Monday) and the last (today), YYYY-MM-DD. */
+  /** First day read (a Monday) and the last (today, or newest), YYYY-MM-DD. */
   startDate?: string;
   endDate?: string;
+  /**
+   * False for a past window: the partial last week is cut off at `endDate`,
+   * not in progress. Absent in older payloads; read as true.
+   */
+  endsToday?: boolean;
   totals: {
     runs: number;
     distanceKm: number;

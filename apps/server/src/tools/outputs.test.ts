@@ -67,7 +67,12 @@ describe("schemas align with the real tool rawObjects", () => {
 
   it("TrainingLoadOutputSchema matches the training-load result object", () => {
     const result = {
-      period: { days: 28, start_date: "2026-05-09", end_date: "2026-06-06" },
+      period: {
+        days: 28,
+        start_date: "2026-05-09",
+        end_date: "2026-06-06",
+        ends_today: true,
+      },
       run_only: false,
       source: "intervals.icu",
       current: { date: "2026-06-06", ctl: 42.1, atl: 38.4, tsb: 3.7 },

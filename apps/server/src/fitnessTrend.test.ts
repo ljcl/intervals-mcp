@@ -805,6 +805,99 @@ describe("trendBands", () => {
     expect(trendBands([])).toEqual([]);
   });
 
+  describe("in a past window (endsToday: false, #80)", () => {
+    const past = { endsToday: false };
+
+    it("dates deep fatigue that runs to the last day instead of calling rest overdue", () => {
+      const series = tsbDays(
+        "2026-04-06",
+        Array(DEEP_FATIGUE_DAYS + 2).fill(DEEP_FATIGUE_TSB - 2),
+      );
+      const [band] = trendBands(series, past);
+      expect(band!.reason).toBe(
+        `TSB at or below ${DEEP_FATIGUE_TSB} for ${DEEP_FATIGUE_DAYS + 2} consecutive days to 2026-04-12, the end of the window: deep fatigue.`,
+      );
+      // Today's wording is unchanged without the option.
+      expect(trendBands(series)[0]!.reason).toContain(
+        "an easy block or rest is overdue",
+      );
+    });
+
+    it("dates freshness that runs to the last day instead of 'race-ready now'", () => {
+      // The last TSB is rounded to one decimal, as in today's wording.
+      const series = tsbDays("2026-04-08", [
+        0,
+        FRESH_TSB + 3,
+        FRESH_TSB + 2,
+        FRESH_TSB + 1.04,
+      ]);
+      const [band] = trendBands(series, past);
+      expect(band!.kind).toBe("fresh");
+      expect(band!.reason).toBe(
+        `TSB at +${FRESH_TSB + 1} on 2026-04-11, the end of the window (fresh since 2026-04-09, peak +${FRESH_TSB + 3}).`,
+      );
+      expect(band!.reason).not.toContain("now");
+    });
+
+    it("dates a steep ramp that runs to the last day", () => {
+      const series = Array.from({ length: 12 }, (_, i) =>
+        day(addDays("2026-04-01", i), -5, 40 + i * 2),
+      );
+      const [ramp] = trendBands(series, past).filter(
+        (b) => b.kind === "steep-ramp",
+      );
+      expect(ramp!.reason).toContain("in the 7 days to 2026-04-12");
+      expect(ramp!.reason).not.toContain("last 7 days");
+    });
+
+    it("keeps the past-tense reason of a band that ended before the last day", () => {
+      const series = tsbDays("2026-04-01", [
+        ...Array(DEEP_FATIGUE_DAYS).fill(DEEP_FATIGUE_TSB - 2),
+        0,
+      ]);
+      expect(trendBands(series, past)).toEqual(trendBands(series));
+    });
+
+    it("flags the same bands, with the dated reasons", () => {
+      const series = tsbDays(
+        "2026-04-06",
+        Array(DEEP_FATIGUE_DAYS + 2).fill(DEEP_FATIGUE_TSB - 2),
+      );
+      expect(computeFlags(series, past)).toEqual([
+        trendBands(series, past)[0]!.reason,
+      ]);
+    });
+
+    it("calls the series' last day 'the end of the window' only when it is the window's end", () => {
+      // The window ends on 2026-04-14; wellness stops on 2026-04-12.
+      const series = tsbDays(
+        "2026-04-06",
+        Array(DEEP_FATIGUE_DAYS + 2).fill(DEEP_FATIGUE_TSB - 2),
+      );
+      const [gapBand] = trendBands(series, {
+        endsToday: false,
+        endDate: "2026-04-14",
+      });
+      expect(gapBand!.reason).toBe(
+        `TSB at or below ${DEEP_FATIGUE_TSB} for ${DEEP_FATIGUE_DAYS + 2} consecutive days to 2026-04-12, the last day with data in the window: deep fatigue.`,
+      );
+      const freshSeries = tsbDays("2026-04-08", [0, FRESH_TSB + 3]);
+      const [freshBand] = trendBands(freshSeries, {
+        endsToday: false,
+        endDate: "2026-04-14",
+      });
+      expect(freshBand!.reason).toContain(
+        "on 2026-04-09, the last day with data in the window (",
+      );
+      // No gap: the series' last day is the window's end.
+      const [endBand] = trendBands(series, {
+        endsToday: false,
+        endDate: "2026-04-12",
+      });
+      expect(endBand!.reason).toContain("to 2026-04-12, the end of the window");
+    });
+  });
+
   it("comes back from buildFitnessTrend alongside the flags", () => {
     const trend = buildFitnessTrend({
       days: window("2026-07-21", 60, rangeLoads("2026-07-01", 21, 150)),

@@ -254,3 +254,13 @@ export const mockRunOnlyTrainingLoadData: TrainingLoadData = payloadFor(
     source: "computed",
   },
 );
+
+/**
+ * The same weeks read as a past window (#80): `newest` was Wednesday
+ * 2026-06-24, before today, so the last week is cut off there, partial
+ * rather than in progress.
+ */
+export const mockPastTrainingLoadData: TrainingLoadData = {
+  ...mockTrainingLoadData,
+  endsToday: false,
+};

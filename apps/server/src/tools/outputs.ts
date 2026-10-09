@@ -77,6 +77,11 @@ export const TrainingLoadOutputSchema = z.object({
     days: z.number().int(),
     start_date: z.string(),
     end_date: z.string(),
+    ends_today: z
+      .boolean()
+      .describe(
+        "False for a past window (newest before today). Its last week is partial unless newest is a Sunday",
+      ),
   }),
   run_only: z
     .boolean()
@@ -96,7 +101,9 @@ export const TrainingLoadOutputSchema = z.object({
       tsb: z.number(),
     })
     .nullable()
-    .describe("Most recent CTL/ATL/TSB; null when no data is available"),
+    .describe(
+      "CTL/ATL/TSB on the last day of the window with data; null when no data is available",
+    ),
   activity_types_included: z
     .array(z.string())
     .describe(
@@ -363,6 +370,11 @@ export const FitnessTrendOutputSchema = z.object({
     days: z.number().int(),
     start_date: z.string(),
     end_date: z.string(),
+    ends_today: z
+      .boolean()
+      .describe(
+        "False for a past window (newest before today): no projection or taper",
+      ),
   }),
   source: z
     .enum(["intervals.icu", "computed"])

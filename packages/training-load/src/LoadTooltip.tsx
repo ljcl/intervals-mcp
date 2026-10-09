@@ -12,7 +12,8 @@ interface WeekTooltipPayloadItem {
     trendKm?: number | null;
     load?: number;
     loadByType?: Record<string, number>;
-    inProgress?: boolean;
+    /** "in progress" or "partial" on the partial week; see `buildLoadRows`. */
+    partialLabel?: string | null;
     warning?: boolean;
     warningReasons?: string[];
   };
@@ -28,8 +29,9 @@ export function LoadTooltip({ active, payload }: LoadTooltipProps) {
   const week = payload[0]?.payload;
   if (!week) return null;
 
+  // "Week of 6 Apr (in progress)", or "(partial)" for a past window.
   const heading = week.weekLabel
-    ? `Week of ${week.weekLabel}${week.inProgress ? " (in progress)" : ""}`
+    ? `Week of ${week.weekLabel}${week.partialLabel ? ` (${week.partialLabel})` : ""}`
     : "";
 
   const breakdown = buildLoadBreakdown(week);

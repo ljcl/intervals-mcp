@@ -81,8 +81,8 @@ descriptions.
 | `get-best-efforts` | Best times at standard running distances: over your history from intervals.icu's pace curves, or inside one run with where each started |
 | `get-race-prediction` | Predicted race times from intervals.icu pace-curve points (Riegel) alongside intervals.icu's own critical-speed model, with confidence, source point, and km goal-pace splits |
 | `get-athlete-stats` | Run totals and totals for every sport (count, moving time, distance and whole-body load per activity type) for this week, the last 4 weeks, this month and YTD, aggregated from list-activities data |
-| `get-fitness-trend` | Fitness/fatigue/form (CTL/ATL/TSB), whole-body from intervals.icu wellness or run-only computed locally, with rest/planned-load projection and a solved taper to a target form on a target date |
-| `get-training-load` | Weekly running volume and volume-spike warnings, weekly intervals.icu training load and the types it covers, plus current CTL/ATL/TSB |
+| `get-fitness-trend` | Fitness/fatigue/form (CTL/ATL/TSB), whole-body from intervals.icu wellness or run-only computed locally, with rest/planned-load projection and a solved taper to a target form on a target date; `newest` reads a past window, with no projection or taper |
+| `get-training-load` | Weekly running volume and volume-spike warnings, weekly intervals.icu training load and the types it covers, plus current CTL/ATL/TSB; `newest` ends the weeks on a past date |
 | `update-activity` | Update an activity's name, description, gear, RPE, or feel, echoing before/after values (write tool) |
 
 `list-activities` defaults to the last 28 days (today back to 27 days
@@ -649,15 +649,28 @@ intervals.icu's own daily wellness record (`source: "intervals.icu"`),
 never recomputed locally, so a custom CTL/ATL time constant configured on the
 account is honoured automatically; a day with no recorded CTL/ATL is a gap,
 not a zero-load day, and is left out of the series with a warning rather than
-corrupting the numbers around it. The window ends at today in the server's
-configured time zone, but `as_of` names the most recent date CTL/ATL is
-actually known for, which projection and a solved taper are seeded from, and
-which can trail today when wellness has not synced yet. `runOnly: true`
+corrupting the numbers around it. The window ends today in the server's
+configured time zone, or on `newest` (YYYY-MM-DD, today or earlier), and
+`days` counts back from that day. `resolveWindowEnd` (`utils/localDate.ts`)
+refuses a `newest` after today before any fetch: intervals.icu's wellness
+rows after today hold its own projection from planned workouts, not records
+(docs/api-notes.md). A `newest` equal to today is the same call as no
+`newest`. A window that ends before today is a past block:
+`period.ends_today` is false, there is no projection and no taper,
+`projectDays`, `plannedLoads` and `targetDate` are ignored (`targetDate` is
+not checked, and `plannedLoads` gets no warnings), and the first warning
+says so. The text heads the last values "End of window" instead of
+"Current", and names the 7-day change "7 days to DATE". `as_of` names the
+most recent date CTL/ATL is actually known for in the window, which
+projection and a solved taper are seeded from, and which can trail today
+when wellness has not synced yet. In a past window a trailing day with no
+wellness is reported only as a gap. `runOnly: true`
 computes CTL/ATL locally from the daily sum of `icu_training_load` across
 Run/TrailRun/VirtualRun activities only (`source: "computed"`), since
 intervals.icu has no per-sport CTL/ATL: it fetches a `days + 150` day runway
-and zero-seeds the recurrence so the 42-day average has settled by the
-requested window, then trims the displayed series back to it. Both paths
+that ends on the window's last day (today, or `newest`) and zero-seeds the
+recurrence so the 42-day average has settled by the requested window, then
+trims the displayed series back to it. Both paths
 report `activity_types_included` (whole-body: the distinct types with
 nonzero load in the window; run-only: the three run types), and whole-body
 notes that some types (e.g. strength) may count toward fatigue (ATL) only,
@@ -678,13 +691,19 @@ band starts at TSB +15 and holds until TSB drops below +12; fresh bands 2
 days apart or less merge, and a fresh band needs 3 days unless it runs to the
 last day. A band that runs to the last day has a present-tense reason ("now")
 and is also in `flags`; a band that ended earlier has a past-tense reason.
+A band that runs to the last day of a past window has a dated reason, not a
+present-tense one: deep fatigue "… to DATE, the end of the window", fresh
+"… on DATE, the end of the window", and a steep ramp "in the 7 days to
+DATE". When wellness stops before the window's end, the reason calls that
+day "the last day with data in the window". The band is still in `flags`.
 `get-fitness-trend` and the
 `view-fitness-trend`/`get-fitness-trend-data` MCP App pair (below) share one
 loader (`loadFitnessTrend` in `loadFitnessTrend.ts`) for both the whole-body
 and run-only paths, so the app's `runOnly: true` payload is built the same
 way as the text tool's and the two can never disagree. The app's payload adds
 `source`, `runOnly`, `activityTypesIncluded`, `warnings`, `endDate`
-(today, so the app can show "already positive today"), and `ctl7dDelta`
+(the window's last day, so the app can show "already positive today"),
+`endsToday` (false for a past window), and `ctl7dDelta`
 (the same `ctlDelta` value as `trend.ctl_7d_delta`, by date, so the app's
 narration and the text tool agree on a series with gaps) alongside the
 series/projection/taper it already carried.
@@ -721,22 +740,37 @@ reported both ways: `time_s` (seconds, matching `units.time`) and
 
 The window is whole weeks (`trainingLoadWindow` in `trainingLoad.ts`, shared
 with the app feed): `days` rounded up to Monday-to-Sunday weeks in the
-athlete's time zone, plus the current week so far. So `days: 28` reads 4
-complete weeks and this week on every weekday, Sunday included. `period`
-reports that window, and `period.days` is its length, which can be up to 13
-days more than the requested `days`. Only the current week can be partial:
-the text marks it "in progress, N of 7 days" and adds a line to `warnings`
-(#43). Averages, the trend and the warnings read the weeks `selectRunWeeks`
-picks, the one call this tool and the app feed both make, so their warnings
-cannot differ: every week from the first week with a run to the current week,
-with zero-run weeks kept, those after the last run included (a layoff is a
-real gap, even one that is still going on), and weeks before the first run
-left out. Neither end depends on load-only activities, so `runOnly` does not
-change which weeks the run numbers read. Averages and the trend use its
-complete weeks only; with no complete week yet, the averages are this week so
-far. The trend compares the distance of the last 2 complete weeks with the 2
+athlete's time zone, to the week that holds the window's last day (today, or
+`newest`, below). By default the last week is the current week so far, so
+`days: 28` reads 4 complete weeks and this week on every weekday, Sunday
+included. `period` reports that window, and `period.days` is its length,
+which can be up to 13 days more than the requested `days`. Only the last
+week can be partial: the week in progress, which the text marks "in
+progress, N of 7 days", or a week cut off at a past `newest` (below). The
+partial week gets a line in `warnings` (#43). Averages, the trend and the
+warnings read the weeks `selectRunWeeks` picks, the one call this tool and
+the app feed both make, so their warnings cannot differ: every week from the
+first week with a run to the last week, with zero-run weeks kept, those
+after the last run included (a layoff is a real gap, even one that is still
+going on), and weeks before the first run left out. Neither end depends on
+load-only activities, so `runOnly` does not change which weeks the run
+numbers read. Averages and the trend use its complete weeks only; with no
+complete week yet, the averages are the partial week. The trend compares the distance of the last 2 complete weeks with the 2
 before, and the text names the four weeks; when all four have no running
 volume, it says so instead of reporting too little data.
+
+`newest` (YYYY-MM-DD, today or earlier; a later date is an error before any
+fetch) ends the window on a past date, and `days` counts back from it. The
+last week read is the week holding `newest`. When `newest` is a past Sunday,
+that week is complete and is one of the `days` weeks, so `days: 84` with a
+Sunday reads exactly those 12 weeks. Any other past `newest` leaves its week
+partial (Monday to `newest`): it is treated like the current week (left out
+of the averages and the trend, flagged only on the volume it has), and the
+text calls it "partial", not "in progress". Today's week is in progress even
+on a Sunday, because today is not over. CTL/ATL/TSB are as of the window's
+last day with data, the text heads them "End of window", and the first
+warning says the window is a past block. `period.ends_today` is false for a past window.
+A `newest` equal to today is the same call as no `newest`.
 
 A warning fires when a week's distance is over 1.5 times the average of the
 4 complete weeks before it: the acute:chronic ratio (#60). The reason gives
@@ -758,8 +792,9 @@ zone. The evidence for any ratio threshold is weak, so the reason says
 cannot make the weeks before it look high. The week in progress is never
 part of an average, and it is flagged only on the volume it already has
 ("so far" in the reason). The run-only runway still counts `days + 150` days
-back from today, so `current` matches `get-fitness-trend`'s run-only value;
-it already covers the 4 baseline weeks.
+back from the window's last day (today, or `newest`), so `current` matches
+`get-fitness-trend`'s run-only value for the same `newest`; it already
+covers the 4 baseline weeks.
 
 `update-activity` changes an activity's name, description, gear, RPE
 (`icu_rpe`), or feel. It always does a fresh read first (bypassing the
@@ -817,7 +852,9 @@ App tool inputs follow the one scheme (docs/architecture.md, Input validation):
 `id` for a single activity (`view-activity-chart`, `view-route-map`,
 `view-activity-zones` and their feeds), `activityId1`/`activityId2` for
 `view-compare-activities` and `get-compare-activities-data`, and `days` (7-728,
-default 42) for `view-cadence-trends` and `get-cadence-trend-data`. The old
+default 42) for `view-cadence-trends` and `get-cadence-trend-data`.
+`view-training-load`, `view-fitness-trend` and their feeds take `days` and an
+optional `newest`, the same field as the text tool. The old
 `activity_id`, `activity_id_1`/`activity_id_2` and `weeks` are still accepted
 through the alias layer.
 
@@ -829,13 +866,13 @@ through the alias layer.
 | `get-cadence-trend-data` | Summary cadence/pace data for the cadence trends UI (app-only) |
 | `view-route-map` | Interactive map of an activity's GPS track, fit to bounds with start/finish markers; optional distance-anchored waypoints (MCP App) |
 | `get-route-map-data` | `[lat, lng]` coordinates from the activity's latlng stream plus index-aligned metric streams and WORK-interval end markers for the route map UI (app-only) |
-| `view-training-load` | Weekly running-volume bars with a rolling trend line, volume-spike warning weeks, a weekly load line, and Fitness/Fatigue/Form tiles; `runOnly` picks the scope load and CTL/ATL/TSB cover, and a Whole body/Runs only toggle in the card switches it, caching each side. Its text adds a `Scope:` line (whole-body with the activity types, or run-only, and where CTL/ATL came from) and a `Current (as of DATE): CTL x / ATL y / TSB +z` line when fitness is known; its `Load:` total is the payload's `totals.load` (MCP App) |
+| `view-training-load` | Weekly running-volume bars with a rolling trend line, volume-spike warning weeks, a weekly load line, and Fitness/Fatigue/Form tiles; `runOnly` picks the scope load and CTL/ATL/TSB cover, and a Whole body/Runs only toggle in the card switches it, caching each side; `newest` ends the chart on a past date, and a past partial week is labelled partial. Its text adds a `Scope:` line (whole-body with the activity types, or run-only, and where CTL/ATL came from) and a `Current (as of DATE): CTL x / ATL y / TSB +z` line when fitness is known (`End of window` and a `Past window:` line for a past window); its `Load:` total is the payload's `totals.load` (MCP App) |
 | `get-training-load-data` | Per-week volume, trend value, warning flags, weekly load, and current CTL/ATL/TSB for the training-load UI; `runOnly` (default false) switches load and CTL/ATL/TSB between whole-body and run-only, while volume and spike warnings stay run-based (app-only) |
 | `view-compare-activities` | Interactive overlay of two activities' streams on a shared distance/time axis with a delta summary (MCP App) |
 | `get-compare-activities-data` | Aggregate comparison (summaries, activity2−activity1 differences, efficiency) for the compare-activities UI (app-only) |
 | `view-activity-zones` | Time-in-zone bar chart for one activity's HR zones with an easy/moderate/hard split (power zones dropped for now; see docs/api-notes.md) (MCP App) |
 | `get-activity-zones-data` | Per-zone time distributions (bucket bounds, seconds, percentages) for the activity-zones UI (app-only) |
-| `view-fitness-trend` | CTL/ATL/TSB over time with shaded fatigue/freshness/ramp bands and a dashed taper plan or rest projection past today; a Whole body/Runs only toggle switches scope, caching each side (MCP App) |
+| `view-fitness-trend` | CTL/ATL/TSB over time with shaded fatigue/freshness/ramp bands and a dashed taper plan or rest projection past today; a Whole body/Runs only toggle switches scope, caching each side; `newest` charts a past block with no projection (MCP App) |
 | `get-fitness-trend-data` | Per-day CTL/ATL/TSB, the projection, the solved taper, and the dated warning bands for the fitness-trend UI; `runOnly` switches between whole-body (intervals.icu wellness) and run-only (computed) (app-only) |
 
 A `view-*` result says the chart was rendered only when the request's client

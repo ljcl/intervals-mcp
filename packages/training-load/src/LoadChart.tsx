@@ -15,7 +15,7 @@ import {
 import { buildLoadA11y } from "./a11y";
 import styles from "./chartView.module.css";
 import { LoadTooltip } from "./LoadTooltip";
-import { buildLoadRows } from "./normalize";
+import { buildLoadRows, isPastWindow } from "./normalize";
 import { type TrainingLoadData } from "./types";
 
 /**
@@ -29,7 +29,7 @@ const DIGIT_EM = 0.62;
 /** The rotated title (about 13px), its inset from the edge, and a gap. */
 const LOAD_TITLE_GUTTER = 24;
 
-/** The "This week so far" fill, as on the legend key and the partial bar. */
+/** The partial week's fill, as on the legend key and the partial bar. */
 const PARTIAL_FILL = "color-mix(in srgb, var(--chart-power) 35%, transparent)";
 
 interface LoadChartProps {
@@ -67,7 +67,11 @@ export function LoadChart({
     Math.ceil(LOAD_TICK_CHARS * DIGIT_EM * tokens.axisFont) +
     (isMobile ? 0 : LOAD_TITLE_GUTTER);
 
-  const chartData = useMemo(() => buildLoadRows(weeks), [weeks]);
+  const endsToday = !isPastWindow(data);
+  const chartData = useMemo(
+    () => buildLoadRows(weeks, endsToday),
+    [weeks, endsToday],
+  );
   const hasWeekInProgress = chartData.some((row) => row.inProgress);
 
   const a11y = useMemo(

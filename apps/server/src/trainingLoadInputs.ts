@@ -7,7 +7,6 @@
  * run filter, or how `current` was read (see AGENTS.md's "derived numbers
  * have exactly one home").
  */
-import { getTimeZone } from "./config";
 import {
   buildRunOnlyFitnessTrend,
   RUN_ONLY_RUNWAY_DAYS,
@@ -21,7 +20,7 @@ import {
   trainingLoadWindow,
   typesWithLoad,
 } from "./trainingLoad";
-import { addDays, todayLocal } from "./utils/localDate";
+import { addDays, type WindowEnd } from "./utils/localDate";
 
 export interface TrainingLoadInputs {
   /** The whole-week window read, from `trainingLoadWindow`. */
@@ -46,8 +45,9 @@ export interface TrainingLoadInputs {
 }
 
 /**
- * Fetches and classifies training-load inputs for `days` back from today,
- * rounded up to whole weeks plus the current week so far
+ * Fetches and classifies training-load inputs for `days` back from
+ * `end.endDate` (today, or the caller's `newest`, from `resolveWindowEnd`),
+ * rounded up to whole weeks to the week holding that day
  * (`trainingLoadWindow`). Both paths also read the runs of the 4 weeks
  * before the window (`baselineRuns`), the volume-spike baseline. Run-only
  * fetches a runway before the window (`RUN_ONLY_RUNWAY_DAYS`) so
@@ -58,12 +58,11 @@ export interface TrainingLoadInputs {
  */
 export async function loadTrainingLoadInputs(
   apiKey: string,
-  options: { days: number; runOnly: boolean },
+  options: { days: number; runOnly: boolean; end: WindowEnd },
   progress: ReportProgress = NO_PROGRESS,
 ): Promise<TrainingLoadInputs> {
-  const { days, runOnly } = options;
-  const tz = getTimeZone();
-  const lookback = trainingLoadWindow(days, todayLocal(tz));
+  const { days, runOnly, end } = options;
+  const lookback = trainingLoadWindow(days, end.endDate, end.endsToday);
   const { baselineStartDate, startDate: windowStart, endDate } = lookback;
   const localDay = (a: IntervalsActivity) => a.start_date_local.split("T")[0]!;
   const inWindow = (a: IntervalsActivity) =>
@@ -73,8 +72,9 @@ export async function loadTrainingLoadInputs(
   const isRun = (a: IntervalsActivity) => RUN_TYPES.includes(a.type ?? "");
 
   if (runOnly) {
-    // Counted back from today by the requested days, as get-fitness-trend
-    // counts it, so `current` matches that tool's run-only value. The
+    // Counted back from the window's last day (today, or newest) by the
+    // requested days, as get-fitness-trend counts it, so `current` matches
+    // that tool's run-only value for the same newest. The
     // window's first Monday is at most 13 days further back than `days`
     // reaches, so at least 137 runway days still come before it.
     const runwayDays = days + RUN_ONLY_RUNWAY_DAYS;
@@ -118,7 +118,7 @@ export async function loadTrainingLoadInputs(
 
   // One listing from the baseline start, split by date: the baseline runs
   // only feed the warnings, the window's activities everything else. No
-  // upper bound, as before: aggregateWeeks keeps a week after the current
+  // upper bound, as before: aggregateWeeks keeps a week after the last
   // one that only a time-zone mismatch can produce.
   progress(`Listing activities ${baselineStartDate} to ${endDate}…`, {
     important: true,

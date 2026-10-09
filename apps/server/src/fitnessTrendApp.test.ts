@@ -33,6 +33,21 @@ describe("mapFitnessTrendApp", () => {
     expect(data.taper).toBeNull();
     expect(data.asOf).toBe(trend.current!.date);
     expect(data.source).toBe("intervals.icu");
+    // A window ends today unless the caller says otherwise.
+    expect(data.endsToday).toBe(true);
+  });
+
+  it("carries endsToday false for a past window (#80)", () => {
+    const trend = buildFitnessTrend({ days: block() });
+
+    const data = mapFitnessTrendApp(trend, {
+      ...META,
+      endDate: "2026-06-28",
+      endsToday: false,
+    });
+
+    expect(data.endsToday).toBe(false);
+    expect(data.endDate).toBe("2026-06-28");
   });
 
   it("carries a null asOf when there is no current day", () => {

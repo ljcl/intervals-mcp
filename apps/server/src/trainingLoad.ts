@@ -17,11 +17,16 @@ const SPIKE_RATIO = 1.5;
 
 /**
  * The window both training-load surfaces read: `days` rounded up to whole
- * Monday-to-Sunday weeks, plus the current week so far. Only the current
- * week can be partial, and it is always the last one, so the rules can
- * treat it apart instead of reading a few days as a full week (#43). A
+ * Monday-to-Sunday weeks, to the week that holds `endDate` (today, or the
+ * caller's `newest`). Only the last week can be partial, so the rules can
+ * treat it apart instead of reading a few days as a full week (#43). When
+ * the window ends today, the last week is the current week so far, and a
  * 28-day request reads 4 complete weeks plus this week on every weekday,
- * Sunday included, so the trend always has its 4 complete weeks.
+ * Sunday included, so the trend always has its 4 complete weeks. When it
+ * ends on a past Sunday, the last week is complete and is one of the `days`
+ * weeks, so `days: 84` reads exactly 12 weeks (#80). Any other past
+ * `endDate` cuts its week off after that day, and that partial week is
+ * read like the current week.
  */
 export interface TrainingLoadWindow {
   /**
@@ -32,14 +37,23 @@ export interface TrainingLoadWindow {
   baselineStartDate: string;
   /** Monday of the first complete week. */
   startDate: string;
-  /** Today in the athlete's time zone: the last day read. */
+  /** The last day read: today, or the caller's `newest`. */
   endDate: string;
-  /** Monday of the current week, which is still in progress. */
-  currentWeekStart: string;
-  /** Complete weeks before the current week: `days` rounded up to whole weeks. */
+  /** False for a past window (`newest` before today). */
+  endsToday: boolean;
+  /** Monday of the last week read, the week holding `endDate`. The timeline runs to it. */
+  lastWeekStart: string;
+  /** Days of the last week read, `endDate` included: 1 on Monday, 7 on Sunday. */
+  lastWeekDays: number;
+  /**
+   * Monday of the partial week, or null when every week read is complete.
+   * The partial week is always the last one: in progress when the window
+   * ends today (Sunday included, as today is not over), or cut off at a past
+   * `endDate` that is not a Sunday.
+   */
+  partialWeekStart: string | null;
+  /** Complete weeks read: `days` rounded up to whole weeks. */
   completeWeeks: number;
-  /** Days of the current week so far, today included: 1 on Monday, 7 on Sunday. */
-  currentWeekDays: number;
   /** Calendar days from `startDate` to `endDate`, both included. */
   spanDays: number;
 }
@@ -47,19 +61,28 @@ export interface TrainingLoadWindow {
 export function trainingLoadWindow(
   days: number,
   endDate: string,
+  endsToday = true,
 ): TrainingLoadWindow {
   const completeWeeks = Math.ceil(days / 7);
-  const currentWeekStart = startOfWeekMonday(endDate);
-  const currentWeekDays = daysBetween(currentWeekStart, endDate) + 1;
-  const startDate = addDays(currentWeekStart, -7 * completeWeeks);
+  const lastWeekStart = startOfWeekMonday(endDate);
+  const lastWeekDays = daysBetween(lastWeekStart, endDate) + 1;
+  // A past week that reaches its Sunday is over, so it is one of the
+  // complete weeks; today's week is still in progress even on a Sunday.
+  const partial = endsToday || lastWeekDays < 7;
+  const startDate = addDays(
+    lastWeekStart,
+    -7 * (partial ? completeWeeks : completeWeeks - 1),
+  );
   return {
     baselineStartDate: addDays(startDate, -7 * CHRONIC_WEEKS),
     startDate,
     endDate,
-    currentWeekStart,
+    endsToday,
+    lastWeekStart,
+    lastWeekDays,
+    partialWeekStart: partial ? lastWeekStart : null,
     completeWeeks,
-    currentWeekDays,
-    spanDays: 7 * completeWeeks + currentWeekDays,
+    spanDays: 7 * completeWeeks + (partial ? lastWeekDays : 0),
   };
 }
 
@@ -77,7 +100,7 @@ export function getWeekStart(localDate: string): string {
 export interface WeeklyVolume {
   week_starting: string;
   distance_km: number;
-  /** The current week: its volume is only the days so far. */
+  /** The partial last week: its volume is only the days read so far. */
   in_progress?: boolean;
 }
 
@@ -185,7 +208,10 @@ export interface TrainingLoadWeek {
    * week instead of dipping on a partial one.
    */
   trendKm: number | null;
-  /** The current week: its volume is only the days so far. */
+  /**
+   * The partial last week: in progress when the window ends today, else cut
+   * off at `endDate`. Its volume is only the days read.
+   */
   inProgress: boolean;
   warning: boolean;
   warningReasons: string[];
@@ -196,11 +222,16 @@ export interface TrainingLoadWeek {
 }
 
 export interface TrainingLoadAppData {
-  /** Calendar days read: whole weeks plus the current week so far. */
+  /** Calendar days read: whole weeks plus the partial last week, if any. */
   days: number;
-  /** First day read (a Monday) and the last (today). */
+  /** First day read (a Monday) and the last (today, or newest). */
   startDate: string;
   endDate: string;
+  /**
+   * False for a past window (newest before today): a partial last week is
+   * cut off at endDate, not in progress.
+   */
+  endsToday: boolean;
   totals: {
     runs: number;
     distanceKm: number;
@@ -244,12 +275,12 @@ const emptyBucket = (weekStarting: string): WeekBucket => ({
  * Builds the weekly timeline both `get-training-load` and
  * `get-training-load-data` read from: a continuous Monday-to-Monday run,
  * from the earliest week that has either a run activity (`runs`) or a load
- * activity (`loadActivities`) to the current week (`currentWeekStart`,
+ * activity (`loadActivities`) to the window's last week (`lastWeekStart`,
  * from {@link trainingLoadWindow}). A load-only week (e.g. a strength-only
  * week, or a window with no runs at all) is not dropped, it just carries
  * zeroed run fields, and a run-only week carries zeroed load fields. Every
  * week after the earliest active one with neither is zero-filled too, up to
- * and including the current week, so a skipped week and a layoff that is
+ * and including the last week, so a skipped week and a layoff that is
  * still going on are both visible. Weeks before the earliest active one are
  * left out: they may be missing data (a new account, say), and with no
  * activity at all the timeline is empty. The one home this timeline is
@@ -260,7 +291,7 @@ const emptyBucket = (weekStarting: string): WeekBucket => ({
 export function aggregateWeeks(
   runs: TrainingLoadActivity[],
   loadActivities: TrainingLoadActivity[],
-  currentWeekStart: string,
+  lastWeekStart: string,
 ): WeekBucket[] {
   const buckets = new Map<string, WeekBucket>();
 
@@ -287,11 +318,10 @@ export function aggregateWeeks(
   const sortedKeys = [...buckets.keys()].sort();
   if (sortedKeys.length === 0) return [];
 
-  // A later active week than the current one only comes from a time-zone
+  // A later active week than the last one only comes from a time-zone
   // mismatch; the timeline still reaches it rather than dropping activity.
   const latestActive = sortedKeys[sortedKeys.length - 1]!;
-  const last =
-    latestActive > currentWeekStart ? latestActive : currentWeekStart;
+  const last = latestActive > lastWeekStart ? latestActive : lastWeekStart;
   const weekKeys: string[] = [];
   for (let key = sortedKeys[0]!; key <= last; key = addDays(key, 7)) {
     weekKeys.push(key);
@@ -306,21 +336,23 @@ export function weekDistanceKm(bucket: WeekBucket): number {
 }
 
 /**
- * True for the current week (or a later one, which only a time-zone mismatch
- * could produce): its volume is only the days so far.
+ * True for the partial week, `partialWeekStart` from
+ * {@link trainingLoadWindow} (or a later one, which only a time-zone
+ * mismatch could produce): its volume is only the days read so far. Never
+ * true when every week read is complete (`partialWeekStart` null).
  */
-export function weekInProgress(
+export function weekIsPartial(
   weekStarting: string,
-  currentWeekStart: string,
+  partialWeekStart: string | null,
 ): boolean {
-  return weekStarting >= currentWeekStart;
+  return partialWeekStart !== null && weekStarting >= partialWeekStart;
 }
 
 /** The weeks the run-based rules read; see {@link selectRunWeeks}. */
 export interface RunWeeks {
   /** First week with a run to the end of the timeline, zero-run weeks kept. */
   span: WeekBucket[];
-  /** `span` without the week in progress. Averages and the trend read these. */
+  /** `span` without the partial week. Averages and the trend read these. */
   complete: WeekBucket[];
   /** Volume-spike warnings over `span`. */
   warnings: WeekWarning[];
@@ -347,7 +379,7 @@ export function baselineWeeks(
  * both call it, so their warnings can never differ (#43).
  *
  * The span runs from the first week with a run to the end of the timeline,
- * which {@link aggregateWeeks} carries to the current week. Zero-run weeks
+ * which {@link aggregateWeeks} carries to the window's last week. Zero-run weeks
  * in it are kept, those after the last run included: a layoff is a real gap
  * the averages, the trend and the warnings must see, whether or not it has
  * ended, and dropping it would compare two weeks that are not adjacent as if
@@ -355,9 +387,11 @@ export function baselineWeeks(
  * data, and in whole-body mode they can hold load only (for example a bike
  * week), so counting them would change the run numbers with `runOnly`.
  * Neither end depends on load-only activities. The week starting on or after
- * `currentWeekStart` is in progress: it can be flagged, but only on the
- * volume it already has (see {@link computeWeekWarnings}), and it is left
- * out of `complete`.
+ * `partialWeekStart` is partial (in progress today, or cut off at a past
+ * `newest`): it can be flagged, but only on the volume it already has (see
+ * {@link computeWeekWarnings}), and it is left out of `complete`. With
+ * `partialWeekStart` null (a window that ends on a past Sunday) every week
+ * is complete.
  *
  * `before` ({@link baselineWeeks}) is only a baseline: the warnings compare
  * the span's first weeks with it, and the weeks from its end to the span's
@@ -366,13 +400,13 @@ export function baselineWeeks(
  */
 export function selectRunWeeks(
   buckets: WeekBucket[],
-  currentWeekStart: string,
+  partialWeekStart: string | null,
   before: WeekBucket[] = [],
 ): RunWeeks {
   const first = buckets.findIndex((b) => b.runs > 0);
   const span = first === -1 ? [] : buckets.slice(first);
   const inProgress = (b: WeekBucket) =>
-    weekInProgress(b.weekStarting, currentWeekStart);
+    weekIsPartial(b.weekStarting, partialWeekStart);
 
   return {
     span,
@@ -422,7 +456,7 @@ export interface VolumeTrend {
 
 /**
  * Volume trend over complete weeks: the distance of the last 2 against the 2
- * before. Needs 4 complete weeks, so the week in progress never counts.
+ * before. Needs 4 complete weeks, so the partial week never counts.
  */
 export function volumeTrend(complete: WeekBucket[]): VolumeTrend {
   const none = (label: string): VolumeTrend => ({ label, weeks: [] });
@@ -499,18 +533,14 @@ export function buildTrainingLoadData(
   const loadActivities = options.loadActivities ?? runs;
   const runOnly = options.runOnly ?? true;
 
-  const buckets = aggregateWeeks(
-    runs,
-    loadActivities,
-    lookback.currentWeekStart,
-  );
+  const buckets = aggregateWeeks(runs, loadActivities, lookback.lastWeekStart);
   const { warnings } = selectRunWeeks(
     buckets,
-    lookback.currentWeekStart,
+    lookback.partialWeekStart,
     baselineWeeks(options.baselineRuns ?? [], lookback),
   );
   const inProgress = (b: WeekBucket) =>
-    weekInProgress(b.weekStarting, lookback.currentWeekStart);
+    weekIsPartial(b.weekStarting, lookback.partialWeekStart);
 
   const reasonsByWeek = new Map<string, string[]>();
   for (const warning of warnings) {
@@ -522,8 +552,8 @@ export function buildTrainingLoadData(
   const distances = buckets.map(weekDistanceKm);
   // The trend line smooths complete weeks only: a partial week would drag
   // it down at the right edge. Buckets are sorted and only the last one can
-  // be in progress, so trend[i] belongs to buckets[i] and the week in
-  // progress gets none.
+  // be partial, so trend[i] belongs to buckets[i] and the partial week gets
+  // none.
   const trend = rollingTrend(
     buckets.filter((b) => !inProgress(b)).map(weekDistanceKm),
   );
@@ -558,6 +588,7 @@ export function buildTrainingLoadData(
     days: lookback.spanDays,
     startDate: lookback.startDate,
     endDate: lookback.endDate,
+    endsToday: lookback.endsToday,
     activityTypesIncluded,
     runOnly,
     current: options.current ?? null,

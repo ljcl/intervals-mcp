@@ -1,6 +1,7 @@
 /**
  * Local-date helpers shared by tools that default a date range to "today" in
- * the athlete's configured time zone (`list-activities`, `get-wellness`).
+ * the athlete's configured time zone (`list-activities`, `get-wellness`,
+ * and the look-back windows of `get-training-load` and `get-fitness-trend`).
  *
  * All functions work on plain `YYYY-MM-DD` strings, the shape every
  * intervals.icu date-window parameter expects, so a tool never has to carry
@@ -133,4 +134,39 @@ export function validateRange(
     };
   }
   return null;
+}
+
+/**
+ * The last day a look-back window reads (`get-training-load`,
+ * `get-fitness-trend` and their app pairs): the caller's `newest`, or today.
+ */
+export interface WindowEnd {
+  /** Last day read, YYYY-MM-DD: `newest`, or today when it is omitted. */
+  endDate: string;
+  /** Today in the athlete's time zone, YYYY-MM-DD. */
+  today: string;
+  /** True when `endDate` is today. False for a past window. */
+  endsToday: boolean;
+}
+
+/**
+ * Resolves a look-back window's last day from an optional `newest` and
+ * `today` (both YYYY-MM-DD, athlete's time zone). The one home for this
+ * rule, so the text tools and the app pairs cannot disagree. A `newest`
+ * after today is an error: intervals.icu has no records there, and its
+ * wellness rows past today hold a projection from planned workouts
+ * (docs/api-notes.md). A `newest` equal to today resolves exactly as an
+ * omitted one, so the two calls share requests and cache keys.
+ */
+export function resolveWindowEnd(
+  newest: string | undefined,
+  today: string,
+): WindowEnd | { error: string } {
+  const endDate = newest ?? today;
+  if (endDate > today) {
+    return {
+      error: `newest ${endDate} is after today (${today}). Use today or an earlier date, or leave newest out to end the window today.`,
+    };
+  }
+  return { endDate, today, endsToday: endDate === today };
 }

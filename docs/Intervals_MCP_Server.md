@@ -61,8 +61,8 @@ rather than (or alongside) text.
 | Tool | Answers | Key params |
 | ---- | ------- | ---------- |
 | `get-athlete-stats` | Run totals, and totals for every sport (strength sessions, swim distance), this week/month/YTD | (none) |
-| `get-fitness-trend` | Am I fresh or fatigued? What if I taper for a race? | `days`, `runOnly`, `projectDays`/`plannedLoads`, `targetDate`/`targetTsb` |
-| `get-training-load` | Weekly volume, volume-spike flags, weekly load | `days`, `runOnly` |
+| `get-fitness-trend` | Am I fresh or fatigued? What if I taper for a race? | `days`, `newest`, `runOnly`, `projectDays`/`plannedLoads`, `targetDate`/`targetTsb` |
+| `get-training-load` | Weekly volume, volume-spike flags, weekly load | `days`, `newest`, `runOnly` |
 | `get-best-efforts` | My best 5K/10K/half/marathon times; my fastest 5K inside one run, and where | `distances`, `window`, `topN`, `id` |
 | `get-race-prediction` | What could I run for X? What pace do I need for a goal time? | `raceDistance` (`5km`, `10km`, `15km`, `10 mile`, `half marathon`, `marathon`, `50km`), `goalTime` |
 | `get-athlete-zones` | What are my HR zones? Is 150 bpm zone 2? What is my threshold pace? Is my LTHR out of date? | `sport` (default Run) |
@@ -85,10 +85,10 @@ same numbers as text use the matching read tool (e.g. `get-fitness-trend`,
 | `view-activity-chart` | `get-activity-streams-raw` | HR, power, pace, altitude, cadence, grade, and dynamics overlays with interval bands |
 | `view-cadence-trends` | `get-cadence-trend-data` | Cadence over time: timeline, scatter, zones, overlay views |
 | `view-route-map` | `get-route-map-data` | GPS track with start/finish markers and optional waypoints |
-| `view-training-load` | `get-training-load-data` | Weekly volume bars with a trend line and volume-spike weeks, a weekly load line, and Fitness/Fatigue/Form tiles; `runOnly` picks the starting scope; toggles whole-body vs runs-only |
+| `view-training-load` | `get-training-load-data` | Weekly volume bars with a trend line and volume-spike weeks, a weekly load line, and Fitness/Fatigue/Form tiles; `runOnly` picks the starting scope; toggles whole-body vs runs-only; `newest` for a past block |
 | `view-compare-activities` | `get-compare-activities-data` | Two activities' streams overlaid with a delta summary |
 | `view-activity-zones` | `get-activity-zones-data` | Time-in-zone bar chart for HR |
-| `view-fitness-trend` | `get-fitness-trend-data` | CTL/ATL/TSB over time with fatigue/freshness bands and a taper plan; toggles whole-body vs runs-only |
+| `view-fitness-trend` | `get-fitness-trend-data` | CTL/ATL/TSB over time with fatigue/freshness bands and a taper plan; toggles whole-body vs runs-only; `newest` for a past block, with no projection |
 
 Once a chart is open, the model can adjust it with that chart's own tool:
 `set-brush-window` (activity chart: zoom to a stretch), `set-viewport` (route
@@ -154,8 +154,9 @@ description is kept. (This is also the `annotate-last-run` prompt.)
   on, so call `list-activities` when you need the id itself.
 - **One input naming scheme.** CamelCase inputs: `id` for one activity,
   `activityId1`/`activityId2` for two, `days` for a look-back window
-  (`view-cadence-trends`: 7-728, default 42). Older spellings
-  (`activity_id`, `weeks`) still work.
+  (`view-cadence-trends`: 7-728, default 42), and `newest` to end a
+  look-back on a past date (`get-training-load`, `get-fitness-trend` and
+  their charts). Older spellings (`activity_id`, `weeks`) still work.
 - **Whole-body vs runs-only fitness.** `get-fitness-trend` and
   `get-training-load` default to whole-body CTL/ATL/TSB, read straight from
   intervals.icu's own wellness record and covering every activity type.
@@ -171,7 +172,12 @@ description is kept. (This is also the `annotate-last-run` prompt.)
   this week. The current week is marked in progress: averages and the trend
   leave it out, and it gets a warning only for the volume it already has.
   Do not read a short current week as a drop in volume. Weeks with no runs
-  count as zero weeks, a layoff that is still going on included.
+  count as zero weeks, a layoff that is still going on included. With
+  `newest` (a past date, never after today), `days` counts back from it: a
+  past Sunday ends the window on a complete week (`days: 84` is exactly 12
+  weeks), and any other past date ends it on a partial week, marked
+  "partial" and treated like the current week. `period.ends_today` is false
+  then, and `get-fitness-trend` has no projection or taper for a past window.
 - **Volume-spike flags compare with the recent average.** A week is flagged
   when its distance is over 1.5 times the average of the 4 complete weeks
   before it; the reason gives the ratio. A normal week after a recovery or

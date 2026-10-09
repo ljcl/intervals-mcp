@@ -114,3 +114,16 @@ export function windowLabel(days: number): string {
 export function windowShortLabel(days: number): string {
   return days % 7 === 0 ? `${days / 7}w` : `${days}d`;
 }
+
+/**
+ * "Last 84 days", or "84 days to 12 Apr 2026" for a look-back that ends on
+ * a past day (`pastEndDate`, YYYY-MM-DD; the year is spelled out). The one
+ * home for the subtitle the training-load and fitness-trend cards show with
+ * no data, so a past window never reads as recent in either (#80).
+ */
+export function lookbackLabel(days: number, pastEndDate?: string): string {
+  const span = `${days} day${days === 1 ? "" : "s"}`;
+  return pastEndDate
+    ? `${span} to ${formatShortDate(pastEndDate, "full")}`
+    : `Last ${span}`;
+}

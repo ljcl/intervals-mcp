@@ -1051,6 +1051,120 @@ async function checkGetTrainingLoadRunOnly(): Promise<void> {
   }
 }
 
+/**
+ * A past Sunday for the past-window checks (#80): the issue's example, so
+ * `days: 84` must read exactly 12 complete weeks with no week in progress.
+ */
+const PAST_SUNDAY = "2026-04-12";
+
+/**
+ * Runs `get-training-load` whole-body on a past window (`newest`) and checks
+ * its shape: 84 days, `ends_today` false, at most 12 weeks ending on the week
+ * of `newest`, and `current` on or before `newest`. Prints counts only.
+ */
+async function checkGetTrainingLoadPastWindow(): Promise<void> {
+  const name = "get-training-load (past window)";
+  try {
+    const result = (await getTrainingLoadTool.execute(
+      { days: 84, runOnly: false, newest: PAST_SUNDAY },
+      apiKey,
+      NO_PROGRESS,
+    )) as {
+      structuredContent?: Record<string, unknown>;
+      isError?: boolean;
+      content?: Array<{ text?: unknown }>;
+    };
+    if (result.isError || !result.structuredContent) {
+      fail(name, errorSummary(result));
+      return;
+    }
+    const d = result.structuredContent as {
+      period: { days: number; end_date: string; ends_today: boolean };
+      current: { date: string } | null;
+      weekly_breakdown: Array<{ week_starting: string }>;
+      totals: { runs: number };
+    };
+    const lastWeek = d.weekly_breakdown.at(-1)?.week_starting;
+    const problems = [
+      d.period.days !== 84 ? `period.days=${d.period.days}` : "",
+      d.period.end_date !== PAST_SUNDAY ? "end_date" : "",
+      d.period.ends_today ? "ends_today=true" : "",
+      d.weekly_breakdown.length > 12
+        ? `weeks=${d.weekly_breakdown.length}`
+        : "",
+      lastWeek !== undefined && lastWeek > PAST_SUNDAY
+        ? "week after newest"
+        : "",
+      d.current && d.current.date > PAST_SUNDAY ? "current after newest" : "",
+    ].filter(Boolean);
+    if (problems.length > 0) {
+      fail(name, `unexpected shape: ${problems.join(", ")}`);
+      return;
+    }
+    ok(
+      name,
+      `days=${d.period.days} ends_today=${d.period.ends_today} weeks=${d.weekly_breakdown.length} runs=${d.totals.runs} as_of=${d.current?.date ?? null}`,
+    );
+  } catch (error) {
+    fail(name, throwSummary(error));
+  }
+}
+
+/**
+ * Runs `get-fitness-trend` whole-body on a past window (`newest`) with a
+ * projection asked for, and checks that none came back: no projection, no
+ * taper, `ends_today` false, `as_of` on or before `newest`. Prints counts only.
+ */
+async function checkGetFitnessTrendPastWindow(): Promise<void> {
+  const name = "get-fitness-trend (past window)";
+  try {
+    const result = (await getFitnessTrendTool.execute(
+      {
+        days: 90,
+        runOnly: false,
+        newest: PAST_SUNDAY,
+        projectDays: 14,
+        targetTsb: 10,
+      },
+      apiKey,
+      NO_PROGRESS,
+    )) as {
+      structuredContent?: Record<string, unknown>;
+      isError?: boolean;
+      content?: Array<{ text?: unknown }>;
+    };
+    if (result.isError || !result.structuredContent) {
+      fail(name, errorSummary(result));
+      return;
+    }
+    const d = result.structuredContent as {
+      period: { end_date: string; ends_today: boolean };
+      as_of: string | null;
+      daily: unknown[];
+      projection: unknown[];
+      taper: unknown;
+      flags: string[];
+    };
+    const problems = [
+      d.period.end_date !== PAST_SUNDAY ? "end_date" : "",
+      d.period.ends_today ? "ends_today=true" : "",
+      d.projection.length > 0 ? `projection=${d.projection.length}` : "",
+      d.taper !== null ? "taper" : "",
+      d.as_of !== null && d.as_of > PAST_SUNDAY ? "as_of after newest" : "",
+    ].filter(Boolean);
+    if (problems.length > 0) {
+      fail(name, `unexpected shape: ${problems.join(", ")}`);
+      return;
+    }
+    ok(
+      name,
+      `ends_today=${d.period.ends_today} as_of=${d.as_of} days=${d.daily.length} projection=${d.projection.length} flags=${d.flags.length}`,
+    );
+  } catch (error) {
+    fail(name, throwSummary(error));
+  }
+}
+
 async function checkGetRunningDynamics(): Promise<void> {
   const name = "get-running-dynamics";
   try {
@@ -1286,6 +1400,8 @@ await checkFitnessTrendMatchesWellness(fitnessTrendCurrent);
 await checkGetFitnessTrendRunOnly();
 await checkGetTrainingLoadWholeBody();
 await checkGetTrainingLoadRunOnly();
+await checkGetTrainingLoadPastWindow();
+await checkGetFitnessTrendPastWindow();
 await checkGetRunningDynamics();
 await checkGetActivityStreamsRaw();
 await checkGetCadenceTrendData();

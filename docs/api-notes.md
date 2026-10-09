@@ -604,3 +604,24 @@ activities came back in 86 KB.
   cached list (gear added since it was cached), they read the list once
   more past the cache. They do not use an item whose `athlete_id` differs
   from the activity's `icu_athlete_id`.
+## Past windows (2026-10-08, #80, live read-only)
+
+- `GET /athlete/0/wellness?oldest=&newest=` includes both bounds: a read from
+  2026-01-01 to 2026-04-12 returned 102 rows, one per day, each with `ctl` and
+  `atl`. A past day's row is the same in a 7-day read and in a 102-day read.
+  With `fields=`, only the requested keys come back.
+- `GET /athlete/0/activities` reads a date-only `oldest` and `newest` as whole
+  local days: `oldest` and `newest` set to one date returned an activity that
+  started in the evening of that day, and `newest` set to the day before left
+  it out.
+- Wellness has rows after today. A read that ran 7 days past today returned a
+  row for every future day, with `ctl` and `atl`, and with `ctlLoad`/`atlLoad`
+  from planned workouts. These rows are intervals.icu's own projection, not
+  records. `GET /athlete/0/activities` returned `[]` for the same dates. So a
+  look-back window must end today or earlier: `resolveWindowEnd`
+  (`utils/localDate.ts`) refuses a `newest` after today.
+- A past window behaves like a window that ends today. A run-only runway
+  counted back from a past `newest` (234 days, 8 listing requests of at most
+  31 days) and a whole-body wellness read to a past `newest` returned complete
+  data, with no gaps. The cache needs no new rule: `intervalsCacheTtl` keys on
+  the full URL, and a past window builds the same URL shape.

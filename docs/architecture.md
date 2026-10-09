@@ -295,22 +295,23 @@ pace per km, while the text tools show km/h. A follow-up picks one.
 
 **Training-load weeks have one definition.** `trainingLoad.ts` owns the
 window (`trainingLoadWindow`: `days` rounded up to whole Monday-to-Sunday
-weeks, plus the current week so far), the timeline (`aggregateWeeks`: first
-week with any activity to the current week), the weeks the run-based rules
-read (`selectRunWeeks`: first week with a run to the current week, zero-run
-weeks kept, the week in progress apart), and the rules themselves
+weeks, to the week that holds `endDate`), the timeline (`aggregateWeeks`:
+first week with any activity to the window's last week), the weeks the
+run-based rules read (`selectRunWeeks`: first week with a run to the last
+week, zero-run weeks kept, the partial week apart), and the rules themselves
 (`computeWeekWarnings`, `volumeTrend`). `get-training-load` and the
 training-load app feed both call them. A window that started mid-week gave a
 steady runner a 1-day first week, then a "200% increase" on the next full
 week, and a trend that compared the unfinished current week with full ones.
 The app also dropped the zero-run weeks that the text tool kept, so the two
-gave different warnings for the same weeks (#43). Only the current week can be
-partial now, and no rule uses it as a baseline or in an average.
+gave different warnings for the same weeks (#43). Only the last week can be
+partial now (the week in progress, or a week cut off at a past `newest`), and
+no rule uses it as a baseline or in an average.
 
 The timeline and the run weeks used to stop at the last week with activity,
 so a layoff that was still going on did not count: an athlete who had not run
 for 2 weeks got the averages and a "limited data" trend of the weeks before.
-Both now run on to the current week. The warning compares a week with the
+Both now run on to the window's last week. The warning compares a week with the
 average of the complete weeks before it, not with the whole period: with a
 whole-period average, the layoff lowered the average and flagged the normal
 weeks before it.
@@ -393,6 +394,23 @@ a typo like 2062-10-17 gave a 13,170-day plan of about 950 KB, 9999-12-31
 overflowed the call stack in `Math.max(...shape)` (now a loop), and
 2027-02-30 rolled over into March.
 
+**Past windows (#80).** `get-training-load`, `get-fitness-trend` and their
+app pairs take an optional `newest`, and `days` counts back from it: a
+look-back that ends on a past date, which fits the naming scheme (Input
+validation, below). `resolveWindowEnd` (`utils/localDate.ts`) is the one
+home for that end. It turns `newest` and today into a `WindowEnd`
+(`endDate`, `today`, `endsToday`), and it refuses a `newest` after today
+before any fetch, because wellness after today is intervals.icu's projection
+(docs/api-notes.md). A `newest` equal to today resolves exactly as an
+omitted one, so the two calls send the same requests. The callers pass the
+`WindowEnd` to `loadTrainingLoadInputs` and `loadFitnessTrend`, so neither
+loader reads the clock. A past window solves nothing forward:
+`loadFitnessTrend` drops `projectDays`, `plannedLoads` and `taper` when
+`endsToday` is false and adds the past-window warning, and the callers skip
+`taperTargetDateError` then. `trainingLoadWindow` ends a past window on a
+complete week when `newest` is a Sunday; otherwise its last week is the
+partial week (`partialWeekStart`), treated like the week in progress.
+
 **Form turning positive has one rule.** `tsbPositiveFrom` in `fitnessTrend.ts`
 sets `tsbPositiveDate` for the run-only, whole-body synced and whole-body
 lagging paths: today when today's raw TSB is already ≥ 0, else the first
@@ -407,7 +425,12 @@ bands have hysteresis (start at `FRESH_TSB` +15, hold until TSB drops below
 and need `FRESH_MIN_DAYS` (3) unless they run to the last day. Before #44, TSB
 moving around +15 for 42 days gave 8 fresh bands, 6 of them 1 day long, and
 the chart showed stripes. Reasons are in the present tense only for the bands
-that are also flags; a band that ended earlier reads in the past tense.
+that are also flags; a band that ended earlier reads in the past tense. In a
+past window, a band that runs to the last day gets a dated reason, not a
+present-tense one (`trendBands(series, { endsToday: false, endDate })`).
+When the series stops before `endDate` (a trailing wellness gap), the reason
+calls its last day "the last day with data in the window", not "the end of
+the window".
 
 **Interval detection pairs by adjacency.** `computeIntervalAnalysis` in
 `intervalAnalysis.ts` builds work segments and rests in one ordered pass, and
@@ -634,6 +657,13 @@ scheme:
 
 Changing an advertised name changes `tool-surface.lock.json` (see the
 tool-identity invariant in CLAUDE.md), so it is a deliberate release note.
+
+**A look-back can end on a past date.** `get-training-load`,
+`get-fitness-trend` and their app pairs take `newest` together with `days`,
+and `days` counts back from `newest` (#80). This is the pattern for a
+look-back that ends before today; do not add `oldest` to it.
+`resolveWindowEnd` (`utils/localDate.ts`) refuses a `newest` after today.
+"Past windows" under Analysis math has the mechanics.
 
 **`update-activity` validates against fresh reads, not cached ones.** Its
 input schema (`superRefine`, `tools/updateActivity.ts`) rejects a `name`

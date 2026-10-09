@@ -1,4 +1,4 @@
-import { fitnessSourceLabel } from "@intervals-mcp/data";
+import { fitnessSourceLabel, lookbackLabel } from "@intervals-mcp/data";
 import { getChartTokens } from "@intervals-mcp/design-system";
 import {
   CardHeader,
@@ -198,7 +198,9 @@ export function App({
       <CardHeader
         title="Fitness trend"
         subtitle={
-          data ? buildTrendSubtitle(data) : `Last ${baseArgs.days} days`
+          data
+            ? buildTrendSubtitle(data)
+            : lookbackLabel(baseArgs.days, baseArgs.newest)
         }
         compact={isMobile}
       />

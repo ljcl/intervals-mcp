@@ -14,8 +14,8 @@
     "get-best-efforts": "94d0050c9fd5bd2e",
     "get-cadence-trend-data": "1fde3a4e7436ad6a",
     "get-compare-activities-data": "cb98ac1a82cc1bb5",
-    "get-fitness-trend": "ed87ff5fc5010c3b",
-    "get-fitness-trend-data": "1e945ab449a4f43f",
+    "get-fitness-trend": "5753a7371c36b670",
+    "get-fitness-trend-data": "b0bfbb1ec51041e7",
     "get-hill-analysis": "809b1a3754fd5f04",
     "get-interval-analysis": "da619e14773c4a96",
     "get-race-prediction": "dd0a30b824acf340",
@@ -23,8 +23,8 @@
     "get-running-dynamics": "ac26eede627d3f5f",
     "get-running-summary": "2d2bb4c6756bd388",
     "get-split-analysis": "3fbbbd4baa4bf25c",
-    "get-training-load": "62556b44fffcb738",
-    "get-training-load-data": "d3101a7134bd7240",
+    "get-training-load": "0b942a29b7c8b24d",
+    "get-training-load-data": "72ff2617bce52435",
     "get-wellness": "6149226c6a9e4457",
     "list-activities": "4d78683c76041f56",
     "list-gear": "2097bdca6c072237",
@@ -33,8 +33,8 @@
     "view-activity-zones": "8ac2aae5ae2cc79d",
     "view-cadence-trends": "2a723ba07f2cfe97",
     "view-compare-activities": "c7202e50529aec0e",
-    "view-fitness-trend": "0f6d551307f94644",
+    "view-fitness-trend": "5337937db598aa85",
     "view-route-map": "1b9e6b120ca3024c",
-    "view-training-load": "635880ffdc405479"
+    "view-training-load": "60beef127ffa794a"
   }
 }

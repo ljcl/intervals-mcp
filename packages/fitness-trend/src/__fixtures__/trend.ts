@@ -389,3 +389,28 @@ export const mockNoLoadData: FitnessTrendData = {
   activitiesIncluded: 12,
   activitiesMissingLoad: 12,
 };
+
+/** The past-window ramp reason, dated to the window's last day as the server words it. */
+const pastRampReason =
+  "CTL climbed 5.3 in the 7 days to 2026-06-28: a steep ramp; sustained rates above ~5/week carry injury and illness risk.";
+
+/**
+ * The same series read as a past window (#80): `newest` 2026-06-28 was
+ * before today, so the server sends no projection and no taper (whatever
+ * `projectDays` the app asked for), dates the band that runs to the last
+ * day, and puts its past-window note first in `warnings`.
+ */
+export const mockPastFitnessTrendData: FitnessTrendData = {
+  ...mockFitnessTrendData,
+  projection: [],
+  taper: null,
+  tsbPositiveDate: null,
+  endsToday: false,
+  bands: mockBands.map((band) =>
+    band.endDate === "2026-06-28" ? { ...band, reason: pastRampReason } : band,
+  ),
+  flags: [pastRampReason],
+  warnings: [
+    "This window ends on 2026-06-28, before today (2026-10-08). It is a past block: CTL/ATL/TSB are as of its last day with data, and there is no projection or taper plan.",
+  ],
+};

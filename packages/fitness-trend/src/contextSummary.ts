@@ -1,5 +1,10 @@
 import { formatSignedTsb } from "@intervals-mcp/data";
-import { isPlanned, isPositiveToday, planDays } from "./normalize";
+import {
+  isPastWindow,
+  isPlanned,
+  isPositiveToday,
+  planDays,
+} from "./normalize";
 import { type FitnessTrendData } from "./types";
 
 /**
@@ -16,8 +21,13 @@ export function buildFitnessTrendContextSummary(
   const current = data.current;
   if (!current) return null;
 
+  const dayCount = `${data.days} day${data.days === 1 ? "" : "s"}`;
+  // A past window (#80) names its last day; its note arrives in `warnings`.
+  const pastEnd = isPastWindow(data) ? data.endDate : undefined;
   const parts = [
-    `Fitness trend, last ${data.days} day${data.days === 1 ? "" : "s"}.`,
+    pastEnd
+      ? `Fitness trend, ${dayCount} to ${pastEnd}.`
+      : `Fitness trend, last ${dayCount}.`,
     `On ${current.date}: fitness (CTL) ${current.ctl}, fatigue (ATL) ${current.atl}, form (TSB) ${formatSignedTsb(current.tsb)}.`,
   ];
 

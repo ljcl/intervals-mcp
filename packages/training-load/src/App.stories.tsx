@@ -8,6 +8,7 @@ import { type useApp } from "@modelcontextprotocol/ext-apps/react";
 import { useState } from "react";
 import { expect, waitFor } from "storybook/test";
 import {
+  mockPastTrainingLoadData,
   mockRunOnlyTrainingLoadData,
   mockTrainingLoadData,
 } from "./__fixtures__/weeks";
@@ -24,6 +25,12 @@ const meta = preview.meta({ component: App });
 /** What `buildDataArgs` gives a call with no arguments. */
 const wholeBodyArgs: TrainingLoadDataArgs = { days: 84, runOnly: false };
 const runOnlyArgs: TrainingLoadDataArgs = { days: 84, runOnly: true };
+/** A call with a past `newest` (#80). */
+const pastArgs: TrainingLoadDataArgs = {
+  days: 84,
+  runOnly: false,
+  newest: "2026-06-24",
+};
 
 /** The two scope notes, which tell the scopes apart on screen. */
 const wholeBodyNote = buildScopeNote(mockTrainingLoadData);
@@ -664,6 +671,50 @@ export const LegendToggleHidesTrend = meta.story({
     await expect(trendToggle).toHaveAttribute("aria-pressed", "false");
     await waitFor(() => expect(curveCount()).toBe(1));
     await expect(barCount()).toBeGreaterThan(0);
+  },
+});
+
+/**
+ * A past window (#80): `newest` cut the last week off on a Wednesday. The
+ * legend calls its light bar a partial week, not this week so far, and the
+ * other scope is fetched for the same `newest`.
+ */
+export const PastWindow = meta.story({
+  args: {
+    app: countingApp,
+    data: mockPastTrainingLoadData,
+    dataArgs: pastArgs,
+  },
+  beforeEach: () => {
+    toggleCalls = [];
+  },
+  play: async ({ canvas, userEvent }) => {
+    await expect(canvas.getByText("Partial week")).toBeVisible();
+    await expect(canvas.queryByText("This week so far")).toBeNull();
+    // The subtitle ends on the window's last day, year included.
+    await expect(
+      canvas.getByText(buildLoadSubtitle(mockPastTrainingLoadData)),
+    ).toBeVisible();
+    await expect(canvas.getByText(/– 24 Jun 2026$/)).toBeVisible();
+
+    await userEvent.click(canvas.getByRole("button", { name: "Runs only" }));
+    await waitFor(() => expect(canvas.getByText(runOnlyNote)).toBeVisible());
+    await expect(toggleCalls).toEqual([
+      { days: 84, runOnly: true, newest: "2026-06-24" },
+    ]);
+  },
+});
+
+export const MobilePastWindow = meta.story({
+  args: {
+    app: null,
+    data: mockPastTrainingLoadData,
+    dataArgs: pastArgs,
+    mode: "mobile",
+  },
+  ...mobile,
+  play: async ({ canvas }) => {
+    await expect(canvas.getByText("Partial week")).toBeVisible();
   },
 });
 
