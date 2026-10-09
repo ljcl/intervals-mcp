@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.0](https://github.com/ljcl/intervals-mcp/compare/v2.4.0...v2.5.0) (2026-10-09)
+
+
+### Features
+
+* check config at startup, follow the athlete's time zone, stop cancelled calls, and log who called and why (epic [#119](https://github.com/ljcl/intervals-mcp/issues/119)) ([#165](https://github.com/ljcl/intervals-mcp/issues/165)) ([a524918](https://github.com/ljcl/intervals-mcp/commit/a524918bcd42f753b779488dfb3e637d9a453c12)), closes [#56](https://github.com/ljcl/intervals-mcp/issues/56) [#69](https://github.com/ljcl/intervals-mcp/issues/69) [#70](https://github.com/ljcl/intervals-mcp/issues/70) [#71](https://github.com/ljcl/intervals-mcp/issues/71)
+
 ## [2.4.0](https://github.com/ljcl/intervals-mcp/compare/v2.3.0...v2.4.0) (2026-10-09)
 
 
