@@ -14,7 +14,8 @@ Related docs: [mcp-apps.md](mcp-apps.md) for the UI packages,
   Turborepo (`apps/*`, `packages/*`).
 - **2026-07-28 only.** `apps/server/src/mcpEndpoint.ts` serves the
   2026-07-28 revision per request — stateless, `_meta` envelope,
-  `server/discover`, `Mcp-Method`/`Mcp-Name` headers, `resultType` plus
+  `server/discover`, `MCP-Protocol-Version`/`Mcp-Method`/`Mcp-Name` headers
+  (SEP-2243; the SDK rejects a request without them), `resultType` plus
   `ttlMs`/`cacheScope` on results — and nothing else. `createMcpHandler` runs
   with `legacy: "reject"`, so a 2025-era request (no envelope claim, e.g. an
   `initialize` handshake) gets HTTP 400 and `-32022`
@@ -975,7 +976,8 @@ text names exists.
 Protocol-surface tests go over the wire. `mcpTestClient.ts`
 (`connectTestClient(name)`) drives a real exchange through
 `createMcpEndpoint(createServer)`: it stamps the `io.modelcontextprotocol/*`
-envelope keys into `params._meta` plus the `Mcp-Method`/`Mcp-Name` headers,
+envelope keys into `params._meta` plus the `MCP-Protocol-Version` (equal to the
+envelope's revision), `Mcp-Method` and `Mcp-Name` headers,
 reads capabilities from `server/discover`, and parses bare JSON or SSE
 (`parseResponse` picks the response out from among notifications either way).
 
@@ -1003,6 +1005,7 @@ curl http://localhost:3000/health
 curl -X POST http://localhost:3000/mcp \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
+  -H "MCP-Protocol-Version: 2026-07-28" \
   -H "Mcp-Method: server/discover" \
   -d '{"jsonrpc": "2.0", "id": 1, "method": "server/discover", "params": {"_meta": {"io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelcontextprotocol/clientInfo": {"name": "test", "version": "1.0"}, "io.modelcontextprotocol/clientCapabilities": {}}}}'
 ```

@@ -138,6 +138,7 @@ mcp() {
     -H "Authorization: Bearer $TOKEN" \
     -H 'Content-Type: application/json' \
     -H 'Accept: application/json, text/event-stream' \
+    -H 'MCP-Protocol-Version: 2026-07-28' \
     -H "Mcp-Method: $method" \
     ${name:+-H "Mcp-Name: $name"} \
     -d "$body" |

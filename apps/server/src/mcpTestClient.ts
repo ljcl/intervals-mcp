@@ -9,8 +9,9 @@
  *
  * The endpoint serves only the 2026-07-28 revision: no handshake at all; every
  * request carries the `io.modelcontextprotocol/*` envelope keys in
- * `params._meta` plus the `Mcp-Method` (and, where the body names one,
- * `Mcp-Name`) header, and capabilities come from `server/discover`.
+ * `params._meta` plus the `MCP-Protocol-Version` and `Mcp-Method` (and, where
+ * the body names one, `Mcp-Name`) headers, and capabilities come from
+ * `server/discover`.
  *
  * Every protocol-surface suite drives the endpoint through this client, so a
  * protocol change is fixed once, here — never by re-bootstrapping in a new
@@ -152,6 +153,11 @@ export async function connectTestClient(
       },
     };
     const headers: Record<string, string> = { "Mcp-Method": method };
+    // SEP-2243: every request also carries MCP-Protocol-Version, equal to the
+    // revision its envelope names (so an override above moves both). The
+    // endpoint rejects an absent header with -32020.
+    const claimed = body.params._meta[PROTOCOL_VERSION_META_KEY];
+    if (typeof claimed === "string") headers["MCP-Protocol-Version"] = claimed;
     // SEP-2243: when the body names a tool, prompt, or resource uri, the
     // Mcp-Name header must carry the same value — the endpoint rejects a
     // mismatch or an absence with -32020.

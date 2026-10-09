@@ -52,6 +52,9 @@ const INITIALIZE_BODY = {
   },
 } as const;
 
+/** SEP-2243: an enveloped request also names its revision in a header. */
+const MODERN_HEADERS = { "MCP-Protocol-Version": "2026-07-28" } as const;
+
 const MODERN_META = {
   "io.modelcontextprotocol/protocolVersion": "2026-07-28",
   "io.modelcontextprotocol/clientInfo": { name: "test-client", version: "1.0" },
@@ -138,7 +141,11 @@ describe("createMcpEndpoint", () => {
             arguments: {},
           },
         },
-        { "Mcp-Method": "tools/call", "Mcp-Name": "get-wellness" },
+        {
+          ...MODERN_HEADERS,
+          "Mcp-Method": "tools/call",
+          "Mcp-Name": "get-wellness",
+        },
       ),
     );
 
@@ -168,7 +175,7 @@ describe("createMcpEndpoint", () => {
           method: "tools/list",
           params: { _meta: MODERN_META },
         },
-        { "Mcp-Method": "tools/list" },
+        { ...MODERN_HEADERS, "Mcp-Method": "tools/list" },
       ),
     );
 
@@ -190,7 +197,7 @@ describe("createMcpEndpoint", () => {
           method: "server/discover",
           params: { _meta: MODERN_META },
         },
-        { "Mcp-Method": "server/discover" },
+        { ...MODERN_HEADERS, "Mcp-Method": "server/discover" },
       ),
     );
 
@@ -234,7 +241,11 @@ describe("createMcpEndpoint", () => {
     const response = await endpoint.handleRequest(
       post(
         `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"_meta":${JSON.stringify(MODERN_META)},"name":"view-route-map","arguments":{"activity_id":3516039180561708486}}}`,
-        { "Mcp-Method": "tools/call", "Mcp-Name": "view-route-map" },
+        {
+          ...MODERN_HEADERS,
+          "Mcp-Method": "tools/call",
+          "Mcp-Name": "view-route-map",
+        },
       ),
     );
     await response.body?.cancel();
@@ -350,7 +361,11 @@ describe("rejected requests (#69)", () => {
             arguments: {},
           },
         },
-        { "Mcp-Method": "tools/call", "Mcp-Name": "get-wellness" },
+        {
+          ...MODERN_HEADERS,
+          "Mcp-Method": "tools/call",
+          "Mcp-Name": "get-wellness",
+        },
       ),
     );
 
@@ -385,7 +400,11 @@ describe("rejected requests (#69)", () => {
             arguments: {},
           },
         },
-        { "Mcp-Method": "tools/call", "Mcp-Name": "get-wellness" },
+        {
+          ...MODERN_HEADERS,
+          "Mcp-Method": "tools/call",
+          "Mcp-Name": "get-wellness",
+        },
       ),
     );
 
@@ -406,7 +425,7 @@ describe("rejected requests (#69)", () => {
           method: "tools/list",
           params: { _meta: MODERN_META },
         },
-        { "Mcp-Method": "tools/list" },
+        { ...MODERN_HEADERS, "Mcp-Method": "tools/list" },
       ),
     );
 
@@ -438,7 +457,7 @@ describe("rejected requests (#69)", () => {
           method: "tools/list",
           params: { _meta: MODERN_META },
         },
-        { "Mcp-Method": "tools/list" },
+        { ...MODERN_HEADERS, "Mcp-Method": "tools/list" },
       ),
     );
 
