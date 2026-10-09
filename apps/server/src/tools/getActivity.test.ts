@@ -312,7 +312,7 @@ describe("formatActivityDetailText", () => {
     expect(text).toContain("Dynamics:");
     expect(text).toContain("GCT 233 ms");
     expect(text).toContain("HR zones:");
-    expect(text).toContain("Z1 0-142");
+    expect(text).toContain("Z1 up to 142");
     expect(text).toContain("Intervals:");
     expect(text).toContain("1. WORK:");
     expect(text).toContain("2. RECOVERY:");

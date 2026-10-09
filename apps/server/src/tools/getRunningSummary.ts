@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { resolveHrZones } from "../activityZones";
+import { hrZoneRangeText, resolveHrZones } from "../activityZones";
 import { formatDuration, STRAVA_STUB_NOTE } from "../formatters";
 import {
   formatLapLine,
@@ -184,7 +184,7 @@ function formatHrZoneSummaryLine(d: RunningSummary): string | null {
           z.max_bpm == null
             ? `${z.min_bpm}+`
             : z.min_bpm != null
-              ? `${z.min_bpm}-${z.max_bpm}`
+              ? hrZoneRangeText({ min: z.min_bpm, max: z.max_bpm })
               : `<=${z.max_bpm}`;
         return `Z${z.zone} ${range} ${formatDuration(z.seconds)} (${z.percent}%)`;
       })

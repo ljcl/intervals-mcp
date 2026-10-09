@@ -8,7 +8,7 @@ Tool names and schemas are a published contract: grants are stored per tool
 identity, so renames or schema reshapes re-prompt every user. See
 [architecture.md](architecture.md#tool-metadata) before changing either.
 
-> **Status.** All twenty tools below talk to intervals.icu directly and are
+> **Status.** All tools below talk to intervals.icu directly and are
 > verified against a real account. `get-fitness-trend`, `get-training-load`,
 > and `get-running-dynamics` are exercised by `scripts/live-check.ts`;
 > `update-activity`'s write path was verified once, separately, with
@@ -72,6 +72,7 @@ descriptions.
 | `get-running-summary` | get-activity's detail fields for a run plus cadence, HR zone, and running-dynamics assessments, and a lap breakdown |
 | `get-running-dynamics` | Ground contact time, vertical oscillation/ratio, step length, and cadence for a run, with VO/GCT target assessments and a per-WORK-interval breakdown |
 | `get-activity-zones` | Time spent in each HR zone for an activity, from the activity's own recorded zone bounds |
+| `get-athlete-zones` | The athlete's own LTHR, max HR, HR and pace zones, threshold pace and FTP from sport settings, with a check of LTHR and max HR against recent heart rate bests |
 | `compare-activities` | Compare two activities side-by-side: pace, HR, cadence, load, and running dynamics, plus activity2-activity1 differences and an efficiency verdict |
 | `get-hill-analysis` | Climb/descent detection with GAP and early-vs-late climb effort drift |
 | `get-split-analysis` | Even km splits with a two-halves pacing verdict stated on the clock and grade-adjusted |
@@ -244,6 +245,55 @@ rate is omitted, with a warning in the text, when the activity recorded
 bounds and zone times with different zone counts. The app payload carries
 the same warning as `hrZoneWarning`, and the app's empty state shows it. An
 activity with no zone data returns a valid empty payload, not an error.
+
+`get-athlete-zones` returns the athlete's own zones and thresholds from
+intervals.icu sport settings: LTHR and max HR (bpm), HR zones, threshold
+pace, pace zones and FTP (W). `sport` (default `Run`) picks the settings
+group. It is matched against each group's `types`, ignoring case and spaces,
+so `TrailRun` and `trail run` both give the Run group. One request reads
+every group (`GET /athlete/{id}/sport-settings`). A sport that no group lists
+gets intervals.icu's default Other group (`default_group: true`), as
+intervals.icu does itself, but only when it is an intervals.icu activity type
+(`intervalsActivityType`, from the `SportSettings.types` enum); a word such
+as `Running` or `Cycling` is an error that lists the groups' types, because
+intervals.icu answers 404 for it. The text says so and lists the other
+groups. Zone
+ranges come from `zoneRanges` (`activityZones.ts`), the rule every zone tool
+uses: zone 1 starts at 0, and each later zone starts above the previous
+zone's upper bound. A heart rate is in the first zone whose upper bound is
+at or above it. This rule gives intervals.icu's own zone times exactly
+(docs/api-notes.md). intervals.icu stores `threshold_pace` as a speed in m/s.
+The tool gives it in m/s and as pace per km for every group, and as pace per
+100 m for a swim group (`threshold_pace_min_per_100m`, through
+`speedDisplay`). Pace zones are percentages of threshold speed, with the
+slowest and fastest pace of each zone (per km, and per 100 m for a swim
+group). Zone 1 has no slow limit, and the top zone (999%) has no fast limit.
+The text gives a swim group's paces per 100 m. Power zones are not covered.
+
+The tool then reads intervals.icu's HR curves for the same sport (`90d` and
+`1y`, one request) and checks two settings. LTHR: intervals.icu's own rule,
+the higher of the best 60-minute heart rate and 98% of the best 20-minute
+heart rate, both of the last 90 days. intervals.icu's `LTHR_UP` achievements
+follow this rule on every probed case (docs/api-notes.md). The 30-minute
+best is not used: a hard 10 km race can hold a 30-minute heart rate above a
+correct LTHR, and the hint would then disagree with intervals.icu. Max HR:
+the best 60-second heart rate of the last year. 60 s, because optical sensor
+spikes inflate 1 to 5 s peaks; a year, because max HR falls with age and an
+all-time peak can be years old. An estimate above the setting gives
+`status: "above"` and a hint that the setting may be out of date. The hint
+names the activity, so the athlete can check it for a sensor error first. An
+estimate at or below the setting is `not_above`. This does not show that the
+setting is too high, only that the estimate from the heart rate bests is not
+above it, so the tool never calls a setting too high. Only an `above` message
+calls the number an LTHR estimate. A 20- or 60-minute best under half of
+the higher of max HR and the best 60-second heart rate (sensor dropouts, sent
+as 0) is not used: the check is `unknown` and the message names the best. `estimate_bpm` and `basis` (the curve point behind
+it) are set whenever they are known. `hr_bests` lists the 20-, 30- and
+60-minute bests of the last 90 days and the 60-second best of the last
+year. The Other group gets no check, because intervals.icu returns the Run
+curve for its types. A failed HR curve read does not fail the call: the
+zones return, both checks are `unknown`, and `warnings` says why
+(`unavailableReason`).
 
 `compare-activities` and the `view-compare-activities`/`get-compare-activities-data`
 MCP App's summary half share one `buildComparison(a, b)`, so text and app
@@ -776,7 +826,7 @@ keystroke would cost an intervals.icu request.
 ## Tool permissions
 
 Every tool declares MCP annotations so a host can tell reads from writes. The
-33 read tools set `readOnlyHint: true` and `destructiveHint: false`, which is
+read tools set `readOnlyHint: true` and `destructiveHint: false`, which is
 the combination clients use to offer a durable "always allow". One tool is a
 write and is expected to keep asking:
 
@@ -810,6 +860,11 @@ These examples assume you already have an activity id to pass to a tool.
 - "Compare my two long runs from last week"
 - "Show me the cadence trends for my last 10 runs"
 - "View the route map for my last ride"
+
+**Zones and thresholds**
+
+- "What are my heart rate zones? Is 150 bpm zone 2 for me?"
+- "Is my LTHR out of date?"
 
 **Stats**
 

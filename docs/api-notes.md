@@ -55,7 +55,7 @@ at `apps/server/src/__fixtures__/intervals/`.
 - `GET /athlete/0/wellness?oldest=&newest=` returns an array keyed by `id` (date). Apple Watch HRV arrives in `hrvSDNN`; `hrv` (rMSSD) is null. `restingHR`, `sleepSecs`, `weight`, `ctl`, `atl`, `rampRate` present.
 - Wellness HRV fields (2026-09-26, #48): `hrv` carries rMSSD and `hrvSDNN` carries SDNN, both in ms. The spec types both as plain floats and describes neither. Which field is set depends on the source device. Apple Watch sets only `hrvSDNN` (above). #48 reports that Garmin, Oura and Whoop set `hrv` and leave `hrvSDNN` null. This account has no such device, so that part is not verified here. `get-wellness` reads both fields and assumes neither.
 - Stride and step length (2026-09-26, #76): `average_stride` (m) is distance per step, not per two-step stride. It equals distance divided by moving time, divided by the step rate (`average_cadence` times 2, divided by 60). This holds to four decimals on the three fixture runs and on every fixture interval. For example, run `i189807578` covers 8,030.29 m in 2,372 s at 83.155 strides/min: 3.3855 m/s over 2.7718 steps/s gives 1.2214 m, and `average_stride` is 1.2213699. So intervals.icu computes it from speed and cadence. `average_step_length` (mm) is the device's own step length. On whole runs the two agree within about 1% (1,226 mm and 1.221 m, 1,108 mm and 1.097 m, 1,209 mm and 1.204 m on the three fixture runs). On an interval they can differ: a slow WORK interval in `activity-multilap-intervals.json` (803 m in 320 s) has `average_stride` 0.900 m and `average_step_length` 1,191 mm. The text of `get-activity` and `get-running-dynamics` prints step length only. `stride_m` stays in structuredContent.
-- `GET /athlete/0/sport-settings/Run`: `lthr`, `max_hr` and `hr_zones` (ascending bpm upper bounds, the last equal to `max_hr`); `threshold_pace` and `pace_zones` null.
+- `GET /athlete/0/sport-settings/Run`: `lthr`, `max_hr` and `hr_zones` (ascending bpm upper bounds, the last equal to `max_hr`); `threshold_pace` and `pace_zones` null at this capture (both set since; see "Sport settings and HR curves" below).
 - Athlete HR on the activity (2026-09-27, #47, from the committed fixtures): `GET /activity/{id}` carries `athlete_max_hr` and `lthr` (the athlete's settings, OpenAPI `Activity`) next to `icu_hr_zones`. On `activity.json`, `activity-hilly.json`, `activity-multilap.json` and every row of `activities.json`: `athlete_max_hr` 190 and `lthr` 172. `icu_hr_zones` is `[142, 154, 163, 171, 190]` on the runs and a 7-zone set ending at 190 on some other types, so the last zone bound equals `athlete_max_hr` either way. `max_heartrate` is the run's own peak (182 to 186 on those runs). `get-interval-analysis` reads `athlete_max_hr`, then the last zone bound.
 - Sliver intervals (2026-09-27, #47): `activity-multilap-intervals.json` ends with a WORK interval of 26 m in 12 s and a RECOVERY interval of 4 s with `distance` and `average_speed` null, and has a 21 m / 6 s RECOVERY interval mid-run. Apple Watch activities often end this way. `get-interval-analysis` ignores intervals under 50 m or 15 s.
 - `GET /athlete/0/gear` returns Gear objects `{ id (numeric string, e.g. "71459"), name, type ("Shoes"), distance (metres, includes the starting distance entered in the UI), activities (count), retired (null when active), reminders ([]) }`.
@@ -369,3 +369,73 @@ curves for a 90-day window (37 runs) and a 2-month range.
   shifts the indices). No activity has `ignore_pace` set either, so whether
   intervals.icu leaves such a run out of the athlete pace curves is not
   verified; get-best-efforts says only that it may.
+## Sport settings and HR curves (2026-10-08, #79, live read-only)
+
+Sport settings:
+
+- `GET /athlete/0/sport-settings` returns an array with one entry per settings
+  group (4 on this account: a ride group, `Run`/`VirtualRun`/`TrailRun`,
+  `Swim`/`OpenWaterSwim`, and `Other`), about 10 KB. Each entry has the same
+  fields as `GET /athlete/0/sport-settings/Run`; the Run entry is identical to
+  that response.
+- `GET /athlete/0/sport-settings/{type}` resolves a type to its group:
+  `TrailRun` returns the Run group. A valid type with no group of its own
+  (`Rowing`) returns the group with `other: true` (`types: ["Other"]`). The
+  type is case-sensitive: `run` and an unknown type return 404
+  `{"status":404,"error":"Not found"}`.
+- `hr_zones` are ascending bpm upper bounds, and the last one equals `max_hr`
+  on every group here. `hr_zone_names` has one name per zone.
+- Upper bounds are inclusive. Counting each 1 Hz `heartrate` sample of a run
+  in the first zone whose upper bound is at or above it gives the run's
+  `icu_hr_zone_times` exactly. A strict "below the bound" count is off by up
+  to 59 s per zone. Zone times count every sample, moving or not.
+- `threshold_pace` is a speed in m/s, not a pace, also on the Swim group
+  with `pace_units: "SECS_100M"`: for example, 0.8 m/s is 100 / 0.8 = 125 s,
+  so 2:05 per 100 m.
+  `pace_units` is a display setting only (`MINS_KM`, `SECS_100M`, ...).
+- `pace_zones` are percentages of threshold speed, ascending, with 999 as the
+  open top. The Run group has the intervals.icu default `[77.5, 87.7, 94.3,
+  100, 103.4, 111.5, 999]`, named Zone 1 to Zone 5c. Checked on two runs: a
+  run at 89.5% of threshold speed has most of its `pace_zone_times` in zone 3
+  (87.7-94.3%), and a run at 96.4% has most in zone 4. Read as percentages of
+  pace (time per km), both runs would be in the top zones. The Swim group has
+  no pace zones on this account.
+- `power_zones` on the ride group look like percentages of FTP
+  (`[55, 75, 90, 105, 120, 150, 999]`), but no activity on this account has
+  power-meter data to check them. `get-athlete-zones` reports `ftp` only.
+
+HR curves:
+
+- `GET /athlete/0/hr-curves.json?type=Run&curves=90d,1y` returns 200 with
+  athlete id `0`. The spec marks `f1`, `f2` and `f3` as required; every call
+  left them out and got 200.
+- Shape: `{ list[{ id, label, start_date_local, end_date_local, days,
+  moving_time, training_load, weight, secs[], values[], activity_id[] }],
+  activities{} }`. `secs` is a duration in seconds, `values` the best average
+  heart rate in bpm over that duration, and `activity_id` the activity that
+  set it; the three are index-aligned. The `activities` map has the same
+  fields as the pace-curves map and no `type`.
+- The `secs` grid is fixed: every second to 60 s, then steps of 5 s to 120 s,
+  10 s to 300 s, 30 s to 600 s, 60 s to 3,600 s, and 300 s after that. It
+  stops at the longest activity in the window. So 60, 1,200, 1,800 and
+  3,600 s are exact grid points when the window has an activity that long.
+- `start_date_local` is the first day of the window; `end_date_local` is local
+  midnight after today. `90d` covers 90 days including today.
+- `type` picks the settings group: `type=TrailRun` returns the same curve as
+  `type=Run`, and `type=Swim` a different one. `type=Rowing` (an Other-group
+  type) and a call with no `type` also return the Run curve, so a curve for
+  an Other-group type cannot be trusted. An unknown type returns 422.
+- A window with no activities returns `{"list":[],"activities":{}}`: the
+  curve id is missing from `list`.
+- Run curves never rise with duration. Swim and ride curves rise by a few bpm
+  in places, and a ride curve falls below 60 bpm at its longest durations,
+  which looks like heart-rate dropouts (sent as 0) averaged in. A dropout can
+  lower a best, not raise it.
+- intervals.icu's own LTHR rule (from its `LTHR_UP` achievements, the
+  `icu_achievements` entries on an activity): `point.secs` is 1,200 or 3,600.
+  For a 20-minute point the new LTHR (`value`) is 98% of the point's heart
+  rate, rounded, and `message` reads "98% of 20m at N bpm" (12 of 12 such
+  achievements). For a 1-hour point `value` equals the point's heart rate,
+  and `message` reads "1h at N bpm" (1 of 1). `get-athlete-zones` uses this
+  rule on the 90-day curve (`lthrEstimate` in `athleteZones.ts`). Not
+  verified: whether an `LTHR_UP` also changes the settings by itself.

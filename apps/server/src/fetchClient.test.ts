@@ -1300,6 +1300,8 @@ describe("intervalsCacheTtl", () => {
     ["/activity/i1/streams.json", 600_000],
     ["/athlete/0/gear", 600_000],
     ["/athlete/0/sport-settings/Run", 3_600_000],
+    ["/athlete/0/sport-settings", 600_000],
+    ["/athlete/0/hr-curves.json", 600_000],
     ["/athlete/0/activities", 60_000],
     ["/athlete/0/activities/search-full", 60_000],
     ["/athlete/0/wellness", 300_000],

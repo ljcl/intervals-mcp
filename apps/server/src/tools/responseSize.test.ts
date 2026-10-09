@@ -19,8 +19,10 @@ import activitiesFixture from "../__fixtures__/intervals/activities.json";
 import activityMultilapFixture from "../__fixtures__/intervals/activity-multilap.json";
 import activityMultilapIntervalsFixture from "../__fixtures__/intervals/activity-multilap-intervals.json";
 import gearFixture from "../__fixtures__/intervals/gear.json";
+import hrCurvesFixture from "../__fixtures__/intervals/hr-curves.json";
 import paceCurvesFixture from "../__fixtures__/intervals/pace-curves.json";
 import paceCurvesSubmaxFixture from "../__fixtures__/intervals/pace-curves-submax.json";
+import sportSettingsListFixture from "../__fixtures__/intervals/sport-settings.json";
 import sportSettingsRunFixture from "../__fixtures__/intervals/sport-settings-run.json";
 import streamsMultilapFixture from "../__fixtures__/intervals/streams-multilap.json";
 import wellnessFixture from "../__fixtures__/intervals/wellness.json";
@@ -41,6 +43,8 @@ vi.mock("../intervalsClient", async (importOriginal) => {
     listGear: vi.fn(),
     getWellness: vi.fn(),
     getSportSettings: vi.fn(),
+    listSportSettings: vi.fn(),
+    getAthleteHrCurves: vi.fn(),
     getAthletePaceCurves: vi.fn(),
   };
 });
@@ -125,6 +129,12 @@ beforeEach(() => {
   );
   vi.mocked(client.getSportSettings).mockResolvedValue(
     sportSettingsRunFixture as unknown as client.IntervalsSportSettings,
+  );
+  vi.mocked(client.listSportSettings).mockResolvedValue(
+    sportSettingsListFixture as unknown as client.IntervalsSportSettings[],
+  );
+  vi.mocked(client.getAthleteHrCurves).mockResolvedValue(
+    hrCurvesFixture as unknown as client.IntervalsAthleteHrCurves,
   );
   vi.mocked(client.getAthletePaceCurves).mockResolvedValue(
     paceCurvesFixture as unknown as client.IntervalsAthletePaceCurves,
@@ -299,6 +309,7 @@ const CASES: Record<string, SizeCase[]> = {
   "view-compare-activities": [
     { label: "default", args: { activityId1: ID, activityId2: ID_2 } },
   ],
+  "get-athlete-zones": [{ label: "Run with HR curves", args: {} }],
 };
 
 const modelVisibleTools = TOOL_DEFS.filter(

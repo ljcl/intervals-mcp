@@ -270,11 +270,31 @@ const IntervalsSportSettingsSchema = z
     id: z.union([z.string(), z.number()]).nullable().optional(),
     athlete_id: z.string().nullable().optional(),
     types: z.array(z.string()).optional(),
+    /** True on intervals.icu's default group, which covers every type that
+     * no other group lists (verified 2026-10-08). */
+    other: z.boolean().nullable().optional(),
     lthr: z.number().nullable().optional(),
     max_hr: z.number().nullable().optional(),
     hr_zones: z.array(z.number()).nullable().optional(),
+    /** Display only, so a bad value never fails the whole parse (and with it
+     * every caller of the settings): a null name stays null, and any other
+     * bad value gives null. The same for `pace_units` and `pace_zone_names`. */
+    hr_zone_names: z
+      .array(z.string().nullable())
+      .nullable()
+      .optional()
+      .catch(null),
+    /** A speed in m/s, not a pace (verified 2026-10-08). */
     threshold_pace: z.number().nullable().optional(),
+    /** A display setting only: MINS_KM, SECS_100M, ... */
+    pace_units: z.string().nullable().optional().catch(null),
+    /** Ascending percentages of threshold speed; 999 is the open top. */
     pace_zones: z.array(z.number()).nullable().optional(),
+    pace_zone_names: z
+      .array(z.string().nullable())
+      .nullable()
+      .optional()
+      .catch(null),
     ftp: z.number().nullable().optional(),
     warmup_time: z.number().nullable().optional(),
   })
@@ -283,6 +303,7 @@ const IntervalsSportSettingsSchema = z
 export type IntervalsSportSettings = z.infer<
   typeof IntervalsSportSettingsSchema
 >;
+const IntervalsSportSettingsListSchema = z.array(IntervalsSportSettingsSchema);
 
 // --- Pace curve schemas ---
 // Verified against __fixtures__/intervals/pace-curves.json (2026-09-25) and
@@ -347,6 +368,37 @@ const IntervalsPaceCurveActivityRefSchema = z
     icu_weight: z.number().nullable().optional(),
   })
   .passthrough();
+
+/** One named curve (`90d`, `1y`, ...) from `GET /athlete/{id}/hr-curves.json`:
+ * index-aligned `secs`/`values`/`activity_id` arrays (verified 2026-10-08). */
+const IntervalsHrCurveListItemSchema = z
+  .object({
+    id: z.string(),
+    label: z.string().nullable().optional(),
+    start_date_local: z.string().nullable().optional(),
+    end_date_local: z.string().nullable().optional(),
+    days: z.number().nullable().optional(),
+    /** Durations in seconds on intervals.icu's fixed grid, up to the
+     * longest activity in the window. */
+    secs: z.array(z.number()),
+    /** Best average heart rate (bpm) over the matching duration. */
+    values: z.array(z.number().nullable()),
+    /** The `i`-prefixed activity id that set the matching best. */
+    activity_id: z.array(z.string().nullable()),
+  })
+  .passthrough();
+
+const IntervalsAthleteHrCurvesSchema = z
+  .object({
+    list: z.array(IntervalsHrCurveListItemSchema),
+    // The same map shape as the pace curves (verified 2026-10-08).
+    activities: z.record(z.string(), IntervalsPaceCurveActivityRefSchema),
+  })
+  .passthrough();
+
+export type IntervalsAthleteHrCurves = z.infer<
+  typeof IntervalsAthleteHrCurvesSchema
+>;
 
 const IntervalsAthletePaceCurvesSchema = z
   .object({
@@ -797,6 +849,60 @@ export async function getSportSettings(
     handleApiError(error, context);
   }
   return parseOrThrow(IntervalsSportSettingsSchema, data, context);
+}
+
+/**
+ * Fetches every sport settings group in one request (verified 2026-10-08:
+ * one entry per group, each the same shape as `/sport-settings/{type}`).
+ * `get-athlete-zones` matches its `sport` against each group's `types`.
+ */
+export async function listSportSettings(
+  apiKey: string,
+): Promise<IntervalsSportSettings[]> {
+  requireApiKey(apiKey);
+  const context = "listSportSettings";
+
+  let data: unknown;
+  try {
+    const response = await intervalsApi.get<unknown>(
+      athletePath("/sport-settings"),
+      { headers: authHeaders(apiKey) },
+    );
+    data = response.data;
+  } catch (error) {
+    handleApiError(error, context);
+  }
+  return parseOrThrow(IntervalsSportSettingsListSchema, data, context);
+}
+
+/**
+ * Fetches the athlete's best heart rate curves for one sport settings
+ * group: `type` picks the group, not one activity type. Works with athlete
+ * id `0`, and `f1`/`f2`/`f3` are not needed, although the spec marks them
+ * as required (verified 2026-10-08). A window with no activities is left
+ * out of `list`.
+ */
+export async function getAthleteHrCurves(
+  apiKey: string,
+  options: { type: string; curves: string[] },
+): Promise<IntervalsAthleteHrCurves> {
+  requireApiKey(apiKey);
+  const context = `getAthleteHrCurves for ${options.curves.join(",")}`;
+
+  let data: unknown;
+  try {
+    const response = await intervalsApi.get<unknown>(
+      athletePath("/hr-curves.json"),
+      {
+        headers: authHeaders(apiKey),
+        params: { type: options.type, curves: options.curves.join(",") },
+      },
+    );
+    data = response.data;
+  } catch (error) {
+    handleApiError(error, context);
+  }
+  return parseOrThrow(IntervalsAthleteHrCurvesSchema, data, context);
 }
 
 /**

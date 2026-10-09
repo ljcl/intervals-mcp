@@ -6,8 +6,10 @@ import intervals from "./__fixtures__/intervals/activity-intervals.json";
 import activityMultilap from "./__fixtures__/intervals/activity-multilap.json";
 import multilapIntervals from "./__fixtures__/intervals/activity-multilap-intervals.json";
 import gearFixture from "./__fixtures__/intervals/gear.json";
+import hrCurvesFixture from "./__fixtures__/intervals/hr-curves.json";
 import paceCurvesFixture from "./__fixtures__/intervals/pace-curves.json";
 import paceCurvesSubmaxFixture from "./__fixtures__/intervals/pace-curves-submax.json";
+import sportSettingsListFixture from "./__fixtures__/intervals/sport-settings.json";
 import sportSettings from "./__fixtures__/intervals/sport-settings-run.json";
 import streams from "./__fixtures__/intervals/streams.json";
 import streamsHilly from "./__fixtures__/intervals/streams-hilly.json";
@@ -18,6 +20,7 @@ import {
   getActivity,
   getActivityIntervals,
   getActivityStreams,
+  getAthleteHrCurves,
   getAthletePaceCurves,
   getSportSettings,
   getWellness,
@@ -25,6 +28,7 @@ import {
   type IntervalsInterval,
   listActivities,
   listGear,
+  listSportSettings,
   searchActivities,
   updateActivity,
 } from "./intervalsClient";
@@ -458,6 +462,64 @@ describe("intervalsClient", () => {
     expect(result.warmup_time).toBe(300);
     expect(result.ftp).toBeNull();
     expect(result.threshold_pace).toBeNull();
+  });
+
+  it("lists every sport settings group in one request", async () => {
+    const calls = mockJson(sportSettingsListFixture);
+    const result = await listSportSettings("k");
+    const url = new URL(calls[0]?.url ?? "");
+    expect(url.pathname).toBe("/api/v1/athlete/0/sport-settings");
+    expect(result).toHaveLength(sportSettingsListFixture.length);
+    const run = result.find((group) => group.types?.includes("Run"));
+    expect(run?.other).toBe(false);
+    expect(run?.pace_units).toBe("MINS_KM");
+    expect(run?.hr_zone_names).toHaveLength(5);
+    expect(result.find((group) => group.other === true)?.types).toEqual([
+      "Other",
+    ]);
+  });
+
+  it("does not fail the settings parse on a bad display-only field", async () => {
+    const [ride, ...rest] = structuredClone(sportSettingsListFixture);
+    mockJson([
+      {
+        ...ride,
+        hr_zone_names: ["Recovery", null, "Tempo"],
+        pace_zone_names: "not a list",
+        pace_units: 7,
+      },
+      ...rest,
+    ]);
+    const result = await listSportSettings("k");
+    expect(result).toHaveLength(sportSettingsListFixture.length);
+    expect(result[0]?.hr_zone_names).toEqual(["Recovery", null, "Tempo"]);
+    expect(result[0]?.pace_zone_names).toBeNull();
+    expect(result[0]?.pace_units).toBeNull();
+  });
+
+  it("fetches athlete HR curves with the requested curve ids, parsing the fixture", async () => {
+    const calls = mockJson(hrCurvesFixture);
+    const result = await getAthleteHrCurves("k", {
+      type: "Run",
+      curves: ["90d", "1y"],
+    });
+    const url = new URL(calls[0]?.url ?? "");
+    expect(url.pathname).toBe("/api/v1/athlete/0/hr-curves.json");
+    expect(url.searchParams.get("type")).toBe("Run");
+    expect(url.searchParams.get("curves")).toBe("90d,1y");
+    // f1/f2/f3 are not needed (docs/api-notes.md).
+    expect([...url.searchParams.keys()].sort()).toEqual(["curves", "type"]);
+    expect(result.list.map((curve) => curve.id)).toEqual(["90d", "1y"]);
+    expect(result.activities.i300000002?.start_date_local).toBe(
+      "2026-08-30T07:00:00",
+    );
+  });
+
+  it("parses HR curves for windows with no activities", async () => {
+    mockJson({ list: [], activities: {} });
+    expect(
+      await getAthleteHrCurves("k", { type: "Run", curves: ["90d"] }),
+    ).toEqual({ list: [], activities: {} });
   });
 
   it("parses the real gear fixture", async () => {

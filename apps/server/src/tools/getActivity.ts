@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { resolveHrZones } from "../activityZones";
+import { hrZoneRangeText, resolveHrZones } from "../activityZones";
 import {
   formatDuration,
   formatFeel,
@@ -350,7 +350,9 @@ function formatZonesLine(d: ActivityDetail): string | null {
   const zones = d.hr_zones
     .map((z) => {
       const range =
-        z.min_bpm != null ? `${z.min_bpm}-${z.max_bpm}` : `<=${z.max_bpm}`;
+        z.min_bpm != null && z.max_bpm != null
+          ? hrZoneRangeText({ min: z.min_bpm, max: z.max_bpm })
+          : `<=${z.max_bpm}`;
       return `Z${z.zone} ${range} ${formatDuration(z.seconds)}`;
     })
     .join(", ");

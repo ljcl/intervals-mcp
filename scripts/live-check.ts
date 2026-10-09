@@ -74,6 +74,9 @@ const { getRacePredictionTool } = await import(
 const { getAthleteStatsTool } = await import(
   "../apps/server/src/tools/getAthleteStats"
 );
+const { getAthleteZonesTool } = await import(
+  "../apps/server/src/tools/getAthleteZones"
+);
 const { getFitnessTrendTool } = await import(
   "../apps/server/src/tools/getFitnessTrend"
 );
@@ -126,6 +129,7 @@ for (const tool of [
   getBestEffortsTool,
   getRacePredictionTool,
   getAthleteStatsTool,
+  getAthleteZonesTool,
   getFitnessTrendTool,
   getTrainingLoadTool,
   getRunningDynamicsTool,
@@ -805,6 +809,44 @@ async function checkGetAthleteStats(): Promise<void> {
   }
 }
 
+async function checkGetAthleteZones(): Promise<void> {
+  const name = "get-athlete-zones";
+  try {
+    const result = (await getAthleteZonesTool.execute(
+      { sport: "Run" },
+      apiKey,
+      NO_PROGRESS,
+    )) as {
+      structuredContent?: Record<string, unknown>;
+      isError?: boolean;
+      content?: Array<{ text?: unknown }>;
+    };
+    if (result.isError || !result.structuredContent) {
+      fail(name, errorSummary(result));
+      return;
+    }
+    const s = result.structuredContent as {
+      hr_zones: unknown[];
+      pace_zones: unknown[];
+      threshold_speed_mps: number | null;
+      hr_bests: unknown[];
+      threshold_checks: {
+        lthr: { status: string };
+        max_hr: { status: string };
+      };
+      warnings: string[];
+    };
+    // Counts and statuses only: LTHR, max HR, zone bounds and heart rate
+    // bests are the athlete's data, not ours to print.
+    ok(
+      name,
+      `hr_zones=${s.hr_zones.length} pace_zones=${s.pace_zones.length} threshold_pace=${s.threshold_speed_mps === null ? "null" : "set"} hr_bests=${s.hr_bests.length} lthr_check=${s.threshold_checks.lthr.status} max_hr_check=${s.threshold_checks.max_hr.status} warnings=${s.warnings.length}`,
+    );
+  } catch (error) {
+    fail(name, throwSummary(error));
+  }
+}
+
 type FitnessCurrent = {
   date: string;
   ctl: number;
@@ -1229,6 +1271,7 @@ await checkGetBestEfforts();
 await checkGetBestEffortsActivity();
 await checkGetRacePrediction();
 await checkGetAthleteStats();
+await checkGetAthleteZones();
 const fitnessTrendCurrent = await checkGetFitnessTrendWholeBody();
 await checkFitnessTrendMatchesWellness(fitnessTrendCurrent);
 await checkGetFitnessTrendRunOnly();

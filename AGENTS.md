@@ -68,8 +68,10 @@ breaking them has shipped bugs — do not work around them locally.
   `activityBestEfforts.ts` (the pace-curve rule).
   CTL/ATL/TSB and any projection/taper math: `fitnessTrend.ts` (TSB from
   wellness: `ctlAtlTsb`; 7-day change: `ctlDelta`, sent to the app in its
-  payload). HR-zone bounds: `resolveHrZones` in `activityZones.ts`. Run
-  types: `PACE_ACTIVITY_TYPES` in `utils/running.ts`.
+  payload). HR-zone bounds: `resolveHrZones` in `activityZones.ts`; zone
+  ranges from bounds: `zoneRanges` there (shared by `buildZoneSet` and
+  `athleteZones.ts`, which holds the settings zones and the LTHR/max HR
+  checks). Run types: `PACE_ACTIVITY_TYPES` in `utils/running.ts`.
   Step-cadence spm and averaged running dynamics: `activityCadenceSpm`/
   `buildRunningDynamics` in `utils/running.ts` (shared by `get-activity` and
   `compare-activities`). Lap text rendering: `formatLapLine` in

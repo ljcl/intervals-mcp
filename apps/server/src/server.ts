@@ -89,6 +89,7 @@ import { getActivityStreamsTool } from "./tools/getActivityStreams";
 import { getActivityZonesTool } from "./tools/getActivityZones";
 import { getAerobicAnalysisTool } from "./tools/getAerobicAnalysis";
 import { getAthleteStatsTool } from "./tools/getAthleteStats";
+import { getAthleteZonesTool } from "./tools/getAthleteZones";
 import { getBestEffortsTool } from "./tools/getBestEfforts";
 import { getFitnessTrendTool } from "./tools/getFitnessTrend";
 import { getHillAnalysisTool } from "./tools/getHillAnalysis";
@@ -432,6 +433,7 @@ const TOOLS = [
   getActivityStreamsTool,
   listGearTool,
   getWellnessTool,
+  getAthleteZonesTool,
 ] as const;
 
 /** Converts every tool implementation to the low-level TOOL_DEFS array. */

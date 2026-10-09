@@ -901,6 +901,12 @@ export function intervalsCacheTtl(path: string): number | null {
   if (/^\/athlete\/[^/]+\/gear$/.test(path)) return 10 * MINUTE_MS;
   // Per-sport zones/settings change rarely.
   if (/^\/athlete\/[^/]+\/sport-settings\/[^/]+$/.test(path)) return HOUR_MS;
+  // Every sport settings group at once (get-athlete-zones). Shorter than the
+  // per-sport rule: an athlete who changes LTHR after the tool's hint can
+  // check again with the same tool soon after.
+  if (/^\/athlete\/[^/]+\/sport-settings$/.test(path)) return 10 * MINUTE_MS;
+  // Heart rate curves: recomputed from history, like the pace curves below.
+  if (/^\/athlete\/[^/]+\/hr-curves\.json$/.test(path)) return 10 * MINUTE_MS;
   // Activity listing: short, so a newly recorded activity shows up quickly.
   if (/^\/athlete\/[^/]+\/activities$/.test(path)) return MINUTE_MS;
   // Activity search: same freshness as the listing it stands in for.

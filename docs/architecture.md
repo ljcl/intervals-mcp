@@ -129,6 +129,8 @@ per-tool. Path patterns and current TTLs (`fetchClient.ts`):
 | `/activity/{id}` | 10m | Invalidated on `update-activity` writes |
 | `/athlete/{id}/gear` | 10m | Rarely changes |
 | `/athlete/{id}/sport-settings/{sport}` | 1h | Rarely changes |
+| `/athlete/{id}/sport-settings` | 10m | Every group at once (`get-athlete-zones`); shorter than one sport's settings, so a changed LTHR shows soon |
+| `/athlete/{id}/hr-curves.json` | 10m | Recomputed from history, like the pace curves |
 | `/athlete/{id}/activities` | 1m | A newly recorded activity should show up quickly |
 | `/athlete/{id}/activities/search-full` | 1m | Same freshness as the listing |
 | `/athlete/{id}/wellness*` | 5m | intervals.icu updates wellness through the day |
@@ -327,6 +329,15 @@ the activity's own `icu_hr_zones` first, else the Run sport settings group
 when its `types` names the activity's type, else no zones with a note.
 `get-activity` (`hr_zones`) and `get-running-summary` (`hr_zone_summary`)
 both call it; each only shapes the result.
+
+`zoneRanges` in the same file turns ascending upper bounds into ranges:
+zone 1 starts at 0, and each later zone starts at the previous zone's upper
+bound. `buildZoneSet` (an activity's zone time) and `athleteZones.ts` (the
+athlete's settings: HR and pace zones) both call it. `athleteZones.ts` also
+holds the LTHR and max HR checks against intervals.icu's HR curves, used by
+`get-athlete-zones`. The LTHR estimate follows intervals.icu's own rule
+(`lthrEstimate`): the higher of the best 60-minute heart rate and 98% of the
+best 20-minute heart rate, both of the last 90 days.
 
 **Run types have one home.** `PACE_ACTIVITY_TYPES` in `utils/running.ts`
 (Run, TrailRun, VirtualRun). `get-running-summary` accepts exactly these,
@@ -579,6 +590,9 @@ scheme:
   `marathon`, `50km`. `get-race-prediction` uses `5km`, `10km`, `15km`,
   `10 mile`, `half marathon`, `marathon`, `50km`; "5K"/"Half Marathon" still
   match through the alias layer.
+- `sport` picks a sport settings group (`get-athlete-zones`), matched against
+  each group's `types`. It is not an activity filter, which is `type`
+  (`list-activities`).
 - Windows: `oldest`/`newest` for an explicit range, `days` for a look-back.
   `view-cadence-trends` and `get-cadence-trend-data` take `days` (7-728,
   default 42) and the payload carries `days`; a `weeks` argument becomes

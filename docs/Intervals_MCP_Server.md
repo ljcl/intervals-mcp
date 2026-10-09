@@ -65,6 +65,7 @@ rather than (or alongside) text.
 | `get-training-load` | Weekly volume, volume-spike flags, weekly load | `days`, `runOnly` |
 | `get-best-efforts` | My best 5K/10K/half/marathon times; my fastest 5K inside one run, and where | `distances`, `window`, `topN`, `id` |
 | `get-race-prediction` | What could I run for X? What pace do I need for a goal time? | `raceDistance` (`5km`, `10km`, `15km`, `10 mile`, `half marathon`, `marathon`, `50km`), `goalTime` |
+| `get-athlete-zones` | What are my HR zones? Is 150 bpm zone 2? What is my threshold pace? Is my LTHR out of date? | `sport` (default Run) |
 
 ### Writes
 
@@ -204,6 +205,14 @@ description is kept. (This is also the `annotate-last-run` prompt.)
   report the raw rate in rpm. HR zone tools generally need the activity's own
   recorded zone bounds or a matching Run sport-settings group; without
   either, HR zone data comes back empty rather than wrong.
+- **Two sources of zone bounds.** `get-athlete-zones` gives today's sport
+  settings. `get-activity-zones` and `get-running-summary` use the bounds
+  recorded with each activity, which can be older. The LTHR and max HR check
+  is a hint: a heart rate sensor error can also put a best above a setting,
+  so check the named activity first. The LTHR check uses intervals.icu's own
+  rule (the higher of the best 60-minute heart rate and 98% of the best
+  20-minute heart rate, last 90 days). An estimate below a setting does not
+  mean that the setting is too high.
 - **Strava-stub activities.** An activity synced into intervals.icu from
   Strava with no further detail is flagged (`is_strava_stub`); don't expect
   streams or laps for it.
@@ -215,7 +224,8 @@ description is kept. (This is also the `annotate-last-run` prompt.)
   `avg_pace_min_per_km`), never miles. Where a tool also needs the number
   for arithmetic it adds a paired `*_sec_per_km` field in seconds
   (`get-race-prediction`'s `pace_sec_per_km`, `compare-activities`'
-  `pace_delta_sec_per_km`).
+  `pace_delta_sec_per_km`). `get-athlete-zones` also gives a swim group's
+  paces per 100 m, in `*_min_per_100m` fields.
 - **`units` object.** Most tool responses include a `units` object naming
   every field's unit explicitly (distance, HR, cadence spm vs rpm, HRV in
   ms, SpO2 in %, respiration in breaths/min), so a unit is never implied.
@@ -236,10 +246,11 @@ not an error.
 Reads are cached briefly to avoid re-fetching the same data:
 
 - Activity detail, streams, and intervals, plus gear: 10 minutes
-- Sport settings: 1 hour
+- Sport settings: 1 hour (every group at once, as `get-athlete-zones`
+  reads them: 10 minutes)
 - Activity list: 1 minute
 - Wellness: 5 minutes
-- Pace curves: 10 minutes
+- Pace and heart rate curves: 10 minutes
 
 After `update-activity` writes, the affected activity's cache entry (and
 related list/gear entries) is cleared immediately, so a follow-up

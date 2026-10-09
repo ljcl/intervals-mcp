@@ -1449,3 +1449,133 @@ export const RunningDynamicsOutputSchema = z.object({
     pace: z.literal("min/km"),
   }),
 });
+
+// ---------- get-athlete-zones ----------
+const AthleteHrZoneSchema = z.object({
+  zone: z.number().int().describe("1-based zone number"),
+  name: z.string().nullable(),
+  min_bpm: z
+    .number()
+    .describe(
+      "The previous zone's upper bound; this zone starts above it. 0 for zone 1",
+    ),
+  max_bpm: z.number().describe("Upper bound, inclusive"),
+});
+const AthletePaceZoneSchema = z.object({
+  zone: z.number().int().describe("1-based zone number"),
+  name: z.string().nullable(),
+  min_pct: z
+    .number()
+    .describe("% of threshold speed where the zone starts; 0 for zone 1"),
+  max_pct: z
+    .number()
+    .nullable()
+    .describe(
+      "% of threshold speed where the zone ends; null for the open top zone",
+    ),
+  slowest_min_per_km: z
+    .string()
+    .nullable()
+    .describe(
+      "Pace at min_pct, m:ss; null for zone 1 or with no threshold pace",
+    ),
+  fastest_min_per_km: z
+    .string()
+    .nullable()
+    .describe(
+      "Pace at max_pct, m:ss; null for the top zone or with no threshold pace",
+    ),
+  slowest_min_per_100m: z
+    .string()
+    .nullable()
+    .describe("As slowest_min_per_km, per 100 m; swim groups only"),
+  fastest_min_per_100m: z
+    .string()
+    .nullable()
+    .describe("As fastest_min_per_km, per 100 m; swim groups only"),
+});
+const HrCurveWindowSchema = z
+  .enum(["90d", "1y"])
+  .describe("intervals.icu HR curve: the last 90 days or the last year");
+const HrBestSchema = z.object({
+  window: HrCurveWindowSchema,
+  duration_s: z.number().int(),
+  bpm: z.number().describe("Best average heart rate over duration_s"),
+  activity_id: z.string().nullable(),
+  date: z
+    .string()
+    .nullable()
+    .describe("Local start date of that activity, YYYY-MM-DD"),
+});
+const ThresholdCheckSchema = z.object({
+  status: z
+    .enum(["above", "not_above", "unknown"])
+    .describe(
+      "above: the estimate is above the setting, which may be out of date. not_above does not show that the setting is too high",
+    ),
+  setting_bpm: z.number().nullable(),
+  estimate_bpm: z
+    .number()
+    .nullable()
+    .describe("What the heart rate bests point to; null when not known"),
+  basis: HrBestSchema.nullable().describe(
+    "The heart rate best behind estimate_bpm",
+  ),
+  message: z.string(),
+});
+export const AthleteZonesOutputSchema = z.object({
+  sport: z.string().describe("Activity type the settings were matched on"),
+  settings_types: z
+    .array(z.string())
+    .describe("Every activity type this settings group covers"),
+  default_group: z
+    .boolean()
+    .describe(
+      "True when no group lists the sport and intervals.icu's default Other group applies",
+    ),
+  lthr_bpm: z.number().nullable(),
+  max_hr_bpm: z.number().nullable(),
+  hr_zones: z.array(AthleteHrZoneSchema),
+  threshold_speed_mps: z
+    .number()
+    .nullable()
+    .describe("intervals.icu's threshold_pace, which is a speed in m/s"),
+  threshold_pace_min_per_km: z.string().nullable().describe("m:ss per km"),
+  threshold_pace_min_per_100m: z
+    .string()
+    .nullable()
+    .describe("m:ss per 100 m; swim groups only"),
+  pace_units: z
+    .string()
+    .nullable()
+    .describe(
+      "The athlete's pace display setting in intervals.icu, e.g. MINS_KM or SECS_100M",
+    ),
+  pace_zones: z.array(AthletePaceZoneSchema),
+  ftp_watts: z.number().nullable(),
+  hr_bests: z
+    .array(HrBestSchema)
+    .describe(
+      "Best 20-, 30- and 60-min heart rate of the last 90 days and best 60-s of the last year, when known",
+    ),
+  threshold_checks: z.object({
+    lthr: ThresholdCheckSchema.describe(
+      "intervals.icu's own rule: the higher of the best 60-min HR and 98% of the best 20-min HR, last 90 days",
+    ),
+    max_hr: ThresholdCheckSchema.describe(
+      "The best 60-s HR of the last year against max HR",
+    ),
+  }),
+  other_groups: z
+    .array(z.array(z.string()))
+    .describe("The types of each other settings group"),
+  warnings: z.array(z.string()),
+  units: z.object({
+    hr: z.literal("bpm"),
+    time: z.literal("s"),
+    pace: z.literal("min/km"),
+    swim_pace: z.literal("min/100m"),
+    power: z.literal("W"),
+    pace_zones: z.literal("% of threshold speed"),
+  }),
+});

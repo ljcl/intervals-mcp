@@ -25,10 +25,54 @@ export interface ActivityZonesData {
 
 const round1 = (value: number) => Math.round(value * 10) / 10;
 
+/** One zone's range, from ascending upper bounds. */
+export interface ZoneRange {
+  /** 1-based zone number. */
+  zone: number;
+  /** The previous zone's upper bound; the zone starts above it. 0 for zone 1. */
+  min: number;
+  /** This zone's upper bound, inclusive (docs/api-notes.md). */
+  max: number;
+}
+
+/**
+ * The one home for turning ascending zone upper bounds into ranges: zone 1
+ * starts at 0, and each later zone starts at the previous zone's upper
+ * bound. {@link buildZoneSet} (an activity's zone time) and
+ * `athleteZones.ts` (the athlete's settings: HR and pace zones) both call
+ * it, so the two cannot disagree on where a zone starts.
+ */
+export function zoneRanges(bounds: readonly number[]): ZoneRange[] {
+  return bounds.map((max, i) => ({
+    zone: i + 1,
+    min: i === 0 ? 0 : (bounds[i - 1] ?? 0),
+    max,
+  }));
+}
+
+/**
+ * The one home for an HR zone's range as text, used by every text tool that
+ * prints HR zones. Heart rate is whole bpm, and an upper bound is inclusive
+ * (docs/api-notes.md), so the previous zone's bound belongs to the zone
+ * below: zone 2 of [142, 154] reads "143-154", and zone 1 reads "up to 142".
+ * A zone whose upper bound is not above the previous one holds no heart rate
+ * and reads "empty". `unit` (for example " bpm") follows each number range.
+ */
+export function hrZoneRangeText(
+  { min, max }: Pick<ZoneRange, "min" | "max">,
+  unit = "",
+): string {
+  if (min <= 0) return `up to ${max}${unit}`;
+  const from = min + 1;
+  if (from > max) return "empty";
+  return from === max ? `${max}${unit}` : `${from}-${max}${unit}`;
+}
+
 /**
  * Builds one zone set from parallel bounds/times arrays. Bounds are the
  * zone's upper edge (intervals.icu sends a real number for the top zone,
- * never an open-ended sentinel); zone 1's lower edge is always 0. Returns
+ * never an open-ended sentinel); the ranges come from {@link zoneRanges}, so
+ * zone 1's lower edge is always 0. Returns
  * null whenever the data can't be trusted: no bounds, no times, a bounds/
  * times count mismatch (would mislabel recorded time under the wrong zone),
  * or nothing recorded.
@@ -57,10 +101,8 @@ export function buildZoneSet(
     // sensor; unlike Strava's response, there is nothing to read here.
     sensorBased: null,
     totalSeconds,
-    buckets: bounds.map((max, i) => ({
-      zone: i + 1,
-      min: i === 0 ? 0 : (bounds[i - 1] ?? 0),
-      max,
+    buckets: zoneRanges(bounds).map((range, i) => ({
+      ...range,
       seconds: times[i] ?? 0,
       pct: round1(((times[i] ?? 0) / totalSeconds) * 100),
     })),

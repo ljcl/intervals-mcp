@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
   AthleteStatsOutputSchema,
+  AthleteZonesOutputSchema,
   BestEffortsOutputSchema,
   CompareActivitiesOutputSchema,
   RunningSummaryOutputSchema,
@@ -338,10 +339,18 @@ describe("output schemas convert to JSON schema", () => {
     RunningSummaryOutputSchema,
     CompareActivitiesOutputSchema,
     BestEffortsOutputSchema,
+    AthleteZonesOutputSchema,
   };
   for (const [name, schema] of Object.entries(schemas)) {
     it(`converts ${name}`, () => {
       expect(() => z.toJSONSchema(schema)).not.toThrow();
     });
   }
+
+  it("inlines AthleteZonesOutputSchema's reused parts (no $ref)", () => {
+    // ThresholdCheckSchema and HrBestSchema appear more than once.
+    const json = JSON.stringify(z.toJSONSchema(AthleteZonesOutputSchema));
+    expect(json).not.toContain("$ref");
+    expect(json).not.toContain("$defs");
+  });
 });

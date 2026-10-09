@@ -63,15 +63,44 @@ const SYNTHETIC_HR = {
 };
 
 /**
+ * Fixed synthetic threshold pace and FTP, the same values as the committed
+ * `sport-settings.json`: `threshold_pace` is a speed in m/s (4:40 /km for a
+ * run, 2:05 /100 m for a swim), so a swim gets its own value.
+ */
+const SYNTHETIC_THRESHOLDS = {
+  runPaceMps: 3.5714285,
+  swimPaceMps: 0.8,
+  ftp: 200,
+};
+// Keep in step with `isSwimming` in packages/data/src/activity-types.ts.
+const SWIM_TYPES = new Set(["Swim", "OpenWaterSwim"]);
+
+/** True for a swim activity (`type`) or a swim settings group (`types`). */
+function isSwimRecord(r: Rec): boolean {
+  const types = Array.isArray(r.types) ? r.types : [r.type];
+  return types.some((t) => typeof t === "string" && SWIM_TYPES.has(t));
+}
+
+/**
  * Replaces LTHR, max HR, resting HR and zone boundaries with
- * {@link SYNTHETIC_HR}. Applies to activities (`lthr`, `athlete_max_hr`,
- * `icu_resting_hr`, `icu_hr_zones`) and sport settings (`lthr`, `max_hr`,
- * `hr_zones`). A zone count with no fixed ladder gets an evenly spaced one
- * ending at the synthetic max.
+ * {@link SYNTHETIC_HR}, and threshold pace and FTP with
+ * {@link SYNTHETIC_THRESHOLDS}. Applies to activities (`lthr`,
+ * `athlete_max_hr`, `icu_resting_hr`, `icu_hr_zones`, `threshold_pace`,
+ * `icu_ftp`) and sport settings (`lthr`, `max_hr`, `hr_zones`,
+ * `threshold_pace`, `ftp`, `indoor_ftp`). A zone count with no fixed ladder
+ * gets an evenly spaced one ending at the synthetic max.
  */
 function scrubHeartRateProfile(r: Rec): Rec {
   const out: Rec = { ...r };
   if (typeof out.lthr === "number") out.lthr = SYNTHETIC_HR.lthr;
+  if (typeof out.threshold_pace === "number") {
+    out.threshold_pace = isSwimRecord(out)
+      ? SYNTHETIC_THRESHOLDS.swimPaceMps
+      : SYNTHETIC_THRESHOLDS.runPaceMps;
+  }
+  for (const k of ["ftp", "indoor_ftp", "icu_ftp"]) {
+    if (typeof out[k] === "number") out[k] = SYNTHETIC_THRESHOLDS.ftp;
+  }
   for (const k of ["max_hr", "athlete_max_hr"]) {
     if (typeof out[k] === "number") out[k] = SYNTHETIC_HR.max;
   }
@@ -386,6 +415,9 @@ function scrubActivityPaceCurve(data: Rec): Rec {
  * a 6.1 km run with three auto-pause stops. */
 const BEST_EFFORTS_RUN = "i193700503";
 
+// `sport-settings.json` (every group) and `hr-curves.json` are synthetic and
+// not captured here: a heart rate curve's top values are de facto the
+// athlete's max HR, which no scrub of single fields can hide.
 write(
   "sport-settings-run.json",
   scrubHeartRateProfile(
