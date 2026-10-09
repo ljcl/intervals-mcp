@@ -14,9 +14,9 @@ on: # zizmor: ignore[dangerous-triggers]
 permissions:
   pull-requests: read
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+# No concurrency group: a run never cancels another (see ci.yml). Each run
+# checks the title in its own event, and GitHub takes the check from the
+# newest run, so the latest title still decides.
 
 jobs:
   # The job name is the status context branch protection requires

@@ -21,6 +21,9 @@ same three. A `refs/tags/v*` ruleset lets only admins create, move or delete a
 release tag, since both publish workflows ship whatever a tag points at.
 `scripts/setup-branch-protection.sh` applies all of this, and re-running it
 converges; renaming any of those three jobs silently unrequires its check.
+GitHub takes each required check from the newest run on the PR's head commit,
+so the three workflows never cancel a PR run: a stack push starts each upper
+PR twice for one commit, and a cancelled newest run blocked the merge.
 
 Normal semver applies (the package is past 1.0.0):
 

@@ -20,8 +20,11 @@ on:
 
 concurrency:
   # The backfill dispatch runs on main's ref, so it gets its own group: sharing
-  # main's would let a later main push replace it while it is pending.
-  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && format('backfill-{0}', inputs.tag) || github.ref }}
+  # main's would let a later main push replace it while it is pending. A PR
+  # run gets a group of its own, so it never cancels another PR run: a
+  # cancelled run reports docker-ok as failed, and a stack push starts two
+  # runs for one commit (see ci.yml).
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && format('backfill-{0}', inputs.tag) || github.event_name == 'pull_request' && format('pr-run-{0}', github.run_id) || github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
