@@ -19,7 +19,7 @@ import { NO_PROGRESS, type ReportProgress } from "../progress";
 import { addDays, isValidCalendarDate, todayLocal } from "../utils/localDate";
 import { isPaceActivity, paceFromDistanceTime } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
-import { prefixedErrorText, toolErrorText } from "./_errors";
+import { noteToolFailure, prefixedErrorText, toolErrorText } from "./_errors";
 import { intervalsActivityIdInput } from "./_ids";
 import { BestEffortsOutputSchema, warnOnSchemaDrift } from "./outputs";
 
@@ -421,6 +421,9 @@ async function buildActivityEfforts(
     ]);
   } catch (error) {
     if (error instanceof IntervalsStreamsUnavailableError) {
+      // This branch answers without toolErrorText, so it notes the failure
+      // for the call's log line itself, as the other stream tools do.
+      noteToolFailure(error);
       return {
         error: `No data streams are recorded for "${activityName}" (activity ${id}), so there are no best efforts to find. This looks like a manual entry.`,
       };

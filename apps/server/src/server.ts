@@ -1585,34 +1585,44 @@ async function runToolCall(
     outcome: ToolOutcome,
     result: ToolCallResult,
     failure?: CallFailure,
+    dispatched = true,
   ): ToolCallResult => {
-    recordToolCall({
-      tool: name,
-      duration_ms: Math.round(performance.now() - startedAt),
-      // The SDK drops an aborted call's result, and a client leaving is not a
-      // server error. Read here, before returning: the SDK aborts the signal
-      // after every response.
-      outcome: scope.signal?.aborted ? "cancelled" : outcome,
-      error_class: failure?.error_class,
-      http_status: failure?.http_status,
-      client_apps: context.clientRendersApps,
-      // recordToolCall bounds both before they reach the log.
-      client_name: client?.name,
-      client_version: client?.version,
-      trace_id: trace?.trace_id,
-      parent_id: trace?.parent_id,
-    });
+    recordToolCall(
+      {
+        tool: name,
+        duration_ms: Math.round(performance.now() - startedAt),
+        // The SDK drops an aborted call's result, and a client leaving is not a
+        // server error. Read here, before returning: the SDK aborts the signal
+        // after every response.
+        outcome: scope.signal?.aborted ? "cancelled" : outcome,
+        error_class: failure?.error_class,
+        http_status: failure?.http_status,
+        client_apps: context.clientRendersApps,
+        // recordToolCall bounds both before they reach the log.
+        client_name: client?.name,
+        client_version: client?.version,
+        trace_id: trace?.trace_id,
+        parent_id: trace?.parent_id,
+      },
+      { dispatched },
+    );
     return result;
   };
 
   const handler = APP_TOOL_HANDLERS[name] ?? TOOL_EXECUTORS.get(name);
   if (!handler) {
-    return finish("error", {
-      isError: true,
-      content: [
-        { type: "text", text: prefixedErrorText(`Unknown tool: ${name}`) },
-      ],
-    });
+    return finish(
+      "error",
+      {
+        isError: true,
+        content: [
+          { type: "text", text: prefixedErrorText(`Unknown tool: ${name}`) },
+        ],
+      },
+      undefined,
+      // The name is the client's text: it shares the one `unknown` counter.
+      false,
+    );
   }
 
   let args: Record<string, unknown> = rawArgs ?? {};

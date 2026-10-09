@@ -74,9 +74,9 @@ describe("dispatch telemetry", () => {
   it("records an unknown tool as an error", async () => {
     await dispatchToolCall("no-such-tool", {});
 
-    expect(toolCallStats()["no-such-tool"]).toMatchObject({
-      calls: 1,
-      errors: 1,
+    // Every unknown name shares one counter, so a client cannot grow the map.
+    expect(toolCallStats()).toEqual({
+      unknown: expect.objectContaining({ calls: 1, errors: 1 }),
     });
   });
 
@@ -90,7 +90,7 @@ describe("dispatch telemetry", () => {
     expect(Array.from(tool)).toHaveLength(64);
     expect(tool.startsWith("xxx")).toBe(true);
     expect(tool).not.toContain("\u202e");
-    expect(Object.keys(toolCallStats())).toEqual([tool]);
+    expect(Object.keys(toolCallStats())).toEqual(["unknown"]);
   });
 
   it("logs a tool name with nothing left after bounding as unknown", async () => {
@@ -286,6 +286,24 @@ describe("dispatch telemetry", () => {
         error_class: "IntervalsStreamsUnavailableError",
       });
       expect(record).not.toHaveProperty("http_status");
+    });
+
+    it("logs the stream failure of get-best-efforts in activity mode", async () => {
+      vi.mocked(getActivity).mockResolvedValueOnce({
+        id: "i1",
+        type: "Run",
+        name: "Morning Run",
+      } as Awaited<ReturnType<typeof getActivity>>);
+      vi.mocked(getActivityStreams).mockResolvedValueOnce([]);
+
+      const result = await dispatchToolCall("get-best-efforts", { id: "i1" });
+
+      expect(result.isError).toBe(true);
+      const [record] = loggedRecords();
+      expect(record).toMatchObject({
+        outcome: "error",
+        error_class: "IntervalsStreamsUnavailableError",
+      });
     });
 
     it("logs ToolErrorResult for a refusal that has no exception", async () => {

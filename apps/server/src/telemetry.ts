@@ -162,9 +162,9 @@ export interface ToolCounters {
 }
 
 /**
- * Cardinality is bounded by the tool surface (34 names), but only names the
- * server actually dispatched are held — an unknown-tool call must not be able
- * to grow the map without limit.
+ * Cardinality is bounded by the tool surface: only names the server actually
+ * dispatched get their own key. Every unknown-tool call shares the one
+ * `unknown` key, so a client cannot grow the map without limit.
  */
 const counters = new Map<string, ToolCounters>();
 
@@ -216,10 +216,11 @@ function buildLine(
  */
 export function recordToolCall(
   record: Omit<ToolCallRecord, "event" | "ts">,
+  { dispatched = true }: { dispatched?: boolean } = {},
 ): ToolCallRecord {
   const ts = new Date().toISOString();
   // An unknown tool's name is the client's text, so it is bounded like the
-  // client strings. It also keys the counters, so /health keys stay short.
+  // client strings before it reaches the line.
   const tool = boundedLogField(record.tool) ?? UNKNOWN_TOOL;
   const line = buildLine(record, tool, ts);
   // Telemetry must never be able to fail the call it describes: a throw here
@@ -230,14 +231,15 @@ export function recordToolCall(
     // A record that cannot be serialised is not worth losing the call over.
   }
 
-  const existing = counters.get(tool) ?? {
+  const key = dispatched ? tool : UNKNOWN_TOOL;
+  const existing = counters.get(key) ?? {
     calls: 0,
     errors: 0,
     cancelled: 0,
     total_ms: 0,
     last_called_at: "",
   };
-  counters.set(tool, {
+  counters.set(key, {
     calls: existing.calls + 1,
     errors:
       existing.errors +

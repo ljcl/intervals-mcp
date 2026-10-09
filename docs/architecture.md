@@ -543,9 +543,10 @@ the authed half of `/health`.
 bounds the two client strings and the tool name, which is client text when the
 tool is unknown: trimmed, stripped of control and format characters and line
 separators (a client controls them, and a bidi override could hide text in a
-terminal), made well-formed, and cut to 64 code points. The bounded name keys
-the `/health` counters too. A name that is empty after bounding logs as
-`unknown`.
+terminal), made well-formed, and cut to 64 code points. A name that is empty
+after bounding logs as `unknown`. The `/health` counters key on the name only
+for a dispatched tool; every unknown tool shares the one `unknown` key, so a
+client cannot grow the map.
 `parseTraceparent` reads the ids from `_meta.traceparent` and accepts only a
 valid W3C value: lower-case hex, no all-zero id, not version `ff`, and for
 version `00` exactly four fields. The `tools/call` handler passes the ids to

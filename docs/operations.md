@@ -40,9 +40,10 @@ athlete. To pin UTC, set `TZ=Etc/UTC`.
 
 Startup waits up to 5 seconds for the lookup. After that, the server listens
 with the fallback zone, and a late answer still applies. A transient failure
-(a 429, a Cloudflare challenge, a timeout, a 5xx or a network fault) runs the
-lookup again after 1, 5 and 15 minutes, then hourly. A Cloudflare challenge
-is a 403 that never reached intervals.icu, so it counts as transient. A
+(a 429, a Cloudflare challenge, a timeout, a 5xx, a network fault or an
+unexpected response shape) runs the lookup again after 1, 5 and 15 minutes,
+then hourly. A Cloudflare challenge is a 403 that never reached
+intervals.icu, so it counts as transient. A
 refusal (any other 4xx, such as a revoked key or a wrong athlete id) keeps
 the fallback and logs one `WARNING`. So does an
 athlete with no zone set, or a zone the server does not recognise. Set `TZ` to
