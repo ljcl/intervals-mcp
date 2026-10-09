@@ -8,6 +8,10 @@ Tool names and schemas are a published contract: grants are stored per tool
 identity, so renames or schema reshapes re-prompt every user. See
 [architecture.md](architecture.md#tool-metadata) before changing either.
 
+Dates and default date windows use the server's time zone: `TZ` when it names
+a zone other than `UTC`, else the athlete's intervals.icu time zone; `/health`
+reports which ([operations.md](operations.md#time-zone)).
+
 > **Status.** All tools below talk to intervals.icu directly and are
 > verified against a real account. `get-fitness-trend`, `get-training-load`,
 > and `get-running-dynamics` are exercised by `scripts/live-check.ts`;
@@ -86,7 +90,7 @@ descriptions.
 | `update-activity` | Update an activity's name, description, gear, RPE, or feel, echoing before/after values (write tool) |
 
 `list-activities` defaults to the last 28 days (today back to 27 days
-earlier) in the server's configured time zone, sorted newest first. Filter
+earlier) in the server's time zone, sorted newest first. Filter
 with `type` (`runs` for Run, TrailRun and VirtualRun, or a comma-separated
 list such as `Run, Hike`; for the most recent run, pass `id: "latest"` to
 the per-activity tool instead) or
@@ -204,7 +208,7 @@ fatigue, stress, mood, motivation, `spo2` (%), `respiration`
 `respiration`. Takes either a single `date` or an `oldest`/`newest` range
 (max 90 calendar days inclusive); supplying `date` together with a range is
 a validation error. With nothing supplied it defaults to today in the
-server's configured time zone. The HRV measure depends on the athlete's
+server's time zone. The HRV measure depends on the athlete's
 device (docs/api-notes.md). The text prints each HRV value that is present
 with its label ("HRV rMSSD", "HRV SDNN", never bare "HRV"). A range's
 averages keep the two measures apart. `hrv_note` comes from the data and
@@ -356,7 +360,9 @@ independent of each side's `efficiency_factor` (intervals.icu's own field).
 A non-running activity on either side degrades to a warning rather than
 failing the call. The app's stream
 overlay (`get-activity-streams-raw`) is intervals.icu-backed (see the
-activity-chart entry below).
+activity-chart entry below). Both compare paths read each activity with
+`getActivity(apiKey, id, { intervals: true })`, the same URL as the
+overlay's reads, so a chat that uses them together reads each activity once.
 
 `view-activity-chart`/`get-activity-streams-raw` (activity-chart MCP App)
 fetch the activity via `getActivity(apiKey, id, { intervals: true })` and its
@@ -649,8 +655,8 @@ intervals.icu's own daily wellness record (`source: "intervals.icu"`),
 never recomputed locally, so a custom CTL/ATL time constant configured on the
 account is honoured automatically; a day with no recorded CTL/ATL is a gap,
 not a zero-load day, and is left out of the series with a warning rather than
-corrupting the numbers around it. The window ends today in the server's
-configured time zone, or on `newest` (YYYY-MM-DD, today or earlier), and
+corrupting the numbers around it. The window ends today in the server's time
+zone, or on `newest` (YYYY-MM-DD, today or earlier), and
 `days` counts back from that day. `resolveWindowEnd` (`utils/localDate.ts`)
 refuses a `newest` after today before any fetch: intervals.icu's wellness
 rows after today hold its own projection from planned workouts, not records
@@ -898,7 +904,9 @@ empty, and counts waypoints without the map legend.
 
 Every `*-data` app-only tool reads intervals.icu streams through
 `loadIntervalsStreams` (see docs/architecture.md#streams) and downsamples to
-about 1,000 points for the chart and route-map payloads. The gap-free axes
+about 1,000 points for the chart and route-map payloads. The values are then
+rounded with `STREAM_DECIMALS` (`streamPrecision.ts`): at most 2 decimals,
+cadence one (strides/min), route-map coordinates 5. The gap-free axes
 (time, distance, and route-map lat/lng) are filled before downsampling so
 every downstream lookup stays valid; every other metric keeps `null` samples
 as `null` (a heart-rate dropout, which intervals.icu sends as 0, is `null`

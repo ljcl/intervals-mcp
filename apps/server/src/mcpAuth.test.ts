@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { requestHasValidSecret, unauthorizedMcpResponse } from "./mcpAuth";
 
 const request = (authorization?: string) =>
@@ -81,5 +81,101 @@ describe("requestHasValidSecret", () => {
     const req = new Request(url);
 
     expect(requestHasValidSecret(req, url)).toBe(false);
+  });
+});
+
+describe("unauthorizedMcpResponse rejection log (#69)", () => {
+  beforeEach(() => {
+    process.env.MCP_AUTH_TOKEN = "s3cret";
+    vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    delete process.env.MCP_AUTH_TOKEN;
+    vi.restoreAllMocks();
+  });
+
+  function logged(): Array<Record<string, unknown>> {
+    return vi
+      .mocked(console.error)
+      .mock.calls.map(([line]) => JSON.parse(String(line)));
+  }
+
+  it("logs a missing header", () => {
+    unauthorizedMcpResponse(request());
+
+    expect(logged()).toEqual([
+      expect.objectContaining({
+        event: "mcp_rejected",
+        status: 401,
+        code: -32001,
+        reason: "no Authorization header",
+        http_method: "POST",
+      }),
+    ]);
+  });
+
+  it("logs a scheme that is not Bearer", () => {
+    unauthorizedMcpResponse(request("Basic s3cret"));
+
+    expect(logged()).toEqual([
+      expect.objectContaining({
+        reason: "Authorization is not a Bearer token",
+      }),
+    ]);
+    expect(JSON.stringify(logged())).not.toContain("s3cret");
+  });
+
+  it("logs a wrong token without the token", () => {
+    unauthorizedMcpResponse(request("Bearer nope"));
+
+    expect(logged()).toEqual([
+      expect.objectContaining({
+        reason: "bearer token does not match MCP_AUTH_TOKEN",
+      }),
+    ]);
+    const text = JSON.stringify(logged());
+    expect(text).not.toContain("nope");
+    expect(text).not.toContain("s3cret");
+  });
+
+  it("copies the mcp-method and mcp-protocol-version headers", () => {
+    const req = new Request("http://localhost:3000/mcp", {
+      method: "POST",
+      headers: {
+        "mcp-method": "tools/call",
+        "mcp-protocol-version": "2026-07-28",
+      },
+    });
+
+    unauthorizedMcpResponse(req);
+
+    expect(logged()).toEqual([
+      expect.objectContaining({
+        mcp_method: "tools/call",
+        protocol_version: "2026-07-28",
+      }),
+    ]);
+  });
+
+  it("logs nothing for an allowed token", () => {
+    unauthorizedMcpResponse(request("Bearer s3cret"));
+
+    expect(console.error).not.toHaveBeenCalled();
+  });
+
+  it("logs nothing when no secret is configured", () => {
+    delete process.env.MCP_AUTH_TOKEN;
+
+    unauthorizedMcpResponse(request());
+
+    expect(console.error).not.toHaveBeenCalled();
+  });
+
+  it("logs nothing when requestHasValidSecret fails", () => {
+    requestHasValidSecret(request("Bearer nope"));
+    requestHasValidSecret(request());
+
+    expect(console.error).not.toHaveBeenCalled();
   });
 });

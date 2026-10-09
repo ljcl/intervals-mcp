@@ -17,7 +17,7 @@ import {
 import { NO_PROGRESS, type ReportProgress } from "../progress";
 import { formatPaceSeconds } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
-import { toolErrorText } from "./_errors";
+import { noteToolFailure, toolErrorText } from "./_errors";
 import { intervalsActivityIdInput } from "./_ids";
 import { AerobicAnalysisOutputSchema, warnOnSchemaDrift } from "./outputs";
 
@@ -189,6 +189,7 @@ export const getAerobicAnalysisTool = {
           streams = await loadIntervalsStreams(apiKey, id, streamTypes);
         } catch (error) {
           if (error instanceof IntervalsStreamsUnavailableError) {
+            noteToolFailure(error);
             return {
               content: [
                 {
@@ -398,6 +399,7 @@ export const getAerobicAnalysisTool = {
       };
     } catch (error) {
       if (error instanceof AerobicAnalysisError) {
+        noteToolFailure(error);
         return {
           content: [{ type: "text" as const, text: `❌ ${error.message}` }],
           isError: true,

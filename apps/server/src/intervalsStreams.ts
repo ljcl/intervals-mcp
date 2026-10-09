@@ -15,22 +15,30 @@ import {
   type IntervalsStream,
 } from "./intervalsClient";
 
-/** Stream type names used by the Phase 2 analysis modules. */
-export type IntervalsStreamType =
-  | "time"
-  | "distance"
-  | "heartrate"
-  | "velocity_smooth"
-  | "altitude"
-  | "fixed_altitude"
-  | "grade_smooth"
-  | "cadence"
-  | "watts"
-  | "latlng"
-  | "stance_time"
-  | "vertical_oscillation"
-  | "vertical_ratio"
-  | "step_length";
+/**
+ * Every stream type any caller may ask for, sorted. It is the one list every
+ * read requests, so each activity's read is one URL that `FetchClient`
+ * caches and coalesces across tools and apps (#71). A new type added here is
+ * paid for on every read.
+ */
+export const INTERVALS_STREAM_TYPES = [
+  "altitude",
+  "cadence",
+  "distance",
+  "grade_smooth",
+  "heartrate",
+  "latlng",
+  "stance_time",
+  "step_length",
+  "time",
+  "velocity_smooth",
+  "vertical_oscillation",
+  "vertical_ratio",
+  "watts",
+] as const;
+
+/** Stream type names a caller can ask {@link loadIntervalsStreams} for. */
+export type IntervalsStreamType = (typeof INTERVALS_STREAM_TYPES)[number];
 
 /** Named, index-aligned streams for one activity. */
 export interface IntervalsStreams {
@@ -40,7 +48,6 @@ export interface IntervalsStreams {
   heartrate?: (number | null)[];
   velocity_smooth?: (number | null)[];
   altitude?: (number | null)[];
-  fixed_altitude?: (number | null)[];
   grade_smooth?: (number | null)[];
   cadence?: (number | null)[];
   watts?: (number | null)[];
@@ -149,12 +156,15 @@ function deriveMoving(
 
 type OptionalStreamType = Exclude<IntervalsStreamType, "time" | "latlng">;
 
-const OPTIONAL_STREAM_TYPES: OptionalStreamType[] = [
+/**
+ * The plain numeric streams, copied index-aligned when requested. `time` and
+ * `latlng` have their own handling. The order fixes the result's key order.
+ */
+export const OPTIONAL_STREAM_TYPES: readonly OptionalStreamType[] = [
   "distance",
   "heartrate",
   "velocity_smooth",
   "altitude",
-  "fixed_altitude",
   "grade_smooth",
   "cadence",
   "watts",
@@ -177,10 +187,12 @@ function heartrateSample(value: number | null): number | null {
 
 /**
  * Fetches and reshapes an activity's data streams via `getActivityStreams`
- * (`intervalsClient.ts`), calling it exactly once. Requests `time` and
- * `distance` even when the caller omits them, since `moving` and every
- * downstream index depend on them, but only returns the optional arrays the
- * caller actually asked for.
+ * (`intervalsClient.ts`), calling it exactly once. It requests
+ * {@link INTERVALS_STREAM_TYPES} whatever the caller asks for, and returns
+ * only the arrays the caller asked for. So every tool's and app's read of one
+ * activity is the same URL, fetched once and then served from the cache or
+ * the in-flight read. The superset includes `time` and `distance`, which
+ * `moving` and every downstream index depend on.
  *
  * Samples where `time` is `null` are dropped, along with the matching sample
  * in every other array, so the returned `time` is always non-null numbers;
@@ -200,12 +212,9 @@ export async function loadIntervalsStreams(
   id: string,
   types: IntervalsStreamType[],
 ): Promise<IntervalsStreams> {
-  const requestTypes = types.includes("time") ? [...types] : ["time", ...types];
-  if (!requestTypes.includes("distance")) requestTypes.push("distance");
-
   let raw: IntervalsStream[];
   try {
-    raw = await getActivityStreams(apiKey, id, requestTypes);
+    raw = await getActivityStreams(apiKey, id, [...INTERVALS_STREAM_TYPES]);
   } catch (error) {
     if (error instanceof IntervalsApiError && error.response.status === 404) {
       throw new IntervalsStreamsUnavailableError(id);
@@ -267,7 +276,8 @@ export async function loadIntervalsStreams(
   }
 
   // `distance` is always requested for `moving`, but returned only when the
-  // caller asked for it.
+  // caller asked for it. `velocity_smooth` counts toward `moving` only when
+  // the caller asked for it, as before the superset read.
   const distanceStream = byType.get("distance");
   const distance =
     result.distance ?? (distanceStream ? aligned(distanceStream) : undefined);

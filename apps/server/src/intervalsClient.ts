@@ -468,6 +468,13 @@ export type IntervalsAthletePaceCurves = z.infer<
   typeof IntervalsAthletePaceCurvesSchema
 >;
 
+/** Only the field {@link getAthleteTimeZone} reads off `GET /athlete/{id}`.
+ * A plain object, never `.passthrough()`: the self record also carries
+ * `icu_api_key`, and parsing strips it. */
+const IntervalsAthleteTimeZoneSchema = z.object({
+  timezone: z.string().nullable().optional(),
+});
+
 /**
  * An intervals.icu API failure that {@link handleApiError} has already
  * interpreted: the user-facing message, with the HTTP status still attached.
@@ -1057,6 +1064,35 @@ export async function getAthleteHrCurves(
     handleApiError(error, context);
   }
   return parseOrThrow(IntervalsAthleteHrCurvesSchema, data, context);
+}
+
+/**
+ * The athlete's `timezone` from `GET /athlete/{INTERVALS_ATHLETE_ID}`, so a
+ * coach key reads the configured athlete's zone, not its own. Returns null
+ * when it is unset or blank. The spec types it as a string; an IANA name is
+ * assumed but not verified live, so the caller validates it
+ * (`setAthleteTimeZone` in config.ts).
+ *
+ * Never cached: `intervalsCacheTtl` has no TTL for `/athlete/{id}`, and none
+ * must be added, because the record carries `icu_api_key`. Errors survive
+ * translation, as for every read here.
+ */
+export async function getAthleteTimeZone(
+  apiKey: string,
+): Promise<string | null> {
+  requireApiKey(apiKey);
+  const context = "getAthleteTimeZone";
+  let data: unknown;
+  try {
+    const response = await intervalsApi.get<unknown>(athletePath(""), {
+      headers: authHeaders(apiKey),
+    });
+    data = response.data;
+  } catch (error) {
+    handleApiError(error, context);
+  }
+  const athlete = parseOrThrow(IntervalsAthleteTimeZoneSchema, data, context);
+  return athlete.timezone?.trim() || null;
 }
 
 /**

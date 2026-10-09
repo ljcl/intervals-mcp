@@ -36,6 +36,15 @@ export interface JsonRpcResponse {
   error?: { code: number; message: string };
 }
 
+/** Per-send options for {@link McpTestClient.send} and {@link McpTestClient.sendRaw}. */
+export interface SendOptions {
+  /**
+   * Aborting it closes the request, which is how a 2026-07-28 client cancels a
+   * call. The endpoint then answers 499 with no body.
+   */
+  signal?: AbortSignal;
+}
+
 export interface McpTestClient {
   /**
    * The `server/discover` result (`capabilities`, `supportedVersions`,
@@ -43,14 +52,26 @@ export interface McpTestClient {
    */
   discover: Record<string, unknown>;
   /** Send a request and return the parsed JSON-RPC response. */
-  send(method: string, params?: unknown): Promise<JsonRpcResponse>;
+  send(
+    method: string,
+    params?: unknown,
+    options?: SendOptions,
+  ): Promise<JsonRpcResponse>;
   /** Send a request and return the raw body, for asserting on notifications. */
-  sendRaw(method: string, params?: unknown): Promise<string>;
+  sendRaw(
+    method: string,
+    params?: unknown,
+    options?: SendOptions,
+  ): Promise<string>;
   /** Abort anything in flight; the endpoint holds no sessions to drain. */
   close(): Promise<void>;
 }
 
-function post(body: unknown, headers: Record<string, string> = {}): Request {
+function post(
+  body: unknown,
+  headers: Record<string, string> = {},
+  signal?: AbortSignal,
+): Request {
   return new Request("http://localhost/mcp", {
     method: "POST",
     headers: {
@@ -59,6 +80,7 @@ function post(body: unknown, headers: Record<string, string> = {}): Request {
       ...headers,
     },
     body: JSON.stringify(body),
+    signal,
   });
 }
 
@@ -109,7 +131,11 @@ export async function connectTestClient(
   const endpoint = createMcpEndpoint(createServer);
   let nextId = 1;
 
-  const sendRaw = async (method: string, params: unknown = {}) => {
+  const sendRaw = async (
+    method: string,
+    params: unknown = {},
+    options?: SendOptions,
+  ) => {
     const merged = params as Record<string, unknown>;
     const body = {
       jsonrpc: "2.0",
@@ -131,12 +157,18 @@ export async function connectTestClient(
     // mismatch or an absence with -32020.
     const name = merged.name ?? merged.uri;
     if (typeof name === "string") headers["Mcp-Name"] = name;
-    const response = await endpoint.handleRequest(post(body, headers));
+    const response = await endpoint.handleRequest(
+      post(body, headers, options?.signal),
+    );
     return await response.text();
   };
 
-  const send = async (method: string, params: unknown = {}) => {
-    const raw = await sendRaw(method, params);
+  const send = async (
+    method: string,
+    params: unknown = {},
+    options?: SendOptions,
+  ) => {
+    const raw = await sendRaw(method, params, options);
     const parsed = parseResponse(raw);
     if (!parsed) throw new Error(`no JSON-RPC response in ${method}: ${raw}`);
     return parsed;

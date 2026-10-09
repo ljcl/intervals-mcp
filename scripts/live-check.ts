@@ -28,6 +28,10 @@ const root = path.resolve(import.meta.dirname, "..");
 dotenv.config({ path: path.join(root, ".env"), quiet: true });
 
 const { getIntervalsApiKey } = await import("../apps/server/src/config");
+const { getAthleteTimeZone } = await import(
+  "../apps/server/src/intervalsClient"
+);
+const { isValidTimeZone } = await import("../apps/server/src/utils/localDate");
 const { getActivityTool } = await import(
   "../apps/server/src/tools/getActivity"
 );
@@ -233,6 +237,23 @@ function parseDispatchJson<T>(result: {
     return JSON.parse(text) as T;
   } catch {
     return null;
+  }
+}
+
+/**
+ * The athlete's `timezone` (#56), which the server follows when TZ chooses
+ * none. Prints only whether it is set and whether this runtime's Intl
+ * accepts it, never the zone itself: it says where the athlete lives.
+ */
+async function checkAthleteTimeZone(): Promise<void> {
+  const name = "athlete time zone";
+  try {
+    const zone = await getAthleteTimeZone(apiKey);
+    if (zone === null) ok(name, "unset");
+    else if (isValidTimeZone(zone)) ok(name, "set, accepted by this runtime");
+    else fail(name, "set, NOT accepted by this runtime");
+  } catch (error) {
+    fail(name, throwSummary(error));
   }
 }
 
@@ -1376,6 +1397,7 @@ async function checkGetFitnessTrendDataScope(runOnly: boolean): Promise<void> {
   }
 }
 
+await checkAthleteTimeZone();
 await checkListActivities();
 await checkListActivitiesSearch();
 await checkGetActivity();

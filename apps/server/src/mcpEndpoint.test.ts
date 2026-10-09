@@ -6,7 +6,7 @@
  * and 64-bit ids survive the body parse.
  */
 import { Server } from "@modelcontextprotocol/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMcpEndpoint, type McpEndpoint } from "./mcpEndpoint";
 import { parseResponse } from "./mcpTestClient";
 
@@ -270,5 +270,207 @@ describe("createMcpEndpoint", () => {
     await endpoint.handleRequest(post(INITIALIZE_BODY)).then((r) => r.text());
 
     await expect(endpoint.close()).resolves.toBeUndefined();
+  });
+});
+
+describe("rejected requests (#69)", () => {
+  beforeEach(() => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** Every line written to stderr, parsed when it is JSON. */
+  function lines(): Array<Record<string, unknown> | string> {
+    return vi.mocked(console.error).mock.calls.map(([first]) => {
+      const text = String(first);
+      return text.startsWith("{")
+        ? (JSON.parse(text) as Record<string, unknown>)
+        : text;
+    });
+  }
+
+  function rejected(): Array<Record<string, unknown>> {
+    return lines().filter(
+      (line): line is Record<string, unknown> =>
+        typeof line !== "string" && line.event === "mcp_rejected",
+    );
+  }
+
+  it("logs one line for a 2025-era initialize and no handler error", async () => {
+    const response = await makeEndpoint().handleRequest(post(INITIALIZE_BODY));
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).error.code).toBe(-32022);
+    expect(console.error).toHaveBeenCalledTimes(1);
+    expect(rejected()).toEqual([
+      expect.objectContaining({
+        status: 400,
+        code: -32022,
+        http_method: "POST",
+        rpc_method: "initialize",
+        protocol_version: "2025-06-18",
+        client_name: "test-client",
+        client_version: "1.0",
+        reason: expect.stringContaining("modern-only-missing-envelope"),
+      }),
+    ]);
+  });
+
+  it("logs malformed JSON as -32700", async () => {
+    await makeEndpoint().handleRequest(post("{not json"));
+
+    expect(console.error).toHaveBeenCalledTimes(1);
+    expect(rejected()).toEqual([
+      expect.objectContaining({ status: 400, code: -32700 }),
+    ]);
+  });
+
+  it("logs a GET as 405", async () => {
+    await makeEndpoint().handleRequest(new Request(MCP_URL, { method: "GET" }));
+
+    expect(console.error).toHaveBeenCalledTimes(1);
+    expect(rejected()).toEqual([
+      expect.objectContaining({ status: 405, http_method: "GET" }),
+    ]);
+  });
+
+  it("logs an Mcp-Name mismatch with the envelope's client", async () => {
+    await makeEndpoint().handleRequest(
+      post(
+        {
+          jsonrpc: "2.0",
+          id: 2,
+          method: "tools/call",
+          params: {
+            _meta: MODERN_META,
+            name: "update-activity",
+            arguments: {},
+          },
+        },
+        { "Mcp-Method": "tools/call", "Mcp-Name": "get-wellness" },
+      ),
+    );
+
+    expect(console.error).toHaveBeenCalledTimes(1);
+    expect(rejected()).toEqual([
+      expect.objectContaining({
+        status: 400,
+        code: -32020,
+        mcp_method: "tools/call",
+        rpc_method: "tools/call",
+        protocol_version: "2026-07-28",
+        client_name: "test-client",
+        client_version: "1.0",
+      }),
+    ]);
+  });
+
+  it("carries the trace ids of a rejected enveloped request", async () => {
+    await makeEndpoint().handleRequest(
+      post(
+        {
+          jsonrpc: "2.0",
+          id: 2,
+          method: "tools/call",
+          params: {
+            _meta: {
+              ...MODERN_META,
+              traceparent:
+                "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+            },
+            name: "update-activity",
+            arguments: {},
+          },
+        },
+        { "Mcp-Method": "tools/call", "Mcp-Name": "get-wellness" },
+      ),
+    );
+
+    expect(rejected()).toEqual([
+      expect.objectContaining({
+        trace_id: "0af7651916cd43dd8448eb211c80319c",
+        parent_id: "b7ad6b7169203331",
+      }),
+    ]);
+  });
+
+  it("writes no mcp_rejected line for a served request", async () => {
+    const response = await makeEndpoint().handleRequest(
+      post(
+        {
+          jsonrpc: "2.0",
+          id: 2,
+          method: "tools/list",
+          params: { _meta: MODERN_META },
+        },
+        { "Mcp-Method": "tools/list" },
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    expect(rejected()).toEqual([]);
+  });
+
+  it("never logs the Authorization header", async () => {
+    await makeEndpoint().handleRequest(
+      post(INITIALIZE_BODY, { Authorization: "Bearer secret-value" }),
+    );
+
+    expect(rejected()).toHaveLength(1);
+    const text = JSON.stringify(vi.mocked(console.error).mock.calls);
+    expect(text).not.toContain("secret-value");
+    expect(text.toLowerCase()).not.toContain("authorization");
+  });
+
+  it("folds a factory failure into one 500 line with its stack", async () => {
+    const endpoint = createMcpEndpoint(() => {
+      throw new Error("boom");
+    });
+
+    const response = await endpoint.handleRequest(
+      post(
+        {
+          jsonrpc: "2.0",
+          id: 2,
+          method: "tools/list",
+          params: { _meta: MODERN_META },
+        },
+        { "Mcp-Method": "tools/list" },
+      ),
+    );
+
+    expect(response.status).toBe(500);
+    expect(console.error).toHaveBeenCalledTimes(1);
+    const [line] = rejected();
+    expect(line).toMatchObject({ status: 500, reason: "boom" });
+    expect(String(line?.stack)).toContain("boom");
+  });
+
+  it("keeps each parallel rejection's own reason and client", async () => {
+    const endpoint = makeEndpoint();
+    const withClient = (name: string) => ({
+      ...INITIALIZE_BODY,
+      params: { ...INITIALIZE_BODY.params, clientInfo: { name, version: "1" } },
+    });
+
+    await Promise.all([
+      endpoint.handleRequest(post(withClient("client-a"))),
+      endpoint.handleRequest(post(withClient("client-b"))),
+    ]);
+
+    const seen = rejected();
+    expect(seen).toHaveLength(2);
+    expect(seen.map((line) => line.client_name).sort()).toEqual([
+      "client-a",
+      "client-b",
+    ]);
+    for (const line of seen) {
+      expect(line.reason).toEqual(
+        expect.stringContaining("modern-only-missing-envelope"),
+      );
+    }
   });
 });

@@ -12,9 +12,10 @@ import {
 } from "../intervalsStreams";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
 import { downsampleColumns, lastValuePerBucket } from "../streamDownsample";
+import { LATLNG_DECIMALS, STREAM_DECIMALS } from "../streamPrecision";
 import { cadenceSpm, isStepCadenceActivity } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
-import { toolErrorText } from "./_errors";
+import { noteToolFailure, toolErrorText } from "./_errors";
 import { intervalsActivityIdInput } from "./_ids";
 import { RESPONSE_BUDGET_CHARS, responseSize } from "./_responseBudget";
 import { ActivityStreamsOutputSchema, warnOnSchemaDrift } from "./outputs";
@@ -91,21 +92,6 @@ const inputSchema = z.object({
 
 type GetActivityStreamsInput = z.infer<typeof inputSchema>;
 
-/** Decimal places each non-latlng stream is rounded to in the response. */
-const DECIMALS: Record<Exclude<StreamType, "latlng">, number> = {
-  time: 0,
-  distance: 1,
-  heartrate: 0,
-  cadence: 0,
-  velocity_smooth: 2,
-  altitude: 1,
-  watts: 0,
-  stance_time: 1,
-  vertical_oscillation: 1,
-  vertical_ratio: 2,
-  step_length: 0,
-};
-
 /**
  * Default per-type unit. `cadence`'s default ("spm") applies only when the
  * activity is a step-cadence type; {@link buildActivityStreamsResult}
@@ -125,8 +111,6 @@ const UNITS: Record<StreamType, string> = {
   vertical_ratio: "%",
   step_length: "mm",
 };
-
-const LATLNG_DECIMALS = 5;
 
 export type StreamValue = number | null | [number, number];
 
@@ -201,7 +185,7 @@ export function buildActivityStreamsResult(
 
     const values = downsampled[t];
     if (!values) continue;
-    const decimals = DECIMALS[t];
+    const decimals = STREAM_DECIMALS[t];
     streams[t] = values.map((v): StreamValue => {
       if (v == null) return null;
       const scaled = t === "cadence" ? (cadenceSpm(v, type) ?? v) : v;
@@ -422,6 +406,7 @@ export const getActivityStreamsTool = {
         streams = await loadIntervalsStreams(apiKey, id, typesToFetch);
       } catch (error) {
         if (error instanceof IntervalsStreamsUnavailableError) {
+          noteToolFailure(error);
           return {
             content: [
               {

@@ -1,3 +1,4 @@
+import { type CallFailure, noteCallFailure } from "../callScope";
 import { HttpError, RateLimitError, RequestTimeoutError } from "../fetchClient";
 
 /**
@@ -13,10 +14,11 @@ import { HttpError, RateLimitError, RequestTimeoutError } from "../fetchClient";
  * generic branch as "An unexpected error occurred". Branch here on the
  * typed error only; never on its message.
  *
- * Imports come from `../fetchClient` only. Tool tests replace the client
- * module with bare factory mocks, so anything imported from there would be
- * `undefined` here and `instanceof undefined` throws inside the very catch
- * block meant to report the failure. `IntervalsStreamsUnavailableError` is
+ * Imports come from `../fetchClient` and `../callScope` only. Tool tests
+ * replace the client module with bare factory mocks, so anything imported
+ * from there would be `undefined` here and `instanceof undefined` throws
+ * inside the very catch block meant to report the failure. `callScope` is a
+ * leaf that no test mocks. `IntervalsStreamsUnavailableError` is
  * deliberately not translated for the same reason, and because every stream
  * tool already treats it as a degrade signal in its own success path: it
  * never reaches a tool's outer catch.
@@ -49,9 +51,41 @@ const DEFAULT_SUBSCRIPTION =
 /** The prefix every `isError` text on the surface starts with. */
 const PREFIX = "❌";
 
+/** The class logged for a thrown value that is not an `Error`. */
+const NON_ERROR_CLASS = "NonError";
+
 function messageOf(error: unknown): string {
   if (error instanceof Error) return error.message;
   return String(error);
+}
+
+/**
+ * The class and HTTP status of a failure, for the call's log line. Reads the
+ * type and status only, never the message. Never throws.
+ */
+export function toolFailureOf(error: unknown): CallFailure {
+  try {
+    if (!(error instanceof Error)) return { error_class: NON_ERROR_CLASS };
+    const failure: CallFailure = {
+      error_class: error.constructor.name || "Error",
+    };
+    if (error instanceof HttpError) failure.http_status = error.response.status;
+    return failure;
+  } catch {
+    return { error_class: NON_ERROR_CLASS };
+  }
+}
+
+/**
+ * Notes `error` as the current call's failure. For a tool branch that returns
+ * `isError` without calling {@link toolErrorText}. Never throws.
+ */
+export function noteToolFailure(error: unknown): void {
+  try {
+    noteCallFailure(toolFailureOf(error));
+  } catch {
+    // Telemetry never fails the call it describes.
+  }
 }
 
 /**
@@ -97,6 +131,7 @@ export function toolErrorText(
   error: unknown,
   options: ToolErrorOptions,
 ): string {
+  noteToolFailure(error);
   const { context, notFound } = options;
   const message = messageOf(error);
   // Operator logs keep the raw detail the athlete-facing line may not carry.

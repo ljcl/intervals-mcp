@@ -5,7 +5,11 @@
  */
 import { createRequire } from "node:module";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { apiKeyConfigured, getIntervalsAthleteId, getTimeZone } from "./config";
+import {
+  apiKeyConfigured,
+  getIntervalsAthleteId,
+  timeZoneSetting,
+} from "./config";
 import { intervalsApi } from "./fetchClient";
 import { handleHealth } from "./health";
 import { SERVER_VERSION } from "./version";
@@ -16,7 +20,7 @@ vi.mock("./config", async (importOriginal) => {
     ...actual,
     apiKeyConfigured: vi.fn(() => false),
     getIntervalsAthleteId: vi.fn(() => "0"),
-    getTimeZone: vi.fn(() => "UTC"),
+    timeZoneSetting: vi.fn(() => ({ zone: "UTC", source: "fallback" })),
   };
 });
 
@@ -24,14 +28,15 @@ vi.mock("./fetchClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./fetchClient")>();
   return {
     ...actual,
-    intervalsApi: { getRateLimitSnapshot: vi.fn() },
+    intervalsApi: { getRateLimitSnapshot: vi.fn(), getAttemptCounts: vi.fn() },
   };
 });
 
 const mockedSnapshot = vi.mocked(intervalsApi.getRateLimitSnapshot);
+const mockedAttempts = vi.mocked(intervalsApi.getAttemptCounts);
 const mockedApiKeyConfigured = vi.mocked(apiKeyConfigured);
 const mockedAthleteId = vi.mocked(getIntervalsAthleteId);
-const mockedTimeZone = vi.mocked(getTimeZone);
+const mockedTimeZone = vi.mocked(timeZoneSetting);
 
 const get = (path = "/health", headers: Record<string, string> = {}) => {
   const url = new URL(`http://localhost:3000${path}`);
@@ -42,12 +47,18 @@ describe("handleHealth", () => {
   beforeEach(() => {
     mockedSnapshot.mockReset();
     mockedSnapshot.mockReturnValue(null);
+    mockedAttempts.mockReset();
+    mockedAttempts.mockReturnValue({
+      last15Minutes: 3,
+      utcDay: 40,
+      utcDate: "2026-10-08",
+    });
     mockedApiKeyConfigured.mockReset();
     mockedApiKeyConfigured.mockReturnValue(false);
     mockedAthleteId.mockReset();
     mockedAthleteId.mockReturnValue("0");
     mockedTimeZone.mockReset();
-    mockedTimeZone.mockReturnValue("UTC");
+    mockedTimeZone.mockReturnValue({ zone: "UTC", source: "fallback" });
   });
 
   afterEach(() => {
@@ -75,15 +86,44 @@ describe("handleHealth", () => {
     expect(body.rate_limit.shortTerm.usage).toBe(42);
   });
 
-  it("defaults athlete_id to 0 and reports the configured time zone", async () => {
+  it("reports rate_limit as null when the snapshot is null", async () => {
+    const { req, url } = get();
+    const body = await handleHealth(req, url).json();
+
+    expect(body.rate_limit).toBeNull();
+  });
+
+  it("reports the upstream request counts", async () => {
+    const { req, url } = get();
+    const body = await handleHealth(req, url).json();
+
+    expect(body.upstream_requests).toEqual({
+      last_15_min: 3,
+      utc_day: 40,
+      utc_date: "2026-10-08",
+    });
+  });
+
+  it("defaults athlete_id to 0", async () => {
     mockedApiKeyConfigured.mockReturnValue(true);
-    mockedTimeZone.mockReturnValue("Australia/Sydney");
 
     const { req, url } = get();
     const body = await (await handleHealth(req, url)).json();
 
     expect(body.athlete_id).toBe("0");
+  });
+
+  it("reports the time zone and where it came from", async () => {
+    mockedTimeZone.mockReturnValue({
+      zone: "Australia/Sydney",
+      source: "intervals.icu",
+    });
+
+    const { req, url } = get();
+    const body = await (await handleHealth(req, url)).json();
+
     expect(body.time_zone).toBe("Australia/Sydney");
+    expect(body.time_zone_source).toBe("intervals.icu");
   });
 
   it("reports api_key_configured: false when no key is set", async () => {
@@ -154,7 +194,9 @@ describe("handleHealth", () => {
     expect(response.status).toBe(200);
     expect(body.status).toBe("ok");
     expect(body.api_key_configured).toBeUndefined();
+    expect(body.time_zone_source).toBeUndefined();
     expect(body.rate_limit).toBeUndefined();
+    expect(body.upstream_requests).toBeUndefined();
   });
 
   it("serves full detail with the secret presented", async () => {

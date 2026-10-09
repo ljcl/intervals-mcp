@@ -77,12 +77,16 @@ COPY --from=builder  --chown=65534:65534 /app/packages/fitness-trend/dist ./pack
 
 USER 65534:65534
 ENV NODE_ENV=production
+# The default PORT.
 EXPOSE 3000
 
 # Exec-form healthcheck: no shell, no wget. Full bun path because HEALTHCHECK
-# does not route through ENTRYPOINT.
+# does not route through ENTRYPOINT. It reads PORT the way the server does
+# (blank or unset means 3000; surrounding spaces are ignored), so
+# `docker run -e PORT=8080 -p 8080:8080` stays healthy. dockerRuntime.test.ts
+# runs the script.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD ["/usr/local/bin/bun","--eval","fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+    CMD ["/usr/local/bin/bun","--eval","fetch('http://localhost:'+(Number(process.env.PORT)||3000)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
 
 # ENTRYPOINT is already /usr/local/bin/bun, so CMD omits the leading "bun".
 CMD ["run","apps/server/dist/index.js"]

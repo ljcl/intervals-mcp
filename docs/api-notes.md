@@ -307,6 +307,21 @@ strongest feeling and 5 the weakest, as `update-activity`'s tool description say
 - `race` (boolean) and `tags` (null or string array) appear on both `search-full` rows and `GET /athlete/0/activities` rows.
 - `GET /athlete/0/activity-tags` returned `[]` and `q=#race` returned `[]` on an account with no tags, so tag search is unverified live (no tags on the probe account); the client test checks `#` is sent encoded.
 
+## Athlete time zone (2026-10-09, #56, live read-only)
+
+- `GET /athlete/{id}` carries `timezone`. The spec types it as a plain string (the `WithSportSettings` schema) and does not say it is an IANA name. The server validates it with `Intl` before use (`setAthleteTimeZone`).
+- Verified live on 2026-10-09 with `scripts/live-check.ts`: the athlete record had `timezone` set, and Bun's `Intl` accepted it. The check prints only that, never the zone itself.
+- The same record also carries `icu_api_key`. `getAthleteTimeZone` parses only `timezone`, and `/athlete/{id}` has no cache TTL, so the record is never cached or logged.
+
+## One stream superset per activity (2026-10-09, #71, live read-only)
+
+- Since #71, every stream read requests the same 13 types: the 12 types of the Phase 4 probe above, plus `watts`. `loadIntervalsStreams` (`INTERVALS_STREAM_TYPES`) sends them sorted, so each activity has one streams URL that every tool and app shares.
+- Verified live on 2026-10-09 with `scripts/live-check.ts`, on a GPS run, a pool swim and a strength session:
+  - A type's data does not depend on the other types in the request. On the GPS run, every tool reported the same numbers on main (per-tool type lists) and on the branch (the superset).
+  - An activity without GPS or a sensor answers 200 with the missing types left out. The pool swim returned 6 stream keys and the strength session 2; the route map got 0 points, and no stream read failed.
+  - Every tool gave the same ok or error result on main and on the branch for both no-GPS activities. The errors are the run-only tools declining a swim or a strength session, as before #71.
+- This account has no run without GPS since March 2026, so a treadmill run is not checked directly.
+
 ## Best efforts and pace curves (2026-10-08, live read-only, #82)
 
 Three runs (6.1, 21.2 and 31.0 km), all with auto-pause stops, and athlete

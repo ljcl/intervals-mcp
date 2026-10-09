@@ -8,8 +8,9 @@ A single-user remote MCP server for intervals.icu run data and analysis, with in
 
 All text tools and every MCP App talk to intervals.icu directly and
 are verified against a real account; see [docs/tools.md](docs/tools.md) for
-the full catalog. The presence of `INTERVALS_API_KEY` is checked at startup
-and reported on `/health`.
+the full catalog. Configuration is checked at startup: a bad variable stops
+the server with a message naming it, and the key's presence is reported on
+`/health`.
 
 **History.** This project began as [strava-mcp](https://github.com/ljcl/strava-mcp)
 and was migrated to intervals.icu as its data source; nothing in the server
@@ -206,11 +207,17 @@ PRs are squash-merged and the **PR title becomes the commit on `main`**, so writ
 
 ## Troubleshooting
 
+**Server exits at startup:** The message names the variable to fix, one line per bad variable. See [operations.md](docs/operations.md#environment-variables).
+
 **AI tool can't reach the server** — MCP requires an HTTPS URL. Use a tunnel (Tailscale Funnel or Cloudflare Tunnel) to expose your local server. See [Connecting to AI Tools](#connecting-to-ai-tools).
 
 **API key errors:** Check `/health` first: `api_key_configured` tells you whether the server has a key set at all. If `api_key_configured` is `true` but calls still fail, the key may be wrong or revoked; generate a new one at intervals.icu, Settings, Developer Settings, and update `INTERVALS_API_KEY`. See [operations.md](docs/operations.md#intervalsicu-api-key).
 
+**Today's run is missing, or dates are a day off:** Check `time_zone` and `time_zone_source` on `/health`. With `TZ` unset (or `UTC`), the server uses your intervals.icu time zone; set `TZ` to choose one. See [operations.md](docs/operations.md#time-zone).
+
 **"Cloudflare … answered with a challenge":** Cloudflare, in front of intervals.icu, stopped the request before it reached intervals.icu, so this is not an API key problem. Wait a few minutes and retry. See [operations.md](docs/operations.md#rate-limits-and-resilience).
+
+**Client can't connect (401 or unsupported protocol version):** Each refused `/mcp` request writes one `mcp_rejected` line to the server log with its status, JSON-RPC code and, when the client sent it, its name. A 401 means the bearer token is missing or wrong. Code `-32022` means the client speaks an older MCP revision. See [operations.md](docs/operations.md#rejected-requests).
 
 **Is the server up and reachable?** `curl https://your-public-url/health`. It answers without touching the intervals.icu API, so it works even when your rate limit is exhausted.
 

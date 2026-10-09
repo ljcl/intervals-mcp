@@ -23,6 +23,25 @@ export function todayLocal(tz: string, now: Date = new Date()): string {
 }
 
 /**
+ * True when `tz` is a zone {@link todayLocal} accepts. It makes the same Intl
+ * call, so validation and use cannot disagree. It does not trim.
+ *
+ * `Intl.supportedValuesOf("timeZone")` is not used: it lists canonical names
+ * only, so it rejects valid aliases such as `US/Pacific`, lowercase names,
+ * `America/Argentina/ComodRivadavia`, and under Node even `UTC`. A POSIX TZ
+ * string such as `AEST-10` is rejected, because Intl rejects it.
+ */
+export function isValidTimeZone(tz: string): boolean {
+  if (!tz) return false;
+  try {
+    todayLocal(tz, new Date(0));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Adds `n` (possibly negative) whole days to a `YYYY-MM-DD` date, using
  * UTC-midnight math so the result never shifts with a local time zone's DST
  * transitions.

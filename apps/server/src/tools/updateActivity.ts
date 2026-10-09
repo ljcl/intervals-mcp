@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CallCancelledError } from "../callScope";
 import { HttpError, RateLimitError } from "../fetchClient";
 import {
   getActivity as fetchActivity,
@@ -18,7 +19,7 @@ import {
   isGearRetired,
 } from "../utils/activityWrite";
 import { WRITE_DESTRUCTIVE } from "./_annotations";
-import { toolErrorText } from "./_errors";
+import { noteToolFailure, toolErrorText } from "./_errors";
 import { intervalsActivityIdInput } from "./_ids";
 import {
   ActivityWriteOutputSchema,
@@ -310,7 +311,11 @@ export const updateActivityTool = {
         // response) leaves the write's outcome unknown, so it gets the same
         // honest "may already have been applied" text rather than either a
         // flat failure or a silent success.
+        // A CallCancelledError is a definite non-write too: FetchClient gives
+        // a started write neither the call signal nor a retry wait, so a
+        // cancel error means the PUT never left.
         const isDefiniteRejection =
+          putError instanceof CallCancelledError ||
           putError instanceof RateLimitError ||
           (putError instanceof HttpError &&
             putError.response.status >= 400 &&
@@ -320,6 +325,7 @@ export const updateActivityTool = {
         }
         const detail =
           putError instanceof Error ? putError.message : String(putError);
+        noteToolFailure(putError);
         return {
           content: [
             {
@@ -384,6 +390,7 @@ export const updateActivityTool = {
     } catch (error) {
       if (written) {
         const detail = error instanceof Error ? error.message : String(error);
+        noteToolFailure(error);
         return {
           content: [
             {

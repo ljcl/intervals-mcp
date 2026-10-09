@@ -27,26 +27,26 @@
         },
         {
           "name": "INTERVALS_ATHLETE_ID",
-          "description": "Athlete id; default 0 means the API key's own athlete",
+          "description": "Athlete id: 0 (default, the API key's own athlete) or e.g. i12345",
           "isRequired": false,
           "format": "string"
         },
         {
           "name": "TZ",
-          "description": "IANA time zone for local dates, e.g. Australia/Sydney",
+          "description": "IANA time zone for local dates, e.g. Australia/Sydney; unset or UTC follows the athlete's intervals.icu time zone (Etc/UTC pins UTC)",
           "isRequired": false,
           "format": "string"
         },
         {
           "name": "MCP_AUTH_TOKEN",
-          "description": "Shared secret gating /mcp and detailed /health (recommended when internet-facing)",
+          "description": "Shared secret (32+ characters) gating /mcp and detailed /health (recommended when internet-facing)",
           "isRequired": false,
           "isSecret": true,
           "format": "string"
         },
         {
           "name": "PORT",
-          "description": "Server port (default 3000)",
+          "description": "Server port, 1-65535 (default 3000)",
           "isRequired": false,
           "format": "number"
         },

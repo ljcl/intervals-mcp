@@ -10,6 +10,7 @@ import paceCurvesFixture from "../__fixtures__/intervals/pace-curves.json";
 import paceCurvesSubmaxFixture from "../__fixtures__/intervals/pace-curves-submax.json";
 import streamsTimeDistanceFixture from "../__fixtures__/intervals/streams-time-distance.json";
 import { intervalsApi } from "../fetchClient";
+import { INTERVALS_STREAM_TYPES } from "../intervalsStreams";
 import { getBestEffortsTool } from "./getBestEfforts";
 
 /** Same swap as `intervalsClient.test.ts`: a real client with an instant
@@ -107,10 +108,10 @@ describe("get-best-efforts requests", () => {
       `/api/v1/activity/${RUN_ID}`,
       `/api/v1/activity/${RUN_ID}/streams.json`,
     ]);
-    // velocity_smooth only feeds `moving` (a stand at 1 Hz is a stop). The
-    // fixture has no such stream, and the loader skips a missing one.
+    // Every stream read asks for the one superset (#71), so this read and
+    // any other stream tool on the run share one cache entry.
     expect(urls[1]?.searchParams.get("types")).toBe(
-      "time,distance,velocity_smooth",
+      INTERVALS_STREAM_TYPES.join(","),
     );
   });
 });

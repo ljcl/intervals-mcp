@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import streamsFixture from "./__fixtures__/intervals/streams.json";
+import { round } from "./formatters";
 import {
   type IntervalsActivity,
   type IntervalsInterval,
 } from "./intervalsClient";
 import { type IntervalsStreams } from "./intervalsStreams";
 import { buildRouteMapData, MAX_ROUTE_MAP_POINTS } from "./routeMapData";
+import { rawUnitDecimals } from "./streamPrecision";
 
 const activity = (
   overrides: Partial<IntervalsActivity> = {},
@@ -306,5 +308,114 @@ describe("buildRouteMapData", () => {
     expect(data.coordinates).toHaveLength(nonNullSamples);
     expect(data.coordinates[0]).toEqual([-33.8568, 151.2153]);
     expect(data.streams?.heartrate).toHaveLength(nonNullSamples);
+  });
+});
+
+/** A track with 6-decimal coordinates and long-fraction scalar streams. */
+function longFractionTrack(length: number): IntervalsStreams {
+  const column = (base: number, step: number) =>
+    Array.from({ length }, (_, i) =>
+      i % 97 === 0 ? null : base + i * step + 1 / 3,
+    );
+  return streams({
+    time: Array.from({ length }, (_, i) => i + 1 / 7),
+    latlng: Array.from({ length }, (_, i): [number, number] => [
+      round(-33.856812 + i * 0.000011, 6),
+      round(151.215347 + i * 0.000013, 6),
+    ]),
+    distance: Array.from({ length }, (_, i) => i * 2.876543219),
+    altitude: column(80, 0.0031),
+    heartrate: column(140, 0.00731),
+    watts: column(250, 0.0123),
+    velocity_smooth: column(2.9, 0.000123),
+    grade_smooth: column(-3, 0.00171),
+    length,
+  });
+}
+
+describe("buildRouteMapData wire precision", () => {
+  it("route-map scalar streams carry at most 2 decimals; coordinates keep 5 by design", () => {
+    const data = buildRouteMapData(activity(), longFractionTrack(3600), []);
+
+    const columns = Object.entries(data.streams ?? {}) as Array<
+      [Parameters<typeof rawUnitDecimals>[0], (number | null)[]]
+    >;
+    expect(columns).toHaveLength(7);
+    const offenders: string[] = [];
+    for (const [key, values] of columns) {
+      for (const v of values) {
+        if (v == null) continue;
+        if (round(v, 2) !== v || round(v, rawUnitDecimals(key)) !== v)
+          offenders.push(`${key}: ${v}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+
+    // 2 decimals is about 1.1 km, which would make the map useless.
+    const points = [...data.coordinates, data.start!, data.end!];
+    expect(points.flat().every((v) => round(v, 5) === v)).toBe(true);
+    expect(points.flat().some((v) => round(v, 4) !== v)).toBe(true);
+  });
+
+  it("takes start and end from the rounded coordinates", () => {
+    const track = longFractionTrack(3600);
+    const [lat, lng] = track.latlng!.at(-1)!;
+
+    const data = buildRouteMapData(activity(), track, []);
+
+    expect(data.start).toEqual(data.coordinates[0]);
+    expect(data.end).toEqual(data.coordinates.at(-1));
+    expect(data.end).toEqual([round(lat, 5), round(lng, 5)]);
+  });
+
+  it("marks WORK interval ends on the unrounded time", () => {
+    // Rounded first, time reads [0, 1, 1, 2], and an interval that ends at
+    // 1 s would end at index 1 rather than at 1.2 s, index 2.
+    const time = [0, 0.6, 1.2, 1.8];
+    const latlng: Array<[number, number]> = time.map((t) => [0, t]);
+
+    const data = buildRouteMapData(activity(), streams({ time, latlng }), [
+      interval({ type: "WORK", start_time: 0, end_time: 1 }),
+    ]);
+
+    expect(data.streams?.time).toEqual([0, 1, 1, 2]);
+    expect(data.annotations?.laps?.[0]?.endIndex).toBe(2);
+  });
+
+  it("anchors waypoints on the unrounded distance", () => {
+    // Rounded first, 3999.96 m reads 4000 m, and the 4 km waypoint would
+    // anchor at index 1 rather than at 4000.04 m, index 2.
+    const data = buildRouteMapData(
+      activity({ distance: 10000 }),
+      streams({
+        time: [0, 1, 2, 3],
+        latlng: [
+          [0, 0],
+          [0, 1],
+          [0, 2],
+          [0, 3],
+        ],
+        distance: [0, 3999.96, 4000.04, 10000],
+      }),
+      [],
+      [{ km: 4, label: "Gel 1", kind: "fuel" }],
+    );
+
+    expect(data.streams?.distance).toEqual([0, 4000, 4000, 10000]);
+    expect(data.annotations?.waypoints?.[0]?.index).toBe(2);
+  });
+
+  it("leaves the payload of an activity with no track unchanged", () => {
+    expect(buildRouteMapData(activity(), null, [])).toEqual({
+      source: "activity",
+      id: "i189807578",
+      name: "Morning Run",
+      activityType: "Run",
+      distance: 10000,
+      elevationGain: 96,
+      coordinates: [],
+      start: null,
+      end: null,
+    });
   });
 });

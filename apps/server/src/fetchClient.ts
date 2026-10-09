@@ -1,4 +1,9 @@
 import { TtlLruCache } from "./cache";
+import {
+  CallCancelledError,
+  currentCallSignal,
+  throwIfCancelled,
+} from "./callScope";
 
 /** What an {@link HttpError} keeps from the failed response. */
 export interface HttpErrorResponse {
@@ -169,7 +174,9 @@ export const DEFAULT_TIMEOUT_MS = 20_000;
 /**
  * Recognises an aborted request. `AbortSignal.timeout()` rejects `fetch` with a
  * `DOMException` named `TimeoutError`; a manual abort uses `AbortError`. Neither
- * is an `Error` subclass we can `instanceof`, so match on the name.
+ * is an `Error` subclass we can `instanceof`, so match on the name. A cancelled
+ * call is classified before this check, so here `AbortError` and
+ * `TimeoutError` come only from the per-attempt timeout.
  */
 export function isAbortError(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
@@ -219,6 +226,17 @@ export function parseRateLimitHeaders(headers: Headers): RateLimitSnapshot {
     retryAfterSeconds: retryAfter,
     observedAt: Date.now(),
   };
+}
+
+/** True when the snapshot holds at least one value parsed from a header. */
+function carriesRateLimitData(s: RateLimitSnapshot): boolean {
+  return (
+    s.shortTerm !== undefined ||
+    s.daily !== undefined ||
+    s.readShortTerm !== undefined ||
+    s.readDaily !== undefined ||
+    s.retryAfterSeconds !== undefined
+  );
 }
 
 /** Next quarter-hour boundary (UTC): when a 15-minute rate-limit window resets. */
@@ -344,8 +362,29 @@ export interface ResponseCacheOptions {
   ttlForPath: (path: string) => number | null;
   /** Max cached entries before LRU eviction (default 200). */
   maxEntries?: number;
+  /**
+   * A rough budget on the summed response-text length of cached entries,
+   * measured as `body.length` before parsing (default unbounded). A response
+   * bigger than the whole budget is served, and still coalesced, but not
+   * cached.
+   */
+  maxBytes?: number;
   /** Injectable clock (ms) shared with the cache; tests override it. */
   now?: () => number;
+}
+
+/** The rolling window of {@link UpstreamAttemptCounts.last15Minutes}. */
+export const ATTEMPT_WINDOW_MS = 15 * 60_000;
+const DAY_MS = 86_400_000;
+
+/** How many request attempts a {@link FetchClient} has started recently. */
+export interface UpstreamAttemptCounts {
+  /** Attempts started in the last 15 minutes. */
+  last15Minutes: number;
+  /** Attempts started since 00:00 UTC. */
+  utcDay: number;
+  /** The UTC date `utcDay` counts, as `YYYY-MM-DD`. */
+  utcDate: string;
 }
 
 /** Tunable backoff/retry behaviour for {@link FetchClient}. */
@@ -377,10 +416,20 @@ export interface RetryOptions {
    */
   minIntervalMs?: number;
   /**
-   * Injectable clock (ms), shared by the `minIntervalMs` throttle and, when
-   * `cache.now` is not given, the response cache. Defaults to `Date.now`.
+   * The pacing clock (ms) for the `minIntervalMs` throttle. Defaults to
+   * `performance.now()` (monotonic, captured at construction): a wall-clock
+   * step back (VM resume, NTP) must not stall the next request. An injected
+   * clock also drives the response cache when `cache.now` is not given. The
+   * default does not: cache TTLs stay on the wall clock, so entries expire
+   * across a host suspend.
    */
   now?: () => number;
+  /**
+   * The wall clock (ms since the epoch) for the attempt counters' rolling 15
+   * minutes and UTC day, like intervals.icu's own windows. Defaults to
+   * `Date.now`. Separate from the monotonic pacing clock `now`.
+   */
+  wallNow?: () => number;
   /**
    * Opt-in response cache for immutable-ish GETs. Omit to disable caching
    * entirely (the default for ad-hoc clients and most tests).
@@ -451,6 +500,66 @@ function cloneCached<T>(value: T): T {
   return structuredClone(value);
 }
 
+/**
+ * Settles like `work`, or rejects with a {@link CallCancelledError} as soon as
+ * `signal` aborts, whichever comes first. `work` keeps running; only this
+ * caller stops waiting for it. The abort listener goes once either side
+ * settles. Without that, a call that waits many times piles listeners onto
+ * its signal, and Node warns past 10.
+ */
+function abandonOnAbort<T>(
+  work: Promise<T>,
+  signal: AbortSignal | undefined,
+  what: string,
+): Promise<T> {
+  if (signal === undefined) return work;
+  if (signal.aborted) {
+    void work.catch(() => undefined);
+    return Promise.reject(
+      new CallCancelledError(what, { cause: signal.reason }),
+    );
+  }
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () =>
+      reject(new CallCancelledError(what, { cause: signal.reason }));
+    signal.addEventListener("abort", onAbort, { once: true });
+    work.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
+}
+
+/**
+ * What stops an attempt loop. `signal` stops new attempts, retries, backoffs
+ * and pacing waits. `interruptAttempt` also aborts an attempt already on the
+ * wire. It is true only for a caller's own straight-to-wire read.
+ */
+interface AttemptCancel {
+  signal: AbortSignal;
+  interruptAttempt: boolean;
+}
+
+/**
+ * A cacheable GET on the wire, shared by every caller that asked for it. An
+ * entry whose controller has aborted is abandoned: every waiter left. Nobody
+ * joins an abandoned entry.
+ */
+interface InFlightRead {
+  promise: Promise<unknown>;
+  /** Stops the shared read's waits and retries once every waiter has left. */
+  controller: AbortController;
+  /** Callers still waiting for `promise`. */
+  waiters: number;
+  settled: boolean;
+}
+
 export class FetchClient {
   private baseURL: string;
   private rateLimit: RateLimitSnapshot | null = null;
@@ -462,6 +571,18 @@ export class FetchClient {
   private readonly timeoutMs: number;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly now: () => number;
+  private readonly wallNow: () => number;
+
+  /**
+   * Start times (wall clock) of recent attempts, oldest first from
+   * {@link attemptHead}. Entries before the head have left the 15-minute
+   * window and wait for compaction.
+   */
+  private attemptStarts: number[] = [];
+  private attemptHead = 0;
+  /** The UTC day number {@link dayAttempts} counts. */
+  private attemptDay = -1;
+  private dayAttempts = 0;
 
   private readonly minIntervalMs: number;
   /** The earliest time (per {@link now}) the next request attempt may start. */
@@ -485,7 +606,7 @@ export class FetchClient {
    * when they race. Entries are removed on settle; only requests the cache
    * would serve (cacheable path, GET/HEAD, not `skipCache`) ever go here.
    */
-  private readonly inFlight = new Map<string, Promise<unknown>>();
+  private readonly inFlight = new Map<string, InFlightRead>();
 
   constructor(baseURL: string, options: RetryOptions = {}) {
     this.baseURL = baseURL;
@@ -497,12 +618,18 @@ export class FetchClient {
     this.sleep =
       options.sleep ??
       ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
-    this.now = options.now ?? Date.now;
+    // Bound and captured here. An arrow that reads `performance.now()` at call
+    // time hangs paced requests under vitest's default fake timers, which
+    // fake `performance` from 0. An unbound reference throws under Node,
+    // which runs the tests.
+    this.now = options.now ?? performance.now.bind(performance);
+    this.wallNow = options.wallNow ?? Date.now;
     this.minIntervalMs = options.minIntervalMs ?? 0;
 
     if (options.cache) {
       this.responseCache = new TtlLruCache<unknown>({
         maxEntries: options.cache.maxEntries,
+        maxBytes: options.cache.maxBytes,
         now: options.cache.now ?? options.now,
       });
       this.ttlForPath = options.cache.ttlForPath;
@@ -527,9 +654,14 @@ export class FetchClient {
     return queryIndex === -1 ? noBase : noBase.slice(0, queryIndex);
   }
 
-  /** Clears the entire response cache (no-op when caching is disabled). */
+  /**
+   * Clears the entire response cache and forgets every in-flight read (no-op
+   * when caching is disabled). A test seam with no production caller. A
+   * forgotten read still answers its waiters, but stores nothing.
+   */
   clearResponseCache(): void {
     this.responseCache?.clear();
+    this.inFlight.clear();
   }
 
   /**
@@ -545,11 +677,59 @@ export class FetchClient {
   }
 
   /**
-   * The rate-limit snapshot from the most recent response, or `null` if no
-   * request carrying rate-limit headers has completed yet.
+   * The rate-limit snapshot from the most recent response that carried
+   * rate-limit data, or `null` until one does. intervals.icu sends none.
    */
   getRateLimitSnapshot(): RateLimitSnapshot | null {
     return this.rateLimit;
+  }
+
+  /**
+   * How many request attempts this client started in the last 15 minutes and
+   * since 00:00 UTC. Retries count; cache hits, joined in-flight reads and
+   * attempts cancelled while queued do not. Both windows reset on restart.
+   */
+  getAttemptCounts(): UpstreamAttemptCounts {
+    const now = this.wallNow();
+    this.pruneAttempts(now);
+    const day = Math.floor(now / DAY_MS);
+    return {
+      last15Minutes: this.attemptStarts.length - this.attemptHead,
+      utcDay: day === this.attemptDay ? this.dayAttempts : 0,
+      utcDate: new Date(day * DAY_MS).toISOString().slice(0, 10),
+    };
+  }
+
+  /**
+   * Moves the head past attempts that left the 15-minute window (one exactly
+   * 15 minutes old has left), and compacts once half the array is dead. A
+   * wall-clock step back can only over-count until the clock catches up.
+   */
+  private pruneAttempts(now: number): void {
+    const starts = this.attemptStarts;
+    while (
+      this.attemptHead < starts.length &&
+      (starts[this.attemptHead] as number) <= now - ATTEMPT_WINDOW_MS
+    ) {
+      this.attemptHead += 1;
+    }
+    if (this.attemptHead > 0 && this.attemptHead * 2 >= starts.length) {
+      this.attemptStarts = starts.slice(this.attemptHead);
+      this.attemptHead = 0;
+    }
+  }
+
+  /** Records one request attempt that is about to go on the wire. */
+  private countAttempt(): void {
+    const now = this.wallNow();
+    this.pruneAttempts(now);
+    this.attemptStarts.push(now);
+    const day = Math.floor(now / DAY_MS);
+    if (day !== this.attemptDay) {
+      this.attemptDay = day;
+      this.dayAttempts = 0;
+    }
+    this.dayAttempts += 1;
   }
 
   /** Exponential backoff with full jitter for retry attempt `n` (0-indexed). */
@@ -574,8 +754,20 @@ export class FetchClient {
    * (rather than returning a rejected promise) still releases the gate.
    * Otherwise that failure would wedge `slotGate` forever and hang every
    * later request with no timeout.
+   *
+   * A cancelled `signal` takes the caller out of the queue. A caller that
+   * leaves the gate queue passes its turn on when it would have come. A
+   * caller that leaves during its gap wait gives its slot back, because
+   * `nextSlot` moves only when the attempt really starts. The write after the
+   * wait is safe: the caller still holds the gate.
    */
-  private async withSlot<T>(fire: () => Promise<T>): Promise<T> {
+  private async withSlot<T>(
+    fire: () => Promise<T>,
+    signal: AbortSignal | undefined,
+    url: string,
+  ): Promise<T> {
+    const what = `Request to ${url}`;
+    throwIfCancelled(signal, what);
     if (this.minIntervalMs <= 0) return fire();
 
     const myTurn = this.slotGate;
@@ -583,15 +775,21 @@ export class FetchClient {
     this.slotGate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    await myTurn;
+    try {
+      await abandonOnAbort(myTurn, signal, what);
+    } catch (error) {
+      void myTurn.then(release);
+      throw error;
+    }
 
     try {
       const now = this.now();
       const slot = Math.max(now, this.nextSlot);
-      this.nextSlot = slot + this.minIntervalMs;
       if (slot > now) {
-        await this.sleep(slot - now);
+        await abandonOnAbort(this.sleep(slot - now), signal, what);
       }
+      throwIfCancelled(signal, what);
+      this.nextSlot = slot + this.minIntervalMs;
       return fire();
     } finally {
       release();
@@ -632,6 +830,8 @@ export class FetchClient {
     // blindly retried, since a transient failure may still have mutated state.
     const method = (fetchOptions.method ?? "GET").toUpperCase();
     const isRetriable = method === "GET" || method === "HEAD";
+    const signal = currentCallSignal();
+    const what = `Request to ${requestConfig.url}`;
 
     // Response cache: serve immutable-ish GETs from memory, and invalidate a
     // resource's cached reads after it is written. The key is the full URL
@@ -649,11 +849,16 @@ export class FetchClient {
       // A `skipCache` read deliberately ignores the in-flight map too — the
       // update-activity append read must never compose onto a shared read that
       // may already be stale by the time it lands.
-      const data = await this.fetchWithRetry<T>(
+      // The call signal stops a read's attempt on the wire. A started write
+      // never carries it: the request may already have changed state upstream.
+      const { data } = await this.fetchWithRetry<T>(
         requestConfig.url,
         fetchOptions,
         requestConfig.responseType,
         isRetriable,
+        signal === undefined
+          ? undefined
+          : { signal, interruptAttempt: isRetriable },
       );
       if (cache && !isRetriable) this.invalidateWritten(requestConfig.url);
       return { data };
@@ -664,40 +869,83 @@ export class FetchClient {
       return { data: cloneCached(cached) as T };
     }
 
+    // A cancelled call neither joins nor starts a read. A cache hit above is
+    // still served.
+    throwIfCancelled(signal, what);
+
     // Coalesce: an identical cacheable GET already on the wire serves this
     // caller too. A rejection propagates to every awaiter; nothing is cached.
-    const shared = this.inFlight.get(cacheKey);
-    if (shared !== undefined) {
-      return { data: cloneCached(await shared) as T };
+    // The shared read runs on its own controller, never a caller's signal, so
+    // one caller leaving cannot stop the read for the others. An abandoned
+    // entry (every waiter left) is never joined.
+    let entry = this.inFlight.get(cacheKey);
+    if (entry === undefined || entry.controller.signal.aborted) {
+      const ttl = cacheTtl;
+      const controller = new AbortController();
+      const created: InFlightRead = {
+        controller,
+        waiters: 0,
+        settled: false,
+        promise: Promise.resolve(),
+      };
+      created.promise = this.fetchWithRetry<unknown>(
+        requestConfig.url,
+        fetchOptions,
+        requestConfig.responseType,
+        isRetriable,
+        { signal: controller.signal, interruptAttempt: false },
+      )
+        .then(({ data, bytes }) => {
+          // Identity check: a write that invalidated this path while we were in
+          // flight has already dropped our entry, and our result predates that
+          // write — storing it would resurrect the stale read the invalidation
+          // just removed. An abandoned entry that a newer read replaced fails
+          // the check too, so it never overwrites the newer result.
+          if (this.inFlight.get(cacheKey) === created) {
+            cache.set(cacheKey, data, ttl, bytes);
+          }
+          return data;
+        })
+        .finally(() => {
+          created.settled = true;
+          // Same identity check: never delete a newer request's entry.
+          if (this.inFlight.get(cacheKey) === created) {
+            this.inFlight.delete(cacheKey);
+          }
+        });
+      // Every waiter may leave, so nobody is sure to observe a rejection.
+      void created.promise.catch(() => undefined);
+      this.inFlight.set(cacheKey, created);
+      entry = created;
     }
+    // No await between the set above and the waiter count in awaitShared.
+    return {
+      data: cloneCached(await this.awaitShared(entry, signal, what)) as T,
+    };
+  }
 
-    const ttl = cacheTtl;
-    const promise: Promise<unknown> = this.fetchWithRetry<unknown>(
-      requestConfig.url,
-      fetchOptions,
-      requestConfig.responseType,
-      isRetriable,
-    )
-      .then((data) => {
-        // Identity check: a write that invalidated this path while we were in
-        // flight has already dropped our entry, and our result predates that
-        // write — storing it would resurrect the stale read the invalidation
-        // just removed.
-        if (this.inFlight.get(cacheKey) === promise) {
-          cache.set(cacheKey, data, ttl);
-        }
-        return data;
-      })
-      .finally(() => {
-        // Same identity check: never delete a newer request's entry.
-        if (this.inFlight.get(cacheKey) === promise) {
-          this.inFlight.delete(cacheKey);
-        }
-      });
-    this.inFlight.set(cacheKey, promise);
-    // No bare `.catch` here: the creator awaits the shared promise itself, so a
-    // rejection is always observed and cannot become an unhandled rejection.
-    return { data: cloneCached(await promise) as T };
+  /**
+   * Waits for a shared read as one of its waiters. A cancelled waiter detaches
+   * with a CallCancelledError and the read carries on for the others.
+   */
+  private async awaitShared(
+    entry: InFlightRead,
+    signal: AbortSignal | undefined,
+    what: string,
+  ): Promise<unknown> {
+    entry.waiters += 1;
+    try {
+      return await abandonOnAbort(entry.promise, signal, what);
+    } finally {
+      entry.waiters -= 1;
+      // Last waiter gone: abandon the read. Its queue, backoff and Retry-After
+      // waits and its retries stop. An attempt already on the wire is not
+      // interrupted: intervals.icu already has the request, so stopping it
+      // saves nothing, and it may still fill the cache. A waiter that
+      // completes normally never aborts: the chain's finally has set
+      // `settled` before `entry.promise` resolves.
+      if (entry.waiters === 0 && !entry.settled) entry.controller.abort();
+    }
   }
 
   /**
@@ -711,6 +959,8 @@ export class FetchClient {
    * Ancestors: a write to a sub-resource changes how its parent reads, so a
    * descendants-only rule would leave the cached parent claiming a stale
    * value.
+   *
+   * A dropped in-flight entry keeps serving the waiters it already has.
    */
   private invalidateWritten(url: string): void {
     const writePath = this.toPath(url);
@@ -729,18 +979,28 @@ export class FetchClient {
   }
 
   /**
-   * One request with retries, returning the parsed body. Transient (5xx /
+   * One request with retries, returning the parsed body and the length of
+   * its text (`bytes`, the response cache's size measure). Transient (5xx /
    * network / timeout) faults back off exponentially; a 429 honours
    * Retry-After. All backoff lives here so every tool benefits.
+   *
+   * With `cancel`, a cancelled call starts no new attempt, retry or wait. A
+   * write rejected with CallCancelledError never reached `fetch`: writes
+   * never take `interruptAttempt` or a retry wait, so the only cancel points
+   * are before the attempt starts. `update-activity` relies on this.
    */
   private async fetchWithRetry<T>(
     url: string,
     fetchOptions: RequestInit,
     responseType: FetchConfig["responseType"],
     isRetriable: boolean,
-  ): Promise<T> {
+    cancel: AttemptCancel | undefined,
+  ): Promise<{ data: T; bytes: number }> {
+    const signal = cancel?.signal;
+    const what = `Request to ${url}`;
     let attempt = 0;
     while (true) {
+      throwIfCancelled(signal, what);
       let response: Response;
       let body: string;
       try {
@@ -749,11 +1009,24 @@ export class FetchClient {
         // whatever was left of the first attempt's budget. Each attempt (the
         // initial one and every retry) is a "request start" for the
         // minIntervalMs throttle, so it goes through withSlot too.
-        response = await this.withSlot(() =>
-          fetch(url, {
-            ...fetchOptions,
-            signal: AbortSignal.timeout(this.timeoutMs),
-          }),
+        response = await this.withSlot(
+          () => {
+            this.countAttempt();
+            // Created when the attempt really starts. AbortSignal.timeout
+            // counts from creation, so one made before withSlot would spend
+            // the attempt's budget in the pacing queue, and a queued write
+            // would be reported as timed out without ever being sent.
+            const timeout = AbortSignal.timeout(this.timeoutMs);
+            return fetch(url, {
+              ...fetchOptions,
+              signal:
+                signal !== undefined && cancel?.interruptAttempt
+                  ? AbortSignal.any([signal, timeout])
+                  : timeout,
+            });
+          },
+          signal,
+          url,
         );
         // The body read is part of the attempt. The timeout signal also
         // covers it, and a body that stalls or is cut off is the same fault
@@ -761,11 +1034,22 @@ export class FetchClient {
         // becomes a RequestTimeoutError, not a bare DOMException (#52).
         body = await response.text();
       } catch (networkError) {
+        // A cancel is classified first. Under AbortSignal.any, fetch rejects
+        // with the signal's reason or a bare AbortError, which the code below
+        // would retry or report as a timeout.
+        if (networkError instanceof CallCancelledError) throw networkError;
+        if (cancel?.interruptAttempt && signal?.aborted) {
+          throw new CallCancelledError(what, { cause: signal.reason });
+        }
         // fetch and the body read reject on network faults (ECONNRESET, DNS,
         // etc.) and on our own timeout. Both are transient, so safe reads
         // back off and retry.
         if (isRetriable && attempt < this.maxRetries) {
-          await this.sleep(this.backoffDelay(attempt));
+          await abandonOnAbort(
+            this.sleep(this.backoffDelay(attempt)),
+            signal,
+            what,
+          );
           attempt += 1;
           continue;
         }
@@ -777,14 +1061,15 @@ export class FetchClient {
           : networkError;
       }
 
-      // Capture rate-limit headers from every response, success or error.
-      this.rateLimit = parseRateLimitHeaders(response.headers);
+      // Capture rate-limit headers from every response, success or error. A
+      // response with none must not overwrite an earlier snapshot.
+      const snapshot = parseRateLimitHeaders(response.headers);
+      if (carriesRateLimitData(snapshot)) this.rateLimit = snapshot;
 
       if (!response.ok) {
         const status = response.status;
 
         if (status === 429) {
-          const snapshot = this.rateLimit;
           const retryAfterMs =
             snapshot.retryAfterSeconds !== undefined
               ? snapshot.retryAfterSeconds * 1000
@@ -795,7 +1080,7 @@ export class FetchClient {
             attempt < this.maxRetries &&
             retryAfterMs <= this.maxRetryAfterMs
           ) {
-            await this.sleep(retryAfterMs);
+            await abandonOnAbort(this.sleep(retryAfterMs), signal, what);
             attempt += 1;
             continue;
           }
@@ -817,7 +1102,11 @@ export class FetchClient {
           isRetriable &&
           attempt < this.maxRetries
         ) {
-          await this.sleep(this.backoffDelay(attempt));
+          await abandonOnAbort(
+            this.sleep(this.backoffDelay(attempt)),
+            signal,
+            what,
+          );
           attempt += 1;
           continue;
         }
@@ -837,14 +1126,17 @@ export class FetchClient {
 
       // Parse response
       if (responseType === "text") {
-        return body as T;
+        return { data: body as T, bytes: body.length };
       }
       const contentType = response.headers.get("content-type");
       if (contentType?.includes("application/json")) {
         // Parse via text so oversized ids survive without precision loss.
-        return parseJsonWithLargeInts(body) as T;
+        return {
+          data: parseJsonWithLargeInts(body) as T,
+          bytes: body.length,
+        };
       }
-      return body as T;
+      return { data: body as T, bytes: body.length };
     }
   }
 
@@ -888,7 +1180,8 @@ const HOUR_MS = 60 * MINUTE_MS;
  * is left uncached.
  */
 export function intervalsCacheTtl(path: string): number | null {
-  // Activity data streams: matched by prefix, since the id is followed by
+  // Activity data streams: one superset URL per activity (see
+  // loadIntervalsStreams). Matched by prefix, since the id is followed by
   // arbitrary stream-selector content (a comma-separated list, a `.json`
   // extension). The path here is already query-stripped (toPath), so this
   // is about the selector living in the path segment itself, not a query.
@@ -930,13 +1223,22 @@ export function intervalsCacheTtl(path: string): number | null {
 }
 
 /**
+ * The response cache's budget on summed response-text length (32 MiB). A
+ * 4-hour activity's full stream set is about 1.25-1.4 MB of text, and the
+ * parsed objects take roughly 1-2x that.
+ */
+const RESPONSE_CACHE_MAX_BYTES = 32 * 1024 * 1024;
+
+/**
  * Create an instance for the intervals.icu API. intervals.icu sends no
  * rate-limit headers (verified 2026-09-24); its draft limits are 5,000
  * requests/day and 2,500 per 15 minutes per API key, and about 10/s per IP.
  * With no headers to react to, the client spaces requests 200ms apart instead
- * of reacting after the fact.
+ * of reacting after the fact. Sustained, that spacing allows 4,500 requests
+ * per 15 minutes, more than the 2,500 draft limit, so /health's
+ * `upstream_requests` shows how much of it this process uses.
  */
 export const intervalsApi = new FetchClient("https://intervals.icu/api/v1", {
   minIntervalMs: 200,
-  cache: { ttlForPath: intervalsCacheTtl },
+  cache: { ttlForPath: intervalsCacheTtl, maxBytes: RESPONSE_CACHE_MAX_BYTES },
 });

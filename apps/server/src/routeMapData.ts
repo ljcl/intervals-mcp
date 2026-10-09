@@ -23,7 +23,7 @@
  * stream via `mapAnchors.ts`.
  */
 
-import { activityDisplayName } from "./formatters";
+import { activityDisplayName, round } from "./formatters";
 import {
   type IntervalsActivity,
   type IntervalsInterval,
@@ -42,6 +42,12 @@ import {
   indexAtOrAfterTime,
   lastValuePerBucket,
 } from "./streamDownsample";
+import {
+  LATLNG_DECIMALS,
+  rawUnitDecimals,
+  roundColumn,
+  STREAM_DECIMALS,
+} from "./streamPrecision";
 
 /** Points after downsampling; matches the other apps' `MAX_CHART_POINTS`. */
 export const MAX_ROUTE_MAP_POINTS = 1000;
@@ -238,11 +244,50 @@ function attachWaypoints(
 }
 
 /**
+ * Rounds the payload for the wire: each coordinate to
+ * {@link LATLNG_DECIMALS}, each stream with `rawUnitDecimals`
+ * (`streamPrecision.ts`). It runs last, so lap markers and waypoints anchor
+ * on full-precision values. `start` and `end` come from the rounded
+ * coordinates, so they stay equal to the first and last points.
+ */
+function roundForWire(data: RouteMapData): RouteMapData {
+  if (data.coordinates.length === 0) return data;
+
+  const coordinates = data.coordinates.map(([lat, lng]): [number, number] => [
+    round(lat, LATLNG_DECIMALS),
+    round(lng, LATLNG_DECIMALS),
+  ]);
+
+  const source = data.streams ?? {};
+  const streams: RouteMapStreams = {};
+  if (source.time) {
+    streams.time = roundColumn(source.time, STREAM_DECIMALS.time);
+  }
+  if (source.distance) {
+    streams.distance = roundColumn(source.distance, STREAM_DECIMALS.distance);
+  }
+  for (const key of METRIC_KEYS) {
+    const values = source[key];
+    if (values) streams[key] = roundColumn(values, rawUnitDecimals(key));
+  }
+
+  return {
+    ...data,
+    coordinates,
+    start: coordinates[0] ?? null,
+    end: coordinates.at(-1) ?? null,
+    streams,
+  };
+}
+
+/**
  * Builds the route-map app's wire shape from a fetched activity, its loaded
  * streams (`loadIntervalsStreams`, or `null` for a stream-less activity,
  * e.g. a manual entry), its intervals (`activity.icu_intervals ?? []`,
  * passed separately so this stays pure and testable without threading the
- * whole activity through), and any caller-supplied waypoints.
+ * whole activity through), and any caller-supplied waypoints. Every stream
+ * value carries at most 2 decimals; coordinates keep 5 (see
+ * {@link roundForWire}).
  */
 export function buildRouteMapData(
   activity: IntervalsActivity,
@@ -250,8 +295,7 @@ export function buildRouteMapData(
   intervals: readonly IntervalsInterval[],
   waypoints?: WaypointInput[],
 ): RouteMapData {
-  return attachWaypoints(
-    buildGeometry(activity, streams, intervals),
-    waypoints,
+  return roundForWire(
+    attachWaypoints(buildGeometry(activity, streams, intervals), waypoints),
   );
 }

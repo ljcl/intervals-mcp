@@ -11,6 +11,7 @@ import {
   ResourceNotFoundError,
   Server,
   type ToolAnnotations,
+  TRACEPARENT_META_KEY,
 } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import {
@@ -34,6 +35,7 @@ import {
   buildCadenceTrendData,
   type CadenceTrendData,
 } from "./cadenceTrendData";
+import { type CallFailure, type CallScope, runInCallScope } from "./callScope";
 import {
   clientSupportsMcpApps,
   MCP_APP_MIME_TYPE,
@@ -71,9 +73,19 @@ import {
 } from "./progress";
 import { completePromptArgument, getPrompt, listPrompts } from "./prompts";
 import { buildRouteMapData, type RouteMapData } from "./routeMapData";
-import { recordToolCall, type ToolOutcome } from "./telemetry";
+import {
+  ERROR_RESULT_CLASS,
+  parseTraceparent,
+  recordToolCall,
+  type ToolOutcome,
+  type TraceIds,
+} from "./telemetry";
 import { READ_ONLY } from "./tools/_annotations";
-import { prefixedErrorText, toolErrorText } from "./tools/_errors";
+import {
+  prefixedErrorText,
+  toolErrorText,
+  toolFailureOf,
+} from "./tools/_errors";
 import {
   idJsonSchemaOverride,
   intervalsActivityIdInput,
@@ -1410,17 +1422,18 @@ async function handleViewRouteMap(
 
 /**
  * Fetch both intervals.icu activities and run the same aggregate comparison
- * the compare-activities text tool uses. getIntervalsActivity is TTL-cached
- * in fetchClient, so the view + data-tool pair costs one fetch per activity,
- * not two.
+ * the compare-activities text tool uses. Same fetch options as
+ * `get-activity-streams-raw` (`intervals: true`): the cache key is the full
+ * request URL, so opening the compare app reads each activity once, for the
+ * view, the data tool and the app's two streams calls together.
  */
 async function loadCompareActivitiesData(
   args: Record<string, unknown>,
   token: string,
 ): Promise<ReturnType<typeof buildComparison>> {
   const [activity1, activity2] = await Promise.all([
-    getIntervalsActivity(token, String(args.activityId1)),
-    getIntervalsActivity(token, String(args.activityId2)),
+    getIntervalsActivity(token, String(args.activityId1), { intervals: true }),
+    getIntervalsActivity(token, String(args.activityId2), { intervals: true }),
   ]);
   return buildComparison(activity1, activity2);
 }
@@ -1519,7 +1532,18 @@ export interface DispatchOptions {
     rendersApps: boolean;
     /** `clientInfo.name`, when the client sent one. */
     name?: string;
+    /** `clientInfo.version`, when the client sent one. */
+    version?: string;
   };
+  /** The ids in the request's W3C `traceparent`, when it carried a valid one. */
+  trace?: TraceIds;
+  /**
+   * Aborts when the client closes the request (its cancel or its own
+   * timeout), when the response stream is cancelled, and at shutdown. It
+   * rides the call scope into every intervals.icu request. Absent means the
+   * call cannot be cancelled.
+   */
+  signal?: AbortSignal;
 }
 
 /**
@@ -1533,10 +1557,22 @@ export interface DispatchOptions {
  * `process.env.INTERVALS_API_KEY` behind its own guard: that gives every
  * tool its own not-configured wording. Resolving here gives one message.
  */
-export async function dispatchToolCall(
+export function dispatchToolCall(
   name: string,
   rawArgs: Record<string, unknown> | undefined,
-  { progress = NO_PROGRESS, client }: DispatchOptions = {},
+  options: DispatchOptions = {},
+): Promise<ToolCallResult> {
+  const scope: CallScope = { signal: options.signal };
+  return runInCallScope(scope, () =>
+    runToolCall(scope, name, rawArgs, options),
+  );
+}
+
+async function runToolCall(
+  scope: CallScope,
+  name: string,
+  rawArgs: Record<string, unknown> | undefined,
+  { progress = NO_PROGRESS, client, trace }: DispatchOptions,
 ): Promise<ToolCallResult> {
   const context: ToolCallContext = {
     clientRendersApps: client?.rendersApps ?? false,
@@ -1548,27 +1584,45 @@ export async function dispatchToolCall(
   const finish = (
     outcome: ToolOutcome,
     result: ToolCallResult,
-    errorClass?: string,
+    failure?: CallFailure,
+    dispatched = true,
   ): ToolCallResult => {
-    recordToolCall({
-      tool: name,
-      duration_ms: Math.round(performance.now() - startedAt),
-      outcome,
-      ...(errorClass ? { error_class: errorClass } : {}),
-      client_apps: context.clientRendersApps,
-      ...(client?.name ? { client_name: client.name } : {}),
-    });
+    recordToolCall(
+      {
+        tool: name,
+        duration_ms: Math.round(performance.now() - startedAt),
+        // The SDK drops an aborted call's result, and a client leaving is not a
+        // server error. Read here, before returning: the SDK aborts the signal
+        // after every response.
+        outcome: scope.signal?.aborted ? "cancelled" : outcome,
+        error_class: failure?.error_class,
+        http_status: failure?.http_status,
+        client_apps: context.clientRendersApps,
+        // recordToolCall bounds both before they reach the log.
+        client_name: client?.name,
+        client_version: client?.version,
+        trace_id: trace?.trace_id,
+        parent_id: trace?.parent_id,
+      },
+      { dispatched },
+    );
     return result;
   };
 
   const handler = APP_TOOL_HANDLERS[name] ?? TOOL_EXECUTORS.get(name);
   if (!handler) {
-    return finish("error", {
-      isError: true,
-      content: [
-        { type: "text", text: prefixedErrorText(`Unknown tool: ${name}`) },
-      ],
-    });
+    return finish(
+      "error",
+      {
+        isError: true,
+        content: [
+          { type: "text", text: prefixedErrorText(`Unknown tool: ${name}`) },
+        ],
+      },
+      undefined,
+      // The name is the client's text: it shares the one `unknown` counter.
+      false,
+    );
   }
 
   let args: Record<string, unknown> = rawArgs ?? {};
@@ -1614,7 +1668,7 @@ export async function dispatchToolCall(
         isError: true,
         content: [{ type: "text", text: prefixedErrorText(message) }],
       },
-      error instanceof Error ? error.constructor.name : undefined,
+      toolFailureOf(error),
     );
   }
 
@@ -1639,8 +1693,15 @@ export async function dispatchToolCall(
           }
         : handled;
     // A handler that returns `isError` failed as surely as one that threw; the
-    // counters would flatter the server if only throws counted.
-    return finish(result.isError ? "error" : "ok", result);
+    // counters would flatter the server if only throws counted. A tool that
+    // translated an error noted it in the scope; a refusal has no exception.
+    return result.isError
+      ? finish(
+          "error",
+          result,
+          scope.failure ?? { error_class: ERROR_RESULT_CLASS },
+        )
+      : finish("ok", result);
   } catch (error) {
     if (error instanceof NoLatestRunError)
       return finish(
@@ -1649,7 +1710,7 @@ export async function dispatchToolCall(
           isError: true,
           content: [{ type: "text", text: prefixedErrorText(error.message) }],
         },
-        error.constructor.name,
+        toolFailureOf(error),
       );
     // The app data handlers throw rather than return `isError`, so this is
     // where their 404s and rate limits get the same typed treatment and
@@ -1665,7 +1726,7 @@ export async function dispatchToolCall(
           },
         ],
       },
-      error instanceof Error ? error.constructor.name : undefined,
+      toolFailureOf(error),
     );
   }
 }
@@ -1690,6 +1751,8 @@ export function createServer(): Server {
     {
       // Built here rather than as a constant: the text names the configured
       // time zone, which is read at serve time like every other tool's.
+      // createServer runs per HTTP request, so a zone resolved after startup
+      // (athleteTimeZone.ts) reaches the next server/discover.
       instructions: serverInstructions(getTimeZone()),
       capabilities: {
         tools: {},
@@ -1742,9 +1805,10 @@ export function createServer(): Server {
     // The shipped envelope type is `{}`, so the reserved keys are read by name.
     const envelope = ctx.mcpReq.envelope as Record<string, unknown> | undefined;
     const clientInfo = envelope?.[CLIENT_INFO_META_KEY] as
-      | { name?: unknown }
+      | { name?: unknown; version?: unknown }
       | undefined;
     const result = await dispatchToolCall(name, args, {
+      signal: ctx.mcpReq.signal,
       // `ctx.mcpReq.notify` is already scoped to this request, which is what
       // lets the transport put the notification on the same SSE stream the
       // response will arrive on.
@@ -1758,7 +1822,16 @@ export function createServer(): Server {
         ),
         name:
           typeof clientInfo?.name === "string" ? clientInfo.name : undefined,
+        version:
+          typeof clientInfo?.version === "string"
+            ? clientInfo.version
+            : undefined,
       },
+      trace: parseTraceparent(
+        (ctx.mcpReq._meta as Record<string, unknown> | undefined)?.[
+          TRACEPARENT_META_KEY
+        ],
+      ),
     });
     // The era-aware projection (SEP-2106 §4.3 text auto-append; identity for
     // this server's always-text, object-structured results) lives in the SDK

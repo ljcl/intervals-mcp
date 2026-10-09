@@ -15,6 +15,7 @@ import {
   type IntervalsStream,
 } from "../intervalsClient";
 import {
+  INTERVALS_STREAM_TYPES,
   type IntervalsStreams,
   loadIntervalsStreams,
 } from "../intervalsStreams";
@@ -381,7 +382,7 @@ describe("getActivityStreamsTool.execute", () => {
     mockedGetActivityStreams.mockReset();
   });
 
-  it("fetches the activity then its streams, always including time in the fetch", async () => {
+  it("fetches the activity then the stream superset, returning only the requested types", async () => {
     mockedGetActivity.mockResolvedValueOnce(runActivity);
     mockedGetActivityStreams.mockResolvedValueOnce(rawStreams);
 
@@ -392,9 +393,7 @@ describe("getActivityStreamsTool.execute", () => {
 
     expect(mockedGetActivity).toHaveBeenCalledWith("key", "i189807578");
     expect(mockedGetActivityStreams).toHaveBeenCalledWith("key", "i189807578", [
-      "heartrate",
-      "time",
-      "distance",
+      ...INTERVALS_STREAM_TYPES,
     ]);
     expect(result.isError).toBeUndefined();
     expect(Object.keys(result.structuredContent?.streams ?? {})).toEqual([

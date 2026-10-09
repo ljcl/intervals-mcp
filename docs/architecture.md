@@ -60,9 +60,16 @@ never per-tool.
 - Parses `X-RateLimit-*` / `Retry-After` headers into a snapshot
   (`intervalsApi.getRateLimitSnapshot()`); intervals.icu sends none of these
   today (verified 2026-09-24), so the client paces itself instead of reacting
-  to headers; see "Request pacing" below.
+  to headers; see "Request pacing" below. The snapshot is stored only when a
+  response carries rate-limit data, so a header-less response never replaces
+  it and the snapshot stays `null` today.
 - Retries 429s honouring `Retry-After` (bounded, so a call never blocks on a
-  full 15-minute window).
+  full 15-minute window). The 429 path reads that response's own snapshot, so
+  a header-less 429 still gets a `RateLimitError` ("wait a few minutes").
+- Counts every request attempt it starts (`getAttemptCounts()`, shown as
+  `upstream_requests` in `/health`). The count sits in the same closure that
+  puts the attempt on the wire, so retries and writes count, and cache hits,
+  joined reads and attempts cancelled in the queue do not.
 - Retries transient 5xx and network faults with bounded exponential backoff —
   GET/HEAD only, never writes. Transient includes Cloudflare's 520-524
   (intervals.icu sits behind Cloudflare; these mean Cloudflare got no answer
@@ -70,6 +77,8 @@ never per-tool.
 - The body read is part of the attempt: the timeout signal covers it, a GET
   whose body stalls or is cut off retries, and a timeout during the read is a
   `RequestTimeoutError` like one during the connect (#52).
+- `FetchClient` stops the upstream work of a cancelled call scope; see
+  "Cancellation".
 - An error body goes into `HttpError.message` only as a one-line summary
   (`summarizeErrorBody`): an HTML page becomes its `<title>`, anything else
   is cut to 200 characters. `handleApiError` uses the same summary. The raw
@@ -98,11 +107,13 @@ never per-tool.
   (the helper's own comment explains why it is not the whole result). The
   dispatcher's own texts (unknown tool, invalid arguments, missing API key)
   have no error to translate, so they get the prefix from
-  `prefixedErrorText` in the same file. Never
-  string-match a message for
-  "Record Not Found", "404", or a `SUBSCRIPTION_REQUIRED:` prefix: the typed
-  errors survive `handleApiError` precisely so callers can branch on them,
-  and a message that merely mentions "404" is not a missing record.
+  `prefixedErrorText` in the same file. `toolErrorText` also notes the
+  error's class and HTTP status in the call scope (`noteCallFailure`,
+  imported from the leaf `callScope.ts`) for the call's log line. Never
+  string-match a message for "Record Not Found", "404", or a
+  `SUBSCRIPTION_REQUIRED:` prefix: the typed errors survive `handleApiError`
+  precisely so callers can branch on them, and a message that merely
+  mentions "404" is not a missing record.
 
 ## Request pacing
 
@@ -112,8 +123,25 @@ intervals.icu sends no `X-RateLimit-*` or `Retry-After` headers (verified
 gap between the *start* of consecutive request attempts, shared across
 concurrent callers via a single next-available-slot clock, not a per-caller
 delay. Draft limits (go-live unconfirmed): 5,000 requests/day and 2,500 per
-rolling 15 minutes per key, about 10/s per IP; 200ms spacing stays well under
-that ceiling without needing header feedback.
+rolling 15 minutes per key, about 10/s per IP. 200ms spacing respects the
+per-IP rate. Sustained, it allows 4,500 requests per 15 minutes, more than the
+2,500 draft limit, so `FetchClient` counts attempts for `/health`.
+
+A caller whose call is cancelled leaves the queue at once. It passes its turn
+on when it would have come, and it gives its slot back.
+
+The slot clock is `performance.now()` (monotonic), bound and captured when
+the client is built. A wall-clock step back (VM resume, NTP) therefore cannot
+stall the next request. Cache TTLs stay on the wall clock on purpose, so a
+host suspend expires cached entries. Capturing the bound function also keeps
+the singleton on the real clock under vitest's default fake timers, which fake
+`performance` from 0. Only the clock is real. The default sleep still calls
+the global `setTimeout`, so under fake timers a request that must wait for
+its slot needs the timers advanced.
+
+The attempt counters' rolling 15 minutes and UTC day use the wall clock
+(`wallNow`), like intervals.icu's own windows. If the wall clock steps back,
+the counters can over-count until it catches up.
 
 ## Response cache
 
@@ -124,7 +152,7 @@ per-tool. Path patterns and current TTLs (`fetchClient.ts`):
 
 | Path | TTL | Rationale |
 | ---- | --- | --------- |
-| `/activity/{id}/streams*` | 10m | Immutable once intervals.icu has processed the activity |
+| `/activity/{id}/streams*` | 10m | One superset URL per activity (see [Streams](#streams)); immutable once processed |
 | `/activity/{id}/intervals` | 10m | Same |
 | `/activity/{id}` | 10m | Invalidated on `update-activity` writes |
 | `/athlete/{id}/gear` | 10m | Rarely changes |
@@ -147,9 +175,9 @@ Everything else is left uncached.
   entry for free. An epoch-based bound would key every call uniquely and the
   TTL would never hit; a calendar-day string already has coarse enough
   granularity that it doesn't.
-- Cache key is the full URL (query included, so distinct stream resolutions and
-  date windows stay separate); TTL and invalidation match the query-stripped
-  path.
+- Cache key is the full URL (query included, so date windows and detail
+  options such as `?intervals=true` stay separate); TTL and invalidation match
+  the query-stripped path.
 - A successful write invalidates every cached read on the same branch —
   descendants (so `update-activity` drops the activity's cached
   detail/streams/zones/laps) **and** ancestors, since a write to a
@@ -165,6 +193,12 @@ Everything else is left uncached.
   does not leave a stale pre-write entry being served afterward.
 - `skipCache: true` bypasses entirely; the `update-activity` append read uses
   it so it never composes onto a stale description.
+- **The cache is bounded by entries and bytes.** It holds at most 200 entries
+  and about 32 MiB of response text (`RESPONSE_CACHE_MAX_BYTES`), measured as
+  the body's length before parsing. LRU eviction runs until the cache is under
+  both bounds. A response bigger than the whole budget is served and
+  coalesced, but not cached. Every write sweeps out expired entries, so an
+  entry that nobody reads again does not wait for LRU eviction.
 - **The cache never shares references.** Every value it hands out (a hit, the
   miss that populated it, a coalesced awaiter's copy) is a `structuredClone`,
   so a consumer may sort, splice, or rename in place without rewriting the
@@ -183,16 +217,31 @@ Everything else is left uncached.
   drops matching in-flight entries too, and an entry that was dropped mid
   flight never stores its (pre-write) result. `skipCache` reads bypass the map
   as well as the cache; paths the policy declines are never coalesced.
+  The shared read runs on its own `AbortController`, never a caller's signal.
+  A cancelled waiter detaches and the read carries on for the others. The
+  last waiter to leave abandons the read, and nobody joins an abandoned
+  entry. The promise has a no-op `catch`, because every waiter may have left
+  and nobody is then sure to observe a rejection.
 
 ## Streams
 
 Every stream read goes through `loadIntervalsStreams` in
 `intervalsStreams.ts`, never a bare `intervalsApi.get`. It calls
-`GET /activity/{id}/streams.json?types=...`, and callers ask for whichever
-stream types their tool or app needs; intervals.icu returns each requested
-type as `{type, data, data2, valueTypeIsArray, ...}` (`latlng` puts latitude
-in `data` and longitude in `data2`; see docs/api-notes.md for the full
-response shape and per-type null patterns from a live probe).
+`GET /activity/{id}/streams.json?types=...`; intervals.icu returns each
+requested type as `{type, data, data2, valueTypeIsArray, ...}` (`latlng`
+puts latitude in `data` and longitude in `data2`; see docs/api-notes.md for
+the full response shape and per-type null patterns from a live probe).
+
+**One request per activity.** Callers ask for whichever stream types their
+tool or app needs, but `loadIntervalsStreams` always requests
+`INTERVALS_STREAM_TYPES`: all 13 types any caller uses, sorted. So every
+tool's and app's read of one activity is the same URL. It is fetched once
+and then served from the [response cache](#response-cache) or the in-flight
+map. The loader returns only the columns the caller asked for. `moving`
+counts `velocity_smooth` only when the caller asked for it, so each tool's
+output is the same as before #71. Before #71 the cache key carried each
+tool's own type list, and one "analyse this run" chat could fetch the same
+streams five times. A type added to the list is paid for on every read.
 
 Only a genuine 404 or an empty result throws
 `IntervalsStreamsUnavailableError`, the one error a caller may degrade on
@@ -226,6 +275,19 @@ stopped sample's distance but drop its time; before #73 every gap over 5 s
 was a stop, and a smart-recording run read at about twice its real pace.
 The rule assumes that intervals.icu keeps smart-recording gaps in the
 `time` stream; that is not verified yet (docs/api-notes.md).
+
+**Wire precision has one table.** `STREAM_DECIMALS` in `streamPrecision.ts`
+gives each scalar stream its decimal places, and no stream gets more than 2.
+`get-activity-streams` rounds in its output unit, so its cadence is whole
+spm. The chart and route-map payloads round in intervals.icu's unit, so
+their cadence (strides/min, which the app doubles) keeps one decimal
+(`rawUnitDecimals`). Coordinates keep 5 decimals (`LATLNG_DECIMALS`,
+about 1.1 m) in both `get-activity-streams` and the route-map payload, by
+design: 2 decimals is about 1.1 km.
+Both mappers round last, into new arrays, so band indices, lap markers and
+waypoints use the full-precision values. Before #71 the payloads sent raw
+bucket means such as `144.66666666666666`: a one-hour run with 12 streams
+was about 130 KB of chart JSON, and is now about 58 KB.
 
 **A sample with no time is dropped, and the loader counts it.**
 `loadIntervalsStreams` drops a sample whose `time` is `null`, with the same
@@ -361,6 +423,11 @@ and `get-training-load`. `STEP_CADENCE_ACTIVITY_TYPES` and
 `RUNNING_ACTIVITY_TYPES` add Walk and Hike on purpose: those have a step
 cadence but no pace.
 
+**Stream wire precision has one home.** `STREAM_DECIMALS` in
+`streamPrecision.ts`. `get-activity-streams` and the chart and route-map app
+payloads all round with it, so a precision change reaches all three at once
+(see [Streams](#streams)).
+
 **Best efforts inside one activity have one home.** `bestEffortWindows` in
 `activityBestEfforts.ts`: for each start sample, the first sample whose
 distance reaches the target, with the elapsed time scaled to exactly the
@@ -458,15 +525,42 @@ the raw message goes to the operator log.
 ## Per-call telemetry
 
 `dispatchToolCall` is timed end to end and emits one structured JSON line per
-call via `telemetry.ts`: tool name, duration, outcome, error class, the
-rate-limit snapshot, and which client made the call (`client_apps`,
-`client_name`). The timer starts **before token resolution**, so a
-not-connected call is recorded too — it cost the caller a round trip. A
+call via `telemetry.ts`: the finish time (`ts`), tool name, duration, outcome,
+the failure (`error_class`, `http_status`), the rate-limit snapshot, which
+client made the call (`client_apps`, `client_name`, `client_version`) and the
+W3C trace ids (`trace_id`, `parent_id`). The timer starts **before token
+resolution**, so a not-connected call is recorded too — it cost the caller a round trip. A
 handler returning `isError` counts as an error alongside a throw, or the
-counters would flatter the server. `recordToolCall` can never fail the call it
-describes: the snapshot read and the serialize are both guarded, because a
-logging fault turning a successful call into an error is worse than a missing
-log line. The rolling counters back the authed half of `/health`.
+counters would flatter the server. A call whose client cancelled or
+disconnected records outcome `cancelled` instead. It counts in `calls` and
+`cancelled`, not in `errors`: a client leaving is not a server error.
+`recordToolCall` can never fail the call it describes: the snapshot read and
+the serialize are both guarded, because a logging fault turning a successful
+call into an error is worse than a missing log line. The rolling counters back
+the authed half of `/health`.
+
+`recordToolCall` stamps `ts` once and uses it for `last_called_at` too. It
+bounds the two client strings and the tool name, which is client text when the
+tool is unknown: trimmed, stripped of control and format characters and line
+separators (a client controls them, and a bidi override could hide text in a
+terminal), made well-formed, and cut to 64 code points. A name that is empty
+after bounding logs as `unknown`. The `/health` counters key on the name only
+for a dispatched tool; every unknown tool shares the one `unknown` key, so a
+client cannot grow the map.
+`parseTraceparent` reads the ids from `_meta.traceparent` and accepts only a
+valid W3C value: lower-case hex, no all-zero id, not version `ff`, and for
+version `00` exactly four fields. The `tools/call` handler passes the ids to
+`dispatchToolCall` as `trace`.
+
+`error_class` and `http_status` come from the call scope. `toolErrorText`
+notes them with `noteCallFailure` (see below), so every catch block that
+translates an error reports it without its own code. The two kinds of branch
+that return `isError` without it note the error themselves: the stream tools'
+`IntervalsStreamsUnavailableError` and analysis-error branches, and
+`update-activity`'s two ambiguous-write branches. The last note wins. A call
+that returns `isError` with no note, such as an argument refusal, logs the
+`ToolErrorResult` sentinel. An unknown tool and an `invalid_args` call carry no
+failure; their `outcome` says why.
 
 The client fields come from the request envelope. The `tools/call` handler
 reads the `io.modelcontextprotocol/clientCapabilities` and
@@ -488,6 +582,28 @@ the 2026-07-28 revision deprecates it (SEP-2577), and a record holds nothing
 the caller does not already know (#72). A request that carries the
 `io.modelcontextprotocol/logLevel` envelope key gets its normal response and
 no `notifications/message`.
+
+### Rejected requests
+
+`mcpEndpoint.ts` writes one `mcp_rejected` line for each answer of HTTP 400 or
+above, except a client-closed 499 (#69). The SDK reports a handler failure
+through `onerror` while it builds the response. A private, exchange-scoped
+`AsyncLocalStorage` (unrelated to `callScope.ts`) collects those reports for
+the exchange that caused them. `handleRequest` reads them once the response
+is known and folds them into the one line, so a rejected exchange never
+prints a second `MCP handler error:` line. The first report is the `reason`.
+A 5xx keeps its stack inside the line, bounded by `telemetry.ts`.
+
+A report that arrives after the response, such as a stream that fails
+mid-body, finds `answered` set and prints as `MCP handler error:`, as does a
+report for an exchange that was served. The endpoint reads the JSON-RPC code
+from a clone of the response. It describes the request from the parsed body
+(a batch by its first element) and never reads the `Authorization` header.
+
+`mcpAuth.ts` writes the line for a 401, because that answer never reaches the
+endpoint. It does not parse the body, so that line has header-derived fields
+only. `/health` and the HEALTHCHECK use `requestHasValidSecret`, which does not
+log.
 
 ## Progress notifications
 
@@ -514,6 +630,69 @@ for.
   not killed by the host's default timeout), and each hook exposes the latest
   message for `LoadingState` to render.
 
+## Cancellation
+
+`callScope.ts` holds the per-call state below the handler: an
+`AsyncLocalStorage` with the call's abort signal (#70) and the failure that
+the call's log line reports (#69). Facts a handler needs to see
+stay in `ToolCallContext`. `dispatchToolCall` opens the scope once, from the
+`signal` the `tools/call` handler passes (`ctx.mcpReq.signal`). The scope
+covers argument validation, `"latest"` resolution and the handler.
+`FetchClient` reads it. Work meant to outlive a call must not start inside
+one.
+
+The SDK aborts `ctx.mcpReq.signal` when:
+
+- the client closes the request. A 2026-07-28 SDK client does this for a user
+  cancel and for its own timeout. The endpoint then answers 499 with no body.
+- the SSE response stream is cancelled.
+- shutdown runs `mcp.close()`.
+- the response has been written. This happens after every call.
+
+A `notifications/cancelled` sent as a separate POST reaches a fresh
+per-request server and does nothing.
+
+A cancel reaches the server only when the HTTPS tunnel or reverse proxy closes
+its upstream request when the client goes.
+
+`FetchClient` reads the signal once per request and stops a cancelled call's
+upstream work:
+
+- A caller's own read combines the call signal with the per-attempt timeout
+  (`AbortSignal.any`), so a cancel aborts an attempt on the wire.
+- The timeout is created when the attempt starts, never while the attempt
+  waits in the pacing queue. A queued request therefore cannot time out
+  before it is sent.
+- After a cancel, no attempt, retry, backoff or pacing wait starts. A queued
+  caller leaves and gives its slot back.
+- `CallCancelledError` is classified before the timeout check, so a cancel is
+  never a `RequestTimeoutError`. Its `cause` is the abort reason.
+- Coalescing: a cancelled waiter detaches. The last waiter to leave abandons
+  the shared read. Its waits and retries stop. An attempt already on the wire
+  runs to its outcome and may fill the cache, because intervals.icu already
+  has the request. An abandoned read is never joined.
+- Writes: a write that has not started never starts. A write that has
+  started is never interrupted. A `CallCancelledError` from a write
+  therefore means it was not sent.
+- A cache hit is still served to a cancelled call.
+
+Above `FetchClient`:
+
+- `update-activity` treats `CallCancelledError` from the PUT as a definite
+  non-write. The write never left, so the text is a plain failure, not "may
+  already have been applied".
+- `finish` in `dispatchToolCall` records outcome `cancelled` when the signal
+  has aborted. It reads the signal before it returns, because the SDK aborts
+  it after every response. The SDK drops the result of an aborted call.
+
+There is no whole-call deadline. The 2026-07-28 SDK client already turns its
+own timeout into a cancel. A server deadline would need new error text and
+could cut a legitimate long scan. The `cancelled` counter shows first whether
+stuck calls happen.
+
+Shutdown exits right after `mcp.close()`, so a call cut there may not get its
+`tool_call` line.
+
 ## API key access
 
 `dispatchToolCall` resolves the intervals.icu API key once per call via
@@ -522,7 +701,52 @@ handler as its second argument. Tools never read
 `process.env.INTERVALS_API_KEY`; adding a tool means accepting
 `(args, token)`, not adding a guard. A missing or blank key throws a typed
 `MissingApiKeyError`; dispatch maps that to one not-configured message naming
-`INTERVALS_API_KEY`.
+`INTERVALS_API_KEY`. The startup time zone lookup (`athleteTimeZone.ts`) is
+the one caller of `getIntervalsApiKey()` outside dispatch.
+
+## Configuration and time zone
+
+`checkConfig()` (`config.ts`) is the startup gate. It checks every variable
+at once, and `index.ts` exits 1 on any error. `index.ts` stays a thin shell
+that coverage excludes, so the logic lives in tested modules, and
+`scripts/docker-smoke.sh` proves the exit on the image's Bun.
+
+`getTimeZone()` is the one synchronous home for the zone every local date
+uses: "today", default date windows, and the server instructions.
+`timeZoneSetting()` returns the same zone with its source (`env`,
+`intervals.icu` or `fallback`) for `/health` and the startup log. The
+athlete's zone is module state in `config.ts`, so none of the callers change
+and `config.ts` never imports the client (no `config` to `intervalsClient`
+cycle).
+
+- **Precedence.** A `TZ` other than exactly `UTC`, then the athlete's zone,
+  then the process zone (UTC when Intl cannot name a usable one). Exactly
+  `UTC` counts as unset because `docker-compose.yml` injects `TZ=${TZ:-UTC}`;
+  `Etc/UTC` pins UTC. An invalid `TZ` never reaches `getTimeZone()`, because
+  `checkConfig()` stops startup for it.
+- **Startup wait.** `index.ts` awaits `initAthleteTimeZone()` before
+  `Bun.serve`, because `getTimeZone()` is synchronous at every call site,
+  including the instructions `createServer` builds per request. The wait is
+  bounded (`TIME_ZONE_STARTUP_WAIT_MS`, 5 s); a late answer still applies,
+  and the next request sees it.
+- **Re-runs.** Only after a transient failure (429, Cloudflare challenge,
+  timeout, 5xx, network fault, schema mismatch): after 1, 5 and 15 minutes,
+  then hourly. This is a one-shot startup task run again, not an HTTP retry:
+  each run goes through `FetchClient`'s own bounded retries and pacing. A
+  Cloudflare challenge (`response.cloudflareChallenge`) is a 403 that never
+  reached intervals.icu, so it counts as transient. Any other 4xx refusal can
+  never succeed, so it logs one `WARNING` and stops. The lookup runs outside
+  any tool call, so it has no call scope or signal.
+- **Security.** `GET /athlete/{id}` returns the athlete record, which carries
+  `icu_api_key`. `getAthleteTimeZone`'s schema is a plain `z.object` that
+  keeps only `timezone`, so parsing strips the key. `intervalsCacheTtl` has
+  no TTL for `/athlete/{id}`, so the record is never cached; do not add one.
+- **Instructions.** The athlete's zone reaches `serverInstructions` through
+  `getTimeZone()`. The text's 1,800-character budget already covers the
+  longest name Intl accepts (32 characters,
+  `America/Argentina/ComodRivadavia`, #147), and
+  `server.integration.test.ts` checks that over the wire for the athlete
+  path.
 
 ## Resource ids
 
@@ -603,8 +827,9 @@ over 25,000 tokens: a 61 KB `get-activity-streams` payload and a 150 KB
   `dispatchToolCall` at its largest inputs against fixtures sized to fill
   them, and fails on a tool with no case, so a new tool cannot skip it.
   `scripts/live-check.ts` prints each response's size and flags one over
-  budget. App-only data feeds never reach the model and are not budgeted
-  (their payload size is #71).
+  budget. App-only data feeds never reach the model and are not budgeted;
+  their stream values are rounded with `STREAM_DECIMALS` (see
+  [Streams](#streams)).
 
 ## Input validation
 

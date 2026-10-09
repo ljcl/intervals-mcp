@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { CallCancelledError, runInCallScope } from "./callScope";
 import {
   describeRateLimit,
   FetchClient,
@@ -313,6 +314,82 @@ describe("FetchClient retry and rate-limit behaviour", () => {
     const snapshot = client.getRateLimitSnapshot();
     expect(snapshot?.shortTerm).toEqual({ limit: 100, usage: 10 });
     expect(snapshot?.daily).toEqual({ limit: 1000, usage: 200 });
+  });
+
+  it("keeps the snapshot null when a response carries no rate-limit headers", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(makeResponse('{"ok":true}')),
+    );
+
+    const client = newClient();
+    await client.get("/thing");
+
+    expect(client.getRateLimitSnapshot()).toBeNull();
+  });
+
+  it("keeps an earlier snapshot when a later response carries no headers", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        makeResponse("{}", {
+          headers: {
+            "x-ratelimit-limit": "100,1000",
+            "x-ratelimit-usage": "10,200",
+          },
+        }),
+      )
+      .mockResolvedValueOnce(makeResponse("{}"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = newClient();
+    await client.get("/one");
+    const first = client.getRateLimitSnapshot();
+    await client.get("/two");
+
+    expect(first?.shortTerm).toEqual({ limit: 100, usage: 10 });
+    expect(client.getRateLimitSnapshot()).toBe(first);
+  });
+
+  it("stores a snapshot from a 503 that carries only Retry-After", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        makeResponse("busy", {
+          status: 503,
+          headers: { "retry-after": "7" },
+        }),
+      ),
+    );
+
+    const client = newClient();
+    await client.put("/thing", {}).catch(() => {});
+
+    expect(client.getRateLimitSnapshot()).toMatchObject({
+      retryAfterSeconds: 7,
+    });
+  });
+
+  it("still throws a RateLimitError for a header-less 429 and stores no snapshot", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockImplementation(async () =>
+          makeResponse("slow down", { status: 429 }),
+        ),
+    );
+
+    const client = newClient();
+    const error = await client.get("/thing").catch((e) => e);
+
+    expect(error).toBeInstanceOf(RateLimitError);
+    expect(error.rateLimit).not.toBeNull();
+    expect(error.rateLimit.retryAfterSeconds).toBeUndefined();
+    expect(error.message).toBe(
+      "Rate limit reached; wait a few minutes and retry.",
+    );
+    expect(client.getRateLimitSnapshot()).toBeNull();
   });
 
   it("honours Retry-After on a 429 and retries to success", async () => {
@@ -712,14 +789,16 @@ describe("FetchClient response cache", () => {
     vi.unstubAllGlobals();
   });
 
-  // A cacheable path + an uncacheable one, plus an injectable clock for expiry.
-  const newCachingClient = (now: () => number = () => 0) =>
+  // A cacheable path + an uncacheable one, plus an injectable clock for expiry
+  // and an optional byte budget.
+  const newCachingClient = (now: () => number = () => 0, maxBytes?: number) =>
     new FetchClient("https://example.test", {
       maxRetries: 0,
       sleep: async () => {},
       cache: {
         ttlForPath: (path) => (path.startsWith("/activities/") ? 1000 : null),
         now,
+        maxBytes,
       },
     });
 
@@ -905,6 +984,80 @@ describe("FetchClient response cache", () => {
     client.clearResponseCache();
     await client.get("/activities/1");
 
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("evicts the least-recently-used response once the byte budget is spent (#71)", async () => {
+    // Each body is 10 characters: '{"id":"1"}'.
+    const fetchMock = vi.fn(async (url: string) =>
+      makeResponse(`{"id":"${url.slice(-1)}"}`),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = newCachingClient(() => 0, 25);
+    await client.get("/activities/1");
+    await client.get("/activities/2");
+    await client.get("/activities/3");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    // Two bodies fit in 25; the third evicted the first.
+    expect((await client.get("/activities/2")).data).toEqual({ id: "2" });
+    expect((await client.get("/activities/3")).data).toEqual({ id: "3" });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    expect((await client.get("/activities/1")).data).toEqual({ id: "1" });
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it("serves and coalesces a response bigger than the whole budget, but does not cache it (#71)", async () => {
+    const body = JSON.stringify({ pad: "x".repeat(90) });
+    expect(body).toHaveLength(100);
+    const fetchMock = vi.fn(async (url: string) =>
+      makeResponse(url.endsWith("/small") ? '{"id":"s"}' : body),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = newCachingClient(() => 0, 50);
+    await client.get("/activities/small");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await client.get("/activities/1");
+    await client.get("/activities/1");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    const [a, b] = await Promise.all([
+      client.get<{ pad: string }>("/activities/2"),
+      client.get<{ pad: string }>("/activities/2"),
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(a.data.pad).toHaveLength(90);
+    expect(b.data.pad).toHaveLength(90);
+
+    // The oversized responses did not evict the small one.
+    expect((await client.get("/activities/small")).data).toEqual({ id: "s" });
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it("keeps cache TTLs on the wall clock by default (#71)", async () => {
+    let wall = 1_000_000;
+    // Before construction: the cache captures its clock then.
+    vi.spyOn(Date, "now").mockImplementation(() => wall);
+    const fetchMock = vi.fn(async () => makeResponse('{"ok":true}'));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new FetchClient("https://example.test", {
+      maxRetries: 0,
+      sleep: async () => {},
+      cache: {
+        ttlForPath: (path) => (path.startsWith("/activities/") ? 1000 : null),
+      },
+    });
+    await client.get("/activities/1");
+    wall += 1001;
+    await client.get("/activities/1");
+
+    // A host suspend moves the wall clock, not the monotonic one; the entry
+    // must still expire.
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
@@ -1290,6 +1443,790 @@ describe("minIntervalMs throttle", () => {
     // The retry's own attempt is spaced from the initial attempt, same as
     // any other pair of consecutive starts.
     expect(starts).toEqual([0, 200]);
+  });
+
+  it("does not stall the next request when the wall clock steps back (#71)", async () => {
+    let wall = 10_000_000;
+    // Before construction: a client that paced on Date.now captured it then.
+    vi.spyOn(Date, "now").mockImplementation(() => wall);
+    const sleeps: number[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => makeResponse("{}")),
+    );
+
+    const client = new FetchClient("https://example.test", {
+      minIntervalMs: 200,
+      sleep: async (ms) => void sleeps.push(ms),
+    });
+    await client.get("/a");
+    // A VM resume or an NTP correction moves the wall clock back an hour.
+    wall = 6_400_000;
+    await client.get("/b");
+
+    // On the wall clock the second GET waited out the whole hour.
+    expect(Math.max(0, ...sleeps)).toBeLessThanOrEqual(200);
+  });
+
+  it("keeps pacing on the real clock under fake timers", async () => {
+    const realSetTimeout = globalThis.setTimeout;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => makeResponse("{}")),
+    );
+    const client = new FetchClient("https://example.test", {
+      minIntervalMs: 200,
+    });
+    await client.get("/a");
+    // Let the 200 ms slot pass in real time, so the next GET needs no wait.
+    // Only the clock is real: the default sleep still calls the global
+    // setTimeout, so under fake timers a request that must wait for its slot
+    // hangs until the test advances the timers.
+    await new Promise<void>((resolve) => realSetTimeout(resolve, 250));
+
+    vi.useFakeTimers();
+    try {
+      const outcome = await Promise.race([
+        client.get("/b").then(() => "done"),
+        new Promise<string>((resolve) =>
+          realSetTimeout(() => resolve("hung"), 1000),
+        ),
+      ]);
+      expect(outcome).toBe("done");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("FetchClient call cancellation (#70)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  interface Pending {
+    url: string;
+    init: RequestInit;
+    resolve: (response: Response) => void;
+    reject: (error: unknown) => void;
+  }
+
+  /**
+   * A fetch fake that answers only when the test says so. With `honourAbort`
+   * it rejects with the signal's reason when the signal aborts, as real
+   * fetch does.
+   */
+  const heldFetch = (honourAbort = false) => {
+    const pending: Pending[] = [];
+    const mock = vi.fn(
+      (url: string, init: RequestInit) =>
+        new Promise<Response>((resolve, reject) => {
+          pending.push({ url, init, resolve, reject });
+          if (honourAbort) {
+            init.signal?.addEventListener("abort", () =>
+              reject(init.signal?.reason),
+            );
+          }
+        }),
+    );
+    vi.stubGlobal("fetch", mock);
+    return { mock, pending };
+  };
+
+  const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+  const inCall = <T>(ac: AbortController, fn: () => Promise<T>): Promise<T> =>
+    runInCallScope({ signal: ac.signal }, fn);
+
+  const timeoutError = () => new DOMException("timed out", "TimeoutError");
+
+  const newClient = (maxRetries = 2) =>
+    new FetchClient("https://example.test", {
+      maxRetries,
+      baseDelayMs: 1,
+      sleep: async () => {},
+    });
+
+  const newCachingClient = (maxRetries = 0) =>
+    new FetchClient("https://example.test", {
+      maxRetries,
+      sleep: async () => {},
+      cache: {
+        ttlForPath: (path) => (path.startsWith("/activities/") ? 1000 : null),
+      },
+    });
+
+  /** A client on a fake clock whose sleeps the test records and releases. */
+  const newPacedClient = (
+    options: { maxRetries?: number; cache?: boolean } = {},
+  ) => {
+    const clock = { now: 0 };
+    const sleeps: Array<{ ms: number; wake: () => void }> = [];
+    const client = new FetchClient("https://example.test", {
+      maxRetries: options.maxRetries ?? 0,
+      minIntervalMs: 200,
+      now: () => clock.now,
+      sleep: (ms) =>
+        new Promise<void>((resolve) => {
+          sleeps.push({
+            ms,
+            wake: () => {
+              clock.now += ms;
+              resolve();
+            },
+          });
+        }),
+      ...(options.cache
+        ? {
+            cache: {
+              ttlForPath: (path: string) =>
+                path.startsWith("/activities/") ? 1000 : null,
+            },
+          }
+        : {}),
+    });
+    return { client, clock, sleeps };
+  };
+
+  it("gives a call's GET its own signal and aborts it with the call", async () => {
+    const { pending } = heldFetch(true);
+    const ac = new AbortController();
+    const result = inCall(ac, () => newClient().get("/a"));
+    const rejected = expect(result).rejects.toBeInstanceOf(CallCancelledError);
+    await flush();
+
+    const signal = pending[0]?.init.signal;
+    expect(signal).toBeDefined();
+    expect(signal).not.toBe(ac.signal);
+    expect(signal?.aborted).toBe(false);
+    ac.abort();
+    expect(signal?.aborted).toBe(true);
+    await rejected;
+  });
+
+  it("gives each attempt a fresh signal outside a call", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(async () => makeResponse("busy", { status: 503 }))
+      .mockImplementation(async () => makeResponse("{}"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await newClient().get("/a");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const first = fetchMock.mock.calls[0]?.[1].signal as AbortSignal;
+    const second = fetchMock.mock.calls[1]?.[1].signal as AbortSignal;
+    expect(first).toBeInstanceOf(AbortSignal);
+    expect(second).not.toBe(first);
+  });
+
+  it.each([
+    ["an abort reason", new Error("Connection closed")],
+    ["no abort reason", undefined],
+  ])(
+    "cancelling mid-GET with %s rejects CallCancelledError, not a timeout",
+    async (_name, reason) => {
+      const { mock } = heldFetch(true);
+      const ac = new AbortController();
+      const result = inCall(ac, () => newClient(0).get("/a"));
+      const settled = result.then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      await flush();
+
+      if (reason === undefined) ac.abort();
+      else ac.abort(reason);
+      const error = await settled;
+
+      expect(error).toBeInstanceOf(CallCancelledError);
+      expect(error).not.toBeInstanceOf(RequestTimeoutError);
+      expect((error as CallCancelledError).cause).toBe(ac.signal.reason);
+      expect(mock).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("still retries a timeout inside a live call and ends as RequestTimeoutError", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(timeoutError());
+    vi.stubGlobal("fetch", fetchMock);
+    const ac = new AbortController();
+
+    await expect(
+      inCall(ac, () => newClient(2).get("/a")),
+    ).rejects.toBeInstanceOf(RequestTimeoutError);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("stops during the backoff after a 503", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(makeResponse("busy", { status: 503 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new FetchClient("https://example.test", {
+      maxRetries: 2,
+      sleep: () => new Promise<void>(() => {}),
+    });
+    const ac = new AbortController();
+    const result = inCall(ac, () => client.get("/a"));
+    const rejected = expect(result).rejects.toBeInstanceOf(CallCancelledError);
+    await flush();
+
+    ac.abort();
+    await rejected;
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops during a 429 Retry-After wait", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      makeResponse("slow down", {
+        status: 429,
+        headers: { "retry-after": "2" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new FetchClient("https://example.test", {
+      maxRetries: 2,
+      sleep: () => new Promise<void>(() => {}),
+    });
+    const ac = new AbortController();
+    const result = inCall(ac, () => client.get("/a"));
+    const rejected = expect(result).rejects.toBeInstanceOf(CallCancelledError);
+    await flush();
+
+    ac.abort();
+    await rejected;
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  describe("with an already-cancelled call", () => {
+    it("makes no request for an uncached GET or a PUT", async () => {
+      const fetchMock = vi.fn(async () => makeResponse("{}"));
+      vi.stubGlobal("fetch", fetchMock);
+      const ac = new AbortController();
+      ac.abort();
+      const client = newClient();
+
+      await expect(inCall(ac, () => client.get("/a"))).rejects.toBeInstanceOf(
+        CallCancelledError,
+      );
+      await expect(
+        inCall(ac, () => client.put("/a", { x: 1 })),
+      ).rejects.toBeInstanceOf(CallCancelledError);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("serves a cache hit but makes no request on a miss", async () => {
+      const fetchMock = vi.fn(async () => makeResponse('{"id":1}'));
+      vi.stubGlobal("fetch", fetchMock);
+      const client = newCachingClient();
+      await client.get("/activities/1");
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      const ac = new AbortController();
+      ac.abort();
+      const hit = await inCall(ac, () => client.get("/activities/1"));
+      expect(hit.data).toEqual({ id: 1 });
+      await expect(
+        inCall(ac, () => client.get("/activities/2")),
+      ).rejects.toBeInstanceOf(CallCancelledError);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("pacing queue", () => {
+    it("lets a caller cancelled in the gate queue leave at once and the next one start", async () => {
+      const fetchMock = vi.fn(async (_url: string) => makeResponse("{}"));
+      vi.stubGlobal("fetch", fetchMock);
+      const { client, sleeps } = newPacedClient();
+
+      await client.get("/a");
+      const b = client.get("/b");
+      await flush();
+      expect(sleeps).toHaveLength(1);
+
+      const acC = new AbortController();
+      const c = inCall(acC, () => client.get("/c"));
+      const cRejected = expect(c).rejects.toBeInstanceOf(CallCancelledError);
+      const d = client.get("/d");
+      await flush();
+
+      acC.abort();
+      await cRejected;
+
+      sleeps[0]?.wake();
+      await b;
+      await flush();
+      expect(sleeps).toHaveLength(2);
+      sleeps[1]?.wake();
+      await d;
+
+      const urls = fetchMock.mock.calls.map((call) => String(call[0]));
+      expect(urls).toEqual([
+        "https://example.test/a",
+        "https://example.test/b",
+        "https://example.test/d",
+      ]);
+    });
+
+    it("gives the slot back when a caller is cancelled during its gap wait", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => makeResponse("{}")),
+      );
+      const { client, sleeps } = newPacedClient();
+
+      await client.get("/a");
+      const acB = new AbortController();
+      const b = inCall(acB, () => client.get("/b"));
+      const bRejected = expect(b).rejects.toBeInstanceOf(CallCancelledError);
+      await flush();
+      expect(sleeps.map((sleep) => sleep.ms)).toEqual([200]);
+
+      acB.abort();
+      await bRejected;
+      const c = client.get("/c");
+      await flush();
+
+      expect(sleeps.map((sleep) => sleep.ms)).toEqual([200, 200]);
+      sleeps[1]?.wake();
+      await c;
+    });
+
+    it("never sends a PUT cancelled while queued for its slot", async () => {
+      const fetchMock = vi.fn(async () => makeResponse("{}"));
+      vi.stubGlobal("fetch", fetchMock);
+      const { client, sleeps } = newPacedClient();
+
+      await client.get("/a");
+      const ac = new AbortController();
+      const put = inCall(ac, () => client.put("/a", { x: 1 }));
+      const rejected = expect(put).rejects.toBeInstanceOf(CallCancelledError);
+      await flush();
+
+      ac.abort();
+      await rejected;
+      sleeps[0]?.wake();
+      await flush();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("never sends a shared read whose waiters all left while it was queued", async () => {
+      const fetchMock = vi.fn(async () => makeResponse('{"id":1}'));
+      vi.stubGlobal("fetch", fetchMock);
+      const { client, sleeps } = newPacedClient({ cache: true });
+
+      await client.get("/other");
+      const ac = new AbortController();
+      const read = inCall(ac, () => client.get("/activities/1"));
+      const rejected = expect(read).rejects.toBeInstanceOf(CallCancelledError);
+      await flush();
+
+      ac.abort();
+      await rejected;
+      sleeps[0]?.wake();
+      await flush();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("shared reads", () => {
+    const body = '{"id":1}';
+
+    it("lets a joiner finish when the creator is cancelled", async () => {
+      const { mock, pending } = heldFetch();
+      const client = newCachingClient();
+      const acCreator = new AbortController();
+      const creator = inCall(acCreator, () => client.get("/activities/1"));
+      const creatorRejected =
+        expect(creator).rejects.toBeInstanceOf(CallCancelledError);
+      await flush();
+      const joiner = client.get("/activities/1");
+      await flush();
+
+      acCreator.abort();
+      await creatorRejected;
+      expect(pending[0]?.init.signal?.aborted).toBe(false);
+
+      pending[0]?.resolve(makeResponse(body));
+      expect((await joiner).data).toEqual({ id: 1 });
+      expect(mock).toHaveBeenCalledTimes(1);
+      await client.get("/activities/1");
+      expect(mock).toHaveBeenCalledTimes(1);
+    });
+
+    it("still serves the creator when a joiner is cancelled", async () => {
+      const { mock, pending } = heldFetch();
+      const client = newCachingClient();
+      const creator = client.get("/activities/1");
+      await flush();
+      const acJoiner = new AbortController();
+      const joiner = inCall(acJoiner, () => client.get("/activities/1"));
+      const joinerRejected =
+        expect(joiner).rejects.toBeInstanceOf(CallCancelledError);
+      await flush();
+
+      acJoiner.abort();
+      await joinerRejected;
+      pending[0]?.resolve(makeResponse(body));
+
+      expect((await creator).data).toEqual({ id: 1 });
+      expect(mock).toHaveBeenCalledTimes(1);
+    });
+
+    it("lets an attempt on the wire finish and fill the cache when every waiter left", async () => {
+      const { mock, pending } = heldFetch();
+      const client = newCachingClient();
+      const acA = new AbortController();
+      const acB = new AbortController();
+      const a = inCall(acA, () => client.get("/activities/1"));
+      const b = inCall(acB, () => client.get("/activities/1"));
+      const rejected = Promise.all([
+        expect(a).rejects.toBeInstanceOf(CallCancelledError),
+        expect(b).rejects.toBeInstanceOf(CallCancelledError),
+      ]);
+      await flush();
+
+      acA.abort();
+      acB.abort();
+      await rejected;
+      expect(pending[0]?.init.signal?.aborted).toBe(false);
+
+      pending[0]?.resolve(makeResponse(body));
+      await flush();
+      const later = await client.get("/activities/1");
+      expect(later.data).toEqual({ id: 1 });
+      expect(mock).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not retry or cache a read abandoned on the wire that then fails", async () => {
+      const { mock, pending } = heldFetch();
+      const client = newCachingClient(2);
+      const ac = new AbortController();
+      const read = inCall(ac, () => client.get("/activities/1"));
+      const rejected = expect(read).rejects.toBeInstanceOf(CallCancelledError);
+      await flush();
+
+      ac.abort();
+      await rejected;
+      pending[0]?.resolve(makeResponse("busy", { status: 503 }));
+      await flush();
+      expect(mock).toHaveBeenCalledTimes(1);
+
+      const later = client.get("/activities/1");
+      await flush();
+      expect(mock).toHaveBeenCalledTimes(2);
+      pending[1]?.resolve(makeResponse(body));
+      expect((await later).data).toEqual({ id: 1 });
+    });
+
+    it("starts its own read for a caller arriving while an abandoned one is on the wire", async () => {
+      const { mock, pending } = heldFetch();
+      const client = newCachingClient();
+      const ac = new AbortController();
+      const first = inCall(ac, () => client.get("/activities/1"));
+      const firstRejected =
+        expect(first).rejects.toBeInstanceOf(CallCancelledError);
+      await flush();
+
+      ac.abort();
+      await firstRejected;
+      const second = client.get("/activities/1");
+      await flush();
+      expect(mock).toHaveBeenCalledTimes(2);
+
+      pending[1]?.resolve(makeResponse('{"id":2}'));
+      expect((await second).data).toEqual({ id: 2 });
+      pending[0]?.resolve(makeResponse('{"id":1}'));
+      await flush();
+
+      const later = await client.get("/activities/1");
+      expect(later.data).toEqual({ id: 2 });
+      expect(mock).toHaveBeenCalledTimes(2);
+    });
+
+    it("still answers its waiter after clearResponseCache and stores nothing", async () => {
+      const { mock, pending } = heldFetch();
+      const client = newCachingClient();
+      const read = client.get("/activities/1");
+      await flush();
+
+      client.clearResponseCache();
+      pending[0]?.resolve(makeResponse(body));
+      expect((await read).data).toEqual({ id: 1 });
+
+      const later = client.get("/activities/1");
+      await flush();
+      expect(mock).toHaveBeenCalledTimes(2);
+      pending[1]?.resolve(makeResponse(body));
+      await later;
+    });
+  });
+
+  describe("writes", () => {
+    it("never interrupts a started PUT and still invalidates the cache", async () => {
+      const { mock, pending } = heldFetch();
+      const client = newCachingClient();
+      const prime = client.get("/activities/1");
+      await flush();
+      pending[0]?.resolve(makeResponse('{"id":1}'));
+      await prime;
+      expect(mock).toHaveBeenCalledTimes(1);
+
+      const ac = new AbortController();
+      const put = inCall(ac, () => client.put("/activities/1", { x: 1 }));
+      await flush();
+      expect(mock).toHaveBeenCalledTimes(2);
+
+      ac.abort();
+      await flush();
+      expect(pending[1]?.init.signal?.aborted).toBe(false);
+      pending[1]?.resolve(makeResponse('{"id":1,"x":1}'));
+      expect((await put).data).toEqual({ id: 1, x: 1 });
+
+      const reread = client.get("/activities/1");
+      await flush();
+      expect(mock).toHaveBeenCalledTimes(3);
+      pending[2]?.resolve(makeResponse('{"id":1,"x":1}'));
+      await reread;
+    });
+
+    it("reports a started PUT that times out after the cancel as a timeout, without a retry", async () => {
+      const { mock, pending } = heldFetch();
+      const client = newClient(2);
+      const ac = new AbortController();
+      const put = inCall(ac, () => client.put("/activities/1", { x: 1 }));
+      const rejected = expect(put).rejects.toBeInstanceOf(RequestTimeoutError);
+      await flush();
+
+      ac.abort();
+      pending[0]?.reject(timeoutError());
+      await rejected;
+      expect(mock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("does not spend an attempt's timeout budget waiting in the pacing queue", async () => {
+    // The fake honours its signal as fetch does: it refuses an expired one.
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      if (init.signal?.aborted) throw init.signal.reason;
+      return makeResponse("{}");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new FetchClient("https://example.test", {
+      timeoutMs: 100,
+      minIntervalMs: 60,
+      maxRetries: 0,
+    });
+
+    const results = await Promise.allSettled([
+      client.get("/a"),
+      client.get("/b"),
+      client.get("/c"),
+      client.put("/d", { x: 1 }),
+    ]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    for (const result of results) expect(result.status).toBe("fulfilled");
+  });
+});
+
+describe("FetchClient upstream attempt counters (#69)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  const MIN = 60_000;
+
+  /** A client whose wall clock the test sets. */
+  const newClient = (
+    clock: { wall: number },
+    options: ConstructorParameters<typeof FetchClient>[1] = {},
+  ) =>
+    new FetchClient("https://example.test", {
+      maxRetries: 2,
+      baseDelayMs: 1,
+      sleep: async () => {},
+      wallNow: () => clock.wall,
+      ...options,
+    });
+
+  const cachingOptions = {
+    maxRetries: 0,
+    cache: {
+      ttlForPath: (path: string) =>
+        path.startsWith("/activities/") ? 1000 : null,
+    },
+  };
+
+  it("counts every attempt of a retried GET", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(makeResponse("boom", { status: 503 }))
+      .mockResolvedValueOnce(makeResponse("{}"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = newClient({ wall: 0 });
+    await client.get("/thing");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(client.getAttemptCounts().last15Minutes).toBe(2);
+    expect(client.getAttemptCounts().utcDay).toBe(2);
+  });
+
+  it("counts a write that answers 503 once, since writes never retry", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(makeResponse("boom", { status: 503 })),
+    );
+
+    const client = newClient({ wall: 0 });
+    await client.put("/thing", {}).catch(() => {});
+
+    expect(client.getAttemptCounts().last15Minutes).toBe(1);
+  });
+
+  it("counts nothing for a cache hit", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(async () => makeResponse("{}"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = newClient({ wall: 0 }, cachingOptions);
+    await client.get("/activities/1");
+    await client.get("/activities/1");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(client.getAttemptCounts().last15Minutes).toBe(1);
+  });
+
+  it("counts nothing for a joined in-flight read", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(async () => makeResponse("{}"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = newClient({ wall: 0 }, cachingOptions);
+    await Promise.all([
+      client.get("/activities/1"),
+      client.get("/activities/1"),
+    ]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(client.getAttemptCounts().last15Minutes).toBe(1);
+  });
+
+  it("drops an attempt from the rolling window at exactly 15 minutes", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => makeResponse("{}")),
+    );
+    const t0 = Date.UTC(2026, 9, 7, 12, 0, 0);
+    const clock = { wall: t0 };
+
+    const client = newClient(clock);
+    await client.get("/thing");
+
+    clock.wall = t0 + 15 * MIN - 1;
+    expect(client.getAttemptCounts().last15Minutes).toBe(1);
+    clock.wall = t0 + 15 * MIN;
+    expect(client.getAttemptCounts().last15Minutes).toBe(0);
+    // The UTC day keeps counting after the rolling window has let go.
+    expect(client.getAttemptCounts().utcDay).toBe(1);
+  });
+
+  it("resets the day count at midnight UTC", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => makeResponse("{}")),
+    );
+    const clock = { wall: Date.parse("2026-10-07T23:59:59.999Z") };
+
+    const client = newClient(clock);
+    await client.get("/thing");
+    expect(client.getAttemptCounts()).toEqual({
+      last15Minutes: 1,
+      utcDay: 1,
+      utcDate: "2026-10-07",
+    });
+
+    clock.wall += 1;
+    expect(client.getAttemptCounts()).toEqual({
+      last15Minutes: 1,
+      utcDay: 0,
+      utcDate: "2026-10-08",
+    });
+  });
+
+  it("keeps an exact in-window count across compaction of 5,000 attempts", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => makeResponse("{}")),
+    );
+    const t0 = Date.UTC(2026, 9, 7, 12, 0, 0);
+    const clock = { wall: t0 };
+
+    const client = newClient(clock);
+    // One attempt every 360 ms for 30 minutes.
+    for (let i = 0; i < 5000; i += 1) {
+      clock.wall = t0 + i * 360;
+      await client.get("/thing");
+    }
+
+    const now = clock.wall;
+    let expected = 0;
+    for (let i = 0; i < 5000; i += 1) {
+      if (t0 + i * 360 > now - 15 * MIN) expected += 1;
+    }
+    expect(client.getAttemptCounts().last15Minutes).toBe(expected);
+    expect(client.getAttemptCounts().utcDay).toBe(5000);
+  });
+
+  it("does not count a read cancelled while it waits for its pacing slot", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => makeResponse("{}")),
+    );
+    const client = newClient(
+      { wall: 0 },
+      {
+        maxRetries: 0,
+        minIntervalMs: 200,
+        now: () => 0,
+        // The second request waits for its slot until the test cancels it.
+        sleep: () => new Promise<void>(() => {}),
+      },
+    );
+
+    await client.get("/first");
+    const ac = new AbortController();
+    const queued = runInCallScope({ signal: ac.signal }, () =>
+      client.get("/second"),
+    );
+    queued.catch(() => {});
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    ac.abort();
+
+    await expect(queued).rejects.toBeInstanceOf(CallCancelledError);
+    expect(client.getAttemptCounts().last15Minutes).toBe(1);
+  });
+
+  it("moves the windows with the wall clock, not the pacing clock", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => makeResponse("{}")),
+    );
+    const pacing = { now: 0 };
+    const clock = { wall: Date.UTC(2026, 9, 7, 12, 0, 0) };
+
+    const client = newClient(clock, { now: () => pacing.now });
+    await client.get("/thing");
+    pacing.now += 60 * MIN;
+
+    expect(client.getAttemptCounts().last15Minutes).toBe(1);
+    clock.wall += 15 * MIN;
+    expect(client.getAttemptCounts().last15Minutes).toBe(0);
   });
 });
 

@@ -24,6 +24,11 @@
  * app's existing rest heuristic matches on that word) or "Lap N"
  * otherwise; `type`/`label` are carried through unmodified (both nullable)
  * for callers that want the raw values instead of the display name.
+ *
+ * Precision: every stream value is rounded with `STREAM_DECIMALS`
+ * (`streamPrecision.ts`), so no value carries more than 2 decimals. Cadence
+ * keeps one, because it stays in strides/min on the wire. Rounding is the
+ * last step: downsampling and the band indices use the unrounded values.
  */
 
 import { activityDisplayName } from "./formatters";
@@ -38,6 +43,11 @@ import {
   fillGaps,
   indexAtOrAfterTime,
 } from "./streamDownsample";
+import {
+  rawUnitDecimals,
+  roundColumn,
+  STREAM_DECIMALS,
+} from "./streamPrecision";
 
 /** Points per stream after downsampling; matches Strava's old "medium" resolution. */
 export const MAX_CHART_POINTS = 1000;
@@ -182,11 +192,20 @@ export function buildActivityChartData(
   const downsampled = downsampleColumns(columns, MAX_CHART_POINTS);
   const time = downsampled.time as number[];
 
-  const outStreams: ActivityChartData["streams"] = { time };
+  // Rounding comes last, into new arrays: `downsampled` can be the caller's
+  // own streams for a short activity, and the bands below index the
+  // unrounded time.
+  const outStreams: ActivityChartData["streams"] = {
+    time: roundColumn(time, STREAM_DECIMALS.time),
+  };
   if (downsampled.distance)
-    outStreams.distance = downsampled.distance as number[];
+    outStreams.distance = roundColumn(
+      downsampled.distance as number[],
+      STREAM_DECIMALS.distance,
+    );
   for (const key of METRIC_KEYS) {
-    if (downsampled[key]) outStreams[key] = downsampled[key];
+    const values = downsampled[key];
+    if (values) outStreams[key] = roundColumn(values, rawUnitDecimals(key));
   }
 
   return {

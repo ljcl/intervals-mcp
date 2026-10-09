@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Starts a built server image and checks it the way a user would meet it:
-# healthy, serving the MCP surface, and stopping cleanly. docker.yml runs it on
-# every build leg before anything is published; dockerRuntime.test.ts only
-# reads the repo tree, so it cannot see what the build context left out, a
-# runtime import of a devDependency, a broken CMD or HEALTHCHECK, or a
-# permission problem under uid 65534.
+# healthy, serving the MCP surface, refusing bad config, and stopping cleanly.
+# docker.yml runs it on every build leg before anything is published;
+# dockerRuntime.test.ts only reads the repo tree, so it cannot see what the
+# build context left out, a runtime import of a devDependency, a broken CMD or
+# HEALTHCHECK, or a permission problem under uid 65534. The container listens
+# on a non-default PORT, which proves the image's HEALTHCHECK reads PORT.
 #
 # Usage: scripts/docker-smoke.sh <image-ref>
 # Needs docker, curl and jq. Run from the repo root (it reads package.json and
@@ -29,18 +30,23 @@ cleanup() {
     echo "--- container logs ---" >&2
     docker logs "$NAME" >&2 || true
   fi
-  docker rm -f "$NAME" >/dev/null 2>&1 || true
+  docker rm -f "$NAME" "$NAME-config" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
 # The healthcheck overrides only shorten the timing; the image's own
-# HEALTHCHECK command is what runs. A dummy key passes startup, which only
-# checks that one is set, and the smoke checks never call intervals.icu.
+# HEALTHCHECK command is what runs. A dummy key passes startup, because
+# startup checks only that a key is set, not that intervals.icu accepts it,
+# and the smoke checks never call intervals.icu. TZ is set, so startup skips
+# the athlete time zone lookup too. The short token only logs a startup
+# WARNING.
 docker run -d --name "$NAME" \
   -e INTERVALS_API_KEY=smoke-dummy \
   -e MCP_AUTH_TOKEN="$TOKEN" \
+  -e PORT=8080 \
+  -e TZ=Australia/Sydney \
   --health-interval=1s --health-start-period=30s --health-retries=3 \
-  -p 127.0.0.1::3000 \
+  -p 127.0.0.1::8080 \
   "$IMAGE" >/dev/null
 
 health=""
@@ -83,7 +89,7 @@ else
   fail "the image carries installed packages:"
   echo "$installed" >&2
 fi
-BASE="http://$(docker port "$NAME" 3000/tcp | head -1)"
+BASE="http://$(docker port "$NAME" 8080/tcp | head -1)"
 
 expected_version="$(jq -r .version package.json)"
 version="$(curl -fsS "$BASE/health" | jq -r .version)"
@@ -91,6 +97,15 @@ if [ "$version" = "$expected_version" ]; then
   pass "/health version $version"
 else
   fail "/health version is '$version', package.json says '$expected_version'"
+fi
+
+# The zone's source sits behind the token, with the rest of the detail.
+zone_source="$(curl -fsS -H "Authorization: Bearer $TOKEN" "$BASE/health" |
+  jq -r .time_zone_source)"
+if [ "$zone_source" = env ]; then
+  pass "/health time zone source env"
+else
+  fail "/health time_zone_source is '$zone_source', expected 'env'"
 fi
 
 status="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/mcp" \
@@ -169,6 +184,15 @@ else
   fail "tools/call with bad arguments: $call"
 fi
 
+# The same call wrote one tool_call line. Its timestamp and client fields come
+# from the call scope, so this proves them on the image's Bun.
+line="$(docker logs "$NAME" 2>&1 | grep '"event":"tool_call"' | tail -1)"
+if jq -e '.ts != null and .tool == "get-activity" and .outcome == "invalid_args" and .client_name == "docker-smoke" and .client_version == "1.0"' <<<"$line" >/dev/null 2>&1; then
+  pass "the tool_call log line carries ts and the client's name and version"
+else
+  fail "tool_call log line: $line"
+fi
+
 # A 2025-era handshake is rejected with the supported revision.
 init="$(curl -sS -w '\n%{http_code}' -X POST "$BASE/mcp" \
   -H "Authorization: Bearer $TOKEN" \
@@ -181,6 +205,51 @@ if [ "$init_status" = 400 ] && [ "$init_code" = -32022 ]; then
   pass "initialize rejected with 400 / -32022"
 else
   fail "initialize returned HTTP $init_status, code $init_code"
+fi
+
+# Each refused /mcp request wrote one mcp_rejected line: the 401 from the
+# bearer gate and the -32022 from the endpoint, which proves the endpoint's
+# exchange-scoped storage on the image's Bun. No line may hold the token.
+rejected="$(docker logs "$NAME" 2>&1 | grep '"event":"mcp_rejected"' || true)"
+if jq -e 'select(.status == 401 and .code == -32001)' <<<"$rejected" >/dev/null 2>&1 &&
+  jq -e 'select(.status == 400 and .code == -32022 and .client_name == "docker-smoke")' <<<"$rejected" >/dev/null 2>&1; then
+  pass "the 401 and -32022 rejections each wrote an mcp_rejected line"
+else
+  fail "mcp_rejected lines: $rejected"
+fi
+if docker logs "$NAME" 2>&1 | grep -qF "$TOKEN"; then
+  fail "a log line holds the MCP auth token"
+else
+  pass "no log line holds the MCP auth token"
+fi
+
+# Bad config stops startup with exit 1 and one line per bad variable. Vitest
+# never runs index.ts, so this is the check that the startup gate runs on the
+# image's Bun. The wait polls like the health wait above, so it needs no GNU
+# timeout. cleanup removes the container.
+docker run -d --name "$NAME-config" \
+  -e INTERVALS_API_KEY=smoke-dummy \
+  -e TZ=Australia/Sydny \
+  -e PORT=abc \
+  "$IMAGE" >/dev/null
+for _ in $(seq 30); do
+  [ "$(docker inspect -f '{{.State.Running}}' "$NAME-config")" = true ] || break
+  sleep 1
+done
+bad="$(docker logs "$NAME-config" 2>&1)"
+if [ "$(docker inspect -f '{{.State.Running}}' "$NAME-config")" = true ]; then
+  fail "bad TZ and PORT: the server still runs after 30 s, output:"
+  echo "$bad" >&2
+else
+  bad_status="$(docker inspect -f '{{.State.ExitCode}}' "$NAME-config")"
+  if [ "$bad_status" = 1 ] &&
+    grep -qF 'TZ is "Australia/Sydny"' <<<"$bad" &&
+    grep -qF 'PORT is "abc"' <<<"$bad"; then
+    pass "bad TZ and PORT stop startup with exit 1, naming both"
+  else
+    fail "bad TZ and PORT: exit $bad_status, output:"
+    echo "$bad" >&2
+  fi
 fi
 
 # SIGTERM drains and exits 0 well inside docker's 10 s default, which is what

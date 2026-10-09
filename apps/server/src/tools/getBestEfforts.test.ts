@@ -12,6 +12,7 @@ import {
   type IntervalsAthletePaceCurves,
   type IntervalsStream,
 } from "../intervalsClient";
+import { INTERVALS_STREAM_TYPES } from "../intervalsStreams";
 import {
   type BestEffortEntry,
   formatBestEffortsText,
@@ -512,10 +513,9 @@ describe("getBestEffortsTool.execute with an id", () => {
     );
 
     expect(mockedGetActivity).toHaveBeenCalledWith("k", RUN_ID);
+    // The loader always reads the one superset (#71).
     expect(mockedStreams).toHaveBeenCalledWith("k", RUN_ID, [
-      "time",
-      "distance",
-      "velocity_smooth",
+      ...INTERVALS_STREAM_TYPES,
     ]);
     expect(mockedAthleteCurves).not.toHaveBeenCalled();
 
