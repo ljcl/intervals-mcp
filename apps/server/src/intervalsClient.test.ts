@@ -25,6 +25,7 @@ import {
   getActivityStreams,
   getAthleteHrCurves,
   getAthletePaceCurves,
+  getAthleteTimeZone,
   getSportSettings,
   getWellness,
   IntervalsApiError,
@@ -867,6 +868,63 @@ describe("intervalsClient", () => {
     expect(new URL(plain[0]?.url ?? "").searchParams.has("subMaxEfforts")).toBe(
       false,
     );
+  });
+
+  describe("getAthleteTimeZone", () => {
+    it("returns only the zone from GET /athlete/0, with Basic auth", async () => {
+      const calls = mockJson({
+        id: "999999",
+        timezone: "Australia/Sydney",
+        icu_api_key: "should-not-leak",
+      });
+      expect(await getAthleteTimeZone("k")).toBe("Australia/Sydney");
+      expect(calls).toHaveLength(1);
+      expect(new URL(calls[0]!.url).pathname).toBe("/api/v1/athlete/0");
+      expect(calls[0]!.headers.get("authorization")).toBe(
+        `Basic ${Buffer.from("API_KEY:k").toString("base64")}`,
+      );
+    });
+
+    it("reads the configured athlete, so a coach key gets that athlete's zone", async () => {
+      process.env.INTERVALS_ATHLETE_ID = "i12345";
+      const calls = mockJson({ timezone: "Europe/London" });
+      expect(await getAthleteTimeZone("k")).toBe("Europe/London");
+      expect(new URL(calls[0]!.url).pathname).toBe("/api/v1/athlete/i12345");
+    });
+
+    it.each([
+      ["null", { timezone: null }],
+      ["missing", {}],
+      ["blank", { timezone: "  " }],
+    ])("returns null when the zone is %s", async (_, body) => {
+      mockJson(body);
+      expect(await getAthleteTimeZone("k")).toBeNull();
+    });
+
+    // The record carries icu_api_key, so it must never sit in the cache.
+    it("is never cached", async () => {
+      const calls = mockJson({ timezone: "Australia/Sydney" });
+      await getAthleteTimeZone("k");
+      await getAthleteTimeZone("k");
+      expect(calls).toHaveLength(2);
+    });
+
+    it("rejects a 401 as an IntervalsApiError with the status", async () => {
+      mockJson({}, 401);
+      const error = await getAthleteTimeZone("k").catch((e) => e);
+      expect(error).toBeInstanceOf(IntervalsApiError);
+      expect(error.response.status).toBe(401);
+    });
+
+    it("throws a plain Error naming the field for a non-string zone", async () => {
+      mockJson({ timezone: 42 });
+      const error = await getAthleteTimeZone("k").catch((e) => e);
+      expect(error).toBeInstanceOf(Error);
+      expect(error).not.toBeInstanceOf(IntervalsApiError);
+      expect((error as Error).message).toMatch(
+        /invalid intervals\.icu response at timezone/,
+      );
+    });
   });
 
   it("maps 404 and 401 to IntervalsApiError with the status", async () => {

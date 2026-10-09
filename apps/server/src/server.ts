@@ -1690,6 +1690,8 @@ export function createServer(): Server {
     {
       // Built here rather than as a constant: the text names the configured
       // time zone, which is read at serve time like every other tool's.
+      // createServer runs per HTTP request, so a zone resolved after startup
+      // (athleteTimeZone.ts) reaches the next server/discover.
       instructions: serverInstructions(getTimeZone()),
       capabilities: {
         tools: {},

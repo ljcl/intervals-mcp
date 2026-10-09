@@ -14,6 +14,8 @@ services:
     environment:
       - INTERVALS_API_KEY=${INTERVALS_API_KEY}
       - INTERVALS_ATHLETE_ID=${INTERVALS_ATHLETE_ID:-0}
+      # UTC (the default) means: follow the athlete's intervals.icu time zone.
+      # Etc/UTC pins UTC.
       - TZ=${TZ:-UTC}
       - PUBLIC_URL=${PUBLIC_URL:-}
       - MCP_AUTH_TOKEN=${MCP_AUTH_TOKEN:-}

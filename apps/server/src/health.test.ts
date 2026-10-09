@@ -5,7 +5,11 @@
  */
 import { createRequire } from "node:module";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { apiKeyConfigured, getIntervalsAthleteId, getTimeZone } from "./config";
+import {
+  apiKeyConfigured,
+  getIntervalsAthleteId,
+  timeZoneSetting,
+} from "./config";
 import { intervalsApi } from "./fetchClient";
 import { handleHealth } from "./health";
 import { SERVER_VERSION } from "./version";
@@ -16,7 +20,7 @@ vi.mock("./config", async (importOriginal) => {
     ...actual,
     apiKeyConfigured: vi.fn(() => false),
     getIntervalsAthleteId: vi.fn(() => "0"),
-    getTimeZone: vi.fn(() => "UTC"),
+    timeZoneSetting: vi.fn(() => ({ zone: "UTC", source: "fallback" })),
   };
 });
 
@@ -31,7 +35,7 @@ vi.mock("./fetchClient", async (importOriginal) => {
 const mockedSnapshot = vi.mocked(intervalsApi.getRateLimitSnapshot);
 const mockedApiKeyConfigured = vi.mocked(apiKeyConfigured);
 const mockedAthleteId = vi.mocked(getIntervalsAthleteId);
-const mockedTimeZone = vi.mocked(getTimeZone);
+const mockedTimeZone = vi.mocked(timeZoneSetting);
 
 const get = (path = "/health", headers: Record<string, string> = {}) => {
   const url = new URL(`http://localhost:3000${path}`);
@@ -47,7 +51,7 @@ describe("handleHealth", () => {
     mockedAthleteId.mockReset();
     mockedAthleteId.mockReturnValue("0");
     mockedTimeZone.mockReset();
-    mockedTimeZone.mockReturnValue("UTC");
+    mockedTimeZone.mockReturnValue({ zone: "UTC", source: "fallback" });
   });
 
   afterEach(() => {
@@ -75,15 +79,26 @@ describe("handleHealth", () => {
     expect(body.rate_limit.shortTerm.usage).toBe(42);
   });
 
-  it("defaults athlete_id to 0 and reports the configured time zone", async () => {
+  it("defaults athlete_id to 0", async () => {
     mockedApiKeyConfigured.mockReturnValue(true);
-    mockedTimeZone.mockReturnValue("Australia/Sydney");
 
     const { req, url } = get();
     const body = await (await handleHealth(req, url)).json();
 
     expect(body.athlete_id).toBe("0");
+  });
+
+  it("reports the time zone and where it came from", async () => {
+    mockedTimeZone.mockReturnValue({
+      zone: "Australia/Sydney",
+      source: "intervals.icu",
+    });
+
+    const { req, url } = get();
+    const body = await (await handleHealth(req, url)).json();
+
     expect(body.time_zone).toBe("Australia/Sydney");
+    expect(body.time_zone_source).toBe("intervals.icu");
   });
 
   it("reports api_key_configured: false when no key is set", async () => {
@@ -154,6 +169,7 @@ describe("handleHealth", () => {
     expect(response.status).toBe(200);
     expect(body.status).toBe("ok");
     expect(body.api_key_configured).toBeUndefined();
+    expect(body.time_zone_source).toBeUndefined();
     expect(body.rate_limit).toBeUndefined();
   });
 

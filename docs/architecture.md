@@ -522,7 +522,52 @@ handler as its second argument. Tools never read
 `process.env.INTERVALS_API_KEY`; adding a tool means accepting
 `(args, token)`, not adding a guard. A missing or blank key throws a typed
 `MissingApiKeyError`; dispatch maps that to one not-configured message naming
-`INTERVALS_API_KEY`.
+`INTERVALS_API_KEY`. The startup time zone lookup (`athleteTimeZone.ts`) is
+the one caller of `getIntervalsApiKey()` outside dispatch.
+
+## Configuration and time zone
+
+`checkConfig()` (`config.ts`) is the startup gate. It checks every variable
+at once, and `index.ts` exits 1 on any error. `index.ts` stays a thin shell
+that coverage excludes, so the logic lives in tested modules, and
+`scripts/docker-smoke.sh` proves the exit on the image's Bun.
+
+`getTimeZone()` is the one synchronous home for the zone every local date
+uses: "today", default date windows, and the server instructions.
+`timeZoneSetting()` returns the same zone with its source (`env`,
+`intervals.icu` or `fallback`) for `/health` and the startup log. The
+athlete's zone is module state in `config.ts`, so none of the callers change
+and `config.ts` never imports the client (no `config` to `intervalsClient`
+cycle).
+
+- **Precedence.** A `TZ` other than exactly `UTC`, then the athlete's zone,
+  then the process zone (UTC when Intl cannot name a usable one). Exactly
+  `UTC` counts as unset because `docker-compose.yml` injects `TZ=${TZ:-UTC}`;
+  `Etc/UTC` pins UTC. An invalid `TZ` never reaches `getTimeZone()`, because
+  `checkConfig()` stops startup for it.
+- **Startup wait.** `index.ts` awaits `initAthleteTimeZone()` before
+  `Bun.serve`, because `getTimeZone()` is synchronous at every call site,
+  including the instructions `createServer` builds per request. The wait is
+  bounded (`TIME_ZONE_STARTUP_WAIT_MS`, 5 s); a late answer still applies,
+  and the next request sees it.
+- **Re-runs.** Only after a transient failure (429, Cloudflare challenge,
+  timeout, 5xx, network fault, schema mismatch): after 1, 5 and 15 minutes,
+  then hourly. This is a one-shot startup task run again, not an HTTP retry:
+  each run goes through `FetchClient`'s own bounded retries and pacing. A
+  Cloudflare challenge (`response.cloudflareChallenge`) is a 403 that never
+  reached intervals.icu, so it counts as transient. Any other 4xx refusal can
+  never succeed, so it logs one `WARNING` and stops. The lookup runs outside
+  any tool call, so it has no call scope or signal.
+- **Security.** `GET /athlete/{id}` returns the athlete record, which carries
+  `icu_api_key`. `getAthleteTimeZone`'s schema is a plain `z.object` that
+  keeps only `timezone`, so parsing strips the key. `intervalsCacheTtl` has
+  no TTL for `/athlete/{id}`, so the record is never cached; do not add one.
+- **Instructions.** The athlete's zone reaches `serverInstructions` through
+  `getTimeZone()`. The text's 1,800-character budget already covers the
+  longest name Intl accepts (32 characters,
+  `America/Argentina/ComodRivadavia`, #147), and
+  `server.integration.test.ts` checks that over the wire for the athlete
+  path.
 
 ## Resource ids
 

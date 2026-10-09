@@ -1,10 +1,11 @@
 import path from "node:path";
 import * as dotenv from "dotenv";
+import { initAthleteTimeZone } from "./athleteTimeZone";
 import {
   checkConfig,
   getIntervalsAthleteId,
   getPort,
-  getTimeZone,
+  timeZoneSetting,
 } from "./config";
 import { createShutdown, serveOptions } from "./httpServer";
 import { warnIfMcpUnprotected } from "./mcpAuth";
@@ -24,8 +25,13 @@ if (errors.length > 0) {
   for (const error of errors) console.error(error);
   process.exit(1);
 }
+
+// TZ unset, blank or exactly UTC: follow the athlete's intervals.icu zone.
+// Waits at most TIME_ZONE_STARTUP_WAIT_MS (athleteTimeZone.ts).
+await initAthleteTimeZone();
+const timeZone = timeZoneSetting();
 console.error(
-  `intervals.icu athlete ${getIntervalsAthleteId()}, time zone ${getTimeZone()}`,
+  `intervals.icu athlete ${getIntervalsAthleteId()}, time zone ${timeZone.zone} (${timeZone.source})`,
 );
 
 const PORT = getPort();

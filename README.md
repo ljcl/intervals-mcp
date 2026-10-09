@@ -213,6 +213,8 @@ PRs are squash-merged and the **PR title becomes the commit on `main`**, so writ
 
 **API key errors:** Check `/health` first: `api_key_configured` tells you whether the server has a key set at all. If `api_key_configured` is `true` but calls still fail, the key may be wrong or revoked; generate a new one at intervals.icu, Settings, Developer Settings, and update `INTERVALS_API_KEY`. See [operations.md](docs/operations.md#intervalsicu-api-key).
 
+**Today's run is missing, or dates are a day off:** Check `time_zone` and `time_zone_source` on `/health`. With `TZ` unset (or `UTC`), the server uses your intervals.icu time zone; set `TZ` to choose one. See [operations.md](docs/operations.md#time-zone).
+
 **"Cloudflare … answered with a challenge":** Cloudflare, in front of intervals.icu, stopped the request before it reached intervals.icu, so this is not an API key problem. Wait a few minutes and retry. See [operations.md](docs/operations.md#rate-limits-and-resilience).
 
 **Is the server up and reachable?** `curl https://your-public-url/health`. It answers without touching the intervals.icu API, so it works even when your rate limit is exhausted.

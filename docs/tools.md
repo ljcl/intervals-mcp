@@ -8,7 +8,11 @@ Tool names and schemas are a published contract: grants are stored per tool
 identity, so renames or schema reshapes re-prompt every user. See
 [architecture.md](architecture.md#tool-metadata) before changing either.
 
-> **Status.** All tools below talk to intervals.icu directly and are
+Dates and default date windows use the server's time zone: `TZ` when it names
+a zone other than `UTC`, else the athlete's intervals.icu time zone; `/health`
+reports which ([operations.md](operations.md#time-zone)).
+
+> **Status.** All twenty tools below talk to intervals.icu directly and are
 > verified against a real account. `get-fitness-trend`, `get-training-load`,
 > and `get-running-dynamics` are exercised by `scripts/live-check.ts`;
 > `update-activity`'s write path was verified once, separately, with
@@ -86,7 +90,7 @@ descriptions.
 | `update-activity` | Update an activity's name, description, gear, RPE, or feel, echoing before/after values (write tool) |
 
 `list-activities` defaults to the last 28 days (today back to 27 days
-earlier) in the server's configured time zone, sorted newest first. Filter
+earlier) in the server's time zone, sorted newest first. Filter
 with `type` (`runs` for Run, TrailRun and VirtualRun, or a comma-separated
 list such as `Run, Hike`; for the most recent run, pass `id: "latest"` to
 the per-activity tool instead) or
@@ -204,7 +208,7 @@ fatigue, stress, mood, motivation, `spo2` (%), `respiration`
 `respiration`. Takes either a single `date` or an `oldest`/`newest` range
 (max 90 calendar days inclusive); supplying `date` together with a range is
 a validation error. With nothing supplied it defaults to today in the
-server's configured time zone. The HRV measure depends on the athlete's
+server's time zone. The HRV measure depends on the athlete's
 device (docs/api-notes.md). The text prints each HRV value that is present
 with its label ("HRV rMSSD", "HRV SDNN", never bare "HRV"). A range's
 averages keep the two measures apart. `hrv_note` comes from the data and
@@ -649,22 +653,10 @@ intervals.icu's own daily wellness record (`source: "intervals.icu"`),
 never recomputed locally, so a custom CTL/ATL time constant configured on the
 account is honoured automatically; a day with no recorded CTL/ATL is a gap,
 not a zero-load day, and is left out of the series with a warning rather than
-corrupting the numbers around it. The window ends today in the server's
-configured time zone, or on `newest` (YYYY-MM-DD, today or earlier), and
-`days` counts back from that day. `resolveWindowEnd` (`utils/localDate.ts`)
-refuses a `newest` after today before any fetch: intervals.icu's wellness
-rows after today hold its own projection from planned workouts, not records
-(docs/api-notes.md). A `newest` equal to today is the same call as no
-`newest`. A window that ends before today is a past block:
-`period.ends_today` is false, there is no projection and no taper,
-`projectDays`, `plannedLoads` and `targetDate` are ignored (`targetDate` is
-not checked, and `plannedLoads` gets no warnings), and the first warning
-says so. The text heads the last values "End of window" instead of
-"Current", and names the 7-day change "7 days to DATE". `as_of` names the
-most recent date CTL/ATL is actually known for in the window, which
-projection and a solved taper are seeded from, and which can trail today
-when wellness has not synced yet. In a past window a trailing day with no
-wellness is reported only as a gap. `runOnly: true`
+corrupting the numbers around it. The window ends at today in the server's
+time zone, but `as_of` names the most recent date CTL/ATL is
+actually known for, which projection and a solved taper are seeded from, and
+which can trail today when wellness has not synced yet. `runOnly: true`
 computes CTL/ATL locally from the daily sum of `icu_training_load` across
 Run/TrailRun/VirtualRun activities only (`source: "computed"`), since
 intervals.icu has no per-sport CTL/ATL: it fetches a `days + 150` day runway

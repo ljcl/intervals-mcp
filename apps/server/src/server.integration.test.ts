@@ -14,8 +14,8 @@
  * than being amended three times on the way.
  */
 import { CLIENT_CAPABILITIES_META_KEY } from "@modelcontextprotocol/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getTimeZone } from "./config";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { getTimeZone, setAthleteTimeZone } from "./config";
 import { serverInstructions } from "./instructions";
 import {
   getActivity,
@@ -33,6 +33,10 @@ vi.mock("./intervalsClient", async (importOriginal) => {
     getActivity: vi.fn(),
     getActivityStreams: vi.fn(),
     getAthletePaceCurves: vi.fn(),
+    // get-activity fires this next to getActivity. Without a mock it would
+    // send a live request through the real intervalsApi. An implementation
+    // passed to vi.fn survives vi.clearAllMocks below.
+    getSportSettings: vi.fn(async () => null),
     listActivities: vi.fn(),
     searchActivities: vi.fn(),
   };
@@ -1020,5 +1024,68 @@ describe("prompts", () => {
     expect(result).toBeUndefined();
     expect(error?.code).toBe(-32602);
     expect(error?.message).toBe("Unknown prompt: no-such-prompt");
+  });
+});
+
+/**
+ * The athlete's intervals.icu zone (#56) reaches what a host receives: the
+ * instructions in server/discover and the "today" behind id "latest". TZ=UTC
+ * is compose's default, which means "follow the athlete".
+ */
+describe("athlete time zone over the wire", () => {
+  const originalTz = process.env.TZ;
+
+  beforeEach(() => {
+    process.env.TZ = "UTC";
+    setAthleteTimeZone("Australia/Sydney");
+  });
+
+  afterEach(() => {
+    if (originalTz === undefined) delete process.env.TZ;
+    else process.env.TZ = originalTz;
+    setAthleteTimeZone(null);
+    vi.useRealTimers();
+  });
+
+  it("names the athlete's zone in the server/discover instructions", async () => {
+    const { discover } = await connectTestClient("athlete-zone-discover");
+    expect(discover.instructions).toContain("Australia/Sydney");
+  });
+
+  /** The newest date of the first window id "latest" lists, at 21:30 UTC. */
+  async function latestWindowNewest(): Promise<string | undefined> {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-04T21:30:00Z"));
+    vi.mocked(listActivities).mockResolvedValueOnce([
+      { id: "i560", type: "Run", start_date_local: "2026-10-05T07:00:00" },
+    ] as never);
+    mockedIntervalsActivity.mockResolvedValueOnce({
+      id: "i560",
+      name: "Easy",
+      type: "Run",
+    } as never);
+    const client = await connectTestClient();
+    await client.send("tools/call", {
+      name: "get-activity",
+      arguments: { id: "latest" },
+    });
+    return vi.mocked(listActivities).mock.calls[0]?.[1]?.newest;
+  }
+
+  it('dates "latest" by the athlete\'s zone: already the 5th in Sydney', async () => {
+    expect(await latestWindowNewest()).toBe("2026-10-05");
+  });
+
+  it('dates "latest" by UTC when the athlete has no zone', async () => {
+    setAthleteTimeZone(null);
+    expect(await latestWindowNewest()).toBe("2026-10-04");
+  });
+
+  it("keeps the instructions within budget for the longest athlete zone", async () => {
+    setAthleteTimeZone(LONGEST_TIME_ZONE);
+    const { discover } = await connectTestClient("athlete-zone-budget");
+    const text = discover.instructions as string;
+    expect(text).toContain(LONGEST_TIME_ZONE);
+    expect(text.length).toBeLessThanOrEqual(MAX_INSTRUCTIONS_CHARS);
   });
 });

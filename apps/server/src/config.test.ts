@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   basicAuthHeader,
   checkConfig,
@@ -7,7 +7,11 @@ import {
   getPort,
   getTimeZone,
   MissingApiKeyError,
+  setAthleteTimeZone,
+  timeZoneNeedsAthlete,
+  timeZoneSetting,
 } from "./config";
+import { isValidTimeZone } from "./utils/localDate";
 
 const ORIGINAL = { ...process.env };
 
@@ -24,7 +28,16 @@ function restoreEnv(): void {
   Object.assign(process.env, ORIGINAL);
 }
 
-afterEach(restoreEnv);
+afterEach(() => {
+  restoreEnv();
+  setAthleteTimeZone(null);
+});
+
+/** Sets TZ on the live env, or deletes it for undefined. */
+function setTz(raw: string | undefined): void {
+  if (raw === undefined) delete process.env.TZ;
+  else process.env.TZ = raw;
+}
 
 describe("getIntervalsApiKey", () => {
   it("returns the trimmed key", () => {
@@ -57,23 +70,118 @@ describe("getIntervalsAthleteId", () => {
 });
 
 describe("getTimeZone", () => {
-  it("returns TZ when set", () => {
+  it("returns TZ when set, with source env", () => {
     process.env.TZ = "Australia/Sydney";
+    expect(getTimeZone()).toBe("Australia/Sydney");
+    expect(timeZoneSetting()).toEqual({
+      zone: "Australia/Sydney",
+      source: "env",
+    });
+  });
+
+  // Under Node, Intl names no usable zone for a blank TZ ("Etc/Unknown" or
+  // undefined), so the fallback must still give a zone Intl accepts.
+  it.each([undefined, "", "   "])(
+    "falls back to a valid process zone for TZ=%j with no athlete zone",
+    (raw) => {
+      setTz(raw);
+      const setting = timeZoneSetting();
+      expect(setting.source).toBe("fallback");
+      expect(isValidTimeZone(setting.zone)).toBe(true);
+      expect(getTimeZone()).toBe(setting.zone);
+    },
+  );
+
+  it.each(["", "   "])("resolves a blank TZ=%j to UTC", (raw) => {
+    setTz(raw);
+    expect(getTimeZone()).toBe("UTC");
+  });
+
+  it.each(["UTC", " UTC "])(
+    "treats TZ=%j as unset and follows the athlete",
+    (raw) => {
+      setTz(raw);
+      setAthleteTimeZone("Australia/Sydney");
+      expect(timeZoneSetting()).toEqual({
+        zone: "Australia/Sydney",
+        source: "intervals.icu",
+      });
+    },
+  );
+
+  it("follows the athlete when TZ is unset", () => {
+    setTz(undefined);
+    setAthleteTimeZone("Australia/Sydney");
     expect(getTimeZone()).toBe("Australia/Sydney");
   });
 
-  it("falls back to the process's resolved zone when unset", () => {
-    delete process.env.TZ;
-    expect(getTimeZone()).toBe(
-      Intl.DateTimeFormat().resolvedOptions().timeZone,
-    );
+  it.each(["Etc/UTC", "GMT", "utc"])(
+    "pins TZ=%j over the athlete's zone",
+    (raw) => {
+      setTz(raw);
+      setAthleteTimeZone("Australia/Sydney");
+      expect(timeZoneSetting()).toEqual({ zone: raw, source: "env" });
+    },
+  );
+
+  it("prefers an explicit TZ over the athlete's zone", () => {
+    setTz("Australia/Brisbane");
+    setAthleteTimeZone("Australia/Sydney");
+    expect(timeZoneSetting()).toEqual({
+      zone: "Australia/Brisbane",
+      source: "env",
+    });
   });
 
-  it("falls back to the process's resolved zone when blank", () => {
-    process.env.TZ = "   ";
-    expect(getTimeZone()).toBe(
-      Intl.DateTimeFormat().resolvedOptions().timeZone,
-    );
+  // checkConfig stops startup for an unknown TZ; this covers a caller that
+  // skipped it.
+  it("never returns an unknown TZ", () => {
+    setTz("Australia/Sydny");
+    const fallback = timeZoneSetting();
+    expect(fallback.source).toBe("fallback");
+    expect(isValidTimeZone(fallback.zone)).toBe(true);
+
+    setAthleteTimeZone("Australia/Perth");
+    expect(timeZoneSetting()).toEqual({
+      zone: "Australia/Perth",
+      source: "intervals.icu",
+    });
+  });
+});
+
+describe("setAthleteTimeZone", () => {
+  beforeEach(() => setTz(undefined));
+
+  it.each(["GMT+10", ""])("refuses %j and keeps the current zone", (zone) => {
+    setAthleteTimeZone("Australia/Sydney");
+    expect(setAthleteTimeZone(zone)).toBe(false);
+    expect(getTimeZone()).toBe("Australia/Sydney");
+  });
+
+  it("trims the zone", () => {
+    expect(setAthleteTimeZone(" Australia/Perth ")).toBe(true);
+    expect(getTimeZone()).toBe("Australia/Perth");
+  });
+
+  it("clears the zone for null", () => {
+    setAthleteTimeZone("Australia/Perth");
+    expect(setAthleteTimeZone(null)).toBe(true);
+    expect(timeZoneSetting().source).toBe("fallback");
+  });
+});
+
+describe("timeZoneNeedsAthlete", () => {
+  it.each([undefined, "", "   ", "UTC", "Australia/Sydny"])(
+    "is true for TZ=%j",
+    (raw) => {
+      setTz(raw);
+      expect(timeZoneNeedsAthlete()).toBe(true);
+    },
+  );
+
+  it.each(["Etc/UTC", "Australia/Sydney"])("is false for TZ=%j", (raw) => {
+    setTz(raw);
+    expect(timeZoneNeedsAthlete()).toBe(false);
   });
 });
 
@@ -127,6 +235,7 @@ describe("checkConfig", () => {
     const { errors } = checkConfig();
     expect(errors).toHaveLength(1);
     expect(errors[0]).toMatch(/^TZ is "Australia\/Sydny"/);
+    expect(errors[0]).toContain("athlete's time zone from intervals.icu");
   });
 
   it.each([undefined, "", "   ", " Australia/Sydney "])(

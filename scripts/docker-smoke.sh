@@ -37,12 +37,14 @@ trap cleanup EXIT
 # The healthcheck overrides only shorten the timing; the image's own
 # HEALTHCHECK command is what runs. A dummy key passes startup, because
 # startup checks only that a key is set, not that intervals.icu accepts it,
-# and the smoke checks never call intervals.icu. The short token only logs a
-# startup WARNING.
+# and the smoke checks never call intervals.icu. TZ is set, so startup skips
+# the athlete time zone lookup too. The short token only logs a startup
+# WARNING.
 docker run -d --name "$NAME" \
   -e INTERVALS_API_KEY=smoke-dummy \
   -e MCP_AUTH_TOKEN="$TOKEN" \
   -e PORT=8080 \
+  -e TZ=Australia/Sydney \
   --health-interval=1s --health-start-period=30s --health-retries=3 \
   -p 127.0.0.1::8080 \
   "$IMAGE" >/dev/null
@@ -95,6 +97,15 @@ if [ "$version" = "$expected_version" ]; then
   pass "/health version $version"
 else
   fail "/health version is '$version', package.json says '$expected_version'"
+fi
+
+# The zone's source sits behind the token, with the rest of the detail.
+zone_source="$(curl -fsS -H "Authorization: Bearer $TOKEN" "$BASE/health" |
+  jq -r .time_zone_source)"
+if [ "$zone_source" = env ]; then
+  pass "/health time zone source env"
+else
+  fail "/health time_zone_source is '$zone_source', expected 'env'"
 fi
 
 status="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/mcp" \

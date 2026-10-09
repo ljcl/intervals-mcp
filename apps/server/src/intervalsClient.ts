@@ -468,6 +468,47 @@ export type IntervalsAthletePaceCurves = z.infer<
   typeof IntervalsAthletePaceCurvesSchema
 >;
 
+/** One activity's curve from `GET /athlete/{numericId}/activity-pace-curves.json`.
+ * `secs` is index-aligned with the response's own `distances` array but
+ * truncated (not null-padded) once the activity's own distance runs out:
+ * a 6 km run against a `distances` filter of `1000,5000,10000` comes back
+ * with `secs.length === 2` (1000 m and 5000 m only), never a trailing
+ * `null` for 10000 m. */
+const IntervalsActivityPaceCurveEntrySchema = z
+  .object({
+    id: z.string(),
+    start_date_local: z.string().nullable().optional(),
+    weight: z.number().nullable().optional(),
+    secs: z.array(z.number().nullable()),
+  })
+  .passthrough();
+
+const IntervalsActivityPaceCurvesSchema = z
+  .object({
+    distances: z.array(z.number()),
+    gap: z.boolean().nullable().optional(),
+    curves: z.array(IntervalsActivityPaceCurveEntrySchema),
+  })
+  .passthrough();
+
+export type IntervalsActivityPaceCurves = z.infer<
+  typeof IntervalsActivityPaceCurvesSchema
+>;
+
+/** Only the field {@link resolveNumericAthleteId} is allowed to read off
+ * `GET /athlete/0`; the real response also carries `icu_api_key` and must
+ * never be logged or stored in full. */
+const IntervalsAthleteSelfSchema = z
+  .object({ id: z.union([z.string(), z.number()]) })
+  .passthrough();
+
+/** Only the field {@link getAthleteTimeZone} reads off `GET /athlete/{id}`.
+ * A plain object, never `.passthrough()`: the self record also carries
+ * `icu_api_key`, and parsing strips it. */
+const IntervalsAthleteTimeZoneSchema = z.object({
+  timezone: z.string().nullable().optional(),
+});
+
 /**
  * An intervals.icu API failure that {@link handleApiError} has already
  * interpreted: the user-facing message, with the HTTP status still attached.
@@ -1067,7 +1108,89 @@ export async function getAthleteHrCurves(
  * verified 2026-10-08); 0 or absent sends no parameter, so the URL and its
  * cache key stay the plain read.
  */
-export async function getAthletePaceCurves(
+function numericIdFromConfigured(configured: string): string | null {
+  if (configured === "0") return null;
+  if (/^\d+$/.test(configured)) return configured;
+  const match = /^i(\d+)$/.exec(configured);
+  return match ? match[1]! : null;
+}
+
+/** Per-process cache for {@link resolveNumericAthleteId}, keyed by API key
+ * (never logged) so a burst of calls costs at most one extra request. */
+const numericAthleteIdCache = new Map<string, string>();
+
+/**
+ * Resolves the bare numeric athlete id `activity-pace-curves.json` requires.
+ * Unlike most athlete-scoped endpoints, it 403s on id `0` (and on an
+ * `i`-prefixed id), verified 2026-09-25 against a real account.
+ *
+ * Uses `INTERVALS_ATHLETE_ID` directly when it is already usable (see
+ * {@link numericIdFromConfigured}); otherwise fetches `GET /athlete/0` and
+ * keeps only the numeric `id` field. That response also carries
+ * `icu_api_key` and is never logged, stored, or returned in full: only the
+ * resolved id string ever leaves this function.
+ */
+export async function resolveNumericAthleteId(apiKey: string): Promise<string> {
+  const direct = numericIdFromConfigured(getIntervalsAthleteId());
+  if (direct) return direct;
+
+  const cached = numericAthleteIdCache.get(apiKey);
+  if (cached) return cached;
+
+  requireApiKey(apiKey);
+  const context = "resolveNumericAthleteId";
+  let data: unknown;
+  try {
+    const response = await intervalsApi.get<unknown>("/athlete/0", {
+      headers: authHeaders(apiKey),
+    });
+    data = response.data;
+  } catch (error) {
+    handleApiError(error, context);
+  }
+  const self = parseOrThrow(IntervalsAthleteSelfSchema, data, context);
+  const numericId = String(self.id);
+  numericAthleteIdCache.set(apiKey, numericId);
+  return numericId;
+}
+
+/**
+ * The athlete's `timezone` from `GET /athlete/{INTERVALS_ATHLETE_ID}`, so a
+ * coach key reads the configured athlete's zone, not its own. Returns null
+ * when it is unset or blank. The spec types it as a string; an IANA name is
+ * assumed but not verified live, so the caller validates it
+ * (`setAthleteTimeZone` in config.ts).
+ *
+ * Never cached: `intervalsCacheTtl` has no TTL for `/athlete/{id}`, and none
+ * must be added, because the record carries `icu_api_key`. Errors survive
+ * translation, as for every read here.
+ */
+export async function getAthleteTimeZone(
+  apiKey: string,
+): Promise<string | null> {
+  requireApiKey(apiKey);
+  const context = "getAthleteTimeZone";
+  let data: unknown;
+  try {
+    const response = await intervalsApi.get<unknown>(athletePath(""), {
+      headers: authHeaders(apiKey),
+    });
+    data = response.data;
+  } catch (error) {
+    handleApiError(error, context);
+  }
+  const athlete = parseOrThrow(IntervalsAthleteTimeZoneSchema, data, context);
+  return athlete.timezone?.trim() || null;
+}
+
+/**
+ * Fetches per-activity pace curves across a date window: each returned
+ * activity's best time at every requested distance it reached. Requires the
+ * bare numeric athlete id ({@link resolveNumericAthleteId}); athlete id `0`
+ * and an `i`-prefixed id both 403 here (verified 2026-09-25), unlike
+ * {@link getAthletePaceCurves} above.
+ */
+export async function getActivityPaceCurves(
   apiKey: string,
   options: { type: string; curves: string[]; subMaxEfforts?: number },
 ): Promise<IntervalsAthletePaceCurves> {

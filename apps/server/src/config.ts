@@ -9,6 +9,11 @@
  * checkConfig() is the startup gate for the server's environment variables.
  * index.ts runs it first, so a bad value stops startup with a message that
  * names the variable, rather than failing later inside a tool call.
+ *
+ * getTimeZone() is the one home for the zone every local date uses. It also
+ * holds the athlete's zone that athleteTimeZone.ts reads from intervals.icu
+ * at startup. The state lives here, so no caller changes and config.ts never
+ * imports the client.
  */
 import { isValidTimeZone } from "./utils/localDate";
 
@@ -42,11 +47,87 @@ export function getIntervalsAthleteId(): string {
   return process.env.INTERVALS_ATHLETE_ID?.trim() || "0";
 }
 
-/** IANA zone for local-date maths; falls back to the process zone. */
+/** Where the zone came from: TZ, the athlete's setting, or the process. */
+export type TimeZoneSource = "env" | "intervals.icu" | "fallback";
+
+export interface TimeZoneSetting {
+  zone: string;
+  source: TimeZoneSource;
+}
+
+/**
+ * The TZ value that means "not chosen". docker-compose.yml injects
+ * `TZ=${TZ:-UTC}`, so an operator who never set TZ arrives with exactly this.
+ * Any other zone, Etc/UTC included, is a choice; Etc/UTC pins UTC.
+ */
+const FOLLOW_ATHLETE_TZ = "UTC";
+
+/** The athlete's zone from intervals.icu, or null until it is known. */
+let athleteTimeZone: string | null = null;
+
+/** The last TZ value checked, so a call does not build an Intl formatter. */
+let tzMemo: { raw: string; valid: boolean } | null = null;
+
+/**
+ * The zone TZ chooses, or null when it chooses none: unset, blank or exactly
+ * UTC. An invalid TZ is never returned; checkConfig stops startup for one.
+ */
+function explicitTimeZone(): string | null {
+  const raw = process.env.TZ?.trim() ?? "";
+  if (raw === "" || raw === FOLLOW_ATHLETE_TZ) return null;
+  if (tzMemo?.raw !== raw) tzMemo = { raw, valid: isValidTimeZone(raw) };
+  return tzMemo.valid ? raw : null;
+}
+
+/** True when TZ chooses no zone, so the athlete's zone should apply. */
+export function timeZoneNeedsAthlete(): boolean {
+  return explicitTimeZone() === null;
+}
+
+/**
+ * Stores the athlete's zone from intervals.icu. Returns false, and keeps the
+ * current state, for a zone Intl does not know. null clears the state (a test
+ * seam). The zone is stored trimmed, as given, not canonicalised.
+ */
+export function setAthleteTimeZone(zone: string | null): boolean {
+  if (zone === null) {
+    athleteTimeZone = null;
+    return true;
+  }
+  const trimmed = zone.trim();
+  if (!isValidTimeZone(trimmed)) return false;
+  athleteTimeZone = trimmed;
+  return true;
+}
+
+/**
+ * The process zone, or UTC when Intl cannot name a usable one. Node reports
+ * undefined for a blank or invalid TZ, and `Etc/Unknown` (which Intl then
+ * rejects) for an empty one. Bun reports UTC.
+ */
+function processTimeZone(): string {
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return zone && isValidTimeZone(zone) ? zone : "UTC";
+}
+
+/**
+ * The zone for local dates and where it came from: TZ when it chooses a
+ * zone, else the athlete's intervals.icu zone, else the process zone.
+ */
+export function timeZoneSetting(): TimeZoneSetting {
+  const env = explicitTimeZone();
+  if (env) return { zone: env, source: "env" };
+  if (athleteTimeZone)
+    return { zone: athleteTimeZone, source: "intervals.icu" };
+  return { zone: processTimeZone(), source: "fallback" };
+}
+
+/**
+ * The one home for the IANA zone every local date uses ("today", default
+ * date windows, the server instructions). See {@link timeZoneSetting}.
+ */
 export function getTimeZone(): string {
-  return (
-    process.env.TZ?.trim() || Intl.DateTimeFormat().resolvedOptions().timeZone
-  );
+  return timeZoneSetting().zone;
 }
 
 export function basicAuthHeader(apiKey: string): string {
@@ -104,7 +185,7 @@ export function checkConfig(): ConfigCheck {
   const tz = process.env.TZ?.trim();
   if (tz && !isValidTimeZone(tz)) {
     errors.push(
-      `TZ is ${quoteValue(tz)}, which is not a time zone this server knows. Use an IANA name such as Australia/Sydney, or leave TZ unset.`,
+      `TZ is ${quoteValue(tz)}, which is not a time zone this server knows. Use an IANA name such as Australia/Sydney, or leave TZ unset to use the athlete's time zone from intervals.icu.`,
     );
   }
 

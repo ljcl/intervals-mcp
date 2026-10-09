@@ -102,6 +102,9 @@ breaking them has shipped bugs — do not work around them locally.
   handlers as argument 2; never read `process.env.INTERVALS_API_KEY`
   elsewhere. A missing key maps to one not-configured message naming the env
   var.
+- **The time zone has one home: `getTimeZone()` (`config.ts`).** Never read
+  `process.env.TZ` or Intl's default zone elsewhere; `checkConfig()` is the
+  startup gate (docs/architecture.md#configuration-and-time-zone).
 - **All reads and writes go through `intervalsClient.ts`.** The retired
   Strava client has been deleted; do not add a new provider-specific client.
 - **Ids go through `intervalsActivityIdInput`** (accepts an optional `i`

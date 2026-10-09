@@ -10,7 +10,7 @@ rate limits, and endpoint security. For the code behind these see
 | -------- | -------- | ----------- |
 | `INTERVALS_API_KEY` | Yes | intervals.icu personal API key (Settings, Developer Settings) |
 | `INTERVALS_ATHLETE_ID` | No | Athlete id: `0` (default, the API key's own athlete), a number, or i-prefixed such as `i12345` |
-| `TZ` | No | IANA time zone for local dates, e.g. `Australia/Sydney`; an unknown zone stops startup |
+| `TZ` | No | IANA zone for today and default date ranges, e.g. `Australia/Sydney`. Unset, blank or exactly `UTC` (compose's default) means the athlete's intervals.icu time zone ([Time zone](#time-zone)); `Etc/UTC` pins UTC; an unknown zone stops startup |
 | `MCP_AUTH_TOKEN` | No | Shared secret; when set, `/mcp` and the detailed half of `/health` require `Authorization: Bearer <token>` (or `?token=` for `/health`). Use at least 32 characters; a shorter one logs a startup `WARNING`, and surrounding whitespace stops startup |
 | `PORT` | No | Server port, 1-65535; blank or unset means `3000`. The image's `HEALTHCHECK` reads it |
 | `PUBLIC_URL` | No | Public URL, used only to warn when `/mcp` is exposed without `MCP_AUTH_TOKEN` |
@@ -23,6 +23,35 @@ one line that names the variable: a missing `INTERVALS_API_KEY`, a `TZ` that
 `INTERVALS_ATHLETE_ID`, and an `MCP_AUTH_TOKEN` with surrounding whitespace.
 The server reports all of them at once and exits with code 1. A token shorter
 than 32 characters only logs a `WARNING`.
+
+## Time zone
+
+"Today" and every default date range use one zone. The server picks it in
+this order:
+
+1. `TZ`, when it names a zone other than exactly `UTC`.
+2. The athlete's `timezone` in intervals.icu, read once at startup from
+   `GET /athlete/{id}` (the `INTERVALS_ATHLETE_ID` athlete).
+3. The process zone, which is UTC in the image.
+
+`TZ` unset, blank or exactly `UTC` means "not chosen". `docker-compose.yml`
+sets `TZ=UTC` when you set nothing, so by default the server follows the
+athlete. To pin UTC, set `TZ=Etc/UTC`.
+
+Startup waits up to 5 seconds for the lookup. After that, the server listens
+with the fallback zone, and a late answer still applies. A transient failure
+(a 429, a Cloudflare challenge, a timeout, a 5xx or a network fault) runs the
+lookup again after 1, 5 and 15 minutes, then hourly. A Cloudflare challenge
+is a 403 that never reached intervals.icu, so it counts as transient. A
+refusal (any other 4xx, such as a revoked key or a wrong athlete id) keeps
+the fallback and logs one `WARNING`. So does an
+athlete with no zone set, or a zone the server does not recognise. Set `TZ` to
+skip the lookup.
+
+The server reads the zone once per process. After you change your time zone
+in intervals.icu, restart the server. The startup log names the zone and its
+source, for example `time zone Australia/Sydney (intervals.icu)`, and so does
+`/health` (`time_zone`, `time_zone_source`).
 
 ## intervals.icu API key
 
@@ -64,6 +93,7 @@ rate-limit state:
   "api_key_configured": true,
   "athlete_id": "0",
   "time_zone": "Australia/Sydney",
+  "time_zone_source": "intervals.icu",
   "rate_limit": null,
   "tools": {
     "list-activities": {
@@ -80,6 +110,9 @@ rate-limit state:
 `version` is `SERVER_VERSION`, resolved from the root `package.json` that
 release-please bumps, so it tracks the release you are running. An `:edge` or
 `:main-<sha>` image runs unreleased code and still reports the last release.
+`time_zone` is the zone local dates use. `time_zone_source` says where it came
+from: `env` (`TZ`), `intervals.icu` (the athlete's setting) or `fallback` (the
+process zone); see [Time zone](#time-zone).
 `rate_limit` is a snapshot parsed from the most recent intervals.icu response's
 `X-RateLimit-*`/`Retry-After` headers (`intervalsApi.getRateLimitSnapshot()`);
 intervals.icu sends none of these today (verified 2026-09-24), so `rate_limit`
