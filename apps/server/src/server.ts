@@ -26,6 +26,7 @@ import {
 import {
   type ArgShape,
   argShape,
+  ignoredArgsText,
   normalizeArgs,
   unknownArgsText,
 } from "./argAliases";
@@ -1494,9 +1495,13 @@ export async function dispatchToolCall(
   let args: Record<string, unknown> = rawArgs ?? {};
   const shape = TOOL_ARG_SHAPES.get(name);
   // Another tool's spelling of a shared input (`activity_id` for `id`, "5K"
-  // for "5km", `weeks` for `days`) is mapped before validation, so it costs
-  // no retry (#78).
-  if (shape) args = normalizeArgs(args, shape);
+  // for "5km", `weeks` for `days`, `oldest`/`newest` for `window`) is mapped
+  // before validation, so it costs no retry (#78, #151).
+  if (shape)
+    args = normalizeArgs(args, shape, { today: todayLocal(getTimeZone()) });
+  // A key still unknown here is dropped by the parse; a successful reply
+  // says so rather than answer as if it had been used (#151).
+  const ignored = shape ? ignoredArgsText(args, shape) : null;
   const schema = TOOL_INPUT_SCHEMAS.get(name);
   if (schema) {
     const parsed = schema.safeParse(args);
@@ -1543,10 +1548,17 @@ export async function dispatchToolCall(
     if (idKeys) args = await resolveLatestIds(args, idKeys, token, progress);
     // Reported on the result so an app can pin the run it first showed.
     const resolved = resolvedArgsOf(asked, args);
-    const result = withResolvedArgs(
+    const handled = withResolvedArgs(
       await handler(args, token, progress, context),
       resolved,
     );
+    const result =
+      ignored && !handled.isError
+        ? {
+            ...handled,
+            content: [...handled.content, { type: "text", text: ignored }],
+          }
+        : handled;
     // A handler that returns `isError` failed as surely as one that threw; the
     // counters would flatter the server if only throws counted.
     return finish(result.isError ? "error" : "ok", result);

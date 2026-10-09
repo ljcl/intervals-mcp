@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { argShape, normalizeArgs, unknownArgsText } from "./argAliases";
+import {
+  argShape,
+  ignoredArgsText,
+  normalizeArgs,
+  unknownArgsText,
+} from "./argAliases";
 
 const single = argShape({
   type: "object",
@@ -225,6 +230,105 @@ describe("normalizeArgs: weeks to days", () => {
     expect(normalizeArgs({ weeks: "six" }, takesDays)).toEqual({
       weeks: "six",
     });
+  });
+});
+
+describe("normalizeArgs: date range to window", () => {
+  const takesWindow = argShape({
+    type: "object",
+    properties: { window: { type: "string" }, topN: { type: "integer" } },
+  });
+  const today = "2026-10-06";
+
+  it("turns oldest and newest into a window range", () => {
+    expect(
+      normalizeArgs(
+        { oldest: "2026-01-01", newest: "2026-03-31", topN: 2 },
+        takesWindow,
+        { today },
+      ),
+    ).toEqual({ window: "2026-01-01..2026-03-31", topN: 2 });
+  });
+
+  it("ends a range with no newest today", () => {
+    expect(
+      normalizeArgs({ oldest: "2026-01-01" }, takesWindow, { today }),
+    ).toEqual({ window: "2026-01-01..2026-10-06" });
+  });
+
+  it("starts a range with no oldest a year before newest, like the default", () => {
+    expect(
+      normalizeArgs({ newest: "2026-03-31" }, takesWindow, { today }),
+    ).toEqual({ window: "2025-03-31..2026-03-31" });
+  });
+
+  it("turns days, or weeks, into a range of that many days ending today", () => {
+    expect(normalizeArgs({ days: 90 }, takesWindow, { today })).toEqual({
+      window: "2026-07-09..2026-10-06",
+    });
+    expect(normalizeArgs({ weeks: "2" }, takesWindow, { today })).toEqual({
+      window: "2026-09-23..2026-10-06",
+    });
+  });
+
+  it("ends a days range at newest when both are sent", () => {
+    expect(
+      normalizeArgs({ days: 7, newest: "2026-03-31" }, takesWindow, { today }),
+    ).toEqual({ window: "2026-03-25..2026-03-31" });
+  });
+
+  it("keeps a count it did not use, so the note names it", () => {
+    expect(
+      normalizeArgs({ oldest: "2026-01-01", days: 30 }, takesWindow, { today }),
+    ).toEqual({ window: "2026-01-01..2026-10-06", days: 30 });
+  });
+
+  it("never overrides a window the caller sent", () => {
+    expect(
+      normalizeArgs({ window: "90d", oldest: "2026-01-01" }, takesWindow, {
+        today,
+      }),
+    ).toEqual({ window: "90d", oldest: "2026-01-01" });
+  });
+
+  it("leaves values it cannot read for the ignored-arguments note", () => {
+    expect(normalizeArgs({ days: "ninety" }, takesWindow, { today })).toEqual({
+      days: "ninety",
+    });
+    expect(normalizeArgs({ days: 0 }, takesWindow, { today })).toEqual({
+      days: 0,
+    });
+  });
+
+  it("passes a malformed date through for window validation to report", () => {
+    expect(normalizeArgs({ oldest: "Jan 1" }, takesWindow, { today })).toEqual({
+      window: "Jan 1..2026-10-06",
+    });
+  });
+
+  it("does nothing without today, or for a tool that takes oldest", () => {
+    expect(normalizeArgs({ oldest: "2026-01-01" }, takesWindow)).toEqual({
+      oldest: "2026-01-01",
+    });
+    const takesRange = argShape({
+      type: "object",
+      properties: { window: {}, oldest: {}, newest: {} },
+    });
+    expect(
+      normalizeArgs({ oldest: "2026-01-01" }, takesRange, { today }),
+    ).toEqual({ oldest: "2026-01-01" });
+  });
+});
+
+describe("ignoredArgsText", () => {
+  it("names each key a successful call dropped, and the keys the tool takes", () => {
+    expect(ignoredArgsText({ id: "i1", activity: "i1" }, single)).toBe(
+      'Ignored argument "activity" (this tool takes: id, includeIntervals).',
+    );
+  });
+
+  it("is null when every key is known", () => {
+    expect(ignoredArgsText({ id: "i1" }, single)).toBeNull();
   });
 });
 

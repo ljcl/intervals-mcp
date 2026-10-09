@@ -606,6 +606,45 @@ describe("tools/call forgiving arguments (#78)", () => {
     expect(mockedAthleteCurves).toHaveBeenCalled();
   });
 
+  it("reads get-best-efforts oldest/newest as its window (#151)", async () => {
+    mockedAthleteCurves.mockResolvedValue({
+      list: [],
+      activities: {},
+    } as never);
+
+    const client = await connectTestClient();
+    const { result } = await client.send("tools/call", {
+      name: "get-best-efforts",
+      arguments: { oldest: "2026-01-01", newest: "2026-03-31" },
+    });
+
+    expect(result?.isError).toBeFalsy();
+    expect(result?.structuredContent).toMatchObject({
+      window: { oldest: "2026-01-01", newest: "2026-03-31" },
+    });
+    expect(JSON.stringify(result?.content)).not.toContain("Ignored");
+  });
+
+  it("says which keys a successful call ignored (#151)", async () => {
+    mockedAthleteCurves.mockResolvedValue({
+      list: [],
+      activities: {},
+    } as never);
+
+    const client = await connectTestClient();
+    const { result } = await client.send("tools/call", {
+      name: "get-best-efforts",
+      arguments: { distances: ["5km"], sport: "Run" },
+    });
+
+    expect(result?.isError).toBeFalsy();
+    const content = result?.content as Array<{ type: string; text: string }>;
+    expect(content.at(-1)).toEqual({
+      type: "text",
+      text: 'Ignored argument "sport" (this tool takes: distances, window, topN).',
+    });
+  });
+
   it("names the unknown key and the expected ones when a call still fails", async () => {
     const client = await connectTestClient();
     const { result, error } = await client.send("tools/call", {

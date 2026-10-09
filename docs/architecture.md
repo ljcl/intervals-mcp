@@ -534,8 +534,9 @@ case, spaces, hyphens and underscores, with a trailing "k" read as "km"
 ("Half Marathon", "5K"), only when exactly one option matches. The
 advertised schemas and `tool-surface.lock.json` do not change. A call that
 still fails validation gets `unknownArgsText` appended, naming each key the
-tool does not take and the keys it does; a call that passes still drops
-unknown keys silently.
+tool does not take and the keys it does. A call that passes drops unknown
+keys, so its reply ends with an `ignoredArgsText` line naming them and the
+keys the tool takes (#151), never an answer that reads as if they were used.
 
 **One naming scheme for inputs.** The alias layer above exists for models and
 hosts that still use older spellings; the advertised schemas follow this
@@ -556,6 +557,13 @@ scheme:
   `view-cadence-trends` and `get-cadence-trend-data` take `days` (7-728,
   default 42) and the payload carries `days`; a `weeks` argument becomes
   `days: weeks * 7` through the alias layer.
+- `get-best-efforts` is the one exception: it advertises `window` ("all",
+  "1y", "90d", or "YYYY-MM-DD..YYYY-MM-DD"), because "all", "1y" and "90d"
+  are intervals.icu's own pace-curve ids. Until a lock break advertises
+  `oldest`/`newest` there (batched with #82), the alias layer reads
+  `oldest`/`newest`/`days`/`weeks` as a `window` range when no `window` is
+  sent (#151): the range ends at `newest` or today, and starts at `oldest`,
+  else `days` back inclusive, else a year back.
 
 Changing an advertised name changes `tool-surface.lock.json` (see the
 tool-identity invariant in CLAUDE.md), so it is a deliberate release note.
