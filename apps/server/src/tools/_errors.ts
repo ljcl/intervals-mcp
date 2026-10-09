@@ -1,4 +1,4 @@
-import { HttpError, RateLimitError } from "../fetchClient";
+import { HttpError, RateLimitError, RequestTimeoutError } from "../fetchClient";
 
 /**
  * The one home for tool-facing error text.
@@ -61,6 +61,30 @@ function messageOf(error: unknown): string {
  */
 export function prefixedErrorText(message: string): string {
   return `${PREFIX} ${message}`;
+}
+
+/**
+ * Why an optional read failed, as a clause for a warning: "Heart rate
+ * curves not read: <reason>." A tool that degrades on a failed secondary
+ * read (and keeps its main answer) words the cause here, so two tools never
+ * describe the same failure in two ways. It branches on the typed error
+ * like {@link toolErrorText}, never on the message, and never throws. The
+ * raw message is the caller's to log for the operator.
+ */
+export function unavailableReason(error: unknown): string {
+  if (error instanceof RateLimitError) {
+    return "the intervals.icu rate limit was reached";
+  }
+  if (error instanceof HttpError && error.response.cloudflareChallenge) {
+    return "Cloudflare, in front of intervals.icu, answered with a challenge";
+  }
+  if (error instanceof HttpError) {
+    return `intervals.icu answered HTTP ${error.response.status}`;
+  }
+  if (error instanceof RequestTimeoutError) {
+    return "intervals.icu did not answer in time";
+  }
+  return "the request failed";
 }
 
 /**
