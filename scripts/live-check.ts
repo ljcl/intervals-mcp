@@ -316,10 +316,16 @@ async function checkGetActivity(): Promise<void> {
         vertical_oscillation_mm: number | null;
       } | null;
       intervals: unknown[] | null;
+      pace_min_per_100m: string | null;
+      speed_kmh: number | null;
+      gear_name: string | null;
+      achievements: unknown[];
+      hr_recovery: unknown;
     };
+    // Whether the gear name resolved, never the name itself.
     ok(
       name,
-      `distance_km=${d.distance_km} cadence_spm=${d.average_cadence_spm} gct_ms=${d.running_dynamics?.stance_time_ms} vo_mm=${d.running_dynamics?.vertical_oscillation_mm} intervals=${d.intervals?.length ?? 0}`,
+      `distance_km=${d.distance_km} cadence_spm=${d.average_cadence_spm} gct_ms=${d.running_dynamics?.stance_time_ms} vo_mm=${d.running_dynamics?.vertical_oscillation_mm} intervals=${d.intervals?.length ?? 0} pace_100m=${d.pace_min_per_100m} speed_kmh=${d.speed_kmh} gear_name_resolved=${d.gear_name != null} achievements=${d.achievements.length} hr_recovery=${d.hr_recovery != null}`,
     );
   } catch (error) {
     fail(name, throwSummary(error));

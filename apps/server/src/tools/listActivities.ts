@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { achievementLabel, achievementTypes } from "../achievements";
 import { getTimeZone } from "../config";
 import { formatDuration, STRAVA_STUB_NOTE } from "../formatters";
 import {
@@ -17,6 +18,7 @@ import {
   isPaceActivity,
   matchesTypeFilter,
   paceFromDistanceTime,
+  sportSpeed,
 } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
 import { prefixedErrorText, toolErrorText } from "./_errors";
@@ -28,7 +30,9 @@ const name = "list-activities";
 const description = `
 Lists intervals.icu activities in a local date range, newest first. Start
 here: each entry carries the activity id that every per-activity tool needs,
-plus distance, time, pace (runs only), heart rate and training load.
+plus distance, time, pace (per km for runs, per 100 m for swims) or speed
+(km/h for other sports), heart rate, training load, and the types of any
+best or threshold rise intervals.icu marked (get-activity has the detail).
 
 For the most recent run, pass id "latest" to the per-activity tool instead
 of listing first; type "runs" lists runs only.
@@ -98,6 +102,8 @@ export interface ActivitySummaryEntry {
   moving_time_s: number;
   moving_time: string;
   pace_min_per_km: string | null;
+  pace_min_per_100m: string | null;
+  speed_kmh: number | null;
   average_hr: number | null;
   load: number | null;
   gear_id: string | null;
@@ -105,6 +111,7 @@ export interface ActivitySummaryEntry {
   is_strava_stub: boolean;
   tags: string[];
   race: boolean;
+  achievement_types: string[];
 }
 
 /** Maps one raw intervals.icu activity to the compact list entry. Exported for direct testing. */
@@ -119,6 +126,7 @@ export function mapActivitySummary(a: IntervalsActivity): ActivitySummaryEntry {
   const pace = isPaceActivity(type)
     ? paceFromDistanceTime(distanceM, movingTimeS)
     : null;
+  const speed = sportSpeed(type, distanceM, movingTimeS);
 
   return {
     id: a.id,
@@ -130,6 +138,8 @@ export function mapActivitySummary(a: IntervalsActivity): ActivitySummaryEntry {
     moving_time_s: movingTimeS,
     moving_time: formatDuration(movingTimeS),
     pace_min_per_km: pace,
+    pace_min_per_100m: speed.pace_min_per_100m,
+    speed_kmh: speed.speed_kmh,
     average_hr: a.average_heartrate ?? null,
     load: a.icu_training_load ?? null,
     gear_id: a.gear?.id ?? null,
@@ -137,6 +147,7 @@ export function mapActivitySummary(a: IntervalsActivity): ActivitySummaryEntry {
     is_strava_stub: a.source === "STRAVA",
     tags: a.tags ?? [],
     race: a.race ?? false,
+    achievement_types: achievementTypes(a.icu_achievements),
   };
 }
 
@@ -147,7 +158,14 @@ interface ActivityListResponse {
   matched: number;
   truncated: boolean;
   search: string | null;
-  units: { distance: "km"; pace: "min/km"; time: "s"; hr: "bpm" };
+  units: {
+    distance: "km";
+    pace: "min/km";
+    swim_pace: "min/100m";
+    speed: "km/h";
+    time: "s";
+    hr: "bpm";
+  };
   activities: ActivitySummaryEntry[];
 }
 
@@ -157,9 +175,17 @@ function formatActivityLine(entry: ActivitySummaryEntry): string {
     parts.push(`${entry.distance_km.toFixed(2)} km`);
   parts.push(entry.moving_time);
   if (entry.pace_min_per_km != null) parts.push(`${entry.pace_min_per_km} /km`);
+  if (entry.pace_min_per_100m != null)
+    parts.push(`${entry.pace_min_per_100m} /100m`);
+  if (entry.speed_kmh != null) parts.push(`${entry.speed_kmh} km/h`);
   if (entry.average_hr != null)
     parts.push(`HR ${Math.round(entry.average_hr)}`);
   if (entry.load != null) parts.push(`load ${Math.round(entry.load)}`);
+  const types = entry.achievement_types;
+  if (types.length > 0)
+    parts.push(
+      `${types.length === 1 ? "achievement" : "achievements"}: ${types.map((t) => achievementLabel(t, entry.type)).join(", ")}`,
+    );
   return `${entry.date} ${entry.type} ${entry.name}, ${parts.join(", ")} [${entry.id}]`;
 }
 
@@ -340,7 +366,14 @@ export const listActivitiesTool = {
           matched,
           truncated: matched > page.length,
           search: search ?? null,
-          units: { distance: "km", pace: "min/km", time: "s", hr: "bpm" },
+          units: {
+            distance: "km",
+            pace: "min/km",
+            swim_pace: "min/100m",
+            speed: "km/h",
+            time: "s",
+            hr: "bpm",
+          },
           activities: page,
         };
       };

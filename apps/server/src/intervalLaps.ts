@@ -18,9 +18,20 @@ import {
   gapPace,
   isPaceActivity,
   isStepCadenceActivity,
-  metersPerSecToPace,
   paceFromDistanceTime,
+  sportSpeed,
 } from "./utils/running";
+
+/**
+ * The text note for swim intervals and laps. intervals.icu counts the rests
+ * at the wall inside a swim interval as moving time (its `moving_time`
+ * equals its `elapsed_time`), while the activity's `moving_time` leaves them
+ * out. So an interval's pace per 100 m can be slower than every pace the
+ * activity line shows (docs/api-notes.md). Shared by get-activity and
+ * get-activity-laps.
+ */
+export const SWIM_INTERVAL_PACE_NOTE =
+  "swim paces include the rests inside each interval";
 
 export interface LapEntry {
   /** 1-based position in `icu_intervals`; intervals carry no lap number of their own. */
@@ -39,7 +50,9 @@ export interface LapEntry {
   /** GAP here is always intervals.icu's own `gap` field, distinct from
    * get-hill-analysis/get-split-analysis's locally-modelled GAP. */
   gap_source: "intervals.icu";
-  /** Set for non-pace sports; falls back to distance/moving_time when the interval carries no `average_speed`. */
+  /** `m:ss` per 100 m for a swim (`sportSpeed`). */
+  pace_min_per_100m: string | null;
+  /** km/h for every sport except runs and swims (`sportSpeed`). */
   speed_kmh: number | null;
   average_hr: number | null;
   max_hr: number | null;
@@ -50,25 +63,6 @@ export interface LapEntry {
   average_gradient_pct: number | null;
 }
 
-/**
- * Speed for a non-pace sport (Ride, etc.): the interval's own `average_speed`
- * (m/s) when present, else derived from `distance`/`moving_time`. `null` for
- * a pace sport (those get `pace_min_per_km` instead) or when neither source
- * is available (e.g. a non-distance sport like WeightTraining).
- */
-function speedKmh(interval: IntervalsInterval, isPace: boolean): number | null {
-  if (isPace) return null;
-  if (interval.average_speed != null && interval.average_speed > 0) {
-    return metersPerSecToPace(interval.average_speed)?.kmh ?? null;
-  }
-  if (interval.distance && interval.moving_time) {
-    return (
-      metersPerSecToPace(interval.distance / interval.moving_time)?.kmh ?? null
-    );
-  }
-  return null;
-}
-
 function mapOneInterval(
   interval: IntervalsInterval,
   lapIndex: number,
@@ -76,6 +70,10 @@ function mapOneInterval(
 ): LapEntry {
   const isPace = isPaceActivity(type);
   const cadence = cadenceSpm(interval.average_cadence, type);
+  // Distance over moving time, as get-activity's intervals, so a lap and the
+  // same interval there always agree. intervals.icu's interval
+  // `average_speed` equals it (docs/api-notes.md).
+  const speed = sportSpeed(type, interval.distance, interval.moving_time);
   return {
     lap_index: lapIndex,
     type: interval.type ?? null,
@@ -90,7 +88,8 @@ function mapOneInterval(
       : null,
     gap_min_per_km: gapPace(interval.gap, type),
     gap_source: "intervals.icu",
-    speed_kmh: speedKmh(interval, isPace),
+    pace_min_per_100m: speed.pace_min_per_100m,
+    speed_kmh: speed.speed_kmh,
     average_hr: interval.average_heartrate ?? null,
     max_hr: interval.max_heartrate ?? null,
     average_cadence: cadence == null ? null : Math.round(cadence),
@@ -149,6 +148,7 @@ export function formatLapLine(lap: LapEntry, cadence: "spm" | "rpm"): string {
   parts.push(lap.moving_time);
   if (lap.pace_min_per_km) parts.push(`${lap.pace_min_per_km} /km`);
   if (lap.gap_min_per_km) parts.push(`GAP ${lap.gap_min_per_km} /km`);
+  if (lap.pace_min_per_100m) parts.push(`${lap.pace_min_per_100m} /100m`);
   if (lap.speed_kmh != null) parts.push(`${lap.speed_kmh} km/h`);
   if (lap.average_watts != null)
     parts.push(`${Math.round(lap.average_watts)} W`);

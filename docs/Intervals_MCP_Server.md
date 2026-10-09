@@ -31,8 +31,8 @@ rather than (or alongside) text.
 
 | Tool | Answers | Key params |
 | ---- | ------- | ---------- |
-| `list-activities` | What did I do recently? What's this activity's id? When did I last do X? Each entry carries `tags` and `race` | `oldest`/`newest` (YYYY-MM-DD, default last 28 days), `type` (`runs` for Run/TrailRun/VirtualRun, one type, or a comma list; for the most recent run, pass `id: "latest"` to the per-activity tool instead), `nameContains`, `search` (all history: name substring or `#tag`), `limit` |
-| `get-activity` | Full detail on one activity | `id` |
+| `list-activities` | What did I do recently? What's this activity's id? When did I last do X? Each entry carries `tags`, `race` and `achievement_types` (a best or threshold rise) | `oldest`/`newest` (YYYY-MM-DD, default last 28 days), `type` (`runs` for Run/TrailRun/VirtualRun, one type, or a comma list; for the most recent run, pass `id: "latest"` to the per-activity tool instead), `nameContains`, `search` (all history: name substring or `#tag`), `limit` |
+| `get-activity` | Full detail on one activity: gear name, swim pace per 100 m, HR recovery, and any best or threshold rise intervals.icu marked (an LTHR_UP is its estimate, not a changed setting; for a run PB, use `get-best-efforts`) | `id` |
 | `list-gear` | What shoes/bikes do I have, and their mileage? | `includeRetired` |
 | `get-wellness` | HRV, resting HR, sleep, weight, CTL/ATL/TSB for a day or range | `date`, or `oldest`/`newest` (max 90 days) |
 
@@ -200,7 +200,9 @@ description is kept. (This is also the `annotate-last-run` prompt.)
   sending the same update again.
 - **Walks, hikes, and other non-running sports.** Pace fields
   (`pace_min_per_km`, `gap_min_per_km`) are only populated for Run/TrailRun/
-  VirtualRun; a Walk or Hike gets cadence but no pace. Cadence itself is
+  VirtualRun; a Walk or Hike gets cadence and `speed_kmh` but no pace. A
+  swim gets `pace_min_per_100m` and no running dynamics; other sports with a
+  distance get `speed_kmh`. Cadence itself is
   doubled to steps/min for Run/TrailRun/VirtualRun/Walk/Hike; other sports
   report the raw rate in rpm. HR zone tools generally need the activity's own
   recorded zone bounds or a matching Run sport-settings group; without
@@ -225,13 +227,16 @@ description is kept. (This is also the `annotate-last-run` prompt.)
 
 ## Units
 
-- **Pace** is always a bare `m:ss` string per kilometre, in a
+- **Pace** for a run is a bare `m:ss` string per kilometre, in a
   `*_min_per_km` field (`pace_min_per_km`, `gap_min_per_km`,
   `avg_pace_min_per_km`), never miles. Where a tool also needs the number
   for arithmetic it adds a paired `*_sec_per_km` field in seconds
   (`get-race-prediction`'s `pace_sec_per_km`, `compare-activities`'
-  `pace_delta_sec_per_km`). `get-athlete-zones` also gives a swim group's
-  paces per 100 m, in `*_min_per_100m` fields.
+  `pace_delta_sec_per_km`). A swim's pace is per 100 m instead, in
+  `pace_min_per_100m` (`units.swim_pace`), and other sports get
+  `speed_kmh` (`units.speed`).
+  `get-athlete-zones` also gives a swim group's paces per 100 m, in
+  `*_min_per_100m` fields.
 - **`units` object.** Most tool responses include a `units` object naming
   every field's unit explicitly (distance, HR, cadence spm vs rpm, HRV in
   ms, SpO2 in %, respiration in breaths/min), so a unit is never implied.

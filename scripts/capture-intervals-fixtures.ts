@@ -117,6 +117,9 @@ function scrubHeartRateProfile(r: Rec): Rec {
         Math.round(SYNTHETIC_HR.max * (0.7 + (0.3 * (i + 1)) / zones.length)),
       );
   }
+  if ("icu_achievements" in out) {
+    out.icu_achievements = scrubAchievements(out.icu_achievements);
+  }
   return out;
 }
 
@@ -150,6 +153,35 @@ function scrubIntervalIntensity(r: Rec, activityType: unknown): Rec {
     if (Array.isArray(list)) out[k] = (list as Rec[]).map(scrubOne);
   }
   return out;
+}
+
+/**
+ * An LTHR_UP achievement carries the new LTHR in `value`, and the HR of the
+ * curve point behind it in `point.value` and `message`, so it gets the
+ * synthetic LTHR too. A 20 min point sets LTHR to 98% of its HR
+ * (docs/api-notes.md), so its point HR is the synthetic LTHR / 0.98. Other
+ * types keep their numbers: a pace or power best is performance data, like
+ * the activity's own pace.
+ */
+function scrubAchievements(list: unknown): unknown {
+  if (!Array.isArray(list)) return list;
+  return list.map((a: Rec) => {
+    if (a?.type !== "LTHR_UP") return a;
+    const point =
+      a.point && typeof a.point === "object" ? (a.point as Rec) : null;
+    const twentyMin = point?.secs === 1200;
+    const pointHr = twentyMin
+      ? Math.round(SYNTHETIC_HR.lthr / 0.98)
+      : SYNTHETIC_HR.lthr;
+    return {
+      ...a,
+      value: SYNTHETIC_HR.lthr,
+      message: twentyMin
+        ? `98% of 20m at ${pointHr} bpm`
+        : `1h at ${pointHr} bpm`,
+      point: point ? { ...point, value: pointHr } : a.point,
+    };
+  });
 }
 
 function scrubStreams(streams: Rec[]): Rec[] {

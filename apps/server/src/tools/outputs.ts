@@ -147,6 +147,34 @@ export const TrainingLoadOutputSchema = z.object({
 // (RunningSummaryOutputSchema), after ActivityDetailOutputSchema and
 // IntervalsLapEntrySchema, which it extends/reuses.
 
+// ---------- swim pace and speed (sportSpeed) ----------
+// One wording for the two sportSpeed fields, in every schema that has them:
+// list-activities, get-activity, compare-activities, and get-activity's
+// intervals and the laps (with the interval wording for swim pace).
+const swimPaceField = () =>
+  z
+    .string()
+    .nullable()
+    .describe(
+      "m:ss per 100 m, from distance over moving time; Swim and OpenWaterSwim only",
+    );
+// An interval's (and so a lap's) swim pace: intervals.icu counts the rests
+// at the wall inside a swim interval as moving time (docs/api-notes.md).
+const swimIntervalPaceField = () =>
+  z
+    .string()
+    .nullable()
+    .describe(
+      "m:ss per 100 m, from distance over the interval's moving time; Swim and OpenWaterSwim only. intervals.icu counts the rests inside a swim interval as moving time, so this pace includes them and can be slower than the activity's own pace_min_per_100m, which leaves them out",
+    );
+const speedKmhField = () =>
+  z
+    .number()
+    .nullable()
+    .describe(
+      "km/h to 1 dp, from distance over moving time; every sport except Run, TrailRun, VirtualRun and swims, when a distance was recorded",
+    );
+
 // ---------- compare-activities ----------
 const CompareRunningDynamicsSchema = z.object({
   stance_time_ms: z.number().nullable(),
@@ -164,6 +192,8 @@ const CompareSideSchema = z.object({
   moving_time: z.string(),
   moving_time_s: z.number().int(),
   pace_min_per_km: z.string().nullable(),
+  pace_min_per_100m: swimPaceField(),
+  speed_kmh: speedKmhField(),
   gap_min_per_km: z.string().nullable(),
   gap_source: z
     .literal("intervals.icu")
@@ -183,6 +213,8 @@ export const CompareActivitiesOutputSchema = z.object({
   units: z.object({
     distance: z.literal("km"),
     pace: z.literal("min/km"),
+    swim_pace: z.literal("min/100m"),
+    speed: z.literal("km/h"),
     time: z.literal("s"),
     hr: z.literal("bpm"),
     elevation: z.literal("m"),
@@ -906,6 +938,8 @@ const ActivitySummarySchema = z.object({
     .string()
     .nullable()
     .describe("Set for Run/TrailRun/VirtualRun only"),
+  pace_min_per_100m: swimPaceField(),
+  speed_kmh: speedKmhField(),
   average_hr: z.number().nullable(),
   load: z.number().nullable().describe("icu_training_load"),
   gear_id: z.string().nullable(),
@@ -917,6 +951,11 @@ const ActivitySummarySchema = z.object({
     ),
   tags: z.array(z.string()).describe("intervals.icu tags; empty when none"),
   race: z.boolean().describe("Marked as a race in intervals.icu"),
+  achievement_types: z
+    .array(z.string())
+    .describe(
+      "intervals.icu achievement types this activity set (BEST_PACE, BEST_POWER, LTHR_UP, FTP_UP); empty when none. get-activity has the detail",
+    ),
 });
 export const ActivityListOutputSchema = z.object({
   oldest: z
@@ -942,6 +981,8 @@ export const ActivityListOutputSchema = z.object({
   units: z.object({
     distance: z.literal("km"),
     pace: z.literal("min/km"),
+    swim_pace: z.literal("min/100m"),
+    speed: z.literal("km/h"),
     time: z.literal("s"),
     hr: z.literal("bpm"),
   }),
@@ -969,20 +1010,83 @@ const RunningDynamicsSchema = z.object({
   step_length_mm: z.number().nullable(),
   stride_m: z.number().nullable(),
 });
+const AchievementSchema = z.object({
+  type: z
+    .string()
+    .describe(
+      "intervals.icu achievement type: BEST_PACE, BEST_POWER, LTHR_UP or FTP_UP. LTHR_UP and FTP_UP concern the sport settings of this activity's type: a swim's LTHR_UP is about the swim LTHR, not the run LTHR",
+    ),
+  message: z
+    .string()
+    .nullable()
+    .describe('intervals.icu\'s own summary, e.g. "1h at 172 bpm"'),
+  value: z
+    .number()
+    .nullable()
+    .describe(
+      "intervals.icu's value as sent. For LTHR_UP, the LTHR in bpm that intervals.icu estimated from this effort, above the LTHR this activity was analysed with. It does not show that the sport settings changed",
+    ),
+  duration_s: z
+    .number()
+    .nullable()
+    .describe("Length of the effort behind it, in seconds"),
+  distance_m: z
+    .number()
+    .nullable()
+    .describe("Distance of the effort in metres, when intervals.icu sends one"),
+  watts: z
+    .number()
+    .nullable()
+    .describe(
+      "Power of the effort in W, as sent (BEST_POWER, FTP_UP); not seen live",
+    ),
+  pace_mps: z
+    .number()
+    .nullable()
+    .describe(
+      "Pace of the effort as sent, a speed in m/s like intervals.icu's other pace fields (BEST_PACE); not seen live",
+    ),
+});
+const HrRecoverySchema = z.object({
+  drop_bpm: z
+    .number()
+    .describe("HR fall across the window: start_bpm minus end_bpm"),
+  start_bpm: z.number(),
+  end_bpm: z.number(),
+  window_s: z
+    .number()
+    .nullable()
+    .describe("Window length in seconds; 60 on every activity checked"),
+  start_time_s: z
+    .number()
+    .nullable()
+    .describe("Where the window starts, in seconds from the activity start"),
+});
 const ActivityIntervalEntrySchema = z.object({
   type: z.string().nullable().describe("e.g. WORK, RECOVERY"),
   label: z.string().nullable(),
   distance_km: z.number().nullable(),
   moving_time_s: z.number().int().nullable(),
   pace_min_per_km: z.string().nullable().describe("Set for runs only"),
+  pace_min_per_100m: swimIntervalPaceField(),
+  speed_kmh: speedKmhField(),
   average_hr: z.number().nullable(),
   average_cadence_spm: z
     .number()
     .nullable()
     .describe("Strides doubled to steps/min, runs only"),
-  stance_time_ms: z.number().nullable(),
-  vertical_oscillation_mm: z.number().nullable(),
-  step_length_mm: z.number().nullable(),
+  stance_time_ms: z
+    .number()
+    .nullable()
+    .describe("Ground contact time, ms; runs, walks and hikes only"),
+  vertical_oscillation_mm: z
+    .number()
+    .nullable()
+    .describe("mm; runs, walks and hikes only"),
+  step_length_mm: z
+    .number()
+    .nullable()
+    .describe("mm; runs, walks and hikes only"),
 });
 export const ActivityDetailOutputSchema = z.object({
   id: z.string(),
@@ -1010,6 +1114,8 @@ export const ActivityDetailOutputSchema = z.object({
     .string()
     .nullable()
     .describe("Set for Run/TrailRun/VirtualRun only"),
+  pace_min_per_100m: swimPaceField(),
+  speed_kmh: speedKmhField(),
   gap_min_per_km: z
     .string()
     .nullable()
@@ -1028,11 +1134,28 @@ export const ActivityDetailOutputSchema = z.object({
     .nullable()
     .describe("Strides doubled to steps/min, runs only"),
   elevation_gain_m: z.number().nullable(),
+  pool_length_m: z
+    .number()
+    .nullable()
+    .describe("Pool length in metres; pool swims only"),
+  lengths: z
+    .number()
+    .int()
+    .nullable()
+    .describe("Pool lengths swum; pool swims only"),
   load: ActivityLoadSchema,
   decoupling_pct: z.number().nullable(),
   efficiency_factor: z.number().nullable(),
   rpe: z.number().nullable(),
   feel: z.number().nullable(),
+  achievements: z
+    .array(AchievementSchema)
+    .describe(
+      "Bests and threshold rises intervals.icu marked on this activity; empty when none",
+    ),
+  hr_recovery: HrRecoverySchema.nullable().describe(
+    "intervals.icu's heart-rate recovery: the HR drop over a window it picked in this activity (60 s on every activity checked). The window can start before an effort ends; null when it found none",
+  ),
   hr_zones: z
     .array(HrZoneEntrySchema)
     .describe("Empty when sport settings or icu_hr_zone_times are unavailable"),
@@ -1047,13 +1170,15 @@ export const ActivityDetailOutputSchema = z.object({
     .string()
     .nullable()
     .describe(
-      "Resolved from the activity payload alone, never an extra list-gear call; null in practice since intervals.icu doesn't populate it on the activity today",
+      "From the athlete's gear list (list-gear's source, cached 10 minutes); the activity sends only the gear id. Null when the activity has no gear or the gear read fails",
     ),
   weather_temp_c: z.number().nullable(),
   description: z.string().nullable(),
   units: z.object({
     distance: z.literal("km"),
     pace: z.literal("min/km"),
+    swim_pace: z.literal("min/100m"),
+    speed: z.literal("km/h"),
     time: z.literal("s"),
     hr: z.literal("bpm"),
     elevation: z.literal("m"),
@@ -1407,7 +1532,8 @@ const IntervalsLapEntrySchema = z.object({
     .describe(
       "GAP here is intervals.icu's own gap field, distinct from get-hill-analysis/get-split-analysis's locally-modelled GAP",
     ),
-  speed_kmh: z.number().nullable().describe("Set for non-pace distance sports"),
+  pace_min_per_100m: swimIntervalPaceField(),
+  speed_kmh: speedKmhField(),
   average_hr: z.number().nullable(),
   max_hr: z.number().nullable(),
   average_cadence: z
@@ -1437,6 +1563,7 @@ export const ActivityLapsOutputSchema = z.object({
   units: z.object({
     distance: z.literal("km"),
     pace: z.literal("min/km"),
+    swim_pace: z.literal("min/100m"),
     speed: z.literal("km/h"),
     time: z.literal("s"),
     hr: z.literal("bpm"),

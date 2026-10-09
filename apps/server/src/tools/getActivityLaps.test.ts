@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { handledNotFound, handledRateLimit } from "../__fixtures__";
 import activityMultilap from "../__fixtures__/intervals/activity-multilap.json";
 import multilapIntervals from "../__fixtures__/intervals/activity-multilap-intervals.json";
+import activitySwimFixture from "../__fixtures__/intervals/activity-swim.json";
+import activitySwimIntervalsFixture from "../__fixtures__/intervals/activity-swim-intervals.json";
 import {
   getActivity,
   type IntervalsActivity,
@@ -123,6 +125,22 @@ describe("getActivityLapsTool.execute", () => {
     expect(text).not.toContain("Note:");
   });
 
+  it("notes that swim lap paces include the rests inside each lap", async () => {
+    mockedGetActivity.mockResolvedValueOnce({
+      ...activitySwimFixture,
+      icu_intervals: activitySwimIntervalsFixture.icu_intervals,
+    } as unknown as IntervalsActivity);
+
+    const result = await getActivityLapsTool.execute(
+      { id: "i189757185" },
+      "test-key",
+    );
+
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain("1:43 /100m");
+    expect(text).toContain("swim paces include the rests inside each interval");
+  });
+
   it("returns a valid empty payload when the activity has no intervals", async () => {
     mockedGetActivity.mockResolvedValueOnce({
       id: "i777",
@@ -154,6 +172,7 @@ describe("getActivityLapsTool.execute", () => {
       units: {
         distance: "km",
         pace: "min/km",
+        swim_pace: "min/100m",
         speed: "km/h",
         time: "s",
         hr: "bpm",
@@ -241,6 +260,7 @@ describe("formatActivityLapsText", () => {
       units: {
         distance: "km",
         pace: "min/km",
+        swim_pace: "min/100m",
         speed: "km/h",
         time: "s",
         hr: "bpm",

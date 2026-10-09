@@ -6,6 +6,7 @@ import activityHilly from "./__fixtures__/intervals/activity-hilly.json";
 import intervals from "./__fixtures__/intervals/activity-intervals.json";
 import activityMultilap from "./__fixtures__/intervals/activity-multilap.json";
 import multilapIntervals from "./__fixtures__/intervals/activity-multilap-intervals.json";
+import activitySwim from "./__fixtures__/intervals/activity-swim.json";
 import gearFixture from "./__fixtures__/intervals/gear.json";
 import hrCurvesFixture from "./__fixtures__/intervals/hr-curves.json";
 import paceCurvesFixture from "./__fixtures__/intervals/pace-curves.json";
@@ -311,6 +312,51 @@ describe("intervalsClient", () => {
     expect(result.power_load).toBe(activity.power_load);
     expect(result.session_rpe).toBe(activity.session_rpe);
     expect(result.strain_score).toBe(activity.strain_score);
+  });
+
+  it("types a pool swim's lengths, HR recovery and achievements", async () => {
+    // The swim fixture sets no achievement; this LTHR_UP is synthetic, in
+    // the shape seen live (docs/api-notes.md).
+    const lthrUp = {
+      id: "lthr",
+      type: "LTHR_UP",
+      message: "1h at 172 bpm",
+      value: 172,
+      secs: null,
+      point: { start_index: 0, end_index: 3600, secs: 3600, value: 172 },
+    };
+    mockJson({ ...activitySwim, icu_achievements: [lthrUp] });
+    const result = await getActivity("k", activitySwim.id);
+    expect(result.lengths).toBe(30);
+    expect(result.pool_length).toBe(50);
+    expect(result.icu_hrr).toMatchObject({
+      start_time: 1458,
+      end_time: 1518,
+      start_bpm: 153,
+      end_bpm: 140,
+      hrr: 13,
+    });
+    expect(result.icu_achievements).toEqual([lthrUp]);
+  });
+
+  it.each([
+    ["a string", "oops"],
+    ["an entry with a numeric type", [{ type: 5 }]],
+  ])(
+    "reads icu_achievements as null, not a failure, when it is %s",
+    async (_label, bad) => {
+      mockJson({ ...activitySwim, icu_achievements: bad });
+      const result = await getActivity("k", activitySwim.id);
+      expect(result.id).toBe(activitySwim.id);
+      expect(result.icu_achievements).toBeNull();
+    },
+  );
+
+  it("reads a malformed icu_hrr as null, not a failure", async () => {
+    mockJson({ ...activitySwim, icu_hrr: "oops" });
+    const result = await getActivity("k", activitySwim.id);
+    expect(result.id).toBe(activitySwim.id);
+    expect(result.icu_hrr).toBeNull();
   });
 
   it("types ctlLoad, atlLoad, and sportInfo on a wellness row", async () => {
@@ -649,6 +695,8 @@ describe("intervalsClient", () => {
     expect(gear[0]?.id).toBe(gearFixture[0]?.id);
     expect(gear[0]?.name).toBe(gearFixture[0]?.name);
     expect(gear[0]?.distance).toBe(gearFixture[0]?.distance);
+    // The owner, which get-activity matches against icu_athlete_id.
+    expect(gear[0]?.athlete_id).toBe("i0");
   });
 
   it("types a gear reminder's known fields and keeps an unknown one via passthrough", async () => {

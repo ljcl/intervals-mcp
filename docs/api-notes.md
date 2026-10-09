@@ -477,3 +477,130 @@ Interval `intensity`:
 - `?intervals=true` adds `icu_intervals` and `icu_groups` to every row, the same as `GET /activity/{id}?intervals=true`. Without it, the rows have no `icu_intervals` key at all (absent, not null), the same as list and search rows.
 - `fields=` is ignored: full rows come back.
 - Size: 19 runs with intervals were 430 KB to 709 KB, read in about 1 s.
+## Achievements, HR recovery, swims and gear (2026-10-08, #86, live read-only)
+
+Seven GETs, plus the 2026 activity list from an earlier probe. One request
+scanned all history before 2026 with `fields=`
+(`GET /athlete/0/activities?oldest=2023-01-01&newest=2025-12-31&fields=id,type,start_date_local,icu_achievements,icu_hrr,gear,lengths,pool_length,distance,moving_time`).
+`fields` returns only the named keys and leaves out null values, so 640
+activities came back in 86 KB.
+
+**Achievements (`icu_achievements`)**
+- Activity rows (`GET /athlete/0/activities`) and `GET /activity/{id}` both
+  carry it. It is `null` when the activity set nothing. An empty array was
+  not seen.
+- Only `LTHR_UP` was seen: 14 activities between October 2024 and May
+  2026 (3 runs, 11 pool swims), in a scan of all history from December
+  2023 to October 2026. Shape: `{ id: "lthr", type: "LTHR_UP",
+  message, value, secs: null, distance: null, pace: null, watts: null,
+  point: { start_index, end_index, secs, value } }`.
+- `value` is the LTHR in bpm that intervals.icu estimated from the effort.
+  `point` is the heart-rate curve point behind it: `secs` is the effort
+  length (3600 or 1200 s) and `value` its HR. For a 1 h point, `value`
+  equals `point.value` and `message` reads "1h at N bpm". For a 20 min
+  point, `value` is 98% of `point.value`, rounded, and `message` reads "98%
+  of 20m at N bpm".
+- The estimate is per sport. Each sport has its own `lthr` on its
+  activities (one value per sport over all of 2026, and Swim's differs from
+  Run's). On both 2026 activities with an LTHR_UP (a run and a swim),
+  `value` is above the activity's own `lthr`.
+- An LTHR_UP does not show that the sport settings changed. On this
+  account, every later activity of the same sport still carries an `lthr`
+  below the achievement's `value` (63 of 63 runs, 23 of 23 swims; checked
+  2026-10-09 on the 2026 activity list, counts only). The activity's `lthr`
+  is not shown to be the setting before the rise either. So the tools call
+  `value` an estimate and never "the new LTHR", and the text names the
+  activity type ("Swim LTHR up: N bpm estimated").
+- `BEST_PACE`, `BEST_POWER` and `FTP_UP` were not seen (no power meter, and
+  no pace best in this account's history). Their `value`, `secs`,
+  `distance`, `pace` and `watts` are not verified. `get-activity` reports
+  `type`, `message`, `value`, the effort length (`secs`, else `point.secs`)
+  and `distance` as sent. It reads `value` as bpm for `LTHR_UP` only.
+- The client parses `icu_achievements` and `icu_hrr` with a fallback to
+  `null`, so a malformed entry cannot fail every read of the activity.
+
+**HR recovery (`icu_hrr`)**
+- Shape (OpenAPI `HRRecovery`): `{ start_index, end_index, start_time,
+  end_time, start_bpm, end_bpm, average_watts, hrr }`. It is `null` when
+  intervals.icu found no recovery.
+- On all 121 activities that have it (December 2023 to October 2026),
+  `end_time - start_time` is 60 and `hrr` equals `start_bpm - end_bpm`.
+  `average_watts` was always null (no power meter).
+- `start_time` and `end_time` are `time` stream values (seconds from the
+  start) at `start_index` and `end_index`. `start_bpm` and `end_bpm` are the
+  `heartrate` samples there. On the pool swim checked, the 60 s window holds
+  32 samples, so an index is not a second.
+- It is present on about a quarter of runs (27 of 110 in 2026) and a third
+  of pool swims (9 of 26). It also appears on some open-water swims,
+  virtual rides, strength and Pilates sessions. The window can be anywhere
+  in the activity, not only at the end. It need not follow an effort
+  either: on the pool swim checked, it starts 28 s before a WORK interval
+  ends. So `hr_recovery`'s describe text does not say "after a hard
+  effort".
+
+**Swims**
+- Pool swims carry `lengths` (a count) and `pool_length` (m; 25 or 50 on
+  this account). Both are null on runs, rides and open-water swims.
+- `average_cadence` on a swim is strokes per minute as intervals.icu counts
+  them. The `cadence` stream summed over one 1,500 m swim gives 538.8
+  strokes, and `average_cadence × moving_time / 60` gives 538.7. The
+  `SWOLF` field equals `(moving_time + average_cadence × moving_time / 60)
+  × 25 / distance` (seconds plus strokes per 25 m) on all 28 swims of 2026,
+  pool and open water. `SWOLF` is also set on runs, where it has no
+  meaning. No tool reads it.
+- `average_stride` is `(distance / moving_time) / (2 × average_cadence /
+  60)` on swims too: intervals.icu doubles the cadence as for a run.
+  `average_step_length` (mm) is within -1% to +2.5% of `average_stride` on
+  the 26 pool swims. Both are about half of the distance per stroke that
+  intervals.icu's own stroke count gives (1.39 m against 2.78 m on the
+  swim checked). So on a swim neither field is a step length or a distance
+  per stroke. `get-activity` reports the step-based fields (ground contact
+  time, vertical oscillation, step length) only for the step-cadence types
+  (`STEP_CADENCE_ACTIVITY_TYPES`), on intervals as on the whole activity.
+- Swim intervals (`?intervals=true`): WORK intervals carry
+  `average_cadence`, `average_step_length` and `average_stride`. RECOVERY
+  intervals have `distance`, `average_speed` and cadence null.
+- A swim interval's `moving_time` equals its `elapsed_time`, so it counts
+  the rests at the wall inside the set. The activity's `moving_time` leaves
+  them out. On the 1,500 m pool swim checked (2026-10-09, from the saved
+  streams), the six WORK intervals sum to 1,610 s, and the `distance`
+  stream holds 1,489 s of movement in total, equal to the activity's
+  `moving_time`. The first WORK interval holds 499 s of movement in its
+  520 s. So each interval's pace per 100 m is slower than the activity's,
+  and the activity pace can be faster than every rep. A run interval's
+  `moving_time` does leave stops out (one fixture lap: 237 s of 311 s). The
+  tools keep both figures (the activity's matches intervals.icu's own
+  `pace`), and the interval and lap texts say that swim paces include the
+  rests.
+- Open-water swims: `lengths`, `pool_length` and `average_step_length` are
+  null. `average_cadence` and `average_stride` are set from a summary rate
+  (there is no `cadence` stream). Their intervals were 100 m auto-laps with
+  cadence null.
+
+**Speed basis**
+- The activity's `pace` field is a speed in m/s, despite its name. It
+  equals `distance / moving_time` on all 148 activities with a distance in
+  2026 (runs, pool and open-water swims, rides, a walk).
+- The activity's `average_speed` is the device's figure and differs from
+  it: by a median 9% (up to 19%) on swims and rides, and 0.3% on runs.
+- On intervals, `average_speed` equals `distance / moving_time` (48
+  intervals of two runs, a pool swim and an open-water swim). No interval had
+  `average_speed` without a distance.
+- The tools compute every pace and speed from `distance / moving_time`:
+  pace per km through `paceFromDistanceTime`, and pace per 100 m and km/h
+  through `sportSpeed` (both in `utils/running.ts`). A swim slower than
+  0.3 m/s (`MIN_MOVING_SPEED_MPS`, one broken open-water recording) gets no
+  pace.
+
+**Gear**
+- On 2026-10-08, activity rows and `GET /activity/{id}` still send `gear:
+  { id, name: null, distance: null, primary: null }`.
+- `GET /athlete/0/gear` items also carry `athlete_id` (equal to the
+  activity's `icu_athlete_id`), `activity_filters`, `component`,
+  `component_ids`, `notes`, `purchased`, `time` and `use_elapsed_time`.
+- The gear id on every activity with gear is in that list, and the item's
+  `activities` count matches. `get-activity` and `get-running-summary` read
+  the name from the cached list (10 minutes). When the id is not in the
+  cached list (gear added since it was cached), they read the list once
+  more past the cache. They do not use an item whose `athlete_id` differs
+  from the activity's `icu_athlete_id`.

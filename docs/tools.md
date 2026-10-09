@@ -63,8 +63,8 @@ descriptions.
 
 | Tool | Description |
 | ---- | ----------- |
-| `list-activities` | Compact, date-bounded activity list with units; the entry point for finding activity ids |
-| `get-activity` | One activity in detail: metrics, load, HR zones, running dynamics, intervals; use after list-activities |
+| `list-activities` | Compact, date-bounded activity list with units; the entry point for finding activity ids; swim pace per 100 m, speed for other sports, achievement types |
+| `get-activity` | One activity in detail: metrics, load, HR zones, running dynamics, intervals, gear name, achievements, HR recovery; use after list-activities |
 | `get-activity-streams` | Time-series streams for one activity, downsampled to a bounded number of points, including running dynamics |
 | `list-gear` | The athlete's gear (shoes) with mileage and retirement status |
 | `get-wellness` | Daily wellness (HRV, resting HR, sleep, weight, CTL/ATL/TSB) for a date or range |
@@ -94,7 +94,13 @@ the per-activity tool instead) or
 (1-200, default 30). `search` (a name substring or `#tag`) reaches all
 history through `search-full`, beyond the 366-day window, with `type`,
 `oldest` and `newest` as post-filters and `nameContains` ignored. Every
-entry carries `tags` and `race`. A page that
+entry carries `tags` and `race`. It also carries `achievement_types`: the
+intervals.icu achievement types the activity set (`achievements.ts`), empty
+when none; the text names them after the load, a threshold type with the
+activity type ("Swim LTHR up"), because a threshold belongs to one sport. Swim and OpenWaterSwim
+entries carry `pace_min_per_100m`, and every other sport that is not a run
+and has a distance carries `speed_kmh`. Both come from `sportSpeed`
+(`utils/running.ts`), from distance over moving time. A page that
 would overrun the response size budget (a year of daily activities at limit
 200) comes back shorter, with `truncated: true`; whenever the list is
 truncated, the text names the `oldest`/`newest` call that fetches the older
@@ -111,10 +117,26 @@ Strava stub spike note.
 `get-activity` takes the `id` from `list-activities` and returns core
 metrics, training load, HR zone time-in-zone, running dynamics (Run,
 TrailRun, VirtualRun, Walk, Hike, with device support), the WORK/RECOVERY
-interval breakdown (`includeIntervals`, default true), gear id, and
-description, all with units. Gear name is included too when the activity
-payload happens to carry one; intervals.icu does not populate it there
-today, so this is currently always id-only. HR zone boundaries come from
+interval breakdown (`includeIntervals`, default true), gear id and name,
+and description, all with units. The gear name comes from the athlete's
+gear list, read through the 10-minute cache (list-gear's source), because
+the activity sends only the gear id. When the id is not in the cached list
+(gear added since it was cached), it reads the list once more past the
+cache. A failed gear read leaves `gear_name` null and never fails the call;
+an activity with no gear sends no gear read. `achievements` lists the bests
+and threshold rises intervals.icu marked (`type`, its own `message`,
+`value`, effort `duration_s`, `distance_m`, `watts` and `pace_mps`, all as
+sent); only `LTHR_UP` is verified live. An LTHR_UP's `value` is the LTHR
+intervals.icu estimated from the effort, not proof that the sport settings
+changed, and the text names the activity type ("Swim LTHR up: N bpm
+estimated (1h at N bpm)"), because a swim's LTHR is not the run's. The
+description sends PB questions to `get-best-efforts`: no pace best has been
+seen in `achievements` live. `hr_recovery` is intervals.icu's heart-rate
+recovery over a window it picks (60 s on every activity checked; it can
+start before an effort ends): `drop_bpm`, `start_bpm`, `end_bpm`,
+`window_s`, `start_time_s`, or null. The text prints the achievements after
+the metrics line and the HR recovery after the load line. Pool swims also
+report `lengths` and `pool_length_m`. HR zone boundaries come from
 the activity's own recorded `icu_hr_zones` when present (any activity
 type), the same source `get-activity-zones` reads; otherwise they fall back
 to the athlete's Run sport settings group (`types` Run, VirtualRun,
@@ -125,7 +147,16 @@ empty array when neither source is usable, rather than failing the call.
 `pace_min_per_km` and `gap_min_per_km` (grade-adjusted pace, derived
 from the activity's `gap` field, which intervals.icu reports in m/s, the
 same unit as `average_speed`) are set for Run/TrailRun/VirtualRun only: a
-Walk or Hike gets a cadence but no pace. The text response truncates
+Walk or Hike gets a cadence but no pace. Swims get `pace_min_per_100m` and
+every other non-run sport with a distance gets `speed_kmh` (Walk and Hike
+included), at activity and interval level, from `sportSpeed`. Ground
+contact time, vertical oscillation and step length show only for Run,
+TrailRun, VirtualRun, Walk and Hike, on intervals too: on a swim,
+intervals.icu's step length is about half a stroke, not a step
+(docs/api-notes.md). A swim interval's moving time includes its rests at
+the wall, while the activity's leaves them out, so an interval's
+`pace_min_per_100m` can be slower than the activity's; the interval header
+in the text says so. The text response truncates
 `description` to 200 characters with a "..." marker;
 `structuredContent.description` is always the full text. The text prints
 `feel` with its scale, for example "feel 2 (1 strongest to 5 weakest)": on
@@ -188,8 +219,11 @@ list, and `icu_intervals` usually mirrors the device's own laps (typically
 one WORK interval per lap, sometimes with a short RECOVERY inserted between
 them), for any sport. Runs report `pace_min_per_km` and grade-adjusted
 `gap_min_per_km` (`gap_source: "intervals.icu"`, from the lap's own `gap`
-field, not the locally-modelled GAP hill/split analysis compute); other
-distance sports report `speed_kmh`. Cadence is spm
+field, not the locally-modelled GAP hill/split analysis compute); swims
+report `pace_min_per_100m` and other distance sports `speed_kmh`, both from
+`sportSpeed` (distance over moving time), so they match `get-activity`'s
+intervals. A swim lap's moving time includes its rests at the wall, so the
+text adds a note that swim paces include them. Cadence is spm
 (doubled from strides) for Run/TrailRun/VirtualRun/Walk/Hike, rpm otherwise,
 with the unit named in `units.cadence`. The response also carries
 `device_lap_count` (`icu_lap_count`) and `intervals_edited`
@@ -198,8 +232,9 @@ the interval count differs from the device's lap count. An activity with no
 intervals returns a valid payload with `lap_count: 0`.
 
 `get-running-summary` takes the `id` from `list-activities` and is a thin
-wrapper over `get-activity`'s mapper: every field `get-activity` returns,
-plus a `cadence_assessment` (from `average_cadence_spm`), an `hr_zone_summary`
+wrapper over `get-activity`'s mapper: every field `get-activity` returns
+(gear name, achievements and HR recovery included; the text prints the last
+two after the metrics and load lines), plus a `cadence_assessment` (from `average_cadence_spm`), an `hr_zone_summary`
 (time and percent per zone), a `dynamics_assessment` (vertical oscillation
 and ground contact time against the 100 mm / 200-260 ms targets, only when
 `running_dynamics` is present), and `laps` (from the same interval mapper as
@@ -301,7 +336,9 @@ output can never drift. Each side reports the same fields `get-activity`
 does for one activity: `pace_min_per_km`/`gap_min_per_km` as `m:ss` strings
 (`gap_source: "intervals.icu"`), training load (`icu_training_load`),
 decoupling, efficiency factor, and running-dynamics averages when the
-device recorded them. The pace delta comes from each activity's raw
+device recorded them. A swim side carries `pace_min_per_100m` and another
+non-run side `speed_kmh`, from the same `sportSpeed`; the pace difference
+and the efficiency block stay run-only. The pace delta comes from each activity's raw
 distance and moving time, never from the formatted per-side paces, so two
 roundings cannot compound; the distance, HR, cadence and elevation
 differences subtract the per-side summary values (off by at most one

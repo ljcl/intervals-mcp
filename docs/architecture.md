@@ -281,6 +281,18 @@ otherwise sit in their own `intervals_icu` field. `compare-activities` once divi
 rate instead, where a slower pace and a lower heart rate add up rather than
 cancel, and called an unchanged runner "declined" (#42).
 
+**Pace per 100 m and km/h have one home.** `sportSpeed` in
+`utils/running.ts` gives `pace_min_per_100m` (Swim, OpenWaterSwim) and
+`speed_kmh` (every other type that is not a run) from distance over moving
+time. It converts with `speedDisplay` from `packages/data`, the apps' one
+conversion, so text and apps agree, and a swim slower than
+`MIN_MOVING_SPEED_MPS` has no pace in either. list-activities, get-activity
+(activity and intervals), compare-activities and `intervalLaps.ts` call it.
+`pace_min_per_km` keeps its own rule (`PACE_ACTIVITY_TYPES`), so Walk and
+Hike get km/h, not a pace (#86). That is one known split between text and
+apps: `speedDisplay` counts Walk and Hike as runs, so the apps show them as
+pace per km, while the text tools show km/h. A follow-up picks one.
+
 **Training-load weeks have one definition.** `trainingLoad.ts` owns the
 window (`trainingLoadWindow`: `days` rounded up to whole Monday-to-Sunday
 weeks, plus the current week so far), the timeline (`aggregateWeeks`: first

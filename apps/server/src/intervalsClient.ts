@@ -81,6 +81,47 @@ const IntervalsIntervalSchema = z
 
 export type IntervalsInterval = z.infer<typeof IntervalsIntervalSchema>;
 
+/** One `icu_achievements` entry (OpenAPI `IcuAchievement`). Only LTHR_UP
+ * has been seen live (docs/api-notes.md), so every field is optional. */
+const IntervalsAchievementSchema = z
+  .object({
+    id: z.string().nullable().optional(),
+    type: z.string().nullable().optional(),
+    message: z.string().nullable().optional(),
+    value: z.number().nullable().optional(),
+    secs: z.number().nullable().optional(),
+    distance: z.number().nullable().optional(),
+    pace: z.number().nullable().optional(),
+    watts: z.number().nullable().optional(),
+    /** The curve point behind the achievement; `secs` is the effort length. */
+    point: z
+      .object({
+        start_index: z.number().nullable().optional(),
+        end_index: z.number().nullable().optional(),
+        secs: z.number().nullable().optional(),
+        value: z.number().nullable().optional(),
+      })
+      .passthrough()
+      .nullable()
+      .optional(),
+  })
+  .passthrough();
+
+/** `icu_hrr` (OpenAPI `HRRecovery`): a 60 s heart-rate recovery window.
+ * The times are `time` stream seconds; the indexes are sample indexes. */
+const IntervalsHrrSchema = z
+  .object({
+    start_index: z.number().nullable().optional(),
+    end_index: z.number().nullable().optional(),
+    start_time: z.number().nullable().optional(),
+    end_time: z.number().nullable().optional(),
+    start_bpm: z.number().nullable().optional(),
+    end_bpm: z.number().nullable().optional(),
+    average_watts: z.number().nullable().optional(),
+    hrr: z.number().nullable().optional(),
+  })
+  .passthrough();
+
 // --- Activity schema ---
 // intervals.icu activities carry hundreds of fields (running dynamics,
 // power-meter data, weather, etc.); only the fields a tool reads are typed,
@@ -153,6 +194,19 @@ const IntervalsActivitySchema = z
     icu_warmup_time: z.number().nullable().optional(),
     icu_average_watts: z.number().nullable().optional(),
     icu_ftp: z.number().nullable().optional(),
+    /** Pool swims only: the length count and the pool length (m). */
+    lengths: z.number().nullable().optional(),
+    pool_length: z.number().nullable().optional(),
+    /** Bests and threshold rises intervals.icu marked; null when none.
+     * `.catch(null)`: a malformed entry must not fail every activity read. */
+    icu_achievements: z
+      .array(IntervalsAchievementSchema)
+      .nullable()
+      .optional()
+      .catch(null),
+    /** Heart-rate recovery; null when intervals.icu found none. Same
+     * `.catch(null)` as `icu_achievements`. */
+    icu_hrr: IntervalsHrrSchema.nullable().optional().catch(null),
     /** Only present when fetched via `getActivity(..., { intervals: true })`. */
     icu_intervals: z.array(IntervalsIntervalSchema).optional(),
   })
@@ -216,6 +270,9 @@ const IntervalsGearSchema = z
     // account where the API reports it that way instead.
     retired: z.union([z.string(), z.boolean()]).nullable().optional(),
     reminders: z.array(IntervalsGearReminderSchema).optional(),
+    /** The owning athlete, equal to an activity's `icu_athlete_id`
+     * (docs/api-notes.md). */
+    athlete_id: z.string().nullable().optional(),
   })
   .passthrough();
 

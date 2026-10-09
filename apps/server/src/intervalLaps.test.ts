@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import activityMultilap from "./__fixtures__/intervals/activity-multilap.json";
 import multilapIntervals from "./__fixtures__/intervals/activity-multilap-intervals.json";
+import activitySwimFixture from "./__fixtures__/intervals/activity-swim.json";
+import activitySwimIntervalsFixture from "./__fixtures__/intervals/activity-swim-intervals.json";
 import {
   cadenceUnit,
   formatLapLine,
@@ -15,6 +17,10 @@ import {
 const runActivity = activityMultilap as unknown as IntervalsActivity;
 const runIntervals =
   multilapIntervals.icu_intervals as unknown as IntervalsInterval[];
+const swimActivity = {
+  ...activitySwimFixture,
+  icu_intervals: activitySwimIntervalsFixture.icu_intervals,
+} as unknown as IntervalsActivity;
 
 describe("mapIntervalsToLaps", () => {
   it("maps the multi-lap fixture in order with pace, GAP, and doubled cadence", () => {
@@ -91,7 +97,7 @@ describe("mapIntervalsToLaps", () => {
     expect(cadenceUnit("Ride")).toBe("rpm");
   });
 
-  it("falls back to distance/moving_time for speed when average_speed is absent", () => {
+  it("computes speed from distance over moving time", () => {
     const rideActivity: Pick<IntervalsActivity, "type"> = { type: "Ride" };
     const rideIntervals = [
       {
@@ -105,6 +111,52 @@ describe("mapIntervalsToLaps", () => {
     const laps = mapIntervalsToLaps(rideActivity, rideIntervals);
 
     expect(laps[0]!.speed_kmh).toBe(36);
+  });
+
+  it("ignores an average_speed that disagrees, as get-activity's intervals do", () => {
+    const rideIntervals = [
+      {
+        type: "WORK",
+        distance: 5000,
+        moving_time: 500,
+        average_speed: 5,
+      } as unknown as IntervalsInterval,
+    ];
+
+    const laps = mapIntervalsToLaps({ type: "Ride" }, rideIntervals);
+
+    expect(laps[0]!.speed_kmh).toBe(36);
+  });
+
+  it("keeps km/h for a walk lap", () => {
+    const laps = mapIntervalsToLaps({ type: "Walk" }, [
+      { type: "WORK", distance: 1000, moving_time: 720 } as IntervalsInterval,
+    ]);
+
+    expect(laps[0]!.speed_kmh).toBe(5);
+    expect(laps[0]!.pace_min_per_100m).toBeNull();
+  });
+
+  it("gives a swim lap a pace per 100 m, matching get-activity's interval", () => {
+    const laps = mapIntervalsToLaps(
+      swimActivity,
+      swimActivity.icu_intervals ?? [],
+    );
+
+    // 503.33 m in 520 s.
+    expect(laps[0]!.pace_min_per_100m).toBe("1:43");
+    expect(laps[0]!.speed_kmh).toBeNull();
+    expect(laps[0]!.pace_min_per_km).toBeNull();
+    expect(formatLapLine(laps[0]!, cadenceUnit("Swim"))).toContain(
+      "8:40, 1:43 /100m, HR 136/153",
+    );
+    expect(formatLapLine(laps[0]!, cadenceUnit("Swim"))).not.toContain("km/h");
+  });
+
+  it("gives a run lap no pace per 100 m", () => {
+    const laps = mapIntervalsToLaps(runActivity, runIntervals);
+
+    expect(laps.every((lap) => lap.pace_min_per_100m === null)).toBe(true);
   });
 
   it("returns an empty array for an activity with no intervals", () => {
@@ -134,6 +186,7 @@ describe("formatLapLine", () => {
       pace_min_per_km: "4:10",
       gap_min_per_km: "4:05",
       gap_source: "intervals.icu",
+      pace_min_per_100m: null,
       speed_kmh: null,
       average_hr: 165,
       max_hr: 172,

@@ -1,4 +1,6 @@
+import { speedDisplay } from "@intervals-mcp/data";
 import { describe, expect, it } from "vitest";
+import { round } from "../formatters";
 import { type IntervalsActivity } from "../intervalsClient";
 import {
   activityCadenceSpm,
@@ -14,6 +16,7 @@ import {
   matchesTypeFilter,
   metersPerSecToPace,
   paceFromDistanceTime,
+  sportSpeed,
 } from "./running";
 
 describe("formatPaceSeconds", () => {
@@ -76,11 +79,6 @@ describe("metersPerSecToPace", () => {
   it("converts 3.33 m/s to approximately 5:00/km pace", () => {
     const result = metersPerSecToPace(3.333);
     expect(result?.minPerKm).toBe("5:00");
-  });
-
-  it("calculates km/h correctly", () => {
-    const result = metersPerSecToPace(3.333);
-    expect(result?.kmh).toBeCloseTo(12.0, 1);
   });
 
   it("returns null for zero speed", () => {
@@ -197,6 +195,70 @@ describe("paceFromDistanceTime", () => {
     // pace string here; get-activity/list-activities decide whether to show
     // it by checking isPaceActivity(type) before calling this.
     expect(paceFromDistanceTime(3000, 1800)).toBe("10:00");
+  });
+});
+
+describe("sportSpeed", () => {
+  it("gives a swim pace per 100 m and no speed", () => {
+    // The pool-swim fixture: 1,500 m in 1,489 s.
+    expect(sportSpeed("Swim", 1500, 1489)).toEqual({
+      pace_min_per_100m: "1:39",
+      speed_kmh: null,
+    });
+    expect(sportSpeed("OpenWaterSwim", 2228.38, 2275).pace_min_per_100m).toBe(
+      "1:42",
+    );
+  });
+
+  it("gives no pace for a swim slower than the apps' moving floor", () => {
+    // 128.54 m in 2,500 s is 0.05 m/s, under MIN_MOVING_SPEED_MPS.
+    expect(sportSpeed("Swim", 128.54, 2500)).toEqual({
+      pace_min_per_100m: null,
+      speed_kmh: null,
+    });
+  });
+
+  it("gives km/h to 1 dp for a ride, a walk and a hike", () => {
+    expect(sportSpeed("Ride", 20000, 2400)).toEqual({
+      pace_min_per_100m: null,
+      speed_kmh: 30,
+    });
+    expect(sportSpeed("Ride", 2284.39, 755).speed_kmh).toBe(10.9);
+    expect(sportSpeed("Walk", 5000, 3600).speed_kmh).toBe(5);
+    expect(sportSpeed("Hike", 5000, 3600).speed_kmh).toBe(5);
+  });
+
+  it("gives neither for a run, which has pace_min_per_km", () => {
+    for (const type of ["Run", "TrailRun", "VirtualRun"])
+      expect(sportSpeed(type, 10000, 3000)).toEqual({
+        pace_min_per_100m: null,
+        speed_kmh: null,
+      });
+  });
+
+  it("gives neither without a positive distance and moving time", () => {
+    const none = { pace_min_per_100m: null, speed_kmh: null };
+    expect(sportSpeed("WeightTraining", 0, 3350)).toEqual(none);
+    expect(sportSpeed("Swim", null, 1489)).toEqual(none);
+    expect(sportSpeed("Ride", 20000, 0)).toEqual(none);
+    expect(sportSpeed("Ride", 20000, undefined)).toEqual(none);
+    // speedDisplay reads a non-finite speed as a gap.
+    expect(sportSpeed("Ride", Number.POSITIVE_INFINITY, 2400)).toEqual(none);
+  });
+
+  it("agrees with the conversion the MCP Apps use", () => {
+    for (const mps of [0.6, 0.95, 1.0073875, 1.4]) {
+      const pace = sportSpeed("Swim", mps * 1000, 1000).pace_min_per_100m;
+      const [m, s] = (pace ?? "").split(":").map(Number);
+      expect((m ?? 0) * 60 + (s ?? 0)).toBe(
+        Math.round(speedDisplay("Swim").fromMps(mps)! * 60),
+      );
+    }
+    for (const mps of [2.5, 8.33, 11.1]) {
+      expect(sportSpeed("Ride", mps * 1000, 1000).speed_kmh).toBe(
+        round(speedDisplay("Ride").fromMps(mps)!, 1),
+      );
+    }
   });
 });
 
