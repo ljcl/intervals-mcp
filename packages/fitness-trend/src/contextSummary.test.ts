@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   mockFitnessTrendData,
+  mockPastFitnessTrendData,
   mockRestProjectionData,
   mockRunOnlyFitnessTrendData,
 } from "./__fixtures__/trend";
@@ -18,6 +19,18 @@ describe("buildFitnessTrendContextSummary", () => {
     expect(summary).toContain(`Taper plan of ${taper.weeks.length} weeks`);
     expect(summary).toContain(`to ${taper.targetDate}`);
     expect(summary).toContain("landing on +12");
+  });
+
+  it("names a past window's last day and carries its note (#80)", () => {
+    const summary = buildFitnessTrendContextSummary(mockPastFitnessTrendData)!;
+
+    expect(summary).toContain("Fitness trend, 90 days to 2026-06-28.");
+    expect(summary).not.toContain("last 90 days");
+    expect(summary).not.toContain("Rest projection");
+    expect(summary).not.toContain("Taper plan");
+    expect(summary).toContain(
+      `Notes: ${mockPastFitnessTrendData.warnings![0]}`,
+    );
   });
 
   it("passes the flags through so the model can talk about them", () => {

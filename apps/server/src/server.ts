@@ -89,6 +89,7 @@ import { getActivityStreamsTool } from "./tools/getActivityStreams";
 import { getActivityZonesTool } from "./tools/getActivityZones";
 import { getAerobicAnalysisTool } from "./tools/getAerobicAnalysis";
 import { getAthleteStatsTool } from "./tools/getAthleteStats";
+import { getAthleteZonesTool } from "./tools/getAthleteZones";
 import { getBestEffortsTool } from "./tools/getBestEfforts";
 import { getFitnessTrendTool } from "./tools/getFitnessTrend";
 import { getHillAnalysisTool } from "./tools/getHillAnalysis";
@@ -107,7 +108,13 @@ import {
   type TrainingLoadAppData,
 } from "./trainingLoad";
 import { loadTrainingLoadInputs } from "./trainingLoadInputs";
-import { addDays, dateInputSchema, todayLocal } from "./utils/localDate";
+import {
+  addDays,
+  dateInputSchema,
+  resolveWindowEnd,
+  todayLocal,
+  type WindowEnd,
+} from "./utils/localDate";
 import { SERVER_VERSION } from "./version";
 
 const EMPTY_SCHEMA = { type: "object", properties: {}, required: [] } as const;
@@ -190,9 +197,11 @@ const waypointsInput = z
 /**
  * Fitness-trend args, shared by the view and data tools. Mirrors the
  * `get-fitness-trend` text tool's inputs, since both surfaces run one solve:
- * a lookback window, how far to project, and an optional taper target. The
- * projection defaults to a fortnight here rather than the text tool's zero —
- * the dashed continuation is half of what the chart is for.
+ * a lookback window ending today or on `newest` (the text tool's own field,
+ * so the two cannot drift), how far to project, and an optional taper
+ * target. The projection defaults to a fortnight here rather than the text
+ * tool's zero — the dashed continuation is half of what the chart is for. A
+ * past window drops it, as the text tool does.
  */
 const fitnessTrendInput = z.object({
   days: z
@@ -214,6 +223,7 @@ const fitnessTrendInput = z.object({
         "computed locally (intervals.icu has no per-sport CTL/ATL). Default " +
         "false reads whole-body CTL/ATL directly from intervals.icu wellness.",
     ),
+  newest: getFitnessTrendTool.inputSchema.shape.newest,
   projectDays: z
     .number()
     .int()
@@ -241,7 +251,8 @@ const fitnessTrendInput = z.object({
 /**
  * Training-load args, shared by the view and data tools. Volume/warnings are
  * always run-based; `runOnly` scopes load and current CTL/ATL/TSB the same
- * way `get-training-load`'s input does.
+ * way `get-training-load`'s input does, and `newest` (the text tool's own
+ * field) ends the window on a past date.
  */
 const trainingLoadInput = z.object({
   days: daysInput,
@@ -252,6 +263,7 @@ const trainingLoadInput = z.object({
       "Sum load and compute CTL/ATL/TSB from Run/TrailRun/VirtualRun training " +
         "load only, instead of whole-body. Weekly volume/warnings are always run-based.",
     ),
+  newest: getTrainingLoadTool.inputSchema.shape.newest,
 });
 
 const APP_TOOL_INPUT_SCHEMAS: Record<string, z.ZodType> = {
@@ -432,6 +444,7 @@ const TOOLS = [
   getActivityStreamsTool,
   listGearTool,
   getWellnessTool,
+  getAthleteZonesTool,
 ] as const;
 
 /** Converts every tool implementation to the low-level TOOL_DEFS array. */
@@ -557,7 +570,7 @@ function buildToolDefs(): ToolDef[] {
     title: "Training load chart",
     description:
       "Open an interactive training-load chart: weekly running volume bars with a rolling trend line, and volume-spike weeks (over 1.5 times the average of the 4 weeks before) highlighted with their reason on hover. " +
-      "Prefer this over text when the user wants to see how their training volume is trending. Takes a number of days of history.",
+      "Prefer this over text when the user wants to see how their training volume is trending. Takes a number of days of history, and newest to end the chart on a past date.",
     inputSchema: toInputSchema(APP_TOOL_INPUT_SCHEMAS["view-training-load"]!),
     annotations: READ_ONLY,
     _meta: {
@@ -589,6 +602,7 @@ function buildToolDefs(): ToolDef[] {
     description:
       "Open an interactive fitness/fatigue/form chart (the performance-management chart): fitness (CTL) and fatigue (ATL) over the lookback window with form (TSB) on its own axis, deep-fatigue, freshness, and steep-ramp periods shaded, and a dashed continuation past today. " +
       "Pass targetDate to chart a solved taper landing on targetTsb on that day, week by week; omit it for a rest projection. " +
+      "Pass newest to chart a past block instead; it has no projection or taper. " +
       "Prefer this over the text-only get-fitness-trend when the user wants to see whether they are peaking or digging a hole.",
     inputSchema: toInputSchema(APP_TOOL_INPUT_SCHEMAS["view-fitness-trend"]!),
     annotations: READ_ONLY,
@@ -957,18 +971,19 @@ async function handleViewCadenceTrends(
  * the run/load activities and current CTL/ATL/TSB, the same inputs
  * `get-training-load` builds through, so the two surfaces can never
  * disagree; `buildTrainingLoadData` then aggregates them into the weekly
- * timeline.
+ * timeline. `end` comes from {@link appWindowEnd}.
  */
 async function loadTrainingLoadAppData(
   apiKey: string,
   args: Record<string, unknown>,
+  end: WindowEnd,
   progress: ReportProgress,
 ): Promise<TrainingLoadAppData> {
   const days = Number(args.days) || 84;
   const runOnly = Boolean(args.runOnly);
 
   const { lookback, runs, baselineRuns, loadActivities, current, source } =
-    await loadTrainingLoadInputs(apiKey, { days, runOnly }, progress);
+    await loadTrainingLoadInputs(apiKey, { days, runOnly, end }, progress);
 
   return buildTrainingLoadData(runs, lookback, {
     loadActivities,
@@ -984,7 +999,14 @@ async function handleGetTrainingLoadData(
   token: string,
   progress: ReportProgress,
 ): Promise<ToolCallResult> {
-  const result = await loadTrainingLoadAppData(token, args, progress);
+  const resolved = appWindowEnd(args);
+  if ("invalid" in resolved) return resolved.invalid;
+  const result = await loadTrainingLoadAppData(
+    token,
+    args,
+    resolved.end,
+    progress,
+  );
   return { content: [{ type: "text", text: JSON.stringify(result) }] };
 }
 
@@ -994,9 +1016,18 @@ async function handleViewTrainingLoad(
   progress: ReportProgress,
   context: ToolCallContext,
 ): Promise<ToolCallResult> {
-  const data = await loadTrainingLoadAppData(token, args, progress);
+  const resolved = appWindowEnd(args);
+  if ("invalid" in resolved) return resolved.invalid;
+  const data = await loadTrainingLoadAppData(
+    token,
+    args,
+    resolved.end,
+    progress,
+  );
   const warningWeeks = data.weeks.filter((w) => w.warning).length;
   const inProgress = data.weeks.find((w) => w.inProgress);
+  // A past window's last week is cut off at newest, not in progress.
+  const pastWindow = !data.endsToday;
 
   const { current } = data;
   // What the app's scope note and tiles say, in the same words as the
@@ -1007,18 +1038,25 @@ async function handleViewTrainingLoad(
 
   const lines = [
     `Training Load (${data.startDate} to ${data.endDate}, CTL/ATL source: ${data.source})`,
+    ...(pastWindow
+      ? [`Past window: it ends on ${data.endDate}, before today.`]
+      : []),
     `Scope: ${scope}.`,
     `Runs: ${data.totals.runs}`,
     `Distance: ${data.totals.distanceKm} km`,
     `Load: ${data.totals.load}`,
     ...(current
       ? [
-          `Current (as of ${current.date}): CTL ${current.ctl} / ATL ${current.atl} / TSB ${formatSigned(current.tsb)}`,
+          `${pastWindow ? "End of window" : "Current"} (as of ${current.date}): CTL ${current.ctl} / ATL ${current.atl} / TSB ${formatSigned(current.tsb)}`,
         ]
       : []),
     `Warning weeks: ${warningWeeks}`,
     ...(inProgress
-      ? [`Week of ${inProgress.weekStarting} is in progress (partial).`]
+      ? [
+          pastWindow
+            ? `Week of ${inProgress.weekStarting} is partial (the window ends on ${data.endDate}).`
+            : `Week of ${inProgress.weekStarting} is in progress (partial).`,
+        ]
       : []),
     "",
     viewFooter(
@@ -1043,6 +1081,7 @@ async function handleViewTrainingLoad(
 async function loadFitnessTrendAppData(
   apiKey: string,
   args: Record<string, unknown>,
+  end: WindowEnd,
   progress: ReportProgress,
 ): Promise<FitnessTrendAppData> {
   const days = Number(args.days) || 90;
@@ -1052,10 +1091,13 @@ async function loadFitnessTrendAppData(
     typeof args.targetDate === "string" ? args.targetDate : undefined;
   const targetTsb = Number(args.targetTsb ?? 10);
 
+  // A past window drops projectDays and the taper in the loader, the one
+  // home for that rule, so the default fortnight never reaches it.
   const loaded = await loadFitnessTrend(
     apiKey,
     {
       days,
+      end,
       runOnly,
       projectDays,
       taper: targetDate ? { targetDate, targetTsb } : undefined,
@@ -1076,6 +1118,7 @@ async function loadFitnessTrendAppData(
     {
       days,
       endDate: loaded.endDate,
+      endsToday: loaded.endsToday,
       activitiesIncluded: loaded.activitiesIncluded,
       activitiesMissingLoad: loaded.activitiesMissingLoad,
       source: loaded.source,
@@ -1087,18 +1130,38 @@ async function loadFitnessTrendAppData(
 }
 
 /**
+ * The window end both app pairs (training load, fitness trend) read:
+ * `args.newest`, or today. A `newest` after today is an isError result
+ * before any fetch, from the same `resolveWindowEnd` the text tools run.
+ */
+function appWindowEnd(
+  args: Record<string, unknown>,
+): { end: WindowEnd } | { invalid: ToolCallResult } {
+  const newest = typeof args.newest === "string" ? args.newest : undefined;
+  const end = resolveWindowEnd(newest, todayLocal(getTimeZone()));
+  if ("error" in end) {
+    return {
+      invalid: {
+        isError: true,
+        content: [{ type: "text", text: prefixedErrorText(end.error) }],
+      },
+    };
+  }
+  return { end };
+}
+
+/**
  * The taper target check both fitness-trend app tools run before any fetch,
  * the same `taperTargetDateError` the text tool runs: a date too far ahead
- * would otherwise solve a plan of any size.
+ * would otherwise solve a plan of any size. A past window solves no taper,
+ * so its `targetDate` is ignored, not checked.
  */
 function fitnessTrendTargetError(
   args: Record<string, unknown>,
+  end: WindowEnd,
 ): ToolCallResult | null {
-  if (typeof args.targetDate !== "string") return null;
-  const message = taperTargetDateError(
-    args.targetDate,
-    todayLocal(getTimeZone()),
-  );
+  if (!end.endsToday || typeof args.targetDate !== "string") return null;
+  const message = taperTargetDateError(args.targetDate, end.today);
   return message
     ? {
         isError: true,
@@ -1112,9 +1175,16 @@ async function handleGetFitnessTrendData(
   token: string,
   progress: ReportProgress,
 ): Promise<ToolCallResult> {
-  const invalid = fitnessTrendTargetError(args);
+  const resolved = appWindowEnd(args);
+  if ("invalid" in resolved) return resolved.invalid;
+  const invalid = fitnessTrendTargetError(args, resolved.end);
   if (invalid) return invalid;
-  const data = await loadFitnessTrendAppData(token, args, progress);
+  const data = await loadFitnessTrendAppData(
+    token,
+    args,
+    resolved.end,
+    progress,
+  );
   return { content: [{ type: "text", text: JSON.stringify(data) }] };
 }
 
@@ -1124,14 +1194,27 @@ async function handleViewFitnessTrend(
   progress: ReportProgress,
   context: ToolCallContext,
 ): Promise<ToolCallResult> {
-  const invalid = fitnessTrendTargetError(args);
+  const resolved = appWindowEnd(args);
+  if ("invalid" in resolved) return resolved.invalid;
+  const invalid = fitnessTrendTargetError(args, resolved.end);
   if (invalid) return invalid;
-  const data = await loadFitnessTrendAppData(token, args, progress);
+  const data = await loadFitnessTrendAppData(
+    token,
+    args,
+    resolved.end,
+    progress,
+  );
   const current = data.current;
-  const lines = [
-    `Fitness Trend (last ${data.days} days)`,
+  const lines =
+    data.endsToday === false
+      ? [
+          `Fitness Trend (${data.days} days to ${data.endDate})`,
+          "Past window: no projection or taper.",
+        ]
+      : [`Fitness Trend (last ${data.days} days)`];
+  lines.push(
     `Source: ${data.source === "computed" ? "computed locally (runs only)" : "intervals.icu (whole body)"}`,
-  ];
+  );
 
   if (current) {
     lines.push(

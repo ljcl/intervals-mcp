@@ -420,6 +420,8 @@ describe("loadIntervalsStreams", () => {
       expect(streams.time).toEqual([0, 2, 3]);
       expect(streams.heartrate).toEqual([100, 110, 115]);
       expect(streams.length).toBe(3);
+      // A caller holding raw indices (ignore_parts) must know they shifted.
+      expect(streams.droppedSamples).toBe(1);
     });
 
     it("throws IntervalsStreamsUnavailableError when every time sample is null", async () => {

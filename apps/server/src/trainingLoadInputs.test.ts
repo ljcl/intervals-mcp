@@ -8,7 +8,7 @@ import {
 } from "./intervalsClient";
 import { trainingLoadWindow } from "./trainingLoad";
 import { loadTrainingLoadInputs } from "./trainingLoadInputs";
-import { addDays } from "./utils/localDate";
+import { addDays, resolveWindowEnd, type WindowEnd } from "./utils/localDate";
 
 vi.mock("./intervalsClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./intervalsClient")>();
@@ -19,6 +19,15 @@ const mockedList = vi.mocked(listActivities);
 const mockedWellness = vi.mocked(getWellness);
 
 const TODAY = "2026-08-19";
+/** A past Sunday, as in the issue's example (#80). */
+const PAST_SUNDAY = "2026-04-12";
+
+/** The window end the callers resolve: today, or a past `newest`. */
+function windowEnd(newest?: string): WindowEnd {
+  const end = resolveWindowEnd(newest, TODAY);
+  if ("error" in end) throw new Error(end.error);
+  return end;
+}
 
 function activity(
   date: string,
@@ -82,7 +91,7 @@ describe("loadTrainingLoadInputs", () => {
 
     const result = await loadTrainingLoadInputs(
       "key",
-      { days: 28, runOnly: false },
+      { days: 28, runOnly: false, end: windowEnd() },
       () => {},
     );
 
@@ -124,7 +133,7 @@ describe("loadTrainingLoadInputs", () => {
 
     const result = await loadTrainingLoadInputs(
       "key",
-      { days: 28, runOnly: false },
+      { days: 28, runOnly: false, end: windowEnd() },
       () => {},
     );
 
@@ -147,7 +156,7 @@ describe("loadTrainingLoadInputs", () => {
 
     const result = await loadTrainingLoadInputs(
       "key",
-      { days, runOnly: true },
+      { days, runOnly: true, end: windowEnd() },
       () => {},
     );
 
@@ -178,7 +187,7 @@ describe("loadTrainingLoadInputs", () => {
 
     const result = await loadTrainingLoadInputs(
       "key",
-      { days: 28, runOnly: true },
+      { days: 28, runOnly: true, end: windowEnd() },
       () => {},
     );
 
@@ -194,11 +203,86 @@ describe("loadTrainingLoadInputs", () => {
 
     const result = await loadTrainingLoadInputs(
       "key",
-      { days: 28, runOnly: false },
+      { days: 28, runOnly: false, end: windowEnd() },
       () => {},
     );
 
     expect(result.current).toBeNull();
     expect(result.activityTypesIncluded).toEqual([]);
+  });
+
+  it("whole-body, past newest: reads the 12 weeks to a past Sunday and its wellness (#80)", async () => {
+    mockedList.mockResolvedValueOnce([
+      activity(PAST_SUNDAY, { id: "last-day" }),
+      activity("2026-01-19", { id: "first-day" }),
+      activity("2026-01-18", { id: "baseline" }),
+    ]);
+    mockedWellness.mockResolvedValueOnce([
+      wellnessRow("2026-04-10", { ctl: 48, atl: 41 }),
+      wellnessRow("2026-04-11", { ctl: 49, atl: 42 }),
+    ]);
+
+    const result = await loadTrainingLoadInputs(
+      "key",
+      { days: 84, runOnly: false, end: windowEnd(PAST_SUNDAY) },
+      () => {},
+    );
+
+    expect(result.lookback).toEqual(trainingLoadWindow(84, PAST_SUNDAY, false));
+    expect(mockedList.mock.calls[0]![1]).toEqual({
+      oldest: "2025-12-22",
+      newest: PAST_SUNDAY,
+    });
+    expect(mockedWellness.mock.calls[0]![1]).toEqual({
+      oldest: "2026-01-19",
+      newest: PAST_SUNDAY,
+    });
+    expect(result.runs.map((a) => a.id)).toEqual(["last-day", "first-day"]);
+    expect(result.baselineRuns.map((a) => a.id)).toEqual(["baseline"]);
+    // The last day with wellness in the window, not today.
+    expect(result.current).toEqual({
+      date: "2026-04-11",
+      ctl: 49,
+      atl: 42,
+      tsb: 7,
+    });
+  });
+
+  it("run-only, past newest: counts the runway back from newest, not today (#80)", async () => {
+    const days = 84;
+    const runwayStart = addDays(
+      PAST_SUNDAY,
+      -(days + RUN_ONLY_RUNWAY_DAYS - 1),
+    );
+    expect(runwayStart).toBe("2025-08-22");
+
+    const end = windowEnd(PAST_SUNDAY);
+    mockedList.mockResolvedValueOnce([activity("2026-04-10")]);
+    const withoutEarlyRun = await loadTrainingLoadInputs(
+      "key",
+      { days, runOnly: true, end },
+      () => {},
+    );
+    // A run early in the runway still counts toward CTL on newest.
+    mockedList.mockResolvedValueOnce([
+      activity("2026-04-10"),
+      activity("2025-08-23", { icu_training_load: 400 }),
+    ]);
+    const withEarlyRun = await loadTrainingLoadInputs(
+      "key",
+      { days, runOnly: true, end },
+      () => {},
+    );
+
+    expect(mockedList.mock.calls[0]![1]).toEqual({
+      oldest: runwayStart,
+      newest: PAST_SUNDAY,
+    });
+    expect(withoutEarlyRun.current?.date).toBe(PAST_SUNDAY);
+    expect(withEarlyRun.current!.ctl).toBeGreaterThan(
+      withoutEarlyRun.current!.ctl,
+    );
+    expect(withEarlyRun.source).toBe("computed");
+    expect(mockedWellness).not.toHaveBeenCalled();
   });
 });

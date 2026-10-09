@@ -47,12 +47,24 @@ export interface TaperPlan {
   recentDailyLoad: number;
 }
 
+/** What the host called `view-fitness-trend` with; every argument is optional. */
+export interface FitnessTrendToolArgs {
+  days?: number;
+  runOnly?: boolean;
+  newest?: string;
+  projectDays?: number;
+  targetDate?: string;
+  targetTsb?: number;
+}
+
 /**
  * Args shared by both the whole-body and run-only scopes; `runOnly` is
  * layered on per fetch by whichever scope is being requested.
  */
 export interface FitnessTrendBaseArgs {
   days: number;
+  /** The window's last day, for a past block; omitted, the window ends today. */
+  newest?: string;
   projectDays: number;
   targetDate?: string;
   targetTsb?: number;
@@ -74,8 +86,13 @@ export interface FitnessTrendData {
    * date it returns positive, if it does.
    */
   tsbPositiveDate: string | null;
-  /** Today in the server's time zone, the window's last date. */
+  /** The window's last day: today in the server's time zone, or newest. */
   endDate?: string;
+  /**
+   * False for a past window (newest before today): no projection or taper.
+   * Optional since older payloads never carried it.
+   */
+  endsToday?: boolean;
   /**
    * CTL change over the 7 calendar days to the last series day, computed
    * server-side by date (the text tool's `ctl_7d_delta`); null when the day
@@ -83,7 +100,7 @@ export interface FitnessTrendData {
    */
   ctl7dDelta?: number | null;
   bands: TrendBand[];
-  /** The bands that run to today — what the text tool prints. */
+  /** The bands that run to the window's last day — what the text tool prints. */
   flags: string[];
   activitiesIncluded: number;
   activitiesMissingLoad: number;

@@ -1,11 +1,51 @@
-import { formatShortDate, formatSignedTsb } from "@intervals-mcp/data";
+import {
+  formatShortDate,
+  formatSignedTsb,
+  lookbackLabel,
+} from "@intervals-mcp/data";
 import { type SummaryStat } from "@intervals-mcp/ui";
 import {
+  type FitnessTrendBaseArgs,
   type FitnessTrendData,
+  type FitnessTrendToolArgs,
   type TaperPlan,
   type TrendBand,
   type TrendDay,
 } from "./types";
+
+/**
+ * What the app asks `get-fitness-trend-data` for, from what the host called
+ * `view-fitness-trend` with, before `runOnly` is layered on per scope.
+ * `newest` must travel: the data tool ends the window today without it, so
+ * dropping it would chart today's window under a past-block request. The
+ * other scope's fetch spreads these, so it gets the same window. Defaults
+ * match the view tool's.
+ */
+export function buildBaseArgs(
+  toolArgs: FitnessTrendToolArgs,
+): FitnessTrendBaseArgs {
+  return {
+    days: toolArgs.days ?? 90,
+    ...(toolArgs.newest ? { newest: toolArgs.newest } : {}),
+    projectDays: toolArgs.projectDays ?? 14,
+    ...(toolArgs.targetDate ? { targetDate: toolArgs.targetDate } : {}),
+    ...(toolArgs.targetTsb !== undefined
+      ? { targetTsb: toolArgs.targetTsb }
+      : {}),
+  };
+}
+
+/**
+ * True for a past window (`newest` before today, #80): no projection or
+ * taper, and its last day is history. Older payloads carry no `endsToday`,
+ * and read as today. The one rule the subtitle, narration and model context
+ * read.
+ */
+export function isPastWindow(
+  data: Pick<FitnessTrendData, "endsToday">,
+): boolean {
+  return data.endsToday === false;
+}
 
 /**
  * One chart row per date. Recorded days carry `ctl`/`atl`/`tsb`; projected
@@ -173,17 +213,27 @@ export function buildSummaryStats(data: FitnessTrendData): SummaryStat[] {
 
 /**
  * "90 days · 2 May – 30 Jul", plus the taper target when one was solved —
- * the card is otherwise detached from the tool call that produced it.
+ * the card is otherwise detached from the tool call that produced it. A
+ * past window (#80) spells out the last day's year ("90 days · 13 Jan –
+ * 12 Apr 2026"), so an old block never reads as this year's. With no days,
+ * the window itself ("Last 90 days", or "90 days to 12 Apr 2026").
  */
 export function buildTrendSubtitle(data: FitnessTrendData): string {
+  const past = isPastWindow(data);
   const first = data.series[0];
   const last = data.series[data.series.length - 1];
-  if (!first || !last) return `Last ${data.days} days`;
+  if (!first || !last) {
+    return lookbackLabel(data.days, past ? data.endDate : undefined);
+  }
 
+  const endYear = past ? "full" : "none";
+  // The start names its year only when it differs from the end's.
+  const startYear =
+    past && first.date.slice(0, 4) !== last.date.slice(0, 4) ? "full" : "none";
   const span =
     first.date === last.date
-      ? formatShortDate(first.date)
-      : `${formatShortDate(first.date)} – ${formatShortDate(last.date)}`;
+      ? formatShortDate(first.date, endYear)
+      : `${formatShortDate(first.date, startYear)} – ${formatShortDate(last.date, endYear)}`;
   const base = `${data.days} day${data.days === 1 ? "" : "s"} · ${span}`;
   return data.taper
     ? `${base} · taper to ${formatShortDate(data.taper.targetDate)}`

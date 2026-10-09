@@ -80,6 +80,7 @@ describe("activity read tools", () => {
       units: {
         distance: "km",
         pace: "min/km",
+        swim_pace: "min/100m",
         speed: "km/h",
         time: "s",
         hr: "bpm",

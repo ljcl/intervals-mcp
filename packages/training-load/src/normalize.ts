@@ -3,6 +3,7 @@ import {
   formatDurationShort,
   formatShortDate,
   formatSignedTsb,
+  lookbackLabel,
 } from "@intervals-mcp/data";
 import { type SummaryStat } from "@intervals-mcp/ui";
 import {
@@ -32,19 +33,49 @@ export function formatHours(timeHours: number): string {
 export type TrainingLoadDataArgs = {
   days: number;
   runOnly: boolean;
+  newest?: string;
 };
 
 /**
  * What the app asks `get-training-load-data` for, from what the host called
  * `view-training-load` with. `runOnly` must travel: the data tool defaults to
  * whole-body, so dropping it would draw a whole-body chart under a run-only
- * request. Defaults match the view tool's.
+ * request. `newest` must travel too: the data tool ends the window today
+ * without it. The other scope's fetch spreads these, so it gets the same
+ * window. Defaults match the view tool's.
  */
 export function buildDataArgs(args: {
   days?: number;
   runOnly?: boolean;
+  newest?: string;
 }): TrainingLoadDataArgs {
-  return { days: args.days ?? 84, runOnly: args.runOnly ?? false };
+  return {
+    days: args.days ?? 84,
+    runOnly: args.runOnly ?? false,
+    ...(args.newest ? { newest: args.newest } : {}),
+  };
+}
+
+/**
+ * True for a past window (`newest` before today, #80): its partial last
+ * week is cut off at `endDate`, not in progress. Older payloads carry no
+ * `endsToday`, and read as today. The one rule the legend, tooltip,
+ * subtitle, narration and model context read.
+ */
+export function isPastWindow(
+  data: Pick<TrainingLoadData, "endsToday">,
+): boolean {
+  return data.endsToday === false;
+}
+
+/**
+ * What the partial last week is called: "in progress" when the window ends
+ * today, "partial" when a past `newest` cuts it off.
+ */
+export function partialWeekWord(
+  data: Pick<TrainingLoadData, "endsToday">,
+): "in progress" | "partial" {
+  return isPastWindow(data) ? "partial" : "in progress";
 }
 
 /**
@@ -118,23 +149,30 @@ export interface LoadRow extends WeekSummary {
   weekLabel: string;
   /** Load for the solid line: complete weeks only. */
   loadComplete: number | null;
-  /** Load of the week in progress, for its own hollow point. */
+  /** Load of the partial week, for its own hollow point. */
   loadSoFar: number | null;
+  /** The tooltip's word for the partial week ("in progress" or "partial"); null on a complete week. */
+  partialLabel: string | null;
 }
 
 /**
- * One chart row per week. The week in progress holds only the days so far,
- * so its load stays off the solid line (as `trendKm` is null for it) and is
- * drawn as a hollow point of its own, beside the dashed partial bar: on the
- * line it would read as a plunge in load. `load` itself is kept for the
- * tooltip.
+ * One chart row per week. The partial week (in progress, or cut off at a
+ * past `newest`) holds only the days read, so its load stays off the solid
+ * line (as `trendKm` is null for it) and is drawn as a hollow point of its
+ * own, beside the dashed partial bar: on the line it would read as a plunge
+ * in load. `load` itself is kept for the tooltip. `endsToday` (the
+ * payload's, default true) picks the word the tooltip gives that week.
  */
-export function buildLoadRows(weeks: WeekSummary[]): LoadRow[] {
+export function buildLoadRows(
+  weeks: WeekSummary[],
+  endsToday = true,
+): LoadRow[] {
   return weeks.map((week) => ({
     ...week,
     weekLabel: formatShortDate(week.weekStarting),
     loadComplete: week.inProgress ? null : week.load,
     loadSoFar: week.inProgress ? week.load : null,
+    partialLabel: week.inProgress ? partialWeekWord({ endsToday }) : null,
   }));
 }
 
@@ -158,14 +196,27 @@ export function countWarningWeeks(weeks: WeekSummary[]): number {
 /**
  * "12 weeks · 4 May – 20 Jul" — the header subtitle. Spans the weeks
  * actually charted rather than the requested `days` window, since gap weeks
- * are zero-filled but a short history still starts where it starts.
+ * are zero-filled but a short history still starts where it starts. A past
+ * window (#80) ends the span on its last day, year included ("12 weeks ·
+ * 19 Jan – 12 Apr 2026"), so last year's weeks never read as this year's.
+ * With no weeks, the window itself ("Last 84 days", or "87 days to 8 Apr
+ * 2026").
  */
 export function buildLoadSubtitle(data: TrainingLoadData): string {
+  const pastEnd = isPastWindow(data) ? data.endDate : undefined;
   const first = data.weeks[0];
   const last = data.weeks[data.weeks.length - 1];
-  if (!first || !last) return `Last ${data.days} days`;
+  if (!first || !last) return lookbackLabel(data.days, pastEnd);
 
   const weekLabel = `${data.weeks.length} ${data.weeks.length === 1 ? "week" : "weeks"}`;
+  if (pastEnd) {
+    // The start names its year only when it differs from the end's.
+    const start = formatShortDate(
+      first.weekStarting,
+      first.weekStarting.slice(0, 4) === pastEnd.slice(0, 4) ? "none" : "full",
+    );
+    return `${weekLabel} · ${start} – ${formatShortDate(pastEnd, "full")}`;
+  }
   const span =
     first.weekStarting === last.weekStarting
       ? formatShortDate(first.weekStarting)

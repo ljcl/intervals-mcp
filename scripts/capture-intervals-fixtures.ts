@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import * as dotenv from "dotenv";
+import { PACE_ACTIVITY_TYPES } from "../apps/server/src/utils/running";
 
 const root = path.resolve(import.meta.dirname, "..");
 dotenv.config({ path: path.join(root, ".env"), quiet: true });
@@ -63,15 +64,44 @@ const SYNTHETIC_HR = {
 };
 
 /**
+ * Fixed synthetic threshold pace and FTP, the same values as the committed
+ * `sport-settings.json`: `threshold_pace` is a speed in m/s (4:40 /km for a
+ * run, 2:05 /100 m for a swim), so a swim gets its own value.
+ */
+const SYNTHETIC_THRESHOLDS = {
+  runPaceMps: 3.5714285,
+  swimPaceMps: 0.8,
+  ftp: 200,
+};
+// Keep in step with `isSwimming` in packages/data/src/activity-types.ts.
+const SWIM_TYPES = new Set(["Swim", "OpenWaterSwim"]);
+
+/** True for a swim activity (`type`) or a swim settings group (`types`). */
+function isSwimRecord(r: Rec): boolean {
+  const types = Array.isArray(r.types) ? r.types : [r.type];
+  return types.some((t) => typeof t === "string" && SWIM_TYPES.has(t));
+}
+
+/**
  * Replaces LTHR, max HR, resting HR and zone boundaries with
- * {@link SYNTHETIC_HR}. Applies to activities (`lthr`, `athlete_max_hr`,
- * `icu_resting_hr`, `icu_hr_zones`) and sport settings (`lthr`, `max_hr`,
- * `hr_zones`). A zone count with no fixed ladder gets an evenly spaced one
- * ending at the synthetic max.
+ * {@link SYNTHETIC_HR}, and threshold pace and FTP with
+ * {@link SYNTHETIC_THRESHOLDS}. Applies to activities (`lthr`,
+ * `athlete_max_hr`, `icu_resting_hr`, `icu_hr_zones`, `threshold_pace`,
+ * `icu_ftp`) and sport settings (`lthr`, `max_hr`, `hr_zones`,
+ * `threshold_pace`, `ftp`, `indoor_ftp`). A zone count with no fixed ladder
+ * gets an evenly spaced one ending at the synthetic max.
  */
 function scrubHeartRateProfile(r: Rec): Rec {
   const out: Rec = { ...r };
   if (typeof out.lthr === "number") out.lthr = SYNTHETIC_HR.lthr;
+  if (typeof out.threshold_pace === "number") {
+    out.threshold_pace = isSwimRecord(out)
+      ? SYNTHETIC_THRESHOLDS.swimPaceMps
+      : SYNTHETIC_THRESHOLDS.runPaceMps;
+  }
+  for (const k of ["ftp", "indoor_ftp", "icu_ftp"]) {
+    if (typeof out[k] === "number") out[k] = SYNTHETIC_THRESHOLDS.ftp;
+  }
   for (const k of ["max_hr", "athlete_max_hr"]) {
     if (typeof out[k] === "number") out[k] = SYNTHETIC_HR.max;
   }
@@ -87,7 +117,71 @@ function scrubHeartRateProfile(r: Rec): Rec {
         Math.round(SYNTHETIC_HR.max * (0.7 + (0.3 * (i + 1)) / zones.length)),
       );
   }
+  if ("icu_achievements" in out) {
+    out.icu_achievements = scrubAchievements(out.icu_achievements);
+  }
   return out;
+}
+
+/**
+ * Rewrites the threshold-derived fields of an interval breakdown (the
+ * `/intervals` response, or an activity read with `?intervals=true`).
+ * On runs, interval `intensity` is heart rate over the real LTHR
+ * (docs/api-notes.md), so the real LTHR can be worked out from it: it is
+ * rewritten against the synthetic LTHR. On other sports it can be pace over
+ * the real threshold pace, so it is nulled. `zone` places each interval and
+ * group in the real zones, and no tool reads it, so it is nulled too.
+ */
+function scrubIntervalIntensity(r: Rec, activityType: unknown): Rec {
+  const isRun =
+    typeof activityType === "string" && PACE_ACTIVITY_TYPES.has(activityType);
+  const scrubOne = (interval: Rec): Rec => {
+    const hr = interval.average_heartrate;
+    const out: Rec = { ...interval };
+    if (typeof out.intensity === "number") {
+      out.intensity =
+        isRun && typeof hr === "number"
+          ? Math.floor((hr * 100) / SYNTHETIC_HR.lthr)
+          : null;
+    }
+    if ("zone" in out) out.zone = null;
+    return out;
+  };
+  const out: Rec = { ...r };
+  for (const k of ["icu_intervals", "icu_groups"]) {
+    const list = out[k];
+    if (Array.isArray(list)) out[k] = (list as Rec[]).map(scrubOne);
+  }
+  return out;
+}
+
+/**
+ * An LTHR_UP achievement carries the new LTHR in `value`, and the HR of the
+ * curve point behind it in `point.value` and `message`, so it gets the
+ * synthetic LTHR too. A 20 min point sets LTHR to 98% of its HR
+ * (docs/api-notes.md), so its point HR is the synthetic LTHR / 0.98. Other
+ * types keep their numbers: a pace or power best is performance data, like
+ * the activity's own pace.
+ */
+function scrubAchievements(list: unknown): unknown {
+  if (!Array.isArray(list)) return list;
+  return list.map((a: Rec) => {
+    if (a?.type !== "LTHR_UP") return a;
+    const point =
+      a.point && typeof a.point === "object" ? (a.point as Rec) : null;
+    const twentyMin = point?.secs === 1200;
+    const pointHr = twentyMin
+      ? Math.round(SYNTHETIC_HR.lthr / 0.98)
+      : SYNTHETIC_HR.lthr;
+    return {
+      ...a,
+      value: SYNTHETIC_HR.lthr,
+      message: twentyMin
+        ? `98% of 20m at ${pointHr} bpm`
+        : `1h at ${pointHr} bpm`,
+      point: point ? { ...point, value: pointHr } : a.point,
+    };
+  });
 }
 
 function scrubStreams(streams: Rec[]): Rec[] {
@@ -291,12 +385,13 @@ const activities = (await get(
   "/athlete/0/activities?oldest=2026-09-01&newest=2026-09-24",
 )) as Rec[];
 write("activities.json", activities.map(scrubActivity));
-write(
-  "activity.json",
-  scrubActivity((await get(`/activity/${ACTIVITY}`)) as Rec, 0),
-);
+const activity = (await get(`/activity/${ACTIVITY}`)) as Rec;
+write("activity.json", scrubActivity(activity, 0));
 const intervals = (await get(`/activity/${ACTIVITY}/intervals`)) as Rec;
-write("activity-intervals.json", { ...intervals });
+write(
+  "activity-intervals.json",
+  scrubIntervalIntensity(intervals, activity.type),
+);
 write(
   "streams.json",
   scrubStreams(
@@ -311,15 +406,16 @@ const wellness = (await get(
 write("wellness.json", synthesizeWellness(wellness));
 
 for (const capture of namedCaptures) {
-  write(
-    `activity-${capture.name}.json`,
-    scrubActivity((await get(`/activity/${capture.id}`)) as Rec, 0),
-  );
+  const captured = (await get(`/activity/${capture.id}`)) as Rec;
+  write(`activity-${capture.name}.json`, scrubActivity(captured, 0));
   if (capture.captureIntervals) {
     const capturedIntervals = (await get(
       `/activity/${capture.id}/intervals`,
     )) as Rec;
-    write(`activity-${capture.name}-intervals.json`, { ...capturedIntervals });
+    write(
+      `activity-${capture.name}-intervals.json`,
+      scrubIntervalIntensity(capturedIntervals, captured.type),
+    );
   }
   write(
     `streams-${capture.name}.json`,
@@ -374,21 +470,21 @@ function scrubPaceCurves(data: Rec): Rec {
 }
 
 /**
- * `activity-pace-curves.json`'s `curves[]` entries carry only an id, a
- * date, a body weight, and the per-distance `secs`: no free text to rename,
- * just the weight scrubbed like every other capture.
+ * One activity's pace curve carries only its id, the distance grid, times
+ * and sample indices. Its `weight` was null when captured; a body weight is
+ * scrubbed to 70 like every other capture.
  */
-function scrubActivityPaceCurves(data: Rec): Rec {
-  const curves = (data.curves ?? []) as Rec[];
-  return {
-    ...data,
-    curves: curves.map((c) => ({
-      ...c,
-      ...("weight" in c ? { weight: 70 } : {}),
-    })),
-  };
+function scrubActivityPaceCurve(data: Rec): Rec {
+  return data.weight == null ? data : { ...data, weight: 70 };
 }
 
+/** The run behind the best-efforts fixtures (`activityBestEfforts.test.ts`):
+ * a 6.1 km run with three auto-pause stops. */
+const BEST_EFFORTS_RUN = "i193700503";
+
+// `sport-settings.json` (every group) and `hr-curves.json` are synthetic and
+// not captured here: a heart rate curve's top values are de facto the
+// athlete's max HR, which no scrub of single fields can hide.
 write(
   "sport-settings-run.json",
   scrubHeartRateProfile(
@@ -406,18 +502,28 @@ write(
     )) as Rec,
   ),
 );
-// `activity-pace-curves.json` 403s on athlete id 0 (and on an `i`-prefixed
-// id); it needs the bare numeric id, resolved from `/athlete/0` and never
-// written to a fixture itself (it also carries `icu_api_key`).
-const self = (await get("/athlete/0")) as Rec;
-const numericAthleteId = String(self.id);
+// The next ranks per distance (`subMaxEfforts`), as get-best-efforts reads
+// them with topN above 1.
 write(
-  "activity-pace-curves.json",
-  scrubActivityPaceCurves(
+  "pace-curves-submax.json",
+  scrubPaceCurves(
     (await get(
-      `/athlete/${numericAthleteId}/activity-pace-curves.json?oldest=2026-09-01&newest=2026-09-24&type=Run&distances=400,1000,5000,10000`,
+      "/athlete/0/pace-curves.json?type=Run&curves=r.2026-08-01.2026-09-30&subMaxEfforts=4",
     )) as Rec,
   ),
+);
+// One run's own pace curve and the two streams it is built from: the golden
+// pair for `bestEffortWindows`. Time and distance only: no coordinates, no
+// heart rate.
+write(
+  "activity-pace-curve.json",
+  scrubActivityPaceCurve(
+    (await get(`/activity/${BEST_EFFORTS_RUN}/pace-curve.json`)) as Rec,
+  ),
+);
+write(
+  "streams-time-distance.json",
+  await get(`/activity/${BEST_EFFORTS_RUN}/streams.json?types=time,distance`),
 );
 
 console.error(`wrote fixtures to ${OUT}`);

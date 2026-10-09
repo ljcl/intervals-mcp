@@ -164,7 +164,7 @@ function positiveCount(raw: unknown): number | null {
 /**
  * `oldest`/`newest`/`days`/`weeks` read as `window: "oldest..newest"`, in
  * place, for a tool that takes `window` and none of those keys, when the
- * caller sent no `window` (#151). `get-best-efforts` is the one such tool:
+ * caller sent no `window` and no `id` (#151). `get-best-efforts` is the one such tool:
  * every other windowed tool takes the range keys, so a model reuses them,
  * and a successful parse would drop them and answer for the default year.
  *
@@ -181,6 +181,9 @@ function rangeToWindow(
   today: string,
 ): void {
   if (out.window !== undefined || !shape.keys.includes("window")) return;
+  // One activity has no window: get-best-efforts refuses `id` with `window`,
+  // so a range sent with an id stays a key the ignored-arguments note names.
+  if (shape.keys.includes("id") && out.id !== undefined) return;
   if (RANGE_KEYS.some((key) => shape.keys.includes(key))) return;
   const oldest = typeof out.oldest === "string" ? out.oldest : undefined;
   const newest = typeof out.newest === "string" ? out.newest : undefined;

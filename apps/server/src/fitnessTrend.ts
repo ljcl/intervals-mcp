@@ -720,10 +720,19 @@ export interface TrendBand {
   days: number;
   /**
    * What the band means: in the present tense ("now") when it runs to the
-   * last day, the sentence `computeFlags` prints; in the past tense when it
-   * ended earlier.
+   * last day of a window that ends today, the sentence `computeFlags`
+   * prints; dated otherwise (a band that ended earlier, or one that runs to
+   * the last day of a past window).
    */
   reason: string;
+}
+
+/** How `trendBands` and `computeFlags` word a band that runs to the last day. */
+interface TrendBandOptions {
+  /** False for a past window (`newest` before today). Default true. */
+  endsToday?: boolean;
+  /** The window's last day (today, or `newest`). */
+  endDate?: string;
 }
 
 /**
@@ -744,12 +753,33 @@ export interface TrendBand {
  * bands at most {@link FRESH_MERGE_GAP_DAYS} apart merge (also across a
  * short wellness gap); and a band needs {@link FRESH_MIN_DAYS} days unless
  * it runs to the last day, which is the current state `computeFlags` reports.
+ *
+ * `options.endsToday: false` marks a past window (`newest` before today,
+ * #80): a band that runs to its last day is history too, so its reason
+ * names that day instead of "now". Default true. `options.endDate` is the
+ * window's last day: when the series stops before it (a trailing wellness
+ * gap), the reason calls the series' last day "the last day with data in
+ * the window", not "the end of the window".
  */
-export function trendBands(series: FitnessTrendDay[]): TrendBand[] {
+export function trendBands(
+  series: FitnessTrendDay[],
+  options: TrendBandOptions = {},
+): TrendBand[] {
   const bands: TrendBand[] = [];
   if (series.length === 0) return bands;
 
+  const endsToday = options.endsToday ?? true;
   const lastIndex = series.length - 1;
+  const lastDate = series[lastIndex]!.date;
+  /** What a past window's dated reason calls `lastDate`. */
+  const lastDateIs =
+    options.endDate === undefined || options.endDate === lastDate
+      ? "the end of the window"
+      : "the last day with data in the window";
+  /** The band runs to today: its reason is in the present tense. */
+  const isNow = (end: number) => end === lastIndex && endsToday;
+  /** The band runs to the last day of a past window: its reason is dated. */
+  const toPastEnd = (end: number) => end === lastIndex && !endsToday;
   const deltaAt = deltaLookup(series);
   const calendarDays = (start: number, end: number) =>
     daysBetween(series[start]!.date, series[end]!.date) + 1;
@@ -800,9 +830,11 @@ export function trendBands(series: FitnessTrendDay[]): TrendBand[] {
         "deep-fatigue",
         start,
         end,
-        end === lastIndex
+        isNow(end)
           ? `TSB at or below ${DEEP_FATIGUE_TSB} for ${days} consecutive days: deep fatigue; an easy block or rest is overdue.`
-          : `TSB was at or below ${DEEP_FATIGUE_TSB} for ${days} consecutive days (${series[start]!.date} to ${series[end]!.date}): deep fatigue, since eased.`,
+          : toPastEnd(end)
+            ? `TSB at or below ${DEEP_FATIGUE_TSB} for ${days} consecutive days to ${lastDate}, ${lastDateIs}: deep fatigue.`
+            : `TSB was at or below ${DEEP_FATIGUE_TSB} for ${days} consecutive days (${series[start]!.date} to ${series[end]!.date}): deep fatigue, since eased.`,
       ),
     );
   }
@@ -835,9 +867,11 @@ export function trendBands(series: FitnessTrendDay[]): TrendBand[] {
         "fresh",
         start,
         end,
-        end === lastIndex
+        isNow(end)
           ? `TSB at ${formatSigned(round1(series[end]!.tsb))} (fresh since ${startDate}, peak ${formatSigned(round1(peak))}): fresh and race-ready now, but fitness decays if this holds for long.`
-          : `Fresh from ${startDate} to ${series[end]!.date} (${days} days, TSB peak ${formatSigned(round1(peak))}).`,
+          : toPastEnd(end)
+            ? `TSB at ${formatSigned(round1(series[end]!.tsb))} on ${lastDate}, ${lastDateIs} (fresh since ${startDate}, peak ${formatSigned(round1(peak))}).`
+            : `Fresh from ${startDate} to ${series[end]!.date} (${days} days, TSB peak ${formatSigned(round1(peak))}).`,
       ),
     );
   }
@@ -851,7 +885,7 @@ export function trendBands(series: FitnessTrendDay[]): TrendBand[] {
         "steep-ramp",
         start,
         end,
-        `CTL climbed ${rampAt(end)} in the ${end === lastIndex ? "last 7 days" : `7 days to ${series[end]!.date}`}: a steep ramp; sustained rates above ~${RAMP_RISK_PER_WEEK}/week carry injury and illness risk.`,
+        `CTL climbed ${rampAt(end)} in the ${isNow(end) ? "last 7 days" : `7 days to ${series[end]!.date}`}: a steep ramp; sustained rates above ~${RAMP_RISK_PER_WEEK}/week carry injury and illness risk.`,
       ),
     );
   }
@@ -862,12 +896,17 @@ export function trendBands(series: FitnessTrendDay[]): TrendBand[] {
 /**
  * The flags worth raising *now*: a band that runs to the end of the window.
  * An old resolved deep-fatigue block is history, not a flag — it still shades
- * on the chart via `trendBands`.
+ * on the chart via `trendBands`. For a past window (`endsToday: false`) the
+ * flags are still the bands that run to its last day, and their reasons are
+ * dated.
  */
-export function computeFlags(series: FitnessTrendDay[]): string[] {
+export function computeFlags(
+  series: FitnessTrendDay[],
+  options: TrendBandOptions = {},
+): string[] {
   const last = series[series.length - 1];
   if (!last) return [];
-  return trendBands(series)
+  return trendBands(series, options)
     .filter((band) => band.end_date === last.date)
     .map((band) => band.reason);
 }

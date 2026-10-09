@@ -24,9 +24,9 @@ describe("formatActivityZones", () => {
     expect(text).toContain("Heart Rate Zones");
     // Fixture: icu_hr_zones [142,154,163,171,190], times [103,146,330,1684,111].
     // Total = 2374s; zone 4 (1684s) = 70.9%.
-    expect(text).toContain("Z4 (163-171 bpm): 28:04 (70.9%)");
+    expect(text).toContain("Z4 (164-171 bpm): 28:04 (70.9%)");
     // The top zone keeps its real upper bound, not an open-ended "+".
-    expect(text).toContain("Z5 (171-190 bpm): 1:51 (4.7%)");
+    expect(text).toContain("Z5 (172-190 bpm): 1:51 (4.7%)");
   });
 });
 

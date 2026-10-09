@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { RUN_TYPES } from "../fitnessTrend";
+import { RUN_ONLY_RUNWAY_DAYS, RUN_TYPES } from "../fitnessTrend";
 import {
   getWellness,
   type IntervalsActivity,
@@ -95,6 +95,7 @@ describe("get-training-load execute", () => {
       days: 35,
       start_date: "2026-05-25",
       end_date: TODAY,
+      ends_today: true,
     });
     expect(structured.totals.runs).toBe(3);
     expect(structured.totals.distance_km).toBe(30);
@@ -505,6 +506,7 @@ describe("get-training-load weeks (#43)", () => {
       days: 34,
       start_date: "2026-08-24",
       end_date: "2026-09-26",
+      ends_today: true,
     });
     expect(structured.weekly_breakdown.map((w) => w.distance_km)).toEqual([
       60, 60, 60, 60, 40,
@@ -620,5 +622,212 @@ describe("get-training-load weeks (#43)", () => {
       null,
     ]);
     expect(appData.weeks.some((w) => w.warning)).toBe(false);
+  });
+});
+
+describe("get-training-load with newest (#80)", () => {
+  /** A past Sunday and a past Wednesday, both before TODAY (a Sunday). */
+  const PAST_SUNDAY = "2026-04-12";
+  const PAST_WEDNESDAY = "2026-04-08";
+
+  interface Structured {
+    period: {
+      days: number;
+      start_date: string;
+      end_date: string;
+      ends_today: boolean;
+    };
+    source: string;
+    current: { date: string; ctl: number; atl: number; tsb: number } | null;
+    averages: { runs_per_week: number; distance_km_per_week: number };
+    warnings: string[];
+    weekly_breakdown: Array<{ week_starting: string; distance_km: number }>;
+  }
+
+  /**
+   * A 20 km run every Wednesday from 2026-01-07 to 2026-06-24: some before
+   * each past window, some inside it, and some after it, which no request
+   * to a past newest may reach.
+   */
+  const weeklyRuns = Array.from({ length: 25 }, (_, i) =>
+    runOn(addDays("2026-01-07", 7 * i), 20),
+  );
+
+  /** Serves only the rows inside the requested range, as intervals.icu does. */
+  function serve(
+    activities: IntervalsActivity[],
+    wellness: IntervalsWellness[] = [],
+  ) {
+    mockedListActivities.mockImplementation(async (_key, { oldest, newest }) =>
+      activities.filter((a) => {
+        const date = a.start_date_local.split("T")[0]!;
+        return date >= oldest && date <= newest;
+      }),
+    );
+    mockedWellness.mockImplementation(async (_key, { oldest, newest }) =>
+      wellness.filter((row) => row.id >= oldest && row.id <= newest),
+    );
+  }
+
+  async function call(input: Record<string, unknown>) {
+    const result = await getTrainingLoadTool.execute(
+      { days: 84, runOnly: false, ...input },
+      "test-token",
+    );
+    return {
+      result,
+      structured: result.structuredContent as Structured | undefined,
+      text: result.content[0]?.text ?? "",
+    };
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(`${TODAY}T12:00:00Z`));
+    mockedWellness.mockReset();
+    mockedListActivities.mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("reports the 12 weeks to a past Sunday for days 84, all of them complete", async () => {
+    serve(weeklyRuns, [
+      wellnessRow("2026-04-11", { ctl: 48.2, atl: 41.7 }),
+      wellnessRow(PAST_SUNDAY, { ctl: 48.5, atl: 40 }),
+      // After newest: never read.
+      wellnessRow("2026-04-13", { ctl: 99, atl: 99 }),
+    ]);
+
+    const { structured, text } = await call({ newest: PAST_SUNDAY });
+
+    expect(structured!.period).toEqual({
+      days: 84,
+      start_date: "2026-01-19",
+      end_date: PAST_SUNDAY,
+      ends_today: false,
+    });
+    expect(TrainingLoadOutputSchema.safeParse(structured).success).toBe(true);
+    expect(structured!.weekly_breakdown.map((w) => w.week_starting)).toEqual(
+      Array.from({ length: 12 }, (_, i) => addDays("2026-01-19", 7 * i)),
+    );
+    expect(structured!.averages.distance_km_per_week).toBe(20);
+    expect(structured!.current).toEqual({
+      date: PAST_SUNDAY,
+      ctl: 48.5,
+      atl: 40,
+      tsb: 8.5,
+    });
+    expect(structured!.warnings[0]).toBe(
+      `This window ends on ${PAST_SUNDAY}, before today (${TODAY}). It is a past block: CTL/ATL/TSB are as of its last day with data, not today.`,
+    );
+    expect(mockedListActivities.mock.calls[0]![1]).toEqual({
+      oldest: "2025-12-22",
+      newest: PAST_SUNDAY,
+    });
+    expect(mockedWellness.mock.calls[0]![1]).toEqual({
+      oldest: "2026-01-19",
+      newest: PAST_SUNDAY,
+    });
+
+    expect(text).toContain(
+      `2026-01-19 to ${PAST_SUNDAY} (12 complete weeks, CTL/ATL source: intervals.icu)`,
+    );
+    expect(text).toContain(`End of window (as of ${PAST_SUNDAY})`);
+    expect(text).not.toContain("Current (as of");
+    expect(text).toContain("Weekly Averages (12 complete weeks)");
+    expect(text).not.toContain("in progress");
+    expect(text).not.toContain("partial");
+  });
+
+  it("calls a past mid-week newest's week partial, not in progress", async () => {
+    serve(weeklyRuns);
+
+    const { structured, text } = await call({ newest: PAST_WEDNESDAY });
+
+    expect(structured!.period).toEqual({
+      days: 87,
+      start_date: "2026-01-12",
+      end_date: PAST_WEDNESDAY,
+      ends_today: false,
+    });
+    expect(structured!.weekly_breakdown).toHaveLength(13);
+    expect(structured!.warnings).toContain(
+      `Week of 2026-04-06 is partial (3 of 7 days, to ${PAST_WEDNESDAY}): averages and the trend leave it out.`,
+    );
+    expect(text).toContain(
+      `2026-01-12 to ${PAST_WEDNESDAY} (12 complete weeks and a partial week of 3 days, CTL/ATL source: intervals.icu)`,
+    );
+    expect(text).toContain(
+      "Week of 2026-04-06 (partial, 3 of 7 days): 1 runs, 20 km",
+    );
+    expect(text).toContain("Weekly Averages (12 complete weeks)");
+    expect(text).not.toContain("in progress");
+  });
+
+  it("averages over the partial week when it holds the only runs", async () => {
+    serve([runOn("2026-04-07", 10)]);
+
+    const { text } = await call({ newest: PAST_WEDNESDAY });
+
+    expect(text).toContain("Weekly Averages (the partial week)");
+    expect(text).not.toContain("this week so far");
+  });
+
+  it("counts the run-only runway back from newest, not from today", async () => {
+    serve(weeklyRuns);
+
+    const { structured } = await call({
+      newest: PAST_SUNDAY,
+      runOnly: true,
+    });
+
+    expect(mockedListActivities.mock.calls[0]![1]).toEqual({
+      oldest: addDays(PAST_SUNDAY, -(84 + RUN_ONLY_RUNWAY_DAYS - 1)),
+      newest: PAST_SUNDAY,
+    });
+    expect(structured!.source).toBe("computed");
+    expect(structured!.current?.date).toBe(PAST_SUNDAY);
+    expect(mockedWellness).not.toHaveBeenCalled();
+  });
+
+  it("is the same call as no newest when newest is today", async () => {
+    serve(weeklyRuns, [wellnessRow(TODAY, { ctl: 50, atl: 45 })]);
+
+    const omitted = await call({});
+    const today = await call({ newest: TODAY });
+
+    expect(today.structured).toEqual(omitted.structured);
+    expect(today.text).toBe(omitted.text);
+    expect(omitted.structured!.period.ends_today).toBe(true);
+    const [omittedList, todayList] = mockedListActivities.mock.calls;
+    expect(todayList![1]).toEqual(omittedList![1]);
+    const [omittedWellness, todayWellness] = mockedWellness.mock.calls;
+    expect(todayWellness![1]).toEqual(omittedWellness![1]);
+  });
+
+  it("refuses a newest after today before any fetch", async () => {
+    const { result, structured } = await call({ newest: "2026-06-29" });
+
+    expect(result.isError).toBe(true);
+    expect(structured).toBeUndefined();
+    expect(result.content[0]?.text).toBe(
+      "❌ newest 2026-06-29 is after today (2026-06-28). Use today or an earlier date, or leave newest out to end the window today.",
+    );
+    expect(mockedListActivities).not.toHaveBeenCalled();
+    expect(mockedWellness).not.toHaveBeenCalled();
+  });
+
+  it("names newest in the error when a past window's fetch fails", async () => {
+    // A network fault: no HTTP status, so the text keeps the context.
+    mockedListActivities.mockRejectedValueOnce(new Error("socket hang up"));
+
+    const { result } = await call({ newest: PAST_SUNDAY });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain(
+      `fetch training load for 84 days to ${PAST_SUNDAY}`,
+    );
   });
 });

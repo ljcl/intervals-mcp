@@ -3,11 +3,13 @@ import { describe, expect, it } from "vitest";
 import {
   mockFitnessTrendData,
   mockNoLoadData,
+  mockPastFitnessTrendData,
   mockRestProjectionData,
 } from "./__fixtures__/trend";
 import {
   BAND_COLORS,
   BAND_LABELS,
+  buildBaseArgs,
   buildChartRows,
   buildSummaryStats,
   buildTrendSubtitle,
@@ -15,9 +17,43 @@ import {
   formatTaperWeek,
   handoverLabel,
   hasRecordedLoad,
+  isPastWindow,
   isPlanned,
   planDays,
 } from "./normalize";
+
+describe("buildBaseArgs", () => {
+  it("defaults to 90 days and a fortnight's projection, as the view tool does", () => {
+    expect(buildBaseArgs({})).toEqual({ days: 90, projectDays: 14 });
+  });
+
+  it("carries the window, the projection and the taper target the host sent", () => {
+    expect(
+      buildBaseArgs({
+        days: 120,
+        projectDays: 7,
+        targetDate: "2026-07-19",
+        targetTsb: 0,
+        runOnly: true,
+      }),
+    ).toEqual({
+      days: 120,
+      projectDays: 7,
+      targetDate: "2026-07-19",
+      // Zero is a target, not a missing one.
+      targetTsb: 0,
+    });
+  });
+
+  it("carries newest, so both scopes chart the same past window (#80)", () => {
+    expect(buildBaseArgs({ newest: "2026-04-12" })).toEqual({
+      days: 90,
+      newest: "2026-04-12",
+      projectDays: 14,
+    });
+    expect(buildBaseArgs({ days: 30 })).not.toHaveProperty("newest");
+  });
+});
 
 describe("planDays / isPlanned", () => {
   it("prefers the taper over the rest projection", () => {
@@ -208,6 +244,43 @@ describe("buildTrendSubtitle", () => {
     expect(buildTrendSubtitle({ ...mockRestProjectionData, series: [] })).toBe(
       "Last 90 days",
     );
+  });
+});
+
+describe("buildTrendSubtitle for a past window (#80)", () => {
+  it("spells out the last day's year", () => {
+    const { series } = mockPastFitnessTrendData;
+    expect(buildTrendSubtitle(mockPastFitnessTrendData)).toBe(
+      `90 days · ${formatShortDate(series[0]!.date)} – 28 Jun 2026`,
+    );
+  });
+
+  it("names the start's year when the window crosses one", () => {
+    const crossing = {
+      ...mockPastFitnessTrendData,
+      series: [
+        { ...mockPastFitnessTrendData.series[0]!, date: "2025-12-30" },
+        ...mockPastFitnessTrendData.series.slice(1),
+      ],
+    };
+    expect(buildTrendSubtitle(crossing)).toBe(
+      "90 days · 30 Dec 2025 – 28 Jun 2026",
+    );
+  });
+
+  it("names the window's last day when no days came back", () => {
+    expect(
+      buildTrendSubtitle({ ...mockPastFitnessTrendData, series: [] }),
+    ).toBe("90 days to 28 Jun 2026");
+  });
+});
+
+describe("isPastWindow", () => {
+  it("is true only when the payload says the window ends before today", () => {
+    expect(isPastWindow({ endsToday: false })).toBe(true);
+    expect(isPastWindow({ endsToday: true })).toBe(false);
+    // Older payloads carry no endsToday: they ended today.
+    expect(isPastWindow({})).toBe(false);
   });
 });
 

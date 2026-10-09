@@ -11,14 +11,21 @@
  * a window full of activities and wellness days, the multi-lap activity, a
  * 4 h all-types stream for get-activity-streams.
  */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { syntheticAllTypesStreams } from "../__fixtures__";
 import activitiesFixture from "../__fixtures__/intervals/activities.json";
+import activitiesSimilarFixture from "../__fixtures__/intervals/activities-similar.json";
 import activityMultilapFixture from "../__fixtures__/intervals/activity-multilap.json";
 import activityMultilapIntervalsFixture from "../__fixtures__/intervals/activity-multilap-intervals.json";
-import activityPaceCurvesFixture from "../__fixtures__/intervals/activity-pace-curves.json";
+import activityRepeatsFixture from "../__fixtures__/intervals/activity-repeats.json";
 import gearFixture from "../__fixtures__/intervals/gear.json";
+import hrCurvesFixture from "../__fixtures__/intervals/hr-curves.json";
+import intervalSearchFixture from "../__fixtures__/intervals/interval-search.json";
 import paceCurvesFixture from "../__fixtures__/intervals/pace-curves.json";
+import paceCurvesSubmaxFixture from "../__fixtures__/intervals/pace-curves-submax.json";
+import sportSettingsListFixture from "../__fixtures__/intervals/sport-settings.json";
 import sportSettingsRunFixture from "../__fixtures__/intervals/sport-settings-run.json";
 import streamsMultilapFixture from "../__fixtures__/intervals/streams-multilap.json";
 import wellnessFixture from "../__fixtures__/intervals/wellness.json";
@@ -32,6 +39,8 @@ vi.mock("../intervalsClient", async (importOriginal) => {
     ...actual,
     listActivities: vi.fn(),
     searchActivities: vi.fn(),
+    searchActivitiesByIntervals: vi.fn(),
+    getActivitiesByIds: vi.fn(),
     getActivity: vi.fn(),
     getActivityIntervals: vi.fn(),
     getActivityStreams: vi.fn(),
@@ -39,9 +48,9 @@ vi.mock("../intervalsClient", async (importOriginal) => {
     listGear: vi.fn(),
     getWellness: vi.fn(),
     getSportSettings: vi.fn(),
+    listSportSettings: vi.fn(),
+    getAthleteHrCurves: vi.fn(),
     getAthletePaceCurves: vi.fn(),
-    getActivityPaceCurves: vi.fn(),
-    resolveNumericAthleteId: vi.fn(),
   };
 });
 
@@ -103,6 +112,8 @@ beforeEach(() => {
   vi.mocked(client.searchActivities).mockImplementation(async () =>
     activitiesIn({ oldest: "2024-10-05", newest: "2026-10-05" }).slice(0, 200),
   );
+  vi.mocked(client.searchActivitiesByIntervals).mockResolvedValue([]);
+  vi.mocked(client.getActivitiesByIds).mockResolvedValue([]);
   vi.mocked(client.getActivity).mockImplementation(async (_key, id) => ({
     ...multilapActivity,
     id,
@@ -126,15 +137,15 @@ beforeEach(() => {
   vi.mocked(client.getSportSettings).mockResolvedValue(
     sportSettingsRunFixture as unknown as client.IntervalsSportSettings,
   );
+  vi.mocked(client.listSportSettings).mockResolvedValue(
+    sportSettingsListFixture as unknown as client.IntervalsSportSettings[],
+  );
+  vi.mocked(client.getAthleteHrCurves).mockResolvedValue(
+    hrCurvesFixture as unknown as client.IntervalsAthleteHrCurves,
+  );
   vi.mocked(client.getAthletePaceCurves).mockResolvedValue(
     paceCurvesFixture as unknown as client.IntervalsAthletePaceCurves,
   );
-  vi.mocked(client.getActivityPaceCurves).mockResolvedValue(
-    activityPaceCurvesFixture as unknown as Awaited<
-      ReturnType<typeof client.getActivityPaceCurves>
-    >,
-  );
-  vi.mocked(client.resolveNumericAthleteId).mockResolvedValue("123");
 });
 
 interface SizeCase {
@@ -142,6 +153,8 @@ interface SizeCase {
   args: Record<string, unknown>;
   /** Swap a mock before the call, for a case needing different data. */
   setup?: () => void;
+  /** Extra assertions on the result, to prove the case reached its largest path. */
+  check?: (result: { structuredContent?: unknown }) => void;
 }
 
 const ALL_STREAM_TYPES = [
@@ -162,12 +175,75 @@ const ALL_STREAM_TYPES = [
 const longRunStreams = () =>
   vi.mocked(client.getActivityStreams).mockResolvedValue(LONG_RUN);
 
+/** A 5 x 1 km session whose search finds 5 earlier sessions with the same reps. */
+const similarSessions = () => {
+  vi.mocked(client.getActivity).mockImplementation(async (_key, id) => ({
+    ...(activityRepeatsFixture as unknown as client.IntervalsActivity),
+    id,
+  }));
+  vi.mocked(client.searchActivitiesByIntervals).mockResolvedValue(
+    intervalSearchFixture as unknown as client.IntervalsActivity[],
+  );
+  vi.mocked(client.getActivitiesByIds).mockResolvedValue(
+    activitiesSimilarFixture as unknown as client.IntervalsActivity[],
+  );
+};
+
+/**
+ * Every activity type intervals.icu has: the 60-value type enum in
+ * docs/intervals-openapi.json, in its order. Real names, not long synthetic
+ * ones: no account can send 60 names of the longest length.
+ */
+const INTERVALS_ACTIVITY_TYPES: string[] = (() => {
+  const spec = JSON.parse(
+    readFileSync(
+      join(import.meta.dirname, "../../../../docs/intervals-openapi.json"),
+      "utf8",
+    ),
+  );
+  const found: string[][] = [];
+  const walk = (node: unknown): void => {
+    if (Array.isArray(node)) node.forEach(walk);
+    else if (node && typeof node === "object") {
+      const { enum: values } = node as { enum?: unknown };
+      if (Array.isArray(values) && values.includes("WeightTraining"))
+        found.push(values as string[]);
+      Object.values(node).forEach(walk);
+    }
+  };
+  walk(spec);
+  return found[0] ?? [];
+})();
+
+/**
+ * One activity of every type, plus one with no type, on the last day of
+ * the range, on top of the default one-a-day list: every get-athlete-stats
+ * period then lists every type.
+ */
+const everyActivityType = () =>
+  vi.mocked(client.listActivities).mockImplementation(async (_key, range) => {
+    const base = activitiesFixture as unknown as client.IntervalsActivity[];
+    const types: (string | null)[] = [...INTERVALS_ACTIVITY_TYPES, null];
+    return [
+      ...types.map((type, i) => ({
+        ...base[0]!,
+        id: `i${400_000_000 + i}`,
+        type,
+        start_date_local: `${range.newest}T06:00:00`,
+      })),
+      ...activitiesIn(range),
+    ];
+  });
+
 /**
  * Largest inputs per tool. A tool missing from this table fails the
  * coverage check below, so a new tool cannot skip the budget.
  */
 const CASES: Record<string, SizeCase[]> = {
-  "get-athlete-stats": [{ label: "default", args: {} }],
+  "get-athlete-stats": [
+    { label: "default", args: {} },
+    { label: "every activity type", args: {}, setup: everyActivityType },
+  ],
   "update-activity": [
     {
       label: "every field",
@@ -194,7 +270,20 @@ const CASES: Record<string, SizeCase[]> = {
   "get-split-analysis": [
     { label: "4 h run", args: { id: ID }, setup: longRunStreams },
   ],
-  "get-interval-analysis": [{ label: "multi-lap", args: { id: ID } }],
+  "get-interval-analysis": [
+    { label: "multi-lap", args: { id: ID } },
+    {
+      label: "repeats, findSimilar",
+      args: { id: "i189757858", findSimilar: true },
+      setup: similarSessions,
+      check: (result) => {
+        const similar = (
+          result.structuredContent as { similar?: { sessions: unknown[] } }
+        ).similar;
+        expect(similar?.sessions).toHaveLength(5);
+      },
+    },
+  ],
   "get-training-load": [{ label: "365 days", args: { days: 365 } }],
   "get-fitness-trend": [
     {
@@ -209,6 +298,17 @@ const CASES: Record<string, SizeCase[]> = {
     {
       label: "every distance, top 5, all time",
       args: { window: "all", topN: 5 },
+      // Four ranks below the best at every distance the window reaches.
+      setup: () =>
+        vi.mocked(client.getAthletePaceCurves).mockResolvedValue({
+          ...paceCurvesSubmaxFixture,
+          list: paceCurvesSubmaxFixture.list.map((c) => ({ ...c, id: "all" })),
+        } as unknown as client.IntervalsAthletePaceCurves),
+    },
+    {
+      label: "4 h run, every distance, top 5",
+      args: { id: ID, topN: 5 },
+      setup: longRunStreams,
     },
   ],
   "get-race-prediction": [
@@ -245,6 +345,7 @@ const CASES: Record<string, SizeCase[]> = {
   "view-compare-activities": [
     { label: "default", args: { activityId1: ID, activityId2: ID_2 } },
   ],
+  "get-athlete-zones": [{ label: "Run with HR curves", args: {} }],
 };
 
 const modelVisibleTools = TOOL_DEFS.filter(
@@ -255,6 +356,10 @@ const modelVisibleTools = TOOL_DEFS.filter(
 ).map((def) => def.name);
 
 describe("response size budget", () => {
+  it("reads the activity type list from the spec", () => {
+    expect(INTERVALS_ACTIVITY_TYPES.length).toBeGreaterThan(50);
+  });
+
   it("has a case for every model-visible tool", () => {
     expect(Object.keys(CASES).sort()).toEqual([...modelVisibleTools].sort());
   });
@@ -265,7 +370,7 @@ describe("response size budget", () => {
 
   it.each(rows)(
     "$name ($label) stays under the budget",
-    async ({ name, args, setup }) => {
+    async ({ name, args, setup, check }) => {
       setup?.();
       const result = await dispatchToolCall(name, args);
       const text = result.content
@@ -273,6 +378,7 @@ describe("response size budget", () => {
         .join("");
       // A size check on an error message proves nothing.
       expect(result.isError, text).toBeUndefined();
+      check?.(result);
       expect(responseSize(text, result.structuredContent)).toBeLessThanOrEqual(
         RESPONSE_BUDGET_CHARS,
       );

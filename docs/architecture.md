@@ -129,10 +129,14 @@ per-tool. Path patterns and current TTLs (`fetchClient.ts`):
 | `/activity/{id}` | 10m | Invalidated on `update-activity` writes |
 | `/athlete/{id}/gear` | 10m | Rarely changes |
 | `/athlete/{id}/sport-settings/{sport}` | 1h | Rarely changes |
+| `/athlete/{id}/sport-settings` | 10m | Every group at once (`get-athlete-zones`); shorter than one sport's settings, so a changed LTHR shows soon |
+| `/athlete/{id}/hr-curves.json` | 10m | Recomputed from history, like the pace curves |
 | `/athlete/{id}/activities` | 1m | A newly recorded activity should show up quickly |
 | `/athlete/{id}/activities/search-full` | 1m | Same freshness as the listing |
+| `/athlete/{id}/activities/interval-search` | 1m | Same freshness as the listing |
+| `/athlete/{id}/activities/{ids}` (`i`-prefixed, comma-separated) | 10m | The same rows as `/activity/{id}`; dropped with the activities list on `update-activity` |
 | `/athlete/{id}/wellness*` | 5m | intervals.icu updates wellness through the day |
-| `/athlete/{id}/pace-curves.json`, `/activity-pace-curves.json` | 10m | Recomputed from history a few times a day at most |
+| `/athlete/{id}/pace-curves.json` | 10m | Recomputed from history a few times a day at most |
 
 Everything else is left uncached.
 
@@ -154,10 +158,11 @@ Everything else is left uncached.
   directions so a future one is covered without a second rule. This
   automatic invalidation only fires when the PUT itself resolves
   successfully; `updateActivity` (`intervalsClient.ts`) additionally
-  invalidates the activity, the athlete's activities list, and the gear
-  list in a `finally`, so a *failed* PUT that may still have mutated state
-  server-side (a 5xx, a network fault, a timeout) does not leave a stale
-  pre-write entry being served afterward.
+  invalidates the activity, the athlete's activities list, the gear list,
+  and the athlete pace curves (their `activities` map carries the run names
+  `get-best-efforts` reports) in a `finally`, so a *failed* PUT that may
+  still have mutated state server-side (a 5xx, a network fault, a timeout)
+  does not leave a stale pre-write entry being served afterward.
 - `skipCache: true` bypasses entirely; the `update-activity` append read uses
   it so it never composes onto a stale description.
 - **The cache never shares references.** Every value it hands out (a hit, the
@@ -222,6 +227,13 @@ was a stop, and a smart-recording run read at about twice its real pace.
 The rule assumes that intervals.icu keeps smart-recording gaps in the
 `time` stream; that is not verified yet (docs/api-notes.md).
 
+**A sample with no time is dropped, and the loader counts it.**
+`loadIntervalsStreams` drops a sample whose `time` is `null`, with the same
+sample in every other stream, and reports how many in `droppedSamples`.
+After a drop, an index that intervals.icu gives into the raw streams (an
+activity's `ignore_parts`) points at the wrong sample. So `get-best-efforts`
+applies those parts only when `droppedSamples` is 0 (#82).
+
 ## Analysis math: one home per definition
 
 **Grade-adjusted pace has one definition.** `hillAnalysis.ts`'s `gapFactor`
@@ -269,24 +281,37 @@ otherwise sit in their own `intervals_icu` field. `compare-activities` once divi
 rate instead, where a slower pace and a lower heart rate add up rather than
 cancel, and called an unchanged runner "declined" (#42).
 
+**Pace per 100 m and km/h have one home.** `sportSpeed` in
+`utils/running.ts` gives `pace_min_per_100m` (Swim, OpenWaterSwim) and
+`speed_kmh` (every other type that is not a run) from distance over moving
+time. It converts with `speedDisplay` from `packages/data`, the apps' one
+conversion, so text and apps agree, and a swim slower than
+`MIN_MOVING_SPEED_MPS` has no pace in either. list-activities, get-activity
+(activity and intervals), compare-activities and `intervalLaps.ts` call it.
+`pace_min_per_km` keeps its own rule (`PACE_ACTIVITY_TYPES`), so Walk and
+Hike get km/h, not a pace (#86). That is one known split between text and
+apps: `speedDisplay` counts Walk and Hike as runs, so the apps show them as
+pace per km, while the text tools show km/h. A follow-up picks one.
+
 **Training-load weeks have one definition.** `trainingLoad.ts` owns the
 window (`trainingLoadWindow`: `days` rounded up to whole Monday-to-Sunday
-weeks, plus the current week so far), the timeline (`aggregateWeeks`: first
-week with any activity to the current week), the weeks the run-based rules
-read (`selectRunWeeks`: first week with a run to the current week, zero-run
-weeks kept, the week in progress apart), and the rules themselves
+weeks, to the week that holds `endDate`), the timeline (`aggregateWeeks`:
+first week with any activity to the window's last week), the weeks the
+run-based rules read (`selectRunWeeks`: first week with a run to the last
+week, zero-run weeks kept, the partial week apart), and the rules themselves
 (`computeWeekWarnings`, `volumeTrend`). `get-training-load` and the
 training-load app feed both call them. A window that started mid-week gave a
 steady runner a 1-day first week, then a "200% increase" on the next full
 week, and a trend that compared the unfinished current week with full ones.
 The app also dropped the zero-run weeks that the text tool kept, so the two
-gave different warnings for the same weeks (#43). Only the current week can be
-partial now, and no rule uses it as a baseline or in an average.
+gave different warnings for the same weeks (#43). Only the last week can be
+partial now (the week in progress, or a week cut off at a past `newest`), and
+no rule uses it as a baseline or in an average.
 
 The timeline and the run weeks used to stop at the last week with activity,
 so a layoff that was still going on did not count: an athlete who had not run
 for 2 weeks got the averages and a "limited data" trend of the weeks before.
-Both now run on to the current week. The warning compares a week with the
+Both now run on to the window's last week. The warning compares a week with the
 average of the complete weeks before it, not with the whole period: with a
 whole-period average, the layoff lowered the average and flagged the normal
 weeks before it.
@@ -320,12 +345,34 @@ when its `types` names the activity's type, else no zones with a note.
 `get-activity` (`hr_zones`) and `get-running-summary` (`hr_zone_summary`)
 both call it; each only shapes the result.
 
+`zoneRanges` in the same file turns ascending upper bounds into ranges:
+zone 1 starts at 0, and each later zone starts at the previous zone's upper
+bound. `buildZoneSet` (an activity's zone time) and `athleteZones.ts` (the
+athlete's settings: HR and pace zones) both call it. `athleteZones.ts` also
+holds the LTHR and max HR checks against intervals.icu's HR curves, used by
+`get-athlete-zones`. The LTHR estimate follows intervals.icu's own rule
+(`lthrEstimate`): the higher of the best 60-minute heart rate and 98% of the
+best 20-minute heart rate, both of the last 90 days.
+
 **Run types have one home.** `PACE_ACTIVITY_TYPES` in `utils/running.ts`
 (Run, TrailRun, VirtualRun). `get-running-summary` accepts exactly these,
 and `fitnessTrend.ts` re-exports them as `RUN_TYPES` for the run-only series
 and `get-training-load`. `STEP_CADENCE_ACTIVITY_TYPES` and
 `RUNNING_ACTIVITY_TYPES` add Walk and Hike on purpose: those have a step
 cadence but no pace.
+
+**Best efforts inside one activity have one home.** `bestEffortWindows` in
+`activityBestEfforts.ts`: for each start sample, the first sample whose
+distance reaches the target, with the elapsed time scaled to exactly the
+target. This is intervals.icu's own pace-curve rule (it reproduced 313 of
+313 activity-curve points, docs/api-notes.md), so `get-best-efforts` with
+an `id` agrees with the same tool over a window at every distance the run
+fully covers. (A run a few metres short of a distance has no stretch of it,
+but over a window it can count for a nearby curve point, such as 21000 m
+for a half marathon.) `topN` picks the fastest stretches that do not
+overlap. `stopped_seconds` reads the loader's `moving` stream with
+`velocity_smooth` loaded, as `get-split-analysis` does, so a stop has one
+definition: an auto-pause gap, or a sample under 0.5 m/s.
 
 **Taper solving.** `fitnessTrend.ts` owns every CTL/ATL/TSB number, including
 the forward-looking ones — `plannedLoads` projects a prescribed load instead of
@@ -347,6 +394,23 @@ a typo like 2062-10-17 gave a 13,170-day plan of about 950 KB, 9999-12-31
 overflowed the call stack in `Math.max(...shape)` (now a loop), and
 2027-02-30 rolled over into March.
 
+**Past windows (#80).** `get-training-load`, `get-fitness-trend` and their
+app pairs take an optional `newest`, and `days` counts back from it: a
+look-back that ends on a past date, which fits the naming scheme (Input
+validation, below). `resolveWindowEnd` (`utils/localDate.ts`) is the one
+home for that end. It turns `newest` and today into a `WindowEnd`
+(`endDate`, `today`, `endsToday`), and it refuses a `newest` after today
+before any fetch, because wellness after today is intervals.icu's projection
+(docs/api-notes.md). A `newest` equal to today resolves exactly as an
+omitted one, so the two calls send the same requests. The callers pass the
+`WindowEnd` to `loadTrainingLoadInputs` and `loadFitnessTrend`, so neither
+loader reads the clock. A past window solves nothing forward:
+`loadFitnessTrend` drops `projectDays`, `plannedLoads` and `taper` when
+`endsToday` is false and adds the past-window warning, and the callers skip
+`taperTargetDateError` then. `trainingLoadWindow` ends a past window on a
+complete week when `newest` is a Sunday; otherwise its last week is the
+partial week (`partialWeekStart`), treated like the week in progress.
+
 **Form turning positive has one rule.** `tsbPositiveFrom` in `fitnessTrend.ts`
 sets `tsbPositiveDate` for the run-only, whole-body synced and whole-body
 lagging paths: today when today's raw TSB is already ≥ 0, else the first
@@ -361,7 +425,12 @@ bands have hysteresis (start at `FRESH_TSB` +15, hold until TSB drops below
 and need `FRESH_MIN_DAYS` (3) unless they run to the last day. Before #44, TSB
 moving around +15 for 42 days gave 8 fresh bands, 6 of them 1 day long, and
 the chart showed stripes. Reasons are in the present tense only for the bands
-that are also flags; a band that ended earlier reads in the past tense.
+that are also flags; a band that ended earlier reads in the past tense. In a
+past window, a band that runs to the last day gets a dated reason, not a
+present-tense one (`trendBands(series, { endsToday: false, endDate })`).
+When the series stops before `endDate` (a trailing wellness gap), the reason
+calls its last day "the last day with data in the window", not "the end of
+the window".
 
 **Interval detection pairs by adjacency.** `computeIntervalAnalysis` in
 `intervalAnalysis.ts` builds work segments and rests in one ordered pass, and
@@ -373,7 +442,18 @@ athlete's max HR (`athlete_max_hr`, else the top `icu_hr_zones` bound), never
 the run's own peak, which made an easy run read as hard. The lap path drops
 sliver laps rather than the whole lap set, and needs 2 blocks of consecutive
 fast laps with slower laps between; `selectCleanWorkLaps` holds the lap
-rules, including the stricter test for 1 km or 1 mile auto-laps.
+rules, including the stricter test for 1 km or 1 mile auto-laps and the cut
+of a slow warm-up or cool-down lap at the edge of the first or last block.
+
+**Similar sessions have one definition.** `intervalSimilarity.ts` holds the
+typical reps (within 20% of the median rep time), the interval-search band
+and the same-structure test. `get-interval-analysis` reads each candidate's
+reps with `repsFromLaps` (`intervalAnalysis.ts`), the lap rules of its own
+analysis, so a candidate is measured with the lap rules of the main analysis
+(a stream-sourced session is compared with candidates' laps). The search and the bulk read are optional reads: when one
+fails, the main analysis still comes back, `similar.status` is
+`unavailable`, `unavailableReason` (`tools/_errors.ts`) words the cause, and
+the raw message goes to the operator log.
 
 ## Per-call telemetry
 
@@ -510,6 +590,11 @@ over 25,000 tokens: a 61 KB `get-activity-streams` payload and a 150 KB
   returns a shorter page with `truncated: true`. The text says what was cut
   and how to get the rest. Measuring beats a fixed cell cap because widths
   differ (a `latlng` cell costs about four `heartrate` cells).
+- A response that a closed set bounds, not an input, needs no shrink.
+  `get-athlete-stats` lists one row per activity type in each of its four
+  periods, and the spec's type enum lists 60 (`Activity.type` itself is a plain string). Its "every activity type" size
+  case puts all 60 in every period (about 32,000 characters). If that case
+  goes over the budget, add a measured shrink.
 - A text response never points at data the reader cannot reach. Some hosts
   pass only the text, so "(N more)" names the call that returns the rest
   ("get-activity-laps lists all 34"), or the cap is raised where no tool
@@ -553,20 +638,32 @@ scheme:
   `marathon`, `50km`. `get-race-prediction` uses `5km`, `10km`, `15km`,
   `10 mile`, `half marathon`, `marathon`, `50km`; "5K"/"Half Marathon" still
   match through the alias layer.
+- `sport` picks a sport settings group (`get-athlete-zones`), matched against
+  each group's `types`. It is not an activity filter, which is `type`
+  (`list-activities`).
 - Windows: `oldest`/`newest` for an explicit range, `days` for a look-back.
   `view-cadence-trends` and `get-cadence-trend-data` take `days` (7-728,
   default 42) and the payload carries `days`; a `weeks` argument becomes
   `days: weeks * 7` through the alias layer.
-- `get-best-efforts` is the one exception: it advertises `window` ("all",
-  "1y", "90d", or "YYYY-MM-DD..YYYY-MM-DD"), because "all", "1y" and "90d"
-  are intervals.icu's own pace-curve ids. Until a lock break advertises
-  `oldest`/`newest` there (batched with #82), the alias layer reads
-  `oldest`/`newest`/`days`/`weeks` as a `window` range when no `window` is
-  sent (#151): the range ends at `newest` or today, and starts at `oldest`,
-  else `days` back inclusive, else a year back.
+- `get-best-efforts` is the one exception, and it stays one on purpose
+  (#82): it advertises `window` ("all", "1y", "90d", or
+  "YYYY-MM-DD..YYYY-MM-DD"), because "all", "1y" and "90d" are
+  intervals.icu's own pace-curve ids, which have no `oldest`/`newest` form.
+  The alias layer reads `oldest`/`newest`/`days`/`weeks` as a `window`
+  range when no `window` and no `id` is sent (#151): the range ends at
+  `newest` or today, and starts at `oldest`, else `days` back inclusive,
+  else a year back. With an `id` the range keys stay unread, and the
+  ignored-arguments note names them.
 
 Changing an advertised name changes `tool-surface.lock.json` (see the
 tool-identity invariant in CLAUDE.md), so it is a deliberate release note.
+
+**A look-back can end on a past date.** `get-training-load`,
+`get-fitness-trend` and their app pairs take `newest` together with `days`,
+and `days` counts back from `newest` (#80). This is the pattern for a
+look-back that ends before today; do not add `oldest` to it.
+`resolveWindowEnd` (`utils/localDate.ts`) refuses a `newest` after today.
+"Past windows" under Analysis math has the mechanics.
 
 **`update-activity` validates against fresh reads, not cached ones.** Its
 input schema (`superRefine`, `tools/updateActivity.ts`) rejects a `name`

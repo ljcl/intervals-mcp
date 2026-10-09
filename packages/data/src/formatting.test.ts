@@ -6,6 +6,7 @@ import {
   formatPace,
   formatShortDate,
   formatTime,
+  lookbackLabel,
   windowLabel,
   windowShortLabel,
 } from "./formatting";
@@ -152,5 +153,16 @@ describe("windowShortLabel", () => {
     [30, "30d"],
   ])("reads %i days as %s", (days, label) => {
     expect(windowShortLabel(days)).toBe(label);
+  });
+});
+
+describe("lookbackLabel", () => {
+  it("reads a window that ends today as the last N days", () => {
+    expect(lookbackLabel(84)).toBe("Last 84 days");
+    expect(lookbackLabel(1)).toBe("Last 1 day");
+  });
+
+  it("names a past window's last day with its year", () => {
+    expect(lookbackLabel(84, "2019-04-14")).toBe("84 days to 14 Apr 2019");
   });
 });

@@ -4,6 +4,7 @@ import {
   formatLapLine,
   type LapEntry,
   mapIntervalsToLaps,
+  SWIM_INTERVAL_PACE_NOTE,
 } from "../intervalLaps";
 import { getActivity as getActivityClient } from "../intervalsClient";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
@@ -16,8 +17,9 @@ const name = "get-activity-laps";
 
 const description = `
 Returns one intervals.icu activity's laps: distance, time, pace and
-grade-adjusted pace (runs) or speed (other sports), HR, cadence, power,
-elevation gain and gradient for each lap. Works for any sport.
+grade-adjusted pace (runs), pace per 100 m (swims) or speed (other sports),
+HR, cadence, power, elevation gain and gradient for each lap. Works for any
+sport.
 
 For a run, get-running-summary already includes this lap table with the rest
 of the summary, and get-activity lists the same intervals with pace and HR.
@@ -52,6 +54,7 @@ interface ActivityLapsResponse {
   units: {
     distance: "km";
     pace: "min/km";
+    swim_pace: "min/100m";
     speed: "km/h";
     time: "s";
     hr: "bpm";
@@ -88,6 +91,8 @@ export function formatActivityLapsText(response: ActivityLapsResponse): string {
       `the device recorded ${response.device_lap_count} laps, not ${response.lap_count}`,
     );
   }
+  if (response.laps.some((lap) => lap.pace_min_per_100m != null))
+    flags.push(SWIM_INTERVAL_PACE_NOTE);
   if (flags.length > 0) lines.push(`Note: ${flags.join("; ")}.`);
 
   for (const lap of response.laps)
@@ -129,6 +134,7 @@ export const getActivityLapsTool = {
         units: {
           distance: "km",
           pace: "min/km",
+          swim_pace: "min/100m",
           speed: "km/h",
           time: "s",
           hr: "bpm",

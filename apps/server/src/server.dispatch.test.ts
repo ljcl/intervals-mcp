@@ -80,6 +80,61 @@ describe("dispatchToolCall input validation", () => {
     });
   });
 
+  it("refuses get-best-efforts with both id and window, without calling intervals.icu", async () => {
+    const result = await dispatchToolCall("get-best-efforts", {
+      id: "i1",
+      window: "1y",
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toMatch(
+      /^❌ Invalid arguments for get-best-efforts: [\s\S]*Send id or window, not both/,
+    );
+    expect(mockedAthleteCurves).not.toHaveBeenCalled();
+    expect(mockedIntervalsActivity).not.toHaveBeenCalled();
+  });
+
+  it('resolves get-best-efforts id "latest" to the newest run before the handler reads it', async () => {
+    mockedIntervalsList.mockResolvedValueOnce([
+      {
+        id: "i42",
+        type: "Run",
+        name: "Run 1",
+        start_date_local: "2026-09-24T07:00:00",
+      },
+    ]);
+    // A ride stops the handler after its first read: this test is about
+    // which id reached it.
+    mockedIntervalsActivity.mockResolvedValueOnce({
+      id: "i42",
+      type: "Ride",
+      name: "Run 1",
+      start_date_local: "2026-09-24T07:00:00",
+    });
+
+    const result = await dispatchToolCall("get-best-efforts", {
+      id: "latest",
+    });
+
+    expect(mockedIntervalsActivity).toHaveBeenCalledWith("test-token", "i42");
+    expect(mockedAthleteCurves).not.toHaveBeenCalled();
+    expect(result.content[0]?.text).toContain("Activity i42");
+  });
+
+  it("reads get-best-efforts activityId as its id (the issue's spelling)", async () => {
+    mockedIntervalsActivity.mockResolvedValueOnce({
+      id: "i43",
+      type: "Ride",
+      name: "Ride 1",
+      start_date_local: "2026-09-24T07:00:00",
+    });
+
+    await dispatchToolCall("get-best-efforts", { activityId: "i43" });
+
+    expect(mockedIntervalsActivity).toHaveBeenCalledWith("test-token", "i43");
+    expect(mockedAthleteCurves).not.toHaveBeenCalled();
+  });
+
   it("applies zod defaults for get-training-load (a real date window, not NaN)", async () => {
     mockedIntervalsList.mockResolvedValueOnce([]);
     mockedIntervalsWellness.mockResolvedValueOnce([]);
@@ -232,6 +287,7 @@ describe("dispatchToolCall input validation", () => {
       days: lookback.spanDays,
       startDate: lookback.startDate,
       endDate: lookback.endDate,
+      endsToday: true,
       activityTypesIncluded: [],
       runOnly: false,
       current: null,
@@ -244,6 +300,22 @@ describe("dispatchToolCall input validation", () => {
     expect(params?.oldest).toBe(lookback.baselineStartDate);
     expect(params?.newest).toBe(lookback.endDate);
   });
+
+  it.each(["get-fitness-trend", "get-training-load-data"])(
+    "rejects a newest that is not a real calendar date for %s (#80)",
+    async (tool) => {
+      mockedIntervalsWellness.mockClear();
+      const result = await dispatchToolCall(tool, { newest: "2026-02-30" });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain(
+        `Invalid arguments for ${tool}`,
+      );
+      expect(result.content[0]?.text).toContain("must be a real calendar date");
+      expect(mockedIntervalsList).not.toHaveBeenCalled();
+      expect(mockedIntervalsWellness).not.toHaveBeenCalled();
+    },
+  );
 
   it("rejects days above the documented bound for view-training-load", async () => {
     const result = await dispatchToolCall("view-training-load", { days: 900 });

@@ -64,20 +64,27 @@ breaking them has shipped bugs — do not work around them locally.
   (`gapFactor`, `computeGrades`, and `gapGrades`, the 100 m averaged grade
   every GAP number uses; `gradeAdjustedSpeeds` for a GAP stream);
   `splitAnalysis.ts` and `get-aerobic-analysis` import, never re-derive.
+  Best-effort stretches inside one activity: `bestEffortWindows` in
+  `activityBestEfforts.ts` (the pace-curve rule).
   CTL/ATL/TSB and any projection/taper math: `fitnessTrend.ts` (TSB from
   wellness: `ctlAtlTsb`; 7-day change: `ctlDelta`, sent to the app in its
-  payload). HR-zone bounds: `resolveHrZones` in `activityZones.ts`. Run
-  types: `PACE_ACTIVITY_TYPES` in `utils/running.ts`.
+  payload). HR-zone bounds: `resolveHrZones` in `activityZones.ts`; zone
+  ranges from bounds: `zoneRanges` there (shared by `buildZoneSet` and
+  `athleteZones.ts`, which holds the settings zones and the LTHR/max HR
+  checks). Run types: `PACE_ACTIVITY_TYPES` in `utils/running.ts`.
   Step-cadence spm and averaged running dynamics: `activityCadenceSpm`/
   `buildRunningDynamics` in `utils/running.ts` (shared by `get-activity` and
   `compare-activities`). Lap text rendering: `formatLapLine` in
   `intervalLaps.ts` (shared by `get-activity-laps` and `get-running-summary`).
+  Interval reps from laps: `selectCleanWorkLaps`/`repsFromLaps` in
+  `intervalAnalysis.ts`; similar-session rules: `intervalSimilarity.ts`.
   Running efficiency factor (m/min per beat): `speedEfficiencyFactor` in
   `aerobicAnalysis.ts` (shared by `get-aerobic-analysis` and
   `compare-activities`). Training-load weeks, warnings and trend:
   `trainingLoadWindow`/`aggregateWeeks`/`selectRunWeeks` in `trainingLoad.ts`
   (shared by `get-training-load` and its app feed). Speed to pace/speed, its
-  label and unit in the MCP Apps: `speedDisplay` in `packages/data/src/speed.ts`.
+  label and unit in the MCP Apps: `speedDisplay` in `packages/data/src/speed.ts`;
+  in the text tools: `sportSpeed` in `utils/running.ts`, which wraps it.
   Text tool and app reading different copies is the failure mode these prevent.
 - **Telemetry:** `dispatchToolCall` emits one JSON line per call; timer starts
   before token resolution (not-connected calls count); a returned `isError`

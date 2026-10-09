@@ -31,8 +31,8 @@ rather than (or alongside) text.
 
 | Tool | Answers | Key params |
 | ---- | ------- | ---------- |
-| `list-activities` | What did I do recently? What's this activity's id? When did I last do X? Each entry carries `tags` and `race` | `oldest`/`newest` (YYYY-MM-DD, default last 28 days), `type` (`runs` for Run/TrailRun/VirtualRun, one type, or a comma list; for the most recent run, pass `id: "latest"` to the per-activity tool instead), `nameContains`, `search` (all history: name substring or `#tag`), `limit` |
-| `get-activity` | Full detail on one activity | `id` |
+| `list-activities` | What did I do recently? What's this activity's id? When did I last do X? Each entry carries `tags`, `race` and `achievement_types` (a best or threshold rise) | `oldest`/`newest` (YYYY-MM-DD, default last 28 days), `type` (`runs` for Run/TrailRun/VirtualRun, one type, or a comma list; for the most recent run, pass `id: "latest"` to the per-activity tool instead), `nameContains`, `search` (all history: name substring or `#tag`), `limit` |
+| `get-activity` | Full detail on one activity: gear name, swim pace per 100 m, HR recovery, and any best or threshold rise intervals.icu marked (an LTHR_UP is its estimate, not a changed setting; for a run PB, use `get-best-efforts`) | `id` |
 | `list-gear` | What shoes/bikes do I have, and their mileage? | `includeRetired` |
 | `get-wellness` | HRV, resting HR, sleep, weight, CTL/ATL/TSB for a day or range | `date`, or `oldest`/`newest` (max 90 days) |
 
@@ -53,18 +53,19 @@ rather than (or alongside) text.
 | `get-hill-analysis` | How did the climbs go, and did I fade on them late? | `id` |
 | `get-split-analysis` | Did I positive-split, or was that the hills? | `id` |
 | `get-aerobic-analysis` | Did I decouple? What's my efficiency factor? | `id`, `basis` (gap, pace or power; gap corrects for hills) |
-| `get-interval-analysis` | Interval workout breakdown: pace/HR per rep, did reps fade? | `id` |
+| `get-interval-analysis` | Interval workout breakdown: pace/HR per rep, did reps fade? Am I faster than the last times I did this workout? | `id`, `findSimilar` |
 | `compare-activities` | How does this run compare to that one? | `activityId1`, `activityId2` |
 
 ### Fitness, load, and performance
 
 | Tool | Answers | Key params |
 | ---- | ------- | ---------- |
-| `get-athlete-stats` | Run totals this week/month/YTD | (none) |
-| `get-fitness-trend` | Am I fresh or fatigued? What if I taper for a race? | `days`, `runOnly`, `projectDays`/`plannedLoads`, `targetDate`/`targetTsb` |
-| `get-training-load` | Weekly volume, volume-spike flags, weekly load | `days`, `runOnly` |
-| `get-best-efforts` | My best 5K/10K/half/marathon times | `distances`, `window`, `topN` |
+| `get-athlete-stats` | Run totals, and totals for every sport (strength sessions, swim distance), this week/month/YTD | (none) |
+| `get-fitness-trend` | Am I fresh or fatigued? What if I taper for a race? | `days`, `newest`, `runOnly`, `projectDays`/`plannedLoads`, `targetDate`/`targetTsb` |
+| `get-training-load` | Weekly volume, volume-spike flags, weekly load | `days`, `newest`, `runOnly` |
+| `get-best-efforts` | My best 5K/10K/half/marathon times; my fastest 5K inside one run, and where | `distances`, `window`, `topN`, `id` |
 | `get-race-prediction` | What could I run for X? What pace do I need for a goal time? | `raceDistance` (`5km`, `10km`, `15km`, `10 mile`, `half marathon`, `marathon`, `50km`), `goalTime` |
+| `get-athlete-zones` | What are my HR zones? Is 150 bpm zone 2? What is my threshold pace? Is my LTHR out of date? | `sport` (default Run) |
 
 ### Writes
 
@@ -84,10 +85,10 @@ same numbers as text use the matching read tool (e.g. `get-fitness-trend`,
 | `view-activity-chart` | `get-activity-streams-raw` | HR, power, pace, altitude, cadence, grade, and dynamics overlays with interval bands |
 | `view-cadence-trends` | `get-cadence-trend-data` | Cadence over time: timeline, scatter, zones, overlay views |
 | `view-route-map` | `get-route-map-data` | GPS track with start/finish markers and optional waypoints |
-| `view-training-load` | `get-training-load-data` | Weekly volume bars with a trend line and volume-spike weeks, a weekly load line, and Fitness/Fatigue/Form tiles; `runOnly` picks the starting scope; toggles whole-body vs runs-only |
+| `view-training-load` | `get-training-load-data` | Weekly volume bars with a trend line and volume-spike weeks, a weekly load line, and Fitness/Fatigue/Form tiles; `runOnly` picks the starting scope; toggles whole-body vs runs-only; `newest` for a past block |
 | `view-compare-activities` | `get-compare-activities-data` | Two activities' streams overlaid with a delta summary |
 | `view-activity-zones` | `get-activity-zones-data` | Time-in-zone bar chart for HR |
-| `view-fitness-trend` | `get-fitness-trend-data` | CTL/ATL/TSB over time with fatigue/freshness bands and a taper plan; toggles whole-body vs runs-only |
+| `view-fitness-trend` | `get-fitness-trend-data` | CTL/ATL/TSB over time with fatigue/freshness bands and a taper plan; toggles whole-body vs runs-only; `newest` for a past block, with no projection |
 
 Once a chart is open, the model can adjust it with that chart's own tool:
 `set-brush-window` (activity chart: zoom to a stretch), `set-viewport` (route
@@ -153,8 +154,9 @@ description is kept. (This is also the `annotate-last-run` prompt.)
   on, so call `list-activities` when you need the id itself.
 - **One input naming scheme.** CamelCase inputs: `id` for one activity,
   `activityId1`/`activityId2` for two, `days` for a look-back window
-  (`view-cadence-trends`: 7-728, default 42). Older spellings
-  (`activity_id`, `weeks`) still work.
+  (`view-cadence-trends`: 7-728, default 42), and `newest` to end a
+  look-back on a past date (`get-training-load`, `get-fitness-trend` and
+  their charts). Older spellings (`activity_id`, `weeks`) still work.
 - **Whole-body vs runs-only fitness.** `get-fitness-trend` and
   `get-training-load` default to whole-body CTL/ATL/TSB, read straight from
   intervals.icu's own wellness record and covering every activity type.
@@ -162,13 +164,20 @@ description is kept. (This is also the `annotate-last-run` prompt.)
   only Run/TrailRun/VirtualRun. The two scopes can report materially
   different numbers for the same athlete and answer different questions;
   don't mix them in one comparison without saying which scope each number is.
+  `get-athlete-stats` gives both side by side: run totals with run-only load,
+  and `all_sports` with whole-body load.
 - **Training-load weeks are whole weeks.** `get-training-load` and
   `view-training-load` round `days` up to whole Monday-to-Sunday weeks and
   add the current week so far: `days: 28` is the last 4 complete weeks plus
   this week. The current week is marked in progress: averages and the trend
   leave it out, and it gets a warning only for the volume it already has.
   Do not read a short current week as a drop in volume. Weeks with no runs
-  count as zero weeks, a layoff that is still going on included.
+  count as zero weeks, a layoff that is still going on included. With
+  `newest` (a past date, never after today), `days` counts back from it: a
+  past Sunday ends the window on a complete week (`days: 84` is exactly 12
+  weeks), and any other past date ends it on a partial week, marked
+  "partial" and treated like the current week. `period.ends_today` is false
+  then, and `get-fitness-trend` has no projection or taper for a past window.
 - **Volume-spike flags compare with the recent average.** A week is flagged
   when its distance is over 1.5 times the average of the 4 complete weeks
   before it; the reason gives the ratio. A normal week after a recovery or
@@ -197,23 +206,43 @@ description is kept. (This is also the `annotate-last-run` prompt.)
   sending the same update again.
 - **Walks, hikes, and other non-running sports.** Pace fields
   (`pace_min_per_km`, `gap_min_per_km`) are only populated for Run/TrailRun/
-  VirtualRun; a Walk or Hike gets cadence but no pace. Cadence itself is
+  VirtualRun; a Walk or Hike gets cadence and `speed_kmh` but no pace. A
+  swim gets `pace_min_per_100m` and no running dynamics; other sports with a
+  distance get `speed_kmh`. Cadence itself is
   doubled to steps/min for Run/TrailRun/VirtualRun/Walk/Hike; other sports
   report the raw rate in rpm. HR zone tools generally need the activity's own
   recorded zone bounds or a matching Run sport-settings group; without
   either, HR zone data comes back empty rather than wrong.
+- **Two sources of zone bounds.** `get-athlete-zones` gives today's sport
+  settings. `get-activity-zones` and `get-running-summary` use the bounds
+  recorded with each activity, which can be older. The LTHR and max HR check
+  is a hint: a heart rate sensor error can also put a best above a setting,
+  so check the named activity first. The LTHR check uses intervals.icu's own
+  rule (the higher of the best 60-minute heart rate and 98% of the best
+  20-minute heart rate, last 90 days). An estimate below a setting does not
+  mean that the setting is too high.
 - **Strava-stub activities.** An activity synced into intervals.icu from
   Strava with no further detail is flagged (`is_strava_stub`); don't expect
   streams or laps for it.
+- **Similar sessions are found from laps.** `get-interval-analysis` with
+  `findSimilar: true` compares only earlier sessions whose laps show clean
+  reps. A workout with no lap per rep (1 km auto-laps only) is skipped and
+  counted in `skipped`, not found. An empty `sessions` list always comes
+  with a `reason`; quote it rather than saying the athlete never did the
+  workout.
 
 ## Units
 
-- **Pace** is always a bare `m:ss` string per kilometre, in a
+- **Pace** for a run is a bare `m:ss` string per kilometre, in a
   `*_min_per_km` field (`pace_min_per_km`, `gap_min_per_km`,
   `avg_pace_min_per_km`), never miles. Where a tool also needs the number
   for arithmetic it adds a paired `*_sec_per_km` field in seconds
   (`get-race-prediction`'s `pace_sec_per_km`, `compare-activities`'
-  `pace_delta_sec_per_km`).
+  `pace_delta_sec_per_km`). A swim's pace is per 100 m instead, in
+  `pace_min_per_100m` (`units.swim_pace`), and other sports get
+  `speed_kmh` (`units.speed`).
+  `get-athlete-zones` also gives a swim group's paces per 100 m, in
+  `*_min_per_100m` fields.
 - **`units` object.** Most tool responses include a `units` object naming
   every field's unit explicitly (distance, HR, cadence spm vs rpm, HRV in
   ms, SpO2 in %, respiration in breaths/min), so a unit is never implied.
@@ -234,10 +263,11 @@ not an error.
 Reads are cached briefly to avoid re-fetching the same data:
 
 - Activity detail, streams, and intervals, plus gear: 10 minutes
-- Sport settings: 1 hour
+- Sport settings: 1 hour (every group at once, as `get-athlete-zones`
+  reads them: 10 minutes)
 - Activity list: 1 minute
 - Wellness: 5 minutes
-- Pace curves: 10 minutes
+- Pace and heart rate curves: 10 minutes
 
 After `update-activity` writes, the affected activity's cache entry (and
 related list/gear entries) is cleared immediately, so a follow-up

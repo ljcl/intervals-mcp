@@ -1,5 +1,9 @@
 import { formatShortDate } from "@intervals-mcp/data";
-import { describeLoadScope, formatCurrentFitness } from "./normalize";
+import {
+  describeLoadScope,
+  formatCurrentFitness,
+  isPastWindow,
+} from "./normalize";
 import { type TrainingLoadData } from "./types";
 
 /**
@@ -72,15 +76,22 @@ export function buildLoadA11y(
     `${weeks.length} week${weeks.length === 1 ? "" : "s"} of running volume from ${fullDate(first.weekStarting)} to ${fullDate(last.weekStarting)}.`,
     `Weekly distance ranges from ${min} to ${max} km${visibility.showTrend ? "; a line shows the 3-week rolling average" : ""}.`,
   ];
+  // A past window's last week is cut off at its end date, not in progress.
+  const cutOff = isPastWindow(data) ? data.endDate : undefined;
   if (last.inProgress) {
     parts.push(
-      `The week of ${fullDate(last.weekStarting)} is still in progress, so its distance and load are only the days so far.`,
+      cutOff
+        ? `The week of ${fullDate(last.weekStarting)} is partial: the window ends on ${fullDate(cutOff)}, so its distance and load count only the days up to then.`
+        : `The week of ${fullDate(last.weekStarting)} is still in progress, so its distance and load are only the days so far.`,
     );
   }
 
   if (visibility.showLoad) {
+    const hollowPoint = cutOff
+      ? "; a hollow point marks the partial week"
+      : "; a hollow point marks the week in progress";
     parts.push(
-      `A second line shows weekly training load on the right axis, from ${minLoad} to ${maxLoad}${completeWeeks.length > 0 && last.inProgress ? " across complete weeks" : ""}${last.inProgress ? "; a hollow point marks the week in progress" : ""}.`,
+      `A second line shows weekly training load on the right axis, from ${minLoad} to ${maxLoad}${completeWeeks.length > 0 && last.inProgress ? " across complete weeks" : ""}${last.inProgress ? hollowPoint : ""}.`,
     );
   }
   parts.push(

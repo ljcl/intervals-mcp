@@ -901,20 +901,31 @@ export function intervalsCacheTtl(path: string): number | null {
   if (/^\/athlete\/[^/]+\/gear$/.test(path)) return 10 * MINUTE_MS;
   // Per-sport zones/settings change rarely.
   if (/^\/athlete\/[^/]+\/sport-settings\/[^/]+$/.test(path)) return HOUR_MS;
+  // Every sport settings group at once (get-athlete-zones). Shorter than the
+  // per-sport rule: an athlete who changes LTHR after the tool's hint can
+  // check again with the same tool soon after.
+  if (/^\/athlete\/[^/]+\/sport-settings$/.test(path)) return 10 * MINUTE_MS;
+  // Heart rate curves: recomputed from history, like the pace curves below.
+  if (/^\/athlete\/[^/]+\/hr-curves\.json$/.test(path)) return 10 * MINUTE_MS;
   // Activity listing: short, so a newly recorded activity shows up quickly.
   if (/^\/athlete\/[^/]+\/activities$/.test(path)) return MINUTE_MS;
   // Activity search: same freshness as the listing it stands in for.
   if (/^\/athlete\/[^/]+\/activities\/search-full$/.test(path))
     return MINUTE_MS;
+  // Interval search: same freshness as the listing it searches.
+  if (/^\/athlete\/[^/]+\/activities\/interval-search$/.test(path))
+    return MINUTE_MS;
+  // Activities by id (one or more `i`-prefixed ids, comma-separated): the
+  // same rows as a detailed activity.
+  if (/^\/athlete\/[^/]+\/activities\/i\d+(,i\d+)*$/.test(path))
+    return 10 * MINUTE_MS;
   // Wellness records: matched by prefix like streams above, so a date
   // sub-path (`/wellness/2026-09-24`) or an extension (`wellness.json`)
   // both count; these update through the day.
   if (/^\/athlete\/[^/]+\/wellness/.test(path)) return 5 * MINUTE_MS;
-  // Pace curves (athlete-level and per-activity): recomputed from an
-  // athlete's history, which changes at most a few times a day.
+  // Athlete pace curves: recomputed from an athlete's history, which
+  // changes at most a few times a day.
   if (/^\/athlete\/[^/]+\/pace-curves\.json$/.test(path)) return 10 * MINUTE_MS;
-  if (/^\/athlete\/[^/]+\/activity-pace-curves\.json$/.test(path))
-    return 10 * MINUTE_MS;
   return null;
 }
 

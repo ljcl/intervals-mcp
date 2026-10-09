@@ -33,6 +33,8 @@ discipline.
 
 It ignores device laps: use get-activity-laps for those and
 get-interval-analysis for workout reps. For climbs, use get-hill-analysis.
+For the fastest 1 km or 5 km anywhere in the run, not on km marks, use
+get-best-efforts with its id.
 
 Notes:
 - Halves are cut at the exact midpoint of recorded distance.

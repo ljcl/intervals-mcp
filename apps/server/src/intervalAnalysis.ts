@@ -52,6 +52,11 @@ export interface IntervalLap {
   avgWatts: number | null;
   /** intervals.icu's own label (`WORK`/`RECOVERY`), when present. */
   type?: string | null;
+  /**
+   * intervals.icu's interval intensity, a whole percent of the sport's
+   * threshold, when present (docs/api-notes.md).
+   */
+  intensity?: number | null;
 }
 
 /**
@@ -107,6 +112,14 @@ const AUTO_LAP_SHARE = 0.7;
 export const AUTO_LAP_MIN_BLOCKS = 3;
 export const AUTO_LAP_FAST_FACTOR = 1.15;
 /**
+ * At the outer edge of the first and the last fast block, a lap slower than
+ * this fraction of the other blocks' median speed is a warm-up or
+ * cool-down lap, not part of a rep. With walk or slow-jog recoveries the
+ * median lap is slow, so a steady warm-up or cool-down lap crosses the fast
+ * threshold, alone or merged with the rep next to it (#84).
+ */
+export const EDGE_LAP_SPEED_FACTOR = 0.8;
+/**
  * Minimum fraction of a rep's moving time that must carry a real (non-zero)
  * power sample before an average is reported; below this the power stream is
  * too gappy to summarise and the field is omitted.
@@ -139,6 +152,8 @@ export interface WorkRep {
   /** Raw stream/lap cadence (one-leg spm for runs). */
   avgCadence: number | null;
   avgWatts: number | null;
+  /** Time-weighted mean of the laps' intensity, rounded; null for stream reps. */
+  intensityPct: number | null;
 }
 
 export interface IntervalFade {
@@ -280,6 +295,7 @@ function toRep(
       agg.wattsW / agg.movingTimeS >= POWER_COVERAGE_MIN
         ? round(agg.wattsSum / agg.wattsW, 0)
         : null,
+    intensityPct: null,
   };
 }
 
@@ -375,6 +391,11 @@ function blockSpeed(block: IntervalLap[]): number {
   return time > 0 ? distance / time : 0;
 }
 
+/** The upper median: for an even count, the higher of the two middle values. */
+function upperMedian(values: number[]): number {
+  return [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)]!;
+}
+
 /**
  * True when most full laps (all but the last, which is usually partial) sit
  * at 1 km or 1 mile: the device split the run by distance, not by effort.
@@ -402,6 +423,8 @@ export interface CleanLapSet {
   autoLaps: boolean;
   /** Sliver laps left out of the analysis. */
   slivers: number;
+  /** Warm-up or cool-down laps cut from the edge of the first or last block. */
+  edgeLapsDropped: number;
 }
 
 /**
@@ -411,25 +434,28 @@ export interface CleanLapSet {
  * clustered. Corrupted laps (rain, sweat) fail the cluster test and fall
  * back to streams. An auto-lap set (1 km or 1 mile laps) needs matching
  * WORK/RECOVERY labels, or 3 blocks clearly faster than the laps between,
- * because a fast auto-lap is often only a downhill km.
+ * because a fast auto-lap is often only a downhill km. With 3 or more
+ * blocks, a slow lap at the outer edge of the first or the last block is a
+ * warm-up or cool-down lap, and it is cut before the cluster test
+ * ({@link EDGE_LAP_SPEED_FACTOR}).
  */
 export function selectCleanWorkLaps(laps: IntervalLap[]): CleanLapSet | null {
   const ordered = [...laps].sort((a, b) => a.lapIndex - b.lapIndex);
   const valid = ordered.filter((lap) => !isSliverLap(lap));
   if (valid.length < 3) return null;
   const speeds = valid.map(lapSpeed);
-  const sorted = [...speeds].sort((a, b) => a - b);
-  const median = sorted[Math.floor(sorted.length / 2)]!;
+  const median = upperMedian(speeds);
   const fast = speeds.map((s) => s >= FAST_SEGMENT_FACTOR * median);
 
   const blocks: IntervalLap[][] = [];
-  const between: IntervalLap[] = [];
+  /** `gaps[k]`: the slower laps between block k and block k + 1. */
+  const gaps: IntervalLap[][] = [];
   let pending: IntervalLap[] = [];
   valid.forEach((lap, i) => {
     if (fast[i]) {
       if (i > 0 && fast[i - 1]) blocks[blocks.length - 1]!.push(lap);
       else {
-        if (blocks.length > 0) between.push(...pending);
+        if (blocks.length > 0) gaps.push(pending);
         blocks.push([lap]);
       }
       pending = [];
@@ -437,7 +463,44 @@ export function selectCleanWorkLaps(laps: IntervalLap[]): CleanLapSet | null {
       pending.push(lap);
     }
   });
+
+  // Cut laps, not whole blocks: a warm-up lap that runs straight into rep 1
+  // merges with it into one block, and dropping the block would lose rep 1.
+  // The last block goes first (a cool-down is the common case). Each check
+  // needs 3 blocks, so at least 2 remain.
+  let edgeLapsDropped = 0;
+  if (blocks.length >= 3) {
+    const last = blocks[blocks.length - 1]!;
+    const others = upperMedian(blocks.slice(0, -1).map(blockSpeed));
+    while (
+      last.length > 0 &&
+      lapSpeed(last[last.length - 1]!) < EDGE_LAP_SPEED_FACTOR * others
+    ) {
+      last.pop();
+      edgeLapsDropped++;
+    }
+    if (last.length === 0) {
+      blocks.pop();
+      gaps.pop();
+    }
+  }
+  if (blocks.length >= 3) {
+    const first = blocks[0]!;
+    const others = upperMedian(blocks.slice(1).map(blockSpeed));
+    while (
+      first.length > 0 &&
+      lapSpeed(first[0]!) < EDGE_LAP_SPEED_FACTOR * others
+    ) {
+      first.shift();
+      edgeLapsDropped++;
+    }
+    if (first.length === 0) {
+      blocks.shift();
+      gaps.shift();
+    }
+  }
   if (blocks.length < 2) return null;
+  const between = gaps.flat();
 
   const blockSpeeds = blocks.map(blockSpeed);
   const mean = blockSpeeds.reduce((a, b) => a + b, 0) / blockSpeeds.length;
@@ -466,13 +529,19 @@ export function selectCleanWorkLaps(laps: IntervalLap[]): CleanLapSet | null {
     if (blocks.length < AUTO_LAP_MIN_BLOCKS || !clearlyFaster) return null;
   }
 
-  return { blocks, labels, autoLaps, slivers: laps.length - valid.length };
+  return {
+    blocks,
+    labels,
+    autoLaps,
+    slivers: laps.length - valid.length,
+    edgeLapsDropped,
+  };
 }
 
 /** Time-weighted mean of one lap field across a block, skipping nulls. */
 function blockMean(
   block: IntervalLap[],
-  field: "avgHr" | "avgCadence" | "avgWatts",
+  field: "avgHr" | "avgCadence" | "avgWatts" | "intensity",
 ): number | null {
   let sum = 0;
   let weight = 0;
@@ -497,6 +566,7 @@ function lapReps(laps: IntervalLap[], blocks: IntervalLap[][]): WorkRep[] {
     const hr = blockMean(block, "avgHr");
     const cadence = blockMean(block, "avgCadence");
     const watts = blockMean(block, "avgWatts");
+    const intensity = blockMean(block, "intensity");
     return {
       index: i + 1,
       startKm: round(startKmByLap.get(block[0]!.lapIndex) ?? 0),
@@ -506,8 +576,20 @@ function lapReps(laps: IntervalLap[], blocks: IntervalLap[][]): WorkRep[] {
       avgHr: hr != null ? round(hr, 0) : null,
       avgCadence: cadence != null ? round(cadence, 1) : null,
       avgWatts: watts != null ? round(watts, 0) : null,
+      intensityPct: intensity != null ? round(intensity, 0) : null,
     };
   });
+}
+
+/**
+ * Work reps from laps alone, with the same rules as the lap path of
+ * {@link computeIntervalAnalysis}, or null when the laps show no clean reps.
+ * The similar-session search reads candidates this way: one bulk read
+ * carries their laps, not their streams.
+ */
+export function repsFromLaps(laps: IntervalLap[]): WorkRep[] | null {
+  const clean = selectCleanWorkLaps(laps);
+  return clean ? lapReps(laps, clean.blocks) : null;
 }
 
 /** Pace/HR/cadence drift across reps: last rep vs first. */
@@ -806,6 +888,12 @@ export function computeIntervalAnalysis(
       lapBits.push("WORK/RECOVERY labels do not match the fast laps");
     }
     if (cleanLaps.autoLaps) lapBits.push("laps are 1 km or 1 mile auto-laps");
+    if (cleanLaps.edgeLapsDropped > 0) {
+      const n = cleanLaps.edgeLapsDropped;
+      lapBits.push(
+        `${n} slow lap${n === 1 ? "" : "s"} at the edge (warm-up, cool-down or a much slower last rep) not counted in a rep`,
+      );
+    }
     if (cleanLaps.slivers > 0) {
       lapBits.push(
         `${cleanLaps.slivers} sliver lap${cleanLaps.slivers === 1 ? "" : "s"} ignored`,

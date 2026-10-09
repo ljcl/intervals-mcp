@@ -438,16 +438,18 @@ weeks, a weekly load line, and Fitness/Fatigue/Form tiles. Calls
 `runOnly` scope the view tool was called with (default false); the card's
 scope pills (below) switch it from there. `runOnly` has
 to travel: the data tool defaults to whole-body, so dropping it would draw a
-whole-body chart under a run-only request. `buildDataArgs` (`normalize.ts`)
-builds the arguments, unit-tested. Volume and spike warnings are always
-run-based; load and CTL/ATL/TSB follow `runOnly`.
+whole-body chart under a run-only request. An optional `newest` (#80) travels
+the same way, so the data tool reads the same past window; without it the
+window ends today. `buildDataArgs` (`normalize.ts`) builds the arguments,
+unit-tested. Volume and spike warnings are always run-based; load and
+CTL/ATL/TSB follow `runOnly`.
 
 - Server-side aggregation is pure and unit-tested in
   `apps/server/src/trainingLoad.ts` (`buildTrainingLoadData`): Monday-start
   weekly buckets over a whole-week window (`days` rounded up to whole weeks,
-  plus the current week so far; `startDate`/`endDate` in the payload), gap
+  to the week that holds `endDate`; `startDate`/`endDate` in the payload), gap
   weeks zero-filled so the timeline stays continuous and runs on to the
-  current week (a layoff that is still going on shows as empty weeks), a
+  window's last week (a layoff that is still going on shows as empty weeks), a
   centered rolling-average trend over complete weeks, per-week warning flags
   with reasons. The weeks the warnings read (`selectRunWeeks`, with the 4
   weeks before the window as a baseline only) and the rule
@@ -459,7 +461,14 @@ run-based; load and CTL/ATL/TSB follow `runOnly`.
 - The current week carries `inProgress: true` and `trendKm: null`: it draws
   as a light dashed bar with a "This week so far" legend key, the trend line
   ends at the last complete week, and the tooltip, narration and model
-  context all say the week is in progress.
+  context all say the week is in progress. For a past window
+  (`endsToday: false`) the last week is partial only when `newest` is not a
+  Sunday, and the legend key ("Partial week"), tooltip, narration and model
+  context say "partial" instead of "in progress". All four read one rule,
+  `isPastWindow` (`normalize.ts`); the tooltip's word comes from
+  `partialWeekWord`, which calls it. The subtitle spells out a past window's
+  last day with its year ("12 weeks · 19 Jan – 12 Apr 2026"), so an old
+  block does not read as this year's.
 - `ComposedChart`: weekly distance bars (warning weeks recoloured in the
   danger hue) plus trend `Line` on the `distance` axis, and weekly `load` as a
   linear `Line` on its own right-hand `load` axis (load runs to the hundreds
@@ -486,13 +495,15 @@ run-based; load and CTL/ATL/TSB follow `runOnly`.
   `formatSignedTsb` and the source by `fitnessSourceLabel`, both in
   `packages/data` and shared with fitness-trend.
 - The `view-training-load` text prints the same numbers: a `Scope:` line and a
-  `Current (as of DATE): CTL x / ATL y / TSB +z` line, with its `Load:` total
-  equal to the payload's `totals.load`.
+  `Current (as of DATE): CTL x / ATL y / TSB +z` line (`End of window`, after
+  a `Past window:` line, for a past window), with its `Load:` total equal to
+  the payload's `totals.load`.
 - A "Whole body" / "Runs only" `PillGroup` under the header (`App.tsx`) switches
   scope, as in fitness-trend. The pills start on the mount payload's `runOnly`;
   the other scope is fetched on demand through the shared keyed
-  `useServerToolFetcher` with the mount's `buildDataArgs` arguments and
-  `runOnly` flipped, and cached, so flipping back never re-fetches. Everything
+  `useServerToolFetcher` with the mount's `buildDataArgs` arguments (`newest`
+  included) and `runOnly` flipped, and cached, so flipping back never
+  re-fetches. Everything
   derived from data (subtitle, tiles, scope note, chart, legend, narration,
   model context) reads the one payload on screen. While the other scope loads,
   a skeleton with its progress line stands in for the tiles and chart; if it
@@ -571,22 +582,32 @@ One activity's time-in-zone distribution (ljcl/strava-mcp#34). Calls
 ### Fitness Trend
 
 Performance-management chart: fitness, fatigue, form, and where the next few
-weeks take them. Calls `get-fitness-trend-data` on mount with `days`,
-`projectDays`, optional `targetDate`/`targetTsb`.
+weeks take them. Calls `get-fitness-trend-data` on mount with `days`, optional
+`newest`, `projectDays`, optional `targetDate`/`targetTsb`, built by
+`buildBaseArgs` (`normalize.ts`, unit-tested); the other scope's fetch spreads
+the same arguments. A past window (`newest` before today, `endsToday: false`)
+has no projection and no taper, so the chart has no forward half, no plan
+legend key and no handover line, and the card shows the past-window note from
+`warnings`. Its subtitle spells out the last day's year, and the narration
+dates the 7-day change ("over the 7 days to 12 Apr 2026"), as the text tool
+does; both read `isPastWindow` (`normalize.ts`). With no data yet, either
+card's subtitle is `lookbackLabel` (`packages/data`): "Last 90 days", or
+"90 days to 12 Apr 2026" when the arguments carry `newest`.
 
 - **No new math.** `fitnessTrend.ts` computes series, bands, taper;
   `fitnessTrendApp.ts` (`mapFitnessTrendApp`) only renames to camelCase for the
   wire. The `view-` tool's text prints the same headline numbers and weekly
   loads so chart and prose cannot drift.
 - Warning bands are **dated server-side** (`trendBands`), and `computeFlags`
-  filters to bands running to today. The app could not derive them itself
+  filters to bands running to the window's last day. The app could not derive them itself
   without copying `DEEP_FATIGUE_TSB` and friends across the boundary, and a
   chart shading a different "deep fatigue" than the prose describes is the
   drift the split prevents. An old resolved block still shades; only a current
   one flags. Fresh bands have hysteresis and merge server-side, so TSB moving
   around +15 shades one band, not stripes.
 - The "Fresh on" tile and the context summary read `tsbPositiveDate` against
-  the payload's `endDate` (today): equal means form is already positive today,
+  the payload's `endDate` (the window's last day; only a window that ends
+  today has a `tsbPositiveDate`): equal means form is already positive today,
   so the tile says "Today" rather than a date. The server sets the date; the
   app only compares.
 - The narration's 7-day fitness change is the payload's `ctl7dDelta`

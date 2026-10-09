@@ -29,6 +29,16 @@ vi.mock("../config", async () => {
 const mockedListActivities = vi.mocked(listActivities);
 const mockedSearch = vi.mocked(searchActivities);
 
+/** The units every list response carries. */
+const LIST_UNITS = {
+  distance: "km",
+  pace: "min/km",
+  swim_pace: "min/100m",
+  speed: "km/h",
+  time: "s",
+  hr: "bpm",
+} as const;
+
 const fixture = activitiesFixture as unknown as IntervalsActivity[];
 const byId = (id: string): IntervalsActivity => {
   const found = fixture.find((a) => a.id === id);
@@ -54,6 +64,24 @@ describe("mapActivitySummary", () => {
     expect(entry.gear_id).toBe("71459");
     expect(entry.source).toBe("OAUTH_CLIENT");
     expect(entry.is_strava_stub).toBe(false);
+    expect(entry.achievement_types).toEqual([]);
+    // A run has pace_min_per_km, so neither sportSpeed field.
+    expect(entry.pace_min_per_100m).toBeNull();
+    expect(entry.speed_kmh).toBeNull();
+  });
+
+  it("lists each achievement type the activity set, once", () => {
+    // Synthetic entries in intervals.icu's shape (docs/api-notes.md).
+    const entry = mapActivitySummary({
+      ...byId("i189807578"),
+      icu_achievements: [
+        { type: "BEST_PACE", message: "5km in 25:00" },
+        { type: "LTHR_UP", value: 172 },
+        { type: "BEST_PACE", message: "10km in 52:00" },
+      ],
+    } as IntervalsActivity);
+
+    expect(entry.achievement_types).toEqual(["BEST_PACE", "LTHR_UP"]);
   });
 
   it("leaves distance and pace null for a non-distance activity", () => {
@@ -62,16 +90,34 @@ describe("mapActivitySummary", () => {
     expect(entry.type).toBe("WeightTraining");
     expect(entry.distance_km).toBeNull();
     expect(entry.pace_min_per_km).toBeNull();
+    expect(entry.pace_min_per_100m).toBeNull();
+    expect(entry.speed_kmh).toBeNull();
     expect(entry.moving_time_s).toBe(3350);
     expect(entry.gear_id).toBeNull();
   });
 
-  it("reports distance but no pace for a non-running distance sport", () => {
+  it("reports a swim's pace per 100 m, not per km", () => {
     const entry = mapActivitySummary(byId("i189757185"));
 
     expect(entry.type).toBe("Swim");
     expect(entry.distance_km).toBe(1.5);
     expect(entry.pace_min_per_km).toBeNull();
+    // 1,500 m in 1,489 s.
+    expect(entry.pace_min_per_100m).toBe("1:39");
+    expect(entry.speed_kmh).toBeNull();
+  });
+
+  it("reports km/h for a ride", () => {
+    const entry = mapActivitySummary({
+      ...byId("i189757177"),
+      type: "Ride",
+      distance: 20000,
+      moving_time: 2400,
+    } as IntervalsActivity);
+
+    expect(entry.pace_min_per_km).toBeNull();
+    expect(entry.pace_min_per_100m).toBeNull();
+    expect(entry.speed_kmh).toBe(30);
   });
 
   it("passes tags and race through", () => {
@@ -122,7 +168,7 @@ describe("formatActivityListText", () => {
       matched: 2,
       truncated: false,
       search: null,
-      units: { distance: "km", pace: "min/km", time: "s", hr: "bpm" },
+      units: LIST_UNITS,
       activities: [run, stub],
     });
 
@@ -138,6 +184,58 @@ describe("formatActivityListText", () => {
     );
   });
 
+  it("prints a swim's pace per 100 m and a ride's km/h", () => {
+    const swim = mapActivitySummary(byId("i189757185"));
+    const ride = mapActivitySummary({
+      ...byId("i189757177"),
+      type: "Ride",
+      distance: 20000,
+      moving_time: 2400,
+    } as IntervalsActivity);
+
+    const lines = formatActivityListText({
+      oldest: "2026-08-28",
+      newest: "2026-09-24",
+      count: 2,
+      matched: 2,
+      truncated: false,
+      search: null,
+      units: LIST_UNITS,
+      activities: [swim, ride],
+    }).split("\n");
+
+    expect(lines[1]).toContain("1.50 km, 24:49, 1:39 /100m, HR 149");
+    expect(lines[1]).not.toContain("/km");
+    expect(lines[2]).toContain("20.00 km, 40:00, 30 km/h");
+  });
+
+  it("names the achievement types after the load, a threshold with its sport", () => {
+    const run = mapActivitySummary(byId("i189807578"));
+    const response = {
+      oldest: "2026-08-28",
+      newest: "2026-09-24",
+      count: 1,
+      matched: 1,
+      truncated: false,
+      search: null,
+      units: LIST_UNITS,
+    } as const;
+
+    const one = formatActivityListText({
+      ...response,
+      activities: [{ ...run, achievement_types: ["LTHR_UP"] }],
+    });
+    expect(one.split("\n")[1]).toBe(
+      "2026-09-24 Run Run 1, 8.03 km, 39:32, 4:55 /km, HR 171, load 56, achievement: Run LTHR up [i189807578]",
+    );
+
+    const two = formatActivityListText({
+      ...response,
+      activities: [{ ...run, achievement_types: ["BEST_PACE", "LTHR_UP"] }],
+    });
+    expect(two).toContain(", load 56, achievements: Best pace, Run LTHR up [");
+  });
+
   it("marks truncation in the header and omits the stub note when none apply", () => {
     const run = mapActivitySummary(byId("i189807578"));
 
@@ -148,7 +246,7 @@ describe("formatActivityListText", () => {
       matched: 5,
       truncated: true,
       search: null,
-      units: { distance: "km", pace: "min/km", time: "s", hr: "bpm" },
+      units: LIST_UNITS,
       activities: [run],
     });
 
@@ -171,7 +269,7 @@ describe("formatActivityListText", () => {
       matched: 0,
       truncated: false,
       search: null,
-      units: { distance: "km", pace: "min/km", time: "s", hr: "bpm" },
+      units: LIST_UNITS,
       activities: [],
     });
 
@@ -301,7 +399,7 @@ describe("listActivitiesTool.execute", () => {
       matched: 0,
       truncated: false,
       search: null,
-      units: { distance: "km", pace: "min/km", time: "s", hr: "bpm" },
+      units: LIST_UNITS,
       activities: [],
     });
   });

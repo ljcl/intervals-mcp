@@ -641,7 +641,7 @@ describe("tools/call forgiving arguments (#78)", () => {
     const content = result?.content as Array<{ type: string; text: string }>;
     expect(content.at(-1)).toEqual({
       type: "text",
-      text: 'Ignored argument "sport" (this tool takes: distances, window, topN).',
+      text: 'Ignored argument "sport" (this tool takes: id, distances, window, topN).',
     });
   });
 

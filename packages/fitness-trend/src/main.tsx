@@ -13,17 +13,13 @@ import { type useApp } from "@modelcontextprotocol/ext-apps/react";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
-import { type FitnessTrendBaseArgs, type FitnessTrendData } from "./types";
+import { buildBaseArgs } from "./normalize";
+import {
+  type FitnessTrendData,
+  type FitnessTrendToolArgs as ToolArgs,
+} from "./types";
 import { VIEW_TOOLS } from "./viewToolDeclarations";
 import "./global.css";
-
-interface ToolArgs {
-  days?: number;
-  runOnly?: boolean;
-  projectDays?: number;
-  targetDate?: string;
-  targetTsb?: number;
-}
 
 const LoadingSkeleton = ({ progress }: { progress?: string | null }) => (
   <LoadingState label="Loading fitness trend" progress={progress}>
@@ -47,14 +43,7 @@ function AppContent({
   mode,
   viewToolRegistry,
 }: AppContentProps) {
-  const baseArgs: FitnessTrendBaseArgs = {
-    days: toolArgs.days ?? 90,
-    projectDays: toolArgs.projectDays ?? 14,
-    ...(toolArgs.targetDate ? { targetDate: toolArgs.targetDate } : {}),
-    ...(toolArgs.targetTsb !== undefined
-      ? { targetTsb: toolArgs.targetTsb }
-      : {}),
-  };
+  const baseArgs = buildBaseArgs(toolArgs);
   const initialRunOnly = toolArgs.runOnly ?? false;
 
   const { data, loading, error, progress, retry } =

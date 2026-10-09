@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   mockFitnessTrendData,
+  mockPastFitnessTrendData,
   mockRestProjectionData,
 } from "./__fixtures__/trend";
 import { buildTrendA11y } from "./a11y";
@@ -60,6 +61,15 @@ describe("buildTrendA11y", () => {
       ctl7dDelta: 2.5,
     }).desc;
     expect(desc).toContain("Fitness rose 2.5 over the last 7 days.");
+  });
+
+  it("dates the 7-day change in a past window (#80)", () => {
+    const desc = buildTrendA11y({
+      ...mockPastFitnessTrendData,
+      ctl7dDelta: 5.3,
+    }).desc;
+    expect(desc).toContain("Fitness rose 5.3 over the 7 days to 28 Jun 2026.");
+    expect(desc).not.toContain("over the last 7 days");
   });
 
   it("says so when nothing is shaded", () => {

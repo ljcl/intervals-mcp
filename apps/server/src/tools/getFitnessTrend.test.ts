@@ -5,7 +5,7 @@ import {
   type IntervalsWellness,
   listActivities,
 } from "../intervalsClient";
-import { addDays } from "../utils/localDate";
+import { addDays, daysBetween } from "../utils/localDate";
 import { getFitnessTrendTool } from "./getFitnessTrend";
 import { FitnessTrendOutputSchema } from "./outputs";
 
@@ -711,5 +711,254 @@ describe("get-fitness-trend execute (runOnly: true)", () => {
     };
     expect(structured.daily).toHaveLength(days);
     expect(structured.daily[0]!.ctl).toBeGreaterThan(0);
+  });
+});
+
+describe("get-fitness-trend with newest (#80)", () => {
+  /** A past Sunday, before TODAY. */
+  const NEWEST = "2026-04-12";
+  const PAST_NOTE = `This window ends on ${NEWEST}, before today (${TODAY}). It is a past block: CTL/ATL/TSB are as of its last day with data, and there is no projection or taper plan.`;
+
+  interface Structured {
+    period: {
+      days: number;
+      start_date: string;
+      end_date: string;
+      ends_today: boolean;
+    };
+    source: string;
+    as_of: string | null;
+    current: { date: string } | null;
+    flags: string[];
+    warnings: string[];
+    projection: unknown[];
+    tsb_positive_date: string | null;
+    taper: unknown;
+  }
+
+  /** 90 synced days to NEWEST, form +12 on every one of them. */
+  const pastWellness = () =>
+    wellnessWindow(NEWEST, 90, () => ({ ctl: 48, atl: 36, atlLoad: 50 }));
+
+  async function call(input: Record<string, unknown>) {
+    const result = await getFitnessTrendTool.execute(
+      { ...DEFAULT_INPUT, ...input },
+      "test-key",
+    );
+    return {
+      result,
+      structured: result.structuredContent as Structured | undefined,
+      text: result.content[0]?.text ?? "",
+    };
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(`${TODAY}T12:00:00Z`));
+    mockedWellness.mockReset();
+    mockedListActivities.mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("reads a past whole-body window with no projection or taper", async () => {
+    mockedWellness.mockResolvedValueOnce(pastWellness());
+    mockedListActivities.mockResolvedValueOnce([]);
+
+    const { result, structured, text } = await call({
+      newest: NEWEST,
+      projectDays: 14,
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect(mockedWellness.mock.calls[0]![1]).toEqual({
+      oldest: "2026-01-13",
+      newest: NEWEST,
+    });
+    expect(mockedListActivities.mock.calls[0]![1]).toEqual({
+      oldest: "2026-01-13",
+      newest: NEWEST,
+    });
+    expect(structured!.period).toEqual({
+      days: 90,
+      start_date: "2026-01-13",
+      end_date: NEWEST,
+      ends_today: false,
+    });
+    expect(FitnessTrendOutputSchema.safeParse(structured).success).toBe(true);
+    expect(structured!.as_of).toBe(NEWEST);
+    expect(structured!.projection).toEqual([]);
+    expect(structured!.taper).toBeNull();
+    expect(structured!.tsb_positive_date).toBeNull();
+    expect(structured!.warnings[0]).toBe(PAST_NOTE);
+
+    expect(text).toContain(
+      `2026-01-13 to ${NEWEST} (90 days, a past window, source: intervals.icu)`,
+    );
+    expect(text).toContain(`**End of window (as of ${NEWEST})**`);
+    expect(text).toContain(`**7 days to ${NEWEST}**: CTL 0, TSB 0`);
+    expect(text).toContain("**Last 14 days of the window**");
+    expect(text).not.toContain("**Current");
+    expect(text).not.toContain("**Projection");
+    expect(text).toContain(`Note: ${PAST_NOTE}`);
+  });
+
+  it("ignores targetDate for a past window instead of rejecting it", async () => {
+    // One target before today, one past the taper horizon: today both are
+    // errors; for a past window neither is checked.
+    for (const targetDate of [NEWEST, inDays(200)]) {
+      mockedWellness.mockResolvedValueOnce(pastWellness());
+      mockedListActivities.mockResolvedValueOnce([]);
+
+      const { result, structured, text } = await call({
+        newest: NEWEST,
+        targetDate,
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(structured!.taper).toBeNull();
+      expect(text).not.toContain("Taper plan");
+    }
+  });
+
+  it("adds no plannedLoads warnings for a past window", async () => {
+    mockedWellness.mockResolvedValueOnce(pastWellness());
+    mockedListActivities.mockResolvedValueOnce([]);
+
+    const { structured } = await call({
+      newest: NEWEST,
+      plannedLoads: [
+        { date: "2026-04-01", load: 50 },
+        { date: inDays(90), load: 50 },
+      ],
+    });
+
+    expect(structured!.warnings[0]).toBe(PAST_NOTE);
+    expect(structured!.warnings.join(" ")).not.toContain("plannedLoads");
+    expect(structured!.projection).toEqual([]);
+  });
+
+  it("reports a trailing gap in a past window as a gap, not as unsynced", async () => {
+    // The last 2 days of the window have no wellness.
+    mockedWellness.mockResolvedValueOnce(pastWellness().slice(0, -2));
+    mockedListActivities.mockResolvedValueOnce([]);
+
+    const { structured } = await call({ newest: NEWEST });
+
+    expect(structured!.as_of).toBe(addDays(NEWEST, -2));
+    const gap = structured!.warnings.find((w) =>
+      w.includes("no wellness CTL/ATL recorded"),
+    );
+    expect(gap).toContain("2 of 90 days");
+    expect(gap).not.toContain("synced");
+  });
+
+  it("does not call the last day with data the end of a past window", async () => {
+    // Deep fatigue for the last 10 days with wellness; the last 2 days of
+    // the window have none.
+    mockedWellness.mockResolvedValueOnce(
+      wellnessWindow(NEWEST, 90, (daysAgo) =>
+        daysAgo < 12 ? { ctl: 40, atl: 70 } : { ctl: 40, atl: 40 },
+      ).slice(0, -2),
+    );
+    mockedListActivities.mockResolvedValueOnce([]);
+
+    const { structured } = await call({ newest: NEWEST });
+
+    const lastWithData = addDays(NEWEST, -2);
+    expect(structured!.as_of).toBe(lastWithData);
+    expect(structured!.flags).toHaveLength(1);
+    expect(structured!.flags[0]).toContain(
+      `to ${lastWithData}, the last day with data in the window`,
+    );
+    expect(structured!.flags[0]).not.toContain("the end of the window");
+  });
+
+  it("counts the run-only runway back from newest", async () => {
+    // One run 3 days before newest.
+    mockedListActivities.mockResolvedValueOnce([
+      run(daysBetween(NEWEST, TODAY) + 3),
+    ]);
+
+    const { structured } = await call({
+      newest: NEWEST,
+      runOnly: true,
+      projectDays: 7,
+    });
+
+    expect(mockedListActivities.mock.calls[0]![1]).toEqual({
+      oldest: addDays(NEWEST, -(90 + 150 - 1)),
+      newest: NEWEST,
+    });
+    expect(structured!.source).toBe("computed");
+    expect(structured!.current!.date).toBe(NEWEST);
+    expect(structured!.projection).toEqual([]);
+    expect(structured!.warnings[0]).toBe(PAST_NOTE);
+    expect(mockedWellness).not.toHaveBeenCalled();
+  });
+
+  it("dates the flags of a past window", async () => {
+    // Deep fatigue for the last 10 days of the window.
+    mockedWellness.mockResolvedValueOnce(
+      wellnessWindow(NEWEST, 90, (daysAgo) =>
+        daysAgo < 10 ? { ctl: 40, atl: 70 } : { ctl: 40, atl: 40 },
+      ),
+    );
+    mockedListActivities.mockResolvedValueOnce([]);
+
+    const { structured } = await call({ newest: NEWEST });
+
+    expect(structured!.flags).toHaveLength(1);
+    expect(structured!.flags).toEqual([
+      `TSB at or below -25 for 10 consecutive days to ${NEWEST}, the end of the window: deep fatigue.`,
+    ]);
+  });
+
+  it("is the same call as no newest when newest is today", async () => {
+    const wellness = wellnessWindow(TODAY, 90, (daysAgo) => ({
+      ctl: 50,
+      atl: 60 - daysAgo / 10,
+    }));
+    for (let i = 0; i < 2; i++) {
+      mockedWellness.mockResolvedValueOnce(wellness);
+      mockedListActivities.mockResolvedValueOnce([run(1)]);
+    }
+
+    const omitted = await call({ projectDays: 7 });
+    const today = await call({ projectDays: 7, newest: TODAY });
+
+    expect(today.structured).toEqual(omitted.structured);
+    expect(today.text).toBe(omitted.text);
+    expect(omitted.structured!.period.ends_today).toBe(true);
+    expect(omitted.structured!.projection).toHaveLength(7);
+    const [omittedWellness, todayWellness] = mockedWellness.mock.calls;
+    expect(todayWellness).toEqual(omittedWellness);
+    const [omittedList, todayList] = mockedListActivities.mock.calls;
+    expect(todayList![1]).toEqual(omittedList![1]);
+  });
+
+  it("refuses a newest after today before any fetch", async () => {
+    const { result, structured } = await call({ newest: inDays(1) });
+
+    expect(result.isError).toBe(true);
+    expect(structured).toBeUndefined();
+    expect(result.content[0]?.text).toBe(
+      `❌ newest ${inDays(1)} is after today (${TODAY}). Use today or an earlier date, or leave newest out to end the window today.`,
+    );
+    expect(mockedWellness).not.toHaveBeenCalled();
+    expect(mockedListActivities).not.toHaveBeenCalled();
+  });
+
+  it("names newest in the error when a past window's fetch fails", async () => {
+    mockedWellness.mockRejectedValueOnce(new Error("socket hang up"));
+
+    const { result } = await call({ newest: NEWEST });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain(
+      `compute fitness trend for 90 days to ${NEWEST}`,
+    );
   });
 });

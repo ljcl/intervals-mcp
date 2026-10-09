@@ -291,6 +291,20 @@ describe("normalizeArgs: date range to window", () => {
     ).toEqual({ window: "90d", oldest: "2026-01-01" });
   });
 
+  it("leaves a range alone when the call names one activity", () => {
+    const takesIdOrWindow = argShape({
+      type: "object",
+      properties: { id: { type: "string" }, window: { type: "string" } },
+    });
+    expect(
+      normalizeArgs(
+        { id: "i1", oldest: "2026-01-01", newest: "2026-03-31" },
+        takesIdOrWindow,
+        { today },
+      ),
+    ).toEqual({ id: "i1", oldest: "2026-01-01", newest: "2026-03-31" });
+  });
+
   it("leaves values it cannot read for the ignored-arguments note", () => {
     expect(normalizeArgs({ days: "ninety" }, takesWindow, { today })).toEqual({
       days: "ninety",

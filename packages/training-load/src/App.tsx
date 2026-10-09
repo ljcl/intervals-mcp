@@ -1,3 +1,4 @@
+import { lookbackLabel } from "@intervals-mcp/data";
 import { getChartTokens } from "@intervals-mcp/design-system";
 import {
   CardHeader,
@@ -24,6 +25,7 @@ import {
   buildScopeNote,
   buildTotalsStats,
   countWarningWeeks,
+  isPastWindow,
   type TrainingLoadDataArgs,
 } from "./normalize";
 import {
@@ -181,7 +183,11 @@ export function App({
     <div className={styles.container} data-compact={isMobile || undefined}>
       <CardHeader
         title="Training load"
-        subtitle={data ? buildLoadSubtitle(data) : `Last ${dataArgs.days} days`}
+        subtitle={
+          data
+            ? buildLoadSubtitle(data)
+            : lookbackLabel(dataArgs.days, dataArgs.newest)
+        }
         compact={isMobile}
       />
       <div className={styles.scopeRow}>
@@ -240,12 +246,13 @@ export function App({
               label="Weekly distance"
               static
             />
-            {/* The light bar is the current week, so a short bar reads as
-             * "not over yet" rather than a drop in volume. */}
+            {/* The light bar is the partial week, so a short bar reads as
+             * "not over yet" (or, in a past window, "cut off at its last
+             * day") rather than a drop in volume. */}
             {hasWeekInProgress && (
               <LegendItem
                 color="color-mix(in srgb, var(--chart-pace) 35%, transparent)"
-                label="This week so far"
+                label={isPastWindow(data) ? "Partial week" : "This week so far"}
                 static
               />
             )}

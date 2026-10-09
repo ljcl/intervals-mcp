@@ -21,6 +21,7 @@ import "./global.css";
 interface ToolArgs {
   days?: number;
   runOnly?: boolean;
+  newest?: string;
 }
 
 const LoadingSkeleton = ({ progress }: { progress?: string | null }) => (

@@ -6,6 +6,7 @@
  * - Cadence is returned as strides/min but runners think in steps/min
  * - Speed is returned as m/s but runners think in pace (min/km or min/mile)
  */
+import { speedDisplayForSport, speedSport } from "@intervals-mcp/data";
 import { round } from "../formatters";
 import { type IntervalsActivity } from "../intervalsClient";
 
@@ -26,11 +27,11 @@ export function isRunningActivity(activityType: string): boolean {
 }
 
 /**
- * Pace conversion result.
+ * Pace conversion result. It has no km/h on purpose: km/h (and pace per
+ * 100 m) come from {@link sportSpeed} only.
  */
 export interface PaceResult {
   metersPerSecond: number;
-  kmh: number;
   minPerKm: string;
   minPerKmRaw: number; // decimal minutes for calculations
   minPerMile: string;
@@ -39,13 +40,15 @@ export interface PaceResult {
 }
 
 /**
- * Formats a pace given in seconds-per-kilometre as `m:ss`, rounding to the
- * nearest second first so a value like 299.6 carries into `5:00` rather than
- * flooring to 4 minutes and rendering an invalid `4:60`.
+ * Formats a pace given in seconds per unit (per km, or per 100 m for a swim)
+ * as `m:ss`, rounding to the nearest second first so a value like 299.6
+ * carries into `5:00` rather than flooring to 4 minutes and rendering an
+ * invalid `4:60`.
  *
  * The one home for seconds -> pace-string formatting: {@link metersPerSecToPace}
  * and (transitively) {@link paceFromDistanceTime} both render their `m:ss`
- * strings through this function rather than each rounding independently.
+ * strings through this function rather than each rounding independently, and
+ * {@link sportSpeed} renders a swim's pace per 100 m through it too.
  *
  * Null-safe by returning a value, never throwing or emitting `NaN:NaN`: zero
  * or a non-finite input (`NaN`, `Infinity`, `-Infinity`) returns `"0:00"`.
@@ -77,7 +80,6 @@ export function metersPerSecToPace(
 
   return {
     metersPerSecond: Math.round(mps * 100) / 100,
-    kmh: Math.round(mps * 3.6 * 10) / 10,
     minPerKm: formatPaceSeconds(secondsPerKm),
     minPerKmRaw: Math.round((secondsPerKm / 60) * 100) / 100,
     minPerMile: formatPaceSeconds(secondsPerMile),
@@ -190,6 +192,58 @@ export function paceFromDistanceTime(
     return null;
   }
   return metersPerSecToPace(distanceM / movingTimeS)?.minPerKm ?? null;
+}
+
+/** The sport-aware companions of `pace_min_per_km`. Not exported: knip
+ * flags an exported type that no other module imports. */
+interface SportSpeed {
+  /** `m:ss` per 100 m; Swim and OpenWaterSwim only. */
+  pace_min_per_100m: string | null;
+  /** km/h to 1 dp; every type that is neither a run nor a swim. */
+  speed_kmh: number | null;
+}
+
+/**
+ * Pace per 100 m for a swim, or km/h for any other type that is not a run
+ * ({@link PACE_ACTIVITY_TYPES}), from distance (m) over moving time (s).
+ * Walk and Hike get km/h, as get-activity-laps always gave them. Both are
+ * null for a run (it has `pace_min_per_km`), and when distance or moving
+ * time is missing or not positive.
+ *
+ * The conversion is `speedDisplay`'s from `@intervals-mcp/data`, the one
+ * the MCP Apps use (#63), so a swim slower than `MIN_MOVING_SPEED_MPS` has
+ * no pace in either. Distance over moving time is intervals.icu's own basis:
+ * the activity's `pace` field (m/s) equals it, while `average_speed` is the
+ * device's figure (docs/api-notes.md).
+ *
+ * The one home for these two fields: list-activities, get-activity
+ * (activity and intervals), compare-activities and `intervalLaps.ts`.
+ */
+export function sportSpeed(
+  type: string,
+  distanceM: number | null | undefined,
+  movingTimeS: number | null | undefined,
+): SportSpeed {
+  const none: SportSpeed = { pace_min_per_100m: null, speed_kmh: null };
+  if (
+    isPaceActivity(type) ||
+    !distanceM ||
+    distanceM <= 0 ||
+    !movingTimeS ||
+    movingTimeS <= 0
+  )
+    return none;
+  const mps = distanceM / movingTimeS;
+  if (speedSport(type) === "swim") {
+    const minutes = speedDisplayForSport("swim").fromMps(mps);
+    return minutes == null
+      ? none
+      : { pace_min_per_100m: formatPaceSeconds(minutes * 60), speed_kmh: null };
+  }
+  const kmh = speedDisplayForSport("other").fromMps(mps);
+  return kmh == null
+    ? none
+    : { pace_min_per_100m: null, speed_kmh: round(kmh, 1) };
 }
 
 /**

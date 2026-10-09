@@ -32,6 +32,8 @@ Paths below are relative to the base URL above (spec lists them as `/api/v1/...`
 | Wellness | `GET /athlete/{id}/wellness{ext}` (date range; `.csv` for CSV), `POST`/`PUT /athlete/{id}/wellness` |
 | Wellness/{date} | `GET /athlete/{id}/wellness/{date}`, `PUT /athlete/{id}/wellness/{date}` |
 | Gear | `GET /athlete/{id}/gear{ext}` (list; `.csv` for CSV), `POST /athlete/{id}/gear` (create); per-item `PUT`/`DELETE /athlete/{id}/gear/{gearId}` |
+| Interval search | `GET /athlete/{id}/activities/interval-search` |
+| Activities by id | `GET /athlete/{athleteId}/activities/{ids}` (comma-separated) |
 
 ## Writes
 - `PUT /activity/{id}` takes only the fields to change. To clear a numeric field send `-1`.
@@ -55,7 +57,7 @@ at `apps/server/src/__fixtures__/intervals/`.
 - `GET /athlete/0/wellness?oldest=&newest=` returns an array keyed by `id` (date). Apple Watch HRV arrives in `hrvSDNN`; `hrv` (rMSSD) is null. `restingHR`, `sleepSecs`, `weight`, `ctl`, `atl`, `rampRate` present.
 - Wellness HRV fields (2026-09-26, #48): `hrv` carries rMSSD and `hrvSDNN` carries SDNN, both in ms. The spec types both as plain floats and describes neither. Which field is set depends on the source device. Apple Watch sets only `hrvSDNN` (above). #48 reports that Garmin, Oura and Whoop set `hrv` and leave `hrvSDNN` null. This account has no such device, so that part is not verified here. `get-wellness` reads both fields and assumes neither.
 - Stride and step length (2026-09-26, #76): `average_stride` (m) is distance per step, not per two-step stride. It equals distance divided by moving time, divided by the step rate (`average_cadence` times 2, divided by 60). This holds to four decimals on the three fixture runs and on every fixture interval. For example, run `i189807578` covers 8,030.29 m in 2,372 s at 83.155 strides/min: 3.3855 m/s over 2.7718 steps/s gives 1.2214 m, and `average_stride` is 1.2213699. So intervals.icu computes it from speed and cadence. `average_step_length` (mm) is the device's own step length. On whole runs the two agree within about 1% (1,226 mm and 1.221 m, 1,108 mm and 1.097 m, 1,209 mm and 1.204 m on the three fixture runs). On an interval they can differ: a slow WORK interval in `activity-multilap-intervals.json` (803 m in 320 s) has `average_stride` 0.900 m and `average_step_length` 1,191 mm. The text of `get-activity` and `get-running-dynamics` prints step length only. `stride_m` stays in structuredContent.
-- `GET /athlete/0/sport-settings/Run`: `lthr`, `max_hr` and `hr_zones` (ascending bpm upper bounds, the last equal to `max_hr`); `threshold_pace` and `pace_zones` null.
+- `GET /athlete/0/sport-settings/Run`: `lthr`, `max_hr` and `hr_zones` (ascending bpm upper bounds, the last equal to `max_hr`); `threshold_pace` and `pace_zones` null at this capture (both set since; see "Sport settings and HR curves" below).
 - Athlete HR on the activity (2026-09-27, #47, from the committed fixtures): `GET /activity/{id}` carries `athlete_max_hr` and `lthr` (the athlete's settings, OpenAPI `Activity`) next to `icu_hr_zones`. On `activity.json`, `activity-hilly.json`, `activity-multilap.json` and every row of `activities.json`: `athlete_max_hr` 190 and `lthr` 172. `icu_hr_zones` is `[142, 154, 163, 171, 190]` on the runs and a 7-zone set ending at 190 on some other types, so the last zone bound equals `athlete_max_hr` either way. `max_heartrate` is the run's own peak (182 to 186 on those runs). `get-interval-analysis` reads `athlete_max_hr`, then the last zone bound.
 - Sliver intervals (2026-09-27, #47): `activity-multilap-intervals.json` ends with a WORK interval of 26 m in 12 s and a RECOVERY interval of 4 s with `distance` and `average_speed` null, and has a 21 m / 6 s RECOVERY interval mid-run. Apple Watch activities often end this way. `get-interval-analysis` ignores intervals under 50 m or 15 s.
 - `GET /athlete/0/gear` returns Gear objects `{ id (numeric string, e.g. "71459"), name, type ("Shoes"), distance (metres, includes the starting distance entered in the UI), activities (count), retired (null when active), reminders ([]) }`.
@@ -82,8 +84,8 @@ at `apps/server/src/__fixtures__/intervals/`.
 | Endpoint | Status | Shape and units |
 | --- | --- | --- |
 | `GET /athlete/0/pace-curves.json?type=Run&curves=all,90d,...` | 200 | Works with athlete id `0`; `{list[{id,label,distance[],values[] s,activity_id[],paceModels[{type:"CS",criticalSpeed m/s,dPrime m,r2}]}], activities{}}`. Curve ids used: `1y` (get-best-efforts default), `all`, `90d` (get-race-prediction) |
-| `GET /athlete/0/activity-pace-curves.json?...` | 403 | Athlete id `0` is denied on this endpoint specifically (unlike `pace-curves.json` above); needs the bare numeric athlete id |
-| `GET /athlete/{numericId}/athlete-summary.json?start&end` | 200 | Weekly rows (Monday-aligned, newest first), totals plus `byCategory[]`; probed but not used: get-athlete-stats instead fetches `list-activities`' underlying `/activities` and aggregates run totals locally (`aggregateRunTotals`), so its bucket boundaries (Monday-aligned week, local calendar month/year) match the rest of the server rather than this endpoint's own |
+| `GET /athlete/0/activity-pace-curves.json?...` | 403 | Athlete id `0` is denied (2026-09-25). On 2026-10-08 the bare numeric id was denied too, and the `i`-prefixed id from `GET /athlete/0` worked. Not used since #82: `pace-curves.json` with `subMaxEfforts` gives the same ranks |
+| `GET /athlete/{numericId}/athlete-summary.json?start&end` | 200 | Weekly rows (Monday-aligned, newest first), totals plus `byCategory[]`; probed but not used: get-athlete-stats instead fetches `list-activities`' underlying `/activities` and aggregates run totals (`aggregateRunTotals`) and per-sport totals (`aggregateSportTotals`) locally, so its bucket boundaries (Monday-aligned week, local calendar month/year) match the rest of the server rather than this endpoint's own |
 | `GET /activity/{id}/interval-stats?start_index&end_index` | 200 | Interval-shaped stats for any stream index range, including `gap` (m/s) |
 | `GET /activity/{id}/time-at-hr` | 200 | `{max_bpm, min_bpm, secs[], cumulative_secs[]}` |
 | `GET /activity/{id}/streams.json` | 200 | `moving` is never returned (silently omitted, not an error); `grade_smooth` (%) and `fixed_altitude` (m) are present; `gap` is not a valid stream type (422 "Invalid stream type") |
@@ -157,6 +159,33 @@ sport-settings, fitness-model-events, athlete-summary, and one activity, all aga
   fact for this account, not a documented rule.
 - `GET /athlete/{id}/fitness-model-events` (custom `FITNESS_DAYS`/`SET_FITNESS`/`SET_EFTP` events
   that would change the constants above) returns `[]` on this account.
+
+## Per-sport totals (2026-10-08, #83, live read-only)
+
+Two reads against athlete 0 for the year to date: `GET /athlete/0/activities?oldest=&newest=`
+(253 rows) and `GET /athlete/0/wellness?oldest=&newest=&fields=id,atlLoad,ctlLoad` (281 rows).
+
+- `type` was set on every row. It is the intervals.icu type name. The spec lists 60 values
+  (`Ride` to `Other`) and has no separate sport category. 8 types appeared: Run, Swim,
+  OpenWaterSwim, Ride, Walk, WeightTraining, Pilates and Workout. `sub_type` was null on every row.
+- `distance` (m) and `icu_distance` are `null`, never 0, on every WeightTraining, Pilates and
+  Workout row. Every row of the other types had a distance above 0.
+- `moving_time` (s, a whole number) was set and above 0 on every row. On WeightTraining, Pilates
+  and Workout rows it equals `elapsed_time` on all but 4 of 105 rows. On the distance types it is
+  always lower than `elapsed_time`.
+- `icu_training_load` was set, above 0 and a whole number on every row of every type. The spec
+  types it `int32`. Not verified: when it is null. get-athlete-stats adds 0 for a null load, as
+  its run totals already do.
+- `total_elevation_gain` is null on every WeightTraining, Pilates, Workout, Swim and
+  OpenWaterSwim row.
+- The sum of `icu_training_load` over the activities of a date range equals the sum of wellness
+  `atlLoad` over the same dates. It was exact on each of get-athlete-stats' four periods and on
+  each of the 281 days. So this sum is the whole-body load, and the per-type loads add up to it.
+  The `ctlLoad` sum is lower, because this account's WeightTraining and Workout load is left out
+  of `ctlLoad` (see "Phase 3 probes").
+- get-athlete-stats builds its per-sport totals (`aggregateSportTotals`) from the same
+  `/activities` rows as its run totals. It does not read `athlete-summary.json`'s `byCategory[]`
+  (see the Phase 2 table), so both sets use the same periods as the rest of the server.
 
 ## Phase 4 probes (2026-09-25 research, streams and map, live read-only, run i189807578)
 
@@ -277,3 +306,322 @@ strongest feeling and 5 the weakest, as `update-activity`'s tool description say
 - `/activities/search` returns light rows (`id,name,start_date_local,type,race,distance,moving_time,tags,description`).
 - `race` (boolean) and `tags` (null or string array) appear on both `search-full` rows and `GET /athlete/0/activities` rows.
 - `GET /athlete/0/activity-tags` returned `[]` and `q=#race` returned `[]` on an account with no tags, so tag search is unverified live (no tags on the probe account); the client test checks `#` is sent encoded.
+
+## Best efforts and pace curves (2026-10-08, live read-only, #82)
+
+Three runs (6.1, 21.2 and 31.0 km), all with auto-pause stops, and athlete
+curves for a 90-day window (37 runs) and a 2-month range.
+
+- `GET /activity/{id}/pace-curve.json` returns one `PaceCurve`: `distance[]`
+  (m, the same fixed grid as the athlete curves, up to the largest grid
+  point the run covers), `values[]` (whole seconds), `start_index[]` and
+  `end_index[]` (sample indices into the activity's streams), and
+  `type: "PACE"`. `activity_id`, `submax_values` and the dates are null.
+- The rule behind every pace-curve value: for each start sample i, take the
+  first sample j where `distance[j] - distance[i]` reaches the target. The
+  time is `(time[j] - time[i]) * target / (distance[j] - distance[i])`,
+  rounded to the nearest second, and the curve keeps the smallest. This rule
+  gave every value on all three runs (313 of 313 points) and the same start
+  and end index on 312 of them. `Math.floor` in place of rounding matched
+  only about half. `bestEffortWindows` (`activityBestEfforts.ts`) is this
+  rule; `activity-pace-curve.json` and `streams-time-distance.json` (one run)
+  pin it in `activityBestEfforts.test.ts`.
+- So a pace-curve time is elapsed time across the stretch. The `time` stream
+  keeps auto-pause gaps, so a stop inside the stretch counts. On a 21.2 km
+  run with 1,101 s of stops, the curve's half marathon spans the whole run
+  and includes every stop. Short distances usually avoid stops, because a
+  stop makes the stretch slower. Before #82, get-best-efforts called the
+  curve "moving-time style"; that was wrong.
+- The athlete curves are built from the activity curves: `pace-curves.json`
+  for a one-day custom range with one run gave the same `distance[]` and
+  `values[]` as that run's own curve. The athlete curves have no
+  `start_index`/`end_index`.
+- `subMaxEfforts=N` on `GET /athlete/0/pace-curves.json` adds
+  `submax_values` and `submax_activity_id` to each curve: N rows, row r
+  holding the (r+2)th best time and its activity at each grid index. A row
+  is truncated, not null-padded, where fewer activities reach the distance.
+  With N=2 and N=4, no activity appeared twice at a grid index, times never
+  decreased with rank, and every activity was in the `activities` map. Ranks
+  1 to 3 matched a local ranking of `activity-pace-curves.json` over the same
+  dates at all six standard distances. `get-best-efforts` reads its `topN`
+  ranks this way, in one request.
+- `includeRanks=true` adds nothing to `type=Run` pace curves.
+- `GET /activity/{id}/best-efforts?stream=&distance=|duration=&count=`
+  accepts `stream=velocity_smooth`, `time` and `distance`; `pace` and `gap`
+  return 422 "Invalid stream type". It returns
+  `{efforts[{start_index, end_index, average, duration, distance}]}`: the
+  `count` best windows that do not overlap, by highest `average`. With
+  `distance=`, `duration` is null and `distance` (m) is
+  `distance[end_index] - distance[start_index - 1]`. With `duration=`,
+  `distance` is null and a window spans `duration` samples. `average` is the
+  mean of the stream over samples `start_index` to `end_index - 1`, a null
+  counting as 0. With `time` or `distance` the best window is only the one
+  with the largest values. The `velocity_smooth` mean leaves out stopped time
+  and read about 1% faster than distance over time, so its best 5 km was not
+  the pace curve's best 5 km. Not used.
+- `GET /athlete/0/activities/{ids}` (comma-separated) works with athlete id
+  `0` and returns full Activity rows in request order. A missing id is left
+  out with no error. A bare-digit id (no `i` prefix) returned no row.
+  `fields=` is ignored here. Not used by get-best-efforts.
+- No activity on this account has `ignore_parts` set (0 of 610 over two
+  years; the spec's `Ignore` is `{start_index, end_index, power, pace, hr}`),
+  so how a part ignored for pace changes a curve is not verified.
+  get-best-efforts leaves out the `pace: true` parts, both ends included, and
+  only when the stream loader dropped no sample (a sample with no time
+  shifts the indices). No activity has `ignore_pace` set either, so whether
+  intervals.icu leaves such a run out of the athlete pace curves is not
+  verified; get-best-efforts says only that it may.
+## Sport settings and HR curves (2026-10-08, #79, live read-only)
+
+Sport settings:
+
+- `GET /athlete/0/sport-settings` returns an array with one entry per settings
+  group (4 on this account: a ride group, `Run`/`VirtualRun`/`TrailRun`,
+  `Swim`/`OpenWaterSwim`, and `Other`), about 10 KB. Each entry has the same
+  fields as `GET /athlete/0/sport-settings/Run`; the Run entry is identical to
+  that response.
+- `GET /athlete/0/sport-settings/{type}` resolves a type to its group:
+  `TrailRun` returns the Run group. A valid type with no group of its own
+  (`Rowing`) returns the group with `other: true` (`types: ["Other"]`). The
+  type is case-sensitive: `run` and an unknown type return 404
+  `{"status":404,"error":"Not found"}`.
+- `hr_zones` are ascending bpm upper bounds, and the last one equals `max_hr`
+  on every group here. `hr_zone_names` has one name per zone.
+- Upper bounds are inclusive. Counting each 1 Hz `heartrate` sample of a run
+  in the first zone whose upper bound is at or above it gives the run's
+  `icu_hr_zone_times` exactly. A strict "below the bound" count is off by up
+  to 59 s per zone. Zone times count every sample, moving or not.
+- `threshold_pace` is a speed in m/s, not a pace, also on the Swim group
+  with `pace_units: "SECS_100M"`: for example, 0.8 m/s is 100 / 0.8 = 125 s,
+  so 2:05 per 100 m.
+  `pace_units` is a display setting only (`MINS_KM`, `SECS_100M`, ...).
+- `pace_zones` are percentages of threshold speed, ascending, with 999 as the
+  open top. The Run group has the intervals.icu default `[77.5, 87.7, 94.3,
+  100, 103.4, 111.5, 999]`, named Zone 1 to Zone 5c. Checked on two runs: a
+  run at 89.5% of threshold speed has most of its `pace_zone_times` in zone 3
+  (87.7-94.3%), and a run at 96.4% has most in zone 4. Read as percentages of
+  pace (time per km), both runs would be in the top zones. The Swim group has
+  no pace zones on this account.
+- `power_zones` on the ride group look like percentages of FTP
+  (`[55, 75, 90, 105, 120, 150, 999]`), but no activity on this account has
+  power-meter data to check them. `get-athlete-zones` reports `ftp` only.
+
+HR curves:
+
+- `GET /athlete/0/hr-curves.json?type=Run&curves=90d,1y` returns 200 with
+  athlete id `0`. The spec marks `f1`, `f2` and `f3` as required; every call
+  left them out and got 200.
+- Shape: `{ list[{ id, label, start_date_local, end_date_local, days,
+  moving_time, training_load, weight, secs[], values[], activity_id[] }],
+  activities{} }`. `secs` is a duration in seconds, `values` the best average
+  heart rate in bpm over that duration, and `activity_id` the activity that
+  set it; the three are index-aligned. The `activities` map has the same
+  fields as the pace-curves map and no `type`.
+- The `secs` grid is fixed: every second to 60 s, then steps of 5 s to 120 s,
+  10 s to 300 s, 30 s to 600 s, 60 s to 3,600 s, and 300 s after that. It
+  stops at the longest activity in the window. So 60, 1,200, 1,800 and
+  3,600 s are exact grid points when the window has an activity that long.
+- `start_date_local` is the first day of the window; `end_date_local` is local
+  midnight after today. `90d` covers 90 days including today.
+- `type` picks the settings group: `type=TrailRun` returns the same curve as
+  `type=Run`, and `type=Swim` a different one. `type=Rowing` (an Other-group
+  type) and a call with no `type` also return the Run curve, so a curve for
+  an Other-group type cannot be trusted. An unknown type returns 422.
+- A window with no activities returns `{"list":[],"activities":{}}`: the
+  curve id is missing from `list`.
+- Run curves never rise with duration. Swim and ride curves rise by a few bpm
+  in places, and a ride curve falls below 60 bpm at its longest durations,
+  which looks like heart-rate dropouts (sent as 0) averaged in. A dropout can
+  lower a best, not raise it.
+- intervals.icu's own LTHR rule (from its `LTHR_UP` achievements, the
+  `icu_achievements` entries on an activity): `point.secs` is 1,200 or 3,600.
+  For a 20-minute point the new LTHR (`value`) is 98% of the point's heart
+  rate, rounded, and `message` reads "98% of 20m at N bpm" (12 of 12 such
+  achievements). For a 1-hour point `value` equals the point's heart rate,
+  and `message` reads "1h at N bpm" (1 of 1). `get-athlete-zones` uses this
+  rule on the 90-day curve (`lthrEstimate` in `athleteZones.ts`). Not
+  verified: whether an `LTHR_UP` also changes the settings by itself.
+## Interval search and bulk activity reads (2026-10-08, #84, live read-only)
+
+29 read-only GETs against one account. Its runs are Apple Watch runs with device laps.
+
+`GET /athlete/{id}/activities/interval-search?minSecs&maxSecs&minIntensity&maxIntensity&minReps&maxReps&type&limit`:
+
+- Athlete id `0` works.
+- `minSecs`, `maxSecs`, `minIntensity` and `maxIntensity` are required. A missing one returns 422 with a JSON body `{status, error}` that names the parameter.
+- `limit` must be 100 or less. `limit=400` returns 422 "limit must be <= 100".
+- It returns full Activity rows (185 keys, the same as `search-full`), newest first, with no `icu_intervals`.
+- It searches all history, not a date window: results went back 16 months.
+- It searches every sport. A wide band returned Run, Ride, Swim, OpenWaterSwim, Pilates, WeightTraining and Workout rows. Filter the sport on the client.
+- The activity whose reps define the band is in the results.
+- It matches RECOVERY intervals too. A band that fits only the 90 s jog recoveries of a 5 x 1 km session returned that session.
+- `type` is a workout target (`AUTO`, `POWER`, `HR`, `PACE`), not the interval label and not the sport. Another value returns 422. On this account `type=HR` returned the same rows as no `type`. `AUTO`, `PACE` and `POWER` returned `[]`, also with intensity 0-300. `get-interval-analysis` sends no `type`.
+- The match rule cannot be reproduced from an activity's current `icu_intervals`. With `minReps=5&maxReps=5`, 1 of the 4 returned runs had only 1 interval in the band, and 2 runs with 5 such intervals were not returned. Treat the result as candidates, and check each candidate from its own intervals.
+
+Interval `intensity`:
+
+- An interval's `intensity` is a whole percent of the sport's threshold: heart rate or pace, per the athlete's settings.
+- On this account's runs it is `floor(average_heartrate * 100 / lthr)`, with the activity's own `lthr`, for all 341 intervals with heart rate across 30 runs. So it is heart rate as a percent of LTHR, although the Run sport settings also have a threshold pace.
+- On this account's swims it is pace: `floor(average_speed * 100 / threshold_pace)` on all 6 WORK intervals of a pool swim and all 23 of an open-water swim (from the saved #86 probes, no new request). The pool swim's RECOVERY intervals have a null `intensity`.
+- The activity's `icu_intensity` is a different number. For runs it is within 1 point of `gap` as a percent of the activity's `threshold_pace` (100 of 108 runs in 2026). Do not compare it with an interval's `intensity`.
+- The Run sport settings have `interval_display: "POWER_HR_PACE"` and `load_order: "POWER_PACE_HR"`, and there is no power data. So interval intensity probably uses the first metric with data in the display order, and activity intensity the first in the load order. This is an inference from one account.
+- `get-interval-analysis` builds its search band from the intervals' own `intensity` values, so the band does not depend on which metric they use.
+- The three #84 fixtures (`activity-repeats`, `activities-similar`, `interval-search`) are trimmed by hand from live reads: fields kept, intensity recomputed against the synthetic LTHR, names `<Type> N`.
+- An interval's `zone` places it in the athlete's real zones. No tool reads it. The fixture capture nulls it, and it rewrites a run interval's `intensity` against the synthetic LTHR (any other sport's to null), because both give away the real thresholds.
+
+`GET /athlete/{athleteId}/activities/{ids}`:
+
+- Athlete id `0` works. `ids` is a comma-separated list of `i`-prefixed ids. A bare numeric id is dropped.
+- A repeated id and an unknown id are dropped with no error: 21 ids with one repeat and one unknown id returned 19 rows.
+- Rows do not come back in request order. On 4 reads they came back oldest first by `start_date_local`. Key the result by `id`.
+- `?intervals=true` adds `icu_intervals` and `icu_groups` to every row, the same as `GET /activity/{id}?intervals=true`. Without it, the rows have no `icu_intervals` key at all (absent, not null), the same as list and search rows.
+- `fields=` is ignored: full rows come back.
+- Size: 19 runs with intervals were 430 KB to 709 KB, read in about 1 s.
+## Achievements, HR recovery, swims and gear (2026-10-08, #86, live read-only)
+
+Seven GETs, plus the 2026 activity list from an earlier probe. One request
+scanned all history before 2026 with `fields=`
+(`GET /athlete/0/activities?oldest=2023-01-01&newest=2025-12-31&fields=id,type,start_date_local,icu_achievements,icu_hrr,gear,lengths,pool_length,distance,moving_time`).
+`fields` returns only the named keys and leaves out null values, so 640
+activities came back in 86 KB.
+
+**Achievements (`icu_achievements`)**
+- Activity rows (`GET /athlete/0/activities`) and `GET /activity/{id}` both
+  carry it. It is `null` when the activity set nothing. An empty array was
+  not seen.
+- Only `LTHR_UP` was seen: 14 activities between October 2024 and May
+  2026 (3 runs, 11 pool swims), in a scan of all history from December
+  2023 to October 2026. Shape: `{ id: "lthr", type: "LTHR_UP",
+  message, value, secs: null, distance: null, pace: null, watts: null,
+  point: { start_index, end_index, secs, value } }`.
+- `value` is the LTHR in bpm that intervals.icu estimated from the effort.
+  `point` is the heart-rate curve point behind it: `secs` is the effort
+  length (3600 or 1200 s) and `value` its HR. For a 1 h point, `value`
+  equals `point.value` and `message` reads "1h at N bpm". For a 20 min
+  point, `value` is 98% of `point.value`, rounded, and `message` reads "98%
+  of 20m at N bpm".
+- The estimate is per sport. Each sport has its own `lthr` on its
+  activities (one value per sport over all of 2026, and Swim's differs from
+  Run's). On both 2026 activities with an LTHR_UP (a run and a swim),
+  `value` is above the activity's own `lthr`.
+- An LTHR_UP does not show that the sport settings changed. On this
+  account, every later activity of the same sport still carries an `lthr`
+  below the achievement's `value` (63 of 63 runs, 23 of 23 swims; checked
+  2026-10-09 on the 2026 activity list, counts only). The activity's `lthr`
+  is not shown to be the setting before the rise either. So the tools call
+  `value` an estimate and never "the new LTHR", and the text names the
+  activity type ("Swim LTHR up: N bpm estimated").
+- `BEST_PACE`, `BEST_POWER` and `FTP_UP` were not seen (no power meter, and
+  no pace best in this account's history). Their `value`, `secs`,
+  `distance`, `pace` and `watts` are not verified. `get-activity` reports
+  `type`, `message`, `value`, the effort length (`secs`, else `point.secs`)
+  and `distance` as sent. It reads `value` as bpm for `LTHR_UP` only.
+- The client parses `icu_achievements` and `icu_hrr` with a fallback to
+  `null`, so a malformed entry cannot fail every read of the activity.
+
+**HR recovery (`icu_hrr`)**
+- Shape (OpenAPI `HRRecovery`): `{ start_index, end_index, start_time,
+  end_time, start_bpm, end_bpm, average_watts, hrr }`. It is `null` when
+  intervals.icu found no recovery.
+- On all 121 activities that have it (December 2023 to October 2026),
+  `end_time - start_time` is 60 and `hrr` equals `start_bpm - end_bpm`.
+  `average_watts` was always null (no power meter).
+- `start_time` and `end_time` are `time` stream values (seconds from the
+  start) at `start_index` and `end_index`. `start_bpm` and `end_bpm` are the
+  `heartrate` samples there. On the pool swim checked, the 60 s window holds
+  32 samples, so an index is not a second.
+- It is present on about a quarter of runs (27 of 110 in 2026) and a third
+  of pool swims (9 of 26). It also appears on some open-water swims,
+  virtual rides, strength and Pilates sessions. The window can be anywhere
+  in the activity, not only at the end. It need not follow an effort
+  either: on the pool swim checked, it starts 28 s before a WORK interval
+  ends. So `hr_recovery`'s describe text does not say "after a hard
+  effort".
+
+**Swims**
+- Pool swims carry `lengths` (a count) and `pool_length` (m; 25 or 50 on
+  this account). Both are null on runs, rides and open-water swims.
+- `average_cadence` on a swim is strokes per minute as intervals.icu counts
+  them. The `cadence` stream summed over one 1,500 m swim gives 538.8
+  strokes, and `average_cadence × moving_time / 60` gives 538.7. The
+  `SWOLF` field equals `(moving_time + average_cadence × moving_time / 60)
+  × 25 / distance` (seconds plus strokes per 25 m) on all 28 swims of 2026,
+  pool and open water. `SWOLF` is also set on runs, where it has no
+  meaning. No tool reads it.
+- `average_stride` is `(distance / moving_time) / (2 × average_cadence /
+  60)` on swims too: intervals.icu doubles the cadence as for a run.
+  `average_step_length` (mm) is within -1% to +2.5% of `average_stride` on
+  the 26 pool swims. Both are about half of the distance per stroke that
+  intervals.icu's own stroke count gives (1.39 m against 2.78 m on the
+  swim checked). So on a swim neither field is a step length or a distance
+  per stroke. `get-activity` reports the step-based fields (ground contact
+  time, vertical oscillation, step length) only for the step-cadence types
+  (`STEP_CADENCE_ACTIVITY_TYPES`), on intervals as on the whole activity.
+- Swim intervals (`?intervals=true`): WORK intervals carry
+  `average_cadence`, `average_step_length` and `average_stride`. RECOVERY
+  intervals have `distance`, `average_speed` and cadence null.
+- A swim interval's `moving_time` equals its `elapsed_time`, so it counts
+  the rests at the wall inside the set. The activity's `moving_time` leaves
+  them out. On the 1,500 m pool swim checked (2026-10-09, from the saved
+  streams), the six WORK intervals sum to 1,610 s, and the `distance`
+  stream holds 1,489 s of movement in total, equal to the activity's
+  `moving_time`. The first WORK interval holds 499 s of movement in its
+  520 s. So each interval's pace per 100 m is slower than the activity's,
+  and the activity pace can be faster than every rep. A run interval's
+  `moving_time` does leave stops out (one fixture lap: 237 s of 311 s). The
+  tools keep both figures (the activity's matches intervals.icu's own
+  `pace`), and the interval and lap texts say that swim paces include the
+  rests.
+- Open-water swims: `lengths`, `pool_length` and `average_step_length` are
+  null. `average_cadence` and `average_stride` are set from a summary rate
+  (there is no `cadence` stream). Their intervals were 100 m auto-laps with
+  cadence null.
+
+**Speed basis**
+- The activity's `pace` field is a speed in m/s, despite its name. It
+  equals `distance / moving_time` on all 148 activities with a distance in
+  2026 (runs, pool and open-water swims, rides, a walk).
+- The activity's `average_speed` is the device's figure and differs from
+  it: by a median 9% (up to 19%) on swims and rides, and 0.3% on runs.
+- On intervals, `average_speed` equals `distance / moving_time` (48
+  intervals of two runs, a pool swim and an open-water swim). No interval had
+  `average_speed` without a distance.
+- The tools compute every pace and speed from `distance / moving_time`:
+  pace per km through `paceFromDistanceTime`, and pace per 100 m and km/h
+  through `sportSpeed` (both in `utils/running.ts`). A swim slower than
+  0.3 m/s (`MIN_MOVING_SPEED_MPS`, one broken open-water recording) gets no
+  pace.
+
+**Gear**
+- On 2026-10-08, activity rows and `GET /activity/{id}` still send `gear:
+  { id, name: null, distance: null, primary: null }`.
+- `GET /athlete/0/gear` items also carry `athlete_id` (equal to the
+  activity's `icu_athlete_id`), `activity_filters`, `component`,
+  `component_ids`, `notes`, `purchased`, `time` and `use_elapsed_time`.
+- The gear id on every activity with gear is in that list, and the item's
+  `activities` count matches. `get-activity` and `get-running-summary` read
+  the name from the cached list (10 minutes). When the id is not in the
+  cached list (gear added since it was cached), they read the list once
+  more past the cache. They do not use an item whose `athlete_id` differs
+  from the activity's `icu_athlete_id`.
+## Past windows (2026-10-08, #80, live read-only)
+
+- `GET /athlete/0/wellness?oldest=&newest=` includes both bounds: a read from
+  2026-01-01 to 2026-04-12 returned 102 rows, one per day, each with `ctl` and
+  `atl`. A past day's row is the same in a 7-day read and in a 102-day read.
+  With `fields=`, only the requested keys come back.
+- `GET /athlete/0/activities` reads a date-only `oldest` and `newest` as whole
+  local days: `oldest` and `newest` set to one date returned an activity that
+  started in the evening of that day, and `newest` set to the day before left
+  it out.
+- Wellness has rows after today. A read that ran 7 days past today returned a
+  row for every future day, with `ctl` and `atl`, and with `ctlLoad`/`atlLoad`
+  from planned workouts. These rows are intervals.icu's own projection, not
+  records. `GET /athlete/0/activities` returned `[]` for the same dates. So a
+  look-back window must end today or earlier: `resolveWindowEnd`
+  (`utils/localDate.ts`) refuses a `newest` after today.
+- A past window behaves like a window that ends today. A run-only runway
+  counted back from a past `newest` (234 days, 8 listing requests of at most
+  31 days) and a whole-body wellness read to a past `newest` returned complete
+  data, with no gaps. The cache needs no new rule: `intervalsCacheTtl` keys on
+  the full URL, and a past window builds the same URL shape.

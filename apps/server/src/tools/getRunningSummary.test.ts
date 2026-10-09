@@ -9,25 +9,39 @@ import {
   getActivity,
   getSportSettings,
   type IntervalsActivity,
+  type IntervalsGear,
   type IntervalsInterval,
   type IntervalsSportSettings,
+  listGear,
 } from "../intervalsClient";
 import {
   formatRunningSummaryText,
   getRunningSummaryTool,
   mapRunningSummary,
 } from "./getRunningSummary";
+import { RunningSummaryOutputSchema } from "./outputs";
 
 vi.mock("../intervalsClient", async () => {
   const actual =
     await vi.importActual<typeof import("../intervalsClient")>(
       "../intervalsClient",
     );
-  return { ...actual, getActivity: vi.fn(), getSportSettings: vi.fn() };
+  return {
+    ...actual,
+    getActivity: vi.fn(),
+    getSportSettings: vi.fn(),
+    listGear: vi.fn(),
+  };
 });
 
 const mockedGetActivity = vi.mocked(getActivity);
 const mockedGetSportSettings = vi.mocked(getSportSettings);
+const mockedListGear = vi.mocked(listGear);
+
+/** Synthetic gear list: the run fixture's gear id, owned by its athlete "i0". */
+const GEAR: IntervalsGear[] = [
+  { id: "71459", name: "Trainer A", type: "Shoes", athlete_id: "i0" },
+];
 
 const runActivity = activityFixture as unknown as IntervalsActivity;
 const sportSettingsRun =
@@ -37,6 +51,31 @@ const sportSettingsRun =
 const runActivityWithIntervals: IntervalsActivity = {
   ...runActivity,
   icu_intervals: activityIntervalsFixture.icu_intervals,
+};
+
+/** The run with a synthetic LTHR_UP and HR recovery, in intervals.icu's shapes. */
+const runWithAchievement: IntervalsActivity = {
+  ...runActivityWithIntervals,
+  icu_achievements: [
+    {
+      id: "lthr",
+      type: "LTHR_UP",
+      message: "1h at 172 bpm",
+      value: 172,
+      secs: null,
+      point: { start_index: 3038, end_index: 6638, secs: 3600, value: 172 },
+    },
+  ],
+  icu_hrr: {
+    start_index: 1200,
+    end_index: 1260,
+    start_time: 1200,
+    end_time: 1260,
+    start_bpm: 170,
+    end_bpm: 140,
+    average_watts: null,
+    hrr: 30,
+  },
 };
 
 const multilapActivityWithIntervals: IntervalsActivity = {
@@ -89,6 +128,8 @@ describe("mapRunningSummary", () => {
     expect(summary.hr_zone_note).toBeNull();
     expect(summary.laps).toHaveLength(2);
     expect(summary.laps[0]?.lap_index).toBe(1);
+    // A run's laps carry pace per km, never per 100 m.
+    expect(summary.laps[0]?.pace_min_per_100m).toBeNull();
 
     // No power block anywhere in the output.
     expect(summary).not.toHaveProperty("power");
@@ -183,11 +224,25 @@ describe("formatRunningSummaryText", () => {
 
     expect(text).toContain("Cadence assessment: moderate");
     expect(text).toContain("Dynamics assessment: VO high");
-    expect(text).toContain("HR zones: Z1 0-142");
+    expect(text).toContain("HR zones: Z1 up to 142");
     expect(text).toContain("Laps:");
     expect(text).toContain("(16 more: get-activity-laps lists all 36)");
     expect(text).not.toContain("🏃");
     expect(text).not.toContain("Strava");
+  });
+
+  it("prints the achievements after the metrics and the HR recovery after the load", () => {
+    const lines = formatRunningSummaryText(
+      mapRunningSummary(runWithAchievement, sportSettingsRun),
+    ).split("\n");
+
+    expect(lines[2]).toBe(
+      "Achievements: Run LTHR up: 172 bpm estimated (1h at 172 bpm)",
+    );
+    expect(lines[3]).toMatch(/^Load: /);
+    expect(lines[4]).toBe(
+      "HR recovery: 170 to 140 bpm in 60 s (drop 30 bpm), from 20:00",
+    );
   });
 
   it("prints feel with intervals.icu's scale, so 1 does not read as the worst", () => {
@@ -228,6 +283,42 @@ describe("getRunningSummaryTool.execute", () => {
   beforeEach(() => {
     mockedGetActivity.mockReset();
     mockedGetSportSettings.mockReset();
+    mockedListGear.mockReset();
+    mockedListGear.mockResolvedValue(GEAR);
+  });
+
+  it("names the gear and reports achievements and HR recovery", async () => {
+    mockedGetActivity.mockResolvedValueOnce(runWithAchievement);
+    mockedGetSportSettings.mockResolvedValueOnce(sportSettingsRun);
+
+    const result = await getRunningSummaryTool.execute(
+      { id: "i189807578" },
+      "key",
+    );
+
+    expect(mockedListGear).toHaveBeenCalledWith("key");
+    expect(result.structuredContent?.gear_name).toBe("Trainer A");
+    expect(result.content[0]?.text).toContain("Gear: Trainer A [71459]");
+    expect(result.structuredContent?.achievements).toHaveLength(1);
+    expect(result.structuredContent?.hr_recovery?.drop_bpm).toBe(30);
+    expect(
+      RunningSummaryOutputSchema.safeParse(result.structuredContent).success,
+    ).toBe(true);
+  });
+
+  it("keeps the gear id alone when the gear read fails", async () => {
+    mockedGetActivity.mockResolvedValueOnce(runActivityWithIntervals);
+    mockedGetSportSettings.mockResolvedValueOnce(sportSettingsRun);
+    mockedListGear.mockRejectedValueOnce(handledRateLimit("listGear"));
+
+    const result = await getRunningSummaryTool.execute(
+      { id: "i189807578" },
+      "key",
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(result.structuredContent?.gear_name).toBeNull();
+    expect(result.content[0]?.text).toContain("Gear: 71459");
   });
 
   it("fetches the activity with intervals and Run sport settings, returning structured content", async () => {
@@ -260,6 +351,8 @@ describe("getRunningSummaryTool.execute", () => {
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain("Ride");
     expect(result.content[0]?.text).toContain("get-activity");
+    // Rejected before the gear read.
+    expect(mockedListGear).not.toHaveBeenCalled();
   });
 
   it("degrades to a null hr_zone_summary when sport settings fail, without failing the call", async () => {

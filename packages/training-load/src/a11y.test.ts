@@ -101,6 +101,23 @@ describe("buildLoadA11y", () => {
     );
   });
 
+  it("calls a past window's last week partial, cut off at the window's end (#80)", () => {
+    const a11y = buildLoadA11y(
+      data(
+        [
+          week("2026-03-30", 20),
+          week("2026-04-06", 6, { inProgress: true, trendKm: null }),
+        ],
+        { endDate: "2026-04-08", endsToday: false },
+      ),
+    );
+    expect(a11y.desc).toContain(
+      "The week of 6 Apr 2026 is partial: the window ends on 8 Apr 2026, so its distance and load count only the days up to then.",
+    );
+    expect(a11y.desc).toContain("; a hollow point marks the partial week.");
+    expect(a11y.desc).not.toContain("in progress");
+  });
+
   it("drops the trend clause when the trend line is hidden (ljcl/strava-mcp#328)", () => {
     const a11y = buildLoadA11y(
       data([week("2026-06-01", 20), week("2026-06-08", 30)]),

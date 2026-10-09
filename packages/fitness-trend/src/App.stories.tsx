@@ -11,6 +11,7 @@ import {
   mockBaseArgs,
   mockFitnessTrendData,
   mockNoLoadData,
+  mockPastFitnessTrendData,
   mockRestProjectionData,
   mockRunOnlyFitnessTrendData,
 } from "./__fixtures__/trend";
@@ -736,6 +737,79 @@ export const NoRecordedLoad = meta.story({
     await expect(
       canvas.getByText(/No training load recorded in this window/),
     ).toBeVisible();
+  },
+});
+
+/** What the host was asked for a past window (#80): `buildBaseArgs` with `newest`. */
+const pastBaseArgs = { ...mockBaseArgs, newest: "2026-06-28" };
+
+/** Every call `recordingApp` answered, to prove the other scope keeps `newest`. */
+let recordedCalls: Array<Record<string, unknown> | undefined> = [];
+const recordingApp = {
+  callServerTool: async (...call: Parameters<CallServerTool>) => {
+    recordedCalls.push(call[0].arguments);
+    return toggleApp!.callServerTool(...call);
+  },
+  getHostCapabilities: () => undefined,
+} as unknown as ReturnType<typeof useApp>["app"];
+
+/**
+ * A past window (#80): the server sent no projection and no taper, so the
+ * legend has no forward key, and the card shows the past-window note. The
+ * other scope is fetched for the same `newest`.
+ */
+export const PastWindow = meta.story({
+  args: {
+    app: recordingApp,
+    data: mockPastFitnessTrendData,
+    baseArgs: pastBaseArgs,
+    initialRunOnly: false,
+  },
+  beforeEach: () => {
+    recordedCalls = [];
+  },
+  play: async ({ canvas, userEvent }) => {
+    await expect(canvas.getByText(/It is a past block/)).toBeVisible();
+    // The subtitle spells out the window's year.
+    await expect(
+      canvas.getByText(buildTrendSubtitle(mockPastFitnessTrendData)),
+    ).toBeVisible();
+    await expect(canvas.getByText(/– 28 Jun 2026$/)).toBeVisible();
+    await expect(
+      canvas.queryByRole("button", { name: "Toggle Rest projection" }),
+    ).toBeNull();
+    await expect(
+      canvas.queryByRole("button", { name: "Toggle Taper plan" }),
+    ).toBeNull();
+    await expect(canvas.queryByText(/Plan to/)).toBeNull();
+
+    await userEvent.click(canvas.getByRole("button", { name: "Runs only" }));
+    await waitFor(() => expect(recordedCalls).toHaveLength(1));
+    await expect(recordedCalls[0]).toEqual({ ...pastBaseArgs, runOnly: true });
+  },
+});
+
+export const MobilePastWindow = meta.story({
+  args: {
+    app: null,
+    data: mockPastFitnessTrendData,
+    baseArgs: pastBaseArgs,
+    initialRunOnly: false,
+    mode: "mobile",
+  },
+  globals: {
+    viewport: { value: "claudeIosCard" },
+  },
+  parameters: { layout: "fullscreen" },
+  decorators: [
+    (StoryFn) => (
+      <MobileCardShell>
+        <StoryFn />
+      </MobileCardShell>
+    ),
+  ],
+  play: async ({ canvas }) => {
+    await expect(canvas.getByText(/It is a past block/)).toBeVisible();
   },
 });
 

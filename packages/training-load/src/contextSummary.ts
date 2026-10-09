@@ -2,6 +2,7 @@ import {
   countWarningWeeks,
   describeLoadScope,
   formatCurrentFitness,
+  isPastWindow,
 } from "./normalize";
 import { type TrainingLoadData } from "./types";
 
@@ -35,10 +36,14 @@ export function buildTrainingLoadContextSummary(
     );
   }
 
+  // A past window's last week is cut off at its end date, not in progress.
+  const cutOff = isPastWindow(data) ? data.endDate : undefined;
   const inProgress = data.weeks.find((w) => w.inProgress);
   if (inProgress) {
     parts.push(
-      `The week of ${inProgress.weekStarting} is still in progress, so its volume and load are only the days so far.`,
+      cutOff
+        ? `The week of ${inProgress.weekStarting} is partial: the window ends on ${cutOff}, so its volume and load count only the days up to then.`
+        : `The week of ${inProgress.weekStarting} is still in progress, so its volume and load are only the days so far.`,
     );
   }
 

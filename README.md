@@ -6,7 +6,7 @@
 
 A single-user remote MCP server for intervals.icu run data and analysis, with interactive MCP Apps.
 
-All twenty text tools and every MCP App talk to intervals.icu directly and
+All text tools and every MCP App talk to intervals.icu directly and
 are verified against a real account; see [docs/tools.md](docs/tools.md) for
 the full catalog. The presence of `INTERVALS_API_KEY` is checked at startup
 and reported on `/health`.
@@ -185,7 +185,7 @@ Any client that speaks [Streamable HTTP](https://modelcontextprotocol.io/docs/co
 ## Tools
 
 The full tool catalog, prompts, permission behaviour, and example requests
-live in [docs/tools.md](docs/tools.md). All twenty text tools and every MCP
+live in [docs/tools.md](docs/tools.md). All text tools and every MCP
 App's data handler talk to intervals.icu directly.
 
 ## Documentation

@@ -1,6 +1,7 @@
 import { formatShortDate } from "@intervals-mcp/data";
 import { describe, expect, it } from "vitest";
 import {
+  mockPastTrainingLoadData,
   mockRunOnlyTrainingLoadData,
   mockTrainingLoadData,
 } from "./__fixtures__/weeks";
@@ -14,6 +15,8 @@ import {
   countWarningWeeks,
   formatCurrentFitness,
   formatHours,
+  isPastWindow,
+  partialWeekWord,
 } from "./normalize";
 import { type WeekSummary } from "./types";
 
@@ -53,6 +56,33 @@ describe("buildDataArgs", () => {
 
   it("defaults to 84 days of whole-body load, as the view tool does", () => {
     expect(buildDataArgs({})).toEqual({ days: 84, runOnly: false });
+  });
+
+  it("carries newest, so the data tool reads the same past window (#80)", () => {
+    expect(buildDataArgs({ newest: "2026-04-12" })).toEqual({
+      days: 84,
+      runOnly: false,
+      newest: "2026-04-12",
+    });
+    // No key at all without one: the data tool then ends the window today.
+    expect(buildDataArgs({ days: 28 })).not.toHaveProperty("newest");
+  });
+});
+
+describe("isPastWindow", () => {
+  it("is true only when the payload says the window ends before today", () => {
+    expect(isPastWindow({ endsToday: false })).toBe(true);
+    expect(isPastWindow({ endsToday: true })).toBe(false);
+    // Older payloads carry no endsToday: they ended today.
+    expect(isPastWindow({})).toBe(false);
+  });
+});
+
+describe("partialWeekWord", () => {
+  it("calls the partial week in progress unless the window is past", () => {
+    expect(partialWeekWord({ endsToday: true })).toBe("in progress");
+    expect(partialWeekWord({})).toBe("in progress");
+    expect(partialWeekWord({ endsToday: false })).toBe("partial");
   });
 });
 
@@ -236,8 +266,15 @@ describe("buildLoadRows", () => {
       load: 50,
       loadComplete: null,
       loadSoFar: 50,
+      partialLabel: "in progress",
     });
     expect(rows.map((r) => r.loadComplete)).toEqual([240, null]);
+    expect(rows[0]!.partialLabel).toBeNull();
+  });
+
+  it("labels a past window's last week partial, not in progress (#80)", () => {
+    const rows = buildLoadRows([complete, partial], false);
+    expect(rows.map((r) => r.partialLabel)).toEqual([null, "partial"]);
   });
 
   it("keeps the week's own fields for the tooltip", () => {
@@ -321,5 +358,32 @@ describe("buildLoadSubtitle", () => {
     expect(
       buildLoadSubtitle({ ...mockTrainingLoadData, days: 84, weeks: [] }),
     ).toBe("Last 84 days");
+  });
+
+  it("ends a past window on its last day, year included", () => {
+    expect(buildLoadSubtitle(mockPastTrainingLoadData)).toBe(
+      `${mockPastTrainingLoadData.weeks.length} weeks · ${formatShortDate(
+        mockPastTrainingLoadData.weeks[0]!.weekStarting,
+      )} – 24 Jun 2026`,
+    );
+  });
+
+  it("names the start's year when a past window crosses one", () => {
+    const crossing = {
+      ...mockPastTrainingLoadData,
+      weeks: [
+        { ...mockPastTrainingLoadData.weeks[0]!, weekStarting: "2025-12-29" },
+        ...mockPastTrainingLoadData.weeks.slice(1),
+      ],
+    };
+    expect(buildLoadSubtitle(crossing)).toBe(
+      `${crossing.weeks.length} weeks · 29 Dec 2025 – 24 Jun 2026`,
+    );
+  });
+
+  it("names a past window's last day when no weeks came back", () => {
+    expect(
+      buildLoadSubtitle({ ...mockPastTrainingLoadData, days: 87, weeks: [] }),
+    ).toBe("87 days to 24 Jun 2026");
   });
 });

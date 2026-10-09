@@ -81,6 +81,47 @@ const IntervalsIntervalSchema = z
 
 export type IntervalsInterval = z.infer<typeof IntervalsIntervalSchema>;
 
+/** One `icu_achievements` entry (OpenAPI `IcuAchievement`). Only LTHR_UP
+ * has been seen live (docs/api-notes.md), so every field is optional. */
+const IntervalsAchievementSchema = z
+  .object({
+    id: z.string().nullable().optional(),
+    type: z.string().nullable().optional(),
+    message: z.string().nullable().optional(),
+    value: z.number().nullable().optional(),
+    secs: z.number().nullable().optional(),
+    distance: z.number().nullable().optional(),
+    pace: z.number().nullable().optional(),
+    watts: z.number().nullable().optional(),
+    /** The curve point behind the achievement; `secs` is the effort length. */
+    point: z
+      .object({
+        start_index: z.number().nullable().optional(),
+        end_index: z.number().nullable().optional(),
+        secs: z.number().nullable().optional(),
+        value: z.number().nullable().optional(),
+      })
+      .passthrough()
+      .nullable()
+      .optional(),
+  })
+  .passthrough();
+
+/** `icu_hrr` (OpenAPI `HRRecovery`): a 60 s heart-rate recovery window.
+ * The times are `time` stream seconds; the indexes are sample indexes. */
+const IntervalsHrrSchema = z
+  .object({
+    start_index: z.number().nullable().optional(),
+    end_index: z.number().nullable().optional(),
+    start_time: z.number().nullable().optional(),
+    end_time: z.number().nullable().optional(),
+    start_bpm: z.number().nullable().optional(),
+    end_bpm: z.number().nullable().optional(),
+    average_watts: z.number().nullable().optional(),
+    hrr: z.number().nullable().optional(),
+  })
+  .passthrough();
+
 // --- Activity schema ---
 // intervals.icu activities carry hundreds of fields (running dynamics,
 // power-meter data, weather, etc.); only the fields a tool reads are typed,
@@ -153,6 +194,19 @@ const IntervalsActivitySchema = z
     icu_warmup_time: z.number().nullable().optional(),
     icu_average_watts: z.number().nullable().optional(),
     icu_ftp: z.number().nullable().optional(),
+    /** Pool swims only: the length count and the pool length (m). */
+    lengths: z.number().nullable().optional(),
+    pool_length: z.number().nullable().optional(),
+    /** Bests and threshold rises intervals.icu marked; null when none.
+     * `.catch(null)`: a malformed entry must not fail every activity read. */
+    icu_achievements: z
+      .array(IntervalsAchievementSchema)
+      .nullable()
+      .optional()
+      .catch(null),
+    /** Heart-rate recovery; null when intervals.icu found none. Same
+     * `.catch(null)` as `icu_achievements`. */
+    icu_hrr: IntervalsHrrSchema.nullable().optional().catch(null),
     /** Only present when fetched via `getActivity(..., { intervals: true })`. */
     icu_intervals: z.array(IntervalsIntervalSchema).optional(),
   })
@@ -216,6 +270,9 @@ const IntervalsGearSchema = z
     // account where the API reports it that way instead.
     retired: z.union([z.string(), z.boolean()]).nullable().optional(),
     reminders: z.array(IntervalsGearReminderSchema).optional(),
+    /** The owning athlete, equal to an activity's `icu_athlete_id`
+     * (docs/api-notes.md). */
+    athlete_id: z.string().nullable().optional(),
   })
   .passthrough();
 
@@ -270,11 +327,31 @@ const IntervalsSportSettingsSchema = z
     id: z.union([z.string(), z.number()]).nullable().optional(),
     athlete_id: z.string().nullable().optional(),
     types: z.array(z.string()).optional(),
+    /** True on intervals.icu's default group, which covers every type that
+     * no other group lists (verified 2026-10-08). */
+    other: z.boolean().nullable().optional(),
     lthr: z.number().nullable().optional(),
     max_hr: z.number().nullable().optional(),
     hr_zones: z.array(z.number()).nullable().optional(),
+    /** Display only, so a bad value never fails the whole parse (and with it
+     * every caller of the settings): a null name stays null, and any other
+     * bad value gives null. The same for `pace_units` and `pace_zone_names`. */
+    hr_zone_names: z
+      .array(z.string().nullable())
+      .nullable()
+      .optional()
+      .catch(null),
+    /** A speed in m/s, not a pace (verified 2026-10-08). */
     threshold_pace: z.number().nullable().optional(),
+    /** A display setting only: MINS_KM, SECS_100M, ... */
+    pace_units: z.string().nullable().optional().catch(null),
+    /** Ascending percentages of threshold speed; 999 is the open top. */
     pace_zones: z.array(z.number()).nullable().optional(),
+    pace_zone_names: z
+      .array(z.string().nullable())
+      .nullable()
+      .optional()
+      .catch(null),
     ftp: z.number().nullable().optional(),
     warmup_time: z.number().nullable().optional(),
   })
@@ -283,10 +360,11 @@ const IntervalsSportSettingsSchema = z
 export type IntervalsSportSettings = z.infer<
   typeof IntervalsSportSettingsSchema
 >;
+const IntervalsSportSettingsListSchema = z.array(IntervalsSportSettingsSchema);
 
 // --- Pace curve schemas ---
-// Verified against __fixtures__/intervals/pace-curves.json and
-// activity-pace-curves.json (2026-09-25, live probe).
+// Verified against __fixtures__/intervals/pace-curves.json (2026-09-25) and
+// pace-curves-submax.json (2026-10-08), live probes.
 const IntervalsPaceModelSchema = z
   .object({
     type: z.string().nullable().optional(),
@@ -309,12 +387,26 @@ const IntervalsPaceCurveListItemSchema = z
     days: z.number().nullable().optional(),
     /** Metres, index-aligned with `values` and `activity_id`. */
     distance: z.array(z.number()),
-    /** Best time in seconds at the matching `distance` index, from the
-     * recorded time stream (a moving-time style curve, not elapsed time). */
+    /** Best time in seconds at the matching `distance` index: elapsed time
+     * across the fastest stretch, a stop inside it included (verified
+     * 2026-10-08, docs/api-notes.md). */
     values: z.array(z.number().nullable()),
     /** The `i`-prefixed activity id that set the best time at the matching
      * index, or `null` where no activity reaches that distance. */
     activity_id: z.array(z.string().nullable()),
+    /** With `subMaxEfforts=N`: N rows, row r the (r+2)th best time (s) at
+     * each `distance` index, each from a different activity. A row is
+     * truncated, not null-padded, where fewer activities reach the distance
+     * (verified 2026-10-08, docs/api-notes.md). */
+    submax_values: z
+      .array(z.array(z.number().nullable()))
+      .nullable()
+      .optional(),
+    /** The activity ids for `submax_values`, in the same shape. */
+    submax_activity_id: z
+      .array(z.array(z.string().nullable()))
+      .nullable()
+      .optional(),
     paceModels: z.array(IntervalsPaceModelSchema).nullable().optional(),
   })
   .passthrough();
@@ -334,6 +426,37 @@ const IntervalsPaceCurveActivityRefSchema = z
   })
   .passthrough();
 
+/** One named curve (`90d`, `1y`, ...) from `GET /athlete/{id}/hr-curves.json`:
+ * index-aligned `secs`/`values`/`activity_id` arrays (verified 2026-10-08). */
+const IntervalsHrCurveListItemSchema = z
+  .object({
+    id: z.string(),
+    label: z.string().nullable().optional(),
+    start_date_local: z.string().nullable().optional(),
+    end_date_local: z.string().nullable().optional(),
+    days: z.number().nullable().optional(),
+    /** Durations in seconds on intervals.icu's fixed grid, up to the
+     * longest activity in the window. */
+    secs: z.array(z.number()),
+    /** Best average heart rate (bpm) over the matching duration. */
+    values: z.array(z.number().nullable()),
+    /** The `i`-prefixed activity id that set the matching best. */
+    activity_id: z.array(z.string().nullable()),
+  })
+  .passthrough();
+
+const IntervalsAthleteHrCurvesSchema = z
+  .object({
+    list: z.array(IntervalsHrCurveListItemSchema),
+    // The same map shape as the pace curves (verified 2026-10-08).
+    activities: z.record(z.string(), IntervalsPaceCurveActivityRefSchema),
+  })
+  .passthrough();
+
+export type IntervalsAthleteHrCurves = z.infer<
+  typeof IntervalsAthleteHrCurvesSchema
+>;
+
 const IntervalsAthletePaceCurvesSchema = z
   .object({
     list: z.array(IntervalsPaceCurveListItemSchema),
@@ -344,40 +467,6 @@ const IntervalsAthletePaceCurvesSchema = z
 export type IntervalsAthletePaceCurves = z.infer<
   typeof IntervalsAthletePaceCurvesSchema
 >;
-
-/** One activity's curve from `GET /athlete/{numericId}/activity-pace-curves.json`.
- * `secs` is index-aligned with the response's own `distances` array but
- * truncated (not null-padded) once the activity's own distance runs out:
- * a 6 km run against a `distances` filter of `1000,5000,10000` comes back
- * with `secs.length === 2` (1000 m and 5000 m only), never a trailing
- * `null` for 10000 m. */
-const IntervalsActivityPaceCurveEntrySchema = z
-  .object({
-    id: z.string(),
-    start_date_local: z.string().nullable().optional(),
-    weight: z.number().nullable().optional(),
-    secs: z.array(z.number().nullable()),
-  })
-  .passthrough();
-
-const IntervalsActivityPaceCurvesSchema = z
-  .object({
-    distances: z.array(z.number()),
-    gap: z.boolean().nullable().optional(),
-    curves: z.array(IntervalsActivityPaceCurveEntrySchema),
-  })
-  .passthrough();
-
-export type IntervalsActivityPaceCurves = z.infer<
-  typeof IntervalsActivityPaceCurvesSchema
->;
-
-/** Only the field {@link resolveNumericAthleteId} is allowed to read off
- * `GET /athlete/0`; the real response also carries `icu_api_key` and must
- * never be logged or stored in full. */
-const IntervalsAthleteSelfSchema = z
-  .object({ id: z.union([z.string(), z.number()]) })
-  .passthrough();
 
 /**
  * An intervals.icu API failure that {@link handleApiError} has already
@@ -612,6 +701,103 @@ export async function searchActivities(
   );
 }
 
+/** Query for {@link searchActivitiesByIntervals}; every field is sent. */
+export interface IntervalsIntervalSearchQuery {
+  /** Shortest matching interval, s. */
+  minSecs: number;
+  /** Longest matching interval, s. */
+  maxSecs: number;
+  /** Lowest interval `intensity`, whole %. */
+  minIntensity: number;
+  /** Highest interval `intensity`, whole %. */
+  maxIntensity: number;
+  /** Fewest matching intervals. */
+  minReps: number;
+  /** Most matching intervals. */
+  maxReps: number;
+  /** At most 100 (a larger value is a 422). */
+  limit: number;
+}
+
+/**
+ * Finds activities with intervals in a time and intensity band, across the
+ * athlete's whole history and every sport, via
+ * `GET /athlete/{id}/activities/interval-search`. Full Activity rows, newest
+ * first, without `icu_intervals`. It also matches recovery intervals, and
+ * its count rule does not follow the current intervals, so treat the rows
+ * as candidates (verified 2026-10-08, docs/api-notes.md). Sends no `type`:
+ * on the verified account only no type (or `HR`) returned rows.
+ */
+export async function searchActivitiesByIntervals(
+  apiKey: string,
+  query: IntervalsIntervalSearchQuery,
+): Promise<IntervalsActivity[]> {
+  requireApiKey(apiKey);
+  const context = `searchActivitiesByIntervals for ${query.minSecs}-${query.maxSecs} s`;
+  // The seven named fields only: a caller's wider object (the search band
+  // also carries `intensityUsed`) must not leak extra query keys.
+  const params = {
+    minSecs: query.minSecs,
+    maxSecs: query.maxSecs,
+    minIntensity: query.minIntensity,
+    maxIntensity: query.maxIntensity,
+    minReps: query.minReps,
+    maxReps: query.maxReps,
+    limit: query.limit,
+  };
+  let data: unknown;
+  try {
+    const response = await intervalsApi.get<unknown>(
+      athletePath("/activities/interval-search"),
+      { headers: authHeaders(apiKey), params },
+    );
+    data = response.data;
+  } catch (error) {
+    handleApiError(error, context);
+  }
+  return parseOrThrow(IntervalsActivitiesResponseSchema, data, context).sort(
+    (a, b) =>
+      a.start_date_local < b.start_date_local
+        ? 1
+        : a.start_date_local > b.start_date_local
+          ? -1
+          : 0,
+  );
+}
+
+/**
+ * Reads several activities in one request via
+ * `GET /athlete/{athleteId}/activities/{ids}` (comma-separated). Pass the
+ * `i`-prefixed ids the API returns: a bare numeric id is dropped. Unknown
+ * and repeated ids are dropped with no error, and the rows do not come
+ * back in request order, so key the result by `id`.
+ * `options.intervals: true` adds `icu_intervals` and `icu_groups` to every
+ * row. An empty `ids` returns `[]` with no request.
+ */
+export async function getActivitiesByIds(
+  apiKey: string,
+  ids: readonly string[],
+  options: { intervals?: boolean } = {},
+): Promise<IntervalsActivity[]> {
+  requireApiKey(apiKey);
+  if (ids.length === 0) return [];
+  const context = `getActivitiesByIds for ${ids.length} ids`;
+  const params: Record<string, string | number | boolean> = {};
+  if (options.intervals) params.intervals = true;
+
+  let data: unknown;
+  try {
+    const response = await intervalsApi.get<unknown>(
+      athletePath(`/activities/${ids.join(",")}`),
+      { headers: authHeaders(apiKey), params },
+    );
+    data = response.data;
+  } catch (error) {
+    handleApiError(error, context);
+  }
+  return parseOrThrow(IntervalsActivitiesResponseSchema, data, context);
+}
+
 /**
  * Fetches a single activity. `options.intervals: true` adds
  * `?intervals=true`, which populates the activity's `icu_intervals` field
@@ -663,9 +849,10 @@ export interface IntervalsActivityUpdate {
  * wrapped in {@link IntervalsApiError}.
  *
  * Invalidates the activity's own cached reads, the athlete's activities
- * list, and the gear list in a `finally`, whatever the outcome: a failed PUT
- * (a 5xx, a network fault, a timeout) may still have mutated state
- * server-side, and `fetchClient.ts`'s automatic write invalidation only
+ * list, the gear list, and the athlete pace curves (their `activities` map
+ * carries each ranked run's name, which `get-best-efforts` reports) in a
+ * `finally`, whatever the outcome: a failed PUT (a 5xx, a network fault, a
+ * timeout) may still have mutated state server-side, and `fetchClient.ts`'s automatic write invalidation only
  * fires on a successful response, so without this a caller reading right
  * after a failed write could keep being served the pre-write cache entry.
  */
@@ -689,6 +876,7 @@ export async function updateActivity(
     intervalsApi.invalidatePath(`/activity/${id}`);
     intervalsApi.invalidatePath(athletePath("/activities"));
     intervalsApi.invalidatePath(athletePath("/gear"));
+    intervalsApi.invalidatePath(athletePath("/pace-curves.json"));
   }
   return parseOrThrow(IntervalsActivitySchema, data, context);
 }
@@ -818,21 +1006,47 @@ export async function getSportSettings(
 }
 
 /**
- * Fetches the athlete's own pace curves (best time per distance, across one
- * or more named windows in one request). Works with athlete id `0` (verified
- * 2026-09-25), unlike {@link getActivityPaceCurves} below.
+ * Fetches every sport settings group in one request (verified 2026-10-08:
+ * one entry per group, each the same shape as `/sport-settings/{type}`).
+ * `get-athlete-zones` matches its `sport` against each group's `types`.
  */
-export async function getAthletePaceCurves(
+export async function listSportSettings(
   apiKey: string,
-  options: { type: string; curves: string[] },
-): Promise<IntervalsAthletePaceCurves> {
+): Promise<IntervalsSportSettings[]> {
   requireApiKey(apiKey);
-  const context = `getAthletePaceCurves for ${options.curves.join(",")}`;
+  const context = "listSportSettings";
 
   let data: unknown;
   try {
     const response = await intervalsApi.get<unknown>(
-      athletePath("/pace-curves.json"),
+      athletePath("/sport-settings"),
+      { headers: authHeaders(apiKey) },
+    );
+    data = response.data;
+  } catch (error) {
+    handleApiError(error, context);
+  }
+  return parseOrThrow(IntervalsSportSettingsListSchema, data, context);
+}
+
+/**
+ * Fetches the athlete's best heart rate curves for one sport settings
+ * group: `type` picks the group, not one activity type. Works with athlete
+ * id `0`, and `f1`/`f2`/`f3` are not needed, although the spec marks them
+ * as required (verified 2026-10-08). A window with no activities is left
+ * out of `list`.
+ */
+export async function getAthleteHrCurves(
+  apiKey: string,
+  options: { type: string; curves: string[] },
+): Promise<IntervalsAthleteHrCurves> {
+  requireApiKey(apiKey);
+  const context = `getAthleteHrCurves for ${options.curves.join(",")}`;
+
+  let data: unknown;
+  try {
+    const response = await intervalsApi.get<unknown>(
+      athletePath("/hr-curves.json"),
       {
         headers: authHeaders(apiKey),
         params: { type: options.type, curves: options.curves.join(",") },
@@ -842,100 +1056,40 @@ export async function getAthletePaceCurves(
   } catch (error) {
     handleApiError(error, context);
   }
-  return parseOrThrow(IntervalsAthletePaceCurvesSchema, data, context);
+  return parseOrThrow(IntervalsAthleteHrCurvesSchema, data, context);
 }
 
 /**
- * Extracts a usable numeric athlete id from `INTERVALS_ATHLETE_ID` without a
- * network call: a bare digit string returned as-is, an `i`-prefixed digit
- * string with the prefix stripped (the prefixed form itself 403s against
- * `activity-pace-curves.json`, verified 2026-09-25). `"0"` (the "self"
- * default) and anything else unrecognised return `null`, meaning "resolve via
- * `/athlete/0`".
+ * Fetches the athlete's own pace curves (best time per distance, across one
+ * or more named windows in one request). Works with athlete id `0` (verified
+ * 2026-09-25). `subMaxEfforts` above 0 adds that many ranks below the best,
+ * each from another activity, in the same response (`submax_values`,
+ * verified 2026-10-08); 0 or absent sends no parameter, so the URL and its
+ * cache key stay the plain read.
  */
-function numericIdFromConfigured(configured: string): string | null {
-  if (configured === "0") return null;
-  if (/^\d+$/.test(configured)) return configured;
-  const match = /^i(\d+)$/.exec(configured);
-  return match ? match[1]! : null;
-}
-
-/** Per-process cache for {@link resolveNumericAthleteId}, keyed by API key
- * (never logged) so a burst of calls costs at most one extra request. */
-const numericAthleteIdCache = new Map<string, string>();
-
-/**
- * Resolves the bare numeric athlete id `activity-pace-curves.json` requires.
- * Unlike most athlete-scoped endpoints, it 403s on id `0` (and on an
- * `i`-prefixed id), verified 2026-09-25 against a real account.
- *
- * Uses `INTERVALS_ATHLETE_ID` directly when it is already usable (see
- * {@link numericIdFromConfigured}); otherwise fetches `GET /athlete/0` and
- * keeps only the numeric `id` field. That response also carries
- * `icu_api_key` and is never logged, stored, or returned in full: only the
- * resolved id string ever leaves this function.
- */
-export async function resolveNumericAthleteId(apiKey: string): Promise<string> {
-  const direct = numericIdFromConfigured(getIntervalsAthleteId());
-  if (direct) return direct;
-
-  const cached = numericAthleteIdCache.get(apiKey);
-  if (cached) return cached;
-
-  requireApiKey(apiKey);
-  const context = "resolveNumericAthleteId";
-  let data: unknown;
-  try {
-    const response = await intervalsApi.get<unknown>("/athlete/0", {
-      headers: authHeaders(apiKey),
-    });
-    data = response.data;
-  } catch (error) {
-    handleApiError(error, context);
-  }
-  const self = parseOrThrow(IntervalsAthleteSelfSchema, data, context);
-  const numericId = String(self.id);
-  numericAthleteIdCache.set(apiKey, numericId);
-  return numericId;
-}
-
-/**
- * Fetches per-activity pace curves across a date window: each returned
- * activity's best time at every requested distance it reached. Requires the
- * bare numeric athlete id ({@link resolveNumericAthleteId}); athlete id `0`
- * and an `i`-prefixed id both 403 here (verified 2026-09-25), unlike
- * {@link getAthletePaceCurves} above.
- */
-export async function getActivityPaceCurves(
+export async function getAthletePaceCurves(
   apiKey: string,
-  options: {
-    oldest: string;
-    newest: string;
-    type: string;
-    distances: number[];
-  },
-): Promise<IntervalsActivityPaceCurves> {
+  options: { type: string; curves: string[]; subMaxEfforts?: number },
+): Promise<IntervalsAthletePaceCurves> {
   requireApiKey(apiKey);
-  const numericId = await resolveNumericAthleteId(apiKey);
-  const context = `getActivityPaceCurves for ${options.oldest} to ${options.newest}`;
+  const context = `getAthletePaceCurves for ${options.curves.join(",")}`;
+  const params: Record<string, string | number> = {
+    type: options.type,
+    curves: options.curves.join(","),
+  };
+  if (options.subMaxEfforts && options.subMaxEfforts > 0) {
+    params.subMaxEfforts = options.subMaxEfforts;
+  }
 
   let data: unknown;
   try {
     const response = await intervalsApi.get<unknown>(
-      `/athlete/${numericId}/activity-pace-curves.json`,
-      {
-        headers: authHeaders(apiKey),
-        params: {
-          oldest: options.oldest,
-          newest: options.newest,
-          type: options.type,
-          distances: options.distances.join(","),
-        },
-      },
+      athletePath("/pace-curves.json"),
+      { headers: authHeaders(apiKey), params },
     );
     data = response.data;
   } catch (error) {
     handleApiError(error, context);
   }
-  return parseOrThrow(IntervalsActivityPaceCurvesSchema, data, context);
+  return parseOrThrow(IntervalsAthletePaceCurvesSchema, data, context);
 }

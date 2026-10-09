@@ -74,6 +74,9 @@ const { getRacePredictionTool } = await import(
 const { getAthleteStatsTool } = await import(
   "../apps/server/src/tools/getAthleteStats"
 );
+const { getAthleteZonesTool } = await import(
+  "../apps/server/src/tools/getAthleteZones"
+);
 const { getFitnessTrendTool } = await import(
   "../apps/server/src/tools/getFitnessTrend"
 );
@@ -126,6 +129,7 @@ for (const tool of [
   getBestEffortsTool,
   getRacePredictionTool,
   getAthleteStatsTool,
+  getAthleteZonesTool,
   getFitnessTrendTool,
   getTrainingLoadTool,
   getRunningDynamicsTool,
@@ -312,10 +316,16 @@ async function checkGetActivity(): Promise<void> {
         vertical_oscillation_mm: number | null;
       } | null;
       intervals: unknown[] | null;
+      pace_min_per_100m: string | null;
+      speed_kmh: number | null;
+      gear_name: string | null;
+      achievements: unknown[];
+      hr_recovery: unknown;
     };
+    // Whether the gear name resolved, never the name itself.
     ok(
       name,
-      `distance_km=${d.distance_km} cadence_spm=${d.average_cadence_spm} gct_ms=${d.running_dynamics?.stance_time_ms} vo_mm=${d.running_dynamics?.vertical_oscillation_mm} intervals=${d.intervals?.length ?? 0}`,
+      `distance_km=${d.distance_km} cadence_spm=${d.average_cadence_spm} gct_ms=${d.running_dynamics?.stance_time_ms} vo_mm=${d.running_dynamics?.vertical_oscillation_mm} intervals=${d.intervals?.length ?? 0} pace_100m=${d.pace_min_per_100m} speed_kmh=${d.speed_kmh} gear_name_resolved=${d.gear_name != null} achievements=${d.achievements.length} hr_recovery=${d.hr_recovery != null}`,
     );
   } catch (error) {
     fail(name, throwSummary(error));
@@ -608,8 +618,10 @@ async function checkGetAerobicAnalysis(): Promise<void> {
 async function checkGetIntervalAnalysis(): Promise<void> {
   const name = "get-interval-analysis";
   try {
+    // findSimilar adds the interval search and one bulk read on an interval
+    // session, and no request on any other run.
     const result = (await getIntervalAnalysisTool.execute(
-      { id: activityId },
+      { id: activityId, findSimilar: true },
       apiKey,
       NO_PROGRESS,
     )) as {
@@ -625,10 +637,11 @@ async function checkGetIntervalAnalysis(): Promise<void> {
       reps: unknown[];
       source: string;
       confidence: string;
+      similar?: { status: string; sessions: unknown[] };
     };
     ok(
       name,
-      `reps=${d.reps.length} source=${d.source} confidence=${d.confidence}`,
+      `reps=${d.reps.length} source=${d.source} confidence=${d.confidence} similar=${d.similar?.status} sessions=${d.similar?.sessions.length ?? 0}`,
     );
   } catch (error) {
     fail(name, throwSummary(error));
@@ -638,8 +651,9 @@ async function checkGetIntervalAnalysis(): Promise<void> {
 async function checkGetBestEfforts(): Promise<void> {
   const name = "get-best-efforts";
   try {
+    // topN 3 reads the next ranks in the same request (subMaxEfforts, #82).
     const result = (await getBestEffortsTool.execute(
-      { distances: ["5km"], window: "1y", topN: 1 },
+      { distances: ["5km"], window: "1y", topN: 3 },
       apiKey,
       NO_PROGRESS,
     )) as {
@@ -655,8 +669,45 @@ async function checkGetBestEfforts(): Promise<void> {
       string,
       Array<{ time_formatted: string }>
     >;
-    const best5k = bestEfforts["5km"]?.[0];
-    ok(name, `best_5km=${best5k?.time_formatted ?? "none"}`);
+    const fiveK = bestEfforts["5km"] ?? [];
+    ok(
+      name,
+      `best_5km=${fiveK[0]?.time_formatted ?? "none"} ranks_5km=${fiveK.length}`,
+    );
+  } catch (error) {
+    fail(name, throwSummary(error));
+  }
+}
+
+async function checkGetBestEffortsActivity(): Promise<void> {
+  const name = "get-best-efforts (id)";
+  try {
+    const result = (await getBestEffortsTool.execute(
+      { id: activityId, distances: ["1km"], topN: 2 },
+      apiKey,
+      NO_PROGRESS,
+    )) as {
+      structuredContent?: Record<string, unknown>;
+      isError?: boolean;
+      content?: Array<{ text?: unknown }>;
+    };
+    if (result.isError || !result.structuredContent) {
+      fail(name, errorSummary(result));
+      return;
+    }
+    const bestEfforts = result.structuredContent.best_efforts as Record<
+      string,
+      Array<{
+        time_formatted: string;
+        start_km: number | null;
+        stopped_seconds: number | null;
+      }>
+    >;
+    const oneKm = bestEfforts["1km"] ?? [];
+    ok(
+      name,
+      `best_1km=${oneKm[0]?.time_formatted ?? "none"} start_km=${oneKm[0]?.start_km ?? "none"} stopped_s=${oneKm[0]?.stopped_seconds ?? "none"} ranks_1km=${oneKm.length}`,
+    );
   } catch (error) {
     fail(name, throwSummary(error));
   }
@@ -705,10 +756,101 @@ async function checkGetAthleteStats(): Promise<void> {
       fail(name, errorSummary(result));
       return;
     }
+    type Totals = { count: number; moving_time_s: number; load: number };
     const d = result.structuredContent as {
       ytd: { runs: number; distance_km: number };
+      all_sports: Record<
+        string,
+        { total: Totals; by_type: Record<string, Totals> }
+      >;
     };
-    ok(name, `ytd_runs=${d.ytd.runs} ytd_distance_km=${d.ytd.distance_km}`);
+    // Each all-sports total must be the sum of its type rows.
+    for (const [period, totals] of Object.entries(d.all_sports)) {
+      for (const key of ["count", "moving_time_s", "load"] as const) {
+        const sum = Object.values(totals.by_type).reduce(
+          (acc, row) => acc + row[key],
+          0,
+        );
+        if (sum !== totals.total[key]) {
+          fail(
+            name,
+            `${period} ${key}: by_type sum ${sum} != total ${totals.total[key]}`,
+          );
+          return;
+        }
+      }
+    }
+    // Report only, never a failure: the whole-body YTD load should equal the
+    // sum of wellness atlLoad (docs/api-notes.md, "Per-sport totals"). A
+    // fresh upload that wellness has not caught up with, or a Strava stub,
+    // can make it differ.
+    const ytd = d.all_sports.ytd;
+    let matchesWellness = "unknown";
+    try {
+      const { getTimeZone } = await import("../apps/server/src/config");
+      const { getWellness } = await import(
+        "../apps/server/src/intervalsClient"
+      );
+      const { todayLocal } = await import("../apps/server/src/utils/localDate");
+      const { startOfYear } = await import(
+        "../apps/server/src/tools/getAthleteStats"
+      );
+      const today = todayLocal(getTimeZone());
+      const wellness = await getWellness(
+        apiKey,
+        { oldest: startOfYear(today), newest: today },
+        { fields: ["id", "atlLoad"] },
+      );
+      const atlLoadSum = wellness.reduce(
+        (acc, day) => acc + (day.atlLoad ?? 0),
+        0,
+      );
+      matchesWellness = String(Math.round(atlLoadSum) === ytd?.total.load);
+    } catch (error) {
+      matchesWellness = `unknown (${throwSummary(error)})`;
+    }
+    ok(
+      name,
+      `ytd_runs=${d.ytd.runs} ytd_distance_km=${d.ytd.distance_km} ytd_types=${Object.keys(ytd?.by_type ?? {}).length} ytd_load_matches_wellness=${matchesWellness}`,
+    );
+  } catch (error) {
+    fail(name, throwSummary(error));
+  }
+}
+
+async function checkGetAthleteZones(): Promise<void> {
+  const name = "get-athlete-zones";
+  try {
+    const result = (await getAthleteZonesTool.execute(
+      { sport: "Run" },
+      apiKey,
+      NO_PROGRESS,
+    )) as {
+      structuredContent?: Record<string, unknown>;
+      isError?: boolean;
+      content?: Array<{ text?: unknown }>;
+    };
+    if (result.isError || !result.structuredContent) {
+      fail(name, errorSummary(result));
+      return;
+    }
+    const s = result.structuredContent as {
+      hr_zones: unknown[];
+      pace_zones: unknown[];
+      threshold_speed_mps: number | null;
+      hr_bests: unknown[];
+      threshold_checks: {
+        lthr: { status: string };
+        max_hr: { status: string };
+      };
+      warnings: string[];
+    };
+    // Counts and statuses only: LTHR, max HR, zone bounds and heart rate
+    // bests are the athlete's data, not ours to print.
+    ok(
+      name,
+      `hr_zones=${s.hr_zones.length} pace_zones=${s.pace_zones.length} threshold_pace=${s.threshold_speed_mps === null ? "null" : "set"} hr_bests=${s.hr_bests.length} lthr_check=${s.threshold_checks.lthr.status} max_hr_check=${s.threshold_checks.max_hr.status} warnings=${s.warnings.length}`,
+    );
   } catch (error) {
     fail(name, throwSummary(error));
   }
@@ -903,6 +1045,120 @@ async function checkGetTrainingLoadRunOnly(): Promise<void> {
     ok(
       name,
       `source=${d.source} ctl=${d.current?.ctl} atl=${d.current?.atl} tsb=${d.current?.tsb} runs=${d.totals.runs} load=${d.totals.load}`,
+    );
+  } catch (error) {
+    fail(name, throwSummary(error));
+  }
+}
+
+/**
+ * A past Sunday for the past-window checks (#80): the issue's example, so
+ * `days: 84` must read exactly 12 complete weeks with no week in progress.
+ */
+const PAST_SUNDAY = "2026-04-12";
+
+/**
+ * Runs `get-training-load` whole-body on a past window (`newest`) and checks
+ * its shape: 84 days, `ends_today` false, at most 12 weeks ending on the week
+ * of `newest`, and `current` on or before `newest`. Prints counts only.
+ */
+async function checkGetTrainingLoadPastWindow(): Promise<void> {
+  const name = "get-training-load (past window)";
+  try {
+    const result = (await getTrainingLoadTool.execute(
+      { days: 84, runOnly: false, newest: PAST_SUNDAY },
+      apiKey,
+      NO_PROGRESS,
+    )) as {
+      structuredContent?: Record<string, unknown>;
+      isError?: boolean;
+      content?: Array<{ text?: unknown }>;
+    };
+    if (result.isError || !result.structuredContent) {
+      fail(name, errorSummary(result));
+      return;
+    }
+    const d = result.structuredContent as {
+      period: { days: number; end_date: string; ends_today: boolean };
+      current: { date: string } | null;
+      weekly_breakdown: Array<{ week_starting: string }>;
+      totals: { runs: number };
+    };
+    const lastWeek = d.weekly_breakdown.at(-1)?.week_starting;
+    const problems = [
+      d.period.days !== 84 ? `period.days=${d.period.days}` : "",
+      d.period.end_date !== PAST_SUNDAY ? "end_date" : "",
+      d.period.ends_today ? "ends_today=true" : "",
+      d.weekly_breakdown.length > 12
+        ? `weeks=${d.weekly_breakdown.length}`
+        : "",
+      lastWeek !== undefined && lastWeek > PAST_SUNDAY
+        ? "week after newest"
+        : "",
+      d.current && d.current.date > PAST_SUNDAY ? "current after newest" : "",
+    ].filter(Boolean);
+    if (problems.length > 0) {
+      fail(name, `unexpected shape: ${problems.join(", ")}`);
+      return;
+    }
+    ok(
+      name,
+      `days=${d.period.days} ends_today=${d.period.ends_today} weeks=${d.weekly_breakdown.length} runs=${d.totals.runs} as_of=${d.current?.date ?? null}`,
+    );
+  } catch (error) {
+    fail(name, throwSummary(error));
+  }
+}
+
+/**
+ * Runs `get-fitness-trend` whole-body on a past window (`newest`) with a
+ * projection asked for, and checks that none came back: no projection, no
+ * taper, `ends_today` false, `as_of` on or before `newest`. Prints counts only.
+ */
+async function checkGetFitnessTrendPastWindow(): Promise<void> {
+  const name = "get-fitness-trend (past window)";
+  try {
+    const result = (await getFitnessTrendTool.execute(
+      {
+        days: 90,
+        runOnly: false,
+        newest: PAST_SUNDAY,
+        projectDays: 14,
+        targetTsb: 10,
+      },
+      apiKey,
+      NO_PROGRESS,
+    )) as {
+      structuredContent?: Record<string, unknown>;
+      isError?: boolean;
+      content?: Array<{ text?: unknown }>;
+    };
+    if (result.isError || !result.structuredContent) {
+      fail(name, errorSummary(result));
+      return;
+    }
+    const d = result.structuredContent as {
+      period: { end_date: string; ends_today: boolean };
+      as_of: string | null;
+      daily: unknown[];
+      projection: unknown[];
+      taper: unknown;
+      flags: string[];
+    };
+    const problems = [
+      d.period.end_date !== PAST_SUNDAY ? "end_date" : "",
+      d.period.ends_today ? "ends_today=true" : "",
+      d.projection.length > 0 ? `projection=${d.projection.length}` : "",
+      d.taper !== null ? "taper" : "",
+      d.as_of !== null && d.as_of > PAST_SUNDAY ? "as_of after newest" : "",
+    ].filter(Boolean);
+    if (problems.length > 0) {
+      fail(name, `unexpected shape: ${problems.join(", ")}`);
+      return;
+    }
+    ok(
+      name,
+      `ends_today=${d.period.ends_today} as_of=${d.as_of} days=${d.daily.length} projection=${d.projection.length} flags=${d.flags.length}`,
     );
   } catch (error) {
     fail(name, throwSummary(error));
@@ -1135,13 +1391,17 @@ await checkGetSplitAnalysis();
 await checkGetAerobicAnalysis();
 await checkGetIntervalAnalysis();
 await checkGetBestEfforts();
+await checkGetBestEffortsActivity();
 await checkGetRacePrediction();
 await checkGetAthleteStats();
+await checkGetAthleteZones();
 const fitnessTrendCurrent = await checkGetFitnessTrendWholeBody();
 await checkFitnessTrendMatchesWellness(fitnessTrendCurrent);
 await checkGetFitnessTrendRunOnly();
 await checkGetTrainingLoadWholeBody();
 await checkGetTrainingLoadRunOnly();
+await checkGetTrainingLoadPastWindow();
+await checkGetFitnessTrendPastWindow();
 await checkGetRunningDynamics();
 await checkGetActivityStreamsRaw();
 await checkGetCadenceTrendData();

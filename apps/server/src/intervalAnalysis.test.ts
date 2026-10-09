@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import activityRepeats from "./__fixtures__/intervals/activity-repeats.json";
 import {
   classifyRest,
   computeFade,
@@ -11,9 +12,11 @@ import {
   REST_LONG_STOP_MIN_SECONDS,
   REST_RECOVERY_MAX_SECONDS,
   REST_URBAN_MAX_SECONDS,
+  repsFromLaps,
   selectCleanWorkLaps,
   type WorkRep,
 } from "./intervalAnalysis";
+import { type IntervalsInterval } from "./intervalsClient";
 
 /** Build 1 Hz streams from legs of constant speed/HR; speed 0 = stopped. */
 interface Leg {
@@ -179,6 +182,8 @@ describe("computeIntervalAnalysis — stream path", () => {
     expect(analysis.fade!.summary).toContain("rep 4 was");
     expect(analysis.fade!.summary).toContain("slower");
     expect(analysis.fade!.summary).toContain("higher HR");
+    // Streams carry no intervals.icu intensity.
+    expect(analysis.reps.every((rep) => rep.intensityPct === null)).toBe(true);
   });
 
   it("reports per-rep power and excludes zero-watt dropouts (ljcl/strava-mcp#213)", () => {
@@ -571,6 +576,235 @@ describe("computeIntervalAnalysis — lap path", () => {
     expect(analysis.confidence).toBe("medium");
     expect(analysis.reasoning).toContain("labels do not match");
   });
+
+  it("gives a lap rep the time-weighted intervals.icu intensity of its laps", () => {
+    const laps = [
+      lap(1, 2000, 720, { intensity: 80 }),
+      lap(2, 840, 200, { intensity: 90 }),
+      lap(3, 420, 100, { intensity: 96 }),
+      lap(4, 400, 240, { intensity: 85 }),
+      lap(5, 1260, 300, { intensity: 94 }),
+      lap(6, 400, 240, { intensity: 86 }),
+      lap(7, 1500, 540, { intensity: 82 }),
+    ];
+    const analysis = computeIntervalAnalysis(buildStreams([easy(2400)]), laps);
+    expect(analysis.source).toBe("laps");
+    // (90 x 200 + 96 x 100) / 300.
+    expect(analysis.reps.map((rep) => rep.intensityPct)).toEqual([92, 94]);
+  });
+
+  it("repsFromLaps gives the lap path's reps, or null without clean laps", () => {
+    const analysis = computeIntervalAnalysis(
+      buildStreams([easy(2400)]),
+      structuredLaps,
+    );
+    expect(repsFromLaps(structuredLaps)).toEqual(analysis.reps);
+    expect(repsFromLaps(structuredLaps.slice(0, 2))).toBeNull();
+  });
+
+  describe("warm-up and cool-down laps at the edge (#84)", () => {
+    /** Laps from [distance m, moving time s] pairs, in order. */
+    const sequence = (...specs: Array<[number, number]>) =>
+      specs.map(([distance, time], i) => lap(i + 1, distance, time));
+    const WALK: [number, number] = [150, 120];
+    /** `count` x (rep, walk); the last rep can take `lastTime` instead. */
+    const repeats = (
+      count: number,
+      rep: [number, number],
+      lastTime?: number,
+    ): Array<[number, number]> =>
+      Array.from({ length: count }, (_, i) => [
+        [rep[0], i === count - 1 && lastTime ? lastTime : rep[1]],
+        WALK,
+      ]).flat() as Array<[number, number]>;
+
+    it("drops a cool-down lap that crosses the fast threshold when recoveries are walks", () => {
+      // The walks make the median lap slow, so a steady cool-down at 2.9 m/s
+      // is "fast" too. It was a sixth block, and the consistency check then
+      // rejected the whole lap set. 690 s, not 710 s: at 710 s the lap is
+      // only just over the fast threshold.
+      const laps = sequence(
+        [2000, 800],
+        WALK,
+        ...repeats(5, [1600, 410]),
+        [2000, 690],
+        [130, 50],
+      );
+      const selection = selectCleanWorkLaps(laps);
+      expect(selection!.blocks.map((block) => block.length)).toEqual([
+        1, 1, 1, 1, 1,
+      ]);
+      expect(selection!.edgeLapsDropped).toBe(1);
+
+      const analysis = computeIntervalAnalysis(
+        buildStreams([easy(3600)]),
+        laps,
+      );
+      expect(analysis.source).toBe("laps");
+      expect(analysis.reps).toHaveLength(5);
+      expect(analysis.reasoning).toContain(
+        "1 slow lap at the edge (warm-up, cool-down or a much slower last rep) not counted in a rep",
+      );
+    });
+
+    it("drops a warm-up lap the same way", () => {
+      const laps = sequence(
+        [300, 150],
+        [2000, 690],
+        WALK,
+        ...repeats(5, [1600, 410]),
+        [2000, 800],
+        [130, 50],
+      );
+      const selection = selectCleanWorkLaps(laps);
+      expect(selection!.blocks).toHaveLength(5);
+      expect(selection!.edgeLapsDropped).toBe(1);
+      expect(selection!.blocks[0]![0]!.distanceM).toBe(1600);
+    });
+
+    it("keeps rep 1 when the warm-up lap runs straight into it", () => {
+      // The warm-up and rep 1 are consecutive fast laps, so they make one
+      // block. Without the rule rep 1 was 3,600 m with the warm-up in it.
+      const laps = sequence(
+        [300, 150],
+        [2000, 690],
+        ...repeats(5, [1600, 410]),
+        [2000, 800],
+        [130, 50],
+      );
+      const selection = selectCleanWorkLaps(laps);
+      expect(selection!.blocks.map((block) => block.length)).toEqual([
+        1, 1, 1, 1, 1,
+      ]);
+      expect(selection!.edgeLapsDropped).toBe(1);
+      const analysis = computeIntervalAnalysis(
+        buildStreams([easy(3600)]),
+        laps,
+      );
+      expect(analysis.reps[0]!.distanceM).toBe(1600);
+    });
+
+    it("keeps a fading last rep within 80% of the other reps' speed", () => {
+      // The last rep runs at 0.875 of the others' speed.
+      const laps = sequence(
+        [2000, 800],
+        WALK,
+        ...repeats(6, [1600, 400], 457),
+        [2000, 800],
+      );
+      const selection = selectCleanWorkLaps(laps);
+      expect(selection!.blocks).toHaveLength(6);
+      expect(selection!.edgeLapsDropped).toBe(0);
+    });
+
+    it("keeps a last rep at 0.83 of the others' speed", () => {
+      // 480 s is 0.83 of the others' speed. A deliberate harder or easier
+      // block (a tempo, a finisher) lands here too, so it stays a rep.
+      const laps = sequence(
+        [2000, 800],
+        WALK,
+        ...repeats(6, [1600, 400], 480),
+        [2000, 800],
+      );
+      const selection = selectCleanWorkLaps(laps);
+      expect(selection!.blocks).toHaveLength(6);
+      expect(selection!.edgeLapsDropped).toBe(0);
+    });
+
+    it("drops a last rep that is more than 20% slower, like a cool-down lap", () => {
+      // The rule cannot tell this rep from a cool-down lap. At 0.77 of the
+      // others' speed it is dropped: 5 reps with even pace, not 6 reps with
+      // a 30% fade, and the reasoning names the dropped lap.
+      const laps = sequence(
+        [2000, 800],
+        WALK,
+        ...repeats(6, [1600, 400], 520),
+        [2000, 800],
+      );
+      const analysis = computeIntervalAnalysis(
+        buildStreams([easy(3600)]),
+        laps,
+      );
+      expect(analysis.reps).toHaveLength(5);
+      expect(analysis.fade!.paceDriftPct).toBe(0);
+      expect(analysis.reasoning).toContain(
+        "1 slow lap at the edge (warm-up, cool-down or a much slower last rep) not counted in a rep",
+      );
+    });
+
+    it("keeps a tempo block before 4 x 400 m as a rep", () => {
+      // 2 km at 4:00/km is 0.83 of the 400 m reps' speed.
+      const laps = sequence(
+        [2000, 800],
+        WALK,
+        [2000, 480],
+        [150, 90],
+        ...repeats(4, [400, 80]),
+        [2000, 800],
+      );
+      const selection = selectCleanWorkLaps(laps);
+      expect(selection).not.toBeNull();
+      expect(selection!.edgeLapsDropped).toBe(0);
+      expect(selection!.blocks[0]![0]!.distanceM).toBe(2000);
+    });
+
+    it("keeps a 1600 m finisher after 4 x 400 m as a rep", () => {
+      const laps = sequence(
+        [2000, 800],
+        WALK,
+        ...repeats(4, [400, 80]),
+        [1600, 380],
+        [2000, 800],
+      );
+      const selection = selectCleanWorkLaps(laps);
+      expect(selection).not.toBeNull();
+      expect(selection!.edgeLapsDropped).toBe(0);
+      expect(selection!.blocks.at(-1)![0]!.distanceM).toBe(1600);
+    });
+
+    it("needs 3 blocks before it trims", () => {
+      // Two blocks, the last one a rep and a slower lap straight after it.
+      // With 2 blocks the lap is kept: the other block is the only evidence
+      // of the rep speed.
+      const laps = sequence(
+        [2000, 800],
+        WALK,
+        [1600, 400],
+        WALK,
+        WALK,
+        WALK,
+        [1600, 400],
+        [1600, 520],
+        [130, 50],
+      );
+      const selection = selectCleanWorkLaps(laps);
+      expect(selection!.blocks.map((block) => block.length)).toEqual([1, 2]);
+      expect(selection!.edgeLapsDropped).toBe(0);
+    });
+
+    it("reads a real 5 x 1 km session as 5 reps, not 6", () => {
+      // Walk-jog recoveries; the cool-down crossed the fast threshold.
+      const laps = (
+        activityRepeats as { icu_intervals: IntervalsInterval[] }
+      ).icu_intervals.map(
+        (interval, i): IntervalLap => ({
+          lapIndex: i + 1,
+          distanceM: interval.distance ?? 0,
+          movingTimeS: interval.moving_time ?? 0,
+          avgSpeedMs: interval.average_speed ?? null,
+          avgHr: interval.average_heartrate ?? null,
+          avgCadence: interval.average_cadence ?? null,
+          avgWatts: interval.average_watts ?? null,
+          type: interval.type ?? null,
+          intensity: interval.intensity ?? null,
+        }),
+      );
+      const selection = selectCleanWorkLaps(laps);
+      expect(selection!.blocks).toHaveLength(5);
+      expect(selection!.edgeLapsDropped).toBe(1);
+      expect(selection!.labels).toBe("agree");
+    });
+  });
 });
 
 describe("computeFade", () => {
@@ -583,6 +817,7 @@ describe("computeFade", () => {
     avgHr: hr,
     avgCadence: null,
     avgWatts: null,
+    intensityPct: null,
   });
 
   it("needs at least two reps", () => {

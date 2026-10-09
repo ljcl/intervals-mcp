@@ -822,6 +822,160 @@ describe("training load handlers", () => {
     expect(textData.warnings.filter((w) => /Volume spike/.test(w))).toEqual([]);
     expect(appData.weeks.some((w) => w.warning)).toBe(false);
   });
+
+  describe("with newest (#80)", () => {
+    /** A past Sunday and a past Wednesday, before TL_TODAY. */
+    const PAST_SUNDAY = "2026-04-12";
+    const PAST_WEDNESDAY = "2026-04-08";
+    /** One 8 km run every Wednesday from 2026-01-07 to 2026-05-27. */
+    const weeklyRuns = Array.from({ length: 21 }, (_, i) =>
+      intervalsRun({
+        id: `w${i}`,
+        start_date_local: `${addDays("2026-01-07", 7 * i)}T07:00:00`,
+      }),
+    );
+
+    /** Serves only the rows inside the requested range, as intervals.icu does. */
+    function serve(wellness: IntervalsWellness[] = []) {
+      mockedIntervalsList.mockImplementation(async (_key, { oldest, newest }) =>
+        weeklyRuns.filter((a) => {
+          const date = a.start_date_local.split("T")[0]!;
+          return date >= oldest && date <= newest;
+        }),
+      );
+      mockedWellness.mockImplementation(async (_key, { oldest, newest }) =>
+        wellness.filter((row) => row.id >= oldest && row.id <= newest),
+      );
+    }
+
+    afterEach(() => {
+      mockedIntervalsList.mockReset();
+      mockedWellness.mockReset();
+    });
+
+    it("get-training-load-data ends a past Sunday's window on a complete week", async () => {
+      serve();
+
+      const result = await dispatchToolCall("get-training-load-data", {
+        days: 84,
+        newest: PAST_SUNDAY,
+      });
+
+      const parsed = JSON.parse(result.content[0]?.text ?? "");
+      expect(parsed).toMatchObject({
+        days: 84,
+        startDate: "2026-01-19",
+        endDate: PAST_SUNDAY,
+        endsToday: false,
+      });
+      expect(parsed.weeks).toHaveLength(12);
+      expect(
+        parsed.weeks.some((w: { inProgress: boolean }) => w.inProgress),
+      ).toBe(false);
+      expect(mockedIntervalsList.mock.calls[0]![1].newest).toBe(PAST_SUNDAY);
+    });
+
+    it("view-training-load prints the past-window line, End of window and the partial week", async () => {
+      serve([
+        {
+          id: PAST_WEDNESDAY,
+          ctl: 45,
+          atl: 39,
+          ctlLoad: 0,
+          atlLoad: 0,
+        } as IntervalsWellness,
+      ]);
+
+      const result = await dispatchToolCall("view-training-load", {
+        newest: PAST_WEDNESDAY,
+      });
+
+      const text = result.content[0]?.text ?? "";
+      expect(text).toContain(
+        `Training Load (2026-01-12 to ${PAST_WEDNESDAY}, CTL/ATL source: intervals.icu)`,
+      );
+      expect(text).toContain(
+        `Past window: it ends on ${PAST_WEDNESDAY}, before today.`,
+      );
+      expect(text).toContain(
+        `End of window (as of ${PAST_WEDNESDAY}): CTL 45 / ATL 39 / TSB +6`,
+      );
+      expect(text).toContain(
+        `Week of 2026-04-06 is partial (the window ends on ${PAST_WEDNESDAY}).`,
+      );
+      expect(text).not.toContain("in progress");
+      expect(text).not.toContain("Current (as of");
+    });
+
+    it("the training-load pair reads the same window for the same newest", async () => {
+      serve();
+
+      await dispatchToolCall("view-training-load", { newest: PAST_SUNDAY });
+      await dispatchToolCall("get-training-load-data", {
+        newest: PAST_SUNDAY,
+      });
+      await dispatchToolCall("get-training-load", {
+        days: 84,
+        newest: PAST_SUNDAY,
+      });
+
+      const [view, data, text] = mockedIntervalsList.mock.calls;
+      expect(data![1]).toEqual(view![1]);
+      expect(text![1]).toEqual(view![1]);
+      const [viewWellness, dataWellness] = mockedWellness.mock.calls;
+      expect(dataWellness![1]).toEqual(viewWellness![1]);
+    });
+
+    it("get-training-load-data with newest equal to today is the same call as no newest", async () => {
+      serve([
+        {
+          id: TL_TODAY,
+          ctl: 45,
+          atl: 39,
+          ctlLoad: 0,
+          atlLoad: 0,
+        } as IntervalsWellness,
+      ]);
+
+      const omitted = await dispatchToolCall("get-training-load-data", {
+        days: 84,
+      });
+      const today = await dispatchToolCall("get-training-load-data", {
+        days: 84,
+        newest: TL_TODAY,
+      });
+
+      expect(today.content[0]?.text).toBe(omitted.content[0]?.text);
+      const parsed = JSON.parse(today.content[0]?.text ?? "");
+      expect(parsed.endsToday).toBe(true);
+      expect(parsed.endDate).toBe(TL_TODAY);
+      // TL_TODAY is a Monday: its week is in progress.
+      expect(parsed.weeks.at(-1)).toMatchObject({
+        weekStarting: TL_TODAY,
+        inProgress: true,
+      });
+      const [listOmitted, listToday] = mockedIntervalsList.mock.calls;
+      expect(listToday![1]).toEqual(listOmitted![1]);
+      const [wellnessOmitted, wellnessToday] = mockedWellness.mock.calls;
+      expect(wellnessToday![1]).toEqual(wellnessOmitted![1]);
+    });
+
+    it.each(["view-training-load", "get-training-load-data"])(
+      "%s refuses a newest after today before any fetch",
+      async (tool) => {
+        const result = await dispatchToolCall(tool, {
+          newest: addDays(TL_TODAY, 1),
+        });
+
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).toBe(
+          `❌ newest 2026-06-02 is after today (${TL_TODAY}). Use today or an earlier date, or leave newest out to end the window today.`,
+        );
+        expect(mockedIntervalsList).not.toHaveBeenCalled();
+        expect(mockedWellness).not.toHaveBeenCalled();
+      },
+    );
+  });
 });
 
 describe("fitness trend handlers", () => {
@@ -1299,6 +1453,149 @@ describe("fitness trend handlers", () => {
     const parsed = JSON.parse(result.content[0]?.text ?? "");
     expect(parsed.source).toBe("intervals.icu");
     expect(parsed.runOnly).toBe(false);
+    expect(parsed.endsToday).toBe(true);
+  });
+
+  describe("with newest (#80)", () => {
+    /** A past day, before TODAY. */
+    const NEWEST = "2026-04-12";
+    const PAST_NOTE = `This window ends on ${NEWEST}, before today (${TODAY}). It is a past block: CTL/ATL/TSB are as of its last day with data, and there is no projection or taper plan.`;
+
+    it("get-fitness-trend-data has no projection for a past window, though projectDays defaults to 14", async () => {
+      mockedWellness.mockResolvedValueOnce(wellnessSeries(NEWEST, 90, 21, 80));
+      mockedIntervalsList.mockResolvedValueOnce([]);
+
+      const result = await dispatchToolCall("get-fitness-trend-data", {
+        newest: NEWEST,
+      });
+
+      const parsed = JSON.parse(result.content[0]?.text ?? "");
+      expect(parsed.endsToday).toBe(false);
+      expect(parsed.endDate).toBe(NEWEST);
+      expect(parsed.series).toHaveLength(90);
+      expect(parsed.projection).toEqual([]);
+      expect(parsed.taper).toBeNull();
+      expect(parsed.tsbPositiveDate).toBeNull();
+      expect(parsed.warnings[0]).toBe(PAST_NOTE);
+      expect(mockedWellness.mock.calls[0]![1]).toEqual({
+        oldest: "2026-01-13",
+        newest: NEWEST,
+      });
+    });
+
+    it("view-fitness-trend titles a past window with its last day", async () => {
+      mockedWellness.mockResolvedValueOnce(wellnessSeries(NEWEST, 90, 21, 80));
+      mockedIntervalsList.mockResolvedValueOnce([]);
+
+      const result = await dispatchToolCall("view-fitness-trend", {
+        newest: NEWEST,
+      });
+
+      const text = result.content[0]?.text ?? "";
+      expect(text).toContain(`Fitness Trend (90 days to ${NEWEST})`);
+      expect(text).toContain("Past window: no projection or taper.");
+      expect(text).not.toContain("last 90 days");
+      expect(text).not.toContain("form turns positive");
+    });
+
+    it("get-fitness-trend-data with newest equal to today is the same call as no newest", async () => {
+      for (let call = 0; call < 2; call++) {
+        mockedWellness.mockResolvedValueOnce(wellnessSeries(TODAY, 90, 21, 80));
+        mockedIntervalsList.mockResolvedValueOnce([]);
+      }
+
+      const omitted = await dispatchToolCall("get-fitness-trend-data", {});
+      const today = await dispatchToolCall("get-fitness-trend-data", {
+        newest: TODAY,
+      });
+
+      expect(today.content[0]?.text).toBe(omitted.content[0]?.text);
+      const parsed = JSON.parse(today.content[0]?.text ?? "");
+      expect(parsed.endsToday).toBe(true);
+      expect(parsed.endDate).toBe(TODAY);
+      // The app's default fortnight projection is still there.
+      expect(parsed.projection).toHaveLength(14);
+      const [wellnessOmitted, wellnessToday] = mockedWellness.mock.calls;
+      expect(wellnessToday![1]).toEqual(wellnessOmitted![1]);
+      expect(mockedIntervalsList.mock.calls[1]![1]).toEqual(
+        mockedIntervalsList.mock.calls[0]![1],
+      );
+    });
+
+    it.each(["view-fitness-trend", "get-fitness-trend-data"])(
+      "%s refuses a newest after today before any fetch",
+      async (tool) => {
+        const result = await dispatchToolCall(tool, { newest: inDays(1) });
+
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).toBe(
+          `❌ newest ${inDays(1)} is after today (${TODAY}). Use today or an earlier date, or leave newest out to end the window today.`,
+        );
+        expect(mockedWellness).not.toHaveBeenCalled();
+        expect(mockedIntervalsList).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(["view-fitness-trend", "get-fitness-trend-data"])(
+      "%s ignores targetDate for a past window instead of rejecting it",
+      async (tool) => {
+        // Past the taper horizon: an error for a window that ends today.
+        mockedWellness.mockResolvedValueOnce(
+          wellnessSeries(NEWEST, 90, 21, 80),
+        );
+        mockedIntervalsList.mockResolvedValueOnce([]);
+
+        const result = await dispatchToolCall(tool, {
+          newest: NEWEST,
+          targetDate: "2062-10-17",
+        });
+
+        expect(result.isError).toBeUndefined();
+        const text = result.content[0]?.text ?? "";
+        expect(text).not.toContain("Taper to");
+        if (tool === "get-fitness-trend-data") {
+          const parsed = JSON.parse(text);
+          expect(parsed.taper).toBeNull();
+          expect(parsed.projection).toEqual([]);
+          expect(parsed.endsToday).toBe(false);
+        }
+      },
+    );
+
+    it("get-fitness-trend and get-fitness-trend-data agree on a past window", async () => {
+      mockedWellness.mockResolvedValueOnce(wellnessSeries(NEWEST, 90, 21, 80));
+      mockedIntervalsList.mockResolvedValueOnce([]);
+      const appData = JSON.parse(
+        (
+          await dispatchToolCall("get-fitness-trend-data", {
+            newest: NEWEST,
+          })
+        ).content[0]?.text ?? "",
+      );
+
+      mockedWellness.mockResolvedValueOnce(wellnessSeries(NEWEST, 90, 21, 80));
+      mockedIntervalsList.mockResolvedValueOnce([]);
+      const textData = (
+        await dispatchToolCall("get-fitness-trend", { newest: NEWEST })
+      ).structuredContent as {
+        as_of: string;
+        current: { ctl: number; atl: number; tsb: number };
+        flags: string[];
+        bands: Array<{ reason: string }>;
+        warnings: string[];
+        period: { ends_today: boolean };
+      };
+
+      expect(textData.period.ends_today).toBe(appData.endsToday);
+      expect(textData.as_of).toBe(appData.asOf);
+      expect(textData.current.ctl).toBe(appData.current.ctl);
+      expect(textData.current.tsb).toBe(appData.current.tsb);
+      expect(textData.flags).toEqual(appData.flags);
+      expect(textData.bands.map((b) => b.reason)).toEqual(
+        appData.bands.map((b: { reason: string }) => b.reason),
+      );
+      expect(textData.warnings).toEqual(appData.warnings);
+    });
   });
 });
 

@@ -1,5 +1,5 @@
 import { formatShortDate, formatSignedTsb } from "@intervals-mcp/data";
-import { BAND_LABELS, isPlanned, planDays } from "./normalize";
+import { BAND_LABELS, isPastWindow, isPlanned, planDays } from "./normalize";
 import { type FitnessTrendData, type TrendBand } from "./types";
 
 /**
@@ -74,12 +74,17 @@ export function buildTrendA11y(
   const direction = visibility.showCtl ? (data.ctl7dDelta ?? null) : null;
   if (direction !== null) {
     const rounded = Math.round(direction * 10) / 10;
+    // A past window's week is history (#80): name its last day, as the text
+    // tool does ("7 days to DATE").
+    const week = isPastWindow(data)
+      ? `over the 7 days to ${fullDate(last.date)}`
+      : "over the last 7 days";
     parts.push(
       rounded > 0
-        ? `Fitness rose ${rounded} over the last 7 days.`
+        ? `Fitness rose ${rounded} ${week}.`
         : rounded < 0
-          ? `Fitness fell ${Math.abs(rounded)} over the last 7 days.`
-          : "Fitness held level over the last 7 days.",
+          ? `Fitness fell ${Math.abs(rounded)} ${week}.`
+          : `Fitness held level ${week}.`,
     );
   }
 

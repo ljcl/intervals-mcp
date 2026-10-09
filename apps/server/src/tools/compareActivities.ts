@@ -12,6 +12,7 @@ import {
   isRunningActivity,
   paceFromDistanceTime,
   type RunningDynamicsAvg,
+  sportSpeed,
 } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
 import { toolErrorText } from "./_errors";
@@ -37,7 +38,9 @@ Notes:
   faster.
 - The efficiency comparison needs heart rate in both runs. A change beyond
   3% reads as improved or declined.
-- A non-running activity on either side gives a warning, not an error.
+- A non-running activity on either side gives a warning, not an error. A
+  swim side shows pace per 100 m and another sport speed in km/h; the pace
+  difference and efficiency are for runs only.
 `;
 
 const inputSchema = z.object({
@@ -60,6 +63,10 @@ interface ActivitySummary {
   moving_time: string;
   moving_time_s: number;
   pace_min_per_km: string | null;
+  /** From `sportSpeed`: swims only. */
+  pace_min_per_100m: string | null;
+  /** From `sportSpeed`: every type that is neither a run nor a swim. */
+  speed_kmh: number | null;
   gap_min_per_km: string | null;
   /** GAP here is always intervals.icu's own `gap` field, distinct from
    * get-hill-analysis/get-split-analysis's locally-modelled GAP. */
@@ -76,6 +83,7 @@ interface ActivitySummary {
 
 function extractActivitySummary(activity: IntervalsActivity): ActivitySummary {
   const type = activity.type ?? "Workout";
+  const speed = sportSpeed(type, activity.distance, activity.moving_time);
 
   return {
     id: activity.id,
@@ -91,6 +99,8 @@ function extractActivitySummary(activity: IntervalsActivity): ActivitySummary {
     pace_min_per_km: isPaceActivity(type)
       ? paceFromDistanceTime(activity.distance, activity.moving_time)
       : null,
+    pace_min_per_100m: speed.pace_min_per_100m,
+    speed_kmh: speed.speed_kmh,
     gap_min_per_km: gapPace(activity.gap, type),
     gap_source: "intervals.icu",
     average_hr: activity.average_heartrate ?? null,
@@ -249,6 +259,8 @@ export function buildComparison(
     units: {
       distance: "km",
       pace: "min/km",
+      swim_pace: "min/100m",
+      speed: "km/h",
       time: "s",
       hr: "bpm",
       elevation: "m",
@@ -313,6 +325,10 @@ export const compareActivitiesTool = {
       lines.push(`  ${summary1.distance_km} km in ${summary1.moving_time}`);
       if (summary1.pace_min_per_km)
         lines.push(`  Pace: ${summary1.pace_min_per_km} /km`);
+      if (summary1.pace_min_per_100m)
+        lines.push(`  Pace: ${summary1.pace_min_per_100m} /100m`);
+      if (summary1.speed_kmh != null)
+        lines.push(`  Speed: ${summary1.speed_kmh} km/h`);
       const hrLine1 = formatHrLine(summary1);
       if (hrLine1) lines.push(hrLine1);
       if (summary1.cadence_spm != null)
@@ -324,6 +340,10 @@ export const compareActivitiesTool = {
       lines.push(`  ${summary2.distance_km} km in ${summary2.moving_time}`);
       if (summary2.pace_min_per_km)
         lines.push(`  Pace: ${summary2.pace_min_per_km} /km`);
+      if (summary2.pace_min_per_100m)
+        lines.push(`  Pace: ${summary2.pace_min_per_100m} /100m`);
+      if (summary2.speed_kmh != null)
+        lines.push(`  Speed: ${summary2.speed_kmh} km/h`);
       const hrLine2 = formatHrLine(summary2);
       if (hrLine2) lines.push(hrLine2);
       if (summary2.cadence_spm != null)

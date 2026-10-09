@@ -23,19 +23,26 @@ describe("trainingLoadWindow", () => {
       baselineStartDate: "2026-07-27",
       startDate: "2026-08-24",
       endDate: "2026-09-26",
-      currentWeekStart: "2026-09-21",
+      endsToday: true,
+      lastWeekStart: "2026-09-21",
+      lastWeekDays: 6,
+      partialWeekStart: "2026-09-21",
       completeWeeks: 4,
-      currentWeekDays: 6,
       spanDays: 34,
     });
   });
 
   it("keeps 4 complete weeks for days 28 on a Sunday, when this week has all 7 days", () => {
-    expect(trainingLoadWindow(28, "2026-09-27")).toMatchObject({
+    // Today's week is still in progress on a Sunday: today is not over.
+    expect(trainingLoadWindow(28, "2026-09-27")).toEqual({
+      baselineStartDate: "2026-07-27",
       startDate: "2026-08-24",
-      currentWeekStart: "2026-09-21",
+      endDate: "2026-09-27",
+      endsToday: true,
+      lastWeekStart: "2026-09-21",
+      lastWeekDays: 7,
+      partialWeekStart: "2026-09-21",
       completeWeeks: 4,
-      currentWeekDays: 7,
       spanDays: 35,
     });
   });
@@ -43,8 +50,9 @@ describe("trainingLoadWindow", () => {
   it("starts the current week on a Monday", () => {
     expect(trainingLoadWindow(28, "2026-09-28")).toMatchObject({
       startDate: "2026-08-31",
-      currentWeekStart: "2026-09-28",
-      currentWeekDays: 1,
+      lastWeekStart: "2026-09-28",
+      partialWeekStart: "2026-09-28",
+      lastWeekDays: 1,
       spanDays: 29,
     });
   });
@@ -54,7 +62,57 @@ describe("trainingLoadWindow", () => {
       const lookback = trainingLoadWindow(28, addDays("2026-09-21", i));
       expect(getWeekStart(lookback.startDate)).toBe(lookback.startDate);
       expect(lookback.completeWeeks).toBe(4);
-      expect(lookback.currentWeekDays).toBe(i + 1);
+      expect(lookback.lastWeekDays).toBe(i + 1);
+    }
+  });
+
+  it("ends a past Sunday's window on that complete week: days 84 is exactly 12 weeks (#80)", () => {
+    // 2026-04-12 is a Sunday.
+    expect(trainingLoadWindow(84, "2026-04-12", false)).toEqual({
+      baselineStartDate: "2025-12-22",
+      startDate: "2026-01-19",
+      endDate: "2026-04-12",
+      endsToday: false,
+      lastWeekStart: "2026-04-06",
+      lastWeekDays: 7,
+      partialWeekStart: null,
+      completeWeeks: 12,
+      spanDays: 84,
+    });
+  });
+
+  it("ends any other past day's window on a partial week after the complete ones (#80)", () => {
+    // 2026-04-11 is a Saturday, 2026-04-08 a Wednesday.
+    expect(trainingLoadWindow(84, "2026-04-11", false)).toEqual({
+      baselineStartDate: "2025-12-15",
+      startDate: "2026-01-12",
+      endDate: "2026-04-11",
+      endsToday: false,
+      lastWeekStart: "2026-04-06",
+      lastWeekDays: 6,
+      partialWeekStart: "2026-04-06",
+      completeWeeks: 12,
+      spanDays: 90,
+    });
+    expect(trainingLoadWindow(84, "2026-04-08", false)).toMatchObject({
+      startDate: "2026-01-12",
+      partialWeekStart: "2026-04-06",
+      lastWeekDays: 3,
+      spanDays: 87,
+      baselineStartDate: "2025-12-15",
+    });
+  });
+
+  it("keeps the complete weeks on every day of a past week; only its Sunday has no partial week", () => {
+    for (let i = 0; i < 7; i += 1) {
+      const day = addDays("2026-04-06", i);
+      const lookback = trainingLoadWindow(28, day, false);
+      expect(getWeekStart(lookback.startDate)).toBe(lookback.startDate);
+      expect(lookback.completeWeeks).toBe(4);
+      expect(lookback.lastWeekDays).toBe(i + 1);
+      expect(lookback.partialWeekStart).toBe(i === 6 ? null : "2026-04-06");
+      // 4 complete weeks, plus the partial week's days when there is one.
+      expect(lookback.spanDays).toBe(i === 6 ? 28 : 28 + i + 1);
     }
   });
 
@@ -319,6 +377,27 @@ describe("selectRunWeeks", () => {
       selectRunWeeks([{ ...bucket("2026-06-01", 0), load: 30 }], "2026-06-08"),
     ).toEqual({ span: [], complete: [], warnings: [] });
   });
+
+  it("counts every week as complete when the window has no partial week (#80)", () => {
+    // A window that ends on a past Sunday: its last week is over.
+    const buckets = [
+      bucket("2026-03-16", 30),
+      bucket("2026-03-23", 30),
+      bucket("2026-03-30", 30),
+      bucket("2026-04-06", 48),
+    ];
+    const { span, complete, warnings } = selectRunWeeks(buckets, null);
+    expect(complete).toEqual(span);
+    expect(span).toHaveLength(4);
+    // The last week is flagged on its full volume, not "so far".
+    expect(warnings).toEqual([
+      {
+        week_starting: "2026-04-06",
+        reason:
+          "Volume spike: 48 km is 1.6 times the 30 km average of the previous 3 weeks",
+      },
+    ]);
+  });
 });
 
 describe("volumeTrend", () => {
@@ -402,12 +481,51 @@ describe("buildTrainingLoadData", () => {
       days: 87,
       startDate: "2026-03-16",
       endDate: "2026-06-10",
+      endsToday: true,
       activityTypesIncluded: ["Run", "TrailRun", "VirtualRun"],
       runOnly: true,
       current: null,
       source: null,
       totals: { runs: 0, distanceKm: 0, timeHours: 0, elevationM: 0, load: 0 },
       weeks: [],
+    });
+  });
+
+  it("reads the 12 complete weeks to a past Sunday, with no week in progress (#80)", () => {
+    // 2026-04-12 is a Sunday: a run on every Wednesday from 2026-01-21.
+    const runs = Array.from({ length: 12 }, (_, i) =>
+      run(addDays("2026-01-21", 7 * i), 20 + i),
+    );
+    const data = buildTrainingLoadData(
+      runs,
+      trainingLoadWindow(84, "2026-04-12", false),
+    );
+    expect(data).toMatchObject({
+      days: 84,
+      startDate: "2026-01-19",
+      endDate: "2026-04-12",
+      endsToday: false,
+    });
+    expect(data.weeks).toHaveLength(12);
+    expect(data.weeks[11]!.weekStarting).toBe("2026-04-06");
+    // The last week is over, so it is a complete week like the others: it
+    // has a trend point and is not drawn as a partial bar.
+    expect(data.weeks.every((w) => !w.inProgress)).toBe(true);
+    expect(data.weeks.every((w) => w.trendKm !== null)).toBe(true);
+  });
+
+  it("marks a past mid-week newest's week as the partial one (#80)", () => {
+    // 2026-04-08 is a Wednesday.
+    const data = buildTrainingLoadData(
+      [run("2026-03-31", 20), run("2026-04-07", 8)],
+      trainingLoadWindow(28, "2026-04-08", false),
+    );
+    expect(data).toMatchObject({ days: 31, endsToday: false });
+    const last = data.weeks[data.weeks.length - 1]!;
+    expect(last).toMatchObject({
+      weekStarting: "2026-04-06",
+      inProgress: true,
+      trendKm: null,
     });
   });
 
@@ -664,8 +782,8 @@ describe("buildTrainingLoadData", () => {
     ]);
     expect(data.weeks[0]!.warning).toBe(false);
     const shared = selectRunWeeks(
-      aggregateWeeks(runs, runs, lookback.currentWeekStart),
-      lookback.currentWeekStart,
+      aggregateWeeks(runs, runs, lookback.lastWeekStart),
+      lookback.partialWeekStart,
     ).warnings;
     expect(
       data.weeks.flatMap((w) =>

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { resolveHrZones } from "../activityZones";
+import { hrZoneRangeText, resolveHrZones } from "../activityZones";
 import { formatDuration, STRAVA_STUB_NOTE } from "../formatters";
 import {
   formatLapLine,
@@ -23,10 +23,13 @@ import { toolErrorText } from "./_errors";
 import { intervalsActivityIdInput } from "./_ids";
 import {
   type ActivityDetail,
+  formatAchievementsLine,
   formatGearLine,
+  formatHrRecoveryLine,
   formatLoadLine,
   formatMetricsLine,
   mapActivityDetail,
+  resolveActivityGearName,
   truncateDescription,
 } from "./getActivity";
 import { RunningSummaryOutputSchema, warnOnSchemaDrift } from "./outputs";
@@ -126,12 +129,14 @@ function buildHrZoneSummary(
 /**
  * Maps one raw intervals.icu activity (with `icu_intervals` populated) plus
  * the athlete's Run sport settings into the running summary: get-activity's
- * `mapActivityDetail` plus run-specific assessments and laps. Exported for
- * direct testing.
+ * `mapActivityDetail` plus run-specific assessments and laps. `gearName` is
+ * passed on to `mapActivityDetail` (from `resolveActivityGearName`).
+ * Exported for direct testing.
  */
 export function mapRunningSummary(
   activity: IntervalsActivity,
   sportSettings: IntervalsSportSettings | null,
+  gearName: string | null = activity.gear?.name ?? null,
 ): RunningSummary {
   const type = activity.type ?? "Workout";
   // `intervals` is dropped: `laps` below carries the same icu_intervals
@@ -139,6 +144,7 @@ export function mapRunningSummary(
   const { intervals: _intervals, ...detail } = mapActivityDetail(
     activity,
     sportSettings,
+    gearName,
   );
 
   const { summary: hrZoneSummary, note: hrZoneNote } = buildHrZoneSummary(
@@ -184,7 +190,7 @@ function formatHrZoneSummaryLine(d: RunningSummary): string | null {
           z.max_bpm == null
             ? `${z.min_bpm}+`
             : z.min_bpm != null
-              ? `${z.min_bpm}-${z.max_bpm}`
+              ? hrZoneRangeText({ min: z.min_bpm, max: z.max_bpm })
               : `<=${z.max_bpm}`;
         return `Z${z.zone} ${range} ${formatDuration(z.seconds)} (${z.percent}%)`;
       })
@@ -213,8 +219,14 @@ export function formatRunningSummaryText(d: RunningSummary): string {
 
   lines.push(formatMetricsLine(d));
 
+  const achievementsLine = formatAchievementsLine(d);
+  if (achievementsLine) lines.push(achievementsLine);
+
   const loadLine = formatLoadLine(d);
   if (loadLine) lines.push(loadLine);
+
+  const hrRecoveryLine = formatHrRecoveryLine(d);
+  if (hrRecoveryLine) lines.push(hrRecoveryLine);
 
   if (d.cadence_assessment)
     lines.push(`Cadence assessment: ${d.cadence_assessment}`);
@@ -283,7 +295,13 @@ export const getRunningSummaryTool = {
         };
       }
 
-      const summary = mapRunningSummary(activity, sportSettingsResult);
+      // After the run-type check, so a rejected non-run sends no gear read.
+      const gearName = await resolveActivityGearName(apiKey, activity);
+      const summary = mapRunningSummary(
+        activity,
+        sportSettingsResult,
+        gearName,
+      );
       warnOnSchemaDrift(name, RunningSummaryOutputSchema, summary);
 
       return {

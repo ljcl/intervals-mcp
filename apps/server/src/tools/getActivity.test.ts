@@ -3,29 +3,41 @@ import { handledNotFound, handledRateLimit } from "../__fixtures__";
 import activitiesFixture from "../__fixtures__/intervals/activities.json";
 import activityFixture from "../__fixtures__/intervals/activity.json";
 import activityIntervalsFixture from "../__fixtures__/intervals/activity-intervals.json";
+import activitySwimFixture from "../__fixtures__/intervals/activity-swim.json";
+import activitySwimIntervalsFixture from "../__fixtures__/intervals/activity-swim-intervals.json";
 import sportSettingsRunFixture from "../__fixtures__/intervals/sport-settings-run.json";
 import {
   getActivity,
   getSportSettings,
   type IntervalsActivity,
+  type IntervalsGear,
   type IntervalsSportSettings,
+  listGear,
 } from "../intervalsClient";
 import {
   formatActivityDetailText,
   getActivityTool,
   mapActivityDetail,
+  resolveActivityGearName,
 } from "./getActivity";
+import { ActivityDetailOutputSchema } from "./outputs";
 
 vi.mock("../intervalsClient", async () => {
   const actual =
     await vi.importActual<typeof import("../intervalsClient")>(
       "../intervalsClient",
     );
-  return { ...actual, getActivity: vi.fn(), getSportSettings: vi.fn() };
+  return {
+    ...actual,
+    getActivity: vi.fn(),
+    getSportSettings: vi.fn(),
+    listGear: vi.fn(),
+  };
 });
 
 const mockedGetActivity = vi.mocked(getActivity);
 const mockedGetSportSettings = vi.mocked(getSportSettings);
+const mockedListGear = vi.mocked(listGear);
 
 const runActivity = activityFixture as unknown as IntervalsActivity;
 const sportSettingsRun =
@@ -37,10 +49,43 @@ const runActivityWithIntervals: IntervalsActivity = {
   icu_intervals: activityIntervalsFixture.icu_intervals,
 };
 
+/** A pool swim (30 x 50 m) with its first four intervals merged in. */
+const swimActivity = {
+  ...activitySwimFixture,
+  icu_intervals: activitySwimIntervalsFixture.icu_intervals,
+} as unknown as IntervalsActivity;
+
 const strengthActivity = (
   activitiesFixture as unknown as IntervalsActivity[]
 ).find((a) => a.id === "i189757177");
 if (!strengthActivity) throw new Error("fixture missing i189757177");
+
+/** Synthetic gear list: the run fixture's gear id, owned by its athlete "i0". */
+const GEAR: IntervalsGear[] = [
+  {
+    id: "71459",
+    name: "Trainer A",
+    type: "Shoes",
+    distance: 115197.44,
+    activities: 7,
+    retired: null,
+    reminders: [],
+    athlete_id: "i0",
+  },
+];
+
+/** Synthetic LTHR_UP from a 1 h effort, in intervals.icu's shape (docs/api-notes.md). */
+const LTHR_UP_1H = {
+  id: "lthr",
+  type: "LTHR_UP",
+  message: "1h at 172 bpm",
+  watts: null,
+  secs: null,
+  value: 172,
+  distance: null,
+  pace: null,
+  point: { start_index: 3038, end_index: 6638, secs: 3600, value: 172 },
+};
 
 describe("mapActivityDetail", () => {
   it("maps a run with intervals and sport settings", () => {
@@ -62,6 +107,9 @@ describe("mapActivityDetail", () => {
     expect(detail.moving_time).toBe("39:32");
     expect(detail.elapsed_time_s).toBe(2373);
     expect(detail.pace_min_per_km).toBe("4:55");
+    // A run has pace_min_per_km, so neither sportSpeed field.
+    expect(detail.pace_min_per_100m).toBeNull();
+    expect(detail.speed_kmh).toBeNull();
     // gap (3.4783862) is m/s, same unit as average_speed; see
     // utils/running.ts's gapPace() comment for the fixture evidence this
     // rests on.
@@ -71,6 +119,10 @@ describe("mapActivityDetail", () => {
     // cadence doubling: 83.15543 strides/min -> ~166 spm.
     expect(detail.average_cadence_spm).toBe(166);
     expect(detail.elevation_gain_m).toBe(85);
+    expect(detail.pool_length_m).toBeNull();
+    expect(detail.lengths).toBeNull();
+    expect(detail.achievements).toEqual([]);
+    expect(detail.hr_recovery).toBeNull();
     expect(detail.load).toEqual({
       training_load: 56,
       hr_load: 56,
@@ -91,6 +143,8 @@ describe("mapActivityDetail", () => {
     expect(detail.units).toEqual({
       distance: "km",
       pace: "min/km",
+      swim_pace: "min/100m",
+      speed: "km/h",
       time: "s",
       hr: "bpm",
       elevation: "m",
@@ -192,6 +246,8 @@ describe("mapActivityDetail", () => {
         distance_km: 7.01,
         moving_time_s: 2075,
         pace_min_per_km: "4:56",
+        pace_min_per_100m: null,
+        speed_kmh: null,
         average_hr: 169,
         average_cadence_spm: 166,
         stance_time_ms: 234,
@@ -204,6 +260,8 @@ describe("mapActivityDetail", () => {
         distance_km: 1.02,
         moving_time_s: 299,
         pace_min_per_km: "4:54",
+        pace_min_per_100m: null,
+        speed_kmh: null,
         average_hr: 179,
         average_cadence_spm: 167,
         stance_time_ms: 230,
@@ -222,7 +280,7 @@ describe("mapActivityDetail", () => {
     // A Walk is a step-cadence type (cadence doubled, dynamics included) but
     // not a pace type (intervals.icu reports no pace for it).
     const walkActivity: IntervalsActivity = {
-      ...runActivity,
+      ...runActivityWithIntervals,
       type: "Walk",
     };
 
@@ -231,6 +289,13 @@ describe("mapActivityDetail", () => {
     expect(detail.type).toBe("Walk");
     expect(detail.pace_min_per_km).toBeNull();
     expect(detail.gap_min_per_km).toBeNull();
+    // A walk gets km/h instead (sportSpeed): 8,030 m in 2,372 s.
+    expect(detail.speed_kmh).toBe(12.2);
+    expect(detail.pace_min_per_100m).toBeNull();
+    // Interval dynamics stay for a step-cadence type.
+    expect(detail.intervals?.[0]?.stance_time_ms).toBe(234);
+    // 7,010.97 m in 2,075 s.
+    expect(detail.intervals?.[0]?.speed_kmh).toBe(12.2);
     // Same raw cadence (83.15543 strides/min) as the run fixture, doubled the
     // same way: ~166 spm.
     expect(detail.average_cadence_spm).toBe(166);
@@ -243,15 +308,141 @@ describe("mapActivityDetail", () => {
     expect(detail.hr_zones).toHaveLength(5);
   });
 
-  it("resolves gear_name from the activity payload when it's present, without an extra call", () => {
+  it("takes gear_name from its third argument", () => {
+    const detail = mapActivityDetail(
+      runActivityWithIntervals,
+      sportSettingsRun,
+      "Trainer A",
+    );
+
+    expect(detail.gear_id).toBe("71459");
+    expect(detail.gear_name).toBe("Trainer A");
+  });
+
+  it("defaults gear_name to the name the payload sends", () => {
     const withGearName: IntervalsActivity = {
       ...runActivityWithIntervals,
-      gear: { id: "71459", name: "Dynafish Xiaonian B" },
+      gear: { id: "71459", name: "Trainer B" },
     };
     const detail = mapActivityDetail(withGearName, sportSettingsRun);
 
-    expect(detail.gear_id).toBe("71459");
-    expect(detail.gear_name).toBe("Dynafish Xiaonian B");
+    expect(detail.gear_name).toBe("Trainer B");
+  });
+
+  it("maps a pool swim's lengths and HR recovery", () => {
+    const detail = mapActivityDetail(swimActivity, null);
+
+    expect(detail.type).toBe("Swim");
+    expect(detail.pace_min_per_km).toBeNull();
+    // 1,500 m in 1,489 s.
+    expect(detail.pace_min_per_100m).toBe("1:39");
+    expect(detail.speed_kmh).toBeNull();
+    expect(detail.lengths).toBe(30);
+    expect(detail.pool_length_m).toBe(50);
+    expect(detail.average_cadence_spm).toBeNull();
+    expect(detail.running_dynamics).toBeNull();
+    expect(detail.achievements).toEqual([]);
+    // intervals.icu's own icu_hrr: a 60 s window, start_time 1458 s.
+    expect(detail.hr_recovery).toEqual({
+      drop_bpm: 13,
+      start_bpm: 153,
+      end_bpm: 140,
+      window_s: 60,
+      start_time_s: 1458,
+    });
+  });
+
+  it("gives swim intervals a pace per 100 m and no step-based dynamics", () => {
+    const detail = mapActivityDetail(swimActivity, null);
+
+    expect(detail.intervals).toHaveLength(4);
+    const [work, recovery, work2] = detail.intervals ?? [];
+    // 503.33 m in 520 s. intervals.icu sends average_step_length 1342.4 mm
+    // on this interval, but on a swim it is not a step (docs/api-notes.md).
+    expect(work).toMatchObject({
+      type: "WORK",
+      pace_min_per_km: null,
+      pace_min_per_100m: "1:43",
+      speed_kmh: null,
+      average_cadence_spm: null,
+      stance_time_ms: null,
+      vertical_oscillation_mm: null,
+      step_length_mm: null,
+    });
+    // A RECOVERY interval has no distance, so no pace either.
+    expect(recovery).toMatchObject({
+      type: "RECOVERY",
+      pace_min_per_100m: null,
+      speed_kmh: null,
+    });
+    expect(work2?.pace_min_per_100m).toBe("1:44");
+    // intervals.icu sends a step length on the WORK intervals; no interval
+    // reports one, or any other step-based field.
+    expect(
+      swimActivity.icu_intervals?.filter((iv) => iv.average_step_length != null)
+        .length,
+    ).toBeGreaterThan(0);
+    for (const iv of detail.intervals ?? [])
+      expect([
+        iv.stance_time_ms,
+        iv.vertical_oscillation_mm,
+        iv.step_length_mm,
+      ]).toEqual([null, null, null]);
+  });
+
+  it("gives a ride km/h for the activity and its intervals", () => {
+    const ride = {
+      ...strengthActivity,
+      type: "Ride",
+      distance: 20000,
+      moving_time: 2400,
+      icu_intervals: [{ type: "WORK", distance: 10000, moving_time: 1200 }],
+    } as IntervalsActivity;
+
+    const detail = mapActivityDetail(ride, null);
+
+    expect(detail.speed_kmh).toBe(30);
+    expect(detail.pace_min_per_100m).toBeNull();
+    expect(detail.intervals?.[0]?.speed_kmh).toBe(30);
+  });
+
+  it("drops an HR recovery with a missing bpm, and computes a missing drop", () => {
+    const noEnd = mapActivityDetail(
+      { ...swimActivity, icu_hrr: { start_bpm: 153, end_bpm: null } },
+      null,
+    );
+    expect(noEnd.hr_recovery).toBeNull();
+
+    const noDrop = mapActivityDetail(
+      { ...swimActivity, icu_hrr: { start_bpm: 153, end_bpm: 140 } },
+      null,
+    );
+    expect(noDrop.hr_recovery).toEqual({
+      drop_bpm: 13,
+      start_bpm: 153,
+      end_bpm: 140,
+      window_s: null,
+      start_time_s: null,
+    });
+  });
+
+  it("maps intervals.icu's achievements", () => {
+    const detail = mapActivityDetail(
+      { ...runActivityWithIntervals, icu_achievements: [LTHR_UP_1H] },
+      sportSettingsRun,
+    );
+
+    expect(detail.achievements).toEqual([
+      {
+        type: "LTHR_UP",
+        message: "1h at 172 bpm",
+        value: 172,
+        duration_s: 3600,
+        distance_m: null,
+        watts: null,
+        pace_mps: null,
+      },
+    ]);
   });
 
   it("maps a strength activity with no pace, no cadence doubling, and null dynamics", () => {
@@ -312,11 +503,72 @@ describe("formatActivityDetailText", () => {
     expect(text).toContain("Dynamics:");
     expect(text).toContain("GCT 233 ms");
     expect(text).toContain("HR zones:");
-    expect(text).toContain("Z1 0-142");
+    expect(text).toContain("Z1 up to 142");
     expect(text).toContain("Intervals:");
     expect(text).toContain("1. WORK:");
     expect(text).toContain("2. RECOVERY:");
     expect(text).not.toContain("(");
+  });
+
+  it("prints a pool swim's pace, lengths and HR recovery", () => {
+    const text = formatActivityDetailText(
+      mapActivityDetail(swimActivity, null),
+    );
+    const lines = text.split("\n");
+
+    expect(lines[1]).toBe(
+      "1.50 km, 24:49, 1:39 /100m, 30 lengths of 50 m, HR 149/165",
+    );
+    // The interval paces count the rests at the wall; the activity's does
+    // not, so the header says so.
+    expect(lines).toContain(
+      "Intervals (swim paces include the rests inside each interval):",
+    );
+    expect(text).toContain("1. WORK: 0.50 km, 8:40, 1:43 /100m, HR 136");
+    expect(text).toContain("2. RECOVERY: 1:48, HR 131");
+    // After the load line, before the zones.
+    expect(lines[2]).toMatch(/^Load: /);
+    expect(lines[3]).toBe(
+      "HR recovery: 153 to 140 bpm in 60 s (drop 13 bpm), from 24:18",
+    );
+  });
+
+  it("prints a ride's km/h on the metrics and interval lines", () => {
+    const ride = {
+      ...strengthActivity,
+      type: "Ride",
+      distance: 20000,
+      moving_time: 2400,
+      icu_intervals: [{ type: "WORK", distance: 10000, moving_time: 1200 }],
+    } as IntervalsActivity;
+    const lines = formatActivityDetailText(mapActivityDetail(ride, null)).split(
+      "\n",
+    );
+
+    expect(lines[1]).toMatch(/^20\.00 km, 40:00, 30 km\/h, HR /);
+    expect(lines).toContain("1. WORK: 10.00 km, 20:00, 30 km/h");
+  });
+
+  it("prints the achievements on the line after the metrics", () => {
+    const text = formatActivityDetailText(
+      mapActivityDetail(
+        { ...runActivityWithIntervals, icu_achievements: [LTHR_UP_1H] },
+        sportSettingsRun,
+      ),
+    );
+
+    expect(text.split("\n")[2]).toBe(
+      "Achievements: Run LTHR up: 172 bpm estimated (1h at 172 bpm)",
+    );
+  });
+
+  it("prints no achievements or HR recovery line when there are none", () => {
+    const text = formatActivityDetailText(
+      mapActivityDetail(runActivityWithIntervals, sportSettingsRun),
+    );
+
+    expect(text).not.toContain("Achievements:");
+    expect(text).not.toContain("HR recovery:");
   });
 
   it("prints feel with intervals.icu's scale, so 1 does not read as the worst", () => {
@@ -366,6 +618,8 @@ describe("formatActivityDetailText", () => {
       distance_km: 1,
       moving_time_s: 300,
       pace_min_per_km: "5:00",
+      pace_min_per_100m: null,
+      speed_kmh: null,
       average_hr: 160,
       average_cadence_spm: 170,
       stance_time_ms: null,
@@ -454,10 +708,147 @@ describe("formatActivityDetailText", () => {
   });
 });
 
+describe("resolveActivityGearName", () => {
+  beforeEach(() => {
+    mockedListGear.mockReset();
+    mockedListGear.mockResolvedValue(GEAR);
+  });
+
+  it("reads the name from the cached gear list", async () => {
+    await expect(resolveActivityGearName("key", runActivity)).resolves.toBe(
+      "Trainer A",
+    );
+    // One read with no options: the cached read, not update-activity's
+    // skipCache one.
+    expect(mockedListGear).toHaveBeenCalledTimes(1);
+    expect(mockedListGear).toHaveBeenCalledWith("key");
+  });
+
+  it("reads nothing for an activity with no gear", async () => {
+    await expect(
+      resolveActivityGearName("key", strengthActivity),
+    ).resolves.toBeNull();
+    expect(mockedListGear).not.toHaveBeenCalled();
+  });
+
+  it("uses the name the payload sends without a read", async () => {
+    await expect(
+      resolveActivityGearName("key", {
+        ...runActivity,
+        gear: { id: "71459", name: "Trainer B" },
+      }),
+    ).resolves.toBe("Trainer B");
+    expect(mockedListGear).not.toHaveBeenCalled();
+  });
+
+  it("is null when the id is not in the list, after one read past the cache", async () => {
+    await expect(
+      resolveActivityGearName("key", {
+        ...runActivity,
+        gear: { id: "99999", name: null },
+      }),
+    ).resolves.toBeNull();
+    expect(mockedListGear).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads past the cache once when the id is not in the cached list (gear added in the last 10 minutes)", async () => {
+    const NEW_GEAR: IntervalsGear = {
+      ...GEAR[0]!,
+      id: "g2",
+      name: "Trainer B",
+    };
+    mockedListGear
+      .mockResolvedValueOnce(GEAR)
+      .mockResolvedValueOnce([...GEAR, NEW_GEAR]);
+
+    await expect(
+      resolveActivityGearName("key", {
+        ...runActivity,
+        gear: { id: "g2", name: null },
+      }),
+    ).resolves.toBe("Trainer B");
+    expect(mockedListGear).toHaveBeenNthCalledWith(1, "key");
+    expect(mockedListGear).toHaveBeenNthCalledWith(2, "key", {
+      skipCache: true,
+    });
+  });
+
+  it("is null when the gear belongs to another athlete", async () => {
+    mockedListGear.mockResolvedValue([{ ...GEAR[0]!, athlete_id: "i9" }]);
+    await expect(
+      resolveActivityGearName("key", runActivity),
+    ).resolves.toBeNull();
+    // Found, so no second read.
+    expect(mockedListGear).toHaveBeenCalledTimes(1);
+  });
+
+  it("is null when the gear has no name", async () => {
+    mockedListGear.mockResolvedValue([{ ...GEAR[0]!, name: null }]);
+    await expect(
+      resolveActivityGearName("key", runActivity),
+    ).resolves.toBeNull();
+  });
+
+  it("is null, not an error, when the gear read fails", async () => {
+    mockedListGear.mockRejectedValue(handledRateLimit("listGear"));
+    await expect(
+      resolveActivityGearName("key", runActivity),
+    ).resolves.toBeNull();
+  });
+});
+
 describe("getActivityTool.execute", () => {
   beforeEach(() => {
     mockedGetActivity.mockReset();
     mockedGetSportSettings.mockReset();
+    mockedListGear.mockReset();
+    mockedListGear.mockResolvedValue(GEAR);
+  });
+
+  it("names the gear from the gear list", async () => {
+    mockedGetActivity.mockResolvedValueOnce(runActivity);
+    mockedGetSportSettings.mockResolvedValueOnce(sportSettingsRun);
+
+    const result = await getActivityTool.execute(
+      { id: "i189807578", includeIntervals: true },
+      "test-key",
+    );
+
+    expect(mockedListGear).toHaveBeenCalledTimes(1);
+    expect(mockedListGear).toHaveBeenCalledWith("test-key");
+    expect(result.structuredContent?.gear_name).toBe("Trainer A");
+    expect(result.content[0]?.text).toContain("Gear: Trainer A [71459]");
+  });
+
+  it("keeps the gear id alone when the gear read fails", async () => {
+    mockedGetActivity.mockResolvedValueOnce(runActivity);
+    mockedGetSportSettings.mockResolvedValueOnce(sportSettingsRun);
+    mockedListGear.mockRejectedValueOnce(handledRateLimit("listGear"));
+
+    const result = await getActivityTool.execute(
+      { id: "i189807578", includeIntervals: true },
+      "test-key",
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(result.structuredContent?.gear_name).toBeNull();
+    expect(result.content[0]?.text).toContain("Gear: 71459");
+  });
+
+  it("returns a pool swim that matches the output schema", async () => {
+    mockedGetActivity.mockResolvedValueOnce(swimActivity);
+    mockedGetSportSettings.mockResolvedValueOnce(sportSettingsRun);
+
+    const result = await getActivityTool.execute(
+      { id: "i189757185", includeIntervals: true },
+      "test-key",
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(mockedListGear).not.toHaveBeenCalled();
+    expect(
+      ActivityDetailOutputSchema.safeParse(result.structuredContent).success,
+    ).toBe(true);
   });
 
   it("fetches the activity and Run sport settings, and returns structured content", async () => {

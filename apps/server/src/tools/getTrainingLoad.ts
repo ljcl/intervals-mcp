@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { getTimeZone } from "../config";
 import { RUN_ONLY_RUNWAY_DAYS } from "../fitnessTrend";
 import { formatDuration, formatSigned } from "../formatters";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
@@ -9,11 +10,16 @@ import {
   selectRunWeeks,
   volumeTrend,
   weekDistanceKm,
-  weekInProgress,
+  weekIsPartial,
 } from "../trainingLoad";
 import { loadTrainingLoadInputs } from "../trainingLoadInputs";
+import {
+  dateInputSchema,
+  resolveWindowEnd,
+  todayLocal,
+} from "../utils/localDate";
 import { READ_ONLY } from "./_annotations";
-import { toolErrorText } from "./_errors";
+import { prefixedErrorText, toolErrorText } from "./_errors";
 import { TrainingLoadOutputSchema, warnOnSchemaDrift } from "./outputs";
 
 const name = "get-training-load";
@@ -22,7 +28,7 @@ const description = `
 Returns weekly running volume (distance, time, elevation, run count) with a
 trend and volume-spike warnings, weekly intervals.icu training load, and
 current CTL/ATL/TSB. Use it for "how is my training volume trending?" or
-"am I ramping up too fast?".
+"am I ramping up too fast?", or with newest for a past block.
 
 For the day-by-day CTL/ATL/TSB trend, a projection or a taper plan, use
 get-fitness-trend. For plain totals (this week, month, year to date), use
@@ -38,6 +44,9 @@ Notes:
   the current week so far is added: days 28 gives 4 complete weeks plus this
   week. Averages and the trend use complete weeks only; the trend compares
   the last 2 with the 2 before.
+- newest ends the window on a past date. CTL/ATL/TSB are then as of the
+  window's last day with data, and a partial last week counts like the
+  current week.
 - Weeks with no runs count as zero weeks, a layoff still going on included.
 - A warning fires when a week's distance is over 1.5 times the average of
   the 4 complete weeks before it (the acute:chronic ratio; needs 3 of them,
@@ -67,6 +76,13 @@ const inputSchema = z.object({
         "CTL/ATL directly from intervals.icu. Weekly volume and warnings " +
         "are always run-based either way.",
     ),
+  newest: dateInputSchema
+    .optional()
+    .describe(
+      "Last day of the window (YYYY-MM-DD), today or earlier. Default: " +
+        "today. days counts back from it. A past Sunday ends the window " +
+        "on a complete week; any other past date ends it on a partial week.",
+    ),
 });
 
 type GetTrainingLoadInput = z.infer<typeof inputSchema>;
@@ -90,11 +106,22 @@ export const getTrainingLoadTool = {
   annotations: READ_ONLY,
   outputSchema: TrainingLoadOutputSchema,
   execute: async (
-    { days, runOnly }: GetTrainingLoadInput,
+    { days, runOnly, newest }: GetTrainingLoadInput,
     apiKey: string,
     progress: ReportProgress = NO_PROGRESS,
   ) => {
     try {
+      // Refused before any fetch: intervals.icu has no records after today.
+      const end = resolveWindowEnd(newest, todayLocal(getTimeZone()));
+      if ("error" in end) {
+        return {
+          content: [
+            { type: "text" as const, text: prefixedErrorText(end.error) },
+          ],
+          isError: true,
+        };
+      }
+
       const {
         lookback,
         runs: runActivities,
@@ -103,16 +130,20 @@ export const getTrainingLoadTool = {
         current,
         source,
         activityTypesIncluded,
-      } = await loadTrainingLoadInputs(apiKey, { days, runOnly }, progress);
+      } = await loadTrainingLoadInputs(
+        apiKey,
+        { days, runOnly, end },
+        progress,
+      );
 
       // The one shared weekly timeline (trainingLoad.ts's aggregateWeeks):
-      // from the first week with a run or load to the current week, so this
-      // tool and the training-load MCP App feed can never report different
-      // weekly or total load for the same activities.
+      // from the first week with a run or load to the window's last week, so
+      // this tool and the training-load MCP App feed can never report
+      // different weekly or total load for the same activities.
       const buckets = aggregateWeeks(
         runActivities,
         loadActivities,
-        lookback.currentWeekStart,
+        lookback.lastWeekStart,
       );
 
       // Individual run activities per week, for the `activities` list this
@@ -173,10 +204,10 @@ export const getTrainingLoadTool = {
       // app feed makes, so the two surfaces can never disagree (#43). The
       // runs before the window are only the warnings' baseline (#60).
       // Averages and the trend read complete weeks only. With no complete
-      // week yet, the averages fall back to the week in progress.
+      // week yet, the averages fall back to the partial week.
       const runWeeks = selectRunWeeks(
         buckets,
-        lookback.currentWeekStart,
+        lookback.partialWeekStart,
         baselineWeeks(baselineRuns, lookback),
       );
       const averageWeeks =
@@ -196,16 +227,29 @@ export const getTrainingLoadTool = {
           ? ` (weeks of ${recent1} and ${recent2} vs ${earlier1} and ${earlier2})`
           : "";
 
-      const warnings = runWeeks.warnings.map(
-        (w) => `Week of ${w.week_starting}: ${w.reason}`,
+      // A past window's last week is not "in progress": it is cut off at
+      // newest. Today's week is in progress even on a Sunday.
+      const pastWindow = !lookback.endsToday;
+      const warnings = pastWindow
+        ? [
+            `This window ends on ${end.endDate}, before today (${end.today}). ` +
+              "It is a past block: CTL/ATL/TSB are as of its last day with data, not today.",
+          ]
+        : [];
+      warnings.push(
+        ...runWeeks.warnings.map(
+          (w) => `Week of ${w.week_starting}: ${w.reason}`,
+        ),
       );
-      const inProgressWeek = sortedWeeks.find((w) =>
-        weekInProgress(w.week_starting, lookback.currentWeekStart),
+      const partialWeek = sortedWeeks.find((w) =>
+        weekIsPartial(w.week_starting, lookback.partialWeekStart),
       );
-      if (inProgressWeek) {
+      if (partialWeek) {
         warnings.push(
-          `Week of ${inProgressWeek.week_starting} is in progress ` +
-            `(${lookback.currentWeekDays} of 7 days)` +
+          `Week of ${partialWeek.week_starting} is ` +
+            (pastWindow
+              ? `partial (${lookback.lastWeekDays} of 7 days, to ${lookback.endDate})`
+              : `in progress (${lookback.lastWeekDays} of 7 days)`) +
             (runWeeks.complete.length > 0
               ? ": averages and the trend leave it out."
               : "."),
@@ -231,12 +275,13 @@ export const getTrainingLoadTool = {
       }
 
       const result = {
-        // The window read, whole weeks plus this week so far: `days` is its
-        // length, so it can be longer than the requested days.
+        // The window read, whole weeks plus the partial last week, if any:
+        // `days` is its length, so it can be longer than the requested days.
         period: {
           days: lookback.spanDays,
           start_date: lookback.startDate,
           end_date: lookback.endDate,
+          ends_today: lookback.endsToday,
         },
         run_only: runOnly,
         source,
@@ -271,8 +316,14 @@ export const getTrainingLoadTool = {
       };
 
       // Format as readable text
+      const weeksRead = plural(lookback.completeWeeks, "complete week");
+      const lastWeekRead = !pastWindow
+        ? " and this week so far"
+        : lookback.partialWeekStart
+          ? ` and a partial week of ${plural(lookback.lastWeekDays, "day")}`
+          : "";
       let output = `Training Load Summary\n`;
-      output += `${result.period.start_date} to ${result.period.end_date} (${plural(lookback.completeWeeks, "complete week")} and this week so far, CTL/ATL source: ${source})\n\n`;
+      output += `${result.period.start_date} to ${result.period.end_date} (${weeksRead}${lastWeekRead}, CTL/ATL source: ${source})\n\n`;
 
       output += `Totals\n`;
       output += `  Runs: ${result.totals.runs}\n`;
@@ -285,7 +336,7 @@ export const getTrainingLoadTool = {
       output += `  Load: ${result.totals.load} (${activityTypesIncluded.join(", ") || "none"})\n\n`;
 
       if (current) {
-        output += `Current (as of ${current.date})\n`;
+        output += `${pastWindow ? "End of window" : "Current"} (as of ${current.date})\n`;
         output += `  Fitness (CTL): ${current.ctl}\n`;
         output += `  Fatigue (ATL): ${current.atl}\n`;
         output += `  Form (TSB): ${formatSigned(current.tsb)}\n\n`;
@@ -295,7 +346,9 @@ export const getTrainingLoadTool = {
         runWeeks.complete.length > 0
           ? plural(runWeeks.complete.length, "complete week")
           : runWeeks.span.length > 0
-            ? "this week so far"
+            ? pastWindow
+              ? "the partial week"
+              : "this week so far"
             : "no runs";
       output += `Weekly Averages (${averagedOver})\n`;
       output += `  Runs/week: ${result.averages.runs_per_week}\n`;
@@ -315,8 +368,8 @@ export const getTrainingLoadTool = {
       output += `Weekly Breakdown\n`;
       for (const week of result.weekly_breakdown) {
         const label =
-          week === inProgressWeek
-            ? ` (in progress, ${lookback.currentWeekDays} of 7 days)`
+          week === partialWeek
+            ? ` (${pastWindow ? "partial" : "in progress"}, ${lookback.lastWeekDays} of 7 days)`
             : "";
         output += `  Week of ${week.week_starting}${label}: ${week.runs} runs, ${week.distance_km} km, ${week.time_formatted}, load ${week.load}\n`;
       }
@@ -333,7 +386,7 @@ export const getTrainingLoadTool = {
           {
             type: "text" as const,
             text: toolErrorText(error, {
-              context: `fetch training load for ${days} days`,
+              context: `fetch training load for ${days} days${newest ? ` to ${newest}` : ""}`,
             }),
           },
         ],

@@ -1,6 +1,10 @@
 import { type ZoneSet } from "@intervals-mcp/data";
 import { z } from "zod";
-import { hrZoneMismatchWarning, mapIntervalsZones } from "../activityZones";
+import {
+  hrZoneMismatchWarning,
+  hrZoneRangeText,
+  mapIntervalsZones,
+} from "../activityZones";
 import { formatDuration } from "../formatters";
 import { getActivity } from "../intervalsClient";
 import { READ_ONLY } from "./_annotations";
@@ -13,7 +17,8 @@ const name = "get-activity-zones";
 const description = `
 Returns one intervals.icu activity's heart rate time in zone: time and
 percent in each zone, from the activity's own recorded zone bounds (not
-today's sport settings).
+today's sport settings). For today's settings and zone ranges, use
+get-athlete-zones.
 
 get-activity and get-running-summary already include HR zone time. Use this
 tool when zones are all you need, or to compare zone distribution between
@@ -38,10 +43,13 @@ const ZONE_META: Partial<Record<ZoneSet["type"], string>> = {
 };
 
 function formatZoneSet(set: ZoneSet): string {
-  const lines = set.buckets.map(
-    (bucket) =>
-      `   Z${bucket.zone} (${bucket.min}-${bucket.max} ${set.unit}): ${formatDuration(bucket.seconds)} (${bucket.pct}%)`,
-  );
+  const lines = set.buckets.map((bucket) => {
+    const range =
+      set.type === "heartrate" && bucket.max !== null
+        ? hrZoneRangeText({ min: bucket.min, max: bucket.max }, ` ${set.unit}`)
+        : `${bucket.min}-${bucket.max} ${set.unit}`;
+    return `   Z${bucket.zone} (${range}): ${formatDuration(bucket.seconds)} (${bucket.pct}%)`;
+  });
   return `${ZONE_META[set.type] ?? set.type}\n${lines.join("\n")}`;
 }
 

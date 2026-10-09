@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { handledNotFound, handledRateLimit } from "../__fixtures__";
+import activitiesFixture from "../__fixtures__/intervals/activities.json";
 import { speedEfficiencyFactor } from "../aerobicAnalysis";
 import { getActivity, type IntervalsActivity } from "../intervalsClient";
 import { buildComparison, compareActivitiesTool } from "./compareActivities";
@@ -34,6 +35,15 @@ function fakeActivity(
     icu_training_load: 60,
     ...overrides,
   } as unknown as IntervalsActivity;
+}
+
+/** A committed activity row, e.g. the two 1,500 m pool swims. */
+function byId(id: string): IntervalsActivity {
+  const found = (activitiesFixture as unknown as IntervalsActivity[]).find(
+    (a) => a.id === id,
+  );
+  if (!found) throw new Error(`fixture missing ${id}`);
+  return found;
 }
 
 const faster = fakeActivity({
@@ -137,6 +147,41 @@ describe("buildComparison", () => {
   it("matches the compare-activities structured output schema", () => {
     const result = buildComparison(fakeActivity({}), faster);
     expect(CompareActivitiesOutputSchema.safeParse(result).success).toBe(true);
+    expect(result.units).toMatchObject({
+      swim_pace: "min/100m",
+      speed: "km/h",
+    });
+  });
+
+  it("gives each swim side a pace per 100 m, with no pace difference or efficiency", () => {
+    const swim1 = byId("i189757185");
+    const swim2 = byId("i189757197");
+    const result = buildComparison(swim1, swim2);
+
+    // 1,500 m in 1,489 s and in 1,420 s.
+    expect(result.activity_1.pace_min_per_100m).toBe("1:39");
+    expect(result.activity_2.pace_min_per_100m).toBe("1:35");
+    expect(result.activity_1.pace_min_per_km).toBeNull();
+    expect(result.activity_1.speed_kmh).toBeNull();
+    expect(result.differences.pace_delta_sec_per_km).toBeNull();
+    expect(result.efficiency).toBeNull();
+    expect(result.warnings).toHaveLength(2);
+    expect(CompareActivitiesOutputSchema.safeParse(result).success).toBe(true);
+  });
+
+  it("gives a ride side km/h and a run side neither speed field", () => {
+    const ride = fakeActivity({
+      name: "Commute",
+      type: "Ride",
+      distance: 20000,
+      moving_time: 2400,
+    });
+    const result = buildComparison(fakeActivity({}), ride);
+
+    expect(result.activity_2.speed_kmh).toBe(30);
+    expect(result.activity_2.pace_min_per_100m).toBeNull();
+    expect(result.activity_1.speed_kmh).toBeNull();
+    expect(result.activity_1.pace_min_per_100m).toBeNull();
   });
 });
 
@@ -261,6 +306,28 @@ describe("compare-activities execute", () => {
       `Activity 1: ${structured.efficiency.activity_1} m/min per beat`,
     );
     expect(text).toContain(`(${structured.efficiency.interpretation})`);
+  });
+
+  it("prints a swim side's pace per 100 m and a ride side's speed", async () => {
+    mockedGetActivity.mockResolvedValueOnce(byId("i189757185"));
+    mockedGetActivity.mockResolvedValueOnce(
+      fakeActivity({
+        name: "Commute",
+        type: "Ride",
+        distance: 20000,
+        moving_time: 2400,
+      }),
+    );
+
+    const result = await compareActivitiesTool.execute(
+      { activityId1: "i189757185", activityId2: "i100" },
+      "test-token",
+    );
+
+    const lines = (result.content[0]?.text ?? "").split("\n");
+    expect(lines).toContain("  Pace: 1:39 /100m");
+    expect(lines).toContain("  Speed: 30 km/h");
+    expect(lines.some((l) => l.endsWith(" /km"))).toBe(false);
   });
 
   it("leaves max HR out of the HR line when the activity recorded none", async () => {
