@@ -86,8 +86,8 @@ breaking them has shipped bugs — do not work around them locally.
   `compare-activities`). Training-load weeks, warnings and trend:
   `trainingLoadWindow`/`aggregateWeeks`/`selectRunWeeks` in `trainingLoad.ts`
   (shared by `get-training-load` and its app feed). Speed to pace/speed, its
-  label and unit in the MCP Apps: `speedDisplay` in `packages/data/src/speed.ts`;
-  in the text tools: `sportSpeed` in `utils/running.ts`, which wraps it.
+  label and unit in the MCP Apps: `speedDisplay` in `packages/data/src/speed.ts`.
+  Stream wire precision: `STREAM_DECIMALS` in `streamPrecision.ts`.
   Text tool and app reading different copies is the failure mode these prevent.
 - **Telemetry:** `dispatchToolCall` emits one JSON line per call; timer starts
   before token resolution (not-connected calls count); a returned `isError`

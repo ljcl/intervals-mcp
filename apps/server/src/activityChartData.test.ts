@@ -5,10 +5,13 @@ import {
   emptyActivityChartData,
   MAX_CHART_POINTS,
 } from "./activityChartData";
+import { round } from "./formatters";
 import {
   type IntervalsActivity,
   type IntervalsInterval,
 } from "./intervalsClient";
+import { type IntervalsStreams } from "./intervalsStreams";
+import { rawUnitDecimals } from "./streamPrecision";
 
 const activity = (
   overrides: Partial<IntervalsActivity> = {},
@@ -193,6 +196,106 @@ describe("buildActivityChartData", () => {
     expect(data.streams.distance?.every((d) => d != null)).toBe(true);
     expect(data.streams.stance_time).toHaveLength(600);
     expect(data.streams.stance_time?.some((v) => v === null)).toBe(true);
+  });
+});
+
+/**
+ * A run with all 12 scalar chart columns holding long fractions, and a
+ * null every 97 samples in each metric column.
+ */
+function longFractionStreams(length: number): IntervalsStreams {
+  const column = (base: number, step: number) =>
+    Array.from({ length }, (_, i) =>
+      i % 97 === 0 ? null : base + i * step + 1 / 3,
+    );
+  return {
+    time: Array.from({ length }, (_, i) => i + 1 / 7),
+    distance: Array.from({ length }, (_, i) => i * 2.876543219),
+    heartrate: column(140, 0.00731),
+    watts: column(250, 0.0123),
+    velocity_smooth: column(2.9, 0.000123),
+    altitude: column(80, 0.0031),
+    grade_smooth: column(-3, 0.00171),
+    cadence: column(86, 0.000417),
+    stance_time: column(240, 0.00213),
+    vertical_oscillation: column(85, 0.00177),
+    vertical_ratio: column(7, 0.000331),
+    step_length: column(1100, 0.0147),
+    moving: [],
+    length,
+  };
+}
+
+describe("buildActivityChartData wire precision", () => {
+  it("chart payload stream values carry at most 2 decimals", () => {
+    const data = buildActivityChartData(
+      activity(),
+      longFractionStreams(3600),
+      [],
+    );
+
+    const columns = Object.entries(data.streams) as Array<
+      [Parameters<typeof rawUnitDecimals>[0], (number | null)[]]
+    >;
+    expect(columns).toHaveLength(12);
+    const offenders: string[] = [];
+    for (const [key, values] of columns) {
+      for (const v of values) {
+        if (v == null) continue;
+        if (round(v, 2) !== v || round(v, rawUnitDecimals(key)) !== v)
+          offenders.push(`${key}: ${v}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+    // Cadence stays in strides/min, so it keeps its one decimal.
+    expect(
+      data.streams.cadence?.some((v) => v != null && !Number.isInteger(v)),
+    ).toBe(true);
+  });
+
+  it("rounds a short activity that needs no downsampling", () => {
+    const length = 600;
+    const data = buildActivityChartData(
+      activity(),
+      {
+        time: Array.from({ length }, (_, i) => i),
+        grade_smooth: Array.from({ length }, () => 1.7961273),
+        moving: [],
+        length,
+      },
+      [],
+    );
+
+    expect(data.streams.time).toHaveLength(length);
+    expect(data.streams.grade_smooth?.[0]).toBe(1.8);
+  });
+
+  it.each([600, 3600])(
+    "leaves the caller's streams unchanged (%i samples)",
+    (length) => {
+      const streams = longFractionStreams(length);
+      const before = structuredClone(streams);
+
+      const data = buildActivityChartData(activity(), streams, []);
+
+      expect(streams).toEqual(before);
+      expect(data.streams.heartrate).not.toBe(streams.heartrate);
+    },
+  );
+
+  it("indexes bands on the unrounded time", () => {
+    // Rounded first, time reads [0, 1, 1, 2], and a band that starts at
+    // 1 s would start at index 1 rather than at 1.2 s, index 2.
+    const time = [0, 0.6, 1.2, 1.8];
+
+    const data = buildActivityChartData(
+      activity(),
+      { time, moving: [], length: time.length },
+      [interval({ start_time: 1, end_time: 1.8 })],
+    );
+
+    expect(data.streams.time).toEqual([0, 1, 1, 2]);
+    expect(data.laps[0]).toMatchObject({ startIndex: 2, endIndex: 3 });
   });
 });
 

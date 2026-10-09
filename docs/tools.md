@@ -892,7 +892,9 @@ empty, and counts waypoints without the map legend.
 
 Every `*-data` app-only tool reads intervals.icu streams through
 `loadIntervalsStreams` (see docs/architecture.md#streams) and downsamples to
-about 1,000 points for the chart and route-map payloads. The gap-free axes
+about 1,000 points for the chart and route-map payloads. The values are then
+rounded with `STREAM_DECIMALS` (`streamPrecision.ts`): at most 2 decimals,
+cadence one (strides/min), route-map coordinates 5. The gap-free axes
 (time, distance, and route-map lat/lng) are filled before downsampling so
 every downstream lookup stays valid; every other metric keeps `null` samples
 as `null` (a heart-rate dropout, which intervals.icu sends as 0, is `null`

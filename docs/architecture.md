@@ -253,12 +253,18 @@ was a stop, and a smart-recording run read at about twice its real pace.
 The rule assumes that intervals.icu keeps smart-recording gaps in the
 `time` stream; that is not verified yet (docs/api-notes.md).
 
-**A sample with no time is dropped, and the loader counts it.**
-`loadIntervalsStreams` drops a sample whose `time` is `null`, with the same
-sample in every other stream, and reports how many in `droppedSamples`.
-After a drop, an index that intervals.icu gives into the raw streams (an
-activity's `ignore_parts`) points at the wrong sample. So `get-best-efforts`
-applies those parts only when `droppedSamples` is 0 (#82).
+**Wire precision has one table.** `STREAM_DECIMALS` in `streamPrecision.ts`
+gives each scalar stream its decimal places, and no stream gets more than 2.
+`get-activity-streams` rounds in its output unit, so its cadence is whole
+spm. The chart and route-map payloads round in intervals.icu's unit, so
+their cadence (strides/min, which the app doubles) keeps one decimal
+(`rawUnitDecimals`). Coordinates keep 5 decimals (`LATLNG_DECIMALS`,
+about 1.1 m) in both `get-activity-streams` and the route-map payload, by
+design: 2 decimals is about 1.1 km.
+Both mappers round last, into new arrays, so band indices, lap markers and
+waypoints use the full-precision values. Before #71 the payloads sent raw
+bucket means such as `144.66666666666666`: a one-hour run with 12 streams
+was about 130 KB of chart JSON, and is now about 58 KB.
 
 ## Analysis math: one home per definition
 
@@ -387,18 +393,10 @@ and `get-training-load`. `STEP_CADENCE_ACTIVITY_TYPES` and
 `RUNNING_ACTIVITY_TYPES` add Walk and Hike on purpose: those have a step
 cadence but no pace.
 
-**Best efforts inside one activity have one home.** `bestEffortWindows` in
-`activityBestEfforts.ts`: for each start sample, the first sample whose
-distance reaches the target, with the elapsed time scaled to exactly the
-target. This is intervals.icu's own pace-curve rule (it reproduced 313 of
-313 activity-curve points, docs/api-notes.md), so `get-best-efforts` with
-an `id` agrees with the same tool over a window at every distance the run
-fully covers. (A run a few metres short of a distance has no stretch of it,
-but over a window it can count for a nearby curve point, such as 21000 m
-for a half marathon.) `topN` picks the fastest stretches that do not
-overlap. `stopped_seconds` reads the loader's `moving` stream with
-`velocity_smooth` loaded, as `get-split-analysis` does, so a stop has one
-definition: an auto-pause gap, or a sample under 0.5 m/s.
+**Stream wire precision has one home.** `STREAM_DECIMALS` in
+`streamPrecision.ts`. `get-activity-streams` and the chart and route-map app
+payloads all round with it, so a precision change reaches all three at once
+(see [Streams](#streams)).
 
 **Taper solving.** `fitnessTrend.ts` owns every CTL/ATL/TSB number, including
 the forward-looking ones — `plannedLoads` projects a prescribed load instead of
@@ -674,8 +672,9 @@ over 25,000 tokens: a 61 KB `get-activity-streams` payload and a 150 KB
   `dispatchToolCall` at its largest inputs against fixtures sized to fill
   them, and fails on a tool with no case, so a new tool cannot skip it.
   `scripts/live-check.ts` prints each response's size and flags one over
-  budget. App-only data feeds never reach the model and are not budgeted
-  (their payload size is #71).
+  budget. App-only data feeds never reach the model and are not budgeted;
+  their stream values are rounded with `STREAM_DECIMALS` (see
+  [Streams](#streams)).
 
 ## Input validation
 
