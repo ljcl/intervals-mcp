@@ -98,8 +98,12 @@ metric and axis) and `set-scope` (fitness trend and training load: whole body
 or runs only, and which series show). Each reply says what the card now draws.
 
 A host that does not render MCP Apps shows no chart. The view tool's text then
-says the client cannot display it and names the text tool to call instead
-(for example `get-fitness-trend` for `view-fitness-trend`).
+says the client cannot display it and gives the matching text tool's own
+text in the same call (for example `get-fitness-trend` for
+`view-fitness-trend`), so there is no need to call that tool again.
+`view-cadence-trends`, `view-route-map` and `view-activity-chart` for a
+non-run activity have no such tool: their text names the tool to call
+instead.
 
 ## Typical workflows
 

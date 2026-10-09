@@ -471,7 +471,12 @@ describe("training load handlers", () => {
     mockedIntervalsList.mockResolvedValueOnce([intervalsRun()]);
     mockedWellness.mockResolvedValueOnce([]);
 
-    const result = await dispatchToolCall("view-training-load", {});
+    const result = await dispatchToolCall(
+      "view-training-load",
+      {},
+      // The view's own summary is what a host that renders the app gets.
+      { client: { rendersApps: true } },
+    );
 
     expect(result.isError).toBeUndefined();
     const text = result.content[0]?.text ?? "";
@@ -504,7 +509,12 @@ describe("training load handlers", () => {
       } as IntervalsWellness,
     ]);
 
-    const result = await dispatchToolCall("view-training-load", {});
+    const result = await dispatchToolCall(
+      "view-training-load",
+      {},
+      // The view's own summary is what a host that renders the app gets.
+      { client: { rendersApps: true } },
+    );
 
     expect(result.isError).toBeUndefined();
     const text = result.content[0]?.text ?? "";
@@ -522,9 +532,11 @@ describe("training load handlers", () => {
   it("view-training-load prints the run-only scope and the locally computed current", async () => {
     const run = intervalsRun();
     mockedIntervalsList.mockResolvedValueOnce([run]);
-    const viewResult = await dispatchToolCall("view-training-load", {
-      runOnly: true,
-    });
+    const viewResult = await dispatchToolCall(
+      "view-training-load",
+      { runOnly: true },
+      { client: { rendersApps: true } },
+    );
     mockedIntervalsList.mockResolvedValueOnce([run]);
     const dataResult = await dispatchToolCall("get-training-load-data", {
       runOnly: true,
@@ -546,7 +558,12 @@ describe("training load handlers", () => {
     mockedIntervalsList.mockResolvedValueOnce([intervalsRun()]);
     mockedWellness.mockResolvedValueOnce([]);
 
-    const result = await dispatchToolCall("view-training-load", {});
+    const result = await dispatchToolCall(
+      "view-training-load",
+      {},
+      // The view's own summary is what a host that renders the app gets.
+      { client: { rendersApps: true } },
+    );
 
     const text = result.content[0]?.text ?? "";
     expect(text).toContain(
@@ -886,9 +903,11 @@ describe("training load handlers", () => {
         } as IntervalsWellness,
       ]);
 
-      const result = await dispatchToolCall("view-training-load", {
-        newest: PAST_WEDNESDAY,
-      });
+      const result = await dispatchToolCall(
+        "view-training-load",
+        { newest: PAST_WEDNESDAY },
+        { client: { rendersApps: true } },
+      );
 
       const text = result.content[0]?.text ?? "";
       expect(text).toContain(
@@ -1133,7 +1152,11 @@ describe("fitness trend handlers", () => {
       mockedIntervalsList.mockResolvedValueOnce([]);
     }
 
-    const view = await dispatchToolCall("view-fitness-trend", {});
+    const view = await dispatchToolCall(
+      "view-fitness-trend",
+      {},
+      { client: { rendersApps: true } },
+    );
     expect(view.content[0]?.text).toContain(
       `Form is already positive today (${TODAY})`,
     );
@@ -1919,10 +1942,12 @@ describe("compare activities handlers", () => {
         compareActivity({ id: "i2" }),
       );
 
-      const result = await dispatchToolCall(tool, {
-        activityId1: "i1",
-        activityId2: "i2",
-      });
+      const result = await dispatchToolCall(
+        tool,
+        { activityId1: "i1", activityId2: "i2" },
+        // A host that renders the app; any other host also runs the twin.
+        { client: { rendersApps: true } },
+      );
 
       // Same options as get-activity-streams-raw, so opening the app reads
       // each activity once (#71).
@@ -2084,6 +2109,16 @@ describe("view tools and hosts that cannot render MCP Apps (#77)", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    // The table answers every read, so a text twin's reads see data too;
+    // reset so those answers end with the test.
+    for (const mock of [
+      mockedIntervalsActivity,
+      mockedIntervalsStreams,
+      mockedWellness,
+      mockedIntervalsList,
+    ]) {
+      mock.mockReset();
+    }
   });
 
   const run = (overrides: Partial<IntervalsActivity> = {}) =>
@@ -2096,54 +2131,70 @@ describe("view tools and hosts that cannot render MCP Apps (#77)", () => {
       ...overrides,
     });
 
-  /** Each view tool, its mocks, and the footer pair the twin table fixes. */
+  /** 2.3 km at 3.3 m/s: enough distance for get-split-analysis. */
+  const runStreams = () => {
+    const time = Array.from({ length: 701 }, (_, i) => i);
+    return [
+      { type: "time", data: time },
+      { type: "distance", data: time.map((t) => t * 3.3) },
+      { type: "heartrate", data: time.map(() => 150) },
+    ];
+  };
+
+  /**
+   * Each view tool, its mocks (they answer every read), the footer it gives
+   * when it has no text twin or the twin fails, and its text twin with the
+   * arguments the view's own defaults give it.
+   */
   const VIEW_TOOLS: Array<{
     name: string;
     args: Record<string, unknown>;
     arrange: () => void;
     kind: string;
-    twin: string;
+    footer: string;
+    twin?: { name: string; args: Record<string, unknown> };
   }> = [
     {
       name: "view-activity-chart",
       args: { id: "123" },
       arrange: () => {
-        mockedIntervalsActivity.mockResolvedValueOnce(run());
-        mockedIntervalsStreams.mockResolvedValueOnce([
-          { type: "time", data: [0, 1, 2] },
-        ]);
+        mockedIntervalsActivity.mockResolvedValue(run());
+        mockedIntervalsStreams.mockImplementation(async () => runStreams());
       },
       kind: "activity chart",
-      twin: "get-activity-streams",
+      footer: "get-activity-streams",
+      twin: { name: "get-split-analysis", args: { id: "123" } },
     },
     {
       name: "view-cadence-trends",
       args: {},
       arrange: () => {
-        mockedIntervalsList.mockResolvedValueOnce([run()]);
+        mockedIntervalsList.mockResolvedValue([run()]);
       },
       kind: "cadence trends chart",
       // get-running-summary needs an id the view text never gives.
-      twin: "list-activities, then get-running-summary",
+      footer: "list-activities, then get-running-summary",
     },
     {
       name: "view-training-load",
       args: {},
       arrange: () => {
-        mockedIntervalsList.mockResolvedValueOnce([
+        mockedIntervalsList.mockResolvedValue([
           run({ start_date_local: `${TODAY}T07:00:00` }),
         ]);
-        mockedWellness.mockResolvedValueOnce([]);
+        mockedWellness.mockResolvedValue([]);
       },
       kind: "training load chart",
       // runOnly must carry over: never mix whole-body and run-only numbers.
-      twin: "get-training-load with the same arguments",
+      footer: "get-training-load with the same arguments",
+      // The view's default window is 84 days; the twin's own is 28.
+      twin: { name: "get-training-load", args: { days: 84 } },
     },
     {
       name: "view-fitness-trend",
       args: {},
       arrange: () => {
-        mockedWellness.mockResolvedValueOnce(
+        mockedWellness.mockResolvedValue(
           Array.from({ length: 91 }, (_, i) => ({
             id: addDays(TODAY, i - 90),
             ctl: 50,
@@ -2152,40 +2203,49 @@ describe("view tools and hosts that cannot render MCP Apps (#77)", () => {
             atlLoad: 0,
           })),
         );
-        mockedIntervalsList.mockResolvedValueOnce([]);
+        mockedIntervalsList.mockResolvedValue([]);
       },
       kind: "fitness trend chart",
-      twin: "get-fitness-trend with the same arguments",
+      footer: "get-fitness-trend with the same arguments",
+      // The view projects 14 days by default; the twin's own default is 0.
+      twin: { name: "get-fitness-trend", args: { days: 90, projectDays: 14 } },
     },
     {
       name: "view-activity-zones",
       args: { id: "123" },
       arrange: () => {
-        mockedIntervalsActivity.mockResolvedValueOnce(run());
+        mockedIntervalsActivity.mockResolvedValue(run());
       },
       kind: "zone distribution chart",
-      twin: "get-activity-zones",
+      footer: "get-activity-zones",
+      twin: { name: "get-activity-zones", args: { id: "123" } },
     },
     {
       name: "view-route-map",
       args: { id: "123" },
       arrange: () => {
-        mockedIntervalsActivity.mockResolvedValueOnce(run());
-        mockedIntervalsStreams.mockResolvedValueOnce(routeMapStreamsFixture());
+        mockedIntervalsActivity.mockResolvedValue(run());
+        mockedIntervalsStreams.mockImplementation(async () =>
+          routeMapStreamsFixture(),
+        );
       },
       kind: "route map",
-      twin: "get-activity",
+      footer: "get-activity",
     },
     {
       name: "view-compare-activities",
       args: { activityId1: "i1", activityId2: "i2" },
       arrange: () => {
-        mockedIntervalsActivity
-          .mockResolvedValueOnce(run({ id: "i1" }))
-          .mockResolvedValueOnce(run({ id: "i2", moving_time: 2900 }));
+        mockedIntervalsActivity.mockImplementation(async (_key, id) =>
+          run({ id, moving_time: id === "i2" ? 2900 : 3000 }),
+        );
       },
       kind: "activity comparison",
-      twin: "compare-activities",
+      footer: "compare-activities",
+      twin: {
+        name: "compare-activities",
+        args: { activityId1: "i1", activityId2: "i2" },
+      },
     },
   ];
 
@@ -2197,61 +2257,149 @@ describe("view tools and hosts that cannot render MCP Apps (#77)", () => {
     expect(VIEW_TOOLS.map((tool) => tool.name).sort()).toEqual(advertised);
   });
 
-  describe.each(VIEW_TOOLS)("$name", ({ name, args, arrange, kind, twin }) => {
-    it("claims a rendered chart to a host that renders MCP Apps", async () => {
-      arrange();
+  describe.each(VIEW_TOOLS)(
+    "$name",
+    ({ name, args, arrange, kind, footer, twin }) => {
+      const footerLine = `This client cannot display the interactive ${kind}. For detail, call ${footer}.`;
+      const twinHeader = twin
+        ? `This client cannot display the interactive ${kind}. The same data from ${twin.name} follows.\n\n`
+        : "";
 
-      const result = await dispatchToolCall(name, args, {
-        client: { rendersApps: true },
+      it("claims a rendered chart to a host that renders MCP Apps", async () => {
+        arrange();
+
+        const result = await dispatchToolCall(name, args, {
+          client: { rendersApps: true },
+        });
+
+        expect(result.isError).toBeUndefined();
+        const text = result.content[0]?.text ?? "";
+        expect(text.endsWith(`[Interactive ${kind} rendered above]`)).toBe(
+          true,
+        );
+        expect(text).not.toContain("This client cannot display");
       });
 
-      expect(result.isError).toBeUndefined();
-      const text = result.content[0]?.text ?? "";
-      expect(text.endsWith(`[Interactive ${kind} rendered above]`)).toBe(true);
-      expect(text).not.toContain("This client cannot display");
-    });
+      if (twin) {
+        it("gives any other host the text twin's own text in the same call", async () => {
+          arrange();
+          const direct = await dispatchToolCall(twin.name, twin.args);
 
-    it("says the client cannot display it and names the text twin otherwise", async () => {
-      arrange();
+          const result = await dispatchToolCall(name, args, {
+            client: { rendersApps: false },
+          });
 
-      const result = await dispatchToolCall(name, args, {
-        client: { rendersApps: false },
+          expect(direct.isError).toBeUndefined();
+          expect(result.isError).toBeUndefined();
+          expect(result.content).toEqual([
+            {
+              type: "text",
+              text: `${twinHeader}${direct.content.map((block) => block.text).join("\n")}`,
+            },
+          ]);
+        });
+      } else {
+        it("says the client cannot display it and names the text tool otherwise", async () => {
+          arrange();
+
+          const result = await dispatchToolCall(name, args, {
+            client: { rendersApps: false },
+          });
+
+          expect(result.isError).toBeUndefined();
+          const text = result.content[0]?.text ?? "";
+          expect(text).not.toContain("rendered above");
+          expect(text.endsWith(footerLine)).toBe(true);
+        });
+      }
+
+      it("names only tools the server advertises", async () => {
+        const { TOOL_DEFS } = await import("./server");
+        const advertised = new Set(TOOL_DEFS.map((tool) => tool.name));
+
+        const named = [
+          ...(footer.match(/\b[a-z]+(?:-[a-z]+)+\b/g) ?? []),
+          ...(twin ? [twin.name] : []),
+        ];
+        expect(named.length).toBeGreaterThan(0);
+        for (const tool of named) expect(advertised).toContain(tool);
       });
 
-      expect(result.isError).toBeUndefined();
-      const text = result.content[0]?.text ?? "";
-      expect(text).not.toContain("rendered above");
-      expect(
-        text.endsWith(
-          `This client cannot display the interactive ${kind}. For detail, call ${twin}.`,
-        ),
-      ).toBe(true);
-    });
+      it("gives the honest text when the caller passes no client at all", async () => {
+        arrange();
 
-    it("names only tools the server advertises in its footer", async () => {
-      const { TOOL_DEFS } = await import("./server");
-      const advertised = new Set(TOOL_DEFS.map((tool) => tool.name));
-      arrange();
+        const result = await dispatchToolCall(name, args);
 
-      const result = await dispatchToolCall(name, args, {
-        client: { rendersApps: false },
+        const text = result.content[0]?.text ?? "";
+        expect(text).not.toContain("rendered above");
+        if (twin) expect(text.startsWith(twinHeader)).toBe(true);
+        else expect(text.endsWith(footerLine)).toBe(true);
       });
+    },
+  );
 
-      const text = result.content[0]?.text ?? "";
-      const pointer = text.slice(text.lastIndexOf("For detail, call "));
-      const named = pointer.match(/\b[a-z]+(?:-[a-z]+)+\b/g) ?? [];
-      expect(named.length).toBeGreaterThan(0);
-      for (const tool of named) expect(advertised).toContain(tool);
+  it("names the text tool instead when the twin fails", async () => {
+    // The view's own read succeeds; the twin's read of the same activity
+    // fails, so the view keeps its summary and points at the tool.
+    mockedIntervalsActivity
+      .mockResolvedValueOnce(run())
+      .mockRejectedValueOnce(new Error("upstream down"));
+
+    const result = await dispatchToolCall(
+      "view-activity-zones",
+      { id: "123" },
+      { client: { rendersApps: false } },
+    );
+
+    expect(result.isError).toBeUndefined();
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain("Heart rate: mostly Z2");
+    expect(text).not.toContain("upstream down");
+    expect(
+      text.endsWith(
+        "This client cannot display the interactive zone distribution chart. For detail, call get-activity-zones.",
+      ),
+    ).toBe(true);
+    expect(mockedIntervalsActivity).toHaveBeenCalledTimes(2);
+  });
+
+  it("passes runOnly to get-training-load, so the text never mixes scopes", async () => {
+    mockedIntervalsList.mockResolvedValue([
+      run({ start_date_local: `${TODAY}T07:00:00` }),
+    ]);
+    mockedWellness.mockResolvedValue([]);
+    const direct = await dispatchToolCall("get-training-load", {
+      days: 84,
+      runOnly: true,
     });
 
-    it("gives the honest text when the caller passes no client at all", async () => {
-      arrange();
+    const result = await dispatchToolCall(
+      "view-training-load",
+      { runOnly: true },
+      { client: { rendersApps: false } },
+    );
 
-      const result = await dispatchToolCall(name, args);
+    const text = result.content[0]?.text ?? "";
+    expect(text.endsWith(direct.content[0]?.text ?? "")).toBe(true);
+  });
 
-      const text = result.content[0]?.text ?? "";
-      expect(text).not.toContain("rendered above");
-      expect(text).toContain(`call ${twin}.`);
-    });
+  it("gives a ride no per-km twin and names get-activity-streams", async () => {
+    mockedIntervalsActivity.mockResolvedValue(run({ type: "Ride" }));
+    mockedIntervalsStreams.mockImplementation(async () => runStreams());
+
+    const result = await dispatchToolCall(
+      "view-activity-chart",
+      { id: "123" },
+      { client: { rendersApps: false } },
+    );
+
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain("Type: Ride");
+    expect(text).not.toContain("get-split-analysis");
+    expect(
+      text.endsWith(
+        "This client cannot display the interactive activity chart. For detail, call get-activity-streams.",
+      ),
+    ).toBe(true);
   });
 });

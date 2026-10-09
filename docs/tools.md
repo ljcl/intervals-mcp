@@ -884,23 +884,36 @@ through the alias layer.
 A `view-*` result says the chart was rendered only when the request's client
 capabilities advertise `io.modelcontextprotocol/ui` with
 `text/html;profile=mcp-app` (`clientSupportsMcpApps`, `clientCapabilities.ts`).
-Otherwise it has no "rendered above" line and ends with `This client cannot
-display the interactive <kind>. For detail, call <twin>.` A call with no client
-information is treated as a host that cannot render apps. Both footers come
-from `viewFooter`; a test checks every tool the twin names is advertised. The
-rest of the text never mentions on-screen UI to such a host: `view-route-map`
-says "No GPS track is recorded for this activity." rather than calling the map
-empty, and counts waypoints without the map legend.
+A call with no client information is treated as a host that cannot render
+apps. Such a host sees no chart, so the model needs the numbers:
 
-| Tool | Footer kind | Text tool it names |
-| ---- | ----------- | ------------------ |
-| `view-activity-chart` | `activity chart` | `get-activity-streams` (`get-activity` when the activity has no streams) |
-| `view-cadence-trends` | `cadence trends chart` | `list-activities, then get-running-summary` |
-| `view-training-load` | `training load chart` | `get-training-load with the same arguments` |
-| `view-fitness-trend` | `fitness trend chart` | `get-fitness-trend with the same arguments` |
-| `view-activity-zones` | `zone distribution chart` | `get-activity-zones` |
-| `view-route-map` | `route map` | `get-activity` |
-| `view-compare-activities` | `activity comparison` | `compare-activities` |
+- A view with a text twin runs the twin in the same call, with the view's own
+  arguments, and returns only `This client cannot display the interactive
+  <kind>. The same data from <twin> follows.`, a blank line and the twin's
+  text (`viewTwinText`). The view's defaults reach the twin, so
+  `view-fitness-trend`'s text projects 14 days and `view-training-load`'s
+  covers 84 days, as the charts do. The twin's `structuredContent` is not
+  passed on: the views have no `outputSchema`.
+- A view with no twin, or whose twin returns `isError`, gives its own summary
+  and ends with `This client cannot display the interactive <kind>. For
+  detail, call <footer>.` (`viewFooter`). The twin's failure does not make
+  the view's result an error.
+
+`viewResult` in `server.ts` makes this choice for every view. A test checks
+that every tool a footer or twin names is advertised. The rest of the text
+never mentions on-screen UI to such a host: `view-route-map` says "No GPS track
+is recorded for this activity." rather than calling the map empty, and counts
+waypoints without the map legend.
+
+| Tool | Footer kind | Text twin | Text tool the footer names |
+| ---- | ----------- | --------- | -------------------------- |
+| `view-activity-chart` | `activity chart` | `get-split-analysis` (Run, TrailRun, VirtualRun with streams) | `get-activity-streams` (`get-activity` when the activity has no streams) |
+| `view-cadence-trends` | `cadence trends chart` | none | `list-activities, then get-running-summary` |
+| `view-training-load` | `training load chart` | `get-training-load` | `get-training-load with the same arguments` |
+| `view-fitness-trend` | `fitness trend chart` | `get-fitness-trend` | `get-fitness-trend with the same arguments` |
+| `view-activity-zones` | `zone distribution chart` | `get-activity-zones` | `get-activity-zones` |
+| `view-route-map` | `route map` | none (no text tool describes the track) | `get-activity` |
+| `view-compare-activities` | `activity comparison` | `compare-activities` | `compare-activities` |
 
 Every `*-data` app-only tool reads intervals.icu streams through
 `loadIntervalsStreams` (see docs/architecture.md#streams) and downsamples to
