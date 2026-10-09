@@ -132,7 +132,7 @@ per-tool. Path patterns and current TTLs (`fetchClient.ts`):
 | `/athlete/{id}/activities` | 1m | A newly recorded activity should show up quickly |
 | `/athlete/{id}/activities/search-full` | 1m | Same freshness as the listing |
 | `/athlete/{id}/wellness*` | 5m | intervals.icu updates wellness through the day |
-| `/athlete/{id}/pace-curves.json`, `/activity-pace-curves.json` | 10m | Recomputed from history a few times a day at most |
+| `/athlete/{id}/pace-curves.json` | 10m | Recomputed from history a few times a day at most |
 
 Everything else is left uncached.
 
@@ -154,10 +154,11 @@ Everything else is left uncached.
   directions so a future one is covered without a second rule. This
   automatic invalidation only fires when the PUT itself resolves
   successfully; `updateActivity` (`intervalsClient.ts`) additionally
-  invalidates the activity, the athlete's activities list, and the gear
-  list in a `finally`, so a *failed* PUT that may still have mutated state
-  server-side (a 5xx, a network fault, a timeout) does not leave a stale
-  pre-write entry being served afterward.
+  invalidates the activity, the athlete's activities list, the gear list,
+  and the athlete pace curves (their `activities` map carries the run names
+  `get-best-efforts` reports) in a `finally`, so a *failed* PUT that may
+  still have mutated state server-side (a 5xx, a network fault, a timeout)
+  does not leave a stale pre-write entry being served afterward.
 - `skipCache: true` bypasses entirely; the `update-activity` append read uses
   it so it never composes onto a stale description.
 - **The cache never shares references.** Every value it hands out (a hit, the
@@ -221,6 +222,13 @@ stopped sample's distance but drop its time; before #73 every gap over 5 s
 was a stop, and a smart-recording run read at about twice its real pace.
 The rule assumes that intervals.icu keeps smart-recording gaps in the
 `time` stream; that is not verified yet (docs/api-notes.md).
+
+**A sample with no time is dropped, and the loader counts it.**
+`loadIntervalsStreams` drops a sample whose `time` is `null`, with the same
+sample in every other stream, and reports how many in `droppedSamples`.
+After a drop, an index that intervals.icu gives into the raw streams (an
+activity's `ignore_parts`) points at the wrong sample. So `get-best-efforts`
+applies those parts only when `droppedSamples` is 0 (#82).
 
 ## Analysis math: one home per definition
 
@@ -326,6 +334,19 @@ and `fitnessTrend.ts` re-exports them as `RUN_TYPES` for the run-only series
 and `get-training-load`. `STEP_CADENCE_ACTIVITY_TYPES` and
 `RUNNING_ACTIVITY_TYPES` add Walk and Hike on purpose: those have a step
 cadence but no pace.
+
+**Best efforts inside one activity have one home.** `bestEffortWindows` in
+`activityBestEfforts.ts`: for each start sample, the first sample whose
+distance reaches the target, with the elapsed time scaled to exactly the
+target. This is intervals.icu's own pace-curve rule (it reproduced 313 of
+313 activity-curve points, docs/api-notes.md), so `get-best-efforts` with
+an `id` agrees with the same tool over a window at every distance the run
+fully covers. (A run a few metres short of a distance has no stretch of it,
+but over a window it can count for a nearby curve point, such as 21000 m
+for a half marathon.) `topN` picks the fastest stretches that do not
+overlap. `stopped_seconds` reads the loader's `moving` stream with
+`velocity_smooth` loaded, as `get-split-analysis` does, so a stop has one
+definition: an auto-pause gap, or a sample under 0.5 m/s.
 
 **Taper solving.** `fitnessTrend.ts` owns every CTL/ATL/TSB number, including
 the forward-looking ones — `plannedLoads` projects a prescribed load instead of
@@ -562,13 +583,15 @@ scheme:
   `view-cadence-trends` and `get-cadence-trend-data` take `days` (7-728,
   default 42) and the payload carries `days`; a `weeks` argument becomes
   `days: weeks * 7` through the alias layer.
-- `get-best-efforts` is the one exception: it advertises `window` ("all",
-  "1y", "90d", or "YYYY-MM-DD..YYYY-MM-DD"), because "all", "1y" and "90d"
-  are intervals.icu's own pace-curve ids. Until a lock break advertises
-  `oldest`/`newest` there (batched with #82), the alias layer reads
-  `oldest`/`newest`/`days`/`weeks` as a `window` range when no `window` is
-  sent (#151): the range ends at `newest` or today, and starts at `oldest`,
-  else `days` back inclusive, else a year back.
+- `get-best-efforts` is the one exception, and it stays one on purpose
+  (#82): it advertises `window` ("all", "1y", "90d", or
+  "YYYY-MM-DD..YYYY-MM-DD"), because "all", "1y" and "90d" are
+  intervals.icu's own pace-curve ids, which have no `oldest`/`newest` form.
+  The alias layer reads `oldest`/`newest`/`days`/`weeks` as a `window`
+  range when no `window` and no `id` is sent (#151): the range ends at
+  `newest` or today, and starts at `oldest`, else `days` back inclusive,
+  else a year back. With an `id` the range keys stay unread, and the
+  ignored-arguments note names them.
 
 Changing an advertised name changes `tool-surface.lock.json` (see the
 tool-identity invariant in CLAUDE.md), so it is a deliberate release note.

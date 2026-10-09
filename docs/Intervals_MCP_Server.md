@@ -63,7 +63,7 @@ rather than (or alongside) text.
 | `get-athlete-stats` | Run totals, and totals for every sport (strength sessions, swim distance), this week/month/YTD | (none) |
 | `get-fitness-trend` | Am I fresh or fatigued? What if I taper for a race? | `days`, `runOnly`, `projectDays`/`plannedLoads`, `targetDate`/`targetTsb` |
 | `get-training-load` | Weekly volume, volume-spike flags, weekly load | `days`, `runOnly` |
-| `get-best-efforts` | My best 5K/10K/half/marathon times | `distances`, `window`, `topN` |
+| `get-best-efforts` | My best 5K/10K/half/marathon times; my fastest 5K inside one run, and where | `distances`, `window`, `topN`, `id` |
 | `get-race-prediction` | What could I run for X? What pace do I need for a goal time? | `raceDistance` (`5km`, `10km`, `15km`, `10 mile`, `half marathon`, `marathon`, `50km`), `goalTime` |
 
 ### Writes

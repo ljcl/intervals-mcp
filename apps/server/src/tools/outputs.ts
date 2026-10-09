@@ -1057,20 +1057,68 @@ export function warnOnSchemaDrift<T>(
 // ---------- get-best-efforts ----------
 const BestEffortEntrySchema = z.object({
   rank: z.number().int(),
-  time_seconds: z.number(),
+  time_seconds: z
+    .number()
+    .describe("Elapsed seconds across the stretch; a stop inside it counts"),
   time_formatted: z.string(),
   pace_min_per_km: z.string().nullable(),
+  distance_m: z
+    .number()
+    .describe(
+      "Metres the time covers: the requested distance with id, or over a window the matched curve point",
+    ),
   date: z.string().describe("ISO date YYYY-MM-DD"),
   activity_id: z.string(),
   activity_name: z.string(),
   race: z.boolean(),
+  start_km: z
+    .number()
+    .nullable()
+    .describe(
+      "With id: km into the run where the stretch starts; null over a window",
+    ),
+  end_km: z
+    .number()
+    .nullable()
+    .describe(
+      "With id: km into the run where the stretch ends; null over a window",
+    ),
+  stopped_seconds: z
+    .number()
+    .int()
+    .nullable()
+    .describe(
+      "With id: seconds of the time spent stopped (an auto-pause gap, or speed under 0.5 m/s); null over a window",
+    ),
 });
 export const BestEffortsOutputSchema = z.object({
-  window: z.object({
-    id: z.string().describe('"all", "1y", "90d", or "r.<oldest>.<newest>"'),
-    oldest: z.string().describe("ISO date YYYY-MM-DD"),
-    newest: z.string().describe("ISO date YYYY-MM-DD"),
-  }),
+  mode: z
+    .enum(["window", "activity"])
+    .describe(
+      '"window" searched your history; "activity" searched the one run in activity',
+    ),
+  window: z
+    .object({
+      id: z.string().describe('"all", "1y", "90d", or "r.<oldest>.<newest>"'),
+      oldest: z.string().describe("ISO date YYYY-MM-DD"),
+      newest: z.string().describe("ISO date YYYY-MM-DD"),
+    })
+    .nullable()
+    .describe("The searched range; null with id"),
+  activity: z
+    .object({
+      id: z.string(),
+      name: z.string(),
+      date: z.string().describe("ISO date YYYY-MM-DD"),
+      type: z.string(),
+      covered_km: z
+        .number()
+        .describe(
+          "Distance the run's distance stream covers, km, rounded down",
+        ),
+    })
+    .nullable()
+    .describe("The searched run; null over a window"),
   top_n: z.number().int(),
   units: z.object({
     time: z.literal("s"),
@@ -1079,13 +1127,13 @@ export const BestEffortsOutputSchema = z.object({
   note: z
     .string()
     .describe(
-      "Time-basis note: best times come from the recorded time stream (a moving-time style curve), not elapsed time",
+      "Time basis: elapsed time across the fastest stretch (intervals.icu's pace-curve rule); a stop inside it counts",
     ),
   best_efforts: z.record(z.string(), z.array(BestEffortEntrySchema)),
   missing: z
     .array(z.string())
     .describe(
-      "Requested distances with no curve point within tolerance (2% of the target or 50m, whichever is larger)",
+      "Requested distances with no result: over a window, no curve point within tolerance (2% of the target or 50m, whichever is larger); with id, longer than the run or only inside parts marked to ignore for pace",
     ),
   warnings: z.array(z.string()),
 });

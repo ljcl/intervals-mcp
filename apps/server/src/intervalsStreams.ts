@@ -58,6 +58,10 @@ export interface IntervalsStreams {
   moving: boolean[];
   /** Number of samples in `time` (and in every other array present). */
   length: number;
+  /** Raw samples dropped for a `null` time. Set by `loadIntervalsStreams`.
+   * Above 0, an index from intervals.icu (such as an activity's
+   * `ignore_parts`) no longer points at the same sample here. */
+  droppedSamples?: number;
 }
 
 /** What `loadIntervalsStreams` can be called for. Only activities today. */
@@ -232,7 +236,12 @@ export async function loadIntervalsStreams(
     throw new IntervalsStreamsUnavailableError(id);
   }
 
-  const result: IntervalsStreams = { time, moving: [], length: time.length };
+  const result: IntervalsStreams = {
+    time,
+    moving: [],
+    length: time.length,
+    droppedSamples: timeStream.data.length - time.length,
+  };
   const aligned = (stream: IntervalsStream) =>
     keepIndices.map((index) => stream.data[index] ?? null);
 

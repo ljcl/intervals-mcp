@@ -638,8 +638,9 @@ async function checkGetIntervalAnalysis(): Promise<void> {
 async function checkGetBestEfforts(): Promise<void> {
   const name = "get-best-efforts";
   try {
+    // topN 3 reads the next ranks in the same request (subMaxEfforts, #82).
     const result = (await getBestEffortsTool.execute(
-      { distances: ["5km"], window: "1y", topN: 1 },
+      { distances: ["5km"], window: "1y", topN: 3 },
       apiKey,
       NO_PROGRESS,
     )) as {
@@ -655,8 +656,45 @@ async function checkGetBestEfforts(): Promise<void> {
       string,
       Array<{ time_formatted: string }>
     >;
-    const best5k = bestEfforts["5km"]?.[0];
-    ok(name, `best_5km=${best5k?.time_formatted ?? "none"}`);
+    const fiveK = bestEfforts["5km"] ?? [];
+    ok(
+      name,
+      `best_5km=${fiveK[0]?.time_formatted ?? "none"} ranks_5km=${fiveK.length}`,
+    );
+  } catch (error) {
+    fail(name, throwSummary(error));
+  }
+}
+
+async function checkGetBestEffortsActivity(): Promise<void> {
+  const name = "get-best-efforts (id)";
+  try {
+    const result = (await getBestEffortsTool.execute(
+      { id: activityId, distances: ["1km"], topN: 2 },
+      apiKey,
+      NO_PROGRESS,
+    )) as {
+      structuredContent?: Record<string, unknown>;
+      isError?: boolean;
+      content?: Array<{ text?: unknown }>;
+    };
+    if (result.isError || !result.structuredContent) {
+      fail(name, errorSummary(result));
+      return;
+    }
+    const bestEfforts = result.structuredContent.best_efforts as Record<
+      string,
+      Array<{
+        time_formatted: string;
+        start_km: number | null;
+        stopped_seconds: number | null;
+      }>
+    >;
+    const oneKm = bestEfforts["1km"] ?? [];
+    ok(
+      name,
+      `best_1km=${oneKm[0]?.time_formatted ?? "none"} start_km=${oneKm[0]?.start_km ?? "none"} stopped_s=${oneKm[0]?.stopped_seconds ?? "none"} ranks_1km=${oneKm.length}`,
+    );
   } catch (error) {
     fail(name, throwSummary(error));
   }
@@ -1188,6 +1226,7 @@ await checkGetSplitAnalysis();
 await checkGetAerobicAnalysis();
 await checkGetIntervalAnalysis();
 await checkGetBestEfforts();
+await checkGetBestEffortsActivity();
 await checkGetRacePrediction();
 await checkGetAthleteStats();
 const fitnessTrendCurrent = await checkGetFitnessTrendWholeBody();

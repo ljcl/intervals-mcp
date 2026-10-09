@@ -1,41 +1,57 @@
 import { z } from "zod";
+import {
+  bestEffortWindows,
+  coveredDistanceM,
+  paceIgnoredMask,
+} from "../activityBestEfforts";
 import { getTimeZone } from "../config";
-import { HttpError } from "../fetchClient";
-import { formatDuration } from "../formatters";
+import { activityDisplayName, formatDuration, round } from "../formatters";
 import {
   getActivity,
-  getActivityPaceCurves,
   getAthletePaceCurves,
-  type IntervalsActivity,
+  type IntervalsAthletePaceCurves,
 } from "../intervalsClient";
+import {
+  IntervalsStreamsUnavailableError,
+  loadIntervalsStreams,
+} from "../intervalsStreams";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
-import { mapWithConcurrency } from "../utils/concurrency";
 import { addDays, isValidCalendarDate, todayLocal } from "../utils/localDate";
-import { paceFromDistanceTime } from "../utils/running";
+import { isPaceActivity, paceFromDistanceTime } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
-import { toolErrorText } from "./_errors";
+import { prefixedErrorText, toolErrorText } from "./_errors";
+import { intervalsActivityIdInput } from "./_ids";
 import { BestEffortsOutputSchema, warnOnSchemaDrift } from "./outputs";
 
 const name = "get-best-efforts";
 
+/** Both modes: the pace-curve rule counts elapsed time (verified 2026-10-08,
+ * docs/api-notes.md), and `bestEffortWindows` uses the same rule. */
 const TIME_BASIS_NOTE =
-  "Best times come from the recorded time stream (a moving-time style curve from intervals.icu's pace curves), not elapsed time.";
+  "Each time is the elapsed time across the fastest stretch, the rule intervals.icu's pace curves use. A stop inside a stretch counts toward its time.";
 
 const description = `
 Returns best times at standard running distances (400 m to marathon by
-default) from intervals.icu's pace curves, over all time, the last year, the
-last 90 days or a custom range. Use it for "what is my fastest 5K?" or to
-check a personal best against a recent race.
+default). Over your history it reads intervals.icu's pace curves for all
+time, the last year, the last 90 days or a custom range: "what is my
+fastest 5K?". With an id it searches one run instead and says where each
+effort starts and ends: "what was my fastest 5K inside Sunday's half?" or
+"my 3 fastest km today" (id "latest" is your newest run).
 
-For predicted race times or goal pacing, use get-race-prediction.
+For predicted race times or goal pacing, use get-race-prediction. For even
+1 km splits of one run, use get-split-analysis.
 
 Notes:
-- Times come from the recorded time stream (moving-time style), not elapsed
-  time. Ranks are computed here; intervals.icu does not return them.
-- A distance with no curve point within 2% (or 50 m) of it is listed in
-  missing, not replaced by a nearby distance.
-- topN above 1 costs extra requests: per-activity pace curves, plus a name
-  lookup for each winning activity.
+- Each time is the elapsed time across the fastest stretch, the rule
+  intervals.icu's pace curves use. A stop inside the stretch counts. With
+  an id, each effort also gives its stopped seconds.
+- Over a window, a distance with no curve point within 2% (or 50 m) of it
+  is listed in missing, not replaced by a nearby distance.
+- With an id, a distance you ask for that is longer than the run is listed
+  in missing.
+- With an id, only runs (Run, TrailRun, VirtualRun) are searched. Parts
+  the athlete marked in intervals.icu to ignore for pace are left out. An
+  activity with no recorded streams returns an error.
 `;
 
 /** Standard distances, in metres. `half marathon`/`marathon` are matched
@@ -64,32 +80,51 @@ const ALL_TIME_START = "1986-01-01";
 const WINDOW_RE = /^(all|1y|90d|\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2})$/;
 const WINDOW_RANGE_RE = /^(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})$/;
 
-const inputSchema = z.object({
-  distances: z
-    .array(z.enum(DISTANCE_LABELS))
-    .min(1)
-    .optional()
-    .describe(
-      "Which distances to report. Default: 400m, 1km, 5km, 10km, half marathon, marathon.",
-    ),
-  window: z
-    .string()
-    .regex(WINDOW_RE, 'Must be "all", "1y", "90d", or "YYYY-MM-DD..YYYY-MM-DD"')
-    .optional()
-    .default("1y")
-    .describe(
-      '"all", "1y", "90d", or a custom "YYYY-MM-DD..YYYY-MM-DD" range. Default: 1y.',
-    ),
-  topN: z
-    .number()
-    .int()
-    .min(1)
-    .max(5)
-    .default(1)
-    .describe(
-      "Top N distinct activities per distance (1-5, default 1). Above 1 fetches per-activity pace curves.",
-    ),
-});
+const inputSchema = z
+  .object({
+    id: intervalsActivityIdInput(
+      "One run to search instead of your history. Do not send window with it.",
+    ).optional(),
+    distances: z
+      .array(z.enum(DISTANCE_LABELS))
+      .min(1)
+      .optional()
+      .describe(
+        "Which distances to report. Default: 400m, 1km, 5km, 10km, half marathon, marathon; with id, only the ones the run is long enough for.",
+      ),
+    // No zod default: a default would make every id call also carry a
+    // window, so the refine below could not refuse the pair. The handler
+    // applies "1y".
+    window: z
+      .string()
+      .regex(
+        WINDOW_RE,
+        'Must be "all", "1y", "90d", or "YYYY-MM-DD..YYYY-MM-DD"',
+      )
+      .optional()
+      .describe(
+        '"all", "1y", "90d", or a custom "YYYY-MM-DD..YYYY-MM-DD" range. Default: 1y. Do not send it with id.',
+      ),
+    topN: z
+      .number()
+      .int()
+      .min(1)
+      .max(5)
+      .default(1)
+      .describe(
+        "How many efforts per distance (1-5, default 1): over a window, the fastest distinct activities; with id, the fastest stretches of that run that do not overlap.",
+      ),
+  })
+  .superRefine((data, ctx) => {
+    if (data.id !== undefined && data.window !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["window"],
+        message:
+          "Send id or window, not both: id searches one run, window searches your history.",
+      });
+    }
+  });
 
 type GetBestEffortsInput = z.infer<typeof inputSchema>;
 
@@ -98,21 +133,46 @@ export interface BestEffortEntry {
   time_seconds: number;
   time_formatted: string;
   pace_min_per_km: string | null;
+  /** Metres the time covers: the requested distance with an id, the
+   * matched curve point over a window. */
+  distance_m: number;
   date: string;
   activity_id: string;
   activity_name: string;
   race: boolean;
+  /** With an id: km into the run, from its first distance sample. Null
+   * over a window. */
+  start_km: number | null;
+  end_km: number | null;
+  /** With an id: the stopped seconds inside `time_seconds`. Null over a
+   * window. */
+  stopped_seconds: number | null;
 }
 
 interface BestEffortsResponse {
-  window: { id: string; oldest: string; newest: string };
+  mode: "window" | "activity";
+  window: { id: string; oldest: string; newest: string } | null;
+  activity: {
+    id: string;
+    name: string;
+    date: string;
+    type: string;
+    covered_km: number;
+  } | null;
   top_n: number;
   units: { time: "s"; pace: "min/km" };
   note: string;
   best_efforts: Record<string, BestEffortEntry[]>;
-  /** Requested distances with no curve point within tolerance
-   * ({@link matchDistance}): 2% of the target or 50 m, whichever is larger.
-   * Each also has a matching entry in `warnings`. */
+  /** Requested distances with no result: over a window, no curve point
+   * within tolerance ({@link matchDistance}, 2% of the target or 50 m,
+   * whichever is larger); with an id, longer than the run (or only inside
+   * ignored parts). Each also has a matching entry in `warnings`. */
+  missing: string[];
+  warnings: string[];
+}
+
+interface EffortsResult {
+  best_efforts: Record<string, BestEffortEntry[]>;
   missing: string[];
   warnings: string[];
 }
@@ -208,22 +268,66 @@ export function matchDistance(
   return diff <= toleranceMeters(target) ? idx : null;
 }
 
-/** `topN === 1`: one call to `getAthletePaceCurves`, whose `activities` map
- * already carries the winning activity's name/race flag/date. */
-async function buildTopOneEfforts(
+/** One rank at one grid index: the time and the activity that set it. */
+interface CurveRank {
+  secs: number;
+  activityId: string;
+}
+
+/**
+ * Ranks 1..`topN` at curve index `idx`: rank 1 from `values`, the rest from
+ * the `submax_values` rows that `subMaxEfforts` adds. A row truncated before
+ * `idx` (fewer activities reach the distance) adds no rank. An activity that
+ * already holds a rank is never listed twice (not seen live, but cheap to
+ * guard).
+ */
+function ranksAt(
+  list: IntervalsAthletePaceCurves["list"][number],
+  idx: number,
+  topN: number,
+): CurveRank[] {
+  const raw = [
+    { secs: list.values[idx], activityId: list.activity_id[idx] },
+    ...(list.submax_values ?? []).map((row, r) => ({
+      secs: row[idx],
+      activityId: list.submax_activity_id?.[r]?.[idx],
+    })),
+  ];
+  const ranks: CurveRank[] = [];
+  const seen = new Set<string>();
+  for (const { secs, activityId } of raw) {
+    if (secs == null || !activityId || seen.has(activityId)) continue;
+    seen.add(activityId);
+    ranks.push({ secs, activityId });
+    if (ranks.length >= topN) break;
+  }
+  return ranks;
+}
+
+/**
+ * Over a window: one `getAthletePaceCurves` call for every `topN`. The
+ * `activities` map carries each ranked activity's name, race flag and date,
+ * and with `topN` above 1, `subMaxEfforts: topN - 1` adds the next ranks in
+ * the same response (#82). Before, ranks below 1 cost a per-activity curve
+ * read plus one `getActivity` call per winning activity, up to 30.
+ */
+async function buildWindowEfforts(
   apiKey: string,
   distances: DistanceLabel[],
+  topN: number,
   resolved: ResolvedWindow,
   progress: ReportProgress,
-): Promise<{
-  best_efforts: Record<string, BestEffortEntry[]>;
-  missing: string[];
-  warnings: string[];
-}> {
-  progress(`Fetching pace curve (${resolved.curveId})…`, { important: true });
+): Promise<EffortsResult> {
+  progress(
+    topN > 1
+      ? `Fetching pace curve (${resolved.curveId}) with the top ${topN} per distance…`
+      : `Fetching pace curve (${resolved.curveId})…`,
+    { important: true },
+  );
   const curves = await getAthletePaceCurves(apiKey, {
     type: "Run",
     curves: [resolved.curveId],
+    ...(topN > 1 ? { subMaxEfforts: topN - 1 } : {}),
   });
   const list = curves.list.find((c) => c.id === resolved.curveId);
 
@@ -231,13 +335,18 @@ async function buildTopOneEfforts(
   const warnings: string[] = [];
   const best_efforts: Record<string, BestEffortEntry[]> = {};
 
+  if (topN > 1 && list && list.submax_values == null) {
+    warnings.push(
+      "intervals.icu returned no ranks below the best for this window, so only the best is shown.",
+    );
+  }
+
   for (const label of distances) {
     const target = DISTANCE_METERS[label];
     const idx = list ? matchDistance(list.distance, target) : null;
-    const timeSeconds = idx !== null ? (list?.values[idx] ?? null) : null;
-    const activityId = idx !== null ? (list?.activity_id[idx] ?? null) : null;
+    const ranks = list && idx !== null ? ranksAt(list, idx, topN) : [];
 
-    if (idx === null || timeSeconds == null || !activityId) {
+    if (!list || idx === null || ranks.length === 0) {
       best_efforts[label] = [];
       missing.push(label);
       warnings.push(
@@ -246,155 +355,22 @@ async function buildTopOneEfforts(
       continue;
     }
 
-    const activityRef = curves.activities[activityId];
-    best_efforts[label] = [
-      {
-        rank: 1,
-        time_seconds: timeSeconds,
-        time_formatted: formatDuration(timeSeconds),
-        pace_min_per_km: paceFromDistanceTime(
-          list?.distance[idx] ?? target,
-          timeSeconds,
-        ),
-        date: (activityRef?.start_date_local ?? "").split("T")[0] ?? "",
-        activity_id: activityId,
-        activity_name: activityRef?.name ?? "Unknown activity",
-        race: activityRef?.race ?? false,
-      },
-    ];
-  }
-
-  return { best_efforts, missing, warnings };
-}
-
-/** Names/race flags for the winning activities are resolved with at most one
- * `getActivity` call per unique id (distances x topN, capped at 30), run
- * through `mapWithConcurrency` so the response cache and the client's own
- * throttle in `fetchClient.ts` do the pacing; never one `listActivities`
- * sweep over the whole window (a 40-year "all" window splits into hundreds
- * of sequential calls). */
-const NAME_LOOKUP_CONCURRENCY = 5;
-
-/** `topN > 1`: one `getActivityPaceCurves` call for the per-activity times,
- * then a bounded-concurrency `getActivity` per winning activity id for its
- * name/race flag, never one `listActivities` call per candidate window. */
-async function buildTopNEfforts(
-  apiKey: string,
-  distances: DistanceLabel[],
-  topN: number,
-  resolved: ResolvedWindow,
-  progress: ReportProgress,
-): Promise<{
-  best_efforts: Record<string, BestEffortEntry[]>;
-  missing: string[];
-  warnings: string[];
-}> {
-  const targetMeters = distances
-    .map((label) => DISTANCE_METERS[label])
-    .sort((a, b) => a - b);
-
-  progress(
-    `Fetching activity pace curves ${resolved.oldest} to ${resolved.newest}…`,
-    { important: true },
-  );
-  const curves = await getActivityPaceCurves(apiKey, {
-    oldest: resolved.oldest,
-    newest: resolved.newest,
-    type: "Run",
-    distances: targetMeters,
-  });
-
-  const missing: string[] = [];
-  const warnings: string[] = [];
-  const candidatesByLabel = new Map<
-    DistanceLabel,
-    { activityId: string; timeSeconds: number; date: string }[]
-  >();
-  const distanceMetersByLabel = new Map<DistanceLabel, number>();
-
-  for (const label of distances) {
-    const target = DISTANCE_METERS[label];
-    const idx = matchDistance(curves.distances, target);
-    if (idx === null) {
-      missing.push(label);
-      warnings.push(
-        `No recorded effort within tolerance near ${label} in this window.`,
-      );
-      continue;
-    }
-    const distanceMeters = curves.distances[idx]!;
-    distanceMetersByLabel.set(label, distanceMeters);
-
-    const candidates = curves.curves
-      .filter((c) => c.secs.length > idx && c.secs[idx] != null)
-      .map((c) => ({
-        activityId: c.id,
-        timeSeconds: c.secs[idx] as number,
-        date: (c.start_date_local ?? "").split("T")[0] ?? "",
-      }))
-      .sort((a, b) => a.timeSeconds - b.timeSeconds)
-      .slice(0, topN);
-
-    if (candidates.length === 0) {
-      missing.push(label);
-      warnings.push(
-        `No recorded effort within tolerance near ${label} in this window.`,
-      );
-      continue;
-    }
-
-    candidatesByLabel.set(label, candidates);
-  }
-
-  const winningIds = new Set<string>();
-  for (const candidates of candidatesByLabel.values()) {
-    for (const c of candidates) winningIds.add(c.activityId);
-  }
-
-  progress(`Resolving ${winningIds.size} activity names…`, {
-    important: true,
-  });
-  const activityById = new Map<string, IntervalsActivity>();
-  await mapWithConcurrency(
-    Array.from(winningIds),
-    NAME_LOOKUP_CONCURRENCY,
-    async (activityId) => {
-      try {
-        activityById.set(activityId, await getActivity(apiKey, activityId));
-      } catch (error) {
-        // A genuinely missing activity (e.g. deleted since the pace curve
-        // was computed) falls back to "Unknown activity" rather than
-        // failing the whole call; anything else, including a rate limit,
-        // is a real failure and should surface as one, not be silently
-        // swallowed into a misleading "Unknown activity".
-        if (error instanceof HttpError && error.response.status === 404) {
-          return;
-        }
-        throw error;
-      }
-    },
-  );
-
-  const best_efforts: Record<string, BestEffortEntry[]> = {};
-  for (const label of distances) {
-    const candidates = candidatesByLabel.get(label);
-    if (!candidates) {
-      best_efforts[label] = [];
-      continue;
-    }
-    const distanceMeters = distanceMetersByLabel.get(label) ?? 0;
-
-    best_efforts[label] = candidates.map((c, i) => {
-      const info = activityById.get(c.activityId);
+    const distanceM = list.distance[idx] ?? target;
+    best_efforts[label] = ranks.map(({ secs, activityId }, k) => {
+      const ref = curves.activities[activityId];
       return {
-        rank: i + 1,
-        time_seconds: c.timeSeconds,
-        time_formatted: formatDuration(c.timeSeconds),
-        pace_min_per_km: paceFromDistanceTime(distanceMeters, c.timeSeconds),
-        date: c.date,
-        activity_id: c.activityId,
-        activity_name: info?.name ?? "Unknown activity",
-        race: info?.race ?? false,
+        rank: k + 1,
+        time_seconds: secs,
+        time_formatted: formatDuration(secs),
+        pace_min_per_km: paceFromDistanceTime(distanceM, secs),
+        distance_m: distanceM,
+        date: (ref?.start_date_local ?? "").split("T")[0] ?? "",
+        activity_id: activityId,
+        activity_name: ref?.name ?? "Unknown activity",
+        race: ref?.race ?? false,
+        start_km: null,
+        end_km: null,
+        stopped_seconds: null,
       };
     });
   }
@@ -402,12 +378,213 @@ async function buildTopNEfforts(
   return { best_efforts, missing, warnings };
 }
 
+/** The searched run, as `BestEffortsResponse.activity` reports it. */
+type SearchedActivity = NonNullable<BestEffortsResponse["activity"]>;
+
+/**
+ * With an id: two requests, the activity and its streams (time, distance
+ * and smoothed speed). `bestEffortWindows` (`activityBestEfforts.ts`) finds
+ * the stretches with the pace curve's own rule, so rank 1 at a distance
+ * equals intervals.icu's activity pace curve there. An `error` is an
+ * athlete-facing reason this run cannot be searched; the caller prefixes it.
+ */
+async function buildActivityEfforts(
+  apiKey: string,
+  id: string,
+  rawDistances: DistanceLabel[] | undefined,
+  topN: number,
+  progress: ReportProgress,
+): Promise<
+  | { error: string }
+  | (EffortsResult & { activity: SearchedActivity; distances: DistanceLabel[] })
+> {
+  progress(`Fetching activity ${id}…`);
+  const activity = await getActivity(apiKey, id);
+  const activityName = activityDisplayName(activity);
+  const type = activity.type ?? "Workout";
+  if (!isPaceActivity(type)) {
+    return {
+      error: `get-best-efforts searches runs only (Run, TrailRun, VirtualRun). Activity ${id} ("${activityName}") is a ${type}.`,
+    };
+  }
+
+  progress(`Fetching the streams for "${activityName}"…`);
+  let streams: Awaited<ReturnType<typeof loadIntervalsStreams>>;
+  try {
+    // `velocity_smooth` only feeds the loader's `moving` stream. Without it,
+    // only a gap in the time stream (an auto-pause) is a stop, and a stand
+    // at a light with auto-pause off counts as moving. With it, a stop here
+    // is a stop in get-split-analysis too. It is in the same request.
+    streams = await loadIntervalsStreams(apiKey, id, [
+      "distance",
+      "velocity_smooth",
+    ]);
+  } catch (error) {
+    if (error instanceof IntervalsStreamsUnavailableError) {
+      return {
+        error: `No data streams are recorded for "${activityName}" (activity ${id}), so there are no best efforts to find. This looks like a manual entry.`,
+      };
+    }
+    throw error;
+  }
+
+  const distance = streams.distance ?? [];
+  const covered = coveredDistanceM(distance);
+  if (covered <= 0) {
+    return {
+      error: `"${activityName}" (activity ${id}) has no distance stream, so there are no best efforts to find.`,
+    };
+  }
+  // Rounded down: a run 3 m short of 5 km reads "4.99 km", never "5.00 km",
+  // so the text never says a run of "5.00 km" is too short for 5km.
+  const coveredKm = Math.floor(covered / 10) / 100;
+  const coveredLabel = `${coveredKm.toFixed(2)} km`;
+
+  const missing: string[] = [];
+  const warnings: string[] = [];
+  const best_efforts: Record<string, BestEffortEntry[]> = {};
+
+  // A distance the athlete did not ask for and the run cannot hold is
+  // dropped; one they asked for is reported in `missing` below. A dropped
+  // distance the run nearly covers (within the window-mode tolerance, such
+  // as a GPS-short parkrun or half marathon) gets a warning, so the model
+  // does not lose it without a word.
+  let distances = rawDistances;
+  if (!distances) {
+    distances = DEFAULT_DISTANCES.filter(
+      (label) => DISTANCE_METERS[label] <= covered,
+    );
+    if (distances.length === 0) {
+      warnings.push(
+        `This run covers ${coveredLabel}, shorter than the shortest distance (400m).`,
+      );
+    } else {
+      for (const label of DEFAULT_DISTANCES) {
+        const short = DISTANCE_METERS[label] - covered;
+        if (short > 0 && short <= toleranceMeters(DISTANCE_METERS[label])) {
+          warnings.push(
+            `${label} was not searched: this run covers ${coveredLabel}, ${Math.ceil(short)} m short of it.`,
+          );
+        }
+      }
+    }
+  }
+
+  // `ignore_parts` indices point into the raw streams. The loader drops a
+  // sample with no time, and after a drop the indices point at the wrong
+  // samples, so the parts are then reported but not applied.
+  const ignored = paceIgnoredMask(activity.ignore_parts, streams.length);
+  let excluded: boolean[] | undefined;
+  if (ignored) {
+    const parts = `${ignored.parts} ${ignored.parts === 1 ? "part" : "parts"}`;
+    const dropped = streams.droppedSamples ?? 0;
+    if (dropped === 0) {
+      excluded = ignored.mask;
+      warnings.push(
+        `Left out ${parts} of this run that you marked in intervals.icu to ignore for pace.`,
+      );
+    } else {
+      warnings.push(
+        `This run has ${parts} marked in intervals.icu to ignore for pace. They were not left out: ${dropped} ${dropped === 1 ? "sample has" : "samples have"} no time, so their positions in the streams are not certain.`,
+      );
+    }
+  }
+  if (activity.ignore_pace === true) {
+    warnings.push(
+      "This run is marked in intervals.icu to ignore its pace, so intervals.icu may leave it out of your pace curves.",
+    );
+  }
+
+  progress("Finding the fastest stretches…", { important: true });
+  const date = activity.start_date_local.split("T")[0] ?? "";
+  const race = activity.race ?? false;
+  for (const label of distances) {
+    const target = DISTANCE_METERS[label];
+    if (target > covered) {
+      best_efforts[label] = [];
+      missing.push(label);
+      warnings.push(`${label} is longer than this run (${coveredLabel}).`);
+      continue;
+    }
+    const windows = bestEffortWindows(
+      { time: streams.time, distance, moving: streams.moving },
+      target,
+      topN,
+      excluded,
+    );
+    // The run covers the target, so with nothing excluded the stretch from
+    // the first distance sample always reaches it: only ignored parts can
+    // leave no stretch.
+    if (windows.length === 0) {
+      best_efforts[label] = [];
+      missing.push(label);
+      warnings.push(`No ${label} stretch outside the ignored parts.`);
+      continue;
+    }
+    best_efforts[label] = windows.map((w, k) => {
+      const timeSeconds = Math.round(w.seconds);
+      return {
+        rank: k + 1,
+        time_seconds: timeSeconds,
+        time_formatted: formatDuration(timeSeconds),
+        pace_min_per_km: paceFromDistanceTime(target, timeSeconds),
+        distance_m: target,
+        date,
+        activity_id: id,
+        activity_name: activityName,
+        race,
+        start_km: round(w.startM / 1000, 2),
+        end_km: round(w.endM / 1000, 2),
+        stopped_seconds: Math.round(w.stoppedSeconds),
+      };
+    });
+  }
+
+  return {
+    best_efforts,
+    missing,
+    warnings,
+    distances,
+    activity: { id, name: activityName, date, type, covered_km: coveredKm },
+  };
+}
+
+/** One effort's lines: where in the run (with an id) or when (over a
+ * window). */
+function effortLines(
+  effort: BestEffortEntry,
+  mode: BestEffortsResponse["mode"],
+): string[] {
+  const pace = effort.pace_min_per_km
+    ? `${effort.pace_min_per_km} min/km`
+    : "n/a";
+  const head = `  ${effort.rank}. ${effort.time_formatted} (${pace})`;
+  if (mode === "activity") {
+    const where =
+      effort.start_km != null && effort.end_km != null
+        ? ` from km ${effort.start_km.toFixed(2)} to ${effort.end_km.toFixed(2)}`
+        : "";
+    const stopped = effort.stopped_seconds
+      ? `, ${formatDuration(effort.stopped_seconds)} stopped`
+      : "";
+    return [`${head}${where}${stopped}`];
+  }
+  const raceLabel = effort.race ? " (race)" : "";
+  return [
+    `${head} - ${effort.date}${raceLabel}`,
+    `     ${effort.activity_name}`,
+  ];
+}
+
 export function formatBestEffortsText(
   response: BestEffortsResponse,
   distances: DistanceLabel[],
 ): string {
+  const { activity, window } = response;
   const lines = [
-    `Best efforts, ${response.window.oldest} to ${response.window.newest}`,
+    activity
+      ? `Best efforts inside ${activity.name} (${activity.id}), ${activity.date}, ${activity.covered_km.toFixed(2)} km`
+      : `Best efforts, ${window?.oldest} to ${window?.newest}`,
   ];
 
   let any = false;
@@ -415,16 +592,16 @@ export function formatBestEffortsText(
     const efforts = response.best_efforts[label];
     if (!efforts || efforts.length === 0) continue;
     any = true;
-    lines.push(`${label}:`);
+    // Over a window the matched curve point can sit up to the tolerance
+    // away from the label: say which distance the times are for.
+    const covers = efforts[0]!.distance_m;
+    lines.push(
+      Math.abs(covers - DISTANCE_METERS[label]) >= 1
+        ? `${label} (${(covers / 1000).toFixed(2)} km):`
+        : `${label}:`,
+    );
     for (const effort of efforts) {
-      const raceLabel = effort.race ? " (race)" : "";
-      const paceLabel = effort.pace_min_per_km
-        ? `${effort.pace_min_per_km} min/km`
-        : "n/a";
-      lines.push(
-        `  ${effort.rank}. ${effort.time_formatted} (${paceLabel}) - ${effort.date}${raceLabel}`,
-      );
-      lines.push(`     ${effort.activity_name}`);
+      lines.push(...effortLines(effort, response.mode));
     }
   }
   if (!any) lines.push("No best efforts found for the requested distances.");
@@ -443,64 +620,116 @@ export const getBestEffortsTool = {
   annotations: READ_ONLY,
   outputSchema: BestEffortsOutputSchema,
   execute: async (
-    { distances: rawDistances, window, topN }: GetBestEffortsInput,
+    { id, distances: rawDistances, window, topN }: GetBestEffortsInput,
     apiKey: string,
     progress: ReportProgress = NO_PROGRESS,
   ) => {
-    const distances = rawDistances ?? DEFAULT_DISTANCES;
-    const tz = getTimeZone();
-    const resolved = resolveWindow(window, tz);
-    if ("error" in resolved) {
-      return {
-        content: [{ type: "text" as const, text: `❌ ${resolved.error}` }],
-        isError: true,
-      };
+    let response: BestEffortsResponse;
+    let distances: DistanceLabel[];
+
+    if (id !== undefined) {
+      try {
+        const outcome = await buildActivityEfforts(
+          apiKey,
+          id,
+          rawDistances,
+          topN,
+          progress,
+        );
+        if ("error" in outcome) {
+          return {
+            content: [
+              { type: "text" as const, text: prefixedErrorText(outcome.error) },
+            ],
+            isError: true,
+          };
+        }
+        distances = outcome.distances;
+        response = {
+          mode: "activity",
+          window: null,
+          activity: outcome.activity,
+          top_n: topN,
+          units: { time: "s", pace: "min/km" },
+          note: TIME_BASIS_NOTE,
+          best_efforts: outcome.best_efforts,
+          missing: outcome.missing,
+          warnings: outcome.warnings,
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: toolErrorText(error, {
+                context: `fetch best efforts for activity ${id}`,
+                notFound: `Activity ${id} was not found.`,
+              }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    } else {
+      const resolved = resolveWindow(window ?? "1y", getTimeZone());
+      if ("error" in resolved) {
+        return {
+          content: [
+            { type: "text" as const, text: prefixedErrorText(resolved.error) },
+          ],
+          isError: true,
+        };
+      }
+      distances = rawDistances ?? DEFAULT_DISTANCES;
+      try {
+        const { best_efforts, missing, warnings } = await buildWindowEfforts(
+          apiKey,
+          distances,
+          topN,
+          resolved,
+          progress,
+        );
+        response = {
+          mode: "window",
+          window: {
+            id: resolved.curveId,
+            oldest: resolved.oldest,
+            newest: resolved.newest,
+          },
+          activity: null,
+          top_n: topN,
+          units: { time: "s", pace: "min/km" },
+          note: TIME_BASIS_NOTE,
+          best_efforts,
+          missing,
+          warnings,
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: toolErrorText(error, {
+                context: `fetch best efforts for ${resolved.oldest} to ${resolved.newest}`,
+                notFound: "No pace curve data was found for this athlete.",
+              }),
+            },
+          ],
+          isError: true,
+        };
+      }
     }
 
-    try {
-      const { best_efforts, missing, warnings } =
-        topN > 1
-          ? await buildTopNEfforts(apiKey, distances, topN, resolved, progress)
-          : await buildTopOneEfforts(apiKey, distances, resolved, progress);
+    warnOnSchemaDrift(name, BestEffortsOutputSchema, response);
 
-      const response: BestEffortsResponse = {
-        window: {
-          id: resolved.curveId,
-          oldest: resolved.oldest,
-          newest: resolved.newest,
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: formatBestEffortsText(response, distances),
         },
-        top_n: topN,
-        units: { time: "s", pace: "min/km" },
-        note: TIME_BASIS_NOTE,
-        best_efforts,
-        missing,
-        warnings,
-      };
-
-      warnOnSchemaDrift(name, BestEffortsOutputSchema, response);
-
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: formatBestEffortsText(response, distances),
-          },
-        ],
-        structuredContent: response,
-      };
-    } catch (error) {
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: toolErrorText(error, {
-              context: `fetch best efforts for ${resolved.oldest} to ${resolved.newest}`,
-              notFound: "No pace curve data was found for this athlete.",
-            }),
-          },
-        ],
-        isError: true,
-      };
-    }
+      ],
+      structuredContent: response,
+    };
   },
 };

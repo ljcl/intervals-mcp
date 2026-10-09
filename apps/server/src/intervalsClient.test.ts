@@ -5,9 +5,9 @@ import activityHilly from "./__fixtures__/intervals/activity-hilly.json";
 import intervals from "./__fixtures__/intervals/activity-intervals.json";
 import activityMultilap from "./__fixtures__/intervals/activity-multilap.json";
 import multilapIntervals from "./__fixtures__/intervals/activity-multilap-intervals.json";
-import activityPaceCurvesFixture from "./__fixtures__/intervals/activity-pace-curves.json";
 import gearFixture from "./__fixtures__/intervals/gear.json";
 import paceCurvesFixture from "./__fixtures__/intervals/pace-curves.json";
+import paceCurvesSubmaxFixture from "./__fixtures__/intervals/pace-curves-submax.json";
 import sportSettings from "./__fixtures__/intervals/sport-settings-run.json";
 import streams from "./__fixtures__/intervals/streams.json";
 import streamsHilly from "./__fixtures__/intervals/streams-hilly.json";
@@ -17,7 +17,6 @@ import { intervalsApi, RateLimitError } from "./fetchClient";
 import {
   getActivity,
   getActivityIntervals,
-  getActivityPaceCurves,
   getActivityStreams,
   getAthletePaceCurves,
   getSportSettings,
@@ -26,7 +25,6 @@ import {
   type IntervalsInterval,
   listActivities,
   listGear,
-  resolveNumericAthleteId,
   searchActivities,
   updateActivity,
 } from "./intervalsClient";
@@ -360,6 +358,30 @@ describe("intervalsClient", () => {
       await listGear("k");
       expect(calls).toHaveLength(2);
     });
+
+    it("invalidates every cached athlete pace curve, whose activities map carries run names", async () => {
+      let calls = mockJson(paceCurvesSubmaxFixture);
+      await getAthletePaceCurves("k", {
+        type: "Run",
+        curves: ["1y"],
+        subMaxEfforts: 2,
+      });
+      await getAthletePaceCurves("k", { type: "Run", curves: ["1y"] });
+      expect(calls).toHaveLength(2);
+
+      calls = mockJson(activity);
+      await updateActivity("k", "i189807578", { name: "Renamed" });
+      expect(calls).toHaveLength(1);
+
+      calls = mockJson(paceCurvesSubmaxFixture);
+      await getAthletePaceCurves("k", {
+        type: "Run",
+        curves: ["1y"],
+        subMaxEfforts: 2,
+      });
+      await getAthletePaceCurves("k", { type: "Run", curves: ["1y"] });
+      expect(calls).toHaveLength(2);
+    });
   });
 
   it("parses the multi-lap fixture and types the widened activity fields", async () => {
@@ -585,58 +607,36 @@ describe("intervalsClient", () => {
     );
   });
 
-  it("fetches activity pace curves against the resolved numeric athlete id, parsing the real fixture", async () => {
-    process.env.INTERVALS_ATHLETE_ID = "555555";
-    const calls = mockJson(activityPaceCurvesFixture);
-    const result = await getActivityPaceCurves("k", {
-      oldest: "2026-09-01",
-      newest: "2026-09-24",
+  it("asks for subMaxEfforts only when above 0, and parses the ranks it adds", async () => {
+    const calls = mockJson(paceCurvesSubmaxFixture);
+    const result = await getAthletePaceCurves("k", {
       type: "Run",
-      distances: [400, 1000, 5000, 10000],
+      curves: ["r.2026-08-01.2026-09-30"],
+      subMaxEfforts: 4,
     });
     const url = new URL(calls[0]?.url ?? "");
-    expect(url.pathname).toBe(
-      "/api/v1/athlete/555555/activity-pace-curves.json",
+    expect(url.pathname).toBe("/api/v1/athlete/0/pace-curves.json");
+    expect(url.searchParams.get("curves")).toBe("r.2026-08-01.2026-09-30");
+    expect(url.searchParams.get("subMaxEfforts")).toBe("4");
+
+    const list = result.list[0];
+    expect(list?.submax_values).toHaveLength(4);
+    expect(list?.submax_activity_id).toHaveLength(4);
+    // Rows are truncated where fewer activities reach the distance.
+    expect(list?.submax_values?.map((row) => row.length)).toEqual([
+      124, 108, 94, 94,
+    ]);
+
+    intervalsApi.clearResponseCache();
+    const plain = mockJson(paceCurvesFixture);
+    await getAthletePaceCurves("k", {
+      type: "Run",
+      curves: ["1y"],
+      subMaxEfforts: 0,
+    });
+    expect(new URL(plain[0]?.url ?? "").searchParams.has("subMaxEfforts")).toBe(
+      false,
     );
-    expect(url.searchParams.get("oldest")).toBe("2026-09-01");
-    expect(url.searchParams.get("distances")).toBe("400,1000,5000,10000");
-    expect(result.curves.length).toBe(activityPaceCurvesFixture.curves.length);
-    expect(result.curves[0]?.secs).toEqual(
-      activityPaceCurvesFixture.curves[0]?.secs,
-    );
-  });
-
-  describe("resolveNumericAthleteId", () => {
-    it("uses a bare numeric INTERVALS_ATHLETE_ID directly, without a network call", async () => {
-      process.env.INTERVALS_ATHLETE_ID = "555555";
-      const calls = mockJson({});
-      expect(await resolveNumericAthleteId("k")).toBe("555555");
-      expect(calls).toHaveLength(0);
-    });
-
-    it("strips an i-prefixed INTERVALS_ATHLETE_ID, without a network call", async () => {
-      process.env.INTERVALS_ATHLETE_ID = "i555555";
-      const calls = mockJson({});
-      expect(await resolveNumericAthleteId("k")).toBe("555555");
-      expect(calls).toHaveLength(0);
-    });
-
-    it('resolves via GET /athlete/0 when unset ("0"), keeping only id', async () => {
-      process.env.INTERVALS_ATHLETE_ID = "0";
-      const calls = mockJson({ id: "999999", icu_api_key: "should-not-leak" });
-      const id = await resolveNumericAthleteId("k-resolve");
-      expect(id).toBe("999999");
-      expect(calls).toHaveLength(1);
-      expect(new URL(calls[0]!.url).pathname).toBe("/api/v1/athlete/0");
-    });
-
-    it("caches the resolved id per apiKey across calls", async () => {
-      process.env.INTERVALS_ATHLETE_ID = "0";
-      const calls = mockJson({ id: "999999" });
-      await resolveNumericAthleteId("k-cache");
-      await resolveNumericAthleteId("k-cache");
-      expect(calls).toHaveLength(1);
-    });
   });
 
   it("maps 404 and 401 to IntervalsApiError with the status", async () => {

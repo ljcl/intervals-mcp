@@ -77,7 +77,7 @@ descriptions.
 | `get-split-analysis` | Even km splits with a two-halves pacing verdict stated on the clock and grade-adjusted |
 | `get-aerobic-analysis` | Aerobic decoupling and efficiency factor on a grade-adjusted, pace or power basis from streams, with intervals.icu's own values labelled apart |
 | `get-interval-analysis` | Interval detection with urban-stop-aware rest classification and rep fade |
-| `get-best-efforts` | Best times at standard running distances, from intervals.icu's pace curves |
+| `get-best-efforts` | Best times at standard running distances: over your history from intervals.icu's pace curves, or inside one run with where each started |
 | `get-race-prediction` | Predicted race times from intervals.icu pace-curve points (Riegel) alongside intervals.icu's own critical-speed model, with confidence, source point, and km goal-pace splits |
 | `get-athlete-stats` | Run totals and totals for every sport (count, moving time, distance and whole-body load per activity type) for this week, the last 4 weeks, this month and YTD, aggregated from list-activities data |
 | `get-fitness-trend` | Fitness/fatigue/form (CTL/ATL/TSB), whole-body from intervals.icu wellness or run-only computed locally, with rest/planned-load projection and a solved taper to a target form on a target date |
@@ -413,30 +413,52 @@ the activity has neither, the peak is a last resort: the response warns,
 and the signal makes no call and does not change the verdict.
 
 `get-best-efforts` reports best times at standard distances (400m, 1km, 5km,
-10km, half marathon, marathon by default, or a subset via `distances`) from
-intervals.icu's pace curves rather than scanning activities. `window` picks
+10km, half marathon, marathon by default, or a subset via `distances`).
+
+Over your history it reads intervals.icu's athlete pace curve. `window` picks
 `all`, `1y` (default), `90d`, or a custom `YYYY-MM-DD..YYYY-MM-DD` range,
-mapped to the matching pace-curve id; with no `window`, the other windowed
-tools' `oldest`/`newest`/`days` are read as a range (see docs/architecture.md,
-Input validation). `topN` (1-5, default 1) picks how many
-distinct activities to report per distance: the default makes one call to the
-athlete's own pace curve, whose `activities` map already carries the name,
-date, and race flag; above 1 fetches per-activity pace curves for the window
-to rank the top N distinct activities per distance locally (intervals.icu
-returns no rank), then resolves the name and race flag for each winning
-activity with one bounded-concurrency `getActivity` call per unique id (at
-most 30, distances x topN), never a `list-activities` sweep over the whole
-window. Pace renders as a bare `m:ss` string in `pace_min_per_km`, never
-miles. Because
-the pace curve is built from the recorded time stream (a moving-time style
-curve), `time_seconds`/`time_formatted` are not elapsed time; the response's
-`note` says so. Each requested distance is matched to the nearest point on
-intervals.icu's curve, but only within tolerance (2% of the target or 50m,
-whichever is larger): a distance with no point that close, whether the
-window's curve is empty or its nearest point is simply too far away (a short
-window's only 5K is never reported as its marathon time), comes back as an
-empty list, named in `missing`, with a matching warning, rather than failing
-the whole call or mislabelling an unrelated distance.
+mapped to the matching curve id. With no `window` and no `id`, the other
+windowed tools' `oldest`/`newest`/`days` are read as a range (see
+docs/architecture.md, Input validation). `topN` (1-5, default 1) picks how many
+distinct activities to report per distance. The call is always one request:
+with `topN` above 1 it adds `subMaxEfforts=topN-1`, and intervals.icu returns
+the next-best times from other activities, with their names, dates and race
+flags in the same response (#82). Before, ranks below 1 cost a per-activity
+curve read and one `getActivity` call per winning activity, up to 30. Each
+requested distance is matched to the nearest curve point, but only within
+tolerance (2% of the target or 50 m, whichever is larger). A distance with no
+point that close comes back as an empty list, named in `missing`, with a
+warning; a short window's only 5K is never reported as its marathon time.
+`distance_m` gives the distance each time covers, and the text names the
+curve point when it is not the label's distance.
+
+With `id` (an activity id or `"latest"`; not with `window`) it searches that
+one run: two requests, the activity and its streams (time, distance and
+smoothed speed), plus the activity-list read that resolves `"latest"`.
+`bestEffortWindows` (`activityBestEfforts.ts`) finds the fastest stretch at
+each distance with the pace curve's own rule, so rank 1 equals intervals.icu's
+activity pace curve (docs/api-notes.md). `topN` picks the fastest stretches
+that do not overlap. Each entry adds `start_km` and `end_km` (from the run's
+first distance sample) and `stopped_seconds`: an auto-pause gap, or a sample
+under 0.5 m/s, the same stops as `get-split-analysis`. With no `distances`,
+only the distances the run covers are searched, and a distance the run is
+just short of (within the window tolerance, such as a GPS-short parkrun) gets
+a warning. A distance you ask for that is longer than the run is empty, in
+`missing`, with a warning. `covered_km` is rounded down, so a run 3 m short
+of 5 km reads 4.99 km. Parts marked in intervals.icu to ignore for pace are
+left out, with a warning; a distance with no stretch outside them is in
+`missing`. If the stream loader dropped a sample with no time, the part
+positions are not certain, so the parts are not left out and the warning
+says so. A run marked to ignore its pace gets a warning that intervals.icu
+may leave it out of the pace curves (not verified, docs/api-notes.md). Only
+Run, TrailRun and VirtualRun are searched, and an activity with no recorded
+streams returns an error.
+
+Every time is the elapsed time across the stretch, the rule intervals.icu's
+pace curves use, so a stop inside the stretch counts (verified 2026-10-08,
+docs/api-notes.md). The response's `note` says so. Before #82 the tool called
+it a moving-time curve; that was wrong. Pace is a bare `m:ss` string in
+`pace_min_per_km`, never miles.
 
 `get-race-prediction` predicts race times from intervals.icu's `all` and `90d`
 pace curves rather than scanning activities: each curve's distance-grid points
@@ -800,6 +822,7 @@ These examples assume you already have an activity id to pass to a tool.
 - "Break down the intervals in activity 12345678 — did I fade across the reps?"
 - "How much did the climbs cost me on Sunday's long run?"
 - "Did I positive-split Sunday's long run, or was that just the hills?"
+- "What was my fastest 5K inside Sunday's half marathon, and where did it start?"
 - "Am I fresh enough to race this weekend? Check my CTL, ATL, and TSB"
 - "My race is on 13 September — what should the next three weeks look like so I arrive at TSB +10?"
 - "Did I decouple on that marathon-pace effort?"

@@ -82,7 +82,7 @@ at `apps/server/src/__fixtures__/intervals/`.
 | Endpoint | Status | Shape and units |
 | --- | --- | --- |
 | `GET /athlete/0/pace-curves.json?type=Run&curves=all,90d,...` | 200 | Works with athlete id `0`; `{list[{id,label,distance[],values[] s,activity_id[],paceModels[{type:"CS",criticalSpeed m/s,dPrime m,r2}]}], activities{}}`. Curve ids used: `1y` (get-best-efforts default), `all`, `90d` (get-race-prediction) |
-| `GET /athlete/0/activity-pace-curves.json?...` | 403 | Athlete id `0` is denied on this endpoint specifically (unlike `pace-curves.json` above); needs the bare numeric athlete id |
+| `GET /athlete/0/activity-pace-curves.json?...` | 403 | Athlete id `0` is denied (2026-09-25). On 2026-10-08 the bare numeric id was denied too, and the `i`-prefixed id from `GET /athlete/0` worked. Not used since #82: `pace-curves.json` with `subMaxEfforts` gives the same ranks |
 | `GET /athlete/{numericId}/athlete-summary.json?start&end` | 200 | Weekly rows (Monday-aligned, newest first), totals plus `byCategory[]`; probed but not used: get-athlete-stats instead fetches `list-activities`' underlying `/activities` and aggregates run totals (`aggregateRunTotals`) and per-sport totals (`aggregateSportTotals`) locally, so its bucket boundaries (Monday-aligned week, local calendar month/year) match the rest of the server rather than this endpoint's own |
 | `GET /activity/{id}/interval-stats?start_index&end_index` | 200 | Interval-shaped stats for any stream index range, including `gap` (m/s) |
 | `GET /activity/{id}/time-at-hr` | 200 | `{max_bpm, min_bpm, secs[], cumulative_secs[]}` |
@@ -304,3 +304,68 @@ strongest feeling and 5 the weakest, as `update-activity`'s tool description say
 - `/activities/search` returns light rows (`id,name,start_date_local,type,race,distance,moving_time,tags,description`).
 - `race` (boolean) and `tags` (null or string array) appear on both `search-full` rows and `GET /athlete/0/activities` rows.
 - `GET /athlete/0/activity-tags` returned `[]` and `q=#race` returned `[]` on an account with no tags, so tag search is unverified live (no tags on the probe account); the client test checks `#` is sent encoded.
+
+## Best efforts and pace curves (2026-10-08, live read-only, #82)
+
+Three runs (6.1, 21.2 and 31.0 km), all with auto-pause stops, and athlete
+curves for a 90-day window (37 runs) and a 2-month range.
+
+- `GET /activity/{id}/pace-curve.json` returns one `PaceCurve`: `distance[]`
+  (m, the same fixed grid as the athlete curves, up to the largest grid
+  point the run covers), `values[]` (whole seconds), `start_index[]` and
+  `end_index[]` (sample indices into the activity's streams), and
+  `type: "PACE"`. `activity_id`, `submax_values` and the dates are null.
+- The rule behind every pace-curve value: for each start sample i, take the
+  first sample j where `distance[j] - distance[i]` reaches the target. The
+  time is `(time[j] - time[i]) * target / (distance[j] - distance[i])`,
+  rounded to the nearest second, and the curve keeps the smallest. This rule
+  gave every value on all three runs (313 of 313 points) and the same start
+  and end index on 312 of them. `Math.floor` in place of rounding matched
+  only about half. `bestEffortWindows` (`activityBestEfforts.ts`) is this
+  rule; `activity-pace-curve.json` and `streams-time-distance.json` (one run)
+  pin it in `activityBestEfforts.test.ts`.
+- So a pace-curve time is elapsed time across the stretch. The `time` stream
+  keeps auto-pause gaps, so a stop inside the stretch counts. On a 21.2 km
+  run with 1,101 s of stops, the curve's half marathon spans the whole run
+  and includes every stop. Short distances usually avoid stops, because a
+  stop makes the stretch slower. Before #82, get-best-efforts called the
+  curve "moving-time style"; that was wrong.
+- The athlete curves are built from the activity curves: `pace-curves.json`
+  for a one-day custom range with one run gave the same `distance[]` and
+  `values[]` as that run's own curve. The athlete curves have no
+  `start_index`/`end_index`.
+- `subMaxEfforts=N` on `GET /athlete/0/pace-curves.json` adds
+  `submax_values` and `submax_activity_id` to each curve: N rows, row r
+  holding the (r+2)th best time and its activity at each grid index. A row
+  is truncated, not null-padded, where fewer activities reach the distance.
+  With N=2 and N=4, no activity appeared twice at a grid index, times never
+  decreased with rank, and every activity was in the `activities` map. Ranks
+  1 to 3 matched a local ranking of `activity-pace-curves.json` over the same
+  dates at all six standard distances. `get-best-efforts` reads its `topN`
+  ranks this way, in one request.
+- `includeRanks=true` adds nothing to `type=Run` pace curves.
+- `GET /activity/{id}/best-efforts?stream=&distance=|duration=&count=`
+  accepts `stream=velocity_smooth`, `time` and `distance`; `pace` and `gap`
+  return 422 "Invalid stream type". It returns
+  `{efforts[{start_index, end_index, average, duration, distance}]}`: the
+  `count` best windows that do not overlap, by highest `average`. With
+  `distance=`, `duration` is null and `distance` (m) is
+  `distance[end_index] - distance[start_index - 1]`. With `duration=`,
+  `distance` is null and a window spans `duration` samples. `average` is the
+  mean of the stream over samples `start_index` to `end_index - 1`, a null
+  counting as 0. With `time` or `distance` the best window is only the one
+  with the largest values. The `velocity_smooth` mean leaves out stopped time
+  and read about 1% faster than distance over time, so its best 5 km was not
+  the pace curve's best 5 km. Not used.
+- `GET /athlete/0/activities/{ids}` (comma-separated) works with athlete id
+  `0` and returns full Activity rows in request order. A missing id is left
+  out with no error. A bare-digit id (no `i` prefix) returned no row.
+  `fields=` is ignored here. Not used by get-best-efforts.
+- No activity on this account has `ignore_parts` set (0 of 610 over two
+  years; the spec's `Ignore` is `{start_index, end_index, power, pace, hr}`),
+  so how a part ignored for pace changes a curve is not verified.
+  get-best-efforts leaves out the `pace: true` parts, both ends included, and
+  only when the stream loader dropped no sample (a sample with no time
+  shifts the indices). No activity has `ignore_pace` set either, so whether
+  intervals.icu leaves such a run out of the athlete pace curves is not
+  verified; get-best-efforts says only that it may.

@@ -374,20 +374,17 @@ function scrubPaceCurves(data: Rec): Rec {
 }
 
 /**
- * `activity-pace-curves.json`'s `curves[]` entries carry only an id, a
- * date, a body weight, and the per-distance `secs`: no free text to rename,
- * just the weight scrubbed like every other capture.
+ * One activity's pace curve carries only its id, the distance grid, times
+ * and sample indices. Its `weight` was null when captured; a body weight is
+ * scrubbed to 70 like every other capture.
  */
-function scrubActivityPaceCurves(data: Rec): Rec {
-  const curves = (data.curves ?? []) as Rec[];
-  return {
-    ...data,
-    curves: curves.map((c) => ({
-      ...c,
-      ...("weight" in c ? { weight: 70 } : {}),
-    })),
-  };
+function scrubActivityPaceCurve(data: Rec): Rec {
+  return data.weight == null ? data : { ...data, weight: 70 };
 }
+
+/** The run behind the best-efforts fixtures (`activityBestEfforts.test.ts`):
+ * a 6.1 km run with three auto-pause stops. */
+const BEST_EFFORTS_RUN = "i193700503";
 
 write(
   "sport-settings-run.json",
@@ -406,18 +403,28 @@ write(
     )) as Rec,
   ),
 );
-// `activity-pace-curves.json` 403s on athlete id 0 (and on an `i`-prefixed
-// id); it needs the bare numeric id, resolved from `/athlete/0` and never
-// written to a fixture itself (it also carries `icu_api_key`).
-const self = (await get("/athlete/0")) as Rec;
-const numericAthleteId = String(self.id);
+// The next ranks per distance (`subMaxEfforts`), as get-best-efforts reads
+// them with topN above 1.
 write(
-  "activity-pace-curves.json",
-  scrubActivityPaceCurves(
+  "pace-curves-submax.json",
+  scrubPaceCurves(
     (await get(
-      `/athlete/${numericAthleteId}/activity-pace-curves.json?oldest=2026-09-01&newest=2026-09-24&type=Run&distances=400,1000,5000,10000`,
+      "/athlete/0/pace-curves.json?type=Run&curves=r.2026-08-01.2026-09-30&subMaxEfforts=4",
     )) as Rec,
   ),
+);
+// One run's own pace curve and the two streams it is built from: the golden
+// pair for `bestEffortWindows`. Time and distance only: no coordinates, no
+// heart rate.
+write(
+  "activity-pace-curve.json",
+  scrubActivityPaceCurve(
+    (await get(`/activity/${BEST_EFFORTS_RUN}/pace-curve.json`)) as Rec,
+  ),
+);
+write(
+  "streams-time-distance.json",
+  await get(`/activity/${BEST_EFFORTS_RUN}/streams.json?types=time,distance`),
 );
 
 console.error(`wrote fixtures to ${OUT}`);

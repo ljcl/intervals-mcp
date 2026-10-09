@@ -18,9 +18,9 @@ import { syntheticAllTypesStreams } from "../__fixtures__";
 import activitiesFixture from "../__fixtures__/intervals/activities.json";
 import activityMultilapFixture from "../__fixtures__/intervals/activity-multilap.json";
 import activityMultilapIntervalsFixture from "../__fixtures__/intervals/activity-multilap-intervals.json";
-import activityPaceCurvesFixture from "../__fixtures__/intervals/activity-pace-curves.json";
 import gearFixture from "../__fixtures__/intervals/gear.json";
 import paceCurvesFixture from "../__fixtures__/intervals/pace-curves.json";
+import paceCurvesSubmaxFixture from "../__fixtures__/intervals/pace-curves-submax.json";
 import sportSettingsRunFixture from "../__fixtures__/intervals/sport-settings-run.json";
 import streamsMultilapFixture from "../__fixtures__/intervals/streams-multilap.json";
 import wellnessFixture from "../__fixtures__/intervals/wellness.json";
@@ -42,8 +42,6 @@ vi.mock("../intervalsClient", async (importOriginal) => {
     getWellness: vi.fn(),
     getSportSettings: vi.fn(),
     getAthletePaceCurves: vi.fn(),
-    getActivityPaceCurves: vi.fn(),
-    resolveNumericAthleteId: vi.fn(),
   };
 });
 
@@ -131,12 +129,6 @@ beforeEach(() => {
   vi.mocked(client.getAthletePaceCurves).mockResolvedValue(
     paceCurvesFixture as unknown as client.IntervalsAthletePaceCurves,
   );
-  vi.mocked(client.getActivityPaceCurves).mockResolvedValue(
-    activityPaceCurvesFixture as unknown as Awaited<
-      ReturnType<typeof client.getActivityPaceCurves>
-    >,
-  );
-  vi.mocked(client.resolveNumericAthleteId).mockResolvedValue("123");
 });
 
 interface SizeCase {
@@ -260,6 +252,17 @@ const CASES: Record<string, SizeCase[]> = {
     {
       label: "every distance, top 5, all time",
       args: { window: "all", topN: 5 },
+      // Four ranks below the best at every distance the window reaches.
+      setup: () =>
+        vi.mocked(client.getAthletePaceCurves).mockResolvedValue({
+          ...paceCurvesSubmaxFixture,
+          list: paceCurvesSubmaxFixture.list.map((c) => ({ ...c, id: "all" })),
+        } as unknown as client.IntervalsAthletePaceCurves),
+    },
+    {
+      label: "4 h run, every distance, top 5",
+      args: { id: ID, topN: 5 },
+      setup: longRunStreams,
     },
   ],
   "get-race-prediction": [

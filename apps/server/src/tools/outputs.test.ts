@@ -270,30 +270,64 @@ describe("schemas align with the real tool rawObjects", () => {
     expect(CompareActivitiesOutputSchema.safeParse(result).success).toBe(true);
   });
 
-  it("BestEffortsOutputSchema matches the best-efforts response object", () => {
-    const response = {
+  it("BestEffortsOutputSchema matches the best-efforts response in both modes", () => {
+    const entry = {
+      rank: 1,
+      time_seconds: 1080,
+      time_formatted: "18:00",
+      pace_min_per_km: "3:36",
+      distance_m: 5000,
+      date: "2026-05-01",
+      activity_id: "i123",
+      activity_name: "5K Race",
+      race: true,
+      start_km: null,
+      end_km: null,
+      stopped_seconds: null,
+    };
+    const windowResponse = {
+      mode: "window",
       window: { id: "1y", oldest: "2025-09-25", newest: "2026-09-25" },
+      activity: null,
       top_n: 1,
       units: { time: "s", pace: "min/km" },
-      note: "Best times come from the recorded time stream (a moving-time style curve), not elapsed time.",
-      best_efforts: {
-        "5km": [
-          {
-            rank: 1,
-            time_seconds: 1080,
-            time_formatted: "18m 0s",
-            pace_min_per_km: "3:36",
-            date: "2026-05-01",
-            activity_id: "i123",
-            activity_name: "5K Race",
-            race: true,
-          },
-        ],
-      },
+      note: "Each time is the elapsed time across the fastest stretch.",
+      best_efforts: { "5km": [entry] },
       missing: [],
       warnings: [],
     };
-    expect(BestEffortsOutputSchema.safeParse(response).success).toBe(true);
+    expect(BestEffortsOutputSchema.safeParse(windowResponse).success).toBe(
+      true,
+    );
+
+    const activityResponse = {
+      ...windowResponse,
+      mode: "activity",
+      window: null,
+      activity: {
+        id: "i123",
+        name: "5K Race",
+        date: "2026-05-01",
+        type: "Run",
+        covered_km: 5.12,
+      },
+      best_efforts: {
+        "5km": [{ ...entry, start_km: 0.06, end_km: 5.06, stopped_seconds: 0 }],
+        "10km": [],
+      },
+      missing: ["10km"],
+    };
+    expect(BestEffortsOutputSchema.safeParse(activityResponse).success).toBe(
+      true,
+    );
+
+    // Every entry carries start_km: null over a window, never absent.
+    expect(
+      BestEffortsOutputSchema.safeParse({
+        ...windowResponse,
+        best_efforts: { "5km": [{ ...entry, start_km: undefined }] },
+      }).success,
+    ).toBe(false);
   });
 });
 

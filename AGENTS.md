@@ -64,6 +64,8 @@ breaking them has shipped bugs — do not work around them locally.
   (`gapFactor`, `computeGrades`, and `gapGrades`, the 100 m averaged grade
   every GAP number uses; `gradeAdjustedSpeeds` for a GAP stream);
   `splitAnalysis.ts` and `get-aerobic-analysis` import, never re-derive.
+  Best-effort stretches inside one activity: `bestEffortWindows` in
+  `activityBestEfforts.ts` (the pace-curve rule).
   CTL/ATL/TSB and any projection/taper math: `fitnessTrend.ts` (TSB from
   wellness: `ctlAtlTsb`; 7-day change: `ctlDelta`, sent to the app in its
   payload). HR-zone bounds: `resolveHrZones` in `activityZones.ts`. Run
