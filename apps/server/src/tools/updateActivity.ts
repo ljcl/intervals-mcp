@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CallCancelledError } from "../callScope";
 import { HttpError, RateLimitError } from "../fetchClient";
 import {
   getActivity as fetchActivity,
@@ -310,7 +311,11 @@ export const updateActivityTool = {
         // response) leaves the write's outcome unknown, so it gets the same
         // honest "may already have been applied" text rather than either a
         // flat failure or a silent success.
+        // A CallCancelledError is a definite non-write too: FetchClient gives
+        // a started write neither the call signal nor a retry wait, so a
+        // cancel error means the PUT never left.
         const isDefiniteRejection =
+          putError instanceof CallCancelledError ||
           putError instanceof RateLimitError ||
           (putError instanceof HttpError &&
             putError.response.status >= 400 &&

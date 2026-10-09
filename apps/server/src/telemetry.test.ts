@@ -51,6 +51,16 @@ describe("recordToolCall", () => {
     });
   });
 
+  it("writes the cancelled outcome on the line", () => {
+    recordToolCall({
+      tool: "get-activity",
+      duration_ms: 3,
+      outcome: "cancelled",
+    });
+
+    expect(lastRecord().outcome).toBe("cancelled");
+  });
+
   it("carries the error class so failures can be grouped", () => {
     recordToolCall({
       tool: "get-best-efforts",
@@ -157,6 +167,31 @@ describe("toolCallStats", () => {
     expect(toolCallStats()["get-activity-laps"]).toMatchObject({
       calls: 2,
       errors: 2,
+    });
+  });
+
+  it("counts a cancelled call as a call and as cancelled, not as an error", () => {
+    recordToolCall({ tool: "get-activity", duration_ms: 10, outcome: "ok" });
+    recordToolCall({
+      tool: "get-activity",
+      duration_ms: 20,
+      outcome: "cancelled",
+    });
+
+    expect(toolCallStats()["get-activity"]).toMatchObject({
+      calls: 2,
+      errors: 0,
+      cancelled: 1,
+      total_ms: 30,
+    });
+  });
+
+  it("leaves cancelled at 0 for an error", () => {
+    recordToolCall({ tool: "get-activity", duration_ms: 1, outcome: "error" });
+
+    expect(toolCallStats()["get-activity"]).toMatchObject({
+      errors: 1,
+      cancelled: 0,
     });
   });
 

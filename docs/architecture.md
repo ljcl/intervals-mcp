@@ -497,10 +497,13 @@ rate-limit snapshot, and which client made the call (`client_apps`,
 `client_name`). The timer starts **before token resolution**, so a
 not-connected call is recorded too — it cost the caller a round trip. A
 handler returning `isError` counts as an error alongside a throw, or the
-counters would flatter the server. `recordToolCall` can never fail the call it
-describes: the snapshot read and the serialize are both guarded, because a
-logging fault turning a successful call into an error is worse than a missing
-log line. The rolling counters back the authed half of `/health`.
+counters would flatter the server. A call whose client cancelled or
+disconnected records outcome `cancelled` instead. It counts in `calls` and
+`cancelled`, not in `errors`: a client leaving is not a server error.
+`recordToolCall` can never fail the call it describes: the snapshot read and
+the serialize are both guarded, because a logging fault turning a successful
+call into an error is worse than a missing log line. The rolling counters back
+the authed half of `/health`.
 
 The client fields come from the request envelope. The `tools/call` handler
 reads the `io.modelcontextprotocol/clientCapabilities` and
@@ -552,9 +555,25 @@ for.
 
 `callScope.ts` holds the per-call state below the handler: an
 `AsyncLocalStorage` with the call's abort signal. Facts a handler needs to see
-stay in `ToolCallContext`. `FetchClient` is the only ambient reader so far;
-nothing opens a scope yet, and `dispatchToolCall` will (#70). Work meant to
-outlive a call must not start inside one.
+stay in `ToolCallContext`. `dispatchToolCall` opens the scope once, from the
+`signal` the `tools/call` handler passes (`ctx.mcpReq.signal`). The scope
+covers argument validation, `"latest"` resolution and the handler.
+`FetchClient` and `mapWithConcurrency` read it. Work meant to outlive a call
+must not start inside one.
+
+The SDK aborts `ctx.mcpReq.signal` when:
+
+- the client closes the request. A 2026-07-28 SDK client does this for a user
+  cancel and for its own timeout. The endpoint then answers 499 with no body.
+- the SSE response stream is cancelled.
+- shutdown runs `mcp.close()`.
+- the response has been written. This happens after every call.
+
+A `notifications/cancelled` sent as a separate POST reaches a fresh
+per-request server and does nothing.
+
+A cancel reaches the server only when the HTTPS tunnel or reverse proxy closes
+its upstream request when the client goes.
 
 `FetchClient` reads the signal once per request and stops a cancelled call's
 upstream work:
@@ -576,6 +595,27 @@ upstream work:
   started is never interrupted. A `CallCancelledError` from a write
   therefore means it was not sent.
 - A cache hit is still served to a cancelled call.
+
+Above `FetchClient`:
+
+- `mapWithConcurrency` checks the signal before each item starts and rejects
+  with `CallCancelledError`. It does not return a shorter array: a caller
+  would read the missing items as failed lookups (`get-best-efforts` would
+  show them as "Unknown activity").
+- `update-activity` treats `CallCancelledError` from the PUT as a definite
+  non-write. The write never left, so the text is a plain failure, not "may
+  already have been applied".
+- `finish` in `dispatchToolCall` records outcome `cancelled` when the signal
+  has aborted. It reads the signal before it returns, because the SDK aborts
+  it after every response. The SDK drops the result of an aborted call.
+
+There is no whole-call deadline. The 2026-07-28 SDK client already turns its
+own timeout into a cancel. A server deadline would need new error text and
+could cut a legitimate long scan. The `cancelled` counter shows first whether
+stuck calls happen.
+
+Shutdown exits right after `mcp.close()`, so a call cut there may not get its
+`tool_call` line.
 
 ## API key access
 

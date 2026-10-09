@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { handledNotFound } from "../__fixtures__";
+import { CallCancelledError } from "../callScope";
 import { HttpError, RateLimitError, RequestTimeoutError } from "../fetchClient";
 import {
   getActivity,
@@ -651,6 +652,25 @@ describe("updateActivityTool.execute", () => {
     expect(text).toContain("may already have been applied");
     expect(text).toContain("get-activity");
     expect(text.toLowerCase()).not.toContain("retry now");
+  });
+
+  it("reports a plain failure, not a possible write, when the call was cancelled before the PUT left", async () => {
+    mockedGetActivity.mockResolvedValueOnce(activity());
+    mockedPut.mockRejectedValueOnce(
+      new CallCancelledError(
+        "Request to https://intervals.icu/api/v1/activity/555",
+      ),
+    );
+
+    const result = await updateActivityTool.execute(
+      { id: "555", name: "Tempo" } as never,
+      "test-token",
+    );
+
+    expect(result.isError).toBe(true);
+    const text = result.content[0]?.text ?? "";
+    expect(text).toMatch(/^❌ Failed to update activity 555/);
+    expect(text).not.toContain("may already have been applied");
   });
 
   it("reports a possibly-applied write on a 503 from the PUT itself", async () => {

@@ -34,6 +34,7 @@ import {
   buildCadenceTrendData,
   type CadenceTrendData,
 } from "./cadenceTrendData";
+import { type CallScope, runInCallScope } from "./callScope";
 import {
   clientSupportsMcpApps,
   MCP_APP_MIME_TYPE,
@@ -1521,6 +1522,13 @@ export interface DispatchOptions {
     /** `clientInfo.name`, when the client sent one. */
     name?: string;
   };
+  /**
+   * Aborts when the client closes the request (its cancel or its own
+   * timeout), when the response stream is cancelled, and at shutdown. It
+   * rides the call scope into every intervals.icu request. Absent means the
+   * call cannot be cancelled.
+   */
+  signal?: AbortSignal;
 }
 
 /**
@@ -1534,10 +1542,22 @@ export interface DispatchOptions {
  * `process.env.INTERVALS_API_KEY` behind its own guard: that gives every
  * tool its own not-configured wording. Resolving here gives one message.
  */
-export async function dispatchToolCall(
+export function dispatchToolCall(
   name: string,
   rawArgs: Record<string, unknown> | undefined,
-  { progress = NO_PROGRESS, client }: DispatchOptions = {},
+  options: DispatchOptions = {},
+): Promise<ToolCallResult> {
+  const scope: CallScope = { signal: options.signal };
+  return runInCallScope(scope, () =>
+    runToolCall(scope, name, rawArgs, options),
+  );
+}
+
+async function runToolCall(
+  scope: CallScope,
+  name: string,
+  rawArgs: Record<string, unknown> | undefined,
+  { progress = NO_PROGRESS, client }: DispatchOptions,
 ): Promise<ToolCallResult> {
   const context: ToolCallContext = {
     clientRendersApps: client?.rendersApps ?? false,
@@ -1554,7 +1574,10 @@ export async function dispatchToolCall(
     recordToolCall({
       tool: name,
       duration_ms: Math.round(performance.now() - startedAt),
-      outcome,
+      // The SDK drops an aborted call's result, and a client leaving is not a
+      // server error. Read here, before returning: the SDK aborts the signal
+      // after every response.
+      outcome: scope.signal?.aborted ? "cancelled" : outcome,
       ...(errorClass ? { error_class: errorClass } : {}),
       client_apps: context.clientRendersApps,
       ...(client?.name ? { client_name: client.name } : {}),
@@ -1748,6 +1771,7 @@ export function createServer(): Server {
       | { name?: unknown }
       | undefined;
     const result = await dispatchToolCall(name, args, {
+      signal: ctx.mcpReq.signal,
       // `ctx.mcpReq.notify` is already scoped to this request, which is what
       // lets the transport put the notification on the same SSE stream the
       // response will arrive on.

@@ -93,8 +93,8 @@ breaking them has shipped bugs — do not work around them locally.
   Text tool and app reading different copies is the failure mode these prevent.
 - **Telemetry:** `dispatchToolCall` emits one JSON line per call; timer starts
   before token resolution (not-connected calls count); a returned `isError`
-  counts as an error; `recordToolCall` can never fail the call it describes;
-  each line records `client_apps` and `client_name` from the request envelope.
+  counts as an error unless the call was cancelled (`cancelled`);
+  `recordToolCall` can never fail the call it describes; each line records `client_apps` and `client_name` from the request envelope.
 - **Progress:** every handler gets a `ReportProgress` closure (third arg,
   always present). Tick counter without `total` (spec demands monotonic
   increase; multi-phase calls can't carry two denominators); time-based
@@ -179,6 +179,10 @@ breaking them has shipped bugs — do not work around them locally.
   in-flight entries, `skipCache` bypasses both). The shared read runs on its
   own controller, never a caller's signal. Never return a cached object
   by reference or add a per-tool in-flight map.
+- **State needed below the handler (`FetchClient`, `mapWithConcurrency`)
+  lives in `callScope.ts`**, opened once by `dispatchToolCall`; handler-visible
+  per-call facts stay in `ToolCallContext`. Work meant to outlive a call never
+  starts inside one.
 - **The Bun version has one home: root `packageManager`.** CI reads it via
   `bun-version-file`; `dockerRuntime.test.ts` pins the Dockerfile's
   `FROM oven/bun:<tag>` lines to the same x.y.z, because Dependabot bumps the

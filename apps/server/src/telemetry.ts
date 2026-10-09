@@ -13,7 +13,12 @@
 
 import { intervalsApi, type RateLimitSnapshot } from "./fetchClient";
 
-export type ToolOutcome = "ok" | "error" | "not_connected" | "invalid_args";
+export type ToolOutcome =
+  | "ok"
+  | "error"
+  | "not_connected"
+  | "invalid_args"
+  | "cancelled";
 
 export interface ToolCallRecord {
   event: "tool_call";
@@ -36,6 +41,8 @@ export interface ToolCallRecord {
 export interface ToolCounters {
   calls: number;
   errors: number;
+  /** Calls whose client cancelled or disconnected before the answer. Not counted in `errors`. */
+  cancelled: number;
   /** Total duration across calls, for a mean without keeping samples. */
   total_ms: number;
   last_called_at: string;
@@ -81,12 +88,16 @@ export function recordToolCall(
   const existing = counters.get(record.tool) ?? {
     calls: 0,
     errors: 0,
+    cancelled: 0,
     total_ms: 0,
     last_called_at: "",
   };
   counters.set(record.tool, {
     calls: existing.calls + 1,
-    errors: existing.errors + (record.outcome === "ok" ? 0 : 1),
+    errors:
+      existing.errors +
+      (record.outcome === "ok" || record.outcome === "cancelled" ? 0 : 1),
+    cancelled: existing.cancelled + (record.outcome === "cancelled" ? 1 : 0),
     total_ms: existing.total_ms + record.duration_ms,
     last_called_at: new Date().toISOString(),
   });

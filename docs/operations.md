@@ -99,6 +99,7 @@ rate-limit state:
     "list-activities": {
       "calls": 3,
       "errors": 0,
+      "cancelled": 0,
       "total_ms": 1260,
       "last_called_at": "2026-10-05T01:02:03.000Z",
       "mean_ms": 420
@@ -138,8 +139,10 @@ shown wrapped here:
 }
 ```
 
-`outcome` is `ok`, `error`, `not_connected` or `invalid_args`; `error_class`
-appears when a call threw. `client_apps` is true when the request's client
+`outcome` is `ok`, `error`, `not_connected`, `invalid_args` or `cancelled`;
+`error_class` appears when a call threw. `cancelled` means the client
+cancelled or disconnected before the answer. `/health` counts it in
+`cancelled`, not in `errors`. `client_apps` is true when the request's client
 capabilities advertised MCP Apps (`io.modelcontextprotocol/ui` with
 `text/html;profile=mcp-app`), and `client_name` is the `clientInfo.name` the
 client sent, when it sent one. They exist to confirm which hosts advertise MCP
@@ -197,6 +200,10 @@ The HTTP layer handles rate limits centrally: passive, nothing to configure
   timeouts retry with bounded exponential backoff; only idempotent reads are
   retried, never writes. A timeout while the response body is still arriving
   counts the same as one before it.
+- A cancelled call sends no further intervals.icu requests. Queued and
+  retrying reads stop. A read shared with another call still finishes for
+  that call. A write already sent is left to finish. This needs a proxy or
+  tunnel that closes its upstream request when the client goes.
 - intervals.icu sits behind Cloudflare. When Cloudflare answers with an HTML
   error page, the tool error quotes only the page title, not the page. When
   it answers with a challenge (`cf-mitigated: challenge`, usually a 403), the
