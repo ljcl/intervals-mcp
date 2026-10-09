@@ -1,5 +1,5 @@
 import { type CallFailure, noteCallFailure } from "../callScope";
-import { HttpError, RateLimitError } from "../fetchClient";
+import { HttpError, RateLimitError, RequestTimeoutError } from "../fetchClient";
 
 /**
  * The one home for tool-facing error text.

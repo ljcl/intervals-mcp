@@ -5,6 +5,7 @@ import {
   daysBetween,
   isValidCalendarDate,
   isValidTimeZone,
+  resolveWindowEnd,
   startOfWeekMonday,
   todayLocal,
   validateRange,

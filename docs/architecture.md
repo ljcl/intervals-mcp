@@ -186,12 +186,11 @@ Everything else is left uncached.
   directions so a future one is covered without a second rule. This
   automatic invalidation only fires when the PUT itself resolves
   successfully; `updateActivity` (`intervalsClient.ts`) additionally
-  invalidates the activity, the athlete's activities list, the gear list
-  and the athlete pace curves in a `finally`, so a *failed* PUT that may
+  invalidates the activity, the athlete's activities list, the gear list,
+  and the athlete pace curves (their `activities` map carries the run names
+  `get-best-efforts` reports) in a `finally`, so a *failed* PUT that may
   still have mutated state server-side (a 5xx, a network fault, a timeout)
-  does not leave a stale pre-write entry being served afterward. The pace
-  curves' `activities` map carries the names `get-best-efforts` and
-  `get-race-prediction` show, so a rename drops it too.
+  does not leave a stale pre-write entry being served afterward.
 - `skipCache: true` bypasses entirely; the `update-activity` append read uses
   it so it never composes onto a stale description.
 - **The cache is bounded by entries and bytes.** It holds at most 200 entries
@@ -289,6 +288,13 @@ Both mappers round last, into new arrays, so band indices, lap markers and
 waypoints use the full-precision values. Before #71 the payloads sent raw
 bucket means such as `144.66666666666666`: a one-hour run with 12 streams
 was about 130 KB of chart JSON, and is now about 58 KB.
+
+**A sample with no time is dropped, and the loader counts it.**
+`loadIntervalsStreams` drops a sample whose `time` is `null`, with the same
+sample in every other stream, and reports how many in `droppedSamples`.
+After a drop, an index that intervals.icu gives into the raw streams (an
+activity's `ignore_parts`) points at the wrong sample. So `get-best-efforts`
+applies those parts only when `droppedSamples` is 0 (#82).
 
 ## Analysis math: one home per definition
 
@@ -421,6 +427,19 @@ cadence but no pace.
 `streamPrecision.ts`. `get-activity-streams` and the chart and route-map app
 payloads all round with it, so a precision change reaches all three at once
 (see [Streams](#streams)).
+
+**Best efforts inside one activity have one home.** `bestEffortWindows` in
+`activityBestEfforts.ts`: for each start sample, the first sample whose
+distance reaches the target, with the elapsed time scaled to exactly the
+target. This is intervals.icu's own pace-curve rule (it reproduced 313 of
+313 activity-curve points, docs/api-notes.md), so `get-best-efforts` with
+an `id` agrees with the same tool over a window at every distance the run
+fully covers. (A run a few metres short of a distance has no stretch of it,
+but over a window it can count for a nearby curve point, such as 21000 m
+for a half marathon.) `topN` picks the fastest stretches that do not
+overlap. `stopped_seconds` reads the loader's `moving` stream with
+`velocity_smooth` loaded, as `get-split-analysis` does, so a stop has one
+definition: an auto-pause gap, or a sample under 0.5 m/s.
 
 **Taper solving.** `fitnessTrend.ts` owns every CTL/ATL/TSB number, including
 the forward-looking ones — `plannedLoads` projects a prescribed load instead of
@@ -618,8 +637,8 @@ the call's log line reports (#69). Facts a handler needs to see
 stay in `ToolCallContext`. `dispatchToolCall` opens the scope once, from the
 `signal` the `tools/call` handler passes (`ctx.mcpReq.signal`). The scope
 covers argument validation, `"latest"` resolution and the handler.
-`FetchClient` and `mapWithConcurrency` read it. Work meant to outlive a call
-must not start inside one.
+`FetchClient` reads it. Work meant to outlive a call must not start inside
+one.
 
 The SDK aborts `ctx.mcpReq.signal` when:
 
@@ -658,10 +677,6 @@ upstream work:
 
 Above `FetchClient`:
 
-- `mapWithConcurrency` checks the signal before each item starts and rejects
-  with `CallCancelledError`. It does not return a shorter array: a caller
-  would read the missing items as failed lookups (`get-best-efforts` would
-  show them as "Unknown activity").
 - `update-activity` treats `CallCancelledError` from the PUT as a definite
   non-write. The write never left, so the text is a plain failure, not "may
   already have been applied".

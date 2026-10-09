@@ -39,7 +39,7 @@ import {
 import { NO_PROGRESS, type ReportProgress } from "../progress";
 import { cadenceSpm, formatPaceSeconds } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
-import { noteToolFailure, toolErrorText } from "./_errors";
+import { noteToolFailure, toolErrorText, unavailableReason } from "./_errors";
 import { intervalsActivityIdInput } from "./_ids";
 import {
   IntervalAnalysisOutputSchema,

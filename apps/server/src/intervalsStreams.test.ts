@@ -167,6 +167,7 @@ describe("loadIntervalsStreams", () => {
 
     // Fetched for `moving` or for other callers: not returned to this one.
     expect(Object.keys(streams).sort()).toEqual([
+      "droppedSamples",
       "heartrate",
       "length",
       "moving",

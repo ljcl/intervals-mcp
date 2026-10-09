@@ -90,7 +90,8 @@ breaking them has shipped bugs — do not work around them locally.
   `compare-activities`). Training-load weeks, warnings and trend:
   `trainingLoadWindow`/`aggregateWeeks`/`selectRunWeeks` in `trainingLoad.ts`
   (shared by `get-training-load` and its app feed). Speed to pace/speed, its
-  label and unit in the MCP Apps: `speedDisplay` in `packages/data/src/speed.ts`.
+  label and unit in the MCP Apps: `speedDisplay` in `packages/data/src/speed.ts`;
+  in the text tools: `sportSpeed` in `utils/running.ts`, which wraps it.
   Stream wire precision: `STREAM_DECIMALS` in `streamPrecision.ts`.
   Text tool and app reading different copies is the failure mode these prevent.
 - **Telemetry:** `dispatchToolCall` emits one JSON line per call; timer starts
@@ -187,9 +188,9 @@ breaking them has shipped bugs — do not work around them locally.
   in-flight entries, `skipCache` bypasses both). The shared read runs on its
   own controller, never a caller's signal. Never return a cached object
   by reference or add a per-tool in-flight map.
-- **State needed below the handler (`FetchClient`, `mapWithConcurrency`)
-  lives in `callScope.ts`**, opened once by `dispatchToolCall`; handler-visible
-  per-call facts stay in `ToolCallContext`. Work meant to outlive a call never
+- **State needed below the handler (`FetchClient`) lives in `callScope.ts`**,
+  opened once by `dispatchToolCall`; handler-visible per-call facts stay in
+  `ToolCallContext`. Work meant to outlive a call never
   starts inside one.
 - **The Bun version has one home: root `packageManager`.** CI reads it via
   `bun-version-file`; `dockerRuntime.test.ts` pins the Dockerfile's

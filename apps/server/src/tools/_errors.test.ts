@@ -12,6 +12,7 @@ import {
   prefixedErrorText,
   toolErrorText,
   toolFailureOf,
+  unavailableReason,
 } from "./_errors";
 
 describe("toolErrorText", () => {
@@ -290,5 +291,51 @@ describe("toolFailureOf", () => {
     });
     expect(toolFailureOf(hostile)).toEqual({ error_class: "NonError" });
     expect(() => noteToolFailure(hostile)).not.toThrow();
+  });
+});
+
+describe("unavailableReason", () => {
+  it("names the rate limit on a RateLimitError, before its HttpError status", () => {
+    expect(unavailableReason(handledRateLimit("getAthleteHrCurves"))).toBe(
+      "the intervals.icu rate limit was reached",
+    );
+  });
+
+  it("names the HTTP status of any other HttpError", () => {
+    expect(unavailableReason(handledNotFound("getAthleteHrCurves"))).toBe(
+      "intervals.icu answered HTTP 404",
+    );
+    expect(
+      unavailableReason(
+        new HttpError("HTTP 503", { status: 503, statusText: "", data: "" }),
+      ),
+    ).toBe("intervals.icu answered HTTP 503");
+  });
+
+  it("names a Cloudflare challenge rather than its 403", () => {
+    expect(
+      unavailableReason(
+        new HttpError("HTTP 403", {
+          status: 403,
+          statusText: "Forbidden",
+          data: "",
+          cloudflareChallenge: true,
+        }),
+      ),
+    ).toBe("Cloudflare, in front of intervals.icu, answered with a challenge");
+  });
+
+  it("names a timeout", () => {
+    expect(
+      unavailableReason(new RequestTimeoutError("https://x/y", 20_000)),
+    ).toBe("intervals.icu did not answer in time");
+  });
+
+  it("falls back to a generic clause and never throws", () => {
+    expect(unavailableReason(new Error("socket hang up"))).toBe(
+      "the request failed",
+    );
+    expect(unavailableReason(null)).toBe("the request failed");
+    expect(unavailableReason("boom")).toBe("the request failed");
   });
 });

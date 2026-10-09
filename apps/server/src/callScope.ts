@@ -4,10 +4,10 @@ import { AsyncLocalStorage } from "node:async_hooks";
  * Per-call state for the code below a tool handler. This module is its only
  * home. Facts a handler needs to see stay in `ToolCallContext`.
  *
- * `dispatchToolCall` opens it once per call; `FetchClient` and
- * `mapWithConcurrency` read it and stop work for a call that has been
- * cancelled, and the error translators write the call's failure into it.
- * Work meant to outlive a call must not start inside one.
+ * `dispatchToolCall` opens it once per call; `FetchClient` reads it and
+ * stops work for a call that has been cancelled, and the error translators
+ * write the call's failure into it. Work meant to outlive a call must not
+ * start inside one.
  */
 export interface CallScope {
   /**
