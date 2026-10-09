@@ -370,9 +370,10 @@ grid fallback (no Recharts). Calls `get-route-map-data` (app-only) with
   scrub tooltip positioned via `map.project`.
 - `set-viewport` and reset frame the basemap camera through `BasemapView`'s
   `frame` prop (`src/basemapCamera.ts`, padding 36, max zoom 17); a frame
-  sent before the style loads is applied on load. The argument checks and
-  their error texts live in `src/viewportRequest.ts`, so both views give the
-  same reply.
+  sent before the style loads is applied on load, or, if the style fails
+  instead, framed and announced on the grid (`gridViewForRange`, #144). The
+  argument checks and their error texts live in `src/viewportRequest.ts`, so
+  both views give the same reply.
 - The live region and the model context say which stretch of the route is
   in view, in one wording for both views (`visibleRoute` and `describeView`
   in `src/viewport.ts`, #53): "Showing the whole route" exactly when every

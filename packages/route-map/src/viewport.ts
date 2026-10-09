@@ -102,6 +102,20 @@ export function frameForIndexRange(
   return clampView({ x: cx - w / 2, y: cy - h / 2, w, h }, base);
 }
 
+/**
+ * The grid view for a basemap frame that never applied (#144): its stretch,
+ * or the base view for a whole-route frame (`range` null). A range that
+ * selects nothing also falls back to the base view.
+ */
+export function gridViewForRange(
+  points: readonly FramePoint[],
+  range: IndexRange | null,
+  base: ViewBox,
+): ViewBox {
+  if (!range) return base;
+  return frameForIndexRange(points, range, base) ?? base;
+}
+
 export interface KmStretch {
   fromKm: number;
   toKm: number;

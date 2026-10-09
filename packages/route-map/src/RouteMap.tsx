@@ -61,7 +61,13 @@ import {
 } from "./panZoom";
 import styles from "./RouteMap.module.css";
 import { type RouteMapData } from "./types";
-import { describeView, frameForIndexRange, visibleRoute } from "./viewport";
+import {
+  describeView,
+  frameForIndexRange,
+  gridViewForRange,
+  type IndexRange,
+  visibleRoute,
+} from "./viewport";
 import { resolveViewportRequest } from "./viewportRequest";
 
 interface RouteMapProps {
@@ -329,9 +335,19 @@ export function RouteMap({
   // the bounds in view back here.
   const [frame, setFrame] = useState<CameraFrame | undefined>();
   const frameNonce = useRef(0);
-  const frameBasemap = (bounds: CameraFrame["bounds"]) => {
+  // The stretch the last frame asked for (null: the whole route) until the
+  // camera reports. Reports start on load, which applies a held frame, so
+  // one still here when the basemap fails never applied.
+  const [unapplied, setUnapplied] = useState<{
+    range: IndexRange | null;
+  } | null>(null);
+  const frameBasemap = (
+    bounds: CameraFrame["bounds"],
+    range: IndexRange | null,
+  ) => {
     frameNonce.current += 1;
     setFrame({ bounds, nonce: frameNonce.current });
+    setUnapplied({ range });
   };
   /** What the basemap camera last showed, when not the whole route. */
   const [basemapPartial, setBasemapPartial] = useState<string | null>(null);
@@ -342,16 +358,24 @@ export function RouteMap({
     );
     setBasemapPartial(seen.whole ? null : seen.text);
     setViewMessage(seen.text);
+    setUnapplied(null);
   };
 
   // The fallback grid starts from the whole route, so a camera the basemap
-  // reported (or a frame it never got to apply) must not outlive it.
+  // reported must not outlive it. A frame it never got to apply (sent before
+  // a failed load, #144) is framed and announced on the grid instead.
   const [cameraView, setCameraView] = useState(showBasemap);
   if (cameraView !== showBasemap) {
     setCameraView(showBasemap);
-    setViewMessage("");
     setBasemapPartial(null);
     setFrame(undefined);
+    setUnapplied(null);
+    const pending =
+      !showBasemap && projected && unapplied
+        ? gridViewForRange(projected.points, unapplied.range, base)
+        : null;
+    if (pending) applyView(pending);
+    else setViewMessage("");
   }
 
   /**
@@ -375,7 +399,7 @@ export function RouteMap({
 
     if (request.kind === "reset") {
       const whole = showBasemap ? trackBounds(data.coordinates) : null;
-      if (whole) frameBasemap(whole);
+      if (whole) frameBasemap(whole, null);
       else resetView();
       return { text: `Showing the whole route (${distanceKm.toFixed(1)} km).` };
     }
@@ -395,7 +419,7 @@ export function RouteMap({
           isError: true,
         };
       }
-      frameBasemap(bounds);
+      frameBasemap(bounds, request.range);
     } else {
       const next = frameForIndexRange(projected.points, request.range, base);
       if (!next) {
