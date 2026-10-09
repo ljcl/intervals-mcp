@@ -102,7 +102,10 @@ to Docker Hub first when the repository has both of these:
   **Public Repo Read-only** scope
 
 Without them (fork PRs, or Dependabot PRs unless the token is also a
-Dependabot secret), the leg writes a notice and pulls anonymously.
+Dependabot secret), the leg writes a notice and pulls anonymously. A login
+that fails (Docker Hub answered one with HTTP 500 during the 2.5.0 release)
+does not fail the leg: the step is `continue-on-error`, so the leg pulls
+anonymously.
 
 ## MCP registry publishing
 

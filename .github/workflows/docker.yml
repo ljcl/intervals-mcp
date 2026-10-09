@@ -112,7 +112,9 @@ jobs:
       # in before setup-buildx so the builder pull and BuildKit's base-image
       # pulls both use the account's limit. The token is unavailable on fork
       # PRs and on Dependabot PRs unless it is also a Dependabot secret; those
-      # skip the login and pull anonymously as before.
+      # skip the login and pull anonymously as before. A failed login (Docker
+      # Hub has answered it with HTTP 500) does not fail the leg either: it
+      # falls back to anonymous pulls.
       - name: Check Docker Hub credentials
         id: dockerhub
         env:
@@ -127,6 +129,7 @@ jobs:
 
       - name: Log in to Docker Hub
         if: steps.dockerhub.outputs.available == 'true'
+        continue-on-error: true
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           username: ${{ vars.DOCKERHUB_USERNAME }}
