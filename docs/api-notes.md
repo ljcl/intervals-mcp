@@ -307,19 +307,20 @@ strongest feeling and 5 the weakest, as `update-activity`'s tool description say
 - `race` (boolean) and `tags` (null or string array) appear on both `search-full` rows and `GET /athlete/0/activities` rows.
 - `GET /athlete/0/activity-tags` returned `[]` and `q=#race` returned `[]` on an account with no tags, so tag search is unverified live (no tags on the probe account); the client test checks `#` is sent encoded.
 
-## Athlete time zone (2026-10-09, #56, spec only, unverified live)
+## Athlete time zone (2026-10-09, #56, live read-only)
 
-- `GET /athlete/{id}` carries `timezone`. The spec types it as a plain string (the `WithSportSettings` schema) and does not say it is an IANA name. The server assumes it is one and validates it with `Intl` before use (`setAthleteTimeZone`).
+- `GET /athlete/{id}` carries `timezone`. The spec types it as a plain string (the `WithSportSettings` schema) and does not say it is an IANA name. The server validates it with `Intl` before use (`setAthleteTimeZone`).
+- Verified live on 2026-10-09 with `scripts/live-check.ts`: the athlete record had `timezone` set, and Bun's `Intl` accepted it. The check prints only that, never the zone itself.
 - The same record also carries `icu_api_key`. `getAthleteTimeZone` parses only `timezone`, and `/athlete/{id}` has no cache TTL, so the record is never cached or logged.
-- Unverified live until the owner runs `scripts/live-check.ts`. Its "athlete time zone" line says whether the zone is set and whether this runtime accepts it, never the zone itself.
 
-## One stream superset per activity (2026-10-09, #71, unverified live)
+## One stream superset per activity (2026-10-09, #71, live read-only)
 
 - Since #71, every stream read requests the same 13 types: the 12 types of the Phase 4 probe above, plus `watts`. `loadIntervalsStreams` (`INTERVALS_STREAM_TYPES`) sends them sorted, so each activity has one streams URL that every tool and app shares.
-- The Phase 4 probe requested all 12 of its types on one GPS run and got all 12 back. Two assumptions are not verified live:
-  - A type's data does not depend on which other types are in the same request.
-  - An activity without GPS or without a sensor (a treadmill run, a run without a power meter) still answers 200, with the missing types left out, rather than an error for the whole request.
-- Re-verify with `bun scripts/live-check.ts <activityId>` on a GPS run and on a no-GPS activity. Every stream tool must answer as before #71.
+- Verified live on 2026-10-09 with `scripts/live-check.ts`, on a GPS run, a pool swim and a strength session:
+  - A type's data does not depend on the other types in the request. On the GPS run, every tool reported the same numbers on main (per-tool type lists) and on the branch (the superset).
+  - An activity without GPS or a sensor answers 200 with the missing types left out. The pool swim returned 6 stream keys and the strength session 2; the route map got 0 points, and no stream read failed.
+  - Every tool gave the same ok or error result on main and on the branch for both no-GPS activities. The errors are the run-only tools declining a swim or a strength session, as before #71.
+- This account has no run without GPS since March 2026, so a treadmill run is not checked directly.
 
 ## Best efforts and pace curves (2026-10-08, live read-only, #82)
 
