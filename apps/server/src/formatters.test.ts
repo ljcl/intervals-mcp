@@ -81,9 +81,21 @@ describe("activityDisplayName", () => {
 });
 
 describe("formatSigned", () => {
-  it("signs zero and positive values, leaves a negative one alone", () => {
+  it("signs a positive value, leaves a negative one alone", () => {
     expect(formatSigned(4.2)).toBe("+4.2");
-    expect(formatSigned(0)).toBe("+0");
     expect(formatSigned(-9)).toBe("-9");
+  });
+
+  it("prints zero with no sign, as the apps' formatSignedTsb does", () => {
+    expect(formatSigned(0)).toBe("0");
+    expect(formatSigned(-0)).toBe("0");
+  });
+
+  it("formats to fixed decimals, signing what is shown", () => {
+    expect(formatSigned(3.17, 1)).toBe("+3.2");
+    expect(formatSigned(-2.06, 1)).toBe("-2.1");
+    expect(formatSigned(0, 1)).toBe("0.0");
+    expect(formatSigned(0.04, 1)).toBe("0.0");
+    expect(formatSigned(-0.04, 1)).toBe("0.0");
   });
 });

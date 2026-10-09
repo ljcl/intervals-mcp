@@ -9,6 +9,7 @@ import {
   taperTargetDateError,
   tsbDelta,
 } from "../fitnessTrend";
+import { formatSigned } from "../formatters";
 import { loadFitnessTrend } from "../loadFitnessTrend";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
 import {
@@ -109,10 +110,8 @@ const inputSchema = z.object({
 
 type GetFitnessTrendInput = z.infer<typeof inputSchema>;
 
-const signed = (value: number) => `${value >= 0 ? "+" : ""}${value}`;
-
 function formatDay(day: FitnessTrendDay): string {
-  return `  ${day.date}: load ${day.load}, CTL ${day.ctl}, ATL ${day.atl}, TSB ${signed(day.tsb)}`;
+  return `  ${day.date}: load ${day.load}, CTL ${day.ctl}, ATL ${day.atl}, TSB ${formatSigned(day.tsb)}`;
 }
 
 /** One line per planned week: what to spend, and how that compares to recent. */
@@ -295,11 +294,11 @@ export const getFitnessTrendTool = {
         output += `**Current (as of ${current.date})**\n`;
         output += `  Fitness (CTL): ${current.ctl}\n`;
         output += `  Fatigue (ATL): ${current.atl}\n`;
-        output += `  Form (TSB): ${signed(current.tsb)}\n\n`;
+        output += `  Form (TSB): ${formatSigned(current.tsb)}\n\n`;
       }
 
       if (trendSummary) {
-        output += `**Last 7 days**: CTL ${signed(trendSummary.ctl_7d_delta)}, TSB ${signed(trendSummary.tsb_7d_delta)}\n\n`;
+        output += `**Last 7 days**: CTL ${formatSigned(trendSummary.ctl_7d_delta)}, TSB ${formatSigned(trendSummary.tsb_7d_delta)}\n\n`;
       }
 
       if (flags.length > 0) {
@@ -321,19 +320,19 @@ export const getFitnessTrendTool = {
         }
         const last = projection[projection.length - 1];
         if (last) {
-          output += `  End of projection (${last.date}): CTL ${last.ctl}, TSB ${signed(last.tsb)}\n`;
+          output += `  End of projection (${last.date}): CTL ${last.ctl}, TSB ${formatSigned(last.tsb)}\n`;
         }
         output += `\n`;
       }
 
       if (taper) {
-        output += `**Taper plan to ${taper.target_date} (target TSB ${signed(taper.target_tsb)})**\n`;
+        output += `**Taper plan to ${taper.target_date} (target TSB ${formatSigned(taper.target_tsb)})**\n`;
         if (taper.weeks.length > 0) {
           for (const week of taper.weeks) {
             output += `${formatTaperWeek(week)}\n`;
           }
           const landing = taper.days[taper.days.length - 1]!;
-          output += `  Lands ${landing.date}: CTL ${landing.ctl}, ATL ${landing.atl}, TSB ${signed(landing.tsb)}\n`;
+          output += `  Lands ${landing.date}: CTL ${landing.ctl}, ATL ${landing.atl}, TSB ${formatSigned(landing.tsb)}\n`;
           output += `  Total planned load ${taper.total_load}`;
           output +=
             taper.recent_daily_load > 0
