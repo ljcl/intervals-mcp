@@ -8,9 +8,13 @@ import { type TrainingLoadData } from "./types";
 /**
  * One-line summary of what the chart is showing, synced to the host so the
  * model can talk about the visible state without re-calling the data tool.
+ * `hiddenSeries` names the series turned off, by the values `set-scope`
+ * accepts, so the model can say what the athlete is not looking at and
+ * switch it back.
  */
 export function buildTrainingLoadContextSummary(
   data: TrainingLoadData,
+  hiddenSeries: readonly string[] = [],
 ): string | null {
   if (!data.days) return null;
 
@@ -47,6 +51,10 @@ export function buildTrainingLoadContextSummary(
     parts.push(`Volume-spike warnings on ${flagged}.`);
   } else {
     parts.push("No volume-spike warnings.");
+  }
+
+  if (hiddenSeries.length > 0) {
+    parts.push(`Hidden series: ${hiddenSeries.join(", ")}.`);
   }
 
   return parts.join(" ");

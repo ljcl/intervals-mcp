@@ -435,7 +435,8 @@ exercise the real default view.
 Weekly running-volume bars with rolling trend line and volume-spike warning
 weeks, a weekly load line, and Fitness/Fatigue/Form tiles. Calls
 `get-training-load-data` with the `days` window (default 84, max 365) and the
-`runOnly` scope the view tool was called with (default false). `runOnly` has
+`runOnly` scope the view tool was called with (default false); the card's
+scope pills (below) switch it from there. `runOnly` has
 to travel: the data tool defaults to whole-body, so dropping it would draw a
 whole-body chart under a run-only request. `buildDataArgs` (`normalize.ts`)
 builds the arguments, unit-tested. Volume and spike warnings are always
@@ -487,6 +488,28 @@ run-based; load and CTL/ATL/TSB follow `runOnly`.
 - The `view-training-load` text prints the same numbers: a `Scope:` line and a
   `Current (as of DATE): CTL x / ATL y / TSB +z` line, with its `Load:` total
   equal to the payload's `totals.load`.
+- A "Whole body" / "Runs only" `PillGroup` under the header (`App.tsx`) switches
+  scope, as in fitness-trend. The pills start on the mount payload's `runOnly`;
+  the other scope is fetched on demand through the shared keyed
+  `useServerToolFetcher` with the mount's `buildDataArgs` arguments and
+  `runOnly` flipped, and cached, so flipping back never re-fetches. Everything
+  derived from data (subtitle, tiles, scope note, chart, legend, narration,
+  model context) reads the one payload on screen. While the other scope loads,
+  a skeleton with its progress line stands in for the tiles and chart; if it
+  fails, `ErrorState` shows the error and a retry. Neither ever shows the first
+  scope's numbers under the second's pill.
+- `set-scope` (`scope`, `show`, `hide`) lets the model switch the pills and the
+  legend toggles for `trend`, `load` and `warnings`, setting the same state the
+  pills do (no second fetch path). `resolveSetScope` (`src/setScope.ts`,
+  unit-tested) refuses a series named in both lists and `warnings` when the
+  landing scope flags no week (a scope still loading is given the benefit of
+  the doubt). The reply claims "Showing" only for a chart that is drawn
+  (`landingFor`): a scope still loading is "Switching to ...; it is still
+  loading", a failed fetch is an error carrying what the card shows, and a
+  loaded scope with no runs has no chart or legend, so a series change is
+  refused with nothing changed while a scope on its own is accepted (the tiles
+  still change) and the reply says only the tiles show. The context summary
+  lists hidden series by the values the schema accepts.
 
 ### Compare Activities
 

@@ -26,15 +26,24 @@ export function formatHours(timeHours: number): string {
 }
 
 /**
+ * The arguments `get-training-load-data` is called with. A type alias, not an
+ * interface, so it passes as the tool's `Record<string, unknown>` arguments.
+ */
+export type TrainingLoadDataArgs = {
+  days: number;
+  runOnly: boolean;
+};
+
+/**
  * What the app asks `get-training-load-data` for, from what the host called
  * `view-training-load` with. `runOnly` must travel: the data tool defaults to
  * whole-body, so dropping it would draw a whole-body chart under a run-only
  * request. Defaults match the view tool's.
  */
-export function buildDataArgs(args: { days?: number; runOnly?: boolean }): {
-  days: number;
-  runOnly: boolean;
-} {
+export function buildDataArgs(args: {
+  days?: number;
+  runOnly?: boolean;
+}): TrainingLoadDataArgs {
   return { days: args.days ?? 84, runOnly: args.runOnly ?? false };
 }
 
