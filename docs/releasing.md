@@ -92,17 +92,30 @@ source index's attestation manifests into the merged index, whereas
 The "Image summary" step filters `.platform.os != "unknown"` to skip those
 attestation manifests when tallying per-arch sizes.
 
-The build legs pull the base images, the buildkit builder and the SBOM scanner
-from Docker Hub. Anonymous pulls share a rate limit per runner IP, and a 429
-there failed the 2.5.0 release PR's builds on both arches. So each leg logs in
-to Docker Hub first when the repository has both of these:
+The build legs need Docker Hub images: the base images, the buildkit builder
+and the SBOM scanner. During the 2.5.0 release Docker Hub failed the builds
+with 429 (anonymous rate limit per runner IP), 500 and 504. So the legs pull
+them through `mirror.gcr.io`, Google's public mirror of Docker Hub:
+`setup-buildx-action` starts the builder from
+`mirror.gcr.io/moby/buildkit` and gives BuildKit `mirror.gcr.io` as the
+mirror for `docker.io`. The Dockerfile keeps its `docker.io` names, so
+Dependabot, `dockerRuntime.test.ts` and local builds do not change, and the
+digest pins make sure that the mirror serves the same content.
+
+BuildKit falls back to Docker Hub when the mirror does not hold an image yet
+(for example a digest that Dependabot has just bumped) or answers with an
+error. For that fallback each leg logs in to Docker Hub first when the
+repository has both of these:
 
 - variable `DOCKERHUB_USERNAME`: the Docker Hub account name
 - secret `DOCKERHUB_TOKEN`: a Docker Hub personal access token with
   **Public Repo Read-only** scope
 
 Without them (fork PRs, or Dependabot PRs unless the token is also a
-Dependabot secret), the leg writes a notice and pulls anonymously.
+Dependabot secret), the leg writes a notice and pulls anonymously. A login
+that fails (Docker Hub answered one with HTTP 500 during the 2.5.0 release)
+does not fail the leg: the step is `continue-on-error`, so the leg pulls
+anonymously.
 
 ## MCP registry publishing
 
