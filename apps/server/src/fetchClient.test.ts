@@ -712,14 +712,16 @@ describe("FetchClient response cache", () => {
     vi.unstubAllGlobals();
   });
 
-  // A cacheable path + an uncacheable one, plus an injectable clock for expiry.
-  const newCachingClient = (now: () => number = () => 0) =>
+  // A cacheable path + an uncacheable one, plus an injectable clock for expiry
+  // and an optional byte budget.
+  const newCachingClient = (now: () => number = () => 0, maxBytes?: number) =>
     new FetchClient("https://example.test", {
       maxRetries: 0,
       sleep: async () => {},
       cache: {
         ttlForPath: (path) => (path.startsWith("/activities/") ? 1000 : null),
         now,
+        maxBytes,
       },
     });
 
@@ -905,6 +907,80 @@ describe("FetchClient response cache", () => {
     client.clearResponseCache();
     await client.get("/activities/1");
 
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("evicts the least-recently-used response once the byte budget is spent (#71)", async () => {
+    // Each body is 10 characters: '{"id":"1"}'.
+    const fetchMock = vi.fn(async (url: string) =>
+      makeResponse(`{"id":"${url.slice(-1)}"}`),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = newCachingClient(() => 0, 25);
+    await client.get("/activities/1");
+    await client.get("/activities/2");
+    await client.get("/activities/3");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    // Two bodies fit in 25; the third evicted the first.
+    expect((await client.get("/activities/2")).data).toEqual({ id: "2" });
+    expect((await client.get("/activities/3")).data).toEqual({ id: "3" });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    expect((await client.get("/activities/1")).data).toEqual({ id: "1" });
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it("serves and coalesces a response bigger than the whole budget, but does not cache it (#71)", async () => {
+    const body = JSON.stringify({ pad: "x".repeat(90) });
+    expect(body).toHaveLength(100);
+    const fetchMock = vi.fn(async (url: string) =>
+      makeResponse(url.endsWith("/small") ? '{"id":"s"}' : body),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = newCachingClient(() => 0, 50);
+    await client.get("/activities/small");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await client.get("/activities/1");
+    await client.get("/activities/1");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    const [a, b] = await Promise.all([
+      client.get<{ pad: string }>("/activities/2"),
+      client.get<{ pad: string }>("/activities/2"),
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(a.data.pad).toHaveLength(90);
+    expect(b.data.pad).toHaveLength(90);
+
+    // The oversized responses did not evict the small one.
+    expect((await client.get("/activities/small")).data).toEqual({ id: "s" });
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it("keeps cache TTLs on the wall clock by default (#71)", async () => {
+    let wall = 1_000_000;
+    // Before construction: the cache captures its clock then.
+    vi.spyOn(Date, "now").mockImplementation(() => wall);
+    const fetchMock = vi.fn(async () => makeResponse('{"ok":true}'));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new FetchClient("https://example.test", {
+      maxRetries: 0,
+      sleep: async () => {},
+      cache: {
+        ttlForPath: (path) => (path.startsWith("/activities/") ? 1000 : null),
+      },
+    });
+    await client.get("/activities/1");
+    wall += 1001;
+    await client.get("/activities/1");
+
+    // A host suspend moves the wall clock, not the monotonic one; the entry
+    // must still expire.
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
@@ -1290,6 +1366,59 @@ describe("minIntervalMs throttle", () => {
     // The retry's own attempt is spaced from the initial attempt, same as
     // any other pair of consecutive starts.
     expect(starts).toEqual([0, 200]);
+  });
+
+  it("does not stall the next request when the wall clock steps back (#71)", async () => {
+    let wall = 10_000_000;
+    // Before construction: a client that paced on Date.now captured it then.
+    vi.spyOn(Date, "now").mockImplementation(() => wall);
+    const sleeps: number[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => makeResponse("{}")),
+    );
+
+    const client = new FetchClient("https://example.test", {
+      minIntervalMs: 200,
+      sleep: async (ms) => void sleeps.push(ms),
+    });
+    await client.get("/a");
+    // A VM resume or an NTP correction moves the wall clock back an hour.
+    wall = 6_400_000;
+    await client.get("/b");
+
+    // On the wall clock the second GET waited out the whole hour.
+    expect(Math.max(0, ...sleeps)).toBeLessThanOrEqual(200);
+  });
+
+  it("keeps pacing on the real clock under fake timers", async () => {
+    const realSetTimeout = globalThis.setTimeout;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => makeResponse("{}")),
+    );
+    const client = new FetchClient("https://example.test", {
+      minIntervalMs: 200,
+    });
+    await client.get("/a");
+    // Let the 200 ms slot pass in real time, so the next GET needs no wait.
+    // Only the clock is real: the default sleep still calls the global
+    // setTimeout, so under fake timers a request that must wait for its slot
+    // hangs until the test advances the timers.
+    await new Promise<void>((resolve) => realSetTimeout(resolve, 250));
+
+    vi.useFakeTimers();
+    try {
+      const outcome = await Promise.race([
+        client.get("/b").then(() => "done"),
+        new Promise<string>((resolve) =>
+          realSetTimeout(() => resolve("hung"), 1000),
+        ),
+      ]);
+      expect(outcome).toBe("done");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

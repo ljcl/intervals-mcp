@@ -184,6 +184,8 @@ The HTTP layer handles rate limits centrally: passive, nothing to configure
   2,500 per rolling 15 minutes per API key, about 10/s per IP. With no
   headers to react to, the client spaces requests 200ms apart instead
   (`intervalsApi`'s `minIntervalMs`), which stays well under that ceiling.
+- The in-memory response cache holds at most 200 entries and about 32 MiB
+  of response text. It evicts the least recently used entries first.
 - If a response ever does carry `X-RateLimit-*`/`Retry-After` headers, the
   client still parses and honours them: a rate-limit response gets bounded
   retries respecting `Retry-After`, and a genuinely exhausted limit surfaces

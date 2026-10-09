@@ -344,6 +344,13 @@ export interface ResponseCacheOptions {
   ttlForPath: (path: string) => number | null;
   /** Max cached entries before LRU eviction (default 200). */
   maxEntries?: number;
+  /**
+   * A rough budget on the summed response-text length of cached entries,
+   * measured as `body.length` before parsing (default unbounded). A response
+   * bigger than the whole budget is served, and still coalesced, but not
+   * cached.
+   */
+  maxBytes?: number;
   /** Injectable clock (ms) shared with the cache; tests override it. */
   now?: () => number;
 }
@@ -377,8 +384,12 @@ export interface RetryOptions {
    */
   minIntervalMs?: number;
   /**
-   * Injectable clock (ms), shared by the `minIntervalMs` throttle and, when
-   * `cache.now` is not given, the response cache. Defaults to `Date.now`.
+   * The pacing clock (ms) for the `minIntervalMs` throttle. Defaults to
+   * `performance.now()` (monotonic, captured at construction): a wall-clock
+   * step back (VM resume, NTP) must not stall the next request. An injected
+   * clock also drives the response cache when `cache.now` is not given. The
+   * default does not: cache TTLs stay on the wall clock, so entries expire
+   * across a host suspend.
    */
   now?: () => number;
   /**
@@ -497,12 +508,17 @@ export class FetchClient {
     this.sleep =
       options.sleep ??
       ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
-    this.now = options.now ?? Date.now;
+    // Bound and captured here. An arrow that reads `performance.now()` at call
+    // time hangs paced requests under vitest's default fake timers, which
+    // fake `performance` from 0. An unbound reference throws under Node,
+    // which runs the tests.
+    this.now = options.now ?? performance.now.bind(performance);
     this.minIntervalMs = options.minIntervalMs ?? 0;
 
     if (options.cache) {
       this.responseCache = new TtlLruCache<unknown>({
         maxEntries: options.cache.maxEntries,
+        maxBytes: options.cache.maxBytes,
         now: options.cache.now ?? options.now,
       });
       this.ttlForPath = options.cache.ttlForPath;
@@ -649,7 +665,7 @@ export class FetchClient {
       // A `skipCache` read deliberately ignores the in-flight map too — the
       // update-activity append read must never compose onto a shared read that
       // may already be stale by the time it lands.
-      const data = await this.fetchWithRetry<T>(
+      const { data } = await this.fetchWithRetry<T>(
         requestConfig.url,
         fetchOptions,
         requestConfig.responseType,
@@ -678,13 +694,13 @@ export class FetchClient {
       requestConfig.responseType,
       isRetriable,
     )
-      .then((data) => {
+      .then(({ data, bytes }) => {
         // Identity check: a write that invalidated this path while we were in
         // flight has already dropped our entry, and our result predates that
         // write — storing it would resurrect the stale read the invalidation
         // just removed.
         if (this.inFlight.get(cacheKey) === promise) {
-          cache.set(cacheKey, data, ttl);
+          cache.set(cacheKey, data, ttl, bytes);
         }
         return data;
       })
@@ -729,7 +745,8 @@ export class FetchClient {
   }
 
   /**
-   * One request with retries, returning the parsed body. Transient (5xx /
+   * One request with retries, returning the parsed body and the length of
+   * its text (`bytes`, the response cache's size measure). Transient (5xx /
    * network / timeout) faults back off exponentially; a 429 honours
    * Retry-After. All backoff lives here so every tool benefits.
    */
@@ -738,7 +755,7 @@ export class FetchClient {
     fetchOptions: RequestInit,
     responseType: FetchConfig["responseType"],
     isRetriable: boolean,
-  ): Promise<T> {
+  ): Promise<{ data: T; bytes: number }> {
     let attempt = 0;
     while (true) {
       let response: Response;
@@ -837,14 +854,17 @@ export class FetchClient {
 
       // Parse response
       if (responseType === "text") {
-        return body as T;
+        return { data: body as T, bytes: body.length };
       }
       const contentType = response.headers.get("content-type");
       if (contentType?.includes("application/json")) {
         // Parse via text so oversized ids survive without precision loss.
-        return parseJsonWithLargeInts(body) as T;
+        return {
+          data: parseJsonWithLargeInts(body) as T,
+          bytes: body.length,
+        };
       }
-      return body as T;
+      return { data: body as T, bytes: body.length };
     }
   }
 
@@ -930,6 +950,13 @@ export function intervalsCacheTtl(path: string): number | null {
 }
 
 /**
+ * The response cache's budget on summed response-text length (32 MiB). A
+ * 4-hour activity's full stream set is about 1.25-1.4 MB of text, and the
+ * parsed objects take roughly 1-2x that.
+ */
+const RESPONSE_CACHE_MAX_BYTES = 32 * 1024 * 1024;
+
+/**
  * Create an instance for the intervals.icu API. intervals.icu sends no
  * rate-limit headers (verified 2026-09-24); its draft limits are 5,000
  * requests/day and 2,500 per 15 minutes per API key, and about 10/s per IP.
@@ -938,5 +965,5 @@ export function intervalsCacheTtl(path: string): number | null {
  */
 export const intervalsApi = new FetchClient("https://intervals.icu/api/v1", {
   minIntervalMs: 200,
-  cache: { ttlForPath: intervalsCacheTtl },
+  cache: { ttlForPath: intervalsCacheTtl, maxBytes: RESPONSE_CACHE_MAX_BYTES },
 });

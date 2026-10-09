@@ -51,7 +51,9 @@ breaking them has shipped bugs — do not work around them locally.
   reads. intervals.icu sends no rate-limit headers, so its client
   (`intervalsApi`) paces itself instead: `minIntervalMs` enforces a minimum
   gap between the start of consecutive request attempts, across concurrent
-  callers, rather than reacting to a response after the fact.
+  callers, rather than reacting to a response after the fact. The cache is
+  bounded by entries and `RESPONSE_CACHE_MAX_BYTES`; pacing runs on the
+  monotonic clock, TTLs on the wall clock.
 - **Intervals stream reads go through `loadIntervalsStreams` in
   `intervalsStreams.ts`**; only a genuine 404 or empty result throws
   `IntervalsStreamsUnavailableError`, the one error a caller may degrade on.

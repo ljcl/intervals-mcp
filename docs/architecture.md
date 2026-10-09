@@ -115,6 +115,15 @@ delay. Draft limits (go-live unconfirmed): 5,000 requests/day and 2,500 per
 rolling 15 minutes per key, about 10/s per IP; 200ms spacing stays well under
 that ceiling without needing header feedback.
 
+The slot clock is `performance.now()` (monotonic), bound and captured when
+the client is built. A wall-clock step back (VM resume, NTP) therefore cannot
+stall the next request. Cache TTLs stay on the wall clock on purpose, so a
+host suspend expires cached entries. Capturing the bound function also keeps
+the singleton on the real clock under vitest's default fake timers, which fake
+`performance` from 0. Only the clock is real. The default sleep still calls
+the global `setTimeout`, so under fake timers a request that must wait for
+its slot needs the timers advanced.
+
 ## Response cache
 
 `fetchClient.ts` also owns an opt-in TTL + LRU cache
@@ -165,6 +174,12 @@ Everything else is left uncached.
   does not leave a stale pre-write entry being served afterward.
 - `skipCache: true` bypasses entirely; the `update-activity` append read uses
   it so it never composes onto a stale description.
+- **The cache is bounded by entries and bytes.** It holds at most 200 entries
+  and about 32 MiB of response text (`RESPONSE_CACHE_MAX_BYTES`), measured as
+  the body's length before parsing. LRU eviction runs until the cache is under
+  both bounds. A response bigger than the whole budget is served and
+  coalesced, but not cached. Every write sweeps out expired entries, so an
+  entry that nobody reads again does not wait for LRU eviction.
 - **The cache never shares references.** Every value it hands out (a hit, the
   miss that populated it, a coalesced awaiter's copy) is a `structuredClone`,
   so a consumer may sort, splice, or rename in place without rewriting the
