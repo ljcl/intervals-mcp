@@ -60,9 +60,16 @@ never per-tool.
 - Parses `X-RateLimit-*` / `Retry-After` headers into a snapshot
   (`intervalsApi.getRateLimitSnapshot()`); intervals.icu sends none of these
   today (verified 2026-09-24), so the client paces itself instead of reacting
-  to headers; see "Request pacing" below.
+  to headers; see "Request pacing" below. The snapshot is stored only when a
+  response carries rate-limit data, so a header-less response never replaces
+  it and the snapshot stays `null` today.
 - Retries 429s honouring `Retry-After` (bounded, so a call never blocks on a
-  full 15-minute window).
+  full 15-minute window). The 429 path reads that response's own snapshot, so
+  a header-less 429 still gets a `RateLimitError` ("wait a few minutes").
+- Counts every request attempt it starts (`getAttemptCounts()`, shown as
+  `upstream_requests` in `/health`). The count sits in the same closure that
+  puts the attempt on the wire, so retries and writes count, and cache hits,
+  joined reads and attempts cancelled in the queue do not.
 - Retries transient 5xx and network faults with bounded exponential backoff —
   GET/HEAD only, never writes. Transient includes Cloudflare's 520-524
   (intervals.icu sits behind Cloudflare; these mean Cloudflare got no answer
@@ -114,8 +121,9 @@ intervals.icu sends no `X-RateLimit-*` or `Retry-After` headers (verified
 gap between the *start* of consecutive request attempts, shared across
 concurrent callers via a single next-available-slot clock, not a per-caller
 delay. Draft limits (go-live unconfirmed): 5,000 requests/day and 2,500 per
-rolling 15 minutes per key, about 10/s per IP; 200ms spacing stays well under
-that ceiling without needing header feedback.
+rolling 15 minutes per key, about 10/s per IP. 200ms spacing respects the
+per-IP rate. Sustained, it allows 4,500 requests per 15 minutes, more than the
+2,500 draft limit, so `FetchClient` counts attempts for `/health`.
 
 A caller whose call is cancelled leaves the queue at once. It passes its turn
 on when it would have come, and it gives its slot back.
@@ -128,6 +136,10 @@ the singleton on the real clock under vitest's default fake timers, which fake
 `performance` from 0. Only the clock is real. The default sleep still calls
 the global `setTimeout`, so under fake timers a request that must wait for
 its slot needs the timers advanced.
+
+The attempt counters' rolling 15 minutes and UTC day use the wall clock
+(`wallNow`), like intervals.icu's own windows. If the wall clock steps back,
+the counters can over-count until it catches up.
 
 ## Response cache
 

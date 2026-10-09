@@ -28,8 +28,8 @@ export interface ToolCallRecord {
   outcome: ToolOutcome;
   /** Constructor name of the thrown error, when one was thrown. */
   error_class?: string;
-  /** intervals.icu quota as of the most recent response, when known
-   * (currently always null: intervals.icu sends no rate-limit headers). */
+  /** intervals.icu quota as of the most recent response that carried it.
+   * Null until intervals.icu sends rate-limit headers (it sends none). */
   rate_limit?: RateLimitSnapshot | null;
   /** Whether the request's client advertised MCP Apps (#77). */
   client_apps?: boolean;

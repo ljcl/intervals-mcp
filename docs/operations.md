@@ -95,6 +95,11 @@ rate-limit state:
   "time_zone": "Australia/Sydney",
   "time_zone_source": "intervals.icu",
   "rate_limit": null,
+  "upstream_requests": {
+    "last_15_min": 42,
+    "utc_day": 310,
+    "utc_date": "2026-10-05"
+  },
   "tools": {
     "list-activities": {
       "calls": 3,
@@ -114,10 +119,17 @@ release-please bumps, so it tracks the release you are running. An `:edge` or
 `time_zone` is the zone local dates use. `time_zone_source` says where it came
 from: `env` (`TZ`), `intervals.icu` (the athlete's setting) or `fallback` (the
 process zone); see [Time zone](#time-zone).
-`rate_limit` is a snapshot parsed from the most recent intervals.icu response's
-`X-RateLimit-*`/`Retry-After` headers (`intervalsApi.getRateLimitSnapshot()`);
-intervals.icu sends none of these today (verified 2026-09-24), so `rate_limit`
-stays `null` even after calls have been made, not just before the first one.
+`rate_limit` is a snapshot parsed from the most recent intervals.icu response
+that carried `X-RateLimit-*`/`Retry-After` headers
+(`intervalsApi.getRateLimitSnapshot()`). It is `null` until one does.
+intervals.icu sends none of these today (verified 2026-09-24), so it stays
+`null` even after calls have been made.
+`upstream_requests` counts the requests this process sent to intervals.icu,
+retries included. Cache hits and reads that join an in-flight request count
+nothing. The two windows are a rolling 15 minutes and the UTC day, both on the
+wall clock, and both reset when the process restarts. Compare them with the
+draft per-key limits (2,500 per 15 minutes, 5,000 per day). Other servers that
+share the key are not counted.
 `tools` holds per-tool counters since the process started, busiest first.
 Wiring monitoring: point an uptime check at the unauthenticated shape; send
 the secret only when you want the config and quota detail.
@@ -186,7 +198,10 @@ The HTTP layer handles rate limits centrally: passive, nothing to configure
   2026-09-24). Draft limits (go-live unconfirmed): 5,000 requests/day and
   2,500 per rolling 15 minutes per API key, about 10/s per IP. With no
   headers to react to, the client spaces requests 200ms apart instead
-  (`intervalsApi`'s `minIntervalMs`), which stays well under that ceiling.
+  (`intervalsApi`'s `minIntervalMs`). That respects the per-IP rate. Sustained,
+  it allows 4,500 requests per 15 minutes, which is more than the 2,500 draft
+  limit. Check `upstream_requests` in [`/health`](#health-check) to see your
+  usage.
 - The in-memory response cache holds at most 200 entries and about 32 MiB
   of response text. It evicts the least recently used entries first.
 - Each activity's streams are fetched once, in one request that carries
@@ -211,9 +226,10 @@ The HTTP layer handles rate limits centrally: passive, nothing to configure
   reached intervals.icu. A challenge that keeps happening points at the
   server's outbound IP address or its `User-Agent`, not at the key.
 
-Read `rate_limit` from [`/health`](#health-check) to see where you stand — it
-reports the snapshot from the most recent intervals.icu response's headers,
-which is `null` today since intervals.icu sends none.
+Read `upstream_requests` from [`/health`](#health-check) to see where you
+stand. `rate_limit` reports the snapshot from the most recent intervals.icu
+response that carried rate-limit headers. It is `null` today, since
+intervals.icu sends none.
 
 ## Docker notes
 

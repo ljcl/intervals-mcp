@@ -228,6 +228,17 @@ export function parseRateLimitHeaders(headers: Headers): RateLimitSnapshot {
   };
 }
 
+/** True when the snapshot holds at least one value parsed from a header. */
+function carriesRateLimitData(s: RateLimitSnapshot): boolean {
+  return (
+    s.shortTerm !== undefined ||
+    s.daily !== undefined ||
+    s.readShortTerm !== undefined ||
+    s.readDaily !== undefined ||
+    s.retryAfterSeconds !== undefined
+  );
+}
+
 /** Next quarter-hour boundary (UTC): when a 15-minute rate-limit window resets. */
 function next15MinReset(now: Date): Date {
   const reset = new Date(now);
@@ -362,6 +373,20 @@ export interface ResponseCacheOptions {
   now?: () => number;
 }
 
+/** The rolling window of {@link UpstreamAttemptCounts.last15Minutes}. */
+export const ATTEMPT_WINDOW_MS = 15 * 60_000;
+const DAY_MS = 86_400_000;
+
+/** How many request attempts a {@link FetchClient} has started recently. */
+export interface UpstreamAttemptCounts {
+  /** Attempts started in the last 15 minutes. */
+  last15Minutes: number;
+  /** Attempts started since 00:00 UTC. */
+  utcDay: number;
+  /** The UTC date `utcDay` counts, as `YYYY-MM-DD`. */
+  utcDate: string;
+}
+
 /** Tunable backoff/retry behaviour for {@link FetchClient}. */
 export interface RetryOptions {
   /** Max retry attempts beyond the initial request (default 2). */
@@ -399,6 +424,12 @@ export interface RetryOptions {
    * across a host suspend.
    */
   now?: () => number;
+  /**
+   * The wall clock (ms since the epoch) for the attempt counters' rolling 15
+   * minutes and UTC day, like intervals.icu's own windows. Defaults to
+   * `Date.now`. Separate from the monotonic pacing clock `now`.
+   */
+  wallNow?: () => number;
   /**
    * Opt-in response cache for immutable-ish GETs. Omit to disable caching
    * entirely (the default for ad-hoc clients and most tests).
@@ -540,6 +571,18 @@ export class FetchClient {
   private readonly timeoutMs: number;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly now: () => number;
+  private readonly wallNow: () => number;
+
+  /**
+   * Start times (wall clock) of recent attempts, oldest first from
+   * {@link attemptHead}. Entries before the head have left the 15-minute
+   * window and wait for compaction.
+   */
+  private attemptStarts: number[] = [];
+  private attemptHead = 0;
+  /** The UTC day number {@link dayAttempts} counts. */
+  private attemptDay = -1;
+  private dayAttempts = 0;
 
   private readonly minIntervalMs: number;
   /** The earliest time (per {@link now}) the next request attempt may start. */
@@ -580,6 +623,7 @@ export class FetchClient {
     // fake `performance` from 0. An unbound reference throws under Node,
     // which runs the tests.
     this.now = options.now ?? performance.now.bind(performance);
+    this.wallNow = options.wallNow ?? Date.now;
     this.minIntervalMs = options.minIntervalMs ?? 0;
 
     if (options.cache) {
@@ -633,11 +677,59 @@ export class FetchClient {
   }
 
   /**
-   * The rate-limit snapshot from the most recent response, or `null` if no
-   * request carrying rate-limit headers has completed yet.
+   * The rate-limit snapshot from the most recent response that carried
+   * rate-limit data, or `null` until one does. intervals.icu sends none.
    */
   getRateLimitSnapshot(): RateLimitSnapshot | null {
     return this.rateLimit;
+  }
+
+  /**
+   * How many request attempts this client started in the last 15 minutes and
+   * since 00:00 UTC. Retries count; cache hits, joined in-flight reads and
+   * attempts cancelled while queued do not. Both windows reset on restart.
+   */
+  getAttemptCounts(): UpstreamAttemptCounts {
+    const now = this.wallNow();
+    this.pruneAttempts(now);
+    const day = Math.floor(now / DAY_MS);
+    return {
+      last15Minutes: this.attemptStarts.length - this.attemptHead,
+      utcDay: day === this.attemptDay ? this.dayAttempts : 0,
+      utcDate: new Date(day * DAY_MS).toISOString().slice(0, 10),
+    };
+  }
+
+  /**
+   * Moves the head past attempts that left the 15-minute window (one exactly
+   * 15 minutes old has left), and compacts once half the array is dead. A
+   * wall-clock step back can only over-count until the clock catches up.
+   */
+  private pruneAttempts(now: number): void {
+    const starts = this.attemptStarts;
+    while (
+      this.attemptHead < starts.length &&
+      (starts[this.attemptHead] as number) <= now - ATTEMPT_WINDOW_MS
+    ) {
+      this.attemptHead += 1;
+    }
+    if (this.attemptHead > 0 && this.attemptHead * 2 >= starts.length) {
+      this.attemptStarts = starts.slice(this.attemptHead);
+      this.attemptHead = 0;
+    }
+  }
+
+  /** Records one request attempt that is about to go on the wire. */
+  private countAttempt(): void {
+    const now = this.wallNow();
+    this.pruneAttempts(now);
+    this.attemptStarts.push(now);
+    const day = Math.floor(now / DAY_MS);
+    if (day !== this.attemptDay) {
+      this.attemptDay = day;
+      this.dayAttempts = 0;
+    }
+    this.dayAttempts += 1;
   }
 
   /** Exponential backoff with full jitter for retry attempt `n` (0-indexed). */
@@ -919,6 +1011,7 @@ export class FetchClient {
         // minIntervalMs throttle, so it goes through withSlot too.
         response = await this.withSlot(
           () => {
+            this.countAttempt();
             // Created when the attempt really starts. AbortSignal.timeout
             // counts from creation, so one made before withSlot would spend
             // the attempt's budget in the pacing queue, and a queued write
@@ -968,14 +1061,15 @@ export class FetchClient {
           : networkError;
       }
 
-      // Capture rate-limit headers from every response, success or error.
-      this.rateLimit = parseRateLimitHeaders(response.headers);
+      // Capture rate-limit headers from every response, success or error. A
+      // response with none must not overwrite an earlier snapshot.
+      const snapshot = parseRateLimitHeaders(response.headers);
+      if (carriesRateLimitData(snapshot)) this.rateLimit = snapshot;
 
       if (!response.ok) {
         const status = response.status;
 
         if (status === 429) {
-          const snapshot = this.rateLimit;
           const retryAfterMs =
             snapshot.retryAfterSeconds !== undefined
               ? snapshot.retryAfterSeconds * 1000
@@ -1140,7 +1234,9 @@ const RESPONSE_CACHE_MAX_BYTES = 32 * 1024 * 1024;
  * rate-limit headers (verified 2026-09-24); its draft limits are 5,000
  * requests/day and 2,500 per 15 minutes per API key, and about 10/s per IP.
  * With no headers to react to, the client spaces requests 200ms apart instead
- * of reacting after the fact.
+ * of reacting after the fact. Sustained, that spacing allows 4,500 requests
+ * per 15 minutes, more than the 2,500 draft limit, so /health's
+ * `upstream_requests` shows how much of it this process uses.
  */
 export const intervalsApi = new FetchClient("https://intervals.icu/api/v1", {
   minIntervalMs: 200,

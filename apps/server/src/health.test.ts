@@ -28,11 +28,12 @@ vi.mock("./fetchClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./fetchClient")>();
   return {
     ...actual,
-    intervalsApi: { getRateLimitSnapshot: vi.fn() },
+    intervalsApi: { getRateLimitSnapshot: vi.fn(), getAttemptCounts: vi.fn() },
   };
 });
 
 const mockedSnapshot = vi.mocked(intervalsApi.getRateLimitSnapshot);
+const mockedAttempts = vi.mocked(intervalsApi.getAttemptCounts);
 const mockedApiKeyConfigured = vi.mocked(apiKeyConfigured);
 const mockedAthleteId = vi.mocked(getIntervalsAthleteId);
 const mockedTimeZone = vi.mocked(timeZoneSetting);
@@ -46,6 +47,12 @@ describe("handleHealth", () => {
   beforeEach(() => {
     mockedSnapshot.mockReset();
     mockedSnapshot.mockReturnValue(null);
+    mockedAttempts.mockReset();
+    mockedAttempts.mockReturnValue({
+      last15Minutes: 3,
+      utcDay: 40,
+      utcDate: "2026-10-08",
+    });
     mockedApiKeyConfigured.mockReset();
     mockedApiKeyConfigured.mockReturnValue(false);
     mockedAthleteId.mockReset();
@@ -77,6 +84,24 @@ describe("handleHealth", () => {
     expect(body.api_key_configured).toBe(true);
     expect(body.athlete_id).toBe("0");
     expect(body.rate_limit.shortTerm.usage).toBe(42);
+  });
+
+  it("reports rate_limit as null when the snapshot is null", async () => {
+    const { req, url } = get();
+    const body = await handleHealth(req, url).json();
+
+    expect(body.rate_limit).toBeNull();
+  });
+
+  it("reports the upstream request counts", async () => {
+    const { req, url } = get();
+    const body = await handleHealth(req, url).json();
+
+    expect(body.upstream_requests).toEqual({
+      last_15_min: 3,
+      utc_day: 40,
+      utc_date: "2026-10-08",
+    });
   });
 
   it("defaults athlete_id to 0", async () => {
@@ -171,6 +196,7 @@ describe("handleHealth", () => {
     expect(body.api_key_configured).toBeUndefined();
     expect(body.time_zone_source).toBeUndefined();
     expect(body.rate_limit).toBeUndefined();
+    expect(body.upstream_requests).toBeUndefined();
   });
 
   it("serves full detail with the secret presented", async () => {

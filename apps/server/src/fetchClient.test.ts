@@ -316,6 +316,82 @@ describe("FetchClient retry and rate-limit behaviour", () => {
     expect(snapshot?.daily).toEqual({ limit: 1000, usage: 200 });
   });
 
+  it("keeps the snapshot null when a response carries no rate-limit headers", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(makeResponse('{"ok":true}')),
+    );
+
+    const client = newClient();
+    await client.get("/thing");
+
+    expect(client.getRateLimitSnapshot()).toBeNull();
+  });
+
+  it("keeps an earlier snapshot when a later response carries no headers", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        makeResponse("{}", {
+          headers: {
+            "x-ratelimit-limit": "100,1000",
+            "x-ratelimit-usage": "10,200",
+          },
+        }),
+      )
+      .mockResolvedValueOnce(makeResponse("{}"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = newClient();
+    await client.get("/one");
+    const first = client.getRateLimitSnapshot();
+    await client.get("/two");
+
+    expect(first?.shortTerm).toEqual({ limit: 100, usage: 10 });
+    expect(client.getRateLimitSnapshot()).toBe(first);
+  });
+
+  it("stores a snapshot from a 503 that carries only Retry-After", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        makeResponse("busy", {
+          status: 503,
+          headers: { "retry-after": "7" },
+        }),
+      ),
+    );
+
+    const client = newClient();
+    await client.put("/thing", {}).catch(() => {});
+
+    expect(client.getRateLimitSnapshot()).toMatchObject({
+      retryAfterSeconds: 7,
+    });
+  });
+
+  it("still throws a RateLimitError for a header-less 429 and stores no snapshot", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockImplementation(async () =>
+          makeResponse("slow down", { status: 429 }),
+        ),
+    );
+
+    const client = newClient();
+    const error = await client.get("/thing").catch((e) => e);
+
+    expect(error).toBeInstanceOf(RateLimitError);
+    expect(error.rateLimit).not.toBeNull();
+    expect(error.rateLimit.retryAfterSeconds).toBeUndefined();
+    expect(error.message).toBe(
+      "Rate limit reached; wait a few minutes and retry.",
+    );
+    expect(client.getRateLimitSnapshot()).toBeNull();
+  });
+
   it("honours Retry-After on a 429 and retries to success", async () => {
     const sleeps: number[] = [];
     const fetchMock = vi
@@ -1952,6 +2028,205 @@ describe("FetchClient call cancellation (#70)", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(4);
     for (const result of results) expect(result.status).toBe("fulfilled");
+  });
+});
+
+describe("FetchClient upstream attempt counters (#69)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  const MIN = 60_000;
+
+  /** A client whose wall clock the test sets. */
+  const newClient = (
+    clock: { wall: number },
+    options: ConstructorParameters<typeof FetchClient>[1] = {},
+  ) =>
+    new FetchClient("https://example.test", {
+      maxRetries: 2,
+      baseDelayMs: 1,
+      sleep: async () => {},
+      wallNow: () => clock.wall,
+      ...options,
+    });
+
+  const cachingOptions = {
+    maxRetries: 0,
+    cache: {
+      ttlForPath: (path: string) =>
+        path.startsWith("/activities/") ? 1000 : null,
+    },
+  };
+
+  it("counts every attempt of a retried GET", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(makeResponse("boom", { status: 503 }))
+      .mockResolvedValueOnce(makeResponse("{}"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = newClient({ wall: 0 });
+    await client.get("/thing");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(client.getAttemptCounts().last15Minutes).toBe(2);
+    expect(client.getAttemptCounts().utcDay).toBe(2);
+  });
+
+  it("counts a write that answers 503 once, since writes never retry", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(makeResponse("boom", { status: 503 })),
+    );
+
+    const client = newClient({ wall: 0 });
+    await client.put("/thing", {}).catch(() => {});
+
+    expect(client.getAttemptCounts().last15Minutes).toBe(1);
+  });
+
+  it("counts nothing for a cache hit", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(async () => makeResponse("{}"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = newClient({ wall: 0 }, cachingOptions);
+    await client.get("/activities/1");
+    await client.get("/activities/1");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(client.getAttemptCounts().last15Minutes).toBe(1);
+  });
+
+  it("counts nothing for a joined in-flight read", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(async () => makeResponse("{}"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = newClient({ wall: 0 }, cachingOptions);
+    await Promise.all([
+      client.get("/activities/1"),
+      client.get("/activities/1"),
+    ]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(client.getAttemptCounts().last15Minutes).toBe(1);
+  });
+
+  it("drops an attempt from the rolling window at exactly 15 minutes", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => makeResponse("{}")),
+    );
+    const t0 = Date.UTC(2026, 9, 7, 12, 0, 0);
+    const clock = { wall: t0 };
+
+    const client = newClient(clock);
+    await client.get("/thing");
+
+    clock.wall = t0 + 15 * MIN - 1;
+    expect(client.getAttemptCounts().last15Minutes).toBe(1);
+    clock.wall = t0 + 15 * MIN;
+    expect(client.getAttemptCounts().last15Minutes).toBe(0);
+    // The UTC day keeps counting after the rolling window has let go.
+    expect(client.getAttemptCounts().utcDay).toBe(1);
+  });
+
+  it("resets the day count at midnight UTC", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => makeResponse("{}")),
+    );
+    const clock = { wall: Date.parse("2026-10-07T23:59:59.999Z") };
+
+    const client = newClient(clock);
+    await client.get("/thing");
+    expect(client.getAttemptCounts()).toEqual({
+      last15Minutes: 1,
+      utcDay: 1,
+      utcDate: "2026-10-07",
+    });
+
+    clock.wall += 1;
+    expect(client.getAttemptCounts()).toEqual({
+      last15Minutes: 1,
+      utcDay: 0,
+      utcDate: "2026-10-08",
+    });
+  });
+
+  it("keeps an exact in-window count across compaction of 5,000 attempts", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => makeResponse("{}")),
+    );
+    const t0 = Date.UTC(2026, 9, 7, 12, 0, 0);
+    const clock = { wall: t0 };
+
+    const client = newClient(clock);
+    // One attempt every 360 ms for 30 minutes.
+    for (let i = 0; i < 5000; i += 1) {
+      clock.wall = t0 + i * 360;
+      await client.get("/thing");
+    }
+
+    const now = clock.wall;
+    let expected = 0;
+    for (let i = 0; i < 5000; i += 1) {
+      if (t0 + i * 360 > now - 15 * MIN) expected += 1;
+    }
+    expect(client.getAttemptCounts().last15Minutes).toBe(expected);
+    expect(client.getAttemptCounts().utcDay).toBe(5000);
+  });
+
+  it("does not count a read cancelled while it waits for its pacing slot", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => makeResponse("{}")),
+    );
+    const client = newClient(
+      { wall: 0 },
+      {
+        maxRetries: 0,
+        minIntervalMs: 200,
+        now: () => 0,
+        // The second request waits for its slot until the test cancels it.
+        sleep: () => new Promise<void>(() => {}),
+      },
+    );
+
+    await client.get("/first");
+    const ac = new AbortController();
+    const queued = runInCallScope({ signal: ac.signal }, () =>
+      client.get("/second"),
+    );
+    queued.catch(() => {});
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    ac.abort();
+
+    await expect(queued).rejects.toBeInstanceOf(CallCancelledError);
+    expect(client.getAttemptCounts().last15Minutes).toBe(1);
+  });
+
+  it("moves the windows with the wall clock, not the pacing clock", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => makeResponse("{}")),
+    );
+    const pacing = { now: 0 };
+    const clock = { wall: Date.UTC(2026, 9, 7, 12, 0, 0) };
+
+    const client = newClient(clock, { now: () => pacing.now });
+    await client.get("/thing");
+    pacing.now += 60 * MIN;
+
+    expect(client.getAttemptCounts().last15Minutes).toBe(1);
+    clock.wall += 15 * MIN;
+    expect(client.getAttemptCounts().last15Minutes).toBe(0);
   });
 });
 

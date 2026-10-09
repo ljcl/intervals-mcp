@@ -39,7 +39,9 @@ breaking them has shipped bugs — do not work around them locally.
   timeout retries and is a `RequestTimeoutError`. Error bodies reach a
   message only through `summarizeErrorBody` (an HTML page becomes its title).
   A cancelled call starts no new attempt, retry or wait; a started write is
-  never interrupted (docs/architecture.md#cancellation).
+  never interrupted (docs/architecture.md#cancellation). The snapshot is
+  stored only when a response carries rate-limit headers; `FetchClient`
+  counts upstream attempts for `/health`.
 - **Error types survive translation.** `handleApiError` rethrows
   `RateLimitError` unmodified (its `detail` is the bare window description a
   tool can quote) and wraps everything else in `IntervalsApiError extends HttpError`
