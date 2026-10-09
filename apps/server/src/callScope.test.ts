@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   CallCancelledError,
+  type CallFailure,
+  type CallScope,
   currentCallSignal,
+  noteCallFailure,
   runInCallScope,
   throwIfCancelled,
 } from "./callScope";
@@ -91,5 +94,39 @@ describe("throwIfCancelled", () => {
     } catch (error) {
       expect((error as CallCancelledError).cause).toBe(ac.signal.reason);
     }
+  });
+});
+
+describe("noteCallFailure", () => {
+  it("does nothing outside a scope, and does not throw", () => {
+    expect(() => noteCallFailure({ error_class: "Error" })).not.toThrow();
+  });
+
+  it("stores the failure on the scope, and the last note wins", () => {
+    const scope: CallScope = {};
+    runInCallScope(scope, () => {
+      noteCallFailure({ error_class: "First" });
+      noteCallFailure({ error_class: "HttpError", http_status: 404 });
+    });
+    expect(scope.failure).toEqual({
+      error_class: "HttpError",
+      http_status: 404,
+    });
+  });
+
+  it("keeps the failures of two parallel scopes apart", async () => {
+    const a: CallScope = {};
+    const b: CallScope = {};
+    const run = (scope: CallScope, failure: CallFailure, delayMs: number) =>
+      runInCallScope(scope, async () => {
+        await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+        noteCallFailure(failure);
+      });
+    await Promise.all([
+      run(a, { error_class: "A", http_status: 404 }, 5),
+      run(b, { error_class: "B", http_status: 429 }, 1),
+    ]);
+    expect(a.failure).toEqual({ error_class: "A", http_status: 404 });
+    expect(b.failure).toEqual({ error_class: "B", http_status: 429 });
   });
 });

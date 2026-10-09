@@ -19,7 +19,7 @@ import {
   isGearRetired,
 } from "../utils/activityWrite";
 import { WRITE_DESTRUCTIVE } from "./_annotations";
-import { toolErrorText } from "./_errors";
+import { noteToolFailure, toolErrorText } from "./_errors";
 import { intervalsActivityIdInput } from "./_ids";
 import {
   ActivityWriteOutputSchema,
@@ -325,6 +325,7 @@ export const updateActivityTool = {
         }
         const detail =
           putError instanceof Error ? putError.message : String(putError);
+        noteToolFailure(putError);
         return {
           content: [
             {
@@ -389,6 +390,7 @@ export const updateActivityTool = {
     } catch (error) {
       if (written) {
         const detail = error instanceof Error ? error.message : String(error);
+        noteToolFailure(error);
         return {
           content: [
             {

@@ -6,7 +6,8 @@ import { AsyncLocalStorage } from "node:async_hooks";
  *
  * `dispatchToolCall` opens it once per call; `FetchClient` and
  * `mapWithConcurrency` read it and stop work for a call that has been
- * cancelled. Work meant to outlive a call must not start inside one.
+ * cancelled, and the error translators write the call's failure into it.
+ * Work meant to outlive a call must not start inside one.
  */
 export interface CallScope {
   /**
@@ -16,6 +17,17 @@ export interface CallScope {
    * cannot be cancelled.
    */
   readonly signal?: AbortSignal;
+  /**
+   * What a tool translated into error text most recently for this call. The
+   * last note wins. Read by `dispatchToolCall` for the call's log line.
+   */
+  failure?: CallFailure;
+}
+
+/** Why a call failed. The field names match `ToolCallRecord`'s. */
+export interface CallFailure {
+  error_class: string;
+  http_status?: number;
 }
 
 const storage = new AsyncLocalStorage<CallScope>();
@@ -28,6 +40,15 @@ export function runInCallScope<T>(scope: CallScope, fn: () => T): T {
 /** The current call's cancel signal, or `undefined` outside a call or for an uncancellable one. */
 export function currentCallSignal(): AbortSignal | undefined {
   return storage.getStore()?.signal;
+}
+
+/**
+ * Notes why the current call failed, for its log line. Does nothing outside a
+ * call.
+ */
+export function noteCallFailure(failure: CallFailure): void {
+  const store = storage.getStore();
+  if (store) store.failure = failure;
 }
 
 /** Thrown when work stops because its tool call was cancelled. */

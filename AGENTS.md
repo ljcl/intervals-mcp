@@ -96,7 +96,10 @@ breaking them has shipped bugs — do not work around them locally.
 - **Telemetry:** `dispatchToolCall` emits one JSON line per call; timer starts
   before token resolution (not-connected calls count); a returned `isError`
   counts as an error unless the call was cancelled (`cancelled`);
-  `recordToolCall` can never fail the call it describes; each line records `client_apps` and `client_name` from the request envelope.
+  `recordToolCall` can never fail the call it describes; each line records
+  `client_apps` and `client_name` from the request envelope; each line also
+  records `ts`, bounded client strings and tool name, W3C trace ids and
+  `error_class`/`http_status` noted in the call scope.
 - **Progress:** every handler gets a `ReportProgress` closure (third arg,
   always present). Tick counter without `total` (spec demands monotonic
   increase; multi-phase calls can't carry two denominators); time-based
@@ -164,14 +167,15 @@ breaking them has shipped bugs — do not work around them locally.
   branches on `RateLimitError` / `HttpError.status` (404, 402, 401/403)
   and the typed `response.cloudflareChallenge` flag (checked before 401/403),
   never on message text; every `isError` text starts with `❌`. Imports come
-  from `fetchClient.ts` only (tool tests mock the client module with bare
-  factories, so an import from there would be `undefined` under those
-  mocks). Catch blocks and the dispatcher's final catch call it for the
-  text and write the `{ content, isError: true }` literal themselves. A
-  text with no error to translate (the dispatcher's unknown-tool,
-  invalid-arguments and missing-key texts) gets the prefix from
-  `prefixedErrorText` in the same file. Tests
-  reject with the `__fixtures__/errors.ts` shapes (`handledRateLimit`,
+  from `fetchClient.ts` and the leaf `callScope.ts` only (tool tests mock the
+  client module with bare factories, so an import from there would be
+  `undefined` under those mocks). Catch blocks and the dispatcher's final
+  catch call it for the text and write the `{ content, isError: true }`
+  literal themselves. `toolErrorText` also notes the failure's class and
+  status (`noteCallFailure`). A text with no error to translate (the
+  dispatcher's unknown-tool, invalid-arguments and missing-key texts) gets the
+  prefix from `prefixedErrorText` in the same file. Tests reject with the
+  `__fixtures__/errors.ts` shapes (`handledRateLimit`,
   `handledNotFound`, `handledSubscriptionRequired`), never a plain
   `Error("404 Not Found")`.
 - **The response cache never shares references and coalesces in-flight

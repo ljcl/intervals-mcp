@@ -11,6 +11,7 @@ import {
   ResourceNotFoundError,
   Server,
   type ToolAnnotations,
+  TRACEPARENT_META_KEY,
 } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import {
@@ -34,7 +35,7 @@ import {
   buildCadenceTrendData,
   type CadenceTrendData,
 } from "./cadenceTrendData";
-import { type CallScope, runInCallScope } from "./callScope";
+import { type CallFailure, type CallScope, runInCallScope } from "./callScope";
 import {
   clientSupportsMcpApps,
   MCP_APP_MIME_TYPE,
@@ -72,9 +73,19 @@ import {
 } from "./progress";
 import { completePromptArgument, getPrompt, listPrompts } from "./prompts";
 import { buildRouteMapData, type RouteMapData } from "./routeMapData";
-import { recordToolCall, type ToolOutcome } from "./telemetry";
+import {
+  ERROR_RESULT_CLASS,
+  parseTraceparent,
+  recordToolCall,
+  type ToolOutcome,
+  type TraceIds,
+} from "./telemetry";
 import { READ_ONLY } from "./tools/_annotations";
-import { prefixedErrorText, toolErrorText } from "./tools/_errors";
+import {
+  prefixedErrorText,
+  toolErrorText,
+  toolFailureOf,
+} from "./tools/_errors";
 import {
   idJsonSchemaOverride,
   intervalsActivityIdInput,
@@ -1521,7 +1532,11 @@ export interface DispatchOptions {
     rendersApps: boolean;
     /** `clientInfo.name`, when the client sent one. */
     name?: string;
+    /** `clientInfo.version`, when the client sent one. */
+    version?: string;
   };
+  /** The ids in the request's W3C `traceparent`, when it carried a valid one. */
+  trace?: TraceIds;
   /**
    * Aborts when the client closes the request (its cancel or its own
    * timeout), when the response stream is cancelled, and at shutdown. It
@@ -1557,7 +1572,7 @@ async function runToolCall(
   scope: CallScope,
   name: string,
   rawArgs: Record<string, unknown> | undefined,
-  { progress = NO_PROGRESS, client }: DispatchOptions,
+  { progress = NO_PROGRESS, client, trace }: DispatchOptions,
 ): Promise<ToolCallResult> {
   const context: ToolCallContext = {
     clientRendersApps: client?.rendersApps ?? false,
@@ -1569,7 +1584,7 @@ async function runToolCall(
   const finish = (
     outcome: ToolOutcome,
     result: ToolCallResult,
-    errorClass?: string,
+    failure?: CallFailure,
   ): ToolCallResult => {
     recordToolCall({
       tool: name,
@@ -1578,9 +1593,14 @@ async function runToolCall(
       // server error. Read here, before returning: the SDK aborts the signal
       // after every response.
       outcome: scope.signal?.aborted ? "cancelled" : outcome,
-      ...(errorClass ? { error_class: errorClass } : {}),
+      error_class: failure?.error_class,
+      http_status: failure?.http_status,
       client_apps: context.clientRendersApps,
-      ...(client?.name ? { client_name: client.name } : {}),
+      // recordToolCall bounds both before they reach the log.
+      client_name: client?.name,
+      client_version: client?.version,
+      trace_id: trace?.trace_id,
+      parent_id: trace?.parent_id,
     });
     return result;
   };
@@ -1638,7 +1658,7 @@ async function runToolCall(
         isError: true,
         content: [{ type: "text", text: prefixedErrorText(message) }],
       },
-      error instanceof Error ? error.constructor.name : undefined,
+      toolFailureOf(error),
     );
   }
 
@@ -1663,8 +1683,15 @@ async function runToolCall(
           }
         : handled;
     // A handler that returns `isError` failed as surely as one that threw; the
-    // counters would flatter the server if only throws counted.
-    return finish(result.isError ? "error" : "ok", result);
+    // counters would flatter the server if only throws counted. A tool that
+    // translated an error noted it in the scope; a refusal has no exception.
+    return result.isError
+      ? finish(
+          "error",
+          result,
+          scope.failure ?? { error_class: ERROR_RESULT_CLASS },
+        )
+      : finish("ok", result);
   } catch (error) {
     if (error instanceof NoLatestRunError)
       return finish(
@@ -1673,7 +1700,7 @@ async function runToolCall(
           isError: true,
           content: [{ type: "text", text: prefixedErrorText(error.message) }],
         },
-        error.constructor.name,
+        toolFailureOf(error),
       );
     // The app data handlers throw rather than return `isError`, so this is
     // where their 404s and rate limits get the same typed treatment and
@@ -1689,7 +1716,7 @@ async function runToolCall(
           },
         ],
       },
-      error instanceof Error ? error.constructor.name : undefined,
+      toolFailureOf(error),
     );
   }
 }
@@ -1768,7 +1795,7 @@ export function createServer(): Server {
     // The shipped envelope type is `{}`, so the reserved keys are read by name.
     const envelope = ctx.mcpReq.envelope as Record<string, unknown> | undefined;
     const clientInfo = envelope?.[CLIENT_INFO_META_KEY] as
-      | { name?: unknown }
+      | { name?: unknown; version?: unknown }
       | undefined;
     const result = await dispatchToolCall(name, args, {
       signal: ctx.mcpReq.signal,
@@ -1785,7 +1812,16 @@ export function createServer(): Server {
         ),
         name:
           typeof clientInfo?.name === "string" ? clientInfo.name : undefined,
+        version:
+          typeof clientInfo?.version === "string"
+            ? clientInfo.version
+            : undefined,
       },
+      trace: parseTraceparent(
+        (ctx.mcpReq._meta as Record<string, unknown> | undefined)?.[
+          TRACEPARENT_META_KEY
+        ],
+      ),
     });
     // The era-aware projection (SEP-2106 §4.3 text auto-append; identity for
     // this server's always-text, object-structured results) lives in the SDK

@@ -142,25 +142,63 @@ shown wrapped here:
 ```json
 {
   "event": "tool_call",
+  "ts": "2026-10-08T01:02:03.004Z",
   "tool": "view-training-load",
   "duration_ms": 420,
   "outcome": "ok",
   "rate_limit": null,
   "client_apps": true,
-  "client_name": "claude-ai"
+  "client_name": "claude-ai",
+  "client_version": "1.4.0"
 }
 ```
 
-`outcome` is `ok`, `error`, `not_connected`, `invalid_args` or `cancelled`;
-`error_class` appears when a call threw. `cancelled` means the client
-cancelled or disconnected before the answer. `/health` counts it in
-`cancelled`, not in `errors`. `client_apps` is true when the request's client
-capabilities advertised MCP Apps (`io.modelcontextprotocol/ui` with
-`text/html;profile=mcp-app`), and `client_name` is the `clientInfo.name` the
-client sent, when it sent one. They exist to confirm which hosts advertise MCP
-Apps before the `view-*` tools are hidden from clients that do not. For
-example, `grep '"event":"tool_call"' | grep '"client_apps":false'` lists the
-calls from hosts that would lose them.
+A failed call adds the failure and, when the client sent a trace, its ids:
+
+```json
+{
+  "event": "tool_call",
+  "ts": "2026-10-08T01:02:07.512Z",
+  "tool": "get-activity",
+  "duration_ms": 310,
+  "outcome": "error",
+  "error_class": "IntervalsApiError",
+  "http_status": 404,
+  "rate_limit": null,
+  "client_apps": false,
+  "client_name": "claude-ai",
+  "client_version": "1.4.0",
+  "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+  "parent_id": "00f067aa0ba902b7"
+}
+```
+
+`ts` is when the call finished. The call started at `ts` minus `duration_ms`.
+`outcome` is `ok`, `error`, `not_connected`, `invalid_args` or `cancelled`.
+`cancelled` means the client cancelled or disconnected before the answer.
+`/health` counts it in `cancelled`, not in `errors`.
+
+`error_class` is the class of the error behind a failed call, for example
+`IntervalsStreamsUnavailableError` for an activity with no streams. It is
+`ToolErrorResult` for a refusal with no exception behind it, such as a bad
+argument combination. A cancelled call keeps the class of the error it was
+failing with. `http_status` is the intervals.icu status, when the error
+carried one.
+
+`client_apps` is true when the request's client capabilities advertised MCP
+Apps (`io.modelcontextprotocol/ui` with `text/html;profile=mcp-app`).
+`client_name` and `client_version` are the `clientInfo` fields the client
+sent, when it sent them. The server trims them, strips control and format
+characters, and cuts them to 64 characters, so a client cannot break the line.
+It bounds `tool` the same way, because a client can send an unknown tool name.
+They exist to confirm which hosts advertise MCP Apps before the `view-*` tools
+are hidden from clients that do not. For example,
+`grep '"event":"tool_call"' | grep '"client_apps":false'` lists the calls from
+hosts that would lose them.
+
+`trace_id` and `parent_id` appear only when the request's `_meta.traceparent`
+is a valid W3C trace context value. Use them to match a line to the client's
+own trace. The server ignores `tracestate` and `baggage`.
 
 ## Securing the endpoint
 

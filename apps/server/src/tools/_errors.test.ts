@@ -4,9 +4,15 @@ import {
   handledRateLimit,
   handledSubscriptionRequired,
 } from "../__fixtures__";
+import { type CallScope, runInCallScope } from "../callScope";
 import { HttpError, RequestTimeoutError } from "../fetchClient";
 import { IntervalsApiError } from "../intervalsClient";
-import { prefixedErrorText, toolErrorText, unavailableReason } from "./_errors";
+import {
+  noteToolFailure,
+  prefixedErrorText,
+  toolErrorText,
+  toolFailureOf,
+} from "./_errors";
 
 describe("toolErrorText", () => {
   beforeEach(() => {
@@ -183,48 +189,106 @@ describe("prefixedErrorText", () => {
   });
 });
 
-describe("unavailableReason", () => {
-  it("names the rate limit on a RateLimitError, before its HttpError status", () => {
-    expect(unavailableReason(handledRateLimit("getAthleteHrCurves"))).toBe(
-      "the intervals.icu rate limit was reached",
-    );
+describe("the failure noted for the call log", () => {
+  beforeEach(() => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
   });
 
-  it("names the HTTP status of any other HttpError", () => {
-    expect(unavailableReason(handledNotFound("getAthleteHrCurves"))).toBe(
-      "intervals.icu answered HTTP 404",
-    );
-    expect(
-      unavailableReason(
-        new HttpError("HTTP 503", { status: 503, statusText: "", data: "" }),
-      ),
-    ).toBe("intervals.icu answered HTTP 503");
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
-  it("names a Cloudflare challenge rather than its 403", () => {
+  /** The failure `toolErrorText` leaves in a fresh call scope for `error`. */
+  function notedFor(error: unknown): CallScope["failure"] {
+    const scope: CallScope = {};
+    runInCallScope(scope, () => toolErrorText(error, { context: "do it" }));
+    return scope.failure;
+  }
+
+  it("notes the class and status of a rate limit", () => {
+    expect(notedFor(handledRateLimit("getActivity"))).toEqual({
+      error_class: "RateLimitError",
+      http_status: 429,
+    });
+  });
+
+  it("notes the class and status of a 404", () => {
+    expect(notedFor(handledNotFound("getActivity"))).toEqual({
+      error_class: "HttpError",
+      http_status: 404,
+    });
+  });
+
+  it("notes a real IntervalsApiError with its status", () => {
     expect(
-      unavailableReason(
-        new HttpError("HTTP 403", {
-          status: 403,
-          statusText: "Forbidden",
+      notedFor(
+        new IntervalsApiError("getActivity: 503", {
+          status: 503,
+          statusText: "Service Unavailable",
           data: "",
-          cloudflareChallenge: true,
         }),
       ),
-    ).toBe("Cloudflare, in front of intervals.icu, answered with a challenge");
+    ).toEqual({ error_class: "IntervalsApiError", http_status: 503 });
   });
 
-  it("names a timeout", () => {
+  it("notes the class only for an error with no status", () => {
     expect(
-      unavailableReason(new RequestTimeoutError("https://x/y", 20_000)),
-    ).toBe("intervals.icu did not answer in time");
+      notedFor(new RequestTimeoutError("https://x.test/a", 20_000)),
+    ).toEqual({ error_class: "RequestTimeoutError" });
   });
 
-  it("falls back to a generic clause and never throws", () => {
-    expect(unavailableReason(new Error("socket hang up"))).toBe(
-      "the request failed",
-    );
-    expect(unavailableReason(null)).toBe("the request failed");
-    expect(unavailableReason("boom")).toBe("the request failed");
+  it.each([null, undefined, "failure"])(
+    "notes NonError for %j and still returns the text",
+    (value) => {
+      const scope: CallScope = {};
+      const text = runInCallScope(scope, () =>
+        toolErrorText(value, { context: "do it" }),
+      );
+      expect(text.startsWith("❌ ")).toBe(true);
+      expect(scope.failure).toEqual({ error_class: "NonError" });
+    },
+  );
+
+  it("leaves the texts alone and does not throw outside a scope", () => {
+    expect(() =>
+      toolErrorText(handledNotFound("getActivity"), { context: "do it" }),
+    ).not.toThrow();
+    expect(
+      toolErrorText(handledNotFound("getActivity"), { context: "do it" }),
+    ).toBe("❌ Not found.");
+  });
+});
+
+describe("toolFailureOf", () => {
+  it.each([
+    ["a plain Error", new Error("x"), { error_class: "Error" }],
+    ["a TypeError", new TypeError("x"), { error_class: "TypeError" }],
+    [
+      "an HttpError",
+      new HttpError("x", { status: 500, statusText: "", data: "" }),
+      { error_class: "HttpError", http_status: 500 },
+    ],
+    ["a string", "x", { error_class: "NonError" }],
+    ["null", null, { error_class: "NonError" }],
+    ["an object", { status: 404 }, { error_class: "NonError" }],
+  ])("maps %s", (_name, error, expected) => {
+    expect(toolFailureOf(error)).toEqual(expected);
+  });
+
+  it("falls back to Error for an error class with no name", () => {
+    const Anonymous = (() => class extends Error {})();
+    Object.defineProperty(Anonymous, "name", { value: "" });
+    expect(toolFailureOf(new Anonymous("x"))).toEqual({ error_class: "Error" });
+  });
+
+  it("never throws, even when reading the value throws", () => {
+    const hostile = new Proxy(new Error("x"), {
+      get(target, key, receiver) {
+        if (key === "constructor") throw new Error("boom");
+        return Reflect.get(target, key, receiver);
+      },
+    });
+    expect(toolFailureOf(hostile)).toEqual({ error_class: "NonError" });
+    expect(() => noteToolFailure(hostile)).not.toThrow();
   });
 });

@@ -39,7 +39,7 @@ import {
 import { NO_PROGRESS, type ReportProgress } from "../progress";
 import { cadenceSpm, formatPaceSeconds } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
-import { toolErrorText, unavailableReason } from "./_errors";
+import { noteToolFailure, toolErrorText } from "./_errors";
 import { intervalsActivityIdInput } from "./_ids";
 import {
   IntervalAnalysisOutputSchema,
@@ -449,6 +449,7 @@ export const getIntervalAnalysisTool = {
         streams = await loadIntervalsStreams(apiKey, id, [...STREAM_TYPES]);
       } catch (error) {
         if (error instanceof IntervalsStreamsUnavailableError) {
+          noteToolFailure(error);
           return {
             content: [
               {
@@ -610,6 +611,7 @@ export const getIntervalAnalysisTool = {
       };
     } catch (error) {
       if (error instanceof IntervalAnalysisError) {
+        noteToolFailure(error);
         return {
           content: [{ type: "text" as const, text: `❌ ${error.message}` }],
           isError: true,

@@ -15,7 +15,7 @@ import { downsampleColumns, lastValuePerBucket } from "../streamDownsample";
 import { LATLNG_DECIMALS, STREAM_DECIMALS } from "../streamPrecision";
 import { cadenceSpm, isStepCadenceActivity } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
-import { toolErrorText } from "./_errors";
+import { noteToolFailure, toolErrorText } from "./_errors";
 import { intervalsActivityIdInput } from "./_ids";
 import { RESPONSE_BUDGET_CHARS, responseSize } from "./_responseBudget";
 import { ActivityStreamsOutputSchema, warnOnSchemaDrift } from "./outputs";
@@ -406,6 +406,7 @@ export const getActivityStreamsTool = {
         streams = await loadIntervalsStreams(apiKey, id, typesToFetch);
       } catch (error) {
         if (error instanceof IntervalsStreamsUnavailableError) {
+          noteToolFailure(error);
           return {
             content: [
               {

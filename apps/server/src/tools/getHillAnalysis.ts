@@ -18,7 +18,7 @@ import {
   isStepCadenceActivity,
 } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
-import { toolErrorText } from "./_errors";
+import { noteToolFailure, toolErrorText } from "./_errors";
 import { intervalsActivityIdInput } from "./_ids";
 import { HillAnalysisOutputSchema, warnOnSchemaDrift } from "./outputs";
 
@@ -124,6 +124,7 @@ export const getHillAnalysisTool = {
         streams = await loadIntervalsStreams(apiKey, id, [...STREAM_TYPES]);
       } catch (error) {
         if (error instanceof IntervalsStreamsUnavailableError) {
+          noteToolFailure(error);
           return {
             content: [
               {
@@ -253,6 +254,7 @@ export const getHillAnalysisTool = {
       };
     } catch (error) {
       if (error instanceof HillAnalysisError) {
+        noteToolFailure(error);
         return {
           content: [{ type: "text" as const, text: `❌ ${error.message}` }],
           isError: true,

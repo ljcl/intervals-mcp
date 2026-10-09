@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { handledNotFound } from "../__fixtures__";
-import { CallCancelledError } from "../callScope";
+import {
+  CallCancelledError,
+  type CallScope,
+  runInCallScope,
+} from "../callScope";
 import { HttpError, RateLimitError, RequestTimeoutError } from "../fetchClient";
 import {
   getActivity,
@@ -641,9 +645,12 @@ describe("updateActivityTool.execute", () => {
       ),
     );
 
-    const result = await updateActivityTool.execute(
-      { id: "555", name: "Tempo" } as never,
-      "test-token",
+    const scope: CallScope = {};
+    const result = await runInCallScope(scope, () =>
+      updateActivityTool.execute(
+        { id: "555", name: "Tempo" } as never,
+        "test-token",
+      ),
     );
 
     expect(result.isError).toBe(true);
@@ -652,6 +659,7 @@ describe("updateActivityTool.execute", () => {
     expect(text).toContain("may already have been applied");
     expect(text).toContain("get-activity");
     expect(text.toLowerCase()).not.toContain("retry now");
+    expect(scope.failure).toEqual({ error_class: "RequestTimeoutError" });
   });
 
   it("reports a plain failure, not a possible write, when the call was cancelled before the PUT left", async () => {
@@ -683,15 +691,22 @@ describe("updateActivityTool.execute", () => {
       }),
     );
 
-    const result = await updateActivityTool.execute(
-      { id: "555", name: "Tempo" } as never,
-      "test-token",
+    const scope: CallScope = {};
+    const result = await runInCallScope(scope, () =>
+      updateActivityTool.execute(
+        { id: "555", name: "Tempo" } as never,
+        "test-token",
+      ),
     );
 
     expect(result.isError).toBe(true);
     const text = result.content[0]?.text ?? "";
     expect(text).toContain("may already have been applied");
     expect(text).toContain("get-activity");
+    expect(scope.failure).toEqual({
+      error_class: "HttpError",
+      http_status: 503,
+    });
   });
 
   it("reports a possibly-applied write when the PUT succeeds but the response body does not parse", async () => {
@@ -761,9 +776,12 @@ describe("updateActivityTool.execute", () => {
     mockedPut.mockResolvedValueOnce(activity({ name: "Tempo" }));
     mockedGetActivity.mockRejectedValueOnce(new Error("network reset"));
 
-    const result = await updateActivityTool.execute(
-      { id: "555", name: "Tempo" } as never,
-      "test-token",
+    const scope: CallScope = {};
+    const result = await runInCallScope(scope, () =>
+      updateActivityTool.execute(
+        { id: "555", name: "Tempo" } as never,
+        "test-token",
+      ),
     );
 
     expect(result.isError).toBe(true);
@@ -773,6 +791,7 @@ describe("updateActivityTool.execute", () => {
     expect(text).toContain("network reset");
     expect(text).toContain("get-activity");
     expect(mockedPut).toHaveBeenCalledTimes(1);
+    expect(scope.failure).toEqual({ error_class: "Error" });
   });
 });
 

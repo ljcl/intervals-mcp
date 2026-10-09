@@ -406,8 +406,10 @@ time zone. It waits for the image's own `HEALTHCHECK` to report healthy
 `package.json` and that `time_zone_source` is `env`, and checks
 that the image carries no `node_modules` install tree, the bearer gate, that
 `tools/list` matches `tool-surface.lock.json`, that every `ui://` app resource
-returns HTML, that a bad-argument `tools/call` comes back as `isError`, that a
-2025-era `initialize` gets `-32022`, that `TZ=Australia/Sydny` with `PORT=abc`
+returns HTML, that a bad-argument `tools/call` comes back as `isError` and
+writes a `tool_call` line with `ts` and the client's name and version (proof
+that the call scope works on Bun), that a 2025-era `initialize` gets
+`-32022`, that `TZ=Australia/Sydny` with `PORT=abc`
 exits 1 naming both variables, and that `docker stop` exits 0 promptly. A
 failing leg keeps the merge job from publishing any tag. Run it locally
 against any build:

@@ -107,11 +107,13 @@ never per-tool.
   (the helper's own comment explains why it is not the whole result). The
   dispatcher's own texts (unknown tool, invalid arguments, missing API key)
   have no error to translate, so they get the prefix from
-  `prefixedErrorText` in the same file. Never
-  string-match a message for
-  "Record Not Found", "404", or a `SUBSCRIPTION_REQUIRED:` prefix: the typed
-  errors survive `handleApiError` precisely so callers can branch on them,
-  and a message that merely mentions "404" is not a missing record.
+  `prefixedErrorText` in the same file. `toolErrorText` also notes the
+  error's class and HTTP status in the call scope (`noteCallFailure`,
+  imported from the leaf `callScope.ts`) for the call's log line. Never
+  string-match a message for "Record Not Found", "404", or a
+  `SUBSCRIPTION_REQUIRED:` prefix: the typed errors survive `handleApiError`
+  precisely so callers can branch on them, and a message that merely
+  mentions "404" is not a missing record.
 
 ## Request pacing
 
@@ -504,10 +506,11 @@ the raw message goes to the operator log.
 ## Per-call telemetry
 
 `dispatchToolCall` is timed end to end and emits one structured JSON line per
-call via `telemetry.ts`: tool name, duration, outcome, error class, the
-rate-limit snapshot, and which client made the call (`client_apps`,
-`client_name`). The timer starts **before token resolution**, so a
-not-connected call is recorded too — it cost the caller a round trip. A
+call via `telemetry.ts`: the finish time (`ts`), tool name, duration, outcome,
+the failure (`error_class`, `http_status`), the rate-limit snapshot, which
+client made the call (`client_apps`, `client_name`, `client_version`) and the
+W3C trace ids (`trace_id`, `parent_id`). The timer starts **before token
+resolution**, so a not-connected call is recorded too — it cost the caller a round trip. A
 handler returning `isError` counts as an error alongside a throw, or the
 counters would flatter the server. A call whose client cancelled or
 disconnected records outcome `cancelled` instead. It counts in `calls` and
@@ -516,6 +519,28 @@ disconnected records outcome `cancelled` instead. It counts in `calls` and
 the serialize are both guarded, because a logging fault turning a successful
 call into an error is worse than a missing log line. The rolling counters back
 the authed half of `/health`.
+
+`recordToolCall` stamps `ts` once and uses it for `last_called_at` too. It
+bounds the two client strings and the tool name, which is client text when the
+tool is unknown: trimmed, stripped of control and format characters and line
+separators (a client controls them, and a bidi override could hide text in a
+terminal), made well-formed, and cut to 64 code points. The bounded name keys
+the `/health` counters too. A name that is empty after bounding logs as
+`unknown`.
+`parseTraceparent` reads the ids from `_meta.traceparent` and accepts only a
+valid W3C value: lower-case hex, no all-zero id, not version `ff`, and for
+version `00` exactly four fields. The `tools/call` handler passes the ids to
+`dispatchToolCall` as `trace`.
+
+`error_class` and `http_status` come from the call scope. `toolErrorText`
+notes them with `noteCallFailure` (see below), so every catch block that
+translates an error reports it without its own code. The two kinds of branch
+that return `isError` without it note the error themselves: the stream tools'
+`IntervalsStreamsUnavailableError` and analysis-error branches, and
+`update-activity`'s two ambiguous-write branches. The last note wins. A call
+that returns `isError` with no note, such as an argument refusal, logs the
+`ToolErrorResult` sentinel. An unknown tool and an `invalid_args` call carry no
+failure; their `outcome` says why.
 
 The client fields come from the request envelope. The `tools/call` handler
 reads the `io.modelcontextprotocol/clientCapabilities` and
@@ -566,7 +591,8 @@ for.
 ## Cancellation
 
 `callScope.ts` holds the per-call state below the handler: an
-`AsyncLocalStorage` with the call's abort signal. Facts a handler needs to see
+`AsyncLocalStorage` with the call's abort signal (#70) and the failure that
+the call's log line reports (#69). Facts a handler needs to see
 stay in `ToolCallContext`. `dispatchToolCall` opens the scope once, from the
 `signal` the `tools/call` handler passes (`ctx.mcpReq.signal`). The scope
 covers argument validation, `"latest"` resolution and the handler.

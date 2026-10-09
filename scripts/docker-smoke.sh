@@ -184,6 +184,15 @@ else
   fail "tools/call with bad arguments: $call"
 fi
 
+# The same call wrote one tool_call line. Its timestamp and client fields come
+# from the call scope, so this proves them on the image's Bun.
+line="$(docker logs "$NAME" 2>&1 | grep '"event":"tool_call"' | tail -1)"
+if jq -e '.ts != null and .tool == "get-activity" and .outcome == "invalid_args" and .client_name == "docker-smoke" and .client_version == "1.0"' <<<"$line" >/dev/null 2>&1; then
+  pass "the tool_call log line carries ts and the client's name and version"
+else
+  fail "tool_call log line: $line"
+fi
+
 # A 2025-era handshake is rejected with the supported revision.
 init="$(curl -sS -w '\n%{http_code}' -X POST "$BASE/mcp" \
   -H "Authorization: Bearer $TOKEN" \
