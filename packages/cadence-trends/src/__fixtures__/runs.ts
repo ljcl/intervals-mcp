@@ -164,6 +164,35 @@ export const runsWithGap: RunSummary[] = mockRuns.filter(
 );
 
 /**
+ * Four runs over three days (two on 1 Jan, one each on 2 and 4 Jan). Ticking
+ * at each run's x repeated a day's label and left the axis unevenly ticked;
+ * the trend's ticks step whole days instead.
+ */
+export const runsOverThreeDays: RunSummary[] = [
+  ...mockRuns.filter((r) => r.date <= "2026-01-04"),
+  {
+    id: "i10021",
+    name: "Shakeout",
+    date: "2026-01-01",
+    distance: 3.0,
+    duration: 1080,
+    averageCadence: 172,
+    averagePace: 6.0,
+    type: "Run",
+  },
+  {
+    id: "i10022",
+    name: "Easy 5k",
+    date: "2026-01-02",
+    distance: 5.0,
+    duration: 1650,
+    averageCadence: 168,
+    averagePace: 5.5,
+    type: "Run",
+  },
+];
+
+/**
  * `mockRuns` where two runs (Recovery Jog, Easy 6k on 14 Jan) recorded no
  * speed: they stay cadence dots but have no pace to plot, and every pace dot
  * after them must still belong to its own run.

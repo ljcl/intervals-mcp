@@ -302,7 +302,14 @@ loading. `runIds` shows any run in it the legend had hidden; leaving the
 overlay shows every run again, as when the overlay owned that state.
 
 Trend uses a time axis (`dateTs`, UTC day), so gaps in running show as gaps.
-Runs on one day share an x, and Recharts' `ComposedChart` has only an axis
+`trendTimeAxis` gives it whole-day ticks (`ceil(span / 4)` days apart): left
+to Recharts it ticks every run's x and repeats a day's label (#145). The
+average line is `timeRollingAverage`, a trailing 14-day window by UTC day
+(`TREND_WINDOW_DAYS`), and it breaks across a gap of more than 14 days
+(#148). Rows stay one per run, so the break comes from two Lines
+(`trendEven`/`trendOdd`) taking alternate stretches, each null on the
+other's, with `connectNulls` off; gap rows or a Line-level `data` would
+risk the Cell and tooltip mapping below. Runs on one day share an x, and Recharts' `ComposedChart` has only an axis
 tooltip, which picks one row for all of them; the trend tooltip therefore
 lists every run that day (`runsByDay`), name, cadence and pace each. Zone
 whiskers run from min to max (`buildZoneRows`). Overlay colours follow selection
