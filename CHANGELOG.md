@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.4.0](https://github.com/ljcl/intervals-mcp/compare/v2.3.0...v2.4.0) (2026-10-09)
+
+
+### Features
+
+* answer more athlete questions (epic [#117](https://github.com/ljcl/intervals-mcp/issues/117)) ([#166](https://github.com/ljcl/intervals-mcp/issues/166)) ([271c90e](https://github.com/ljcl/intervals-mcp/commit/271c90ec7e27557c31e14327324c89e63bc09d91))
+* **training-load:** switch between whole-body and run-only scope in the card ([#160](https://github.com/ljcl/intervals-mcp/issues/160)) ([5391601](https://github.com/ljcl/intervals-mcp/commit/53916010e58ddf876b9d7edf48eca6b83e35e2d5))
+
+
+### Bug Fixes
+
+* **cadence-trends:** day-aligned trend ticks and a time-based rolling average ([#159](https://github.com/ljcl/intervals-mcp/issues/159)) ([d9b426d](https://github.com/ljcl/intervals-mcp/commit/d9b426dad006bd5bd5af235f1d86eafe3b88cc60))
+* get-best-efforts reads oldest, newest and days as its window, and replies name ignored arguments ([#155](https://github.com/ljcl/intervals-mcp/issues/155)) ([e38625d](https://github.com/ljcl/intervals-mcp/commit/e38625d1068f2270b88c64ba88b43d00629dc7f5))
+* keep server instructions under 1,800 characters for every time zone ([#154](https://github.com/ljcl/intervals-mcp/issues/154)) ([23a33d0](https://github.com/ljcl/intervals-mcp/commit/23a33d0630282c8a91ba5b52b756ef80417721fc))
+* **route-map:** keep a set-viewport frame when the basemap fails before load ([#158](https://github.com/ljcl/intervals-mcp/issues/158)) ([95add8f](https://github.com/ljcl/intervals-mcp/commit/95add8f2f95917e2d8cf4f10c73ba0569fca11be))
+
 ## [2.3.0](https://github.com/ljcl/intervals-mcp/compare/v2.2.0...v2.3.0) (2026-10-05)
 
 
