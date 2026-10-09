@@ -9,6 +9,59 @@ import {
 } from "./outputs";
 
 describe("schemas align with the real tool rawObjects", () => {
+  it("AthleteStatsOutputSchema matches the athlete-stats object", () => {
+    const runs = {
+      runs: 2,
+      distance_km: 14.07,
+      moving_time_s: 4277,
+      moving_time: "1:11:17",
+      elevation_gain_m: 156,
+      load: 93,
+      average_pace_min_per_km: "5:04",
+    };
+    const empty = {
+      total: { count: 0, moving_time_s: 0, load: 0 },
+      by_type: {},
+    };
+    const response = {
+      this_week: runs,
+      last_4_weeks: runs,
+      this_month: runs,
+      ytd: runs,
+      all_sports: {
+        this_week: {
+          total: { count: 3, moving_time_s: 7627, load: 111 },
+          by_type: {
+            Run: {
+              count: 2,
+              moving_time_s: 4277,
+              distance_km: 14.07,
+              load: 93,
+            },
+            WeightTraining: {
+              count: 1,
+              moving_time_s: 3350,
+              distance_km: null,
+              load: 18,
+            },
+          },
+        },
+        last_4_weeks: empty,
+        this_month: empty,
+        ytd: empty,
+      },
+      units: { distance: "km", pace: "min/km", time: "s", elevation: "m" },
+    };
+    expect(AthleteStatsOutputSchema.safeParse(response).success).toBe(true);
+
+    const badDistance = structuredClone(response);
+    badDistance.all_sports.this_week.by_type.WeightTraining = {
+      ...response.all_sports.this_week.by_type.WeightTraining,
+      distance_km: "n/a" as unknown as null,
+    };
+    expect(AthleteStatsOutputSchema.safeParse(badDistance).success).toBe(false);
+  });
+
   it("TrainingLoadOutputSchema matches the training-load result object", () => {
     const result = {
       period: { days: 28, start_date: "2026-05-09", end_date: "2026-06-06" },

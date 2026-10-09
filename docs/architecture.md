@@ -510,6 +510,11 @@ over 25,000 tokens: a 61 KB `get-activity-streams` payload and a 150 KB
   returns a shorter page with `truncated: true`. The text says what was cut
   and how to get the rest. Measuring beats a fixed cell cap because widths
   differ (a `latlng` cell costs about four `heartrate` cells).
+- A response that a closed set bounds, not an input, needs no shrink.
+  `get-athlete-stats` lists one row per activity type in each of its four
+  periods, and the spec's type enum lists 60 (`Activity.type` itself is a plain string). Its "every activity type" size
+  case puts all 60 in every period (about 32,000 characters). If that case
+  goes over the budget, add a measured shrink.
 - A text response never points at data the reader cannot reach. Some hosts
   pass only the text, so "(N more)" names the call that returns the rest
   ("get-activity-laps lists all 34"), or the cap is raised where no tool

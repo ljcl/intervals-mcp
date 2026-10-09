@@ -11,6 +11,8 @@
  * a window full of activities and wellness days, the multi-lap activity, a
  * 4 h all-types stream for get-activity-streams.
  */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { syntheticAllTypesStreams } from "../__fixtures__";
 import activitiesFixture from "../__fixtures__/intervals/activities.json";
@@ -163,11 +165,60 @@ const longRunStreams = () =>
   vi.mocked(client.getActivityStreams).mockResolvedValue(LONG_RUN);
 
 /**
+ * Every activity type intervals.icu has: the 60-value type enum in
+ * docs/intervals-openapi.json, in its order. Real names, not long synthetic
+ * ones: no account can send 60 names of the longest length.
+ */
+const INTERVALS_ACTIVITY_TYPES: string[] = (() => {
+  const spec = JSON.parse(
+    readFileSync(
+      join(import.meta.dirname, "../../../../docs/intervals-openapi.json"),
+      "utf8",
+    ),
+  );
+  const found: string[][] = [];
+  const walk = (node: unknown): void => {
+    if (Array.isArray(node)) node.forEach(walk);
+    else if (node && typeof node === "object") {
+      const { enum: values } = node as { enum?: unknown };
+      if (Array.isArray(values) && values.includes("WeightTraining"))
+        found.push(values as string[]);
+      Object.values(node).forEach(walk);
+    }
+  };
+  walk(spec);
+  return found[0] ?? [];
+})();
+
+/**
+ * One activity of every type, plus one with no type, on the last day of
+ * the range, on top of the default one-a-day list: every get-athlete-stats
+ * period then lists every type.
+ */
+const everyActivityType = () =>
+  vi.mocked(client.listActivities).mockImplementation(async (_key, range) => {
+    const base = activitiesFixture as unknown as client.IntervalsActivity[];
+    const types: (string | null)[] = [...INTERVALS_ACTIVITY_TYPES, null];
+    return [
+      ...types.map((type, i) => ({
+        ...base[0]!,
+        id: `i${400_000_000 + i}`,
+        type,
+        start_date_local: `${range.newest}T06:00:00`,
+      })),
+      ...activitiesIn(range),
+    ];
+  });
+
+/**
  * Largest inputs per tool. A tool missing from this table fails the
  * coverage check below, so a new tool cannot skip the budget.
  */
 const CASES: Record<string, SizeCase[]> = {
-  "get-athlete-stats": [{ label: "default", args: {} }],
+  "get-athlete-stats": [
+    { label: "default", args: {} },
+    { label: "every activity type", args: {}, setup: everyActivityType },
+  ],
   "update-activity": [
     {
       label: "every field",
@@ -255,6 +306,10 @@ const modelVisibleTools = TOOL_DEFS.filter(
 ).map((def) => def.name);
 
 describe("response size budget", () => {
+  it("reads the activity type list from the spec", () => {
+    expect(INTERVALS_ACTIVITY_TYPES.length).toBeGreaterThan(50);
+  });
+
   it("has a case for every model-visible tool", () => {
     expect(Object.keys(CASES).sort()).toEqual([...modelVisibleTools].sort());
   });

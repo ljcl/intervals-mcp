@@ -83,7 +83,7 @@ at `apps/server/src/__fixtures__/intervals/`.
 | --- | --- | --- |
 | `GET /athlete/0/pace-curves.json?type=Run&curves=all,90d,...` | 200 | Works with athlete id `0`; `{list[{id,label,distance[],values[] s,activity_id[],paceModels[{type:"CS",criticalSpeed m/s,dPrime m,r2}]}], activities{}}`. Curve ids used: `1y` (get-best-efforts default), `all`, `90d` (get-race-prediction) |
 | `GET /athlete/0/activity-pace-curves.json?...` | 403 | Athlete id `0` is denied on this endpoint specifically (unlike `pace-curves.json` above); needs the bare numeric athlete id |
-| `GET /athlete/{numericId}/athlete-summary.json?start&end` | 200 | Weekly rows (Monday-aligned, newest first), totals plus `byCategory[]`; probed but not used: get-athlete-stats instead fetches `list-activities`' underlying `/activities` and aggregates run totals locally (`aggregateRunTotals`), so its bucket boundaries (Monday-aligned week, local calendar month/year) match the rest of the server rather than this endpoint's own |
+| `GET /athlete/{numericId}/athlete-summary.json?start&end` | 200 | Weekly rows (Monday-aligned, newest first), totals plus `byCategory[]`; probed but not used: get-athlete-stats instead fetches `list-activities`' underlying `/activities` and aggregates run totals (`aggregateRunTotals`) and per-sport totals (`aggregateSportTotals`) locally, so its bucket boundaries (Monday-aligned week, local calendar month/year) match the rest of the server rather than this endpoint's own |
 | `GET /activity/{id}/interval-stats?start_index&end_index` | 200 | Interval-shaped stats for any stream index range, including `gap` (m/s) |
 | `GET /activity/{id}/time-at-hr` | 200 | `{max_bpm, min_bpm, secs[], cumulative_secs[]}` |
 | `GET /activity/{id}/streams.json` | 200 | `moving` is never returned (silently omitted, not an error); `grade_smooth` (%) and `fixed_altitude` (m) are present; `gap` is not a valid stream type (422 "Invalid stream type") |
@@ -157,6 +157,33 @@ sport-settings, fitness-model-events, athlete-summary, and one activity, all aga
   fact for this account, not a documented rule.
 - `GET /athlete/{id}/fitness-model-events` (custom `FITNESS_DAYS`/`SET_FITNESS`/`SET_EFTP` events
   that would change the constants above) returns `[]` on this account.
+
+## Per-sport totals (2026-10-08, #83, live read-only)
+
+Two reads against athlete 0 for the year to date: `GET /athlete/0/activities?oldest=&newest=`
+(253 rows) and `GET /athlete/0/wellness?oldest=&newest=&fields=id,atlLoad,ctlLoad` (281 rows).
+
+- `type` was set on every row. It is the intervals.icu type name. The spec lists 60 values
+  (`Ride` to `Other`) and has no separate sport category. 8 types appeared: Run, Swim,
+  OpenWaterSwim, Ride, Walk, WeightTraining, Pilates and Workout. `sub_type` was null on every row.
+- `distance` (m) and `icu_distance` are `null`, never 0, on every WeightTraining, Pilates and
+  Workout row. Every row of the other types had a distance above 0.
+- `moving_time` (s, a whole number) was set and above 0 on every row. On WeightTraining, Pilates
+  and Workout rows it equals `elapsed_time` on all but 4 of 105 rows. On the distance types it is
+  always lower than `elapsed_time`.
+- `icu_training_load` was set, above 0 and a whole number on every row of every type. The spec
+  types it `int32`. Not verified: when it is null. get-athlete-stats adds 0 for a null load, as
+  its run totals already do.
+- `total_elevation_gain` is null on every WeightTraining, Pilates, Workout, Swim and
+  OpenWaterSwim row.
+- The sum of `icu_training_load` over the activities of a date range equals the sum of wellness
+  `atlLoad` over the same dates. It was exact on each of get-athlete-stats' four periods and on
+  each of the 281 days. So this sum is the whole-body load, and the per-type loads add up to it.
+  The `ctlLoad` sum is lower, because this account's WeightTraining and Workout load is left out
+  of `ctlLoad` (see "Phase 3 probes").
+- get-athlete-stats builds its per-sport totals (`aggregateSportTotals`) from the same
+  `/activities` rows as its run totals. It does not read `athlete-summary.json`'s `byCategory[]`
+  (see the Phase 2 table), so both sets use the same periods as the rest of the server.
 
 ## Phase 4 probes (2026-09-25 research, streams and map, live read-only, run i189807578)
 

@@ -705,10 +705,63 @@ async function checkGetAthleteStats(): Promise<void> {
       fail(name, errorSummary(result));
       return;
     }
+    type Totals = { count: number; moving_time_s: number; load: number };
     const d = result.structuredContent as {
       ytd: { runs: number; distance_km: number };
+      all_sports: Record<
+        string,
+        { total: Totals; by_type: Record<string, Totals> }
+      >;
     };
-    ok(name, `ytd_runs=${d.ytd.runs} ytd_distance_km=${d.ytd.distance_km}`);
+    // Each all-sports total must be the sum of its type rows.
+    for (const [period, totals] of Object.entries(d.all_sports)) {
+      for (const key of ["count", "moving_time_s", "load"] as const) {
+        const sum = Object.values(totals.by_type).reduce(
+          (acc, row) => acc + row[key],
+          0,
+        );
+        if (sum !== totals.total[key]) {
+          fail(
+            name,
+            `${period} ${key}: by_type sum ${sum} != total ${totals.total[key]}`,
+          );
+          return;
+        }
+      }
+    }
+    // Report only, never a failure: the whole-body YTD load should equal the
+    // sum of wellness atlLoad (docs/api-notes.md, "Per-sport totals"). A
+    // fresh upload that wellness has not caught up with, or a Strava stub,
+    // can make it differ.
+    const ytd = d.all_sports.ytd;
+    let matchesWellness = "unknown";
+    try {
+      const { getTimeZone } = await import("../apps/server/src/config");
+      const { getWellness } = await import(
+        "../apps/server/src/intervalsClient"
+      );
+      const { todayLocal } = await import("../apps/server/src/utils/localDate");
+      const { startOfYear } = await import(
+        "../apps/server/src/tools/getAthleteStats"
+      );
+      const today = todayLocal(getTimeZone());
+      const wellness = await getWellness(
+        apiKey,
+        { oldest: startOfYear(today), newest: today },
+        { fields: ["id", "atlLoad"] },
+      );
+      const atlLoadSum = wellness.reduce(
+        (acc, day) => acc + (day.atlLoad ?? 0),
+        0,
+      );
+      matchesWellness = String(Math.round(atlLoadSum) === ytd?.total.load);
+    } catch (error) {
+      matchesWellness = `unknown (${throwSummary(error)})`;
+    }
+    ok(
+      name,
+      `ytd_runs=${d.ytd.runs} ytd_distance_km=${d.ytd.distance_km} ytd_types=${Object.keys(ytd?.by_type ?? {}).length} ytd_load_matches_wellness=${matchesWellness}`,
+    );
   } catch (error) {
     fail(name, throwSummary(error));
   }

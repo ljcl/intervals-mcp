@@ -79,7 +79,7 @@ descriptions.
 | `get-interval-analysis` | Interval detection with urban-stop-aware rest classification and rep fade |
 | `get-best-efforts` | Best times at standard running distances, from intervals.icu's pace curves |
 | `get-race-prediction` | Predicted race times from intervals.icu pace-curve points (Riegel) alongside intervals.icu's own critical-speed model, with confidence, source point, and km goal-pace splits |
-| `get-athlete-stats` | Run totals (this week, last 4 weeks, this month, YTD) aggregated from list-activities data |
+| `get-athlete-stats` | Run totals and totals for every sport (count, moving time, distance and whole-body load per activity type) for this week, the last 4 weeks, this month and YTD, aggregated from list-activities data |
 | `get-fitness-trend` | Fitness/fatigue/form (CTL/ATL/TSB), whole-body from intervals.icu wellness or run-only computed locally, with rest/planned-load projection and a solved taper to a target form on a target date |
 | `get-training-load` | Weekly running volume and volume-spike warnings, weekly intervals.icu training load and the types it covers, plus current CTL/ATL/TSB |
 | `update-activity` | Update an activity's name, description, gear, RPE, or feel, echoing before/after values (write tool) |
@@ -466,6 +466,38 @@ mile paces or splits. Pace is a flat `pace_sec_per_km`/`pace_min_per_km` pair
 target, or a split row reports one; `units.distance` is `"m"`, matching the
 `distance_m` fields the response actually carries.
 
+`get-athlete-stats` takes no inputs. It reports four periods: this week
+(Monday to today), the last 4 weeks (today and the 27 days before it), this
+month and the year to date, all in the server's time zone. It reads every
+activity in one client read of `/athlete/{id}/activities` (31-day windows,
+no row cap), from 1 January or 27 days back, whichever is earlier. It builds two sets of totals from the same rows. The
+run totals (`this_week`, `last_4_weeks`, `this_month`, `ytd`) count Run,
+TrailRun and VirtualRun only: run count, distance, moving time, elevation
+gain, run-only load and average pace (total distance over total moving
+time). `all_sports` has the same four periods over every activity type.
+Each period has `by_type`, keyed by the intervals.icu type name, with
+`count`, `moving_time_s`, `distance_km` and `load`. It also has a `total`
+with `count`, `moving_time_s` and `load`. Each `total` field is the sum of
+the `by_type` rows, so the type loads add up to the whole-body load. On
+the account checked, that load equalled the sum of intervals.icu's wellness
+`atlLoad` over the same dates (docs/api-notes.md, "Per-sport totals").
+Strava stubs and uploads that wellness has not caught up with can make them
+differ. `total` has no distance,
+because a sum of run, ride and swim kilometres has no training meaning.
+`distance_km` is null for a type with no distance above 0, such as
+WeightTraining or Pilates. An activity with no load adds 0 to `load`. Types
+are ordered by load (highest first), then by moving time, then by name. The
+text lists them in the same order, under its own "All sports (whole-body
+load)" header. TrailRun and VirtualRun keep their own rows, so the run rows'
+count, moving time and load add up to the run totals (distance can differ
+by rounding). One sport can have several types, such as Swim and
+OpenWaterSwim: add their rows for a sport total. Activities synced from Strava
+(`source: "STRAVA"`) are left out of both sets: the API gives no data for
+them (docs/api-notes.md, Strava stub spike). The spec's type enum lists 60 activity
+types (`Activity.type` itself is a plain string), so the response has an
+upper bound: every type in every period is
+about 32,000 characters, under the response size budget.
+
 `get-fitness-trend` computes the classic CTL/ATL/TSB performance-management
 chart two ways. Whole-body (default) reads CTL/ATL straight off
 intervals.icu's own daily wellness record (`source: "intervals.icu"`),
@@ -760,6 +792,8 @@ These examples assume you already have an activity id to pass to a tool.
 **Stats**
 
 - "What are my running stats for this year?"
+- "How many strength sessions have I done this month?"
+- "How far have I swum this year?"
 
 **Training analysis**
 

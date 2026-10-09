@@ -36,8 +36,9 @@ of listing first; type "runs" lists runs only.
 search finds activities by name or #tag across all history, beyond the
 366-day window (for example "when did I last run the club 10K?").
 
-For run totals (this week, month, year) use get-athlete-stats instead of
-adding up this list; for weekly volume trends, get-training-load.
+For totals this week, month or year, for runs or for every sport, use
+get-athlete-stats instead of adding up this list; for weekly volume trends,
+get-training-load.
 
 Notes:
 - Without search, defaults to the last 28 days ending today, and a range cannot exceed 366 days.

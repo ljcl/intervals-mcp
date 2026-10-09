@@ -10,11 +10,52 @@ const RunTotalsSchema = z.object({
   load: z.number(),
   average_pace_min_per_km: z.string().nullable(),
 });
+const SportTotalsSchema = z.object({
+  count: z.number().int().describe("Activities of this type in the period"),
+  moving_time_s: z.number().int().describe("Moving time in seconds"),
+  distance_km: z
+    .number()
+    .nullable()
+    .describe(
+      "Distance in km. Null when no activity of this type in the period has a distance above 0, for example WeightTraining",
+    ),
+  load: z
+    .number()
+    .describe(
+      "intervals.icu training load (icu_training_load). An activity with no load adds 0",
+    ),
+});
+const AllSportsPeriodSchema = z.object({
+  total: z
+    .object({
+      count: z.number().int(),
+      moving_time_s: z.number().int(),
+      load: z.number(),
+    })
+    .describe(
+      "All types together. Each field is the sum of by_type, so load is the whole-body load",
+    ),
+  by_type: z
+    .record(z.string(), SportTotalsSchema)
+    .describe(
+      "Totals per intervals.icu activity type (for example Run, TrailRun, WeightTraining, Swim), highest load first",
+    ),
+});
 export const AthleteStatsOutputSchema = z.object({
   this_week: RunTotalsSchema,
   last_4_weeks: RunTotalsSchema,
   this_month: RunTotalsSchema,
   ytd: RunTotalsSchema,
+  all_sports: z
+    .object({
+      this_week: AllSportsPeriodSchema,
+      last_4_weeks: AllSportsPeriodSchema,
+      this_month: AllSportsPeriodSchema,
+      ytd: AllSportsPeriodSchema,
+    })
+    .describe(
+      "Totals for every activity type except Strava stubs, for the same periods as the run totals. This load is whole-body and the run totals' load is run-only: say which load a number is",
+    ),
   units: z.object({
     distance: z.literal("km"),
     pace: z.literal("min/km"),

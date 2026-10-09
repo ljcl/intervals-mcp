@@ -60,7 +60,7 @@ rather than (or alongside) text.
 
 | Tool | Answers | Key params |
 | ---- | ------- | ---------- |
-| `get-athlete-stats` | Run totals this week/month/YTD | (none) |
+| `get-athlete-stats` | Run totals, and totals for every sport (strength sessions, swim distance), this week/month/YTD | (none) |
 | `get-fitness-trend` | Am I fresh or fatigued? What if I taper for a race? | `days`, `runOnly`, `projectDays`/`plannedLoads`, `targetDate`/`targetTsb` |
 | `get-training-load` | Weekly volume, volume-spike flags, weekly load | `days`, `runOnly` |
 | `get-best-efforts` | My best 5K/10K/half/marathon times | `distances`, `window`, `topN` |
@@ -162,6 +162,8 @@ description is kept. (This is also the `annotate-last-run` prompt.)
   only Run/TrailRun/VirtualRun. The two scopes can report materially
   different numbers for the same athlete and answer different questions;
   don't mix them in one comparison without saying which scope each number is.
+  `get-athlete-stats` gives both side by side: run totals with run-only load,
+  and `all_sports` with whole-body load.
 - **Training-load weeks are whole weeks.** `get-training-load` and
   `view-training-load` round `days` up to whole Monday-to-Sunday weeks and
   add the current week so far: `days: 28` is the last 4 complete weeks plus
