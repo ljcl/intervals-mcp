@@ -297,9 +297,11 @@ export const compareActivitiesTool = {
     try {
       progress(`Comparing activities ${activityId1} and ${activityId2}`);
 
+      // The same URL as the compare app's reads, so a chat that uses both
+      // reads each activity once. buildComparison ignores icu_intervals.
       const [activity1, activity2] = await Promise.all([
-        getActivity(apiKey, activityId1),
-        getActivity(apiKey, activityId2),
+        getActivity(apiKey, activityId1, { intervals: true }),
+        getActivity(apiKey, activityId2, { intervals: true }),
       ]);
 
       const result = buildComparison(activity1, activity2);

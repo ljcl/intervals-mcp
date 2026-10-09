@@ -186,6 +186,9 @@ The HTTP layer handles rate limits centrally: passive, nothing to configure
   (`intervalsApi`'s `minIntervalMs`), which stays well under that ceiling.
 - The in-memory response cache holds at most 200 entries and about 32 MiB
   of response text. It evicts the least recently used entries first.
+- Each activity's streams are fetched once, in one request that carries
+  every stream type the tools use. All tools and apps share that response
+  for 10 minutes.
 - If a response ever does carry `X-RateLimit-*`/`Retry-After` headers, the
   client still parses and honours them: a rate-limit response gets bounded
   retries respecting `Retry-After`, and a genuinely exhausted limit surfaces

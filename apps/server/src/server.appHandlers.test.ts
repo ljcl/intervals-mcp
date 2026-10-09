@@ -1909,6 +1909,34 @@ describe("compare activities handlers", () => {
     expect(text).toContain("faster");
   });
 
+  it.each(["view-compare-activities", "get-compare-activities-data"])(
+    "%s reads each activity with the app's streams URL (intervals: true)",
+    async (tool) => {
+      mockedIntervalsActivity.mockResolvedValueOnce(
+        compareActivity({ id: "i1" }),
+      );
+      mockedIntervalsActivity.mockResolvedValueOnce(
+        compareActivity({ id: "i2" }),
+      );
+
+      const result = await dispatchToolCall(tool, {
+        activityId1: "i1",
+        activityId2: "i2",
+      });
+
+      // Same options as get-activity-streams-raw, so opening the app reads
+      // each activity once (#71).
+      expect(result.isError).toBeUndefined();
+      expect(mockedIntervalsActivity).toHaveBeenCalledTimes(2);
+      expect(mockedIntervalsActivity).toHaveBeenCalledWith("test-token", "i1", {
+        intervals: true,
+      });
+      expect(mockedIntervalsActivity).toHaveBeenCalledWith("test-token", "i2", {
+        intervals: true,
+      });
+    },
+  );
+
   it("propagates a fetch failure as isError", async () => {
     mockedIntervalsActivity.mockRejectedValueOnce(
       new Error("Record Not Found"),

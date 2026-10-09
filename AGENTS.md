@@ -61,7 +61,8 @@ breaking them has shipped bugs — do not work around them locally.
   intervals.icu sends as 0) to `null`, once, for every caller; `watts` and
   `cadence` zeros stay 0. It derives `moving` too: a time gap is a stop only
   when the distance across it gives a speed under 0.5 m/s, so it always
-  requests `distance` (#73).
+  requests `distance` (#73). It always requests the one superset
+  `INTERVALS_STREAM_TYPES` and returns only the requested columns.
 - **Derived numbers have exactly one home.** GAP: `hillAnalysis.ts`
   (`gapFactor`, `computeGrades`, and `gapGrades`, the 100 m averaged grade
   every GAP number uses; `gradeAdjustedSpeeds` for a GAP stream);

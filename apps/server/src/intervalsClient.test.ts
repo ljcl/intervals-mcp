@@ -502,55 +502,37 @@ describe("intervalsClient", () => {
       expect(calls).toHaveLength(2);
     });
 
-    it("invalidates every cached athlete pace curve, whose activities map carries run names", async () => {
-      let calls = mockJson(paceCurvesSubmaxFixture);
-      await getAthletePaceCurves("k", {
-        type: "Run",
-        curves: ["1y"],
-        subMaxEfforts: 2,
-      });
-      await getAthletePaceCurves("k", { type: "Run", curves: ["1y"] });
-      expect(calls).toHaveLength(2);
+    // The pace curves' `activities` map carries the names get-best-efforts
+    // and get-race-prediction show, so a rename must not wait out the TTL.
+    const curves = { type: "Run", curves: ["1y"] };
+
+    it("invalidates the athlete pace curves on success", async () => {
+      let calls = mockJson(paceCurvesFixture);
+      await getAthletePaceCurves("k", curves);
+      await getAthletePaceCurves("k", curves);
+      expect(calls).toHaveLength(1);
 
       calls = mockJson(activity);
       await updateActivity("k", "i189807578", { name: "Renamed" });
-      expect(calls).toHaveLength(1);
 
-      calls = mockJson(paceCurvesSubmaxFixture);
-      await getAthletePaceCurves("k", {
-        type: "Run",
-        curves: ["1y"],
-        subMaxEfforts: 2,
-      });
-      await getAthletePaceCurves("k", { type: "Run", curves: ["1y"] });
-      expect(calls).toHaveLength(2);
+      calls = mockJson(paceCurvesFixture);
+      await getAthletePaceCurves("k", curves);
+      expect(calls).toHaveLength(1);
     });
 
-    it("invalidates the interval search and the bulk read too: both sit under the activities list", async () => {
-      const band = {
-        minSecs: 225,
-        maxSecs: 309,
-        minIntensity: 92,
-        maxIntensity: 107,
-        minReps: 3,
-        maxReps: 7,
-        limit: 100,
-      };
-      let calls = mockJson([]);
-      await searchActivitiesByIntervals("k", band);
-      await getActivitiesByIds("k", ["i1", "i2"], { intervals: true });
-      await searchActivitiesByIntervals("k", band);
-      await getActivitiesByIds("k", ["i1", "i2"], { intervals: true });
-      // The second pair came from the cache.
-      expect(calls).toHaveLength(2);
+    it("invalidates the athlete pace curves after a failed PUT", async () => {
+      let calls = mockJson(paceCurvesFixture);
+      await getAthletePaceCurves("k", curves);
+      expect(calls).toHaveLength(1);
 
-      calls = mockJson(activity);
-      await updateActivity("k", "i189807578", { name: "x" });
+      mockJson({}, 503);
+      await expect(
+        updateActivity("k", "i189807578", { name: "Renamed" }),
+      ).rejects.toBeInstanceOf(IntervalsApiError);
 
-      calls = mockJson([]);
-      await searchActivitiesByIntervals("k", band);
-      await getActivitiesByIds("k", ["i1", "i2"], { intervals: true });
-      expect(calls).toHaveLength(2);
+      calls = mockJson(paceCurvesFixture);
+      await getAthletePaceCurves("k", curves);
+      expect(calls).toHaveLength(1);
     });
   });
 

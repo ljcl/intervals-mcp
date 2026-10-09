@@ -890,12 +890,14 @@ export interface IntervalsActivityUpdate {
  * wrapped in {@link IntervalsApiError}.
  *
  * Invalidates the activity's own cached reads, the athlete's activities
- * list, the gear list, and the athlete pace curves (their `activities` map
- * carries each ranked run's name, which `get-best-efforts` reports) in a
- * `finally`, whatever the outcome: a failed PUT (a 5xx, a network fault, a
- * timeout) may still have mutated state server-side, and `fetchClient.ts`'s automatic write invalidation only
- * fires on a successful response, so without this a caller reading right
- * after a failed write could keep being served the pre-write cache entry.
+ * list, the gear list and the athlete pace curves in a `finally`, whatever
+ * the outcome: a failed PUT (a 5xx, a network fault, a timeout) may still
+ * have mutated state server-side, and `fetchClient.ts`'s automatic write
+ * invalidation only fires on a successful response, so without this a
+ * caller reading right after a failed write could keep being served the
+ * pre-write cache entry. The pace curves' `activities` map carries the
+ * activity names `get-best-efforts` and `get-race-prediction` show, so a
+ * rename must drop it too.
  */
 export async function updateActivity(
   apiKey: string,

@@ -530,6 +530,8 @@ happened (the text `compare-activities` tool reports aggregates only). Takes
 activity (TTL-cached server-side) and `get-compare-activities-data` for the
 delta summary bar. That tool reuses the text tool's aggregate logic, extracted
 as pure `buildComparison` in `apps/server/src/tools/compareActivities.ts`.
+Every read uses the `?intervals=true` activity URL, so opening the app reads
+each activity and its streams once (#71).
 
 - Alignment is pure and unit-tested in `src/align.ts`: both activities
   resample onto one uniform grid over the shared distance or time axis

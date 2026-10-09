@@ -133,7 +133,7 @@ per-tool. Path patterns and current TTLs (`fetchClient.ts`):
 
 | Path | TTL | Rationale |
 | ---- | --- | --------- |
-| `/activity/{id}/streams*` | 10m | Immutable once intervals.icu has processed the activity |
+| `/activity/{id}/streams*` | 10m | One superset URL per activity (see [Streams](#streams)); immutable once processed |
 | `/activity/{id}/intervals` | 10m | Same |
 | `/activity/{id}` | 10m | Invalidated on `update-activity` writes |
 | `/athlete/{id}/gear` | 10m | Rarely changes |
@@ -156,9 +156,9 @@ Everything else is left uncached.
   entry for free. An epoch-based bound would key every call uniquely and the
   TTL would never hit; a calendar-day string already has coarse enough
   granularity that it doesn't.
-- Cache key is the full URL (query included, so distinct stream resolutions and
-  date windows stay separate); TTL and invalidation match the query-stripped
-  path.
+- Cache key is the full URL (query included, so date windows and detail
+  options such as `?intervals=true` stay separate); TTL and invalidation match
+  the query-stripped path.
 - A successful write invalidates every cached read on the same branch —
   descendants (so `update-activity` drops the activity's cached
   detail/streams/zones/laps) **and** ancestors, since a write to a
@@ -167,11 +167,12 @@ Everything else is left uncached.
   directions so a future one is covered without a second rule. This
   automatic invalidation only fires when the PUT itself resolves
   successfully; `updateActivity` (`intervalsClient.ts`) additionally
-  invalidates the activity, the athlete's activities list, the gear list,
-  and the athlete pace curves (their `activities` map carries the run names
-  `get-best-efforts` reports) in a `finally`, so a *failed* PUT that may
+  invalidates the activity, the athlete's activities list, the gear list
+  and the athlete pace curves in a `finally`, so a *failed* PUT that may
   still have mutated state server-side (a 5xx, a network fault, a timeout)
-  does not leave a stale pre-write entry being served afterward.
+  does not leave a stale pre-write entry being served afterward. The pace
+  curves' `activities` map carries the names `get-best-efforts` and
+  `get-race-prediction` show, so a rename drops it too.
 - `skipCache: true` bypasses entirely; the `update-activity` append read uses
   it so it never composes onto a stale description.
 - **The cache is bounded by entries and bytes.** It holds at most 200 entries
@@ -203,11 +204,21 @@ Everything else is left uncached.
 
 Every stream read goes through `loadIntervalsStreams` in
 `intervalsStreams.ts`, never a bare `intervalsApi.get`. It calls
-`GET /activity/{id}/streams.json?types=...`, and callers ask for whichever
-stream types their tool or app needs; intervals.icu returns each requested
-type as `{type, data, data2, valueTypeIsArray, ...}` (`latlng` puts latitude
-in `data` and longitude in `data2`; see docs/api-notes.md for the full
-response shape and per-type null patterns from a live probe).
+`GET /activity/{id}/streams.json?types=...`; intervals.icu returns each
+requested type as `{type, data, data2, valueTypeIsArray, ...}` (`latlng`
+puts latitude in `data` and longitude in `data2`; see docs/api-notes.md for
+the full response shape and per-type null patterns from a live probe).
+
+**One request per activity.** Callers ask for whichever stream types their
+tool or app needs, but `loadIntervalsStreams` always requests
+`INTERVALS_STREAM_TYPES`: all 13 types any caller uses, sorted. So every
+tool's and app's read of one activity is the same URL. It is fetched once
+and then served from the [response cache](#response-cache) or the in-flight
+map. The loader returns only the columns the caller asked for. `moving`
+counts `velocity_smooth` only when the caller asked for it, so each tool's
+output is the same as before #71. Before #71 the cache key carried each
+tool's own type list, and one "analyse this run" chat could fetch the same
+streams five times. A type added to the list is paid for on every read.
 
 Only a genuine 404 or an empty result throws
 `IntervalsStreamsUnavailableError`, the one error a caller may degrade on

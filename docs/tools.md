@@ -360,7 +360,9 @@ independent of each side's `efficiency_factor` (intervals.icu's own field).
 A non-running activity on either side degrades to a warning rather than
 failing the call. The app's stream
 overlay (`get-activity-streams-raw`) is intervals.icu-backed (see the
-activity-chart entry below).
+activity-chart entry below). Both compare paths read each activity with
+`getActivity(apiKey, id, { intervals: true })`, the same URL as the
+overlay's reads, so a chat that uses them together reads each activity once.
 
 `view-activity-chart`/`get-activity-streams-raw` (activity-chart MCP App)
 fetch the activity via `getActivity(apiKey, id, { intervals: true })` and its

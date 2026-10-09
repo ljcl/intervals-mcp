@@ -312,3 +312,11 @@ strongest feeling and 5 the weakest, as `update-activity`'s tool description say
 - `GET /athlete/{id}` carries `timezone`. The spec types it as a plain string (the `WithSportSettings` schema) and does not say it is an IANA name. The server assumes it is one and validates it with `Intl` before use (`setAthleteTimeZone`).
 - The same record also carries `icu_api_key`. `getAthleteTimeZone` parses only `timezone`, and `/athlete/{id}` has no cache TTL, so the record is never cached or logged.
 - Unverified live until the owner runs `scripts/live-check.ts`. Its "athlete time zone" line says whether the zone is set and whether this runtime accepts it, never the zone itself.
+
+## One stream superset per activity (2026-10-09, #71, unverified live)
+
+- Since #71, every stream read requests the same 13 types: the 12 types of the Phase 4 probe above, plus `watts`. `loadIntervalsStreams` (`INTERVALS_STREAM_TYPES`) sends them sorted, so each activity has one streams URL that every tool and app shares.
+- The Phase 4 probe requested all 12 of its types on one GPS run and got all 12 back. Two assumptions are not verified live:
+  - A type's data does not depend on which other types are in the same request.
+  - An activity without GPS or without a sensor (a treadmill run, a run without a power meter) still answers 200, with the missing types left out, rather than an error for the whole request.
+- Re-verify with `bun scripts/live-check.ts <activityId>` on a GPS run and on a no-GPS activity. Every stream tool must answer as before #71.

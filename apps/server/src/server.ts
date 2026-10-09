@@ -1410,17 +1410,18 @@ async function handleViewRouteMap(
 
 /**
  * Fetch both intervals.icu activities and run the same aggregate comparison
- * the compare-activities text tool uses. getIntervalsActivity is TTL-cached
- * in fetchClient, so the view + data-tool pair costs one fetch per activity,
- * not two.
+ * the compare-activities text tool uses. Same fetch options as
+ * `get-activity-streams-raw` (`intervals: true`): the cache key is the full
+ * request URL, so opening the compare app reads each activity once, for the
+ * view, the data tool and the app's two streams calls together.
  */
 async function loadCompareActivitiesData(
   args: Record<string, unknown>,
   token: string,
 ): Promise<ReturnType<typeof buildComparison>> {
   const [activity1, activity2] = await Promise.all([
-    getIntervalsActivity(token, String(args.activityId1)),
-    getIntervalsActivity(token, String(args.activityId2)),
+    getIntervalsActivity(token, String(args.activityId1), { intervals: true }),
+    getIntervalsActivity(token, String(args.activityId2), { intervals: true }),
   ]);
   return buildComparison(activity1, activity2);
 }

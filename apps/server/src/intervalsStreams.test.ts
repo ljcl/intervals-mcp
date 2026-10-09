@@ -10,10 +10,12 @@ import streamsHrDropoutFixture from "./__fixtures__/intervals/streams-hr-dropout
 import streamsMultilapFixture from "./__fixtures__/intervals/streams-multilap.json";
 import { HttpError, intervalsApi, RateLimitError } from "./fetchClient";
 import {
+  INTERVALS_STREAM_TYPES,
   IntervalsStreamsUnavailableError,
   loadIntervalsStreams,
   MOVING_GAP_THRESHOLD_SECONDS,
   MOVING_MIN_VELOCITY_MPS,
+  OPTIONAL_STREAM_TYPES,
 } from "./intervalsStreams";
 import { computeSplitAnalysis } from "./splitAnalysis";
 
@@ -115,43 +117,80 @@ describe("loadIntervalsStreams", () => {
     expect(streams.distance?.some((v) => v === null)).toBe(true);
   });
 
-  it("only requests the types passed in, plus time and distance for moving", async () => {
-    mockedGet.mockResolvedValueOnce({
+  it("requests the one superset whatever the caller asks for (#71)", async () => {
+    mockedGet.mockResolvedValue({
       data: [
         { type: "time", data: [0, 1, 2] },
         { type: "heartrate", data: [100, 110, 120] },
+      ],
+    });
+
+    await loadIntervalsStreams("key", "i1", ["heartrate"]);
+    await loadIntervalsStreams("key", "i1", ["latlng", "time"]);
+
+    const superset =
+      "/activity/i1/streams.json?types=altitude,cadence,distance,grade_smooth,heartrate,latlng,stance_time,step_length,time,velocity_smooth,vertical_oscillation,vertical_ratio,watts";
+    expect(mockedGet).toHaveBeenCalledTimes(2);
+    expect(mockedGet).toHaveBeenNthCalledWith(1, superset, expect.anything());
+    expect(mockedGet).toHaveBeenNthCalledWith(2, superset, expect.anything());
+  });
+
+  it("keeps the superset sorted, unique, and in step with the types it returns", () => {
+    expect([...INTERVALS_STREAM_TYPES]).toEqual(
+      [...new Set(INTERVALS_STREAM_TYPES)].sort(),
+    );
+    // A type the loader can return but never requests, or requests but
+    // never returns, fails here.
+    expect(new Set([...OPTIONAL_STREAM_TYPES, "time", "latlng"])).toEqual(
+      new Set(INTERVALS_STREAM_TYPES),
+    );
+  });
+
+  it("returns only the requested arrays from the superset response", async () => {
+    mockedGet.mockResolvedValueOnce({
+      data: [
+        { type: "time", data: [0, 1, 2] },
         { type: "distance", data: [0, 3, 6] },
+        { type: "heartrate", data: [100, 110, 120] },
+        { type: "watts", data: [200, 210, 220] },
+        {
+          type: "latlng",
+          data: [-33.8, -33.8, -33.8],
+          data2: [151.2, 151.2, 151.2],
+        },
+        { type: "velocity_smooth", data: [3, 3, 3] },
+        { type: "stance_time", data: [250, 251, 252] },
       ],
     });
 
     const streams = await loadIntervalsStreams("key", "i1", ["heartrate"]);
 
-    expect(mockedGet).toHaveBeenCalledWith(
-      "/activity/i1/streams.json?types=time,heartrate,distance",
-      expect.anything(),
-    );
-    // Fetched for `moving` only: not returned to a caller that did not ask.
-    expect(Object.hasOwn(streams, "distance")).toBe(false);
-  });
-
-  it("does not duplicate time or distance when the caller already requested them", async () => {
-    mockedGet.mockResolvedValueOnce({
-      data: [
-        { type: "time", data: [0, 1, 2] },
-        { type: "distance", data: [0, 3, 6] },
-      ],
-    });
-
-    const streams = await loadIntervalsStreams("key", "i1", [
-      "distance",
+    // Fetched for `moving` or for other callers: not returned to this one.
+    expect(Object.keys(streams).sort()).toEqual([
+      "heartrate",
+      "length",
+      "moving",
       "time",
     ]);
+  });
 
-    expect(mockedGet).toHaveBeenCalledWith(
-      "/activity/i1/streams.json?types=distance,time",
-      expect.anything(),
-    );
-    expect(streams.distance).toEqual([0, 3, 6]);
+  it("counts velocity toward moving only when the caller asked for it", async () => {
+    const response = {
+      data: [
+        { type: "time", data: [0, 1, 2, 3] },
+        { type: "velocity_smooth", data: [3, 3, 0.2, 3] },
+      ],
+    };
+    mockedGet.mockResolvedValueOnce(response);
+    mockedGet.mockResolvedValueOnce(response);
+
+    const withoutVelocity = await loadIntervalsStreams("key", "i1", ["time"]);
+    const withVelocity = await loadIntervalsStreams("key", "i1", [
+      "velocity_smooth",
+    ]);
+
+    expect(withoutVelocity.moving).toEqual([true, true, true, true]);
+    expect(withVelocity.moving).toEqual([true, true, false, true]);
   });
 
   describe("derived moving", () => {

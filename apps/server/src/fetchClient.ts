@@ -908,7 +908,8 @@ const HOUR_MS = 60 * MINUTE_MS;
  * is left uncached.
  */
 export function intervalsCacheTtl(path: string): number | null {
-  // Activity data streams: matched by prefix, since the id is followed by
+  // Activity data streams: one superset URL per activity (see
+  // loadIntervalsStreams). Matched by prefix, since the id is followed by
   // arbitrary stream-selector content (a comma-separated list, a `.json`
   // extension). The path here is already query-stripped (toPath), so this
   // is about the selector living in the path segment itself, not a query.
