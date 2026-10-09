@@ -106,15 +106,16 @@ jobs:
           platform="${{ matrix.platform }}"
           echo "pair=${platform//\//-}" >> "$GITHUB_OUTPUT"
 
-      # The base images, the buildkit builder image and the SBOM scanner all
-      # come from Docker Hub, whose anonymous-pull rate limit (shared by every
-      # job on the runner's IP) failed whole release builds with 429. Logged
-      # in before setup-buildx so the builder pull and BuildKit's base-image
-      # pulls both use the account's limit. The token is unavailable on fork
-      # PRs and on Dependabot PRs unless it is also a Dependabot secret; those
-      # skip the login and pull anonymously as before. A failed login (Docker
-      # Hub has answered it with HTTP 500) does not fail the leg either: it
-      # falls back to anonymous pulls.
+      # The base images, the buildkit builder image and the SBOM scanner are
+      # Docker Hub images. Docker Hub failed the 2.5.0 release builds with 429
+      # (anonymous rate limit), 500 and 504, so setup-buildx below pulls them
+      # through mirror.gcr.io. Docker Hub is only the fallback for an image
+      # the mirror does not hold yet (a fresh Dependabot digest, say), and
+      # that fallback is logged in here so it uses the account's limit. The
+      # token is unavailable on fork PRs and on Dependabot PRs unless it is
+      # also a Dependabot secret; those skip the login and pull anonymously.
+      # A failed login (Docker Hub has answered it with HTTP 500) does not
+      # fail the leg either: it falls back to anonymous pulls.
       - name: Check Docker Hub credentials
         id: dockerhub
         env:
@@ -135,7 +136,17 @@ jobs:
           username: ${{ vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      # mirror.gcr.io is Google's public pull-through mirror of Docker Hub.
+      # Every FROM is pinned by digest, so the mirror cannot serve different
+      # content, and the Dockerfile keeps its docker.io names for Dependabot,
+      # dockerRuntime.test.ts and local builds. BuildKit tries the mirror
+      # first and falls back to docker.io on a miss or an error.
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: image=mirror.gcr.io/moby/buildkit:buildx-stable-1
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
 
       - name: Docker metadata (labels)
         id: meta
