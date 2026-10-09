@@ -12,7 +12,7 @@
     "test:coverage": "bun ../../scripts/coverage-ratchet-guard.ts vitest.config.ts -- vitest run --coverage"
   },
   "dependencies": {
-    "@modelcontextprotocol/server": "2.0.0",
+    "@modelcontextprotocol/server": "2.3.1",
     "@intervals-mcp/activity-chart": "workspace:*",
     "@intervals-mcp/activity-zones": "workspace:*",
     "@intervals-mcp/cadence-trends": "workspace:*",

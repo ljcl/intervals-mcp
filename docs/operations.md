@@ -265,9 +265,10 @@ Set it in `.env` (`docker-compose.yml` forwards it automatically), or pass it
 through yourself when running the published image without that compose file
 (`docker run -e MCP_AUTH_TOKEN=...`).
 
-Every served `/mcp` POST carries `Mcp-Method` (and, for a tool call,
-`Mcp-Name` with the tool name), and the server rejects any request whose
-headers disagree with its body. So a reverse proxy or WAF in front of the
+Every served `/mcp` request POST carries `MCP-Protocol-Version` and
+`Mcp-Method` (and, for a tool call, `Mcp-Name` with the tool name), and the
+server rejects with HTTP 400 and `-32020` any request that leaves one out or
+whose headers disagree with its body. So a reverse proxy or WAF in front of the
 server can log, rate-limit, or block by tool without parsing JSON — for
 example, deny `Mcp-Name: update-activity` to make the instance read-only.
 Only 2026-07-28 clients are served: a 2025-era client gets HTTP 400 with
