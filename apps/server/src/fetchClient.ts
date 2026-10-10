@@ -338,7 +338,12 @@ interface FetchConfig {
   params?: Record<string, string | number | boolean>;
   data?: unknown;
   method?: string;
-  responseType?: "json" | "text";
+  /**
+   * `bytes` reads the body as raw bytes (a `Uint8Array`), for a binary file
+   * such as an activity's original FIT file; an error body is still decoded
+   * as text for its message.
+   */
+  responseType?: "json" | "text" | "bytes";
   /**
    * Skip the response cache for this request entirely — neither read a cached
    * value nor store the result. Used by write paths that need a guaranteed-fresh
@@ -488,7 +493,8 @@ export function parseJsonWithLargeInts(text: string): unknown {
  * objects, arrays, strings, numbers, booleans, null), and
  * {@link parseJsonWithLargeInts} keeps oversized ids as digit strings rather
  * than BigInt — either would survive the clone, but strings are what we have.
- * A `responseType: "text"` body is a primitive and clones trivially.
+ * A `responseType: "text"` body is a primitive and clones trivially, and a
+ * `"bytes"` body is a `Uint8Array`, which `structuredClone` copies too.
  *
  * Cloning was chosen over deep-freezing on purpose. Freezing would turn a
  * future in-place sort into a strict-mode TypeError at the call site — louder
@@ -1003,6 +1009,7 @@ export class FetchClient {
       throwIfCancelled(signal, what);
       let response: Response;
       let body: string;
+      let raw: Uint8Array | undefined;
       try {
         // A fresh signal per attempt: AbortSignal.timeout starts counting the
         // moment it is created, so a shared one would leave later retries with
@@ -1032,7 +1039,12 @@ export class FetchClient {
         // covers it, and a body that stalls or is cut off is the same fault
         // as a connection that does: a safe read retries it, and a timeout
         // becomes a RequestTimeoutError, not a bare DOMException (#52).
-        body = await response.text();
+        if (responseType === "bytes" && response.ok) {
+          raw = new Uint8Array(await response.arrayBuffer());
+          body = "";
+        } else {
+          body = await response.text();
+        }
       } catch (networkError) {
         // A cancel is classified first. Under AbortSignal.any, fetch rejects
         // with the signal's reason or a bare AbortError, which the code below
@@ -1125,6 +1137,9 @@ export class FetchClient {
       }
 
       // Parse response
+      if (raw !== undefined) {
+        return { data: raw as T, bytes: raw.byteLength };
+      }
       if (responseType === "text") {
         return { data: body as T, bytes: body.length };
       }
@@ -1190,6 +1205,9 @@ export function intervalsCacheTtl(path: string): number | null {
   if (/^\/activity\/[^/]+\/intervals$/.test(path)) return 10 * MINUTE_MS;
   // Detailed activity.
   if (/^\/activity\/[^/]+$/.test(path)) return 10 * MINUTE_MS;
+  // The original activity file (a FIT file's bytes, read for its weather).
+  // It never changes after upload; the TTL only bounds the memory it holds.
+  if (/^\/activity\/[^/]+\/file$/.test(path)) return 10 * MINUTE_MS;
   // Gear rarely changes.
   if (/^\/athlete\/[^/]+\/gear$/.test(path)) return 10 * MINUTE_MS;
   // Per-sport zones/settings change rarely.

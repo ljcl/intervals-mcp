@@ -136,6 +136,10 @@ export interface ActivityWriteChange {
   field: string;
   before: string | number | null;
   after: string | number | null;
+  /** On a gear change: the name of the gear before the write. */
+  before_name?: string | null;
+  /** On a gear change: the name of the gear the re-read shows. */
+  after_name?: string | null;
 }
 
 /**

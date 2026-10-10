@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCadenceTrendData } from "./cadenceTrendData";
+import { buildCadenceTrendData, cadenceTrendLines } from "./cadenceTrendData";
 import { type IntervalsActivity } from "./intervalsClient";
 
 function activity(
@@ -83,20 +83,33 @@ describe("buildCadenceTrendData", () => {
     expect(result.excludedNoCadence).toBe(0);
   });
 
-  it("derives pace in decimal minutes/km from average_speed", () => {
-    const result = buildCadenceTrendData([activity({ average_speed: 3.33 })], {
-      days: 28,
-    });
+  it("derives pace in decimal minutes/km from distance over moving time, as every activity pace does", () => {
+    // 12,031 m in 3,700 s moving is 5:08 /km; intervals.icu's average_speed
+    // (3.277 m/s, over the watch's 3,671 s timer) would give 5:05.
+    const result = buildCadenceTrendData(
+      [activity({ distance: 12031, moving_time: 3700, average_speed: 3.277 })],
+      { days: 28 },
+    );
 
-    // 1000 / 3.33 / 60 ≈ 5.005
-    expect(result.activities[0]?.averagePace).toBeCloseTo(5.01, 2);
+    expect(result.activities[0]?.averagePace).toBeCloseTo(5.13, 2);
     expect(result.noPaceCount).toBe(0);
   });
 
+  it("falls back to average_speed when the run has no moving time", () => {
+    const result = buildCadenceTrendData(
+      [activity({ moving_time: null, average_speed: 3.33 })],
+      { days: 28 },
+    );
+
+    // 1000 / 3.33 / 60 ≈ 5.005
+    expect(result.activities[0]?.averagePace).toBeCloseTo(5.01, 2);
+  });
+
   it("gives a run with no recorded speed a null pace instead of 0 min/km, but keeps it (it still has cadence)", () => {
-    const result = buildCadenceTrendData([activity({ average_speed: null })], {
-      days: 28,
-    });
+    const result = buildCadenceTrendData(
+      [activity({ distance: 0, average_speed: null })],
+      { days: 28 },
+    );
 
     expect(result.activities).toHaveLength(1);
     expect(result.activities[0]?.averagePace).toBeNull();
@@ -107,8 +120,8 @@ describe("buildCadenceTrendData", () => {
     const result = buildCadenceTrendData(
       [
         activity({ id: "i1", average_speed: 3.33 }),
-        activity({ id: "i2", average_speed: null }),
-        activity({ id: "i3", average_speed: 0 }),
+        activity({ id: "i2", distance: null, average_speed: null }),
+        activity({ id: "i3", distance: 0, average_speed: 0 }),
       ],
       { days: 28 },
     );
@@ -146,5 +159,77 @@ describe("buildCadenceTrendData", () => {
     });
 
     expect(result.activities[0]?.distance).toBe(8.12);
+  });
+});
+
+describe("cadenceTrendLines", () => {
+  const runs = (paces: Array<[number | null, number]>) =>
+    buildCadenceTrendData(
+      paces.map(([paceMinPerKm, spm], i) =>
+        activity({
+          id: `i${i + 1}`,
+          name: `Run ${i + 1}`,
+          start_date_local: `${new Date(Date.UTC(2026, 5, 20 - i)).toISOString().slice(0, 10)}T07:00:00`,
+          distance: paceMinPerKm == null ? 0 : 10000,
+          moving_time: paceMinPerKm == null ? 3000 : paceMinPerKm * 600,
+          average_speed: null,
+          average_cadence: spm / 2,
+        }),
+      ),
+      { days: 28 },
+    );
+
+  it("lists each run's cadence, cadence by pace zone, and the slope against pace", () => {
+    const lines = cadenceTrendLines(
+      runs([
+        [4.25, 176],
+        [5, 170],
+        [6, 160],
+        [null, 166],
+      ]),
+    );
+    expect(lines).toEqual([
+      "Cadence Trends (last 4 weeks)",
+      "Runs: 4",
+      "Average cadence: 168 spm",
+      "No pace recorded (cadence only): 1",
+      "",
+      "Cadence by run (newest first):",
+      "  2026-06-20 Run 1 [i1]: 10.00 km, 4:15 /km, 176 spm",
+      "  2026-06-19 Run 2 [i2]: 10.00 km, 5:00 /km, 170 spm",
+      "  2026-06-18 Run 3 [i3]: 10.00 km, 6:00 /km, 160 spm",
+      "  2026-06-17 Run 4 [i4]: 0.00 km, no pace, 166 spm",
+      "",
+      "Cadence by pace zone:",
+      "  Threshold (faster than 4:00 /km): no runs",
+      "  Tempo (4:00 to 4:30 /km): 1 run, mean 176 spm (176 to 176)",
+      "  Moderate (4:30 to 5:30 /km): 1 run, mean 170 spm (170 to 170)",
+      "  Easy (slower than 5:30 /km): 1 run, mean 160 spm (160 to 160)",
+      "",
+      "Cadence against pace: slope -9.2 spm per min/km over 3 runs: cadence rises 9.2 spm for each 1:00 /km faster.",
+    ]);
+  });
+
+  it("says when there is no line to fit, and lists at most 60 runs", () => {
+    const many = runs(
+      Array.from({ length: 62 }, () => [5, 170] as [number, number]),
+    );
+    const lines = cadenceTrendLines(many);
+    expect(lines.filter((l) => l.startsWith("  2026-"))).toHaveLength(60);
+    expect(lines).toContain(
+      "  (2 runs more; a shorter days window lists them)",
+    );
+    // Every run shares one pace: no slope.
+    expect(lines.at(-1)).toBe(
+      "Cadence against pace: no line, because fewer than 2 runs have both a pace and a cadence, or they all share one pace.",
+    );
+  });
+
+  it("stops after the totals when the window has no runs with cadence", () => {
+    expect(cadenceTrendLines(runs([]))).toEqual([
+      "Cadence Trends (last 4 weeks)",
+      "Runs: 0",
+      "Average cadence: 0 spm",
+    ]);
   });
 });

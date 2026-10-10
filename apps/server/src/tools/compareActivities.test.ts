@@ -1,17 +1,62 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { handledNotFound, handledRateLimit } from "../__fixtures__";
+import {
+  handledNotFound,
+  handledRateLimit,
+  type SyntheticLeg,
+  syntheticStreams,
+} from "../__fixtures__";
+import {
+  buildFitFile,
+  FIT_TYPES,
+  fitFieldDescription,
+} from "../__fixtures__/fitFile";
 import activitiesFixture from "../__fixtures__/intervals/activities.json";
 import { speedEfficiencyFactor } from "../aerobicAnalysis";
-import { getActivity, type IntervalsActivity } from "../intervalsClient";
+import {
+  getActivity,
+  getActivityFile,
+  getActivityStreams,
+  type IntervalsActivity,
+} from "../intervalsClient";
 import { buildComparison, compareActivitiesTool } from "./compareActivities";
 import { CompareActivitiesOutputSchema } from "./outputs";
 
 vi.mock("../intervalsClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../intervalsClient")>();
-  return { ...actual, getActivity: vi.fn() };
+  return {
+    ...actual,
+    getActivity: vi.fn(),
+    getActivityStreams: vi.fn(),
+    getActivityFile: vi.fn(),
+  };
 });
 
 const mockedGetActivity = vi.mocked(getActivity);
+const mockedGetActivityStreams = vi.mocked(getActivityStreams);
+const mockedGetActivityFile = vi.mocked(getActivityFile);
+
+/** A HealthFit-style FIT file: session humidity and temperature. */
+function weatherFile(temperature: number, humidity: number): Uint8Array {
+  return buildFitFile([
+    fitFieldDescription(0, 3, "SESSION WEATHER HUMIDITY", FIT_TYPES.uint16),
+    {
+      global: 18,
+      fields: [{ num: 57, type: FIT_TYPES.sint8, value: temperature }],
+      devFields: [
+        { num: 3, devIndex: 0, type: FIT_TYPES.uint16, value: humidity * 100 },
+      ],
+    },
+  ]);
+}
+
+/** `km` 1 km legs at 5:00/km, with the heart rate `hr(k)` on km k (1-based). */
+function kmLegs(km: number, hr: (k: number) => number): SyntheticLeg[] {
+  return Array.from({ length: km }, (_, i) => ({
+    metres: 1000,
+    speed: 1000 / 300,
+    hr: hr(i + 1),
+  }));
+}
 
 /**
  * Build a minimal intervals.icu activity from a partial. Only the fields the
@@ -275,6 +320,200 @@ describe("buildComparison efficiency factor", () => {
 describe("compare-activities execute", () => {
   beforeEach(() => {
     mockedGetActivity.mockReset();
+    mockedGetActivityStreams.mockReset();
+    // No streams by default: the per-km table says why it is missing.
+    mockedGetActivityStreams.mockResolvedValue([]);
+    mockedGetActivityFile.mockReset();
+  });
+
+  it("pairs the km and calls a gap that is there from km 1 a constant offset", async () => {
+    mockedGetActivity.mockResolvedValueOnce(fakeActivity({}));
+    mockedGetActivity.mockResolvedValueOnce(faster);
+    mockedGetActivityStreams.mockImplementation(async (_key, id) =>
+      syntheticStreams(kmLegs(6, () => (id === "i100" ? 150 : 159))),
+    );
+
+    const result = await compareActivitiesTool.execute(
+      { activityId1: "i100", activityId2: "i200" },
+      "test-token",
+    );
+
+    const structured = CompareActivitiesOutputSchema.parse(
+      result.structuredContent,
+    );
+    const km = structured.km_comparison;
+    expect(km?.basis).toBe("gap");
+    expect(km?.rows).toHaveLength(6);
+    expect(km?.rows[0]).toMatchObject({
+      km: 1,
+      pace_1_min_per_km: "5:00",
+      pace_2_min_per_km: "5:00",
+      pace_delta_sec_per_km: 0,
+      hr_1: 150,
+      hr_2: 159,
+      hr_delta_bpm: 9,
+      efficiency_delta_pct: -5.7,
+    });
+    expect(km?.verdict).toBe("constant offset");
+    expect(km?.hr_gap_first_km_bpm).toBe(9);
+    expect(km?.hr_gap_last_km_bpm).toBe(9);
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain(
+      "Per km at the same distance (activity 2 minus activity 1; efficiency on grade-adjusted pace):",
+    );
+    expect(text).toContain(
+      "  1.   pace 5:00 vs 5:00 (0 s), HR 150 vs 159 (+9), efficiency -5.7%",
+    );
+    expect(text).toMatch(/^Verdict: Constant offset: /m);
+  });
+
+  it("calls a gap that grows over the run growing drift, naming the run that lost efficiency", async () => {
+    mockedGetActivity.mockResolvedValueOnce(fakeActivity({}));
+    mockedGetActivity.mockResolvedValueOnce(faster);
+    mockedGetActivityStreams.mockImplementation(async (_key, id) =>
+      syntheticStreams(kmLegs(8, (k) => (id === "i100" ? 150 : 150 + 2 * k))),
+    );
+
+    const result = await compareActivitiesTool.execute(
+      { activityId1: "i100", activityId2: "i200" },
+      "test-token",
+    );
+
+    const km = CompareActivitiesOutputSchema.parse(
+      result.structuredContent,
+    ).km_comparison;
+    expect(km?.verdict).toBe("growing drift");
+    expect(km?.hr_gap_first_km_bpm).toBe(2);
+    expect(km?.hr_gap_last_km_bpm).toBe(16);
+    expect(km?.interpretation).toContain(
+      "Activity 2 lost efficiency as the run went on",
+    );
+  });
+
+  it("says why there is no per-km table when a run has no streams", async () => {
+    mockedGetActivity.mockResolvedValueOnce(fakeActivity({}));
+    mockedGetActivity.mockResolvedValueOnce(faster);
+
+    const result = await compareActivitiesTool.execute(
+      { activityId1: "i100", activityId2: "i200" },
+      "test-token",
+    );
+
+    const structured = CompareActivitiesOutputSchema.parse(
+      result.structuredContent,
+    );
+    expect(structured.km_comparison).toBeNull();
+    expect(structured.km_comparison_note).toBe("activity 1 has no streams");
+    expect(result.content[0]?.text).toContain(
+      "No per-km table: activity 1 has no streams.",
+    );
+  });
+
+  it("reads no streams when either side is not a run, and names that side", async () => {
+    mockedGetActivity.mockResolvedValueOnce(fakeActivity({}));
+    mockedGetActivity.mockResolvedValueOnce(
+      fakeActivity({ id: "i200", type: "Ride" }),
+    );
+
+    const result = await compareActivitiesTool.execute(
+      { activityId1: "i100", activityId2: "i200" },
+      "test-token",
+    );
+
+    expect(mockedGetActivityStreams).not.toHaveBeenCalled();
+    expect(
+      CompareActivitiesOutputSchema.parse(result.structuredContent)
+        .km_comparison_note,
+    ).toBe("activity 2 is not a run");
+  });
+
+  it("fails on a rate limit from a stream read rather than reading it as no streams", async () => {
+    mockedGetActivity.mockResolvedValueOnce(fakeActivity({}));
+    mockedGetActivity.mockResolvedValueOnce(faster);
+    mockedGetActivityStreams.mockRejectedValue(
+      handledRateLimit("getActivityStreams"),
+    );
+
+    const result = await compareActivitiesTool.execute(
+      { activityId1: "i100", activityId2: "i200" },
+      "test-token",
+    );
+
+    expect(result.isError).toBe(true);
+  });
+
+  it("reports each run's weather, the difference, and a note when the dew point differs by more than 5 °C", async () => {
+    mockedGetActivity.mockResolvedValueOnce(
+      fakeActivity({ file_type: "fit", average_temp: 12 }),
+    );
+    mockedGetActivity.mockResolvedValueOnce({
+      ...faster,
+      file_type: "fit",
+      average_temp: 26,
+    });
+    mockedGetActivityFile.mockImplementation(async (_key, id) =>
+      id === "i100" ? weatherFile(12, 60) : weatherFile(26, 75),
+    );
+
+    const result = await compareActivitiesTool.execute(
+      { activityId1: "i100", activityId2: "i200" },
+      "test-token",
+    );
+
+    const structured = CompareActivitiesOutputSchema.parse(
+      result.structuredContent,
+    );
+    expect(structured.activity_1.weather).toMatchObject({
+      temperature_c: 12,
+      humidity_pct: 60,
+      dew_point_c: 4.5,
+    });
+    expect(structured.activity_2.weather).toMatchObject({
+      temperature_c: 26,
+      humidity_pct: 75,
+      dew_point_c: 21.2,
+    });
+    expect(structured.differences.weather).toEqual({
+      temperature_c: 14,
+      humidity_pct: 15,
+      dew_point_c: 16.7,
+    });
+    expect(structured.weather_note).toMatch(
+      /^The dew point differs by \+16\.7 °C/,
+    );
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain(
+      "  Weather: 12 °C, humidity 60%, dew point 4.5 °C (activity file)",
+    );
+    expect(text).toContain(
+      "  Weather: 12 to 26 °C (+14.0), dew point 4.5 to 21.2 °C (+16.7), humidity 60 to 75% (+15)",
+    );
+    expect(text).toMatch(/^Weather note: The dew point differs by \+16\.7 °C/m);
+  });
+
+  it("gives no weather note when the dew points are within 5 °C", async () => {
+    mockedGetActivity.mockResolvedValueOnce(
+      fakeActivity({ file_type: "fit", average_temp: 18 }),
+    );
+    mockedGetActivity.mockResolvedValueOnce({
+      ...faster,
+      file_type: "fit",
+      average_temp: 20,
+    });
+    mockedGetActivityFile.mockImplementation(async (_key, id) =>
+      id === "i100" ? weatherFile(18, 70) : weatherFile(20, 70),
+    );
+
+    const result = await compareActivitiesTool.execute(
+      { activityId1: "i100", activityId2: "i200" },
+      "test-token",
+    );
+
+    expect(
+      CompareActivitiesOutputSchema.parse(result.structuredContent)
+        .weather_note,
+    ).toBeNull();
+    expect(result.content[0]?.text).not.toContain("Weather note");
   });
 
   it("fetches both activities and returns text plus structured output", async () => {

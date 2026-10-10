@@ -73,11 +73,11 @@ descriptions.
 | `list-gear` | The athlete's gear (shoes) with mileage and retirement status |
 | `get-wellness` | Daily wellness (HRV, resting HR, sleep, weight, CTL/ATL/TSB) for a date or range |
 | `get-activity-laps` | Laps of an activity, derived from its intervals, with sport-aware pace/speed, GAP, HR, power, cadence |
-| `get-running-summary` | get-activity's detail fields for a run plus cadence, HR zone, and running-dynamics assessments, and a lap breakdown |
+| `get-running-summary` | get-activity's detail fields for a run plus cadence, HR zone, and running-dynamics assessments, a lap breakdown, the weather with humidity and dew point from the FIT file, and decoupling and efficiency factor computed from the streams when intervals.icu has none |
 | `get-running-dynamics` | Ground contact time, vertical oscillation/ratio, step length, and cadence for a run, with VO/GCT target assessments and a per-WORK-interval breakdown |
 | `get-activity-zones` | Time spent in each HR zone for an activity, from the activity's own recorded zone bounds |
 | `get-athlete-zones` | The athlete's own LTHR, max HR, HR and pace zones, threshold pace and FTP from sport settings, with a check of LTHR and max HR against recent heart rate bests |
-| `compare-activities` | Compare two activities side-by-side: pace, HR, cadence, load, and running dynamics, plus activity2-activity1 differences and an efficiency verdict |
+| `compare-activities` | Compare two activities side-by-side: pace, HR, cadence, load, running dynamics and weather, plus activity2-activity1 differences, an efficiency verdict, and a per-km table with a constant-offset or growing-drift verdict |
 | `get-hill-analysis` | Climb/descent detection with GAP and early-vs-late climb effort drift |
 | `get-split-analysis` | Even km splits with a two-halves pacing verdict stated on the clock and grade-adjusted |
 | `get-aerobic-analysis` | Aerobic decoupling and efficiency factor on a grade-adjusted, pace or power basis from streams, with intervals.icu's own values labelled apart |
@@ -87,7 +87,7 @@ descriptions.
 | `get-athlete-stats` | Run totals and totals for every sport (count, moving time, distance and whole-body load per activity type) for this week, the last 4 weeks, this month and YTD, aggregated from list-activities data |
 | `get-fitness-trend` | Fitness/fatigue/form (CTL/ATL/TSB), whole-body from intervals.icu wellness or run-only computed locally, with rest/planned-load projection and a solved taper to a target form on a target date; `newest` reads a past window, with no projection or taper |
 | `get-training-load` | Weekly running volume and volume-spike warnings, weekly intervals.icu training load and the types it covers, plus current CTL/ATL/TSB; `newest` ends the weeks on a past date |
-| `update-activity` | Update an activity's name, description, gear, RPE, or feel, echoing before/after values (write tool) |
+| `update-activity` | Update an activity's name, description, gear, RPE, or feel, echoing before/after values, with gear names (write tool) |
 
 `list-activities` defaults to the last 28 days (today back to 27 days
 earlier) in the server's time zone, sorted newest first. Filter
@@ -122,7 +122,19 @@ Strava stub spike note.
 metrics, training load, HR zone time-in-zone, running dynamics (Run,
 TrailRun, VirtualRun, Walk, Hike, with device support), the WORK/RECOVERY
 interval breakdown (`includeIntervals`, default true), gear id and name,
-and description, all with units. The gear name comes from the athlete's
+and description, all with units. `moving_time_source` is `intervals.icu`:
+the paces use the activity's own `moving_time`, which can differ from the
+stream tools' moving time and from a lap's (docs/api-notes.md, "Moving
+time"); each interval carries `moving_time_source: "lap"`, and the text
+prints the moving time as "1:01:40 moving (intervals.icu)" and heads the
+intervals with a note that lap moving times are intervals.icu's own.
+`weather` (`buildActivityWeather`, `activityWeather.ts`) has the
+temperature: intervals.icu's weather service when it has one, else the
+file's own average (`temperature_source: "file"`, a watch sensor or the
+weather an exporter wrote). get-activity reads no file, so its
+`humidity_pct` and `dew_point_c` are null; get-running-summary and
+compare-activities read them. The text prints a `Weather:` line after the
+HR recovery. The gear name comes from the athlete's
 gear list, read through the 10-minute cache (list-gear's source), because
 the activity sends only the gear id. When the id is not in the cached list
 (gear added since it was cached), it reads the list once more past the
@@ -217,6 +229,8 @@ values are SDNN, not rMSSD, so rMSSD norms do not apply. Otherwise it names
 the measures present, or says that the days have no HRV.
 
 `get-activity-laps` takes the `id` from `list-activities` and returns laps
+(each with `moving_time_source: "lap"`: intervals.icu's own moving time for
+the lap, which the second header line says can differ from the activity's)
 derived from the activity's intervals (`icu_intervals`, fetched via
 `getActivity(..., { intervals: true })`): intervals.icu has no separate lap
 list, and `icu_intervals` usually mirrors the device's own laps (typically
@@ -251,6 +265,31 @@ any other type is rejected with a message naming the type and pointing to
 `get-activity`. The text response caps the lap list at 20 lines and names
 `get-activity-laps` for the rest; `structuredContent.laps` always has the
 full list.
+
+When intervals.icu has no `decoupling` or no `icu_efficiency_factor`, the
+summary computes both from the streams on the grade-adjusted basis, through
+`streamAerobicAnalysis` (`getAerobicAnalysis.ts`), the stream path
+get-aerobic-analysis uses, with its warm-up exclusion. It fills only the
+missing ones. `decoupling_source` and `efficiency_factor_source` say
+`intervals.icu` or `computed`, `aerobic_basis` is `gap` (or `pace` with no
+elevation data), and `aerobic_note` says why a missing value was not
+computed (no streams, no heart rate) or carries the analysis' warnings. The
+load line prints only intervals.icu's values; computed ones get their own
+`Aerobic (computed from the streams, grade-adjusted; intervals.icu has
+none):` line. Only a genuine no-streams result degrades; a rate limit on the
+stream read fails the call, as the stream loader requires. The stream read
+is the same superset URL as every stream tool's, so a split or hill analysis
+after the summary is a cache hit.
+
+The summary also reads the original FIT file (`GET /activity/{id}/file`,
+cached 10 minutes, only for a FIT upload) for the humidity the activity
+record leaves out (`loadActivityWeather`, `activityWeather.ts`;
+`fitWeather.ts` reads HealthFit's session humidity field and Garmin's
+weather reports). When the file has a humidity, its own temperature goes
+with it, and `dew_point_c` is computed from the two (Magnus formula). A
+failed file read is logged and leaves the humidity out; it never fails the
+call. `hr_recovery` stays intervals.icu's only: a watch's "cardio recovery"
+is measured after the workout ends, past the streams.
 
 `get-running-dynamics` takes the `id` from `list-activities` plus an
 optional `includeIntervals` (default `true`) and returns one activity's
@@ -360,9 +399,36 @@ independent of each side's `efficiency_factor` (intervals.icu's own field).
 A non-running activity on either side degrades to a warning rather than
 failing the call. The app's stream
 overlay (`get-activity-streams-raw`) is intervals.icu-backed (see the
-activity-chart entry below). Both compare paths read each activity with
+activity-chart entry below). Both compare paths go through one loader,
+`loadComparison` (`compareActivities.ts`): it reads each activity with
 `getActivity(apiKey, id, { intervals: true })`, the same URL as the
-overlay's reads, so a chat that uses them together reads each activity once.
+overlay's reads, and each one's streams and FIT file, so a chat that uses
+them together reads each once (server.streamSharing.test.ts counts it).
+Each side has `moving_time_source: "intervals.icu"`.
+
+Each side has `weather` (as get-running-summary's, with the FIT file's
+humidity and dew point), `differences.weather` has the temperature,
+humidity and dew point differences, and `weather_note` is set when the dew
+point differs by more than 5 °C, or, without a dew point on both sides,
+the temperature does (`weatherNote`, `activityWeather.ts`): warmer, more
+humid air raises heart rate at the same pace, so part of the HR and
+efficiency difference can be the weather.
+
+`km_comparison` pairs the full km both runs covered, at the same distance,
+from the same 1 km splits as get-split-analysis (`loadSplitAnalysis`, its
+own stream path), and `compareKmSplits` (`kmComparison.ts`) gives each km's
+pace, HR and efficiency factor on both runs with the differences. The
+efficiency is `speedEfficiencyFactor` on grade-adjusted pace when both runs
+have elevation data (`basis: "gap"`), else on moving pace. The verdict fits
+a line to the per-km efficiency gap: a change of 3 points or more from the
+first km to the last is `growing drift` (fatigue or heat building up during
+the run), anything less is a `constant offset` (the gap is there from km 1:
+conditions or recovery). `interpretation` gives the fitted efficiency and
+HR gaps at the first and last km, and names the run that lost efficiency.
+With fewer than 3 km of heart rate in both runs there is no verdict. A
+side that is not a run or has no streams gives `km_comparison: null` and
+`km_comparison_note` says why; a rate limit fails the call. Two 4-hour runs
+pair about 46 km, inside the response budget (responseSize.test.ts).
 
 `view-activity-chart`/`get-activity-streams-raw` (activity-chart MCP App)
 fetch the activity via `getActivity(apiKey, id, { intervals: true })` and its
@@ -445,6 +511,16 @@ the ascent summed from the altitude samples with a 3 m hysteresis
 (`computed`), else null. It once added each split's net change, so a km
 that climbed 20 m and descended 20 m added 0 (136 m against
 `get-activity`'s 693 m on one marathon, #45).
+
+Every row of the split table has the same columns: a column (GAP, elevation
+change, HR, power) is printed on every row when any split has it, with
+`n/a` on a split that has none, and GAP is printed even when it equals the
+pace. The paces use the streams' moving time (`totals.moving_time_source:
+"streams"`: stops left out, as the watch's own timer does), and
+`totals.intervals_icu_moving_time_s` has the activity's own; the text names
+both when they differ ("Moving time 1:01:12 (streams: stops left out);
+intervals.icu's own moving time is 1:01:40, 5:08 /km, which
+get-running-summary uses").
 
 `get-aerobic-analysis` computes decoupling and efficiency factor from
 streams on one `basis`: `gap` reads `velocity_smooth` corrected for grade
@@ -819,7 +895,11 @@ also quotes the removed text (length and first 120 characters), because
 some hosts drop `structuredContent`, where `changes[].before` has it in
 full. `gearId` is validated against `list-gear`: an unknown id fails
 and lists the available gear ids and names; a retired gear id is accepted
-with a warning. Gear can be switched but not cleared; intervals.icu ignores
+with a warning. `gear_name` names the gear the re-read activity shows on
+every write, from that fresh gear list when `gearId` was sent, else from
+get-activity's cached read (a failed read leaves it null and never fails
+the write). A gear change in `changes` adds `before_name` and `after_name`,
+and the text says `gear to "Name" [id] (was "Old name" [id])`. Gear can be switched but not cleared; intervals.icu ignores
 a null gear id (docs/api-notes.md). Name, description, and RPE writes were
 live-verified 2026-09-25 (docs/api-notes.md); `feel` is 1 to 5 on
 intervals.icu's scale, 1 the strongest feeling and 5 the weakest (verified
@@ -886,38 +966,63 @@ through the alias layer.
 | `view-fitness-trend` | CTL/ATL/TSB over time with shaded fatigue/freshness/ramp bands and a dashed taper plan or rest projection past today; a Whole body/Runs only toggle switches scope, caching each side; `newest` charts a past block with no projection (MCP App) |
 | `get-fitness-trend-data` | Per-day CTL/ATL/TSB, the projection, the solved taper, and the dated warning bands for the fitness-trend UI; `runOnly` switches between whole-body (intervals.icu wellness) and run-only (computed) (app-only) |
 
-A `view-*` result says the chart was rendered only when the request's client
-capabilities advertise `io.modelcontextprotocol/ui` with
-`text/html;profile=mcp-app` (`clientSupportsMcpApps`, `clientCapabilities.ts`).
-A call with no client information is treated as a host that cannot render
-apps. Such a host sees no chart, so the model needs the numbers:
+Every `view-*` result carries the chart's data, so the model has the numbers
+in the same call whether or not the athlete sees the chart. Only its first
+line depends on the client (`viewHeader`, `clientCapabilities.ts`):
+
+- A client whose request capabilities advertise `io.modelcontextprotocol/ui`
+  with `text/html;profile=mcp-app` (`clientSupportsMcpApps`) reads
+  `Interactive <kind> shown.`
+- Any other client, and a call with no client information, reads `This
+  client did not report MCP Apps support, so the interactive <kind> may not
+  show.` It never says "cannot display": the Claude app renders the card for
+  a cloud agent session whose client does not advertise the extension
+  (docs/architecture.md, Telemetry), so that text was wrong there.
+
+The 2026-07-28 revision has no `initialize`: the capabilities come in every
+request's envelope, and the server reads them there. A 2025-era request has
+none on `tools/call`, because the server serves that era statelessly.
+
+Then the data:
 
 - A view with a text twin runs the twin in the same call, with the view's own
-  arguments, and returns only `This client cannot display the interactive
-  <kind>. The same data from <twin> follows.`, a blank line and the twin's
-  text (`viewTwinText`). The view's defaults reach the twin, so
+  arguments, and gives `The same data from <twin> follows.`, a blank line and
+  the twin's text. The view's defaults reach the twin, so
   `view-fitness-trend`'s text projects 14 days and `view-training-load`'s
   covers 84 days, as the charts do. The twin's `structuredContent` is not
   passed on: the views have no `outputSchema`.
-- A view with no twin, or whose twin returns `isError`, gives its own summary
-  and ends with `This client cannot display the interactive <kind>. For
-  detail, call <footer>.` (`viewFooter`). The twin's failure does not make
-  the view's result an error.
+- `view-route-map` keeps its own lines ahead of its twin's text (`Its data
+  follows, then the text of get-hill-analysis.`): the distance, the
+  elevation gain and each waypoint with its km, label and kind, which only
+  the view has, then get-hill-analysis' climbs.
+- `view-cadence-trends` has no twin; its own lines are the data
+  (`cadenceTrendLines`, `cadenceTrendData.ts`): each run's date, name,
+  id, distance, pace and cadence (the 60 newest, with a count of the rest), the
+  cadence of each pace zone (runs, mean, range), and the cadence-against-
+  pace slope with what it means ("cadence rises 10.6 spm for each 1:00 /km
+  faster"). The zones and the slope come from `computeZoneStats` and
+  `cadencePaceRegression` in `@intervals-mcp/data`, the functions the app's
+  zone and scatter views draw, so the text and the chart agree. The pace is
+  distance over moving time, as every activity pace.
+- A view with no twin, or whose twin returns `isError`, gives `Its data
+  follows.` and its own summary, and ends with `For detail, call <footer>.`
+  when that summary is not the whole of the data. The twin's failure does
+  not make the view's result an error.
 
 `viewResult` in `server.ts` makes this choice for every view. A test checks
 that every tool a footer or twin names is advertised. The rest of the text
-never mentions on-screen UI to such a host: `view-route-map` says "No GPS track
-is recorded for this activity." rather than calling the map empty, and counts
-waypoints without the map legend.
+never mentions on-screen UI to a client that did not advertise MCP Apps:
+`view-route-map` says "No GPS track is recorded for this activity." rather
+than calling the map empty, and lists waypoints without the map legend.
 
-| Tool | Footer kind | Text twin | Text tool the footer names |
-| ---- | ----------- | --------- | -------------------------- |
+| Tool | Chart kind | Text twin | Footer when the twin fails |
+| ---- | ---------- | --------- | -------------------------- |
 | `view-activity-chart` | `activity chart` | `get-split-analysis` (Run, TrailRun, VirtualRun with streams) | `get-activity-streams` (`get-activity` when the activity has no streams) |
-| `view-cadence-trends` | `cadence trends chart` | none | `list-activities, then get-running-summary` |
+| `view-cadence-trends` | `cadence trends chart` | none: its lines are the data | none |
 | `view-training-load` | `training load chart` | `get-training-load` | `get-training-load with the same arguments` |
 | `view-fitness-trend` | `fitness trend chart` | `get-fitness-trend` | `get-fitness-trend with the same arguments` |
 | `view-activity-zones` | `zone distribution chart` | `get-activity-zones` | `get-activity-zones` |
-| `view-route-map` | `route map` | none (no text tool describes the track) | `get-activity` |
+| `view-route-map` | `route map` | `get-hill-analysis`, after its own lines | `get-activity` |
 | `view-compare-activities` | `activity comparison` | `compare-activities` | `compare-activities` |
 
 Every `*-data` app-only tool reads intervals.icu streams through

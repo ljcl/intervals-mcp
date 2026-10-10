@@ -4,6 +4,7 @@ import { HttpError, RateLimitError } from "../fetchClient";
 import {
   getActivity as fetchActivity,
   type IntervalsActivity,
+  type IntervalsGear,
   listGear,
   updateActivity as putActivity,
 } from "../intervalsClient";
@@ -21,6 +22,7 @@ import {
 import { WRITE_DESTRUCTIVE } from "./_annotations";
 import { noteToolFailure, toolErrorText } from "./_errors";
 import { intervalsActivityIdInput } from "./_ids";
+import { resolveActivityGearName } from "./getActivity";
 import {
   ActivityWriteOutputSchema,
   toActivityWriteOutput,
@@ -147,7 +149,16 @@ function formatDescriptionPreview(text: string): string {
   return `${text.length} chars ("${preview}")`;
 }
 
+/** A gear id with its name, as get-activity's text shows it. */
+function formatGear(id: string | number | null, gearName?: string | null) {
+  if (id === null) return "no gear";
+  return gearName ? `"${gearName}" [${id}]` : `"${id}"`;
+}
+
 function formatChangeSummary(change: ActivityWriteChange): string {
+  if (change.field === "gear") {
+    return `gear to ${formatGear(change.after, change.after_name)} (was ${formatGear(change.before, change.before_name)})`;
+  }
   if (change.field !== "description") {
     return `${change.field} to ${formatChangeValue(change.after)}`;
   }
@@ -156,18 +167,43 @@ function formatChangeSummary(change: ActivityWriteChange): string {
 }
 
 /**
- * `gearName` (resolved from a fresh `list-gear` call) is only trustworthy
- * when the activity's own gear id actually matches what was requested;
- * otherwise the not-applied warning already covers it and echoing the
- * requested name here would claim gear that was never assigned.
+ * The name of the gear `activity` shows, or null. The activity payload
+ * never names its gear (docs/api-notes.md), so the name comes from the gear
+ * list: the fresh one a `gearId` request already read, else get-activity's
+ * own cached read. It names the gear the activity actually has, so a gear
+ * change that did not apply never claims the requested name. Never throws:
+ * a failed read leaves the name null and the write's result stands.
  */
-function resolveAppliedGearName(
-  requestedGearId: string | undefined,
-  resolvedName: string | null | undefined,
-  actualGearId: string | null,
-): string | null | undefined {
-  if (requestedGearId === undefined) return undefined;
-  return actualGearId === requestedGearId ? (resolvedName ?? null) : null;
+async function gearNameOf(
+  apiKey: string,
+  activity: IntervalsActivity,
+  gearList: IntervalsGear[] | undefined,
+): Promise<string | null> {
+  const id = activity.gear?.id;
+  if (!id) return null;
+  const listed = gearList ? findGear(id, gearList) : undefined;
+  if (listed) return listed.name ?? null;
+  return resolveActivityGearName(apiKey, activity);
+}
+
+/**
+ * Adds the gear names to a gear change, so the reply names the shoes
+ * rather than only their ids (`before_name`, `after_name`).
+ */
+async function withGearNames(
+  changes: ActivityWriteChange[],
+  apiKey: string,
+  before: IntervalsActivity,
+  afterName: string | null,
+  gearList: IntervalsGear[] | undefined,
+): Promise<ActivityWriteChange[]> {
+  if (!changes.some((change) => change.field === "gear")) return changes;
+  const beforeName = await gearNameOf(apiKey, before, gearList);
+  return changes.map((change) =>
+    change.field === "gear"
+      ? { ...change, before_name: beforeName, after_name: afterName }
+      : change,
+  );
 }
 
 export const updateActivityTool = {
@@ -239,11 +275,11 @@ export const updateActivityTool = {
       }
 
       let gearWarning: string | undefined;
-      let gearName: string | null | undefined;
+      let gearList: IntervalsGear[] | undefined;
 
       if (gearId !== undefined) {
         // Fresh (skipCache) so gear added moments ago is accepted.
-        const gearList = await listGear(apiKey, { skipCache: true });
+        gearList = await listGear(apiKey, { skipCache: true });
         const match = findGear(gearId, gearList);
         if (!match) {
           return {
@@ -256,9 +292,8 @@ export const updateActivityTool = {
             isError: true,
           };
         }
-        gearName = match.name ?? null;
         if (isGearRetired(match.retired)) {
-          gearWarning = `Gear ${match.id} (${gearName ?? "unnamed"}) is retired.`;
+          gearWarning = `Gear ${match.id} (${match.name ?? "unnamed"}) is retired.`;
         }
       }
 
@@ -287,7 +322,7 @@ export const updateActivityTool = {
           before,
           [],
           gearWarning ? [gearWarning] : [],
-          resolveAppliedGearName(gearId, gearName, beforeFields.gearId),
+          await gearNameOf(apiKey, before, gearList),
         );
         warnOnSchemaDrift(name, ActivityWriteOutputSchema, structured);
         return {
@@ -343,20 +378,23 @@ export const updateActivityTool = {
       const after = await fetchActivity(apiKey, id, { skipCache: true });
       const afterFields = toFields(after);
 
-      const {
-        changes,
-        warnings,
-      }: {
-        changes: ActivityWriteChange[];
-        warnings: string[];
-      } = diffActivityWrite(patch, beforeFields, afterFields);
+      const diff = diffActivityWrite(patch, beforeFields, afterFields);
+      const { warnings } = diff;
       if (gearWarning) warnings.unshift(gearWarning);
+      const gearName = await gearNameOf(apiKey, after, gearList);
+      const changes = await withGearNames(
+        diff.changes,
+        apiKey,
+        before,
+        gearName,
+        gearList,
+      );
 
       const structured = toActivityWriteOutput(
         after,
         changes,
         warnings,
-        resolveAppliedGearName(gearId, gearName, afterFields.gearId),
+        gearName,
       );
       warnOnSchemaDrift(name, ActivityWriteOutputSchema, structured);
 

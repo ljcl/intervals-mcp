@@ -33,6 +33,16 @@ import {
 export const SWIM_INTERVAL_PACE_NOTE =
   "swim paces include the rests inside each interval";
 
+/**
+ * The text note for every lap and interval list. intervals.icu's moving time
+ * for a lap follows its own rule, so the laps can add up to more or less
+ * than the activity's moving time, and a one-lap run's lap pace can differ
+ * from the activity's (docs/api-notes.md, "Moving time"). Shared by
+ * get-activity, get-activity-laps and get-running-summary.
+ */
+export const LAP_MOVING_TIME_NOTE =
+  "lap moving times are intervals.icu's own per lap and can differ from the activity's";
+
 export interface LapEntry {
   /** 1-based position in `icu_intervals`; intervals carry no lap number of their own. */
   lap_index: number;
@@ -42,6 +52,8 @@ export interface LapEntry {
   distance_km: number | null;
   moving_time_s: number | null;
   moving_time: string;
+  /** intervals.icu's own moving time for this lap, not the activity's. */
+  moving_time_source: "lap";
   elapsed_time_s: number | null;
   /** Set for Run/TrailRun/VirtualRun only. */
   pace_min_per_km: string | null;
@@ -82,6 +94,7 @@ function mapOneInterval(
       interval.distance != null ? round(interval.distance / 1000, 2) : null,
     moving_time_s: interval.moving_time ?? null,
     moving_time: formatDuration(interval.moving_time),
+    moving_time_source: "lap",
     elapsed_time_s: interval.elapsed_time ?? null,
     pace_min_per_km: isPace
       ? paceFromDistanceTime(interval.distance, interval.moving_time)

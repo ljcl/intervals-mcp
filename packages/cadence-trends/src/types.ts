@@ -89,12 +89,6 @@ export type OverlayRunStatus =
   | "failed";
 
 /** Pace zone definition */
-export interface PaceZone {
-  label: string;
-  minPace: number;
-  maxPace: number;
-}
-
 /** View identifiers */
 export type ViewId = "trend" | "scatter" | "zones" | "overlay";
 

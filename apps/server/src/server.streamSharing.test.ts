@@ -6,6 +6,7 @@
  * activity with the same `?intervals=true` URL as the app's streams calls.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { buildFitFile } from "./__fixtures__/fitFile";
 import activityHilly from "./__fixtures__/intervals/activity-hilly.json";
 import activityMultilap from "./__fixtures__/intervals/activity-multilap.json";
 import multilapIntervals from "./__fixtures__/intervals/activity-multilap-intervals.json";
@@ -113,6 +114,14 @@ async function router(
   const streams = /^\/activity\/(i\d+)\/streams\.json$/.exec(path);
   if (streams && streams[1]! in ACTIVITIES) {
     return json(ACTIVITIES[streams[1]!]!.streams);
+  }
+
+  // The original file, read for its weather: a FIT file with no humidity.
+  const file = /^\/activity\/(i\d+)\/file$/.exec(path);
+  if (file && file[1]! in ACTIVITIES) {
+    return new Response(new Blob([buildFitFile([]) as BlobPart]), {
+      headers: { "content-type": "application/octet-stream" },
+    });
   }
 
   if (/^\/athlete\/[^/]+\/sport-settings\/Run$/.test(path)) {
@@ -236,6 +245,13 @@ describe("opening compare-activities (#71)", () => {
       expect(reads[0]?.url.searchParams.get("intervals"), id).toBe("true");
       expect(
         streamReads().filter(({ url }) => url.pathname.includes(`/${id}/`)),
+        id,
+      ).toHaveLength(1);
+      // The weather's file read is shared the same way.
+      expect(
+        wire.filter(
+          ({ url }) => url.pathname === `/api/v1/activity/${id}/file`,
+        ),
         id,
       ).toHaveLength(1);
     }

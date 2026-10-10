@@ -1,13 +1,11 @@
-import { formatShortDate } from "@intervals-mcp/data";
+import { computeZoneStats, formatShortDate } from "@intervals-mcp/data";
 import { describe, expect, it } from "vitest";
 import {
   assignOverlayColors,
   buildCadenceSubtitle,
   buildZoneRows,
   computeSummaryStats,
-  computeZoneStats,
   dayTimestamp,
-  linearRegression,
   overlayRunLabel,
   overlayRunStatus,
   resampleOverlayRuns,
@@ -298,62 +296,6 @@ describe("computeSummaryStats", () => {
 
     expect(stats.currentAvg).toBe(180);
     expect(stats.previousAvg).toBe(170);
-  });
-});
-
-describe("computeZoneStats", () => {
-  it("buckets runs by pace zone with mean/min/max per zone", () => {
-    const stats = computeZoneStats([
-      run({ averagePace: 3.8, averageCadence: 185 }), // Threshold (<4)
-      run({ averagePace: 4.2, averageCadence: 180 }), // Tempo (4–4.5)
-      run({ averagePace: 4.4, averageCadence: 176 }), // Tempo
-      run({ averagePace: 6.0, averageCadence: 165 }), // Easy (5.5–20)
-      run({ averagePace: 6.0, averageCadence: 0 }), // dropout, excluded
-    ]);
-
-    const byLabel = new Map(stats.map((s) => [s.zone.label, s]));
-    expect(byLabel.get("Threshold")?.count).toBe(1);
-    expect(byLabel.get("Tempo")?.mean).toBe(178);
-    expect(byLabel.get("Tempo")?.min).toBe(176);
-    expect(byLabel.get("Tempo")?.max).toBe(180);
-    expect(byLabel.get("Easy")?.count).toBe(1);
-    expect(byLabel.get("Moderate")?.count).toBe(0);
-  });
-
-  it("excludes a run with no recorded pace instead of coercing null into a zone", () => {
-    const stats = computeZoneStats([
-      run({ averagePace: 4.2, averageCadence: 180 }), // Tempo
-      run({ averagePace: null, averageCadence: 175 }), // no speed, excluded
-    ]);
-
-    const byLabel = new Map(stats.map((s) => [s.zone.label, s]));
-    expect(byLabel.get("Tempo")?.count).toBe(1);
-    const totalCount = stats.reduce((sum, s) => sum + s.count, 0);
-    expect(totalCount).toBe(1);
-  });
-});
-
-describe("linearRegression", () => {
-  it("fits a perfect line exactly", () => {
-    const fit = linearRegression([
-      { x: 1, y: 3 },
-      { x: 2, y: 5 },
-      { x: 3, y: 7 },
-    ]);
-
-    expect(fit?.slope).toBeCloseTo(2);
-    expect(fit?.intercept).toBeCloseTo(1);
-  });
-
-  it("returns null for degenerate inputs", () => {
-    expect(linearRegression([{ x: 1, y: 1 }])).toBeNull();
-    // All x equal → zero denominator.
-    expect(
-      linearRegression([
-        { x: 2, y: 1 },
-        { x: 2, y: 9 },
-      ]),
-    ).toBeNull();
   });
 });
 

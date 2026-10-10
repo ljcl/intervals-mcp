@@ -4,6 +4,11 @@ import {
   formatAchievement,
   mapAchievements,
 } from "../achievements";
+import {
+  type ActivityWeather,
+  buildActivityWeather,
+  formatWeatherLine,
+} from "../activityWeather";
 import { hrZoneRangeText, resolveHrZones } from "../activityZones";
 import {
   formatDuration,
@@ -11,7 +16,7 @@ import {
   round,
   STRAVA_STUB_NOTE,
 } from "../formatters";
-import { SWIM_INTERVAL_PACE_NOTE } from "../intervalLaps";
+import { LAP_MOVING_TIME_NOTE, SWIM_INTERVAL_PACE_NOTE } from "../intervalLaps";
 import {
   getActivity as getActivityClient,
   getSportSettings,
@@ -112,6 +117,8 @@ interface ActivityIntervalEntry {
   label: string | null;
   distance_km: number | null;
   moving_time_s: number | null;
+  /** intervals.icu's own moving time for this interval, not the activity's. */
+  moving_time_source: "lap";
   pace_min_per_km: string | null;
   pace_min_per_100m: string | null;
   speed_kmh: number | null;
@@ -134,6 +141,8 @@ export interface ActivityDetail {
   distance_km: number | null;
   moving_time_s: number;
   moving_time: string;
+  /** The activity's own `moving_time`, which the paces here use. */
+  moving_time_source: "intervals.icu";
   elapsed_time_s: number | null;
   pace_min_per_km: string | null;
   /** From `sportSpeed`: swims only. */
@@ -170,7 +179,8 @@ export interface ActivityDetail {
    * or the read fails.
    */
   gear_name: string | null;
-  weather_temp_c: number | null;
+  /** From `buildActivityWeather`; get-activity reads no file, so no humidity. */
+  weather: ActivityWeather | null;
   description: string | null;
   units: {
     distance: "km";
@@ -222,6 +232,7 @@ function mapInterval(
     distance_km:
       interval.distance != null ? round(interval.distance / 1000, 2) : null,
     moving_time_s: interval.moving_time ?? null,
+    moving_time_source: "lap",
     pace_min_per_km: isPaceActivity(type)
       ? paceFromDistanceTime(interval.distance, interval.moving_time)
       : null,
@@ -320,6 +331,7 @@ export function mapActivityDetail(
   activity: IntervalsActivity,
   sportSettings: IntervalsSportSettings | null,
   gearName: string | null = activity.gear?.name ?? null,
+  weather: ActivityWeather | null = buildActivityWeather(activity, null),
 ): ActivityDetail {
   const type = activity.type ?? "Workout";
   const movingTimeS = activity.moving_time ?? 0;
@@ -348,6 +360,7 @@ export function mapActivityDetail(
     distance_km: distanceKm,
     moving_time_s: movingTimeS,
     moving_time: formatDuration(movingTimeS),
+    moving_time_source: "intervals.icu",
     elapsed_time_s: activity.elapsed_time ?? null,
     pace_min_per_km: isPaceActivity(type)
       ? paceFromDistanceTime(activity.distance, activity.moving_time)
@@ -391,7 +404,7 @@ export function mapActivityDetail(
     intervals,
     gear_id: activity.gear?.id ?? null,
     gear_name: gearName,
-    weather_temp_c: activity.average_weather_temp ?? null,
+    weather,
     description: activity.description ?? null,
     units: {
       distance: "km",
@@ -413,7 +426,7 @@ export function formatMetricsLine(
 ): string {
   const parts: string[] = [];
   if (d.distance_km != null) parts.push(`${d.distance_km.toFixed(2)} km`);
-  parts.push(d.moving_time);
+  parts.push(`${d.moving_time} moving (${d.moving_time_source})`);
   if (d.pace_min_per_km != null) parts.push(`${d.pace_min_per_km} /km`);
   if (d.gap_min_per_km != null) parts.push(`GAP ${d.gap_min_per_km} /km`);
   if (d.pace_min_per_100m != null) parts.push(`${d.pace_min_per_100m} /100m`);
@@ -453,9 +466,16 @@ export function formatHrRecoveryLine(
   return `HR recovery: ${hrr.start_bpm} to ${hrr.end_bpm} bpm${window} (drop ${hrr.drop_bpm} bpm)${from}`;
 }
 
-/** Exported for reuse by get-running-summary. */
+/**
+ * Exported for reuse by get-running-summary. It prints only intervals.icu's
+ * decoupling and efficiency factor: a value marked `computed` (the running
+ * summary's) gets its own line there.
+ */
 export function formatLoadLine(
-  d: Omit<ActivityDetail, "intervals">,
+  d: Omit<ActivityDetail, "intervals"> & {
+    decoupling_source?: string | null;
+    efficiency_factor_source?: string | null;
+  },
 ): string | null {
   const parts: string[] = [];
   if (d.load.training_load != null)
@@ -466,8 +486,10 @@ export function formatLoadLine(
     parts.push(`pace load ${Math.round(d.load.pace_load)}`);
   if (d.load.trimp != null) parts.push(`TRIMP ${d.load.trimp}`);
   if (d.load.intensity != null) parts.push(`intensity ${d.load.intensity}%`);
-  if (d.decoupling_pct != null) parts.push(`decoupling ${d.decoupling_pct}%`);
-  if (d.efficiency_factor != null) parts.push(`EF ${d.efficiency_factor}`);
+  if (d.decoupling_pct != null && d.decoupling_source !== "computed")
+    parts.push(`decoupling ${d.decoupling_pct}%`);
+  if (d.efficiency_factor != null && d.efficiency_factor_source !== "computed")
+    parts.push(`EF ${d.efficiency_factor}`);
   if (d.rpe != null) parts.push(`RPE ${d.rpe}`);
   if (d.feel != null) parts.push(formatFeel(d.feel));
   if (parts.length === 0) return null;
@@ -554,6 +576,9 @@ export function formatActivityDetailText(d: ActivityDetail): string {
   const hrRecoveryLine = formatHrRecoveryLine(d);
   if (hrRecoveryLine) lines.push(hrRecoveryLine);
 
+  const weatherLine = formatWeatherLine(d.weather);
+  if (weatherLine) lines.push(weatherLine);
+
   const dynamicsLine = formatDynamicsLine(d);
   if (dynamicsLine) lines.push(dynamicsLine);
 
@@ -568,11 +593,10 @@ export function formatActivityDetailText(d: ActivityDetail): string {
   }
 
   if (d.intervals && d.intervals.length > 0) {
-    lines.push(
-      d.intervals.some((iv) => iv.pace_min_per_100m != null)
-        ? `Intervals (${SWIM_INTERVAL_PACE_NOTE}):`
-        : "Intervals:",
-    );
+    const notes = [LAP_MOVING_TIME_NOTE];
+    if (d.intervals.some((iv) => iv.pace_min_per_100m != null))
+      notes.push(SWIM_INTERVAL_PACE_NOTE);
+    lines.push(`Intervals (${notes.join("; ")}):`);
     const shown = d.intervals.slice(0, MAX_INTERVAL_LINES);
     for (const [i, entry] of shown.entries())
       lines.push(formatIntervalLine(entry, i));

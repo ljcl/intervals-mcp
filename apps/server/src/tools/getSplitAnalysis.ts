@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { formatSigned } from "../formatters";
-import { getActivity } from "../intervalsClient";
+import { formatDuration, formatSigned } from "../formatters";
+import { getActivity, type IntervalsActivity } from "../intervalsClient";
 import {
   IntervalsStreamsUnavailableError,
   loadIntervalsStreams,
@@ -9,6 +9,7 @@ import { NO_PROGRESS, type ReportProgress } from "../progress";
 import {
   computeSplitAnalysis,
   type Split,
+  type SplitAnalysis,
   SplitAnalysisError,
   type SplitStreams,
 } from "../splitAnalysis";
@@ -16,6 +17,7 @@ import {
   cadenceSpm,
   formatPaceSeconds,
   isStepCadenceActivity,
+  paceFromDistanceTime,
 } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
 import { noteToolFailure, toolErrorText } from "./_errors";
@@ -91,17 +93,65 @@ function splitOut(split: Split, type: string) {
   };
 }
 
-function splitLine(s: ReturnType<typeof splitOut>): string {
+/**
+ * Which moving time the split paces use. The streams leave out every stop,
+ * as the watch's own timer does; intervals.icu's moving_time follows its own
+ * rule, so the two paces differ (docs/api-notes.md, "Moving time"). The
+ * line names both when they differ, so neither reads as an error.
+ */
+function movingTimeLine(
+  streamsS: number,
+  intervalsIcuS: number | null,
+  distanceM: number | null | undefined,
+): string {
+  const streams = `Moving time ${formatDuration(streamsS)} (streams: stops left out)`;
+  if (intervalsIcuS == null || intervalsIcuS === streamsS) return streams;
+  const paceText = paceFromDistanceTime(distanceM, intervalsIcuS);
+  const pace = paceText ? `, ${paceText} /km` : "";
+  return `${streams}; intervals.icu's own moving time is ${formatDuration(intervalsIcuS)}${pace}, which get-running-summary uses`;
+}
+
+type SplitOut = ReturnType<typeof splitOut>;
+
+/** The optional columns of the split table. */
+interface SplitColumns {
+  gap: boolean;
+  elevation: boolean;
+  hr: boolean;
+  watts: boolean;
+}
+
+/**
+ * A column is in the table when any split has a value for it, and then
+ * every row prints it, "n/a" when that split has none: rows with different
+ * columns are hard to read down. GAP prints even when it equals the pace.
+ */
+function splitColumns(splits: SplitOut[]): SplitColumns {
+  return {
+    gap: splits.some((s) => s.gap_pace_min_per_km != null),
+    elevation: splits.some((s) => s.elevation_change_m != null),
+    hr: splits.some((s) => s.avg_hr != null),
+    watts: splits.some((s) => s.avg_watts != null),
+  };
+}
+
+function splitLine(s: SplitOut, columns: SplitColumns): string {
   const parts = [
     s.pace_min_per_km ? `${s.pace_min_per_km} /km` : "no pace",
-    s.gap_pace_min_per_km && s.gap_pace_min_per_km !== s.pace_min_per_km
-      ? `GAP ${s.gap_pace_min_per_km} /km`
+    columns.gap
+      ? `GAP ${s.gap_pace_min_per_km ? `${s.gap_pace_min_per_km} /km` : "n/a"}`
       : null,
-    s.elevation_change_m != null
-      ? `${formatSigned(s.elevation_change_m)} m`
+    columns.elevation
+      ? s.elevation_change_m != null
+        ? `${formatSigned(s.elevation_change_m)} m`
+        : "elevation n/a"
       : null,
-    s.avg_hr != null ? `${s.avg_hr} bpm` : null,
-    s.avg_watts != null ? `${s.avg_watts} W` : null,
+    columns.hr ? (s.avg_hr != null ? `${s.avg_hr} bpm` : "HR n/a") : null,
+    columns.watts
+      ? s.avg_watts != null
+        ? `${s.avg_watts} W`
+        : "power n/a"
+      : null,
   ].filter(Boolean);
   // "3." for a full split, "0.62 km (partial)" for the trailing remainder,
   // whose pace is extrapolated and should not read like the others.
@@ -109,6 +159,35 @@ function splitLine(s: ReturnType<typeof splitOut>): string {
     ? `${(s.distance_m / 1000).toFixed(2)} km (partial)`
     : `${s.split}.`;
   return `  ${label.padEnd(4)} ${parts.join(", ")}`;
+}
+
+/**
+ * The split analysis of one activity: its streams through the shared
+ * adapter, binned by `computeSplitAnalysis`. The one stream path for 1 km
+ * splits, shared with compare-activities' per-km table. Throws
+ * `IntervalsStreamsUnavailableError` for an activity with no streams and
+ * `SplitAnalysisError` for streams it cannot split.
+ */
+export async function loadSplitAnalysis(
+  apiKey: string,
+  id: string,
+  activity: Pick<IntervalsActivity, "total_elevation_gain">,
+): Promise<SplitAnalysis> {
+  const streams = await loadIntervalsStreams(apiKey, id, [...STREAM_TYPES]);
+  const splitStreams: SplitStreams = {
+    time: streams.time,
+    distance: streams.distance ?? [],
+    altitude: streams.altitude,
+    grade_smooth: streams.grade_smooth,
+    heartrate: streams.heartrate,
+    velocity_smooth: streams.velocity_smooth,
+    cadence: streams.cadence,
+    watts: streams.watts,
+    moving: streams.moving,
+  };
+  return computeSplitAnalysis(splitStreams, {
+    recordedElevationGainM: activity.total_elevation_gain ?? null,
+  });
 }
 
 export const getSplitAnalysisTool = {
@@ -130,9 +209,9 @@ export const getSplitAnalysisTool = {
       const displayName = activity.name ?? type;
 
       progress(`Fetching streams for "${displayName}"`);
-      let streams: Awaited<ReturnType<typeof loadIntervalsStreams>>;
+      let analysis: SplitAnalysis;
       try {
-        streams = await loadIntervalsStreams(apiKey, id, [...STREAM_TYPES]);
+        analysis = await loadSplitAnalysis(apiKey, id, activity);
       } catch (error) {
         if (error instanceof IntervalsStreamsUnavailableError) {
           noteToolFailure(error);
@@ -148,22 +227,7 @@ export const getSplitAnalysisTool = {
         }
         throw error;
       }
-
       progress("Computing split analysis", { important: true });
-      const splitStreams: SplitStreams = {
-        time: streams.time,
-        distance: streams.distance ?? [],
-        altitude: streams.altitude,
-        grade_smooth: streams.grade_smooth,
-        heartrate: streams.heartrate,
-        velocity_smooth: streams.velocity_smooth,
-        cadence: streams.cadence,
-        watts: streams.watts,
-        moving: streams.moving,
-      };
-      const analysis = computeSplitAnalysis(splitStreams, {
-        recordedElevationGainM: activity.total_elevation_gain ?? null,
-      });
 
       const structured = {
         activity_id: id,
@@ -210,6 +274,8 @@ export const getSplitAnalysisTool = {
         totals: {
           distance_m: analysis.totals.distanceM,
           moving_time_s: analysis.totals.movingTimeS,
+          moving_time_source: "streams" as const,
+          intervals_icu_moving_time_s: activity.moving_time ?? null,
           elapsed_time_s: analysis.totals.elapsedTimeS,
           elevation_gain_m: analysis.totals.elevationGainM,
           elevation_gain_source: analysis.totals.elevationGainSource,
@@ -239,6 +305,11 @@ export const getSplitAnalysisTool = {
         `Split Analysis: ${structured.name} (${structured.date})`,
         `Grade source: ${structured.grade_source}`,
         `${distanceLabel} km, ${analysis.splits.length} splits, average ${structured.totals.avg_pace_min_per_km ? `${structured.totals.avg_pace_min_per_km} min/km` : "n/a"}${gain != null ? `, +${Math.round(gain)} m gain (${structured.totals.elevation_gain_source})` : ""}`,
+        movingTimeLine(
+          structured.totals.moving_time_s,
+          structured.totals.intervals_icu_moving_time_s,
+          activity.distance,
+        ),
         "",
       ];
 
@@ -259,8 +330,9 @@ export const getSplitAnalysisTool = {
       }
 
       lines.push(`Splits (km):`);
+      const columns = splitColumns(structured.splits);
       for (const split of structured.splits) {
-        lines.push(splitLine(split));
+        lines.push(splitLine(split, columns));
       }
       if (structured.fastest_split != null) {
         lines.push(

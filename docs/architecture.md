@@ -89,6 +89,10 @@ never per-tool.
 - The body read is part of the attempt: the timeout signal covers it, a GET
   whose body stalls or is cut off retries, and a timeout during the read is a
   `RequestTimeoutError` like one during the connect (#52).
+- `responseType: "bytes"` reads a successful body as a `Uint8Array` (an
+  activity's original FIT file, `getActivityFile`), through the same retry,
+  pacing, cache and coalescing; an error body is still read as text for its
+  message. A text read would replace the bytes that are not valid UTF-8.
 - `FetchClient` stops the upstream work of a cancelled call scope; see
   "Cancellation".
 - An error body goes into `HttpError.message` only as a one-line summary
@@ -167,6 +171,7 @@ per-tool. Path patterns and current TTLs (`fetchClient.ts`):
 | `/activity/{id}/streams*` | 10m | One superset URL per activity (see [Streams](#streams)); immutable once processed |
 | `/activity/{id}/intervals` | 10m | Same |
 | `/activity/{id}` | 10m | Invalidated on `update-activity` writes |
+| `/activity/{id}/file` | 10m | The original upload's bytes, read for its weather (`activityWeather.ts`); it never changes, and the TTL bounds the memory a 150 KB to 1 MB file holds |
 | `/athlete/{id}/gear` | 10m | Rarely changes |
 | `/athlete/{id}/sport-settings/{sport}` | 1h | Rarely changes |
 | `/athlete/{id}/sport-settings` | 10m | Every group at once (`get-athlete-zones`); shorter than one sport's settings, so a changed LTHR shows soon |
@@ -534,6 +539,37 @@ fails, the main analysis still comes back, `similar.status` is
 `unavailable`, `unavailableReason` (`tools/_errors.ts`) words the cause, and
 the raw message goes to the operator log.
 
+**Weather has one home.** `activityWeather.ts` builds every tool's
+`weather` (`buildActivityWeather`): intervals.icu's weather service, else
+the file's own average temperature, and the humidity of the FIT file
+(`fitWeather.ts`, which reads HealthFit's session humidity field and
+Garmin's `weather_conditions` messages and never throws). The dew point
+(`dewPointC`, Magnus formula) comes from the file's own temperature and
+humidity, never from one source's temperature and another's humidity. The
+comparison's weather difference and its note (`weatherDifference`,
+`weatherNote`, more than 5 °C of dew point) live there too.
+
+**Where two runs' difference starts has one home.** `compareKmSplits` in
+`kmComparison.ts` pairs two runs' 1 km splits, which come from
+`loadSplitAnalysis` (`tools/getSplitAnalysis.ts`), get-split-analysis' own
+stream path, so a km is the same km, pace and GAP in both tools. Its
+efficiency is `speedEfficiencyFactor`. The verdict fits a least-squares line
+to the per-km efficiency gap against the km number (a km without heart rate
+does not shift the others): 3 points or more of change from the first km to
+the last is growing drift, less is a constant offset.
+
+**Cadence against pace has one home.** `PACE_ZONES`, `computeZoneStats` and
+`cadencePaceRegression` live in `@intervals-mcp/data` (`cadence.ts`), so the
+cadence-trends app's zone and scatter views and view-cadence-trends' text
+(`cadenceTrendLines`) state the same zones and slope.
+
+**The decoupling and efficiency factor computed from streams have one
+path.** `streamAerobicAnalysis` (`tools/getAerobicAnalysis.ts`) reads the
+streams, converts speed to grade-adjusted speed on the gap basis, excludes
+the warm-up and runs `computeAerobicAnalysis`. get-aerobic-analysis and
+get-running-summary (which fills a missing intervals.icu value from it)
+both call it.
+
 ## Per-call telemetry
 
 `dispatchToolCall` is timed end to end and emits one structured JSON line per
@@ -582,14 +618,15 @@ shipped envelope type is `{}`, so by key, with a cast) and passes
 `clientSupportsMcpApps(capabilities)`: the client advertised
 `io.modelcontextprotocol/ui` with `text/html;profile=mcp-app`. The same
 boolean reaches each handler as the fourth argument (`ToolCallContext`), and the
-`view-*` handlers use it to choose their text (`viewResult`), so a result never
-claims a rendered chart to a host that does not render one (#77). Such a host
-gets the text twin's own text, run in the same call with the view's arguments,
-because the model has no chart to describe; a view with no twin, or whose twin
-fails, names the text tool instead (docs/tools.md lists the pairs). A call
-dispatched without client information records `client_apps: false`. A host that
-renders apps without advertising them gets the "cannot display" text too; the
-log field is how an operator sees how many calls that affects.
+`view-*` handlers use it for their first line only (`viewHeader`,
+`viewResult`): `Interactive <kind> shown.` to a client that advertised MCP
+Apps, and "may not show" to any other, so a result never claims a chart to a
+host that does not render one (#77). Every client then gets the chart's data:
+the text twin's own text, run in the same call with the view's arguments, or
+the view's own lines when it has no twin or the twin fails (docs/tools.md
+lists the pairs). A call dispatched without client information records
+`client_apps: false`. The log field is how an operator sees how many calls
+come from clients that do not advertise MCP Apps.
 
 The reverse also happens: a host can render the app for a client that did
 not advertise it. On 2026-10-10 (Sydney) the Claude iOS app showed its
@@ -600,7 +637,12 @@ session, whose client did not advertise the extension (each result had the
 2025-11-25 client whichever client made the call, and the server refused that
 era then (see Runtime and transport). Hiding the `view-*` tools from clients
 that do not advertise the extension (#143) would also hide them from a
-session like that one, whose host can render the card.
+session like that one, whose host can render the card. The server cannot see
+that the host renders the card: the request comes from the cloud agent's
+client, and its capabilities are all the server gets (the 2026-07-28
+revision has no `initialize` to read them from instead). So since 2026-10-10
+such a client reads that the chart "may not show", which is true either way,
+and no longer that it "cannot display" one.
 
 The records stay with the operator: the stderr line and the `/health`
 counters. The server does not advertise the `logging` capability, because

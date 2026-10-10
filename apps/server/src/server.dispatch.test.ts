@@ -22,7 +22,9 @@ vi.mock("./intervalsClient", async (importOriginal) => {
     ...actual,
     getActivity: vi.fn(),
     getActivityStreams: vi.fn(),
+    getActivityFile: vi.fn(),
     getAthletePaceCurves: vi.fn(),
+    getSportSettings: vi.fn(),
     listActivities: vi.fn(),
     getWellness: vi.fn(),
   };
@@ -356,6 +358,8 @@ describe("dispatchToolCall input validation", () => {
       // biome-ignore lint/suspicious/noExplicitAny: minimal fixture
       { ...activity, id: "2", name: "Run B" } as any,
     );
+    // No streams: the comparison degrades to no per-km table.
+    mockedStreams.mockResolvedValue([]);
 
     const result = await dispatchToolCall("get-compare-activities-data", {
       activityId1: "1",

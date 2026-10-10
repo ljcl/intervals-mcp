@@ -267,6 +267,9 @@ altitude overlays; cadence and grade where recorded).
 ### Cadence Trends
 
 Four views: Trend timeline, Scatter plot, Pace Zones, Overlay comparison.
+The pace zones (`PACE_ZONES`, `computeZoneStats`) and the scatter's
+cadence-against-pace line (`cadencePaceRegression`) come from
+`@intervals-mcp/data`, where view-cadence-trends' text reads them too.
 Calls `get-cadence-trend-data` on mount with `days` (the payload echoes
 `days`; the subtitle and context summary say "last 6 weeks" for a whole
 number of weeks, else "last 30 days", as the server's view text does) and
@@ -285,8 +288,8 @@ at the cap so the limit is legible.
 
 `set-view` (`view`, `runIds` up to 4, `xAxis`) lets the model drive the view;
 `runIds` replaces the selection, in the order given, so overlay colours follow
-it. The model never sees the chart's runs, so the description points it at
-`list-activities` for ids. `resolveSetView` (`src/setView.ts`, unit-tested)
+it. The view's text lists each run with its id (`cadenceTrendLines`), and
+the description also points the model at `list-activities` for ids. `resolveSetView` (`src/setView.ts`, unit-tested)
 matches an id with or without the `i` prefix (not `"latest"`), and a refusal
 names ids the chart lacks apart from runs with no cadence, each once; a
 `runIds` or `xAxis` without a `view` moves to the overlay, while an empty

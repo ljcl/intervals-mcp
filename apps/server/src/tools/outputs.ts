@@ -154,6 +154,44 @@ export const TrainingLoadOutputSchema = z.object({
 // (RunningSummaryOutputSchema), after ActivityDetailOutputSchema and
 // IntervalsLapEntrySchema, which it extends/reuses.
 
+// ---------- moving time source ----------
+// One run can carry three moving times: intervals.icu's own for the
+// activity, the one the stream tools count, and intervals.icu's own per lap.
+// They differ by tens of seconds (docs/api-notes.md, "Moving time"), so
+// every pace and moving time names which it is.
+const MOVING_TIME_SOURCE_TEXT =
+  "Where the moving time behind this pace comes from. intervals.icu: the activity's own moving_time, as intervals.icu shows it; streams: counted from the streams, leaving out stops (an auto-pause gap, or slower than 0.5 m/s), as the split, hill and aerobic tools do; lap: intervals.icu's moving time for that lap. They can differ by tens of seconds on one run";
+const movingTimeSourceField = <T extends "intervals.icu" | "streams" | "lap">(
+  source: T,
+) => z.literal(source).describe(MOVING_TIME_SOURCE_TEXT);
+
+// ---------- weather (activityWeather.ts) ----------
+const ActivityWeatherSchema = z.object({
+  temperature_c: z.number().nullable(),
+  temperature_source: z
+    .enum(["intervals.icu", "file"])
+    .nullable()
+    .describe(
+      "intervals.icu: its weather service; file: the uploaded file, either the weather an exporter such as HealthFit wrote or a watch's own sensor, which a wrist warms",
+    ),
+  feels_like_c: z
+    .number()
+    .nullable()
+    .describe("intervals.icu weather service only"),
+  humidity_pct: z
+    .number()
+    .nullable()
+    .describe(
+      "Relative humidity from the FIT file; get-running-summary and compare-activities read the file, get-activity does not, so it is null there",
+    ),
+  dew_point_c: z
+    .number()
+    .nullable()
+    .describe(
+      "From the file's own temperature and humidity (Magnus formula); null without both",
+    ),
+});
+
 // ---------- swim pace and speed (sportSpeed) ----------
 // One wording for the two sportSpeed fields, in every schema that has them:
 // list-activities, get-activity, compare-activities, and get-activity's
@@ -198,6 +236,7 @@ const CompareSideSchema = z.object({
   distance_km: z.number(),
   moving_time: z.string(),
   moving_time_s: z.number().int(),
+  moving_time_source: movingTimeSourceField("intervals.icu"),
   pace_min_per_km: z.string().nullable(),
   pace_min_per_100m: swimPaceField(),
   speed_kmh: speedKmhField(),
@@ -215,6 +254,9 @@ const CompareSideSchema = z.object({
   decoupling_pct: z.number().nullable(),
   efficiency_factor: z.number().nullable(),
   running_dynamics: CompareRunningDynamicsSchema.nullable(),
+  weather: ActivityWeatherSchema.nullable().describe(
+    "Temperature, and humidity and dew point from the FIT file; null when the activity has no weather",
+  ),
 });
 export const CompareActivitiesOutputSchema = z.object({
   units: z.object({
@@ -237,7 +279,70 @@ export const CompareActivitiesOutputSchema = z.object({
     avg_hr: z.number().nullable(),
     cadence_spm: z.number().nullable(),
     elevation_gain_m: z.number(),
+    weather: z
+      .object({
+        temperature_c: z.number().nullable(),
+        humidity_pct: z.number().nullable(),
+        dew_point_c: z.number().nullable(),
+      })
+      .describe("Activity 2 minus activity 1; null where either side has none"),
   }),
+  weather_note: z
+    .string()
+    .nullable()
+    .describe(
+      "Set when the dew point differs by more than 5 °C (or, without a dew point on both sides, the temperature): the weather can explain part of the HR difference",
+    ),
+  km_comparison: z
+    .object({
+      basis: z
+        .enum(["gap", "pace"])
+        .describe(
+          "Efficiency on grade-adjusted pace when both runs have elevation data, else on moving pace",
+        ),
+      rows: z.array(
+        z.object({
+          km: z.number().int(),
+          pace_1_min_per_km: z.string().nullable(),
+          pace_2_min_per_km: z.string().nullable(),
+          pace_delta_sec_per_km: z
+            .number()
+            .nullable()
+            .describe("Negative: activity 2 ran this km faster"),
+          hr_1: z.number().nullable(),
+          hr_2: z.number().nullable(),
+          hr_delta_bpm: z.number().nullable(),
+          efficiency_1: z
+            .number()
+            .nullable()
+            .describe("Metres per minute per beat, on basis"),
+          efficiency_2: z.number().nullable(),
+          efficiency_delta_pct: z
+            .number()
+            .nullable()
+            .describe("Activity 2 against activity 1; negative is worse"),
+        }),
+      ),
+      verdict: z
+        .enum(["constant offset", "growing drift"])
+        .nullable()
+        .describe(
+          "From a line fitted to the per-km efficiency gap: a change of 3 points or more from the first km to the last is growing drift. Null with fewer than 3 km of heart rate in both",
+        ),
+      efficiency_gap_first_km_pct: z.number().nullable(),
+      efficiency_gap_last_km_pct: z.number().nullable(),
+      hr_gap_first_km_bpm: z.number().nullable(),
+      hr_gap_last_km_bpm: z.number().nullable(),
+      interpretation: z.string(),
+    })
+    .nullable()
+    .describe(
+      "The full km both runs covered, paired at the same distance, from the same 1 km splits as get-split-analysis. Null when either is not a run, has no streams, or they share no full km; km_comparison_note says why",
+    ),
+  km_comparison_note: z
+    .string()
+    .nullable()
+    .describe("Why km_comparison is null, when it is"),
   efficiency: z
     .object({
       activity_1: z.number(),
@@ -572,6 +677,16 @@ const ActivityWriteChangeSchema = z.object({
   field: z.string(),
   before: z.union([z.string(), z.number(), z.null()]),
   after: z.union([z.string(), z.number(), z.null()]),
+  before_name: z
+    .string()
+    .nullable()
+    .optional()
+    .describe("Gear change only: the gear's name before the write"),
+  after_name: z
+    .string()
+    .nullable()
+    .optional()
+    .describe("Gear change only: the name of the gear the activity now has"),
 });
 
 /**
@@ -581,8 +696,8 @@ const ActivityWriteChangeSchema = z.object({
  *
  * `gearName` is passed separately because the activity payload never carries
  * the assigned gear's name (`gear.name` is always `null`; see
- * docs/api-notes.md). update-activity resolves it from `list-gear` when
- * `gearId` was part of the request.
+ * docs/api-notes.md). update-activity resolves it from the gear list for
+ * every write, the fresh list when `gearId` was part of the request.
  */
 export function toActivityWriteOutput(
   activity: WrittenActivityLike,
@@ -590,6 +705,8 @@ export function toActivityWriteOutput(
     field: string;
     before: string | number | null;
     after: string | number | null;
+    before_name?: string | null;
+    after_name?: string | null;
   }[],
   warnings: string[],
   gearName?: string | null,
@@ -708,6 +825,14 @@ export const SplitAnalysisOutputSchema = z.object({
   totals: z.object({
     distance_m: z.number(),
     moving_time_s: z.number().int(),
+    moving_time_source: movingTimeSourceField("streams"),
+    intervals_icu_moving_time_s: z
+      .number()
+      .int()
+      .nullable()
+      .describe(
+        "The activity's own moving_time, which get-activity and get-running-summary report; null when intervals.icu has none",
+      ),
     elapsed_time_s: z.number().int(),
     elevation_gain_m: z
       .number()
@@ -1079,6 +1204,7 @@ const ActivityIntervalEntrySchema = z.object({
   label: z.string().nullable(),
   distance_km: z.number().nullable(),
   moving_time_s: z.number().int().nullable(),
+  moving_time_source: movingTimeSourceField("lap"),
   pace_min_per_km: z.string().nullable().describe("Set for runs only"),
   pace_min_per_100m: swimIntervalPaceField(),
   speed_kmh: speedKmhField(),
@@ -1121,6 +1247,7 @@ export const ActivityDetailOutputSchema = z.object({
     .describe("2 dp; null when the activity recorded no distance"),
   moving_time_s: z.number().int(),
   moving_time: z.string().describe("h:mm:ss, or mm:ss under an hour"),
+  moving_time_source: movingTimeSourceField("intervals.icu"),
   elapsed_time_s: z.number().int().nullable(),
   pace_min_per_km: z
     .string()
@@ -1184,7 +1311,9 @@ export const ActivityDetailOutputSchema = z.object({
     .describe(
       "From the athlete's gear list (list-gear's source, cached 10 minutes); the activity sends only the gear id. Null when the activity has no gear or the gear read fails",
     ),
-  weather_temp_c: z.number().nullable(),
+  weather: ActivityWeatherSchema.nullable().describe(
+    "Null when the activity has no weather at all",
+  ),
   description: z.string().nullable(),
   units: z.object({
     distance: z.literal("km"),
@@ -1528,6 +1657,7 @@ const IntervalsLapEntrySchema = z.object({
   distance_km: z.number().nullable(),
   moving_time_s: z.number().int().nullable(),
   moving_time: z.string().describe("h:mm:ss, or mm:ss under an hour"),
+  moving_time_source: movingTimeSourceField("lap"),
   elapsed_time_s: z.number().int().nullable(),
   pace_min_per_km: z
     .string()
@@ -1599,9 +1729,29 @@ const HrZoneSummaryEntrySchema = z.object({
   seconds: z.number().int(),
   percent: z.number().describe("Share of recorded zone time, 1 dp"),
 });
+const AerobicSourceSchema = z
+  .enum(["intervals.icu", "computed"])
+  .nullable()
+  .describe(
+    "intervals.icu: its own value (basis not reported); computed: from the streams, as get-aerobic-analysis computes it, because intervals.icu has none; null when there is no value",
+  );
 export const RunningSummaryOutputSchema = ActivityDetailOutputSchema.omit({
   intervals: true,
 }).extend({
+  decoupling_source: AerobicSourceSchema,
+  efficiency_factor_source: AerobicSourceSchema,
+  aerobic_basis: z
+    .enum(["gap", "pace"])
+    .nullable()
+    .describe(
+      "Basis of the computed values: gap (grade-adjusted; efficiency factor in m/min per beat) or pace when the activity has no elevation data; null when nothing was computed",
+    ),
+  aerobic_note: z
+    .string()
+    .nullable()
+    .describe(
+      "Why a missing value was not computed (no streams, no heart rate), or a warning on the computed values",
+    ),
   cadence_assessment: z
     .string()
     .nullable()

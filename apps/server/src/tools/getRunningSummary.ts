@@ -1,8 +1,20 @@
 import { z } from "zod";
+import {
+  type ActivityWeather,
+  formatWeatherLine,
+  loadActivityWeather,
+} from "../activityWeather";
 import { hrZoneRangeText, resolveHrZones } from "../activityZones";
-import { formatDuration, STRAVA_STUB_NOTE } from "../formatters";
+import { AerobicAnalysisError, interpretDecoupling } from "../aerobicAnalysis";
+import {
+  formatDuration,
+  formatSigned,
+  round,
+  STRAVA_STUB_NOTE,
+} from "../formatters";
 import {
   formatLapLine,
+  LAP_MOVING_TIME_NOTE,
   type LapEntry,
   mapIntervalsToLaps,
 } from "../intervalLaps";
@@ -12,6 +24,7 @@ import {
   type IntervalsActivity,
   type IntervalsSportSettings,
 } from "../intervalsClient";
+import { IntervalsStreamsUnavailableError } from "../intervalsStreams";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
 import {
   assessCadence,
@@ -32,6 +45,10 @@ import {
   resolveActivityGearName,
   truncateDescription,
 } from "./getActivity";
+import {
+  type StreamAerobicResult,
+  streamAerobicAnalysis,
+} from "./getAerobicAnalysis";
 import { RunningSummaryOutputSchema, warnOnSchemaDrift } from "./outputs";
 
 const name = "get-running-summary";
@@ -51,6 +68,11 @@ sports.
 Notes:
 - Accepts Run, TrailRun and VirtualRun only; other types return an error
   that points to get-activity.
+- When intervals.icu has no decoupling or efficiency factor, both are
+  computed from the streams on the grade-adjusted basis and marked
+  computed, as get-aerobic-analysis computes them.
+- Weather: temperature, and humidity and dew point from the FIT file when
+  it has them.
 - HR zones use the activity's own bounds, else the Run sport settings; the
   zone summary is left out, with a note, when neither matches.
 - The text lists at most 20 laps; get-activity-laps and structuredContent.laps
@@ -90,11 +112,114 @@ interface DynamicsAssessment {
  * breakdown twice in different shapes.
  */
 export interface RunningSummary extends Omit<ActivityDetail, "intervals"> {
+  /** Where `decoupling_pct` comes from; null when it is null. */
+  decoupling_source: AerobicSource | null;
+  /** Where `efficiency_factor` comes from; null when it is null. */
+  efficiency_factor_source: AerobicSource | null;
+  /** The basis of the computed values ("pace" without elevation data). */
+  aerobic_basis: "gap" | "pace" | null;
+  /** Why a missing value was not computed, or a warning on a computed one. */
+  aerobic_note: string | null;
   cadence_assessment: string | null;
   hr_zone_summary: HrZoneSummary | null;
   hr_zone_note: string | null;
   dynamics_assessment: DynamicsAssessment | null;
   laps: LapEntry[];
+}
+
+type AerobicSource = "intervals.icu" | "computed";
+
+/**
+ * The stream analysis behind a missing decoupling or efficiency factor:
+ * `result` when it ran, `note` when the activity cannot be analysed (no
+ * streams, no heart rate). Any other failure propagates, as the stream
+ * loader's contract requires.
+ */
+export interface ComputedAerobic {
+  result: StreamAerobicResult | null;
+  note: string | null;
+}
+
+/**
+ * Computes decoupling and efficiency factor from the streams on the gap
+ * basis when intervals.icu has either one missing; null when it has both.
+ */
+async function computeMissingAerobic(
+  apiKey: string,
+  id: string,
+  activity: IntervalsActivity,
+  sportSettings: IntervalsSportSettings | null,
+): Promise<ComputedAerobic | null> {
+  if (activity.decoupling != null && activity.icu_efficiency_factor != null)
+    return null;
+  try {
+    return {
+      result: await streamAerobicAnalysis(apiKey, id, activity, sportSettings, {
+        basis: "gap",
+      }),
+      note: null,
+    };
+  } catch (error) {
+    if (error instanceof IntervalsStreamsUnavailableError)
+      return {
+        result: null,
+        note: "not computed: the activity has no streams",
+      };
+    if (error instanceof AerobicAnalysisError)
+      return { result: null, note: `not computed: ${error.message}` };
+    throw error;
+  }
+}
+
+/**
+ * The decoupling and efficiency factor fields: intervals.icu's own where it
+ * has them, else the computed ones, each with its source.
+ */
+function aerobicFields(
+  detail: Pick<ActivityDetail, "decoupling_pct" | "efficiency_factor">,
+  computed: ComputedAerobic | null,
+): Pick<
+  RunningSummary,
+  | "decoupling_pct"
+  | "decoupling_source"
+  | "efficiency_factor"
+  | "efficiency_factor_source"
+  | "aerobic_basis"
+  | "aerobic_note"
+> {
+  const result = computed?.result ?? null;
+  const decoupling =
+    detail.decoupling_pct ??
+    (result ? round(result.analysis.decouplingPct, 1) : null);
+  const efficiency =
+    detail.efficiency_factor ??
+    (result ? round(result.analysis.efficiencyFactor, 3) : null);
+  const usedComputed =
+    result !== null &&
+    (detail.decoupling_pct == null || detail.efficiency_factor == null);
+  const warnings = result
+    ? [...result.warnings, ...result.analysis.warnings]
+    : [];
+  return {
+    decoupling_pct: decoupling,
+    decoupling_source:
+      detail.decoupling_pct != null
+        ? "intervals.icu"
+        : decoupling != null
+          ? "computed"
+          : null,
+    efficiency_factor: efficiency,
+    efficiency_factor_source:
+      detail.efficiency_factor != null
+        ? "intervals.icu"
+        : efficiency != null
+          ? "computed"
+          : null,
+    aerobic_basis:
+      usedComputed && result && result.basis !== "power" ? result.basis : null,
+    aerobic_note:
+      computed?.note ?? (warnings.length > 0 ? warnings.join(" ") : null),
+  };
 }
 
 /**
@@ -137,6 +262,8 @@ export function mapRunningSummary(
   activity: IntervalsActivity,
   sportSettings: IntervalsSportSettings | null,
   gearName: string | null = activity.gear?.name ?? null,
+  computedAerobic: ComputedAerobic | null = null,
+  weather?: ActivityWeather | null,
 ): RunningSummary {
   const type = activity.type ?? "Workout";
   // `intervals` is dropped: `laps` below carries the same icu_intervals
@@ -145,6 +272,7 @@ export function mapRunningSummary(
     activity,
     sportSettings,
     gearName,
+    weather,
   );
 
   const { summary: hrZoneSummary, note: hrZoneNote } = buildHrZoneSummary(
@@ -174,6 +302,7 @@ export function mapRunningSummary(
 
   return {
     ...detail,
+    ...aerobicFields(detail, computedAerobic),
     cadence_assessment: assessCadence(detail.average_cadence_spm),
     hr_zone_summary: hrZoneSummary,
     hr_zone_note: hrZoneNote,
@@ -201,6 +330,31 @@ function formatHrZoneSummaryLine(d: RunningSummary): string | null {
   return null;
 }
 
+const BASIS_TEXT: Record<"gap" | "pace", string> = {
+  gap: "grade-adjusted",
+  pace: "raw pace, no elevation data",
+};
+
+/**
+ * The computed decoupling and efficiency factor, on their own line so they
+ * never read as intervals.icu's (the load line has those), or why a missing
+ * one was not computed. Null when intervals.icu has both.
+ */
+function formatComputedAerobicLine(d: RunningSummary): string | null {
+  const parts: string[] = [];
+  if (d.decoupling_source === "computed" && d.decoupling_pct != null)
+    parts.push(
+      `decoupling ${formatSigned(d.decoupling_pct, 1)}% (${interpretDecoupling(d.decoupling_pct).split(":")[0]})`,
+    );
+  if (d.efficiency_factor_source === "computed" && d.efficiency_factor != null)
+    parts.push(`EF ${d.efficiency_factor} m/min per beat`);
+  const note = d.aerobic_note ? ` Note: ${d.aerobic_note}` : "";
+  if (parts.length === 0)
+    return d.aerobic_note ? `Aerobic: ${d.aerobic_note}` : null;
+  const basis = d.aerobic_basis ? `, ${BASIS_TEXT[d.aerobic_basis]}` : "";
+  return `Aerobic (computed from the streams${basis}; intervals.icu has none): ${parts.join(", ")}.${note}`;
+}
+
 function formatDynamicsAssessmentLine(d: RunningSummary): string | null {
   if (!d.dynamics_assessment) return null;
   const parts: string[] = [];
@@ -225,8 +379,14 @@ export function formatRunningSummaryText(d: RunningSummary): string {
   const loadLine = formatLoadLine(d);
   if (loadLine) lines.push(loadLine);
 
+  const aerobicLine = formatComputedAerobicLine(d);
+  if (aerobicLine) lines.push(aerobicLine);
+
   const hrRecoveryLine = formatHrRecoveryLine(d);
   if (hrRecoveryLine) lines.push(hrRecoveryLine);
+
+  const weatherLine = formatWeatherLine(d.weather);
+  if (weatherLine) lines.push(weatherLine);
 
   if (d.cadence_assessment)
     lines.push(`Cadence assessment: ${d.cadence_assessment}`);
@@ -245,7 +405,7 @@ export function formatRunningSummaryText(d: RunningSummary): string {
   }
 
   if (d.laps.length > 0) {
-    lines.push("Laps:");
+    lines.push(`Laps (${LAP_MOVING_TIME_NOTE}):`);
     const shown = d.laps.slice(0, MAX_LAP_LINES);
     for (const lap of shown) lines.push(formatLapLine(lap, "spm"));
     const remaining = d.laps.length - shown.length;
@@ -295,12 +455,23 @@ export const getRunningSummaryTool = {
         };
       }
 
-      // After the run-type check, so a rejected non-run sends no gear read.
-      const gearName = await resolveActivityGearName(apiKey, activity);
+      // After the run-type check, so a rejected non-run sends no further
+      // read. The streams are read only when intervals.icu lacks decoupling
+      // or the efficiency factor.
+      progress(
+        `Reading gear, weather and streams for "${activity.name ?? id}"`,
+      );
+      const [gearName, computedAerobic, weather] = await Promise.all([
+        resolveActivityGearName(apiKey, activity),
+        computeMissingAerobic(apiKey, id, activity, sportSettingsResult),
+        loadActivityWeather(apiKey, id, activity),
+      ]);
       const summary = mapRunningSummary(
         activity,
         sportSettingsResult,
         gearName,
+        computedAerobic,
+        weather,
       );
       warnOnSchemaDrift(name, RunningSummaryOutputSchema, summary);
 
