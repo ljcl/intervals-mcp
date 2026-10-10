@@ -5,13 +5,16 @@ import activityIntervalsFixture from "../__fixtures__/intervals/activity-interva
 import activityMultilap from "../__fixtures__/intervals/activity-multilap.json";
 import multilapIntervals from "../__fixtures__/intervals/activity-multilap-intervals.json";
 import sportSettingsRunFixture from "../__fixtures__/intervals/sport-settings-run.json";
+import streamsFixture from "../__fixtures__/intervals/streams.json";
 import {
   getActivity,
+  getActivityStreams,
   getSportSettings,
   type IntervalsActivity,
   type IntervalsGear,
   type IntervalsInterval,
   type IntervalsSportSettings,
+  type IntervalsStream,
   listGear,
 } from "../intervalsClient";
 import {
@@ -29,12 +32,14 @@ vi.mock("../intervalsClient", async () => {
   return {
     ...actual,
     getActivity: vi.fn(),
+    getActivityStreams: vi.fn(),
     getSportSettings: vi.fn(),
     listGear: vi.fn(),
   };
 });
 
 const mockedGetActivity = vi.mocked(getActivity);
+const mockedGetActivityStreams = vi.mocked(getActivityStreams);
 const mockedGetSportSettings = vi.mocked(getSportSettings);
 const mockedListGear = vi.mocked(listGear);
 
@@ -287,6 +292,103 @@ describe("getRunningSummaryTool.execute", () => {
     mockedGetSportSettings.mockReset();
     mockedListGear.mockReset();
     mockedListGear.mockResolvedValue(GEAR);
+    mockedGetActivityStreams.mockReset();
+    mockedGetActivityStreams.mockResolvedValue(
+      streamsFixture as unknown as IntervalsStream[],
+    );
+  });
+
+  it("computes decoupling and efficiency factor from the streams when intervals.icu has none, marked computed", async () => {
+    mockedGetActivity.mockResolvedValueOnce(runActivityWithIntervals);
+    mockedGetSportSettings.mockResolvedValueOnce(sportSettingsRun);
+
+    const result = await getRunningSummaryTool.execute(
+      { id: "i189807578" },
+      "key",
+    );
+
+    const structured = RunningSummaryOutputSchema.parse(
+      result.structuredContent,
+    );
+    expect(mockedGetActivityStreams).toHaveBeenCalledTimes(1);
+    expect(structured.decoupling_source).toBe("computed");
+    expect(structured.efficiency_factor_source).toBe("computed");
+    expect(structured.decoupling_pct).toEqual(expect.any(Number));
+    // Metres per minute per beat: a 5 min/km run at about 160 bpm is ~1.2.
+    expect(structured.efficiency_factor).toBeGreaterThan(0.8);
+    expect(structured.efficiency_factor).toBeLessThan(2);
+    const text = result.content[0]?.text ?? "";
+    expect(text).toMatch(
+      /^Aerobic \(computed from the streams, (grade-adjusted|raw pace, no elevation data); intervals\.icu has none\): decoupling [+-]?\d+(\.\d)?% \(\w+\), EF \d\.\d+ m\/min per beat\./m,
+    );
+    // Not on the load line, which is intervals.icu's.
+    const loadLine = text.split("\n").find((line) => line.startsWith("Load:"));
+    expect(loadLine).not.toContain("decoupling");
+  });
+
+  it("keeps intervals.icu's own decoupling and efficiency factor and reads no streams when it has both", async () => {
+    mockedGetActivity.mockResolvedValueOnce({
+      ...runActivityWithIntervals,
+      decoupling: 2.34,
+      icu_efficiency_factor: 1.456,
+    });
+    mockedGetSportSettings.mockResolvedValueOnce(sportSettingsRun);
+
+    const result = await getRunningSummaryTool.execute(
+      { id: "i189807578" },
+      "key",
+    );
+
+    const structured = RunningSummaryOutputSchema.parse(
+      result.structuredContent,
+    );
+    expect(mockedGetActivityStreams).not.toHaveBeenCalled();
+    expect(structured.decoupling_pct).toBe(2.3);
+    expect(structured.decoupling_source).toBe("intervals.icu");
+    expect(structured.efficiency_factor_source).toBe("intervals.icu");
+    expect(structured.aerobic_basis).toBeNull();
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain("decoupling 2.3%, EF 1.46");
+    expect(text).not.toContain("Aerobic");
+  });
+
+  it("says why a missing decoupling was not computed when the activity has no streams", async () => {
+    mockedGetActivity.mockResolvedValueOnce(runActivityWithIntervals);
+    mockedGetSportSettings.mockResolvedValueOnce(sportSettingsRun);
+    mockedGetActivityStreams.mockResolvedValueOnce([]);
+
+    const result = await getRunningSummaryTool.execute(
+      { id: "i189807578" },
+      "key",
+    );
+
+    expect(result.isError).toBeUndefined();
+    const structured = RunningSummaryOutputSchema.parse(
+      result.structuredContent,
+    );
+    expect(structured.decoupling_pct).toBeNull();
+    expect(structured.decoupling_source).toBeNull();
+    expect(structured.aerobic_note).toBe(
+      "not computed: the activity has no streams",
+    );
+    expect(result.content[0]?.text).toContain(
+      "Aerobic: not computed: the activity has no streams",
+    );
+  });
+
+  it("fails on a rate limit from the stream read rather than reading it as no streams", async () => {
+    mockedGetActivity.mockResolvedValueOnce(runActivityWithIntervals);
+    mockedGetSportSettings.mockResolvedValueOnce(sportSettingsRun);
+    mockedGetActivityStreams.mockRejectedValueOnce(
+      handledRateLimit("getActivityStreams"),
+    );
+
+    const result = await getRunningSummaryTool.execute(
+      { id: "i189807578" },
+      "key",
+    );
+
+    expect(result.isError).toBe(true);
   });
 
   it("names the gear and reports achievements and HR recovery", async () => {

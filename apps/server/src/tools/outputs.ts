@@ -1634,9 +1634,29 @@ const HrZoneSummaryEntrySchema = z.object({
   seconds: z.number().int(),
   percent: z.number().describe("Share of recorded zone time, 1 dp"),
 });
+const AerobicSourceSchema = z
+  .enum(["intervals.icu", "computed"])
+  .nullable()
+  .describe(
+    "intervals.icu: its own value (basis not reported); computed: from the streams, as get-aerobic-analysis computes it, because intervals.icu has none; null when there is no value",
+  );
 export const RunningSummaryOutputSchema = ActivityDetailOutputSchema.omit({
   intervals: true,
 }).extend({
+  decoupling_source: AerobicSourceSchema,
+  efficiency_factor_source: AerobicSourceSchema,
+  aerobic_basis: z
+    .enum(["gap", "pace"])
+    .nullable()
+    .describe(
+      "Basis of the computed values: gap (grade-adjusted; efficiency factor in m/min per beat) or pace when the activity has no elevation data; null when nothing was computed",
+    ),
+  aerobic_note: z
+    .string()
+    .nullable()
+    .describe(
+      "Why a missing value was not computed (no streams, no heart rate), or a warning on the computed values",
+    ),
   cadence_assessment: z
     .string()
     .nullable()

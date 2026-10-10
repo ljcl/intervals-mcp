@@ -459,9 +459,16 @@ export function formatHrRecoveryLine(
   return `HR recovery: ${hrr.start_bpm} to ${hrr.end_bpm} bpm${window} (drop ${hrr.drop_bpm} bpm)${from}`;
 }
 
-/** Exported for reuse by get-running-summary. */
+/**
+ * Exported for reuse by get-running-summary. It prints only intervals.icu's
+ * decoupling and efficiency factor: a value marked `computed` (the running
+ * summary's) gets its own line there.
+ */
 export function formatLoadLine(
-  d: Omit<ActivityDetail, "intervals">,
+  d: Omit<ActivityDetail, "intervals"> & {
+    decoupling_source?: string | null;
+    efficiency_factor_source?: string | null;
+  },
 ): string | null {
   const parts: string[] = [];
   if (d.load.training_load != null)
@@ -472,8 +479,10 @@ export function formatLoadLine(
     parts.push(`pace load ${Math.round(d.load.pace_load)}`);
   if (d.load.trimp != null) parts.push(`TRIMP ${d.load.trimp}`);
   if (d.load.intensity != null) parts.push(`intensity ${d.load.intensity}%`);
-  if (d.decoupling_pct != null) parts.push(`decoupling ${d.decoupling_pct}%`);
-  if (d.efficiency_factor != null) parts.push(`EF ${d.efficiency_factor}`);
+  if (d.decoupling_pct != null && d.decoupling_source !== "computed")
+    parts.push(`decoupling ${d.decoupling_pct}%`);
+  if (d.efficiency_factor != null && d.efficiency_factor_source !== "computed")
+    parts.push(`EF ${d.efficiency_factor}`);
   if (d.rpe != null) parts.push(`RPE ${d.rpe}`);
   if (d.feel != null) parts.push(formatFeel(d.feel));
   if (parts.length === 0) return null;

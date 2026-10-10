@@ -8,7 +8,12 @@ import {
 } from "../aerobicAnalysis";
 import { formatSigned } from "../formatters";
 import { gradeAdjustedSpeeds } from "../hillAnalysis";
-import { getActivity, getSportSettings } from "../intervalsClient";
+import {
+  getActivity,
+  getSportSettings,
+  type IntervalsActivity,
+  type IntervalsSportSettings,
+} from "../intervalsClient";
 import {
   IntervalsStreamsUnavailableError,
   type IntervalsStreamType,
@@ -131,6 +136,82 @@ function halfOut(half: AerobicAnalysis["firstHalf"], basis: Basis) {
   };
 }
 
+/** What {@link streamAerobicAnalysis} computed, and on which basis. */
+export interface StreamAerobicResult {
+  analysis: AerobicAnalysis;
+  /** "gap" falls back to "pace" when the activity has no elevation data. */
+  basis: Basis;
+  /** The fallback and noisy-elevation warnings; the analysis has its own. */
+  warnings: string[];
+}
+
+/**
+ * Decoupling and efficiency factor computed from the activity's streams on
+ * `basis`. The warm-up is excluded as this tool does by default (the
+ * activity's `icu_warmup_time`, then the Run sport settings' `warmup_time`,
+ * then 5 minutes) unless `excludeWarmupSeconds` is set. The one home of the
+ * stream path, shared with get-running-summary, which fills intervals.icu's
+ * missing values from it on the gap basis. Throws
+ * `IntervalsStreamsUnavailableError` for an activity with no streams and
+ * `AerobicAnalysisError` for streams it cannot analyse (no heart rate).
+ */
+export async function streamAerobicAnalysis(
+  apiKey: string,
+  id: string,
+  activity: IntervalsActivity,
+  sportSettings: IntervalsSportSettings | null,
+  options: {
+    basis: Basis;
+    excludeWarmupSeconds?: number;
+    thresholdPower?: number | null;
+  },
+): Promise<StreamAerobicResult> {
+  let basis = options.basis;
+  const streams = await loadIntervalsStreams(
+    apiKey,
+    id,
+    basis === "gap"
+      ? [...BASE_STREAM_TYPES, ...GRADE_STREAM_TYPES]
+      : BASE_STREAM_TYPES,
+  );
+  const warnings: string[] = [];
+  let speed = streams.velocity_smooth;
+  if (basis === "gap") {
+    const gap = gradeAdjustedSpeeds({
+      time: streams.time,
+      distance: streams.distance ?? [],
+      altitude: streams.altitude,
+      grade_smooth: streams.grade_smooth,
+      velocity_smooth: streams.velocity_smooth,
+    });
+    if (gap) {
+      speed = gap.speeds;
+      if (gap.warning) warnings.push(gap.warning);
+    } else {
+      basis = "pace";
+      warnings.push(
+        "No elevation data, so the grade-adjusted basis is unavailable: this uses raw pace, and hills count as drift.",
+      );
+    }
+  }
+  const streamsForAnalysis: AerobicStreams = {
+    time: streams.time,
+    heartrate: streams.heartrate,
+    watts: basis === "power" ? streams.watts : undefined,
+    velocity_smooth: basis === "power" ? undefined : speed,
+    moving: streams.moving,
+  };
+  const analysis = computeAerobicAnalysis(streamsForAnalysis, {
+    excludeWarmupSeconds:
+      options.excludeWarmupSeconds ??
+      activity.icu_warmup_time ??
+      sportSettings?.warmup_time ??
+      300,
+    thresholdPower: options.thresholdPower ?? null,
+  });
+  return { analysis, basis, warnings };
+}
+
 export const getAerobicAnalysisTool = {
   name,
   title: "Aerobic analysis",
@@ -179,14 +260,23 @@ export const getAerobicAnalysisTool = {
       let analysis: AerobicAnalysis | null = null;
 
       if (basis != null) {
-        const streamTypes =
-          basis === "gap"
-            ? [...BASE_STREAM_TYPES, ...GRADE_STREAM_TYPES]
-            : BASE_STREAM_TYPES;
         progress(`Fetching streams for "${displayName}"`);
-        let streams: Awaited<ReturnType<typeof loadIntervalsStreams>>;
+        let result: StreamAerobicResult;
         try {
-          streams = await loadIntervalsStreams(apiKey, id, streamTypes);
+          result = await streamAerobicAnalysis(
+            apiKey,
+            id,
+            activity,
+            sportSettings,
+            {
+              basis,
+              excludeWarmupSeconds:
+                excludeWarmupMinutes != null
+                  ? excludeWarmupMinutes * 60
+                  : undefined,
+              thresholdPower: resolvedThresholdPower,
+            },
+          );
         } catch (error) {
           if (error instanceof IntervalsStreamsUnavailableError) {
             noteToolFailure(error);
@@ -202,43 +292,10 @@ export const getAerobicAnalysisTool = {
           }
           throw error;
         }
-
-        let speed = streams.velocity_smooth;
-        if (basis === "gap") {
-          const gap = gradeAdjustedSpeeds({
-            time: streams.time,
-            distance: streams.distance ?? [],
-            altitude: streams.altitude,
-            grade_smooth: streams.grade_smooth,
-            velocity_smooth: streams.velocity_smooth,
-          });
-          if (gap) {
-            speed = gap.speeds;
-            if (gap.warning) warnings.push(gap.warning);
-          } else {
-            basis = "pace";
-            warnings.push(
-              "No elevation data, so the grade-adjusted basis is unavailable: this uses raw pace, and hills count as drift.",
-            );
-          }
-        }
-
         progress("Computing aerobic analysis", { important: true });
-        const streamsForAnalysis: AerobicStreams = {
-          time: streams.time,
-          heartrate: streams.heartrate,
-          watts: basis === "power" ? streams.watts : undefined,
-          velocity_smooth: basis === "power" ? undefined : speed,
-          moving: streams.moving,
-        };
-        const resolvedWarmupSeconds =
-          excludeWarmupMinutes != null
-            ? excludeWarmupMinutes * 60
-            : (activity.icu_warmup_time ?? sportSettings?.warmup_time ?? 300);
-        analysis = computeAerobicAnalysis(streamsForAnalysis, {
-          excludeWarmupSeconds: resolvedWarmupSeconds,
-          thresholdPower: resolvedThresholdPower,
-        });
+        analysis = result.analysis;
+        basis = result.basis;
+        warnings.push(...result.warnings);
       }
 
       if (basis === "power" && resolvedThresholdPower == null) {
