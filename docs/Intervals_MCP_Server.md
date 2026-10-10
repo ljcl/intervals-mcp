@@ -102,7 +102,9 @@ call another tool for them: the matching text tool's own text (for example
 `get-fitness-trend` for `view-fitness-trend`), run in the same call. The
 route map gives its distance, elevation and waypoints, then
 `get-hill-analysis`' climbs; the cadence trends give each run's cadence,
-cadence by pace zone and the cadence-against-pace slope. The first line says
+cadence by pace zone (the athlete's own Run pace zones from
+`get-athlete-zones`) and the cadence-against-pace slope. Runs under 1 km
+are left out and counted. The first line says
 the chart is shown only when the client said it renders MCP Apps; otherwise
 it says the chart may not show, because some hosts render the card anyway.
 

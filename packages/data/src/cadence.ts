@@ -4,20 +4,36 @@
  * both read them here, so the chart and the text can never disagree.
  */
 
-/** A pace zone in min/km; a lower number is a faster pace. */
+/**
+ * A pace zone in min/km; a lower number is a faster pace. A zone holds a
+ * pace from `minPace` (its fast limit, inclusive) up to `maxPace` (its slow
+ * limit, exclusive). null is an open end: the fastest zone has no fast limit
+ * and the slowest no slow limit.
+ */
 export interface PaceZone {
   label: string;
-  minPace: number;
-  maxPace: number;
+  minPace: number | null;
+  maxPace: number | null;
 }
 
-/** Pace zones in min/km. Lower number = faster pace. */
+/**
+ * Fixed pace zones in min/km, fastest first: the fallback for an athlete
+ * whose Run sport settings have no threshold pace or pace zones.
+ */
 export const PACE_ZONES: PaceZone[] = [
-  { label: "Threshold", minPace: 0, maxPace: 4 },
+  { label: "Threshold", minPace: null, maxPace: 4 },
   { label: "Tempo", minPace: 4, maxPace: 4.5 },
   { label: "Moderate", minPace: 4.5, maxPace: 5.5 },
-  { label: "Easy", minPace: 5.5, maxPace: 20 },
+  { label: "Easy", minPace: 5.5, maxPace: null },
 ];
+
+/** True when `pace` (min/km) is in `zone`. */
+function paceInZone(pace: number, zone: PaceZone): boolean {
+  return (
+    (zone.minPace == null || pace >= zone.minPace) &&
+    (zone.maxPace == null || pace < zone.maxPace)
+  );
+}
 
 /** What the zone stats read from each run. */
 export interface CadencePaceRun {
@@ -35,14 +51,20 @@ export interface ZoneStat {
   count: number;
 }
 
-/** Group activities by pace zone and compute per-zone stats */
-export function computeZoneStats(activities: CadencePaceRun[]): ZoneStat[] {
-  return PACE_ZONES.map((zone) => {
+/**
+ * Group activities by pace zone and compute per-zone stats, one per zone in
+ * the order given: the athlete's own zones when the feed has them, else
+ * {@link PACE_ZONES}.
+ */
+export function computeZoneStats(
+  activities: CadencePaceRun[],
+  zones: readonly PaceZone[] = PACE_ZONES,
+): ZoneStat[] {
+  return zones.map((zone) => {
     const inZone = activities.filter(
       (a) =>
         a.averagePace != null &&
-        a.averagePace >= zone.minPace &&
-        a.averagePace < zone.maxPace &&
+        paceInZone(a.averagePace, zone) &&
         a.averageCadence > 0,
     );
     if (inZone.length === 0) {

@@ -561,7 +561,15 @@ the last is growing drift, less is a constant offset.
 **Cadence against pace has one home.** `PACE_ZONES`, `computeZoneStats` and
 `cadencePaceRegression` live in `@intervals-mcp/data` (`cadence.ts`), so the
 cadence-trends app's zone and scatter views and view-cadence-trends' text
-(`cadenceTrendLines`) state the same zones and slope.
+(`cadenceTrendLines`) state the same zones and slope. The zones are the
+athlete's: `cadencePaceZones` (`athleteZones.ts`) turns the Run sport
+settings' threshold pace and pace zones into min/km limits from the same
+`zoneRanges` as get-athlete-zones, and the feed carries them
+(`paceZones`, `paceZoneSource`). The fixed `PACE_ZONES` (4:00, 4:30 and
+5:30 /km) are only the fallback when the settings have no threshold pace
+or the read fails. Runs with a recorded distance under 1 km
+(`MIN_CADENCE_RUN_DISTANCE_M`) are left out and counted (`excludedShort`),
+as cadence-less runs are.
 
 **The decoupling and efficiency factor computed from streams have one
 path.** `streamAerobicAnalysis` (`tools/getAerobicAnalysis.ts`) reads the

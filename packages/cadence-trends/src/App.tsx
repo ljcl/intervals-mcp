@@ -221,7 +221,9 @@ export function App({
         overlayAxis: xMode,
         overlayStatus,
         excludedNoCadence: data.excludedNoCadence,
+        excludedShort: data.excludedShort,
         noPaceCount: data.noPaceCount,
+        paceZoneSource: data.paceZoneSource,
       }),
     [
       data.days,
@@ -230,7 +232,9 @@ export function App({
       xMode,
       overlayStatus,
       data.excludedNoCadence,
+      data.excludedShort,
       data.noPaceCount,
+      data.paceZoneSource,
     ],
   );
 
@@ -294,7 +298,11 @@ export function App({
           />
         )}
         {activeView === "zones" && (
-          <ZonesView activities={data.activities} mode={mode} />
+          <ZonesView
+            activities={data.activities}
+            zones={data.paceZones}
+            mode={mode}
+          />
         )}
         {activeView === "overlay" && (
           <OverlayView

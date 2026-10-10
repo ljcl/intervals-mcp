@@ -1,4 +1,8 @@
-import { computeZoneStats } from "@intervals-mcp/data";
+import {
+  computeZoneStats,
+  PACE_ZONES,
+  type PaceZone,
+} from "@intervals-mcp/data";
 import { GRID_DASHARRAY, getChartTokens } from "@intervals-mcp/design-system";
 import { EmptyState } from "@intervals-mcp/ui";
 import { useMemo } from "react";
@@ -15,17 +19,21 @@ import {
 } from "recharts";
 import { buildZonesA11y } from "./a11y";
 import styles from "./chartView.module.css";
-import { buildZoneRows } from "./normalize";
+import { buildZoneRows, shortZoneLabel, zoneOpacities } from "./normalize";
 import { type RunSummary } from "./types";
 
 interface ZonesViewProps {
   activities: RunSummary[];
+  /** The feed's pace zones; the fixed `PACE_ZONES` when it has none. */
+  zones?: PaceZone[];
   mode?: "mobile" | "desktop";
 }
 
-const ZONE_OPACITIES = [1, 0.8, 0.6, 0.4];
-
-export function ZonesView({ activities, mode = "desktop" }: ZonesViewProps) {
+export function ZonesView({
+  activities,
+  zones = PACE_ZONES,
+  mode = "desktop",
+}: ZonesViewProps) {
   const isMobile = mode === "mobile";
   const tokens = {
     ...getChartTokens(mode),
@@ -35,7 +43,11 @@ export function ZonesView({ activities, mode = "desktop" }: ZonesViewProps) {
     marginBottom: 24,
   };
 
-  const zoneStats = useMemo(() => computeZoneStats(activities), [activities]);
+  const zoneStats = useMemo(
+    () => computeZoneStats(activities, zones),
+    [activities, zones],
+  );
+  const opacities = useMemo(() => zoneOpacities(zones), [zones]);
 
   const chartData = useMemo(() => buildZoneRows(zoneStats), [zoneStats]);
 
@@ -67,6 +79,8 @@ export function ZonesView({ activities, mode = "desktop" }: ZonesViewProps) {
           />
           <XAxis
             dataKey="zone"
+            tickFormatter={shortZoneLabel}
+            interval={0}
             tick={{
               fontSize: tokens.axisFont,
               fill: "var(--color-text-tertiary)",
@@ -102,7 +116,7 @@ export function ZonesView({ activities, mode = "desktop" }: ZonesViewProps) {
               <Cell
                 key={row.zone}
                 fill="var(--chart-cadence)"
-                fillOpacity={ZONE_OPACITIES[row.zoneIndex] ?? 0.4}
+                fillOpacity={opacities[row.zoneIndex] ?? 0.4}
               />
             ))}
             <ErrorBar

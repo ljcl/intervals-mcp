@@ -31,6 +31,7 @@ import {
   normalizeArgs,
   unknownArgsText,
 } from "./argAliases";
+import { cadencePaceZones } from "./athleteZones";
 import {
   buildCadenceTrendData,
   type CadenceTrendData,
@@ -52,6 +53,7 @@ import { activityDisplayName, formatSigned } from "./formatters";
 import { serverInstructions } from "./instructions";
 import {
   getActivity as getIntervalsActivity,
+  getSportSettings,
   listActivities as listActivitiesFn,
 } from "./intervalsClient";
 import {
@@ -1064,9 +1066,17 @@ async function loadCadenceTrendData(
   const newest = todayLocal(tz);
   const oldest = addDays(newest, -(days - 1));
 
-  const activities = await listActivitiesFn(apiKey, { oldest, newest });
+  // The pace zones come from the Run sport settings; a failed read falls
+  // back to the fixed zones, which the text and the app both name.
+  const [activities, runSettings] = await Promise.all([
+    listActivitiesFn(apiKey, { oldest, newest }),
+    getSportSettings(apiKey, "Run").catch(() => null),
+  ]);
 
-  return buildCadenceTrendData(activities, { days });
+  return buildCadenceTrendData(activities, {
+    days,
+    paceZones: runSettings ? cadencePaceZones(runSettings) : null,
+  });
 }
 
 async function handleGetCadenceTrendData(

@@ -1,6 +1,7 @@
 import {
   formatShortDate,
   isRunning,
+  type PaceZone,
   smooth,
   windowLabel,
   type ZoneStat,
@@ -72,13 +73,13 @@ export interface ZoneRow {
   min: number;
   max: number;
   count: number;
-  /** Position in PACE_ZONES, so a zone keeps its shade when another is empty. */
+  /** Position in the feed's zones, so a zone keeps its shade when another is empty. */
   zoneIndex: number;
   /** [mean - min, max - mean]: Recharts draws an asymmetric whisker from a pair. */
   error: [number, number];
 }
 
-/** The non-empty zones as bars, each keeping its own index into PACE_ZONES. */
+/** The non-empty zones as bars, each keeping its own index into the zones. */
 export function buildZoneRows(stats: ZoneStat[]): ZoneRow[] {
   return stats.flatMap((s, zoneIndex) =>
     s.count > 0
@@ -95,6 +96,30 @@ export function buildZoneRows(stats: ZoneStat[]): ZoneRow[] {
         ]
       : [],
   );
+}
+
+/**
+ * One bar shade per zone, in the zones' order: the fastest zone darkest,
+ * the slowest lightest. The athlete's zones come slowest first and the
+ * fixed ones fastest first, so the shade follows each zone's pace, not its
+ * position.
+ */
+export function zoneOpacities(zones: readonly PaceZone[]): number[] {
+  // A zone's place from fastest: by its fast limit, open (null) first.
+  const order = zones
+    .map((zone, index) => ({ index, pace: zone.minPace ?? -1 }))
+    .sort((a, b) => a.pace - b.pace);
+  const opacities = new Array<number>(zones.length).fill(1);
+  const steps = Math.max(zones.length - 1, 1);
+  order.forEach(({ index }, rank) => {
+    opacities[index] = Math.round((1 - (0.6 * rank) / steps) * 100) / 100;
+  });
+  return opacities;
+}
+
+/** "Zone 5a" reads "Z5a" on the axis, so seven zones fit a phone. */
+export function shortZoneLabel(label: string): string {
+  return label.replace(/^zone\s*/i, "Z");
 }
 
 /**

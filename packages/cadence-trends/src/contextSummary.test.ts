@@ -189,6 +189,37 @@ describe("buildCadenceContextSummary", () => {
     ).not.toContain("no recorded pace");
   });
 
+  it("mentions runs under 1 km it left out", () => {
+    expect(
+      buildCadenceContextSummary({
+        days: 42,
+        activeView: "trend",
+        selectedRuns: [],
+        excludedShort: 1,
+      }),
+    ).toContain("1 run under 1 km excluded.");
+  });
+
+  it("names whose pace zones the zone view uses, on that view only", () => {
+    const summary = (
+      activeView: "zones" | "trend",
+      paceZoneSource: "athlete" | "default",
+    ) =>
+      buildCadenceContextSummary({
+        days: 42,
+        activeView,
+        selectedRuns: [],
+        paceZoneSource,
+      });
+    expect(summary("zones", "athlete")).toContain(
+      "Pace zones: the athlete's Run sport settings.",
+    );
+    expect(summary("zones", "default")).toContain(
+      "Pace zones: fixed (the Run sport settings have no threshold pace).",
+    );
+    expect(summary("trend", "athlete")).not.toContain("Pace zones");
+  });
+
   describe("in the overlay, only drawn runs are compared", () => {
     const selectedRuns = [
       run({ id: "1", name: "Tempo", averageCadence: 181 }),

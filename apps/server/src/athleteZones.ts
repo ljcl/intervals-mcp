@@ -4,7 +4,11 @@
  * Pure: `get-athlete-zones` fetches, this maps. Zone ranges come from
  * `zoneRanges` (`activityZones.ts`), the rule every zone tool uses.
  */
-import { isSwimming, speedDisplayForSport } from "@intervals-mcp/data";
+import {
+  isSwimming,
+  type PaceZone,
+  speedDisplayForSport,
+} from "@intervals-mcp/data";
 import { zoneRanges } from "./activityZones";
 import { round } from "./formatters";
 import {
@@ -245,6 +249,30 @@ export function mapPaceZones(group: IntervalsSportSettings): AthletePaceZone[] {
       fastest_min_per_100m: swim && fastest ? paceAt(range.max, "100m") : null,
     };
   });
+}
+
+/**
+ * The athlete's pace zones as `view-cadence-trends` buckets runs by them:
+ * min/km numbers, slowest zone first, from the same `zoneRanges` and
+ * threshold speed as {@link mapPaceZones}. A zone's upper bound is
+ * inclusive (docs/api-notes.md), so a run at exactly threshold pace is in
+ * the zone that ends at 100%: the fast limit is inclusive, as `PaceZone`
+ * reads it. Null when the group has no threshold pace or no pace zones;
+ * the view then uses the fixed `PACE_ZONES`.
+ */
+export function cadencePaceZones(
+  group: IntervalsSportSettings,
+): PaceZone[] | null {
+  const threshold = validSpeed(group.threshold_pace);
+  const bounds = group.pace_zones ?? [];
+  if (threshold === null || bounds.length === 0) return null;
+  const paceAt = (pct: number) =>
+    speedDisplayForSport("run").fromMps((threshold * pct) / 100);
+  return zoneRanges(bounds).map((range) => ({
+    label: group.pace_zone_names?.[range.zone - 1] ?? `Zone ${range.zone}`,
+    minPace: range.max >= OPEN_TOP_PCT ? null : paceAt(range.max),
+    maxPace: range.min > 0 ? paceAt(range.min) : null,
+  }));
 }
 
 // ---------- heart rate bests and threshold checks ----------

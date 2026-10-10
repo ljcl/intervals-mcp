@@ -24,7 +24,9 @@ vi.mock("./intervalsClient", async (importOriginal) => {
     getActivityStreams: vi.fn(),
     getActivityFile: vi.fn(),
     getAthletePaceCurves: vi.fn(),
-    getSportSettings: vi.fn(),
+    // get-cadence-trend-data reads the Run pace zones next to the list; with
+    // none, it uses the fixed zones.
+    getSportSettings: vi.fn(async () => null),
     listActivities: vi.fn(),
     getWellness: vi.fn(),
   };
