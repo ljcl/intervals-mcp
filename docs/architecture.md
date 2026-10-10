@@ -571,11 +571,24 @@ shipped envelope type is `{}`, so by key, with a cast) and passes
 `clientSupportsMcpApps(capabilities)`: the client advertised
 `io.modelcontextprotocol/ui` with `text/html;profile=mcp-app`. The same
 boolean reaches each handler as the fourth argument (`ToolCallContext`), and the
-`view-*` handlers use it to choose their footer, so a result never claims a
-rendered chart to a host that does not render one (#77). A call dispatched
-without client information records `client_apps: false`. A host that renders
-apps without advertising them gets the "cannot display" text too; the log
-field is how an operator sees how many calls that affects.
+`view-*` handlers use it to choose their text (`viewResult`), so a result never
+claims a rendered chart to a host that does not render one (#77). Such a host
+gets the text twin's own text, run in the same call with the view's arguments,
+because the model has no chart to describe; a view with no twin, or whose twin
+fails, names the text tool instead (docs/tools.md lists the pairs). A call
+dispatched without client information records `client_apps: false`. A host that
+renders apps without advertising them gets the "cannot display" text too; the
+log field is how an operator sees how many calls that affects.
+
+The reverse also happens, and the server cannot fix it: a host can try to
+render the app for a client that did not advertise it. On 2026-10-10
+(Sydney) the Claude iOS app showed its "Failed to load this connector" card
+for `view-activity-chart`, `view-activity-zones` and `view-training-load`
+calls from a cloud agent session. That session's client did not advertise the
+extension (each result had the "cannot display" text). The same day a Claude
+Code session's `resources/read` of `ui://activity-zones/app.html` returned the
+HTML as `text/html;profile=mcp-app`, so the resource itself was served. Hiding
+the `view-*` tools from such clients (#143) would stop the calls.
 
 The records stay with the operator: the stderr line and the `/health`
 counters. The server does not advertise the `logging` capability, because

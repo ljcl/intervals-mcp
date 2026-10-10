@@ -43,3 +43,17 @@ export function viewFooter(
     ? `[Interactive ${kind} rendered above]`
     : `This client cannot display the interactive ${kind}. For detail, call ${twin}.`;
 }
+
+/**
+ * The whole view-* text for a host that cannot render MCP Apps when the text
+ * twin answered in the same call: one line that says so, then the twin's own
+ * text, so the model has the chart's numbers without a second call. `twin` is
+ * the tool name only.
+ */
+export function viewTwinText(
+  kind: string,
+  twin: string,
+  twinText: string,
+): string {
+  return `This client cannot display the interactive ${kind}. The same data from ${twin} follows.\n\n${twinText}`;
+}

@@ -484,8 +484,14 @@ describe("tools/call on a view-* tool", () => {
     },
   };
 
+  // Every read answers, so get-activity-zones, which a host without MCP Apps
+  // gets in the same call, reads the activity too.
+  afterEach(() => {
+    mockedIntervalsActivity.mockReset();
+  });
+
   function mockZonesActivity() {
-    mockedIntervalsActivity.mockResolvedValueOnce({
+    mockedIntervalsActivity.mockResolvedValue({
       id: "123",
       name: "Morning Run",
       type: "Run",
@@ -520,15 +526,16 @@ describe("tools/call on a view-* tool", () => {
     expect(text).not.toContain("This client cannot display");
   });
 
-  it("names the text twin when the request advertises no capabilities", async () => {
+  it("gives get-activity-zones' text when the request advertises no capabilities", async () => {
     const text = await viewText();
 
     expect(text).not.toContain("rendered above");
     expect(
-      text.endsWith(
-        "This client cannot display the interactive zone distribution chart. For detail, call get-activity-zones.",
+      text.startsWith(
+        "This client cannot display the interactive zone distribution chart. The same data from get-activity-zones follows.\n\n",
       ),
     ).toBe(true);
+    expect(text).toContain("Z2 (131-155 bpm): 30:00 (60%)");
   });
 
   it("names the text twin when the extension lacks the MCP App mime type", async () => {
@@ -539,7 +546,7 @@ describe("tools/call on a view-* tool", () => {
     });
 
     expect(text).not.toContain("rendered above");
-    expect(text).toContain("call get-activity-zones.");
+    expect(text).toContain("The same data from get-activity-zones follows.");
   });
 });
 

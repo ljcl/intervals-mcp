@@ -1,12 +1,13 @@
 /**
- * Whether a request's client renders MCP Apps, and the view-* footer that
- * depends on it (#77).
+ * Whether a request's client renders MCP Apps, and the view-* texts that
+ * depend on it (#77).
  */
 import { describe, expect, it } from "vitest";
 import {
   clientSupportsMcpApps,
   MCP_APP_MIME_TYPE,
   viewFooter,
+  viewTwinText,
 } from "./clientCapabilities";
 
 const UI = "io.modelcontextprotocol/ui";
@@ -60,6 +61,20 @@ describe("viewFooter", () => {
   it("names the text twin otherwise", () => {
     expect(viewFooter("training load chart", "get-training-load", false)).toBe(
       "This client cannot display the interactive training load chart. For detail, call get-training-load.",
+    );
+  });
+});
+
+describe("viewTwinText", () => {
+  it("says the client cannot display the chart, then gives the twin's text", () => {
+    expect(
+      viewTwinText(
+        "zone distribution chart",
+        "get-activity-zones",
+        "Activity Zones (ID: 123):",
+      ),
+    ).toBe(
+      "This client cannot display the interactive zone distribution chart. The same data from get-activity-zones follows.\n\nActivity Zones (ID: 123):",
     );
   });
 });

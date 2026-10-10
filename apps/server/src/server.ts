@@ -40,6 +40,7 @@ import {
   clientSupportsMcpApps,
   MCP_APP_MIME_TYPE,
   viewFooter,
+  viewTwinText,
 } from "./clientCapabilities";
 import { getIntervalsApiKey, getTimeZone } from "./config";
 import { taperTargetDateError } from "./fitnessTrend";
@@ -127,6 +128,7 @@ import {
   todayLocal,
   type WindowEnd,
 } from "./utils/localDate";
+import { isPaceActivity } from "./utils/running";
 import { SERVER_VERSION } from "./version";
 
 const EMPTY_SCHEMA = { type: "object", properties: {}, required: [] } as const;
@@ -713,7 +715,7 @@ export const TOOL_DEFS = buildToolDefs();
 /**
  * What the request's client told the server about itself, handed to every
  * handler as its fourth argument. Only the view-* handlers read it, to decide
- * whether to claim a rendered chart (#77).
+ * whether to claim a rendered chart or give the text twin's text (#77).
  */
 export interface ToolCallContext {
   /** The client advertised MCP Apps, so a view-* tool's chart is on screen. */
@@ -807,6 +809,83 @@ for (const [name, schema] of TOOL_INPUT_SCHEMAS) {
   if (keys.length > 0) TOOL_ID_KEYS.set(name, keys);
 }
 
+/** How a view-* result names its chart and the text tool behind it (#77). */
+interface ViewText {
+  /** The chart, as the result names it ("training load chart"). */
+  kind: string;
+  /** The call the footer names, starting with a tool name. */
+  footer: string;
+  /**
+   * The text tool that gives the chart's numbers for the view's own
+   * arguments, when one does.
+   */
+  twin?: string;
+}
+
+/**
+ * The result of a view-* tool. A host that renders MCP Apps gets `lines` and
+ * the "rendered above" line. Any other host gets the text twin's own text,
+ * run in this call with the view's arguments: the athlete sees no chart, so
+ * the model needs the numbers, and the twin is their one home. With no twin,
+ * or when the twin fails, that host gets `lines` and the footer that names
+ * the text tool to call.
+ */
+async function viewResult(
+  lines: string[],
+  view: ViewText,
+  args: Record<string, unknown>,
+  token: string,
+  progress: ReportProgress,
+  context: ToolCallContext,
+): Promise<ToolCallResult> {
+  if (!context.clientRendersApps && view.twin) {
+    const twinText = await viewTwinCall(
+      view.twin,
+      args,
+      token,
+      progress,
+      context,
+    );
+    if (twinText !== null) {
+      return {
+        content: [
+          { type: "text", text: viewTwinText(view.kind, view.twin, twinText) },
+        ],
+      };
+    }
+  }
+  const footer = viewFooter(view.kind, view.footer, context.clientRendersApps);
+  return {
+    content: [{ type: "text", text: [...lines, "", footer].join("\n") }],
+  };
+}
+
+/**
+ * The text of tool `name`, run through its own input schema, or null when it
+ * returns `isError`. Its failure is not the view's: the view already has its
+ * data and falls back to naming the tool. The dispatcher reads a noted
+ * failure only for an `isError` result, so the log line stays `ok`.
+ */
+async function viewTwinCall(
+  name: string,
+  args: Record<string, unknown>,
+  token: string,
+  progress: ReportProgress,
+  context: ToolCallContext,
+): Promise<string | null> {
+  const execute = TOOL_EXECUTORS.get(name);
+  const parsed = TOOL_INPUT_SCHEMAS.get(name)?.safeParse(args);
+  if (!execute || !parsed?.success) return null;
+  const result = await execute(
+    parsed.data as Record<string, unknown>,
+    token,
+    progress,
+    context,
+  );
+  if (result.isError) return null;
+  return result.content.map((block) => block.text).join("\n");
+}
+
 /** Stream types the activity-chart app can plot, including running dynamics. */
 const CHART_STREAM_TYPES: IntervalsStreamType[] = [
   "time",
@@ -826,7 +905,7 @@ const CHART_STREAM_TYPES: IntervalsStreamType[] = [
 async function handleViewActivityChart(
   args: Record<string, unknown>,
   token: string,
-  _progress: ReportProgress,
+  progress: ReportProgress,
   context: ToolCallContext,
 ): Promise<ToolCallResult> {
   const activityId = String(args.id);
@@ -860,16 +939,23 @@ async function handleViewActivityChart(
         : "This activity has no recorded streams.",
     );
   }
-  lines.push(
-    "",
-    viewFooter(
-      "activity chart",
+  return viewResult(
+    lines,
+    {
+      kind: "activity chart",
       // get-activity-streams would only repeat that there are none.
-      noStreams ? "get-activity" : "get-activity-streams",
-      context.clientRendersApps,
-    ),
+      footer: noStreams ? "get-activity" : "get-activity-streams",
+      // The per-km text of a run; other sports have no one text twin.
+      twin:
+        noStreams || !isPaceActivity(activity.type ?? "")
+          ? undefined
+          : getSplitAnalysisTool.name,
+    },
+    args,
+    token,
+    progress,
+    context,
   );
-  return { content: [{ type: "text", text: lines.join("\n") }] };
 }
 
 async function handleGetActivityStreamsRaw(
@@ -943,7 +1029,7 @@ async function handleGetCadenceTrendData(
 async function handleViewCadenceTrends(
   args: Record<string, unknown>,
   token: string,
-  _progress: ReportProgress,
+  progress: ReportProgress,
   context: ToolCallContext,
 ): Promise<ToolCallResult> {
   const data = await loadCadenceTrendData(token, args);
@@ -966,15 +1052,19 @@ async function handleViewCadenceTrends(
     ...(data.noPaceCount > 0
       ? [`No pace recorded (cadence only): ${data.noPaceCount}`]
       : []),
-    "",
-    viewFooter(
-      "cadence trends chart",
-      // get-running-summary needs an id this text never gives.
-      "list-activities, then get-running-summary",
-      context.clientRendersApps,
-    ),
   ];
-  return { content: [{ type: "text", text: lines.join("\n") }] };
+  return viewResult(
+    lines,
+    {
+      kind: "cadence trends chart",
+      // get-running-summary needs an id this text never gives.
+      footer: "list-activities, then get-running-summary",
+    },
+    args,
+    token,
+    progress,
+    context,
+  );
 }
 
 /**
@@ -1070,15 +1160,20 @@ async function handleViewTrainingLoad(
             : `Week of ${inProgress.weekStarting} is in progress (partial).`,
         ]
       : []),
-    "",
-    viewFooter(
-      "training load chart",
-      // runOnly carries over: never mix whole-body and run-only numbers.
-      "get-training-load with the same arguments",
-      context.clientRendersApps,
-    ),
   ];
-  return { content: [{ type: "text", text: lines.join("\n") }] };
+  return viewResult(
+    lines,
+    {
+      kind: "training load chart",
+      // runOnly carries over: never mix whole-body and run-only numbers.
+      footer: "get-training-load with the same arguments",
+      twin: getTrainingLoadTool.name,
+    },
+    args,
+    token,
+    progress,
+    context,
+  );
 }
 
 /**
@@ -1252,16 +1347,21 @@ async function handleViewFitnessTrend(
     lines.push(`Flag: ${flag}`);
   }
 
-  lines.push(
-    "",
-    viewFooter(
-      "fitness trend chart",
+  return viewResult(
+    lines,
+    {
+      kind: "fitness trend chart",
       // runOnly carries over: never mix whole-body and run-only numbers.
-      "get-fitness-trend with the same arguments",
-      context.clientRendersApps,
-    ),
+      footer: "get-fitness-trend with the same arguments",
+      // The view's projectDays default (14) reaches the twin, whose own is 0,
+      // so the text projects as far as the chart does.
+      twin: getFitnessTrendTool.name,
+    },
+    args,
+    token,
+    progress,
+    context,
   );
-  return { content: [{ type: "text", text: lines.join("\n") }] };
 }
 
 /** Shared fetch + mapping for the activity-zones view and data tools. */
@@ -1291,7 +1391,7 @@ async function handleGetActivityZonesData(
 async function handleViewActivityZones(
   args: Record<string, unknown>,
   token: string,
-  _progress: ReportProgress,
+  progress: ReportProgress,
   context: ToolCallContext,
 ): Promise<ToolCallResult> {
   const data = await loadActivityZonesData(token, String(args.id));
@@ -1312,15 +1412,18 @@ async function handleViewActivityZones(
       );
     }
   }
-  lines.push(
-    "",
-    viewFooter(
-      "zone distribution chart",
-      "get-activity-zones",
-      context.clientRendersApps,
-    ),
+  return viewResult(
+    lines,
+    {
+      kind: "zone distribution chart",
+      footer: "get-activity-zones",
+      twin: getActivityZonesTool.name,
+    },
+    args,
+    token,
+    progress,
+    context,
   );
-  return { content: [{ type: "text", text: lines.join("\n") }] };
 }
 /** Stream types the route-map app needs: latlng plus the chartable metrics. */
 const ROUTE_MAP_STREAM_TYPES: IntervalsStreamType[] = [
@@ -1385,7 +1488,7 @@ async function handleGetRouteMapData(
 async function handleViewRouteMap(
   args: Record<string, unknown>,
   token: string,
-  _progress: ReportProgress,
+  progress: ReportProgress,
   context: ToolCallContext,
 ): Promise<ToolCallResult> {
   const data = await loadRouteMapData(args, token);
@@ -1413,11 +1516,15 @@ async function handleViewRouteMap(
   for (const warning of data.waypointWarnings ?? []) {
     lines.push(`Warning: ${warning}`);
   }
-  lines.push(
-    "",
-    viewFooter("route map", "get-activity", context.clientRendersApps),
+  // No text tool describes the track, so no twin: get-activity has the rest.
+  return viewResult(
+    lines,
+    { kind: "route map", footer: "get-activity" },
+    args,
+    token,
+    progress,
+    context,
   );
-  return { content: [{ type: "text", text: lines.join("\n") }] };
 }
 
 /**
@@ -1449,7 +1556,7 @@ async function handleGetCompareActivitiesData(
 async function handleViewCompareActivities(
   args: Record<string, unknown>,
   token: string,
-  _progress: ReportProgress,
+  progress: ReportProgress,
   context: ToolCallContext,
 ): Promise<ToolCallResult> {
   const data = await loadCompareActivitiesData(args, token);
@@ -1468,15 +1575,18 @@ async function handleViewCompareActivities(
   for (const warning of data.warnings ?? []) {
     lines.push(`Warning: ${warning}`);
   }
-  lines.push(
-    "",
-    viewFooter(
-      "activity comparison",
-      "compare-activities",
-      context.clientRendersApps,
-    ),
+  return viewResult(
+    lines,
+    {
+      kind: "activity comparison",
+      footer: "compare-activities",
+      twin: compareActivitiesTool.name,
+    },
+    args,
+    token,
+    progress,
+    context,
   );
-  return { content: [{ type: "text", text: lines.join("\n") }] };
 }
 
 interface ToolCallResult {
