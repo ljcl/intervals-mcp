@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.7.0](https://github.com/ljcl/intervals-mcp/compare/v2.6.0...v2.7.0) (2026-10-10)
+
+
+### Features
+
+* weather and per-km drift in run comparisons, data in every view, labelled moving times ([#179](https://github.com/ljcl/intervals-mcp/issues/179)) ([37c040d](https://github.com/ljcl/intervals-mcp/commit/37c040dec1ac83d670ce19d70a0dee9f1cfc0b92))
+
 ## [2.6.0](https://github.com/ljcl/intervals-mcp/compare/v2.5.1...v2.6.0) (2026-10-10)
 
 
