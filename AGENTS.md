@@ -24,12 +24,16 @@ this file holds only the invariants that apply to every change.
 One line each; full rationale in docs/architecture.md. These exist because
 breaking them has shipped bugs — do not work around them locally.
 
-- **Only the 2026-07-28 revision is served.** `mcpEndpoint.ts` serves it
-  statelessly per request with `legacy: "reject"`: a 2025-era request gets
-  HTTP 400 `-32022` naming the supported revision. Do not reintroduce a legacy
-  fallback — a claim-less request skips the `Mcp-Method`/`Mcp-Name` header
-  check, so it would bypass any proxy rule keyed on those headers. No sessions
-  (`Mcp-Session-Id` is gone; GET/DELETE answer 405). The endpoint parses every POST body itself with
+- **2026-07-28 is the revision; 2025-era requests are served read-only.**
+  `mcpEndpoint.ts` serves both statelessly per request with
+  `legacy: "stateless"`, because claude.ai loads MCP Apps with a 2025-11-25
+  client. A claim-less request skips the `Mcp-Method`/`Mcp-Name` header check,
+  so a proxy rule keyed on those headers cannot see it: `createServer` gets the
+  request's `era`, and on `legacy` its `tools/list` leaves out every tool not
+  annotated read-only and `dispatchToolCall` (`readOnly`) refuses one. Never
+  serve a write on the 2025 path. No sessions (`Mcp-Session-Id` is gone;
+  GET/DELETE answer 405). An envelope naming an unserved revision gets HTTP
+  400 `-32022`. The endpoint parses every POST body itself with
   `parseJsonWithLargeInts` → SDK `parsedBody`; that seam keeps 64-bit ids
   intact.
 - **Rate limits and retries live in `fetchClient.ts`, never per-tool.**

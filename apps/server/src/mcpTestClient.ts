@@ -7,11 +7,12 @@
  * an annotation, capability, or schema that does not serialize cannot
  * influence a host, and a table in memory proves nothing about the wire.
  *
- * The endpoint serves only the 2026-07-28 revision: no handshake at all; every
- * request carries the `io.modelcontextprotocol/*` envelope keys in
- * `params._meta` plus the `MCP-Protocol-Version` and `Mcp-Method` (and, where
- * the body names one, `Mcp-Name`) headers, and capabilities come from
- * `server/discover`.
+ * `send` speaks the 2026-07-28 revision: no handshake at all; every request
+ * carries the `io.modelcontextprotocol/*` envelope keys in `params._meta` plus
+ * the `MCP-Protocol-Version` and `Mcp-Method` (and, where the body names one,
+ * `Mcp-Name`) headers, and capabilities come from `server/discover`.
+ * `sendLegacy` speaks the 2025-11-25 revision, as claude.ai's MCP Apps loader
+ * does, which the endpoint serves statelessly.
  *
  * Every protocol-surface suite drives the endpoint through this client, so a
  * protocol change is fixed once, here — never by re-bootstrapping in a new
@@ -28,6 +29,9 @@ import { createServer } from "./server";
 
 /** The 2026-07-28 revision every request names in its envelope. */
 export const PROTOCOL_VERSION = "2026-07-28";
+
+/** The 2025-era revision claude.ai's MCP Apps loader speaks. */
+export const LEGACY_PROTOCOL_VERSION = "2025-11-25";
 
 /** A JSON-RPC response as it came off the wire. */
 export interface JsonRpcResponse {
@@ -64,6 +68,17 @@ export interface McpTestClient {
     params?: unknown,
     options?: SendOptions,
   ): Promise<string>;
+  /**
+   * Send a 2025-era request (no envelope) and return the parsed JSON-RPC
+   * response. Like a 2025 client, it names {@link LEGACY_PROTOCOL_VERSION} in
+   * `MCP-Protocol-Version` on every request after `initialize`. `headers`
+   * win, so a test can spoof `Mcp-Name`.
+   */
+  sendLegacy(
+    method: string,
+    params?: unknown,
+    headers?: Record<string, string>,
+  ): Promise<JsonRpcResponse>;
   /** Abort anything in flight; the endpoint holds no sessions to drain. */
   close(): Promise<void>;
 }
@@ -180,6 +195,26 @@ export async function connectTestClient(
     return parsed;
   };
 
+  const sendLegacy = async (
+    method: string,
+    params?: unknown,
+    headers: Record<string, string> = {},
+  ) => {
+    const body = { jsonrpc: "2.0", id: nextId++, method, params };
+    const response = await endpoint.handleRequest(
+      post(body, {
+        ...(method === "initialize"
+          ? {}
+          : { "MCP-Protocol-Version": LEGACY_PROTOCOL_VERSION }),
+        ...headers,
+      }),
+    );
+    const raw = await response.text();
+    const parsed = parseResponse(raw);
+    if (!parsed) throw new Error(`no JSON-RPC response in ${method}: ${raw}`);
+    return parsed;
+  };
+
   // No handshake in this revision; `server/discover` is the optional probe
   // that replaced initialize's advertisement.
   const discover = (await send("server/discover")).result ?? {};
@@ -188,6 +223,7 @@ export async function connectTestClient(
     discover,
     send,
     sendRaw,
+    sendLegacy,
     close: () => endpoint.close(),
   };
 }

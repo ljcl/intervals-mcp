@@ -212,12 +212,13 @@ wrapped here:
   "ts": "2026-10-08T01:03:00.120Z",
   "status": 400,
   "code": -32022,
-  "reason": "Rejected 2025-era request on a modern-only endpoint (modern-only-missing-envelope): Unsupported protocol version: 2025-06-18",
+  "reason": "Unsupported protocol version: 2099-01-01",
   "http_method": "POST",
-  "rpc_method": "initialize",
-  "protocol_version": "2025-06-18",
-  "client_name": "claude-desktop",
-  "client_version": "0.9.0"
+  "mcp_method": "tools/list",
+  "rpc_method": "tools/list",
+  "protocol_version": "2099-01-01",
+  "client_name": "example-client",
+  "client_version": "1.0"
 }
 ```
 
@@ -245,10 +246,18 @@ A 401 has one of three reasons: `no Authorization header`,
 body of an unauthenticated request. A 401 line therefore carries only
 `status`, `code`, `reason`, `http_method`, `mcp_method` and `protocol_version`.
 
-To find clients that still speak the 2025 revision:
+To find clients whose envelope names a revision the server does not serve:
 
 ```bash
 docker compose logs | grep mcp_rejected | grep '"code":-32022'
+```
+
+A 2025-era request (no envelope, for example claude.ai's MCP Apps loader) is
+served, so it writes no `mcp_rejected` line. Its `tool_call` line has no
+`client_name`, because only the envelope carries one. To list those calls:
+
+```bash
+docker compose logs | grep '"event":"tool_call"' | grep -v '"client_name"'
 ```
 
 ## Securing the endpoint
@@ -265,13 +274,22 @@ Set it in `.env` (`docker-compose.yml` forwards it automatically), or pass it
 through yourself when running the published image without that compose file
 (`docker run -e MCP_AUTH_TOKEN=...`).
 
-Every served `/mcp` request POST carries `MCP-Protocol-Version` and
+Every 2026-07-28 request POST carries `MCP-Protocol-Version` and
 `Mcp-Method` (and, for a tool call, `Mcp-Name` with the tool name), and the
-server rejects with HTTP 400 and `-32020` any request that leaves one out or
-whose headers disagree with its body. So a reverse proxy or WAF in front of the
-server can log, rate-limit, or block by tool without parsing JSON — for
-example, deny `Mcp-Name: update-activity` to make the instance read-only.
-Only 2026-07-28 clients are served: a 2025-era client gets HTTP 400 with
+server rejects with HTTP 400 and `-32020` any such request that leaves one out
+or whose headers disagree with its body. So a reverse proxy or WAF in front of
+the server can log, rate-limit, or block those requests by tool without
+parsing JSON.
+
+The server also serves 2025-era requests (no envelope), because claude.ai
+loads MCP Apps with a 2025-11-25 client. Those requests skip the header check,
+so they can carry any `Mcp-Name`, or none. A rule keyed on the headers cannot
+see what they call. For that reason the server never runs a write on that
+path: a 2025-era `tools/list` leaves out `update-activity`, and a 2025-era
+call to it gets an `isError` result. To make the instance read-only for every
+client, deny `Mcp-Name: update-activity` at the proxy. A 2026-07-28 client
+must send that header, and a 2025-era client cannot run the tool at all. An
+envelope naming any revision other than 2026-07-28 gets HTTP 400 with
 JSON-RPC error `-32022` naming `2026-07-28` as the supported revision.
 
 The secret also gates the detailed half of `/health` (open it with

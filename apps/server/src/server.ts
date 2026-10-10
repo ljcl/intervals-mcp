@@ -713,6 +713,21 @@ function buildToolDefs(): ToolDef[] {
 export const TOOL_DEFS = buildToolDefs();
 
 /**
+ * Every tool not annotated read-only: the tools that change data. A 2025-era
+ * request neither lists nor runs them (see {@link DispatchOptions.readOnly}).
+ */
+const WRITE_TOOLS = new Set(
+  TOOL_DEFS.filter((def) => def.annotations?.readOnlyHint !== true).map(
+    (def) => def.name,
+  ),
+);
+
+/** What a 2025-era `tools/list` gets: {@link TOOL_DEFS} without the writes. */
+const READ_ONLY_TOOL_DEFS = TOOL_DEFS.filter(
+  (def) => !WRITE_TOOLS.has(def.name),
+);
+
+/**
  * What the request's client told the server about itself, handed to every
  * handler as its fourth argument. Only the view-* handlers read it, to decide
  * whether to claim a rendered chart or give the text twin's text (#77).
@@ -1648,6 +1663,13 @@ export interface DispatchOptions {
   /** The ids in the request's W3C `traceparent`, when it carried a valid one. */
   trace?: TraceIds;
   /**
+   * The request came over the 2025-era path. That path skips the SDK's
+   * `Mcp-Method`/`Mcp-Name` header check, so a proxy rule keyed on those
+   * headers cannot see which tool it calls. Only read-only tools run; a
+   * write is refused before its arguments are read.
+   */
+  readOnly?: boolean;
+  /**
    * Aborts when the client closes the request (its cancel or its own
    * timeout), when the response stream is cancelled, and at shutdown. It
    * rides the call scope into every intervals.icu request. Absent means the
@@ -1682,7 +1704,7 @@ async function runToolCall(
   scope: CallScope,
   name: string,
   rawArgs: Record<string, unknown> | undefined,
-  { progress = NO_PROGRESS, client, trace }: DispatchOptions,
+  { progress = NO_PROGRESS, client, trace, readOnly }: DispatchOptions,
 ): Promise<ToolCallResult> {
   const context: ToolCallContext = {
     clientRendersApps: client?.rendersApps ?? false,
@@ -1732,6 +1754,24 @@ async function runToolCall(
       undefined,
       // The name is the client's text: it shares the one `unknown` counter.
       false,
+    );
+  }
+
+  if (readOnly && WRITE_TOOLS.has(name)) {
+    return finish(
+      "error",
+      {
+        isError: true,
+        content: [
+          {
+            type: "text",
+            text: prefixedErrorText(
+              `${name} changes data, and this client connects with a 2025 protocol revision, so the server does not run it. To make the change, use a client that speaks the 2026-07-28 revision.`,
+            ),
+          },
+        ],
+      },
+      { error_class: ERROR_RESULT_CLASS },
     );
   }
 
@@ -1851,7 +1891,19 @@ async function runToolCall(
  */
 const STATIC_SURFACE_TTL_MS = 60 * 60 * 1000;
 
-export function createServer(): Server {
+/**
+ * The server for one request. `era` is the SDK's name for the request's
+ * protocol era: `legacy` for a 2025-era request, which the endpoint serves
+ * statelessly so claude.ai can load the MCP Apps. That path skips the
+ * `Mcp-Method`/`Mcp-Name` header check, so on it `tools/list` leaves out
+ * every write tool and `tools/call` refuses one.
+ */
+export function createServer({
+  era = "modern",
+}: {
+  era?: "legacy" | "modern";
+} = {}): Server {
+  const legacy = era === "legacy";
   const server = new Server(
     {
       name: "Intervals Extra",
@@ -1890,7 +1942,9 @@ export function createServer(): Server {
   // structurally; the wire shape these serialize to is what the integration
   // suite asserts, so the casts below are confined to this seam.
   server.setRequestHandler("tools/list", async () => ({
-    tools: TOOL_DEFS as unknown as ListToolsResult["tools"],
+    tools: (legacy
+      ? READ_ONLY_TOOL_DEFS
+      : TOOL_DEFS) as unknown as ListToolsResult["tools"],
   }));
 
   server.setRequestHandler("prompts/list", async () => ({
@@ -1919,6 +1973,7 @@ export function createServer(): Server {
       | undefined;
     const result = await dispatchToolCall(name, args, {
       signal: ctx.mcpReq.signal,
+      readOnly: legacy,
       // `ctx.mcpReq.notify` is already scoped to this request, which is what
       // lets the transport put the notification on the same SSE stream the
       // response will arrive on.

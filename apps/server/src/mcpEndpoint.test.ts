@@ -1,9 +1,10 @@
 /**
- * HTTP behaviour of the 2026-07-28-only /mcp endpoint (#33): an enveloped
- * request is served, any 2025-era request is rejected with a typed
- * unsupported-version error naming the served revision, malformed JSON
- * returns a JSON-RPC parse error instead of throwing out of `req.json()`,
- * and 64-bit ids survive the body parse.
+ * HTTP behaviour of the /mcp endpoint (#33): an enveloped 2026-07-28 request
+ * is served, a 2025-era request is served statelessly and tells the server
+ * factory its era (so the server can refuse writes on that path), an envelope
+ * naming an unserved revision is rejected with a typed unsupported-version
+ * error, malformed JSON returns a JSON-RPC parse error instead of throwing
+ * out of `req.json()`, and 64-bit ids survive the body parse.
  */
 import { Server } from "@modelcontextprotocol/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -62,68 +63,94 @@ const MODERN_META = {
 } as const;
 
 describe("createMcpEndpoint", () => {
-  it("rejects a 2025-era initialize, naming the supported revision", async () => {
+  it("serves a 2025-era initialize statelessly, with no session", async () => {
     const endpoint = makeEndpoint();
 
     const response = await endpoint.handleRequest(post(INITIALIZE_BODY));
 
-    expect(response.status).toBe(400);
+    // claude.ai loads MCP Apps with a 2025-era client, so this era is served.
+    expect(response.status).toBe(200);
     expect(response.headers.get("mcp-session-id")).toBeNull();
-    const body = await response.json();
-    // -32022: UnsupportedProtocolVersion. `data.supported` is what tells an
-    // old client which revision to speak instead.
-    expect(body.error.code).toBe(-32022);
-    expect(body.error.data).toEqual({
-      supported: ["2026-07-28"],
-      requested: "2025-06-18",
-    });
+    const parsed = parseResponse(await response.text());
+    expect(parsed?.result?.protocolVersion).toBe("2025-06-18");
   });
 
-  it("rejects a request with no envelope, even without a prior handshake", async () => {
+  it("serves a request with no envelope, even without a prior handshake", async () => {
     const endpoint = makeEndpoint();
 
     const response = await endpoint.handleRequest(
       post({ jsonrpc: "2.0", id: 2, method: "tools/list" }),
     );
 
-    expect(response.status).toBe(400);
-    const body = await response.json();
-    expect(body.error.code).toBe(-32022);
-    expect(body.error.data.supported).toEqual(["2026-07-28"]);
+    expect(response.status).toBe(200);
+    expect(parseResponse(await response.text())?.result?.tools).toEqual([]);
   });
 
-  it("never serves a claim-less tools/call past a spoofed Mcp-Name", async () => {
-    // A proxy rule keyed on Mcp-Name is only sound if every served request
-    // went through the header-vs-body check. A legacy fallback skipped it:
-    // this exact request was answered 200 under `legacy: "stateless"`.
-    let called = false;
-    const endpoint = createMcpEndpoint(() => {
+  it("tells the server factory each request's era, whatever its headers say", async () => {
+    // A 2025-era request skips the SDK's Mcp-Method/Mcp-Name check, so a
+    // spoofed Mcp-Name passes. The era is how createServer knows to refuse
+    // writes on that path.
+    const eras: string[] = [];
+    const endpoint = createMcpEndpoint(({ era }) => {
+      eras.push(era);
       const server = new Server(
         { name: "test", version: "0.0.0" },
         { capabilities: { tools: {} } },
       );
-      server.setRequestHandler("tools/call", async () => {
-        called = true;
-        return { content: [] };
-      });
+      server.setRequestHandler("tools/list", async () => ({ tools: [] }));
       return server;
     });
+
+    await endpoint.handleRequest(
+      post(
+        { jsonrpc: "2.0", id: 1, method: "tools/list" },
+        { "Mcp-Method": "tools/list", "Mcp-Name": "get-wellness" },
+      ),
+    );
+    await endpoint.handleRequest(
+      post(
+        {
+          jsonrpc: "2.0",
+          id: 2,
+          method: "tools/list",
+          params: { _meta: MODERN_META },
+        },
+        { ...MODERN_HEADERS, "Mcp-Method": "tools/list" },
+      ),
+    );
+
+    expect(eras).toEqual(["legacy", "modern"]);
+  });
+
+  it("rejects an envelope naming a revision it does not serve", async () => {
+    const endpoint = makeEndpoint();
 
     const response = await endpoint.handleRequest(
       post(
         {
           jsonrpc: "2.0",
           id: 2,
-          method: "tools/call",
-          params: { name: "update-activity", arguments: {} },
+          method: "tools/list",
+          params: {
+            _meta: {
+              ...MODERN_META,
+              "io.modelcontextprotocol/protocolVersion": "2099-01-01",
+            },
+          },
         },
-        { "Mcp-Method": "tools/call", "Mcp-Name": "get-wellness" },
+        { "MCP-Protocol-Version": "2099-01-01", "Mcp-Method": "tools/list" },
       ),
     );
 
     expect(response.status).toBe(400);
-    expect((await response.json()).error.code).toBe(-32022);
-    expect(called).toBe(false);
+    const body = await response.json();
+    // -32022: UnsupportedProtocolVersion. `data.supported` is what tells the
+    // client which revision to speak instead.
+    expect(body.error.code).toBe(-32022);
+    expect(body.error.data).toEqual({
+      supported: ["2026-07-28"],
+      requested: "2099-01-01",
+    });
   });
 
   it("rejects an enveloped request whose Mcp-Name disagrees with the body", async () => {
@@ -310,8 +337,44 @@ describe("rejected requests (#69)", () => {
     );
   }
 
-  it("logs one line for a 2025-era initialize and no handler error", async () => {
+  /** A tools/list whose envelope names a revision the endpoint does not serve. */
+  function unservedRevision(
+    clientName = "test-client",
+    headers: Record<string, string> = {},
+  ): Request {
+    return post(
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "tools/list",
+        params: {
+          _meta: {
+            ...MODERN_META,
+            "io.modelcontextprotocol/protocolVersion": "2099-01-01",
+            "io.modelcontextprotocol/clientInfo": {
+              name: clientName,
+              version: "1.0",
+            },
+          },
+        },
+      },
+      {
+        "MCP-Protocol-Version": "2099-01-01",
+        "Mcp-Method": "tools/list",
+        ...headers,
+      },
+    );
+  }
+
+  it("writes no line for a served 2025-era initialize", async () => {
     const response = await makeEndpoint().handleRequest(post(INITIALIZE_BODY));
+
+    expect(response.status).toBe(200);
+    expect(console.error).not.toHaveBeenCalled();
+  });
+
+  it("logs one line for an unserved revision and no handler error", async () => {
+    const response = await makeEndpoint().handleRequest(unservedRevision());
 
     expect(response.status).toBe(400);
     expect((await response.json()).error.code).toBe(-32022);
@@ -321,11 +384,12 @@ describe("rejected requests (#69)", () => {
         status: 400,
         code: -32022,
         http_method: "POST",
-        rpc_method: "initialize",
-        protocol_version: "2025-06-18",
+        mcp_method: "tools/list",
+        rpc_method: "tools/list",
+        protocol_version: "2099-01-01",
         client_name: "test-client",
         client_version: "1.0",
-        reason: expect.stringContaining("modern-only-missing-envelope"),
+        reason: "Unsupported protocol version: 2099-01-01",
       }),
     ]);
   });
@@ -435,7 +499,7 @@ describe("rejected requests (#69)", () => {
 
   it("never logs the Authorization header", async () => {
     await makeEndpoint().handleRequest(
-      post(INITIALIZE_BODY, { Authorization: "Bearer secret-value" }),
+      unservedRevision("test-client", { Authorization: "Bearer secret-value" }),
     );
 
     expect(rejected()).toHaveLength(1);
@@ -470,14 +534,10 @@ describe("rejected requests (#69)", () => {
 
   it("keeps each parallel rejection's own reason and client", async () => {
     const endpoint = makeEndpoint();
-    const withClient = (name: string) => ({
-      ...INITIALIZE_BODY,
-      params: { ...INITIALIZE_BODY.params, clientInfo: { name, version: "1" } },
-    });
 
     await Promise.all([
-      endpoint.handleRequest(post(withClient("client-a"))),
-      endpoint.handleRequest(post(withClient("client-b"))),
+      endpoint.handleRequest(unservedRevision("client-a")),
+      endpoint.handleRequest(unservedRevision("client-b")),
     ]);
 
     const seen = rejected();
@@ -487,9 +547,7 @@ describe("rejected requests (#69)", () => {
       "client-b",
     ]);
     for (const line of seen) {
-      expect(line.reason).toEqual(
-        expect.stringContaining("modern-only-missing-envelope"),
-      );
+      expect(line.reason).toBe("Unsupported protocol version: 2099-01-01");
     }
   });
 });

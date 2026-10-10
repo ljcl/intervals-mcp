@@ -408,11 +408,13 @@ that the image carries no `node_modules` install tree, the bearer gate, that
 `tools/list` matches `tool-surface.lock.json`, that every `ui://` app resource
 returns HTML, that a bad-argument `tools/call` comes back as `isError` and
 writes a `tool_call` line with `ts` and the client's name and version (proof
-that the call scope works on Bun), that a 2025-era `initialize` gets
-`-32022`, that `TZ=Australia/Sydny` with `PORT=abc` exits 1 naming both
-variables, and that `docker stop` exits 0 promptly. It also checks that the
-401 and the `-32022` rejection each wrote an `mcp_rejected` line, and that no
-log line holds the token. A failing leg keeps the merge job from publishing
+that the call scope works on Bun), that a 2025-era `initialize` is served
+and a 2025-era `update-activity` is refused (the write guard), that an
+envelope naming an unserved revision gets `-32022`, that
+`TZ=Australia/Sydny` with `PORT=abc` exits 1 naming both variables, and that
+`docker stop` exits 0 promptly. It also checks that the 401 and the `-32022`
+rejection each wrote an `mcp_rejected` line, and that no log line holds the
+token. A failing leg keeps the merge job from publishing
 any tag. Run it locally against any build:
 
 ```bash

@@ -181,7 +181,7 @@ Add to `.vscode/mcp.json` in your workspace (or run **MCP: Add Server** from the
 
 #### Other clients (generic Streamable HTTP)
 
-Any client that speaks [Streamable HTTP](https://modelcontextprotocol.io/docs/concepts/transports) can connect to the `/mcp` endpoint directly. The endpoint serves only the 2026-07-28 revision: clients send stateless requests carrying the `io.modelcontextprotocol/*` envelope keys and the `Mcp-Method`/`Mcp-Name` headers (`server/discover` advertises capabilities). A 2025-era client (one that opens with `initialize`) gets JSON-RPC error `-32022` naming the supported revision. POST JSON-RPC messages with an `Accept: application/json, text/event-stream` header. Protocol details: [docs/architecture.md](docs/architecture.md#runtime-and-transport).
+Any client that speaks [Streamable HTTP](https://modelcontextprotocol.io/docs/concepts/transports) can connect to the `/mcp` endpoint directly. The endpoint serves the 2026-07-28 revision: clients send stateless requests carrying the `io.modelcontextprotocol/*` envelope keys and the `Mcp-Method`/`Mcp-Name` headers (`server/discover` advertises capabilities). A 2025-era client (one that opens with `initialize`) is served statelessly too, because claude.ai loads MCP Apps that way, but it gets no write tool: `update-activity` needs a 2026-07-28 client. POST JSON-RPC messages with an `Accept: application/json, text/event-stream` header. Protocol details: [docs/architecture.md](docs/architecture.md#runtime-and-transport).
 
 ## Tools
 
@@ -217,7 +217,7 @@ PRs are squash-merged and the **PR title becomes the commit on `main`**, so writ
 
 **"Cloudflare … answered with a challenge":** Cloudflare, in front of intervals.icu, stopped the request before it reached intervals.icu, so this is not an API key problem. Wait a few minutes and retry. See [operations.md](docs/operations.md#rate-limits-and-resilience).
 
-**Client can't connect (401 or unsupported protocol version):** Each refused `/mcp` request writes one `mcp_rejected` line to the server log with its status, JSON-RPC code and, when the client sent it, its name. A 401 means the bearer token is missing or wrong. Code `-32022` means the client speaks an older MCP revision. See [operations.md](docs/operations.md#rejected-requests).
+**Client can't connect (401 or unsupported protocol version):** Each refused `/mcp` request writes one `mcp_rejected` line to the server log with its status, JSON-RPC code and, when the client sent it, its name. A 401 means the bearer token is missing or wrong. Code `-32022` means the client's envelope names an MCP revision the server does not serve. See [operations.md](docs/operations.md#rejected-requests).
 
 **Is the server up and reachable?** `curl https://your-public-url/health`. It answers without touching the intervals.icu API, so it works even when your rate limit is exhausted.
 
