@@ -154,6 +154,26 @@ function toInputSchema(schema: z.ZodType): Record<string, unknown> {
 }
 
 /**
+ * Build the advertised JSON Schema for a tool's *output*: the default
+ * (output) projection with every object left open. zod closes each object
+ * with `additionalProperties: false`, and a host can hold a tool list from
+ * before a deploy and validate the new results against it. A closed object
+ * then rejects every field a release adds: 2.7.0's new fields failed every
+ * get-running-summary and compare-activities call against cached 2.6.0
+ * schemas. `output-schema.lock.json` guards the other half, a required field
+ * that goes away or takes a new type (outputSchemaCompat.test.ts).
+ */
+function toOutputSchema(schema: z.ZodType): Record<string, unknown> {
+  return z.toJSONSchema(schema, {
+    override: ({ jsonSchema }) => {
+      if (jsonSchema.additionalProperties === false) {
+        delete jsonSchema.additionalProperties;
+      }
+    },
+  });
+}
+
+/**
  * Zod schemas for the MCP App tools. Single source of truth: the
  * advertised JSON Schemas in buildToolDefs derive from these, and dispatch
  * validates every call against them, so a host omitting or mistyping an
@@ -482,7 +502,7 @@ function buildToolDefs(): ToolDef[] {
       inputSchema: t.inputSchema ? toInputSchema(t.inputSchema) : EMPTY_SCHEMA,
     };
     if (t.annotations) def.annotations = t.annotations;
-    if (t.outputSchema) def.outputSchema = z.toJSONSchema(t.outputSchema);
+    if (t.outputSchema) def.outputSchema = toOutputSchema(t.outputSchema);
     return def;
   });
 

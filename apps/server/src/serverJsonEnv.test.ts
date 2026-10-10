@@ -29,6 +29,7 @@ const EXEMPT: Record<string, string> = {
   // Dev-only: regenerates tool-surface.lock.json inside toolSurface.test.ts;
   // meaningless outside a test run.
   UPDATE_TOOL_SURFACE_LOCK: "dev-only lock regeneration flag",
+  UPDATE_OUTPUT_SCHEMA_LOCK: "dev-only lock regeneration flag",
 };
 
 function stripComments(source: string): string {
