@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  type ActivityWeather,
+  formatWeatherLine,
+  loadActivityWeather,
+} from "../activityWeather";
 import { hrZoneRangeText, resolveHrZones } from "../activityZones";
 import { AerobicAnalysisError, interpretDecoupling } from "../aerobicAnalysis";
 import {
@@ -66,6 +71,8 @@ Notes:
 - When intervals.icu has no decoupling or efficiency factor, both are
   computed from the streams on the grade-adjusted basis and marked
   computed, as get-aerobic-analysis computes them.
+- Weather: temperature, and humidity and dew point from the FIT file when
+  it has them.
 - HR zones use the activity's own bounds, else the Run sport settings; the
   zone summary is left out, with a note, when neither matches.
 - The text lists at most 20 laps; get-activity-laps and structuredContent.laps
@@ -256,6 +263,7 @@ export function mapRunningSummary(
   sportSettings: IntervalsSportSettings | null,
   gearName: string | null = activity.gear?.name ?? null,
   computedAerobic: ComputedAerobic | null = null,
+  weather?: ActivityWeather | null,
 ): RunningSummary {
   const type = activity.type ?? "Workout";
   // `intervals` is dropped: `laps` below carries the same icu_intervals
@@ -264,6 +272,7 @@ export function mapRunningSummary(
     activity,
     sportSettings,
     gearName,
+    weather,
   );
 
   const { summary: hrZoneSummary, note: hrZoneNote } = buildHrZoneSummary(
@@ -376,6 +385,9 @@ export function formatRunningSummaryText(d: RunningSummary): string {
   const hrRecoveryLine = formatHrRecoveryLine(d);
   if (hrRecoveryLine) lines.push(hrRecoveryLine);
 
+  const weatherLine = formatWeatherLine(d.weather);
+  if (weatherLine) lines.push(weatherLine);
+
   if (d.cadence_assessment)
     lines.push(`Cadence assessment: ${d.cadence_assessment}`);
 
@@ -446,16 +458,20 @@ export const getRunningSummaryTool = {
       // After the run-type check, so a rejected non-run sends no further
       // read. The streams are read only when intervals.icu lacks decoupling
       // or the efficiency factor.
-      progress(`Reading gear and streams for "${activity.name ?? id}"`);
-      const [gearName, computedAerobic] = await Promise.all([
+      progress(
+        `Reading gear, weather and streams for "${activity.name ?? id}"`,
+      );
+      const [gearName, computedAerobic, weather] = await Promise.all([
         resolveActivityGearName(apiKey, activity),
         computeMissingAerobic(apiKey, id, activity, sportSettingsResult),
+        loadActivityWeather(apiKey, id, activity),
       ]);
       const summary = mapRunningSummary(
         activity,
         sportSettingsResult,
         gearName,
         computedAerobic,
+        weather,
       );
       warnOnSchemaDrift(name, RunningSummaryOutputSchema, summary);
 

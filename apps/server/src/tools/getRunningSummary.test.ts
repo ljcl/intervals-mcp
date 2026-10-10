@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { handledNotFound, handledRateLimit } from "../__fixtures__";
+import {
+  buildFitFile,
+  FIT_TYPES,
+  fitFieldDescription,
+} from "../__fixtures__/fitFile";
 import activityFixture from "../__fixtures__/intervals/activity.json";
 import activityIntervalsFixture from "../__fixtures__/intervals/activity-intervals.json";
 import activityMultilap from "../__fixtures__/intervals/activity-multilap.json";
@@ -8,6 +13,7 @@ import sportSettingsRunFixture from "../__fixtures__/intervals/sport-settings-ru
 import streamsFixture from "../__fixtures__/intervals/streams.json";
 import {
   getActivity,
+  getActivityFile,
   getActivityStreams,
   getSportSettings,
   type IntervalsActivity,
@@ -32,6 +38,7 @@ vi.mock("../intervalsClient", async () => {
   return {
     ...actual,
     getActivity: vi.fn(),
+    getActivityFile: vi.fn(),
     getActivityStreams: vi.fn(),
     getSportSettings: vi.fn(),
     listGear: vi.fn(),
@@ -40,6 +47,17 @@ vi.mock("../intervalsClient", async () => {
 
 const mockedGetActivity = vi.mocked(getActivity);
 const mockedGetActivityStreams = vi.mocked(getActivityStreams);
+const mockedGetActivityFile = vi.mocked(getActivityFile);
+
+/** A FIT file with HealthFit's session humidity (69%) and temperature. */
+const HEALTHFIT_FILE = buildFitFile([
+  fitFieldDescription(0, 3, "SESSION WEATHER HUMIDITY", FIT_TYPES.uint16),
+  {
+    global: 18,
+    fields: [{ num: 57, type: FIT_TYPES.sint8, value: 22 }],
+    devFields: [{ num: 3, devIndex: 0, type: FIT_TYPES.uint16, value: 6900 }],
+  },
+]);
 const mockedGetSportSettings = vi.mocked(getSportSettings);
 const mockedListGear = vi.mocked(listGear);
 
@@ -296,6 +314,74 @@ describe("getRunningSummaryTool.execute", () => {
     mockedGetActivityStreams.mockResolvedValue(
       streamsFixture as unknown as IntervalsStream[],
     );
+    mockedGetActivityFile.mockReset();
+    mockedGetActivityFile.mockResolvedValue(HEALTHFIT_FILE);
+  });
+
+  it("reports the temperature, and the humidity and dew point from the FIT file", async () => {
+    mockedGetActivity.mockResolvedValueOnce(runActivityWithIntervals);
+    mockedGetSportSettings.mockResolvedValueOnce(sportSettingsRun);
+
+    const result = await getRunningSummaryTool.execute(
+      { id: "i189807578" },
+      "key",
+    );
+
+    expect(mockedGetActivityFile).toHaveBeenCalledWith("key", "i189807578");
+    const structured = RunningSummaryOutputSchema.parse(
+      result.structuredContent,
+    );
+    expect(structured.weather).toEqual({
+      temperature_c: 22,
+      temperature_source: "file",
+      feels_like_c: null,
+      humidity_pct: 69,
+      dew_point_c: 16.1,
+    });
+    expect(result.content[0]?.text).toContain(
+      "Weather: 22 °C, humidity 69%, dew point 16.1 °C (activity file)",
+    );
+  });
+
+  it("keeps the file's temperature, with no humidity, when the file read fails", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockedGetActivity.mockResolvedValueOnce(runActivityWithIntervals);
+    mockedGetSportSettings.mockResolvedValueOnce(sportSettingsRun);
+    mockedGetActivityFile.mockRejectedValueOnce(handledNotFound("file"));
+
+    const result = await getRunningSummaryTool.execute(
+      { id: "i189807578" },
+      "key",
+    );
+
+    expect(result.isError).toBeUndefined();
+    const structured = RunningSummaryOutputSchema.parse(
+      result.structuredContent,
+    );
+    expect(structured.weather).toMatchObject({
+      temperature_c: 22,
+      humidity_pct: null,
+      dew_point_c: null,
+    });
+    errorSpy.mockRestore();
+  });
+
+  it("reads no file for an activity that was not a FIT upload", async () => {
+    mockedGetActivity.mockResolvedValueOnce({
+      ...runActivityWithIntervals,
+      file_type: null,
+      average_temp: null,
+    });
+    mockedGetSportSettings.mockResolvedValueOnce(sportSettingsRun);
+
+    const result = await getRunningSummaryTool.execute(
+      { id: "i189807578" },
+      "key",
+    );
+
+    expect(mockedGetActivityFile).not.toHaveBeenCalled();
+    expect(result.structuredContent?.weather).toBeNull();
+    expect(result.content[0]?.text).not.toContain("Weather:");
   });
 
   it("computes decoupling and efficiency factor from the streams when intervals.icu has none, marked computed", async () => {

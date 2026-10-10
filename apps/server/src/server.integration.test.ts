@@ -32,7 +32,10 @@ vi.mock("./intervalsClient", async (importOriginal) => {
   return {
     ...actual,
     getActivity: vi.fn(),
-    getActivityStreams: vi.fn(),
+    // No streams and no file unless a test serves them: compare-activities
+    // reads both for its per-km table and weather.
+    getActivityStreams: vi.fn(async () => []),
+    getActivityFile: vi.fn(async () => new Uint8Array()),
     getAthletePaceCurves: vi.fn(),
     // get-activity fires this next to getActivity. Without a mock it would
     // send a live request through the real intervalsApi. An implementation

@@ -4,6 +4,11 @@ import {
   formatAchievement,
   mapAchievements,
 } from "../achievements";
+import {
+  type ActivityWeather,
+  buildActivityWeather,
+  formatWeatherLine,
+} from "../activityWeather";
 import { hrZoneRangeText, resolveHrZones } from "../activityZones";
 import {
   formatDuration,
@@ -174,7 +179,8 @@ export interface ActivityDetail {
    * or the read fails.
    */
   gear_name: string | null;
-  weather_temp_c: number | null;
+  /** From `buildActivityWeather`; get-activity reads no file, so no humidity. */
+  weather: ActivityWeather | null;
   description: string | null;
   units: {
     distance: "km";
@@ -325,6 +331,7 @@ export function mapActivityDetail(
   activity: IntervalsActivity,
   sportSettings: IntervalsSportSettings | null,
   gearName: string | null = activity.gear?.name ?? null,
+  weather: ActivityWeather | null = buildActivityWeather(activity, null),
 ): ActivityDetail {
   const type = activity.type ?? "Workout";
   const movingTimeS = activity.moving_time ?? 0;
@@ -397,7 +404,7 @@ export function mapActivityDetail(
     intervals,
     gear_id: activity.gear?.id ?? null,
     gear_name: gearName,
-    weather_temp_c: activity.average_weather_temp ?? null,
+    weather,
     description: activity.description ?? null,
     units: {
       distance: "km",
@@ -568,6 +575,9 @@ export function formatActivityDetailText(d: ActivityDetail): string {
 
   const hrRecoveryLine = formatHrRecoveryLine(d);
   if (hrRecoveryLine) lines.push(hrRecoveryLine);
+
+  const weatherLine = formatWeatherLine(d.weather);
+  if (weatherLine) lines.push(weatherLine);
 
   const dynamicsLine = formatDynamicsLine(d);
   if (dynamicsLine) lines.push(dynamicsLine);

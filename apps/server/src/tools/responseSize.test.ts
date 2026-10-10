@@ -44,6 +44,7 @@ vi.mock("../intervalsClient", async (importOriginal) => {
     getActivity: vi.fn(),
     getActivityIntervals: vi.fn(),
     getActivityStreams: vi.fn(),
+    getActivityFile: vi.fn(),
     updateActivity: vi.fn(),
     listGear: vi.fn(),
     getWellness: vi.fn(),
@@ -124,6 +125,8 @@ beforeEach(() => {
   vi.mocked(client.getActivityStreams).mockResolvedValue(
     streamsMultilapFixture as unknown as client.IntervalsStream[],
   );
+  // A FIT file with no weather; the weather is a few fields either way.
+  vi.mocked(client.getActivityFile).mockResolvedValue(new Uint8Array());
   vi.mocked(client.updateActivity).mockImplementation(async (_key, id) => ({
     ...multilapActivity,
     id,
@@ -293,6 +296,20 @@ const CASES: Record<string, SizeCase[]> = {
   ],
   "compare-activities": [
     { label: "two activities", args: { activityId1: ID, activityId2: ID_2 } },
+    {
+      // The per-km table grows with distance: two 4 h runs pair about 46 km.
+      label: "two 4 h runs",
+      args: { activityId1: ID, activityId2: ID_2 },
+      setup: longRunStreams,
+      check: (result) =>
+        expect(
+          (
+            result.structuredContent as {
+              km_comparison: { rows: unknown[] } | null;
+            }
+          ).km_comparison?.rows.length,
+        ).toBeGreaterThan(40),
+    },
   ],
   "get-best-efforts": [
     {
@@ -344,6 +361,11 @@ const CASES: Record<string, SizeCase[]> = {
   "view-activity-zones": [{ label: "default", args: { id: ID } }],
   "view-compare-activities": [
     { label: "default", args: { activityId1: ID, activityId2: ID_2 } },
+    {
+      label: "two 4 h runs",
+      args: { activityId1: ID, activityId2: ID_2 },
+      setup: longRunStreams,
+    },
   ],
   "get-athlete-zones": [{ label: "Run with HR curves", args: {} }],
 };

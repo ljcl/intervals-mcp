@@ -27,7 +27,11 @@ vi.mock("./intervalsClient", async (importOriginal) => {
   return {
     ...actual,
     getActivity: vi.fn(),
-    getActivityStreams: vi.fn(),
+    // No streams and no file unless a test serves them: compare reads both
+    // for its per-km table and weather. An implementation passed to vi.fn
+    // survives vi.clearAllMocks and mockReset.
+    getActivityStreams: vi.fn(async () => []),
+    getActivityFile: vi.fn(async () => new Uint8Array()),
     getWellness: vi.fn(),
     listActivities: vi.fn(),
   };

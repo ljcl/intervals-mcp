@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { formatDuration, formatSigned } from "../formatters";
-import { getActivity } from "../intervalsClient";
+import { getActivity, type IntervalsActivity } from "../intervalsClient";
 import {
   IntervalsStreamsUnavailableError,
   loadIntervalsStreams,
@@ -9,6 +9,7 @@ import { NO_PROGRESS, type ReportProgress } from "../progress";
 import {
   computeSplitAnalysis,
   type Split,
+  type SplitAnalysis,
   SplitAnalysisError,
   type SplitStreams,
 } from "../splitAnalysis";
@@ -160,6 +161,35 @@ function splitLine(s: SplitOut, columns: SplitColumns): string {
   return `  ${label.padEnd(4)} ${parts.join(", ")}`;
 }
 
+/**
+ * The split analysis of one activity: its streams through the shared
+ * adapter, binned by `computeSplitAnalysis`. The one stream path for 1 km
+ * splits, shared with compare-activities' per-km table. Throws
+ * `IntervalsStreamsUnavailableError` for an activity with no streams and
+ * `SplitAnalysisError` for streams it cannot split.
+ */
+export async function loadSplitAnalysis(
+  apiKey: string,
+  id: string,
+  activity: Pick<IntervalsActivity, "total_elevation_gain">,
+): Promise<SplitAnalysis> {
+  const streams = await loadIntervalsStreams(apiKey, id, [...STREAM_TYPES]);
+  const splitStreams: SplitStreams = {
+    time: streams.time,
+    distance: streams.distance ?? [],
+    altitude: streams.altitude,
+    grade_smooth: streams.grade_smooth,
+    heartrate: streams.heartrate,
+    velocity_smooth: streams.velocity_smooth,
+    cadence: streams.cadence,
+    watts: streams.watts,
+    moving: streams.moving,
+  };
+  return computeSplitAnalysis(splitStreams, {
+    recordedElevationGainM: activity.total_elevation_gain ?? null,
+  });
+}
+
 export const getSplitAnalysisTool = {
   name,
   title: "Split analysis",
@@ -179,9 +209,9 @@ export const getSplitAnalysisTool = {
       const displayName = activity.name ?? type;
 
       progress(`Fetching streams for "${displayName}"`);
-      let streams: Awaited<ReturnType<typeof loadIntervalsStreams>>;
+      let analysis: SplitAnalysis;
       try {
-        streams = await loadIntervalsStreams(apiKey, id, [...STREAM_TYPES]);
+        analysis = await loadSplitAnalysis(apiKey, id, activity);
       } catch (error) {
         if (error instanceof IntervalsStreamsUnavailableError) {
           noteToolFailure(error);
@@ -197,22 +227,7 @@ export const getSplitAnalysisTool = {
         }
         throw error;
       }
-
       progress("Computing split analysis", { important: true });
-      const splitStreams: SplitStreams = {
-        time: streams.time,
-        distance: streams.distance ?? [],
-        altitude: streams.altitude,
-        grade_smooth: streams.grade_smooth,
-        heartrate: streams.heartrate,
-        velocity_smooth: streams.velocity_smooth,
-        cadence: streams.cadence,
-        watts: streams.watts,
-        moving: streams.moving,
-      };
-      const analysis = computeSplitAnalysis(splitStreams, {
-        recordedElevationGainM: activity.total_elevation_gain ?? null,
-      });
 
       const structured = {
         activity_id: id,

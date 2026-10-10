@@ -181,7 +181,13 @@ describe("schemas align with the real tool rawObjects", () => {
       intervals: null,
       gear_id: "g1",
       gear_name: "Pegasus",
-      weather_temp_c: 15,
+      weather: {
+        temperature_c: 18,
+        temperature_source: "file",
+        feels_like_c: null,
+        humidity_pct: 87,
+        dew_point_c: 15.8,
+      },
       description: "Tempo run",
       units: {
         distance: "km",
@@ -295,7 +301,7 @@ describe("schemas align with the real tool rawObjects", () => {
       intervals: null,
       gear_id: null,
       gear_name: null,
-      weather_temp_c: null,
+      weather: null,
       description: null,
       units: {
         distance: "km",
@@ -384,6 +390,13 @@ describe("schemas align with the real tool rawObjects", () => {
         step_length_mm: 1200,
         stride_m: 1.2,
       },
+      weather: {
+        temperature_c: 16,
+        temperature_source: "file",
+        feels_like_c: null,
+        humidity_pct: null,
+        dew_point_c: null,
+      },
     };
     const result = {
       units: {
@@ -406,7 +419,34 @@ describe("schemas align with the real tool rawObjects", () => {
         avg_hr: -2,
         cadence_spm: 1,
         elevation_gain_m: 5,
+        weather: { temperature_c: 2, humidity_pct: null, dew_point_c: null },
       },
+      weather_note: null,
+      km_comparison: {
+        basis: "gap",
+        rows: [
+          {
+            km: 1,
+            pace_1_min_per_km: "5:00",
+            pace_2_min_per_km: "4:50",
+            pace_delta_sec_per_km: -10,
+            hr_1: 150,
+            hr_2: 148,
+            hr_delta_bpm: -2,
+            efficiency_1: 1.333,
+            efficiency_2: 1.401,
+            efficiency_delta_pct: 5.1,
+          },
+        ],
+        verdict: null,
+        efficiency_gap_first_km_pct: null,
+        efficiency_gap_last_km_pct: null,
+        hr_gap_first_km_bpm: null,
+        hr_gap_last_km_bpm: null,
+        interpretation:
+          "No verdict: fewer than 3 full km have heart rate in both runs.",
+      },
+      km_comparison_note: null,
       efficiency: {
         activity_1: 1.333,
         activity_2: 1.358,

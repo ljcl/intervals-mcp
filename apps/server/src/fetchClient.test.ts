@@ -1148,6 +1148,53 @@ describe("FetchClient response cache hand-out immutability (ljcl/strava-mcp#357)
     expect(b.data).toBe("<gpx/>");
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it("reads a bytes body unchanged, and a hit gets its own copy", async () => {
+    // Not valid UTF-8: a text read would replace these bytes.
+    const bytes = new Uint8Array([0x0e, 0x10, 0xff, 0xfe, 0x80, 0x2e]);
+    const fetchMock = vi.fn().mockImplementation(
+      async () =>
+        new Response(bytes, {
+          status: 200,
+          headers: { "content-type": "application/octet-stream" },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = newCachingClient();
+    const a = await client.get<Uint8Array>("/activities/1/file", {
+      responseType: "bytes",
+    });
+    expect(a.data).toBeInstanceOf(Uint8Array);
+    expect([...a.data]).toEqual([...bytes]);
+    a.data[0] = 0;
+    const b = await client.get<Uint8Array>("/activities/1/file", {
+      responseType: "bytes",
+    });
+    expect([...b.data]).toEqual([...bytes]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads a bytes request's error body as text for the message", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(
+        async () =>
+          new Response('{"error":"Activity not found"}', {
+            status: 404,
+            headers: { "content-type": "application/json" },
+          }),
+      ),
+    );
+
+    const client = newCachingClient();
+    await expect(
+      client.get("/activities/1/file", { responseType: "bytes" }),
+    ).rejects.toMatchObject({
+      message: expect.stringContaining("Activity not found"),
+      response: { status: 404 },
+    });
+  });
 });
 
 describe("FetchClient in-flight GET coalescing (ljcl/strava-mcp#355)", () => {
@@ -2235,6 +2282,8 @@ describe("intervalsCacheTtl", () => {
     ["/activity/i1", 600_000],
     ["/activity/i1/intervals", 600_000],
     ["/activity/i1/streams.json", 600_000],
+    ["/activity/i1/file", 600_000],
+    ["/activity/i1/fit-file", null],
     ["/athlete/0/gear", 600_000],
     ["/athlete/0/sport-settings/Run", 3_600_000],
     ["/athlete/0/sport-settings", 600_000],

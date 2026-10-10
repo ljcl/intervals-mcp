@@ -138,7 +138,15 @@ describe("mapActivityDetail", () => {
     // The fixture's gear entry carries name: null (intervals.icu does not
     // populate it on the activity today; see docs/api-notes.md).
     expect(detail.gear_name).toBeNull();
-    expect(detail.weather_temp_c).toBeNull();
+    // The file's own average temperature; get-activity reads no file, so
+    // there is no humidity or dew point.
+    expect(detail.weather).toEqual({
+      temperature_c: 22,
+      temperature_source: "file",
+      feels_like_c: null,
+      humidity_pct: null,
+      dew_point_c: null,
+    });
     expect(detail.description).toBeNull();
     expect(detail.units).toEqual({
       distance: "km",

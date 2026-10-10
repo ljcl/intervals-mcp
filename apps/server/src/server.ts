@@ -93,8 +93,9 @@ import {
   isActivityIdSchema,
 } from "./tools/_ids";
 import {
-  buildComparison,
+  type ComparisonResult,
   compareActivitiesTool,
+  loadComparison,
 } from "./tools/compareActivities";
 import { getActivityTool } from "./tools/getActivity";
 import { getActivityLapsTool } from "./tools/getActivityLaps";
@@ -1552,12 +1553,12 @@ async function handleViewRouteMap(
 async function loadCompareActivitiesData(
   args: Record<string, unknown>,
   token: string,
-): Promise<ReturnType<typeof buildComparison>> {
-  const [activity1, activity2] = await Promise.all([
-    getIntervalsActivity(token, String(args.activityId1), { intervals: true }),
-    getIntervalsActivity(token, String(args.activityId2), { intervals: true }),
-  ]);
-  return buildComparison(activity1, activity2);
+): Promise<ComparisonResult> {
+  return loadComparison(
+    token,
+    String(args.activityId1),
+    String(args.activityId2),
+  );
 }
 
 async function handleGetCompareActivitiesData(

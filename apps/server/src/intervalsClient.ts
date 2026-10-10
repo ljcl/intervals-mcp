@@ -145,7 +145,16 @@ const IntervalsActivitySchema = z
     average_heartrate: z.number().nullable().optional(),
     max_heartrate: z.number().nullable().optional(),
     average_cadence: z.number().nullable().optional(),
+    /** intervals.icu's own weather for the activity (its weather service);
+     * null unless the athlete's settings fetch it. */
     average_weather_temp: z.number().nullable().optional(),
+    average_feels_like: z.number().nullable().optional(),
+    /** The activity file's own average temperature (a FIT session's
+     * `avg_temperature`): a watch sensor, or the weather an exporter such as
+     * HealthFit wrote there (docs/api-notes.md). */
+    average_temp: z.number().nullable().optional(),
+    /** The uploaded file's format, e.g. "fit"; null for a manual entry. */
+    file_type: z.string().nullable().optional(),
     average_stance_time: z.number().nullable().optional(),
     average_vertical_oscillation: z.number().nullable().optional(),
     average_vertical_ratio: z.number().nullable().optional(),
@@ -929,6 +938,30 @@ export async function getActivityStreams(
     handleApiError(error, context);
   }
   return parseOrThrow(IntervalsStreamsResponseSchema, data, context);
+}
+
+/**
+ * Downloads an activity's original uploaded file (`GET /activity/{id}/file`)
+ * as raw bytes: a FIT file for a FIT upload, which is the only file a tool
+ * reads (for weather the activity record leaves out, `activityWeather.ts`).
+ * intervals.icu has no file for a Strava stub or a manual entry; that is a
+ * 404 like any other.
+ */
+export async function getActivityFile(
+  apiKey: string,
+  id: string,
+): Promise<Uint8Array> {
+  requireApiKey(apiKey);
+  const context = `getActivityFile for ID ${id}`;
+  try {
+    const response = await intervalsApi.get<Uint8Array>(
+      `/activity/${id}/file`,
+      { headers: authHeaders(apiKey), responseType: "bytes" },
+    );
+    return response.data;
+  } catch (error) {
+    handleApiError(error, context);
+  }
 }
 
 /**
