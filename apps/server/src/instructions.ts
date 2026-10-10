@@ -20,7 +20,7 @@ export function serverInstructions(timeZone: string): string {
     "",
     "For fitness questions, use get-fitness-trend for freshness, fatigue or a taper plan; get-training-load for weekly volume and spike flags; get-athlete-stats for totals this week, month or year; get-wellness for HRV, resting heart rate and sleep; get-best-efforts and get-race-prediction for race times; get-athlete-zones for zones and thresholds.",
     "",
-    "A view-* tool opens a chart for the athlete; for numbers in your reply, call the matching text tool (get-fitness-trend for view-fitness-trend).",
+    "A view-* tool opens a chart for the athlete, and its result has the chart's numbers too (get-fitness-trend's text for view-fitness-trend), so no second call is needed.",
     "",
     "get-fitness-trend and get-training-load use whole-body load from every sport by default; runOnly: true gives a run-only series. Never mix the two in one comparison, and say which one each number is.",
     "",

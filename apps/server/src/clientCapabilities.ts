@@ -28,32 +28,21 @@ export function clientSupportsMcpApps(capabilities: unknown): boolean {
 }
 
 /**
- * The last line of every view-* text: a rendered chart is claimed only to a
- * host that said it renders MCP Apps; any other host is told it cannot see the
- * chart and which text tool carries the same numbers. `twin` is the call to
- * make instead, starting with a tool name ("get-training-load with the same
- * arguments"); the app-handler tests check every name it gives is a real tool.
+ * The first line of every view-* text. A chart is claimed as shown only to
+ * a client that advertised MCP Apps. Any other client gets a line that is
+ * true either way: a host can render the card for a client that did not
+ * advertise the extension (the Claude app does, for a cloud agent session),
+ * so "cannot display" was wrong there (docs/architecture.md, "Telemetry").
+ * Either way the view's data follows, so the model never needs a second
+ * call for the numbers. `then` says what follows ("The same data from
+ * get-training-load follows.").
  */
-export function viewFooter(
+export function viewHeader(
   kind: string,
-  twin: string,
   rendersApps: boolean,
+  then: string,
 ): string {
   return rendersApps
-    ? `[Interactive ${kind} rendered above]`
-    : `This client cannot display the interactive ${kind}. For detail, call ${twin}.`;
-}
-
-/**
- * The whole view-* text for a host that cannot render MCP Apps when the text
- * twin answered in the same call: one line that says so, then the twin's own
- * text, so the model has the chart's numbers without a second call. `twin` is
- * the tool name only.
- */
-export function viewTwinText(
-  kind: string,
-  twin: string,
-  twinText: string,
-): string {
-  return `This client cannot display the interactive ${kind}. The same data from ${twin} follows.\n\n${twinText}`;
+    ? `Interactive ${kind} shown. ${then}`
+    : `This client did not report MCP Apps support, so the interactive ${kind} may not show. ${then}`;
 }

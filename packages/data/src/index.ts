@@ -1,4 +1,13 @@
 export { isRunning, isSwimming } from "./activity-types";
+export {
+  type CadencePaceRun,
+  cadencePaceRegression,
+  computeZoneStats,
+  linearRegression,
+  PACE_ZONES,
+  type PaceZone,
+  type ZoneStat,
+} from "./cadence";
 export { fitnessSourceLabel, formatSignedTsb } from "./fitness";
 export {
   formatClock,

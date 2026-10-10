@@ -1,4 +1,4 @@
-import { formatPace } from "@intervals-mcp/data";
+import { cadencePaceRegression, formatPace } from "@intervals-mcp/data";
 import { GRID_DASHARRAY, getChartTokens } from "@intervals-mcp/design-system";
 import { EmptyState } from "@intervals-mcp/ui";
 import { useMemo, useState } from "react";
@@ -15,7 +15,7 @@ import {
 } from "recharts";
 import { buildScatterA11y } from "./a11y";
 import styles from "./chartView.module.css";
-import { dotSize, linearRegression } from "./normalize";
+import { dotSize } from "./normalize";
 import { SharedTooltip } from "./SharedTooltip";
 import { type RunSummary } from "./types";
 
@@ -78,10 +78,8 @@ export function ScatterView({
     [runs, maxDistance, now, timeRange, tokens.dotScale],
   );
 
-  const regression = useMemo(() => {
-    const points = runs.map((a) => ({ x: a.averagePace, y: a.averageCadence }));
-    return linearRegression(points);
-  }, [runs]);
+  // The same line view-cadence-trends' text states (`@intervals-mcp/data`).
+  const regression = useMemo(() => cadencePaceRegression(runs), [runs]);
 
   const a11y = useMemo(
     () => buildScatterA11y(runs, regression?.slope ?? null),

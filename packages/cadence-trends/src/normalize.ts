@@ -3,6 +3,7 @@ import {
   isRunning,
   smooth,
   windowLabel,
+  type ZoneStat,
 } from "@intervals-mcp/data";
 import {
   COMPARISON_COLORS,
@@ -10,18 +11,9 @@ import {
   type OverlayRunStatus,
   type OverlayStreamData,
   type OverlayXMode,
-  type PaceZone,
   type RunStreamState,
   type RunSummary,
 } from "./types";
-
-/** Pace zones in min/km. Lower number = faster pace. */
-export const PACE_ZONES: PaceZone[] = [
-  { label: "Threshold", minPace: 0, maxPace: 4 },
-  { label: "Tempo", minPace: 4, maxPace: 4.5 },
-  { label: "Moderate", minPace: 4.5, maxPace: 5.5 },
-  { label: "Easy", minPace: 5.5, maxPace: 20 },
-];
 
 /**
  * "18 runs · last 6 weeks" — the header subtitle. Counts every run in the
@@ -71,38 +63,6 @@ export function computeSummaryStats(
     delta: currentAvg - previousAvg,
     runCount: activities.length,
   };
-}
-
-export interface ZoneStat {
-  zone: PaceZone;
-  mean: number;
-  min: number;
-  max: number;
-  count: number;
-}
-
-/** Group activities by pace zone and compute per-zone stats */
-export function computeZoneStats(activities: RunSummary[]): ZoneStat[] {
-  return PACE_ZONES.map((zone) => {
-    const inZone = activities.filter(
-      (a) =>
-        a.averagePace != null &&
-        a.averagePace >= zone.minPace &&
-        a.averagePace < zone.maxPace &&
-        a.averageCadence > 0,
-    );
-    if (inZone.length === 0) {
-      return { zone, mean: 0, min: 0, max: 0, count: 0 };
-    }
-    const cadences = inZone.map((a) => a.averageCadence);
-    return {
-      zone,
-      mean: Math.round(cadences.reduce((s, c) => s + c, 0) / cadences.length),
-      min: Math.min(...cadences),
-      max: Math.max(...cadences),
-      count: inZone.length,
-    };
-  });
 }
 
 /** One drawn bar of the pace-zone chart. */
@@ -246,29 +206,6 @@ export function trendTimeAxis(timestamps: number[]): {
   const ticks: number[] = [];
   for (let tick = first; tick <= last; tick += step) ticks.push(tick);
   return { domain: [first, last], ticks };
-}
-
-/** Simple linear regression: y = slope * x + intercept */
-export function linearRegression(
-  points: Array<{ x: number; y: number }>,
-): { slope: number; intercept: number } | null {
-  const n = points.length;
-  if (n < 2) return null;
-  let sumX = 0;
-  let sumY = 0;
-  let sumXY = 0;
-  let sumX2 = 0;
-  for (const p of points) {
-    sumX += p.x;
-    sumY += p.y;
-    sumXY += p.x * p.y;
-    sumX2 += p.x * p.x;
-  }
-  const denom = n * sumX2 - sumX * sumX;
-  if (Math.abs(denom) < 1e-10) return null;
-  const slope = (n * sumXY - sumX * sumY) / denom;
-  const intercept = (sumY - slope * sumX) / n;
-  return { slope, intercept };
 }
 
 /** Convert raw stream data to overlay points for a single run */

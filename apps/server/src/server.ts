@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import { createRequire } from "node:module";
-import { dominantBucket, windowLabel } from "@intervals-mcp/data";
+import { dominantBucket } from "@intervals-mcp/data";
 import {
   type CallToolResult,
   CLIENT_CAPABILITIES_META_KEY,
@@ -34,13 +34,13 @@ import {
 import {
   buildCadenceTrendData,
   type CadenceTrendData,
+  cadenceTrendLines,
 } from "./cadenceTrendData";
 import { type CallFailure, type CallScope, runInCallScope } from "./callScope";
 import {
   clientSupportsMcpApps,
   MCP_APP_MIME_TYPE,
-  viewFooter,
-  viewTwinText,
+  viewHeader,
 } from "./clientCapabilities";
 import { getIntervalsApiKey, getTimeZone } from "./config";
 import { taperTargetDateError } from "./fitnessTrend";
@@ -829,22 +829,31 @@ for (const [name, schema] of TOOL_INPUT_SCHEMAS) {
 interface ViewText {
   /** The chart, as the result names it ("training load chart"). */
   kind: string;
-  /** The call the footer names, starting with a tool name. */
-  footer: string;
+  /**
+   * The call the text names when `lines` are only a summary of the chart's
+   * data: the view has no twin, or its twin failed. Omit it when `lines`
+   * carry the data themselves.
+   */
+  footer?: string;
   /**
    * The text tool that gives the chart's numbers for the view's own
    * arguments, when one does.
    */
   twin?: string;
+  /**
+   * Keep `lines` ahead of the twin's text: the view has data its twin does
+   * not (the route map's waypoints, ahead of get-hill-analysis' climbs).
+   */
+  keepLines?: boolean;
 }
 
 /**
- * The result of a view-* tool. A host that renders MCP Apps gets `lines` and
- * the "rendered above" line. Any other host gets the text twin's own text,
- * run in this call with the view's arguments: the athlete sees no chart, so
- * the model needs the numbers, and the twin is their one home. With no twin,
- * or when the twin fails, that host gets `lines` and the footer that names
- * the text tool to call.
+ * The result of a view-* tool, the same for every host but its first line
+ * (`viewHeader`): the chart's data always follows, so the model has the
+ * numbers in the same call whether or not the athlete sees the chart. The
+ * data is the text twin's own text, run here with the view's arguments,
+ * because the twin is the numbers' one home. With no twin, or when the twin
+ * fails, it is `lines`, and `footer` names the text tool to call for more.
  */
 async function viewResult(
   lines: string[],
@@ -854,7 +863,9 @@ async function viewResult(
   progress: ReportProgress,
   context: ToolCallContext,
 ): Promise<ToolCallResult> {
-  if (!context.clientRendersApps && view.twin) {
+  const header = (then: string) =>
+    viewHeader(view.kind, context.clientRendersApps, then);
+  if (view.twin) {
     const twinText = await viewTwinCall(
       view.twin,
       args,
@@ -863,17 +874,21 @@ async function viewResult(
       context,
     );
     if (twinText !== null) {
-      return {
-        content: [
-          { type: "text", text: viewTwinText(view.kind, view.twin, twinText) },
-        ],
-      };
+      const text = view.keepLines
+        ? [
+            header(`Its data follows, then the text of ${view.twin}.`),
+            "",
+            ...lines,
+            "",
+            twinText,
+          ]
+        : [header(`The same data from ${view.twin} follows.`), "", twinText];
+      return { content: [{ type: "text", text: text.join("\n") }] };
     }
   }
-  const footer = viewFooter(view.kind, view.footer, context.clientRendersApps);
-  return {
-    content: [{ type: "text", text: [...lines, "", footer].join("\n") }],
-  };
+  const text = [header("Its data follows."), "", ...lines];
+  if (view.footer) text.push("", `For detail, call ${view.footer}.`);
+  return { content: [{ type: "text", text: text.join("\n") }] };
 }
 
 /**
@@ -1049,33 +1064,11 @@ async function handleViewCadenceTrends(
   context: ToolCallContext,
 ): Promise<ToolCallResult> {
   const data = await loadCadenceTrendData(token, args);
-  const runs = data.activities;
-
-  const avgCadence =
-    runs.length > 0
-      ? Math.round(
-          runs.reduce((sum, a) => sum + a.averageCadence, 0) / runs.length,
-        )
-      : 0;
-
-  const lines = [
-    `Cadence Trends (last ${windowLabel(data.days)})`,
-    `Runs: ${runs.length}`,
-    `Average cadence: ${avgCadence} spm`,
-    ...(data.excludedNoCadence > 0
-      ? [`Excluded (no cadence recorded): ${data.excludedNoCadence}`]
-      : []),
-    ...(data.noPaceCount > 0
-      ? [`No pace recorded (cadence only): ${data.noPaceCount}`]
-      : []),
-  ];
+  // The lines carry every number the chart draws: no twin, no footer.
+  const lines = cadenceTrendLines(data);
   return viewResult(
     lines,
-    {
-      kind: "cadence trends chart",
-      // get-running-summary needs an id this text never gives.
-      footer: "list-activities, then get-running-summary",
-    },
+    { kind: "cadence trends chart" },
     args,
     token,
     progress,
@@ -1521,21 +1514,29 @@ async function handleViewRouteMap(
         : "No GPS track is recorded for this activity.",
     );
   }
-  const waypointCount = data.annotations?.waypoints?.length ?? 0;
-  if (waypointCount > 0) {
+  const waypoints = data.annotations?.waypoints ?? [];
+  if (waypoints.length > 0) {
     lines.push(
       context.clientRendersApps
-        ? `Waypoints: ${waypointCount} pinned along the track (toggleable via the map legend).`
-        : `Waypoints: ${waypointCount} placed along the track.`,
+        ? `Waypoints: ${waypoints.length} pinned along the track (toggleable via the map legend):`
+        : `Waypoints: ${waypoints.length} placed along the track:`,
     );
+    for (const waypoint of waypoints)
+      lines.push(`  km ${waypoint.km}: ${waypoint.label} (${waypoint.kind})`);
   }
   for (const warning of data.waypointWarnings ?? []) {
     lines.push(`Warning: ${warning}`);
   }
-  // No text tool describes the track, so no twin: get-activity has the rest.
+  // The climbs come from get-hill-analysis, their one home; the waypoints
+  // only this view has, so its lines stay ahead of them.
   return viewResult(
     lines,
-    { kind: "route map", footer: "get-activity" },
+    {
+      kind: "route map",
+      footer: "get-activity",
+      twin: getHillAnalysisTool.name,
+      keepLines: true,
+    },
     args,
     token,
     progress,

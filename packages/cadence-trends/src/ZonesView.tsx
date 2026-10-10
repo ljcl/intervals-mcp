@@ -1,3 +1,4 @@
+import { computeZoneStats } from "@intervals-mcp/data";
 import { GRID_DASHARRAY, getChartTokens } from "@intervals-mcp/design-system";
 import { EmptyState } from "@intervals-mcp/ui";
 import { useMemo } from "react";
@@ -14,7 +15,7 @@ import {
 } from "recharts";
 import { buildZonesA11y } from "./a11y";
 import styles from "./chartView.module.css";
-import { buildZoneRows, computeZoneStats } from "./normalize";
+import { buildZoneRows } from "./normalize";
 import { type RunSummary } from "./types";
 
 interface ZonesViewProps {

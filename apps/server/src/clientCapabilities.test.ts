@@ -6,8 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   clientSupportsMcpApps,
   MCP_APP_MIME_TYPE,
-  viewFooter,
-  viewTwinText,
+  viewHeader,
 } from "./clientCapabilities";
 
 const UI = "io.modelcontextprotocol/ui";
@@ -51,30 +50,24 @@ describe("clientSupportsMcpApps", () => {
   });
 });
 
-describe("viewFooter", () => {
-  it("keeps the rendered line for app hosts", () => {
-    expect(viewFooter("training load chart", "get-training-load", true)).toBe(
-      "[Interactive training load chart rendered above]",
-    );
-  });
-
-  it("names the text twin otherwise", () => {
-    expect(viewFooter("training load chart", "get-training-load", false)).toBe(
-      "This client cannot display the interactive training load chart. For detail, call get-training-load.",
-    );
-  });
-});
-
-describe("viewTwinText", () => {
-  it("says the client cannot display the chart, then gives the twin's text", () => {
+describe("viewHeader", () => {
+  it("says the chart is shown to a client that advertised MCP Apps", () => {
     expect(
-      viewTwinText(
-        "zone distribution chart",
-        "get-activity-zones",
-        "Activity Zones (ID: 123):",
+      viewHeader(
+        "training load chart",
+        true,
+        "The same data from get-training-load follows.",
       ),
     ).toBe(
-      "This client cannot display the interactive zone distribution chart. The same data from get-activity-zones follows.\n\nActivity Zones (ID: 123):",
+      "Interactive training load chart shown. The same data from get-training-load follows.",
     );
+  });
+
+  it("never says cannot display to any other client, because its host may still render the card", () => {
+    const text = viewHeader("route map", false, "Its data follows.");
+    expect(text).toBe(
+      "This client did not report MCP Apps support, so the interactive route map may not show. Its data follows.",
+    );
+    expect(text).not.toContain("cannot display");
   });
 });

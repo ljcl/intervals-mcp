@@ -523,22 +523,24 @@ describe("tools/call on a view-* tool", () => {
     return content[0]?.text ?? "";
   }
 
-  it("claims a rendered chart when the request advertises MCP Apps", async () => {
+  it("says the chart is shown, with get-activity-zones' text, when the request advertises MCP Apps", async () => {
     const text = await viewText(MCP_APPS_CAPABILITIES);
 
     expect(
-      text.endsWith("[Interactive zone distribution chart rendered above]"),
+      text.startsWith(
+        "Interactive zone distribution chart shown. The same data from get-activity-zones follows.\n\n",
+      ),
     ).toBe(true);
-    expect(text).not.toContain("This client cannot display");
+    expect(text).toContain("Z2 (131-155 bpm): 30:00 (60%)");
+    expect(text).not.toContain("may not show");
   });
 
-  it("gives get-activity-zones' text when the request advertises no capabilities", async () => {
+  it("gives get-activity-zones' text, and never says cannot display, when the request advertises no capabilities", async () => {
     const text = await viewText();
 
-    expect(text).not.toContain("rendered above");
     expect(
       text.startsWith(
-        "This client cannot display the interactive zone distribution chart. The same data from get-activity-zones follows.\n\n",
+        "This client did not report MCP Apps support, so the interactive zone distribution chart may not show. The same data from get-activity-zones follows.\n\n",
       ),
     ).toBe(true);
     expect(text).toContain("Z2 (131-155 bpm): 30:00 (60%)");
