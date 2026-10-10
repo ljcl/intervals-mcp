@@ -545,6 +545,95 @@ describe("updateActivityTool.execute", () => {
     expect(structured.gear_name).toBeNull();
   });
 
+  it("names the gear before and after a gear change, in the change and the text", async () => {
+    mockedGetActivity.mockResolvedValueOnce(
+      activity({ gear: { id: "g2", name: null } }),
+    );
+    mockedListGear.mockResolvedValueOnce(gearList);
+    mockedPut.mockResolvedValueOnce(
+      activity({ gear: { id: "g1", name: null } }),
+    );
+    mockedGetActivity.mockResolvedValueOnce(
+      activity({ gear: { id: "g1", name: null } }),
+    );
+
+    const result = await updateActivityTool.execute(
+      { id: "555", gearId: "g1" } as never,
+      "test-token",
+    );
+
+    const structured = ActivityWriteOutputSchema.parse(
+      result.structuredContent,
+    );
+    expect(structured.gear_name).toBe("Pegasus");
+    expect(structured.changes).toEqual([
+      {
+        field: "gear",
+        before: "g2",
+        after: "g1",
+        before_name: "Old Trainers",
+        after_name: "Pegasus",
+      },
+    ]);
+    expect(result.content[0]?.text).toContain(
+      'gear to "Pegasus" [g1] (was "Old Trainers" [g2])',
+    );
+    // The fresh list from the gearId check names both: no second read.
+    expect(mockedListGear).toHaveBeenCalledTimes(1);
+  });
+
+  it("names the activity's gear on a write that does not touch gear, from the cached list", async () => {
+    mockedGetActivity.mockResolvedValueOnce(
+      activity({ gear: { id: "g1", name: null } }),
+    );
+    mockedPut.mockResolvedValueOnce(
+      activity({ name: "Tempo", gear: { id: "g1", name: null } }),
+    );
+    mockedGetActivity.mockResolvedValueOnce(
+      activity({ name: "Tempo", gear: { id: "g1", name: null } }),
+    );
+    mockedListGear.mockResolvedValueOnce(gearList);
+
+    const result = await updateActivityTool.execute(
+      { id: "555", name: "Tempo" } as never,
+      "test-token",
+    );
+
+    const structured = ActivityWriteOutputSchema.parse(
+      result.structuredContent,
+    );
+    expect(structured.gear_id).toBe("g1");
+    expect(structured.gear_name).toBe("Pegasus");
+    expect(mockedListGear).toHaveBeenCalledWith("test-token");
+  });
+
+  it("leaves gear_name null, and still reports the write, when the gear read fails", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockedGetActivity.mockResolvedValueOnce(
+      activity({ gear: { id: "g1", name: null } }),
+    );
+    mockedPut.mockResolvedValueOnce(
+      activity({ name: "Tempo", gear: { id: "g1", name: null } }),
+    );
+    mockedGetActivity.mockResolvedValueOnce(
+      activity({ name: "Tempo", gear: { id: "g1", name: null } }),
+    );
+    mockedListGear.mockRejectedValue(new Error("network down"));
+
+    const result = await updateActivityTool.execute(
+      { id: "555", name: "Tempo" } as never,
+      "test-token",
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0]?.text).toContain("Updated activity 555");
+    const structured = ActivityWriteOutputSchema.parse(
+      result.structuredContent,
+    );
+    expect(structured.gear_name).toBeNull();
+    errorSpy.mockRestore();
+  });
+
   it("echoes before/after for every changed field", async () => {
     mockedGetActivity.mockResolvedValueOnce(
       activity({ name: "Morning Run", feel: 3 }),

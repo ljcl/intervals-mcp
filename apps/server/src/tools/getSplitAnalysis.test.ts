@@ -219,6 +219,57 @@ describe("get-split-analysis", () => {
     expect(text).not.toContain("GAP");
   });
 
+  it("prints GAP on every split, even where it equals the pace", async () => {
+    mockedGetActivity.mockResolvedValue(flatActivity);
+    // Flat altitude: grade 0, so GAP equals the clock pace on every split.
+    mockedGetActivityStreams.mockResolvedValue(
+      syntheticStreams([
+        { metres: 2000, speed: 1000 / 300 },
+        { metres: 1000, speed: 1000 / 330 },
+      ]),
+    );
+
+    const result = await getSplitAnalysisTool.execute(
+      { id: "i189807578" },
+      "test-key",
+    );
+
+    const text = result.content[0]?.text ?? "";
+    const rows = text.split("\n").filter((line) => /^ {2}\d+\. {2}/.test(line));
+    expect(rows).toHaveLength(3);
+    for (const row of rows)
+      expect(row).toMatch(/\d:\d{2} \/km, GAP \d:\d{2} \/km/);
+    expect(rows[0]).toContain("5:00 /km, GAP 5:00 /km");
+  });
+
+  it("names the streams as its moving-time source, and intervals.icu's own moving time when it differs", async () => {
+    mockedGetActivity.mockResolvedValue({
+      ...flatActivity,
+      distance: 3000,
+      moving_time: 960,
+    } as IntervalsActivity);
+    mockedGetActivityStreams.mockResolvedValue(
+      syntheticStreams([{ metres: 3000, speed: 1000 / 300 }]),
+    );
+
+    const result = await getSplitAnalysisTool.execute(
+      { id: "i189807578" },
+      "test-key",
+    );
+
+    const structured = SplitAnalysisOutputSchema.parse(
+      result.structuredContent,
+    );
+    expect(structured.totals.moving_time_source).toBe("streams");
+    expect(structured.totals.intervals_icu_moving_time_s).toBe(960);
+    const text = result.content[0]?.text ?? "";
+    expect(structured.totals.moving_time_s).toBe(900);
+    expect(text).toContain("Moving time 15:00 (streams: stops left out)");
+    expect(text).toContain(
+      "intervals.icu's own moving time is 16:00, 5:20 /km, which get-running-summary uses",
+    );
+  });
+
   it("errors cleanly for an activity with no recorded streams, naming it", async () => {
     mockedGetActivity.mockResolvedValue({
       ...hillyActivity,

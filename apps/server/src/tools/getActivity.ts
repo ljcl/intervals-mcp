@@ -11,7 +11,7 @@ import {
   round,
   STRAVA_STUB_NOTE,
 } from "../formatters";
-import { SWIM_INTERVAL_PACE_NOTE } from "../intervalLaps";
+import { LAP_MOVING_TIME_NOTE, SWIM_INTERVAL_PACE_NOTE } from "../intervalLaps";
 import {
   getActivity as getActivityClient,
   getSportSettings,
@@ -112,6 +112,8 @@ interface ActivityIntervalEntry {
   label: string | null;
   distance_km: number | null;
   moving_time_s: number | null;
+  /** intervals.icu's own moving time for this interval, not the activity's. */
+  moving_time_source: "lap";
   pace_min_per_km: string | null;
   pace_min_per_100m: string | null;
   speed_kmh: number | null;
@@ -134,6 +136,8 @@ export interface ActivityDetail {
   distance_km: number | null;
   moving_time_s: number;
   moving_time: string;
+  /** The activity's own `moving_time`, which the paces here use. */
+  moving_time_source: "intervals.icu";
   elapsed_time_s: number | null;
   pace_min_per_km: string | null;
   /** From `sportSpeed`: swims only. */
@@ -222,6 +226,7 @@ function mapInterval(
     distance_km:
       interval.distance != null ? round(interval.distance / 1000, 2) : null,
     moving_time_s: interval.moving_time ?? null,
+    moving_time_source: "lap",
     pace_min_per_km: isPaceActivity(type)
       ? paceFromDistanceTime(interval.distance, interval.moving_time)
       : null,
@@ -348,6 +353,7 @@ export function mapActivityDetail(
     distance_km: distanceKm,
     moving_time_s: movingTimeS,
     moving_time: formatDuration(movingTimeS),
+    moving_time_source: "intervals.icu",
     elapsed_time_s: activity.elapsed_time ?? null,
     pace_min_per_km: isPaceActivity(type)
       ? paceFromDistanceTime(activity.distance, activity.moving_time)
@@ -413,7 +419,7 @@ export function formatMetricsLine(
 ): string {
   const parts: string[] = [];
   if (d.distance_km != null) parts.push(`${d.distance_km.toFixed(2)} km`);
-  parts.push(d.moving_time);
+  parts.push(`${d.moving_time} moving (${d.moving_time_source})`);
   if (d.pace_min_per_km != null) parts.push(`${d.pace_min_per_km} /km`);
   if (d.gap_min_per_km != null) parts.push(`GAP ${d.gap_min_per_km} /km`);
   if (d.pace_min_per_100m != null) parts.push(`${d.pace_min_per_100m} /100m`);
@@ -568,11 +574,10 @@ export function formatActivityDetailText(d: ActivityDetail): string {
   }
 
   if (d.intervals && d.intervals.length > 0) {
-    lines.push(
-      d.intervals.some((iv) => iv.pace_min_per_100m != null)
-        ? `Intervals (${SWIM_INTERVAL_PACE_NOTE}):`
-        : "Intervals:",
-    );
+    const notes = [LAP_MOVING_TIME_NOTE];
+    if (d.intervals.some((iv) => iv.pace_min_per_100m != null))
+      notes.push(SWIM_INTERVAL_PACE_NOTE);
+    lines.push(`Intervals (${notes.join("; ")}):`);
     const shown = d.intervals.slice(0, MAX_INTERVAL_LINES);
     for (const [i, entry] of shown.entries())
       lines.push(formatIntervalLine(entry, i));

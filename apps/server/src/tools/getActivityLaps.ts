@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   cadenceUnit,
   formatLapLine,
+  LAP_MOVING_TIME_NOTE,
   type LapEntry,
   mapIntervalsToLaps,
   SWIM_INTERVAL_PACE_NOTE,
@@ -77,7 +78,7 @@ export function formatActivityLapsText(response: ActivityLapsResponse): string {
   }
 
   lines.push(
-    `${response.lap_count} laps from ${response.lap_source} (usually the device's own laps)`,
+    `${response.lap_count} laps from ${response.lap_source} (usually the device's own laps); ${LAP_MOVING_TIME_NOTE}`,
   );
 
   const flags: string[] = [];

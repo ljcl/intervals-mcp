@@ -154,6 +154,17 @@ export const TrainingLoadOutputSchema = z.object({
 // (RunningSummaryOutputSchema), after ActivityDetailOutputSchema and
 // IntervalsLapEntrySchema, which it extends/reuses.
 
+// ---------- moving time source ----------
+// One run can carry three moving times: intervals.icu's own for the
+// activity, the one the stream tools count, and intervals.icu's own per lap.
+// They differ by tens of seconds (docs/api-notes.md, "Moving time"), so
+// every pace and moving time names which it is.
+const MOVING_TIME_SOURCE_TEXT =
+  "Where the moving time behind this pace comes from. intervals.icu: the activity's own moving_time, as intervals.icu shows it; streams: counted from the streams, leaving out stops (an auto-pause gap, or slower than 0.5 m/s), as the split, hill and aerobic tools do; lap: intervals.icu's moving time for that lap. They can differ by tens of seconds on one run";
+const movingTimeSourceField = <T extends "intervals.icu" | "streams" | "lap">(
+  source: T,
+) => z.literal(source).describe(MOVING_TIME_SOURCE_TEXT);
+
 // ---------- swim pace and speed (sportSpeed) ----------
 // One wording for the two sportSpeed fields, in every schema that has them:
 // list-activities, get-activity, compare-activities, and get-activity's
@@ -198,6 +209,7 @@ const CompareSideSchema = z.object({
   distance_km: z.number(),
   moving_time: z.string(),
   moving_time_s: z.number().int(),
+  moving_time_source: movingTimeSourceField("intervals.icu"),
   pace_min_per_km: z.string().nullable(),
   pace_min_per_100m: swimPaceField(),
   speed_kmh: speedKmhField(),
@@ -572,6 +584,16 @@ const ActivityWriteChangeSchema = z.object({
   field: z.string(),
   before: z.union([z.string(), z.number(), z.null()]),
   after: z.union([z.string(), z.number(), z.null()]),
+  before_name: z
+    .string()
+    .nullable()
+    .optional()
+    .describe("Gear change only: the gear's name before the write"),
+  after_name: z
+    .string()
+    .nullable()
+    .optional()
+    .describe("Gear change only: the name of the gear the activity now has"),
 });
 
 /**
@@ -581,8 +603,8 @@ const ActivityWriteChangeSchema = z.object({
  *
  * `gearName` is passed separately because the activity payload never carries
  * the assigned gear's name (`gear.name` is always `null`; see
- * docs/api-notes.md). update-activity resolves it from `list-gear` when
- * `gearId` was part of the request.
+ * docs/api-notes.md). update-activity resolves it from the gear list for
+ * every write, the fresh list when `gearId` was part of the request.
  */
 export function toActivityWriteOutput(
   activity: WrittenActivityLike,
@@ -590,6 +612,8 @@ export function toActivityWriteOutput(
     field: string;
     before: string | number | null;
     after: string | number | null;
+    before_name?: string | null;
+    after_name?: string | null;
   }[],
   warnings: string[],
   gearName?: string | null,
@@ -708,6 +732,14 @@ export const SplitAnalysisOutputSchema = z.object({
   totals: z.object({
     distance_m: z.number(),
     moving_time_s: z.number().int(),
+    moving_time_source: movingTimeSourceField("streams"),
+    intervals_icu_moving_time_s: z
+      .number()
+      .int()
+      .nullable()
+      .describe(
+        "The activity's own moving_time, which get-activity and get-running-summary report; null when intervals.icu has none",
+      ),
     elapsed_time_s: z.number().int(),
     elevation_gain_m: z
       .number()
@@ -1079,6 +1111,7 @@ const ActivityIntervalEntrySchema = z.object({
   label: z.string().nullable(),
   distance_km: z.number().nullable(),
   moving_time_s: z.number().int().nullable(),
+  moving_time_source: movingTimeSourceField("lap"),
   pace_min_per_km: z.string().nullable().describe("Set for runs only"),
   pace_min_per_100m: swimIntervalPaceField(),
   speed_kmh: speedKmhField(),
@@ -1121,6 +1154,7 @@ export const ActivityDetailOutputSchema = z.object({
     .describe("2 dp; null when the activity recorded no distance"),
   moving_time_s: z.number().int(),
   moving_time: z.string().describe("h:mm:ss, or mm:ss under an hour"),
+  moving_time_source: movingTimeSourceField("intervals.icu"),
   elapsed_time_s: z.number().int().nullable(),
   pace_min_per_km: z
     .string()
@@ -1528,6 +1562,7 @@ const IntervalsLapEntrySchema = z.object({
   distance_km: z.number().nullable(),
   moving_time_s: z.number().int().nullable(),
   moving_time: z.string().describe("h:mm:ss, or mm:ss under an hour"),
+  moving_time_source: movingTimeSourceField("lap"),
   elapsed_time_s: z.number().int().nullable(),
   pace_min_per_km: z
     .string()

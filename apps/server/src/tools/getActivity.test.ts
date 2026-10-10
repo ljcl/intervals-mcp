@@ -245,6 +245,7 @@ describe("mapActivityDetail", () => {
         label: null,
         distance_km: 7.01,
         moving_time_s: 2075,
+        moving_time_source: "lap",
         pace_min_per_km: "4:56",
         pace_min_per_100m: null,
         speed_kmh: null,
@@ -259,6 +260,7 @@ describe("mapActivityDetail", () => {
         label: null,
         distance_km: 1.02,
         moving_time_s: 299,
+        moving_time_source: "lap",
         pace_min_per_km: "4:54",
         pace_min_per_100m: null,
         speed_kmh: null,
@@ -504,10 +506,14 @@ describe("formatActivityDetailText", () => {
     expect(text).toContain("GCT 233 ms");
     expect(text).toContain("HR zones:");
     expect(text).toContain("Z1 up to 142");
-    expect(text).toContain("Intervals:");
+    expect(lines[1]).toContain("moving (intervals.icu)");
+    expect(text).toContain(
+      "Intervals (lap moving times are intervals.icu's own per lap and can differ from the activity's):",
+    );
     expect(text).toContain("1. WORK:");
     expect(text).toContain("2. RECOVERY:");
-    expect(text).not.toContain("(");
+    expect(text).not.toContain("more: get-activity-laps");
+    expect(text).not.toContain("swim paces");
   });
 
   it("prints a pool swim's pace, lengths and HR recovery", () => {
@@ -517,12 +523,12 @@ describe("formatActivityDetailText", () => {
     const lines = text.split("\n");
 
     expect(lines[1]).toBe(
-      "1.50 km, 24:49, 1:39 /100m, 30 lengths of 50 m, HR 149/165",
+      "1.50 km, 24:49 moving (intervals.icu), 1:39 /100m, 30 lengths of 50 m, HR 149/165",
     );
     // The interval paces count the rests at the wall; the activity's does
     // not, so the header says so.
     expect(lines).toContain(
-      "Intervals (swim paces include the rests inside each interval):",
+      "Intervals (lap moving times are intervals.icu's own per lap and can differ from the activity's; swim paces include the rests inside each interval):",
     );
     expect(text).toContain("1. WORK: 0.50 km, 8:40, 1:43 /100m, HR 136");
     expect(text).toContain("2. RECOVERY: 1:48, HR 131");
@@ -545,7 +551,9 @@ describe("formatActivityDetailText", () => {
       "\n",
     );
 
-    expect(lines[1]).toMatch(/^20\.00 km, 40:00, 30 km\/h, HR /);
+    expect(lines[1]).toMatch(
+      /^20\.00 km, 40:00 moving \(intervals\.icu\), 30 km\/h, HR /,
+    );
     expect(lines).toContain("1. WORK: 10.00 km, 20:00, 30 km/h");
   });
 
@@ -617,6 +625,7 @@ describe("formatActivityDetailText", () => {
       label: null,
       distance_km: 1,
       moving_time_s: 300,
+      moving_time_source: "lap" as const,
       pace_min_per_km: "5:00",
       pace_min_per_100m: null,
       speed_kmh: null,

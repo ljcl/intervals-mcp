@@ -3,6 +3,7 @@ import { hrZoneRangeText, resolveHrZones } from "../activityZones";
 import { formatDuration, STRAVA_STUB_NOTE } from "../formatters";
 import {
   formatLapLine,
+  LAP_MOVING_TIME_NOTE,
   type LapEntry,
   mapIntervalsToLaps,
 } from "../intervalLaps";
@@ -245,7 +246,7 @@ export function formatRunningSummaryText(d: RunningSummary): string {
   }
 
   if (d.laps.length > 0) {
-    lines.push("Laps:");
+    lines.push(`Laps (${LAP_MOVING_TIME_NOTE}):`);
     const shown = d.laps.slice(0, MAX_LAP_LINES);
     for (const lap of shown) lines.push(formatLapLine(lap, "spm"));
     const remaining = d.laps.length - shown.length;

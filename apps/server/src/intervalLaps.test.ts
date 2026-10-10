@@ -182,6 +182,7 @@ describe("formatLapLine", () => {
       distance_km: 1.2,
       moving_time_s: 300,
       moving_time: "5:00",
+      moving_time_source: "lap",
       elapsed_time_s: 300,
       pace_min_per_km: "4:10",
       gap_min_per_km: "4:05",

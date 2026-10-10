@@ -62,6 +62,8 @@ interface ActivitySummary {
   distance_km: number;
   moving_time: string;
   moving_time_s: number;
+  /** The activity's own `moving_time`, which the pace and the pace delta use. */
+  moving_time_source: "intervals.icu";
   pace_min_per_km: string | null;
   /** From `sportSpeed`: swims only. */
   pace_min_per_100m: string | null;
@@ -96,6 +98,7 @@ function extractActivitySummary(activity: IntervalsActivity): ActivitySummary {
     distance_km: round((activity.distance ?? 0) / 1000, 2),
     moving_time: formatDuration(activity.moving_time ?? 0),
     moving_time_s: activity.moving_time ?? 0,
+    moving_time_source: "intervals.icu",
     pace_min_per_km: isPaceActivity(type)
       ? paceFromDistanceTime(activity.distance, activity.moving_time)
       : null,
@@ -324,7 +327,9 @@ export const compareActivitiesTool = {
 
       const lines = [`Activity 1: ${summary1.name} [${summary1.id}]`];
       lines.push(`  ${summary1.date} | ${summary1.type}`);
-      lines.push(`  ${summary1.distance_km} km in ${summary1.moving_time}`);
+      lines.push(
+        `  ${summary1.distance_km} km in ${summary1.moving_time} moving (${summary1.moving_time_source})`,
+      );
       if (summary1.pace_min_per_km)
         lines.push(`  Pace: ${summary1.pace_min_per_km} /km`);
       if (summary1.pace_min_per_100m)
@@ -339,7 +344,9 @@ export const compareActivitiesTool = {
 
       lines.push(`Activity 2: ${summary2.name} [${summary2.id}]`);
       lines.push(`  ${summary2.date} | ${summary2.type}`);
-      lines.push(`  ${summary2.distance_km} km in ${summary2.moving_time}`);
+      lines.push(
+        `  ${summary2.distance_km} km in ${summary2.moving_time} moving (${summary2.moving_time_source})`,
+      );
       if (summary2.pace_min_per_km)
         lines.push(`  Pace: ${summary2.pace_min_per_km} /km`);
       if (summary2.pace_min_per_100m)
