@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.6.0](https://github.com/ljcl/intervals-mcp/compare/v2.5.1...v2.6.0) (2026-10-10)
+
+
+### Features
+
+* give view-* tools' text twin to clients that cannot show MCP Apps ([#176](https://github.com/ljcl/intervals-mcp/issues/176)) ([d2829e3](https://github.com/ljcl/intervals-mcp/commit/d2829e340fccc103740693135a8218574649952b))
+
+
+### Bug Fixes
+
+* load MCP App charts in claude.ai by serving 2025-era requests read-only ([#178](https://github.com/ljcl/intervals-mcp/issues/178)) ([2cd5ee3](https://github.com/ljcl/intervals-mcp/commit/2cd5ee39df2a624ea6d88c6ab5d2a511421ecdb5))
+
 ## [2.5.1](https://github.com/ljcl/intervals-mcp/compare/v2.5.0...v2.5.1) (2026-10-09)
 
 
