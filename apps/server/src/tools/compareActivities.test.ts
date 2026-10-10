@@ -409,6 +409,24 @@ describe("compare-activities execute", () => {
     );
   });
 
+  it("reads no streams when either side is not a run, and names that side", async () => {
+    mockedGetActivity.mockResolvedValueOnce(fakeActivity({}));
+    mockedGetActivity.mockResolvedValueOnce(
+      fakeActivity({ id: "i200", type: "Ride" }),
+    );
+
+    const result = await compareActivitiesTool.execute(
+      { activityId1: "i100", activityId2: "i200" },
+      "test-token",
+    );
+
+    expect(mockedGetActivityStreams).not.toHaveBeenCalled();
+    expect(
+      CompareActivitiesOutputSchema.parse(result.structuredContent)
+        .km_comparison_note,
+    ).toBe("activity 2 is not a run");
+  });
+
   it("fails on a rate limit from a stream read rather than reading it as no streams", async () => {
     mockedGetActivity.mockResolvedValueOnce(fakeActivity({}));
     mockedGetActivity.mockResolvedValueOnce(faster);

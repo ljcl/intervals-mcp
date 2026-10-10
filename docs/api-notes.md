@@ -640,3 +640,53 @@ activities came back in 86 KB.
   31 days) and a whole-body wellness read to a past `newest` returned complete
   data, with no gaps. The cache needs no new rule: `intervalsCacheTtl` keys on
   the full URL, and a past window builds the same URL shape.
+
+## Weather (2026-10-10, live read-only, run i195596014 and three others)
+
+- The activity record has two temperature sources and no humidity.
+  `average_weather_temp`, `average_feels_like`, `average_wind_speed` and the
+  other weather fields come from intervals.icu's own weather service, and
+  are null when `has_weather` is false. That was true for all 315 activities
+  of the last year on the account checked, although the athlete has a
+  weather forecast location (`GET /athlete/0/weather-config`). `GET
+  /activity/{id}/weather-summary` returned the same nulls. The OpenAPI spec
+  has no humidity or dew point field on `Activity` or
+  `ActivityWeatherSummary`.
+- `average_temp` is the uploaded file's own average temperature, the FIT
+  session's `avg_temperature`. 224 of the 315 activities had one. HealthFit
+  (the Apple Watch exporter on this account) writes Apple Health's workout
+  weather there: 18 °C on i195596014, as its own export said. On a Garmin
+  file the same field is the watch's sensor, which a wrist warms.
+- `GET /activity/{id}/file` returns the original upload as raw bytes
+  (`application/octet-stream`, a FIT file here, 155 KB for a 1 h run, not
+  compressed). HealthFit adds developer fields to the session, among them
+  `SESSION WEATHER HUMIDITY` (uint16, no scale in its field description):
+  8700 on i195596014, which is 87% in hundredths of a percent. Three other
+  runs gave 6400, 6000 and 6900 with 16, 22 and 22 °C. None of the four had
+  standard `weather_conditions` messages (global 128), which Garmin watches
+  record with `temperature` and `relative_humidity`. `fitWeather.ts` reads
+  both, and `activityWeather.ts` computes the dew point from the file's own
+  temperature and humidity.
+
+## Moving time (2026-10-10, live read-only, run i195596014)
+
+One 12.03 km run gave three paces in three tools: 5:08, 5:05 and 5:11 /km.
+They come from three moving times, and each tool now names its source
+(`moving_time_source`):
+
+- `moving_time` is 3,700 s (5:08 /km): intervals.icu's own rule.
+- The streams have 7 auto-pause gaps of 199 s in total, so elapsed time
+  (3,871 s) minus the gaps is 3,672 s (5:05 /km). The FIT session's
+  `total_timer_time`, the watch's own timer, is 3,671 s. The stream tools
+  count this one (`moving`, "streams").
+- The one WORK lap's `moving_time` is 3,731 s over 12.01 km (5:11 /km), more
+  than the activity's: intervals.icu's rule for a lap is its own too
+  ("lap").
+- `average_speed` is 3.277 m/s, which is distance over the 3,671 s timer,
+  not over `moving_time`. So every activity pace is distance over
+  `moving_time`, as `sportSpeed` documents; view-cadence-trends used
+  `average_speed` and now does the same.
+
+intervals.icu's rules are not published, and copying them would change on
+the next server update, so the tools label the source rather than recompute
+a single time.

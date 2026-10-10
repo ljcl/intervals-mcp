@@ -198,6 +198,11 @@ function kmComparisonOf(
 ): { comparison: KmComparison | null; note: string | null } {
   if (!splits1 || !splits2)
     return { comparison: null, note: "the streams were not read" };
+  // A side that is not a run is the reason, ahead of the run beside it.
+  const sides = [splits1, splits2];
+  const notRun = sides.findIndex((side) => side.note === NOT_A_RUN);
+  if (notRun !== -1)
+    return { comparison: null, note: `activity ${notRun + 1} ${NOT_A_RUN}` };
   if (!splits1.analysis)
     return { comparison: null, note: `activity 1 ${splits1.note}` };
   if (!splits2.analysis)
@@ -213,18 +218,25 @@ function kmComparisonOf(
     : { comparison: null, note: "the runs share no full km" };
 }
 
+const NOT_A_RUN = "is not a run";
+
+/** A side whose streams are not read, because one of the two is not a run. */
+function unreadSplits(activity: IntervalsActivity): SideSplits {
+  return isPaceActivity(activity.type ?? "")
+    ? { analysis: null, note: "was not read" }
+    : { analysis: null, note: NOT_A_RUN };
+}
+
 /**
  * One side's 1 km splits through get-split-analysis' own path, or why there
- * are none: not a run, no streams, or streams it cannot split. Any other
- * failure (a rate limit, a 5xx) propagates, as the stream loader requires.
+ * are none: no streams, or streams it cannot split. Any other failure (a
+ * rate limit, a 5xx) propagates, as the stream loader requires.
  */
 async function loadSideSplits(
   apiKey: string,
   id: string,
   activity: IntervalsActivity,
 ): Promise<SideSplits> {
-  if (!isPaceActivity(activity.type ?? ""))
-    return { analysis: null, note: "is not a run" };
   try {
     return { analysis: await loadSplitAnalysis(apiKey, id, activity) };
   } catch (error) {
@@ -255,11 +267,16 @@ export async function loadComparison(
     getActivity(apiKey, id2, { intervals: true }),
   ]);
   progress("Reading weather and streams for both activities");
+  // The per-km table needs two runs: with a non-run on either side, neither
+  // side's streams are read.
+  const bothRuns =
+    isPaceActivity(activity1.type ?? "") &&
+    isPaceActivity(activity2.type ?? "");
   const [weather1, weather2, splits1, splits2] = await Promise.all([
     loadActivityWeather(apiKey, id1, activity1),
     loadActivityWeather(apiKey, id2, activity2),
-    loadSideSplits(apiKey, id1, activity1),
-    loadSideSplits(apiKey, id2, activity2),
+    bothRuns ? loadSideSplits(apiKey, id1, activity1) : unreadSplits(activity1),
+    bothRuns ? loadSideSplits(apiKey, id2, activity2) : unreadSplits(activity2),
   ]);
   return buildComparison(activity1, activity2, {
     weather1,

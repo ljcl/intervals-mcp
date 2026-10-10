@@ -41,7 +41,7 @@ rather than (or alongside) text.
 | Tool | Answers | Key params |
 | ---- | ------- | ---------- |
 | `get-activity-laps` | What were the lap splits? | `id` |
-| `get-running-summary` | One-shot run readout: metrics, HR zones, cadence, dynamics, laps | `id` |
+| `get-running-summary` | One-shot run readout: metrics, HR zones, cadence, dynamics, laps, weather (with humidity and dew point when the FIT file has them), and decoupling and efficiency factor (computed from the streams when intervals.icu has none) | `id` |
 | `get-running-dynamics` | Ground contact time, vertical oscillation/ratio, step length | `id`, `includeIntervals` |
 | `get-activity-zones` | Time in each HR zone (power zones are not reported yet) | `id` |
 | `get-activity-streams` | Raw time-series (HR, pace, cadence, power, altitude...) | `id`, `types`, `maxPoints` |
@@ -54,7 +54,7 @@ rather than (or alongside) text.
 | `get-split-analysis` | Did I positive-split, or was that the hills? | `id` |
 | `get-aerobic-analysis` | Did I decouple? What's my efficiency factor? | `id`, `basis` (gap, pace or power; gap corrects for hills) |
 | `get-interval-analysis` | Interval workout breakdown: pace/HR per rep, did reps fade? Am I faster than the last times I did this workout? | `id`, `findSimilar` |
-| `compare-activities` | How does this run compare to that one? | `activityId1`, `activityId2` |
+| `compare-activities` | How does this run compare to that one? Was the gap there from km 1 (conditions) or did it grow (fatigue)? Was the weather different? | `activityId1`, `activityId2` |
 
 ### Fitness, load, and performance
 
@@ -97,13 +97,14 @@ overlay by `list-activities` id, axis), `set-metric` (compare activities:
 metric and axis) and `set-scope` (fitness trend and training load: whole body
 or runs only, and which series show). Each reply says what the card now draws.
 
-A host that does not render MCP Apps shows no chart. The view tool's text then
-says the client cannot display it and gives the matching text tool's own
-text in the same call (for example `get-fitness-trend` for
-`view-fitness-trend`), so there is no need to call that tool again.
-`view-cadence-trends`, `view-route-map` and `view-activity-chart` for a
-non-run activity have no such tool: their text names the tool to call
-instead.
+Every view tool's text carries the chart's numbers, so there is no need to
+call another tool for them: the matching text tool's own text (for example
+`get-fitness-trend` for `view-fitness-trend`), run in the same call. The
+route map gives its distance, elevation and waypoints, then
+`get-hill-analysis`' climbs; the cadence trends give each run's cadence,
+cadence by pace zone and the cadence-against-pace slope. The first line says
+the chart is shown only when the client said it renders MCP Apps; otherwise
+it says the chart may not show, because some hosts render the card anyway.
 
 ## Typical workflows
 
@@ -225,6 +226,20 @@ description is kept. (This is also the `annotate-last-run` prompt.)
   rule (the higher of the best 60-minute heart rate and 98% of the best
   20-minute heart rate, last 90 days). An estimate below a setting does not
   mean that the setting is too high.
+- **Three moving times, each labelled.** intervals.icu's activity moving
+  time (get-activity, get-running-summary, compare-activities), the streams'
+  moving time with stops left out (get-split-analysis and the other stream
+  tools; it matches the watch's own timer), and intervals.icu's moving time
+  per lap can differ by tens of seconds on one run, so the paces differ by a
+  few seconds per km. Each pace's `moving_time_source` says which it is
+  (`intervals.icu`, `streams` or `lap`); quote the one that fits the
+  question and say which.
+- **Weather.** Humidity and dew point come from the FIT file (HealthFit
+  writes Apple's workout weather there); intervals.icu's own weather is
+  empty unless the athlete's settings fetch it. A temperature from the file
+  can be a watch sensor's reading, which a wrist warms. When
+  compare-activities' dew points differ by more than 5 °C, it says so: part
+  of the heart rate difference can be the weather.
 - **Strava-stub activities.** An activity synced into intervals.icu from
   Strava with no further detail is flagged (`is_strava_stub`); don't expect
   streams or laps for it.

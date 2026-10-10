@@ -169,7 +169,7 @@ describe("cadenceTrendLines", () => {
         activity({
           id: `i${i + 1}`,
           name: `Run ${i + 1}`,
-          start_date_local: `2026-06-${String(20 - i).padStart(2, "0")}T07:00:00`,
+          start_date_local: `${new Date(Date.UTC(2026, 5, 20 - i)).toISOString().slice(0, 10)}T07:00:00`,
           distance: paceMinPerKm == null ? 0 : 10000,
           moving_time: paceMinPerKm == null ? 3000 : paceMinPerKm * 600,
           average_speed: null,
@@ -195,10 +195,10 @@ describe("cadenceTrendLines", () => {
       "No pace recorded (cadence only): 1",
       "",
       "Cadence by run (newest first):",
-      "  2026-06-20 Run 1: 10.00 km, 4:15 /km, 176 spm",
-      "  2026-06-19 Run 2: 10.00 km, 5:00 /km, 170 spm",
-      "  2026-06-18 Run 3: 10.00 km, 6:00 /km, 160 spm",
-      "  2026-06-17 Run 4: 0.00 km, no pace, 166 spm",
+      "  2026-06-20 Run 1 [i1]: 10.00 km, 4:15 /km, 176 spm",
+      "  2026-06-19 Run 2 [i2]: 10.00 km, 5:00 /km, 170 spm",
+      "  2026-06-18 Run 3 [i3]: 10.00 km, 6:00 /km, 160 spm",
+      "  2026-06-17 Run 4 [i4]: 0.00 km, no pace, 166 spm",
       "",
       "Cadence by pace zone:",
       "  Threshold (faster than 4:00 /km): no runs",
@@ -215,9 +215,7 @@ describe("cadenceTrendLines", () => {
       Array.from({ length: 62 }, () => [5, 170] as [number, number]),
     );
     const lines = cadenceTrendLines(many);
-    expect(
-      lines.filter((l) => l.startsWith("  2026-") || l.startsWith("  20")),
-    ).toHaveLength(60);
+    expect(lines.filter((l) => l.startsWith("  2026-"))).toHaveLength(60);
     expect(lines).toContain(
       "  (2 runs more; a shorter days window lists them)",
     );

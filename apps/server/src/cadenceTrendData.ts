@@ -133,8 +133,9 @@ function zoneRangeText(zone: PaceZone, index: number): string {
 const runsText = (count: number) => `${count} ${count === 1 ? "run" : "runs"}`;
 
 /**
- * The view-cadence-trends text: each run's cadence, cadence by pace zone,
- * and the cadence-against-pace slope. The zones and the slope come from
+ * The view-cadence-trends text: each run's cadence (with its id, which the
+ * app's set-view takes), cadence by pace zone, and the cadence-against-pace
+ * slope. The zones and the slope come from
  * `@intervals-mcp/data`, the functions the app's zone and scatter views
  * draw, so the text states the chart's numbers.
  */
@@ -166,7 +167,7 @@ export function cadenceTrendLines(data: CadenceTrendData): string[] {
         ? `${formatPaceSeconds(run.averagePace * 60)} /km`
         : "no pace";
     lines.push(
-      `  ${run.date} ${run.name}: ${run.distance.toFixed(2)} km, ${pace}, ${run.averageCadence} spm`,
+      `  ${run.date} ${run.name} [${run.id}]: ${run.distance.toFixed(2)} km, ${pace}, ${run.averageCadence} spm`,
     );
   }
   const more = runs.length - MAX_CADENCE_RUN_LINES;

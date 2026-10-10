@@ -97,6 +97,13 @@ breaking them has shipped bugs — do not work around them locally.
   label and unit in the MCP Apps: `speedDisplay` in `packages/data/src/speed.ts`;
   in the text tools: `sportSpeed` in `utils/running.ts`, which wraps it.
   Stream wire precision: `STREAM_DECIMALS` in `streamPrecision.ts`.
+  Weather, dew point and the weather note: `activityWeather.ts` (FIT
+  humidity read by `fitWeather.ts`). Two runs' per-km difference and its
+  drift verdict: `compareKmSplits` in `kmComparison.ts`, on the splits of
+  `loadSplitAnalysis` (`get-split-analysis`). Stream decoupling/EF:
+  `streamAerobicAnalysis` (`get-aerobic-analysis`, `get-running-summary`).
+  Cadence pace zones and the cadence-against-pace slope: `cadence.ts` in
+  `packages/data`. Each pace names its moving time (`moving_time_source`).
   Text tool and app reading different copies is the failure mode these prevent.
 - **Telemetry:** `dispatchToolCall` emits one JSON line per call; timer starts
   before token resolution (not-connected calls count); a returned `isError`
