@@ -1,3 +1,4 @@
+import { PACE_ZONES, type PaceZone } from "@intervals-mcp/data";
 import { describe, expect, it } from "vitest";
 import { buildCadenceTrendData, cadenceTrendLines } from "./cadenceTrendData";
 import { type IntervalsActivity } from "./intervalsClient";
@@ -153,6 +154,43 @@ describe("buildCadenceTrendData", () => {
     expect(result.activities[0]?.date).toBe("2026-06-01");
   });
 
+  it("leaves out a run under 1 km and counts it, keeping a run with no distance", () => {
+    const result = buildCadenceTrendData(
+      [
+        activity({ id: "i1", distance: 220, moving_time: 80 }),
+        activity({ id: "i2", distance: 1000, moving_time: 330 }),
+        activity({ id: "i3", distance: 0, moving_time: 1800 }),
+        activity({ id: "i4", distance: null, moving_time: 1800 }),
+      ],
+      { days: 28 },
+    );
+
+    expect(result.activities.map((a) => a.id)).toEqual(["i2", "i3", "i4"]);
+    expect(result.excludedShort).toBe(1);
+  });
+
+  it("carries the athlete's pace zones, else the fixed ones", () => {
+    const zones: PaceZone[] = [
+      { label: "Zone 1", minPace: 5.5, maxPace: null },
+      { label: "Zone 2", minPace: null, maxPace: 5.5 },
+    ];
+    const athlete = buildCadenceTrendData([activity()], {
+      days: 28,
+      paceZones: zones,
+    });
+    expect(athlete.paceZones).toBe(zones);
+    expect(athlete.paceZoneSource).toBe("athlete");
+
+    for (const paceZones of [null, [], undefined]) {
+      const fixed = buildCadenceTrendData([activity()], {
+        days: 28,
+        paceZones,
+      });
+      expect(fixed.paceZones).toBe(PACE_ZONES);
+      expect(fixed.paceZoneSource).toBe("default");
+    }
+  });
+
   it("converts distance to km rounded to 2dp", () => {
     const result = buildCadenceTrendData([activity({ distance: 8123.456 })], {
       days: 28,
@@ -200,13 +238,45 @@ describe("cadenceTrendLines", () => {
       "  2026-06-18 Run 3 [i3]: 10.00 km, 6:00 /km, 160 spm",
       "  2026-06-17 Run 4 [i4]: 0.00 km, no pace, 166 spm",
       "",
-      "Cadence by pace zone:",
+      "Cadence by pace zone (fixed zones: the Run sport settings have no threshold pace or pace zones):",
       "  Threshold (faster than 4:00 /km): no runs",
-      "  Tempo (4:00 to 4:30 /km): 1 run, mean 176 spm (176 to 176)",
-      "  Moderate (4:30 to 5:30 /km): 1 run, mean 170 spm (170 to 170)",
+      "  Tempo (4:30-4:00 /km): 1 run, mean 176 spm (176 to 176)",
+      "  Moderate (5:30-4:30 /km): 1 run, mean 170 spm (170 to 170)",
       "  Easy (slower than 5:30 /km): 1 run, mean 160 spm (160 to 160)",
       "",
       "Cadence against pace: slope -9.2 spm per min/km over 3 runs: cadence rises 9.2 spm for each 1:00 /km faster.",
+    ]);
+  });
+
+  it("buckets by the athlete's pace zones and names the runs under 1 km it left out", () => {
+    // 4:50 /km threshold, as on the athlete's Run settings.
+    const zones: PaceZone[] = [
+      { label: "Zone 1", minPace: 6.22, maxPace: null },
+      { label: "Zone 2", minPace: 5.51, maxPace: 6.22 },
+      { label: "Zone 3", minPace: 5.12, maxPace: 5.51 },
+      { label: "Zone 4", minPace: 4.83, maxPace: 5.12 },
+      { label: "Zone 5", minPace: null, maxPace: 4.83 },
+    ];
+    const data = buildCadenceTrendData(
+      [
+        activity({ id: "i1", distance: 10000, moving_time: 2940 }), // 4:54
+        activity({ id: "i2", distance: 10000, moving_time: 3600 }), // 6:00
+        activity({ id: "i3", distance: 220, moving_time: 80 }),
+      ],
+      { days: 28, paceZones: zones },
+    );
+    const lines = cadenceTrendLines(data);
+
+    expect(lines).toContain("Excluded (under 1 km): 1");
+    const from = lines.indexOf(
+      "Cadence by pace zone (the Run sport settings' pace zones):",
+    );
+    expect(lines.slice(from + 1, from + 6)).toEqual([
+      "  Zone 1 (slower than 6:13 /km): no runs",
+      "  Zone 2 (6:13-5:31 /km): 1 run, mean 168 spm (168 to 168)",
+      "  Zone 3 (5:31-5:07 /km): no runs",
+      "  Zone 4 (5:07-4:50 /km): 1 run, mean 168 spm (168 to 168)",
+      "  Zone 5 (faster than 4:50 /km): no runs",
     ]);
   });
 

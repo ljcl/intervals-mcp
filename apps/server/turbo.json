@@ -4,12 +4,12 @@
   "tasks": {
     "test": {
       "dependsOn": ["topo", "^build"],
-      "env": ["UPDATE_TOOL_SURFACE_LOCK"]
+      "env": ["UPDATE_TOOL_SURFACE_LOCK", "UPDATE_OUTPUT_SCHEMA_LOCK"]
     },
     "test:coverage": {
       "dependsOn": ["topo", "^build"],
       "outputs": ["coverage/**"],
-      "env": ["UPDATE_TOOL_SURFACE_LOCK"]
+      "env": ["UPDATE_TOOL_SURFACE_LOCK", "UPDATE_OUTPUT_SCHEMA_LOCK"]
     }
   }
 }

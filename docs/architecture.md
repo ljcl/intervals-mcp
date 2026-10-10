@@ -561,7 +561,15 @@ the last is growing drift, less is a constant offset.
 **Cadence against pace has one home.** `PACE_ZONES`, `computeZoneStats` and
 `cadencePaceRegression` live in `@intervals-mcp/data` (`cadence.ts`), so the
 cadence-trends app's zone and scatter views and view-cadence-trends' text
-(`cadenceTrendLines`) state the same zones and slope.
+(`cadenceTrendLines`) state the same zones and slope. The zones are the
+athlete's: `cadencePaceZones` (`athleteZones.ts`) turns the Run sport
+settings' threshold pace and pace zones into min/km limits from the same
+`zoneRanges` as get-athlete-zones, and the feed carries them
+(`paceZones`, `paceZoneSource`). The fixed `PACE_ZONES` (4:00, 4:30 and
+5:30 /km) are only the fallback when the settings have no threshold pace
+or the read fails. Runs with a recorded distance under 1 km
+(`MIN_CADENCE_RUN_DISTANCE_M`) are left out and counted (`excludedShort`),
+as cadence-less runs are.
 
 **The decoupling and efficiency factor computed from streams have one
 path.** `streamAerobicAnalysis` (`tools/getAerobicAnalysis.ts`) reads the
@@ -867,6 +875,35 @@ reuses `mapIntervalsZones` (the activity-zones app's mapper) so the text tool
 and the chart cannot describe different zones. Empty results still emit a valid
 payload (`count: 0`), because a caller branching on `structuredContent` should
 not have to handle "absent" as a third case.
+
+**Output schemas outlive a deploy.** A host can keep the tool list it read
+before a deploy and validate the new release's results against it. In 2.7.0
+every get-running-summary and compare-activities call failed on such a host:
+the cached 2.6.0 schemas required `weather_temp_c`, which 2.7.0 removed, and
+closed every object with `additionalProperties: false`, so each new field was
+an error too. Two rules prevent this:
+
+- `toOutputSchema` (server.ts) publishes every output object open (no
+  `additionalProperties: false`), so adding a field is always safe. The
+  integration suite checks it on the wire.
+- `apps/server/output-schema.lock.json` records each required field of each
+  tool's output with its JSON types and allowed values, one line per field.
+  `outputSchemaCompat.test.ts` fails when a field goes away, becomes
+  optional, or takes a new type or value, and names it. To change or remove
+  a field, add the new one and keep the old one for at least a release. If a
+  break is intended, regenerate and say so in the PR: a host with the old
+  list rejects every call to that tool until it reloads the list.
+
+```bash
+cd apps/server && UPDATE_OUTPUT_SCHEMA_LOCK=1 bunx vitest run src/outputSchemaCompat.test.ts
+```
+
+A field that is only added needs the regeneration too (that diff only adds
+lines), so that its later removal is caught. `server.outputSchema.test.ts`
+calls every tool over the wire with recorded intervals.icu responses and
+validates each `structuredContent` with the SDK's Ajv validator, as a host
+does. zod's own `parse` strips unknown keys, so it cannot see this class of
+mismatch.
 
 ## Response size budget
 

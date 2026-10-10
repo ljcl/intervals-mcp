@@ -3,6 +3,7 @@ import hrCurvesFixture from "./__fixtures__/intervals/hr-curves.json";
 import sportSettingsFixture from "./__fixtures__/intervals/sport-settings.json";
 import {
   buildAthleteZones,
+  cadencePaceZones,
   checkLthr,
   checkMaxHr,
   type HrCurveRead,
@@ -18,6 +19,7 @@ import {
   type IntervalsSportSettings,
 } from "./intervalsClient";
 import { AthleteZonesOutputSchema } from "./tools/outputs";
+import { formatPaceSeconds } from "./utils/running";
 
 const groups = sportSettingsFixture as unknown as IntervalsSportSettings[];
 const curves = hrCurvesFixture as unknown as IntervalsAthleteHrCurves;
@@ -204,6 +206,37 @@ describe("mapPaceZones", () => {
 
   it("gives no zones when the group has none", () => {
     expect(mapPaceZones({ ...runGroup, pace_zones: null })).toEqual([]);
+  });
+});
+
+describe("cadencePaceZones", () => {
+  it("gives view-cadence-trends the same zones as mapPaceZones, as min/km numbers", () => {
+    const zones = cadencePaceZones(runGroup)!;
+    const text = mapPaceZones(runGroup);
+    expect(zones.map((z) => z.label)).toEqual(text.map((z) => z.name));
+    // Zone 1 has no slow limit and the open top zone no fast limit.
+    expect(zones[0]?.maxPace).toBeNull();
+    expect(zones[6]?.minPace).toBeNull();
+    const asText = (pace: number | null) =>
+      pace == null ? null : formatPaceSeconds(pace * 60);
+    expect(zones.map((z) => [asText(z.maxPace), asText(z.minPace)])).toEqual(
+      text.map((z) => [z.slowest_min_per_km, z.fastest_min_per_km]),
+    );
+    // One zone's fast limit is the next faster zone's slow limit.
+    for (let i = 1; i < zones.length; i += 1) {
+      expect(zones[i]?.maxPace).toBe(zones[i - 1]?.minPace);
+    }
+  });
+
+  it("names a zone with no name by its number", () => {
+    const zones = cadencePaceZones({ ...runGroup, pace_zone_names: null });
+    expect(zones?.[1]?.label).toBe("Zone 2");
+  });
+
+  it("gives null without a threshold pace or pace zones, so the view uses its fixed zones", () => {
+    expect(cadencePaceZones({ ...runGroup, threshold_pace: null })).toBeNull();
+    expect(cadencePaceZones({ ...runGroup, pace_zones: [] })).toBeNull();
+    expect(cadencePaceZones({ ...runGroup, pace_zones: null })).toBeNull();
   });
 });
 

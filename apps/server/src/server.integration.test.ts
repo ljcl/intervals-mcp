@@ -313,6 +313,12 @@ describe("tools/list", () => {
       expect(schema.type, `${String(tool.name)} outputSchema.type`).toBe(
         "object",
       );
+      // A host can validate a new release's results against a schema it
+      // cached before the deploy; a closed object rejects every added field.
+      expect(
+        JSON.stringify(schema),
+        `${String(tool.name)} outputSchema closes an object`,
+      ).not.toContain('"additionalProperties":false');
     }
   });
 

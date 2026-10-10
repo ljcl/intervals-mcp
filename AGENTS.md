@@ -142,7 +142,9 @@ breaking them has shipped bugs — do not work around them locally.
   file). Text tools reuse the apps' mappers rather than re-deriving, e.g.
   `get-activity-zones` calls `mapIntervalsZones` from `activityZones.ts`. Empty
   results emit a valid payload (`count: 0`). `warnOnSchemaDrift` keeps dev
-  honest.
+  honest. Hosts cache schemas across deploys: output objects stay open
+  (`toOutputSchema`), and `output-schema.lock.json` fails a required field
+  that goes away or widens (`UPDATE_OUTPUT_SCHEMA_LOCK=1`; say so in the PR).
 - **`update-activity` never claims success or silently fails on an
   ambiguous write.** It reads the activity fresh, refuses a description
   with no `descriptionMode` that would drop existing text, then validates

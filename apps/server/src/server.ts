@@ -31,6 +31,7 @@ import {
   normalizeArgs,
   unknownArgsText,
 } from "./argAliases";
+import { cadencePaceZones } from "./athleteZones";
 import {
   buildCadenceTrendData,
   type CadenceTrendData,
@@ -52,6 +53,7 @@ import { activityDisplayName, formatSigned } from "./formatters";
 import { serverInstructions } from "./instructions";
 import {
   getActivity as getIntervalsActivity,
+  getSportSettings,
   listActivities as listActivitiesFn,
 } from "./intervalsClient";
 import {
@@ -150,6 +152,26 @@ function toInputSchema(schema: z.ZodType): Record<string, unknown> {
   return z.toJSONSchema(schema, {
     io: "input",
     override: idJsonSchemaOverride,
+  });
+}
+
+/**
+ * Build the advertised JSON Schema for a tool's *output*: the default
+ * (output) projection with every object left open. zod closes each object
+ * with `additionalProperties: false`, and a host can hold a tool list from
+ * before a deploy and validate the new results against it. A closed object
+ * then rejects every field a release adds: 2.7.0's new fields failed every
+ * get-running-summary and compare-activities call against cached 2.6.0
+ * schemas. `output-schema.lock.json` guards the other half, a required field
+ * that goes away or takes a new type (outputSchemaCompat.test.ts).
+ */
+function toOutputSchema(schema: z.ZodType): Record<string, unknown> {
+  return z.toJSONSchema(schema, {
+    override: ({ jsonSchema }) => {
+      if (jsonSchema.additionalProperties === false) {
+        delete jsonSchema.additionalProperties;
+      }
+    },
   });
 }
 
@@ -482,7 +504,7 @@ function buildToolDefs(): ToolDef[] {
       inputSchema: t.inputSchema ? toInputSchema(t.inputSchema) : EMPTY_SCHEMA,
     };
     if (t.annotations) def.annotations = t.annotations;
-    if (t.outputSchema) def.outputSchema = z.toJSONSchema(t.outputSchema);
+    if (t.outputSchema) def.outputSchema = toOutputSchema(t.outputSchema);
     return def;
   });
 
@@ -1044,9 +1066,17 @@ async function loadCadenceTrendData(
   const newest = todayLocal(tz);
   const oldest = addDays(newest, -(days - 1));
 
-  const activities = await listActivitiesFn(apiKey, { oldest, newest });
+  // The pace zones come from the Run sport settings; a failed read falls
+  // back to the fixed zones, which the text and the app both name.
+  const [activities, runSettings] = await Promise.all([
+    listActivitiesFn(apiKey, { oldest, newest }),
+    getSportSettings(apiKey, "Run").catch(() => null),
+  ]);
 
-  return buildCadenceTrendData(activities, { days });
+  return buildCadenceTrendData(activities, {
+    days,
+    paceZones: runSettings ? cadencePaceZones(runSettings) : null,
+  });
 }
 
 async function handleGetCadenceTrendData(

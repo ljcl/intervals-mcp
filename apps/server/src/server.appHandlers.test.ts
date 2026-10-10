@@ -6,6 +6,7 @@
  * content.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import sportSettingsFixture from "./__fixtures__/intervals/sport-settings.json";
 import { viewHeader } from "./clientCapabilities";
 import { RateLimitError } from "./fetchClient";
 import {
@@ -16,8 +17,10 @@ import {
 import {
   getActivity as getIntervalsActivityFn,
   getActivityStreams as getIntervalsStreamsFn,
+  getSportSettings as getSportSettingsFn,
   getWellness as getWellnessFn,
   type IntervalsActivity,
+  type IntervalsSportSettings,
   type IntervalsWellness,
   listActivities as listActivitiesFn,
 } from "./intervalsClient";
@@ -33,6 +36,9 @@ vi.mock("./intervalsClient", async (importOriginal) => {
     // survives vi.clearAllMocks and mockReset.
     getActivityStreams: vi.fn(async () => []),
     getActivityFile: vi.fn(async () => new Uint8Array()),
+    // The cadence trends read the Run pace zones; none unless a test serves
+    // them, so the fixed zones apply.
+    getSportSettings: vi.fn(async () => null),
     getWellness: vi.fn(),
     listActivities: vi.fn(),
   };
@@ -333,6 +339,36 @@ describe("cadence trends handlers", () => {
     expect(text).toContain("Cadence Trends (last 4 weeks)");
     expect(text).toContain("Runs: 1");
     expect(text).toContain("Average cadence: 85 spm");
+  });
+
+  it("buckets by the Run sport settings' pace zones, and says so", async () => {
+    const runGroup = (
+      sportSettingsFixture as unknown as IntervalsSportSettings[]
+    ).find((g) => g.types?.includes("Run"))!;
+    vi.mocked(getSportSettingsFn).mockResolvedValueOnce(runGroup);
+    vi.mocked(getSportSettingsFn).mockResolvedValueOnce(runGroup);
+    mockedIntervalsList.mockResolvedValue([
+      intervalsActivity({ average_cadence: 85, average_speed: 3.33 }),
+    ]);
+
+    const data = JSON.parse(
+      (await dispatchToolCall("get-cadence-trend-data", {})).content[0]?.text ??
+        "",
+    );
+    const text =
+      (await dispatchToolCall("view-cadence-trends", {})).content[0]?.text ??
+      "";
+
+    expect(data.paceZoneSource).toBe("athlete");
+    expect(data.paceZones).toHaveLength(7);
+    expect(vi.mocked(getSportSettingsFn)).toHaveBeenCalledWith(
+      "test-token",
+      "Run",
+    );
+    expect(text).toContain(
+      "Cadence by pace zone (the Run sport settings' pace zones):",
+    );
+    expect(text).toContain("  Zone 5c (faster than 4:11 /km): no runs");
   });
 
   it("view-cadence-trends names a window that is not whole weeks in days", async () => {

@@ -1,5 +1,10 @@
-import { computeZoneStats, formatShortDate } from "@intervals-mcp/data";
+import {
+  computeZoneStats,
+  formatShortDate,
+  PACE_ZONES,
+} from "@intervals-mcp/data";
 import { describe, expect, it } from "vitest";
+import { athletePaceZones } from "./__fixtures__/runs";
 import {
   assignOverlayColors,
   buildCadenceSubtitle,
@@ -10,10 +15,12 @@ import {
   overlayRunStatus,
   resampleOverlayRuns,
   runsByDay,
+  shortZoneLabel,
   TREND_WINDOW_DAYS,
   timeRollingAverage,
   toOverlayPoints,
   trendTimeAxis,
+  zoneOpacities,
 } from "./normalize";
 import {
   COMPARISON_COLORS,
@@ -374,7 +381,7 @@ describe("buildCadenceSubtitle", () => {
 });
 
 describe("buildZoneRows", () => {
-  const zone = (label: string) => ({ label, minPace: 0, maxPace: 0 });
+  const zone = (label: string) => ({ label, minPace: null, maxPace: null });
   const stats = [
     { zone: zone("Threshold"), mean: 0, min: 0, max: 0, count: 0 },
     { zone: zone("Tempo"), mean: 178, min: 170, max: 190, count: 4 },
@@ -549,5 +556,31 @@ describe("runsByDay", () => {
     expect(byDay.get(dayTimestamp("2026-01-11"))).toEqual([morning, evening]);
     expect(byDay.get(dayTimestamp("2026-01-12"))).toEqual([next]);
     expect(byDay.size).toBe(2);
+  });
+});
+
+describe("zoneOpacities", () => {
+  it("shades the fixed zones from Threshold (darkest) to Easy", () => {
+    expect(zoneOpacities(PACE_ZONES)).toEqual([1, 0.8, 0.6, 0.4]);
+  });
+
+  it("shades the athlete's zones by pace, though they come slowest first", () => {
+    expect(zoneOpacities(athletePaceZones)).toEqual([
+      0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1,
+    ]);
+  });
+
+  it("gives a lone zone full shade", () => {
+    expect(
+      zoneOpacities([{ label: "All", minPace: null, maxPace: null }]),
+    ).toEqual([1]);
+  });
+});
+
+describe("shortZoneLabel", () => {
+  it("shortens intervals.icu's zone names and leaves other names", () => {
+    expect(shortZoneLabel("Zone 5a")).toBe("Z5a");
+    expect(shortZoneLabel("Zone 1")).toBe("Z1");
+    expect(shortZoneLabel("Tempo")).toBe("Tempo");
   });
 });

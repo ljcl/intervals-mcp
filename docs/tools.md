@@ -998,7 +998,9 @@ Then the data:
 - `view-cadence-trends` has no twin; its own lines are the data
   (`cadenceTrendLines`, `cadenceTrendData.ts`): each run's date, name,
   id, distance, pace and cadence (the 60 newest, with a count of the rest), the
-  cadence of each pace zone (runs, mean, range), and the cadence-against-
+  cadence of each pace zone (runs, mean, range; the zones are the Run sport
+  settings' pace zones, else fixed 4:00/4:30/5:30 /km zones, and the
+  heading says which), and the cadence-against-
   pace slope with what it means ("cadence rises 10.6 spm for each 1:00 /km
   faster"). The zones and the slope come from `computeZoneStats` and
   `cadencePaceRegression` in `@intervals-mcp/data`, the functions the app's

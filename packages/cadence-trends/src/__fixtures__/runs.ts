@@ -1,3 +1,4 @@
+import { type PaceZone } from "@intervals-mcp/data";
 import { type RunSummary } from "../types";
 
 /** ~15 runs over 42 days (6 weeks) with gradual cadence improvement (166→176 spm) */
@@ -218,4 +219,19 @@ export const runsWithSameDay: RunSummary[] = [
     averagePace: 6.0,
     type: "Run",
   },
+];
+
+/**
+ * An athlete's Run pace zones as get-cadence-trend-data sends them: a 4:50
+ * /km threshold (3.448 m/s) and intervals.icu's default seven zones,
+ * slowest first.
+ */
+export const athletePaceZones: PaceZone[] = [
+  { label: "Zone 1", minPace: 6.2366, maxPace: null },
+  { label: "Zone 2", minPace: 5.5112, maxPace: 6.2366 },
+  { label: "Zone 3", minPace: 5.1255, maxPace: 5.5112 },
+  { label: "Zone 4", minPace: 4.8337, maxPace: 5.1255 },
+  { label: "Zone 5a", minPace: 4.6747, maxPace: 4.8337 },
+  { label: "Zone 5b", minPace: 4.3352, maxPace: 4.6747 },
+  { label: "Zone 5c", minPace: null, maxPace: 4.3352 },
 ];

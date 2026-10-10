@@ -38,9 +38,13 @@ export interface CadenceContextInput {
    * of the chart entirely; mentioned so the model knows the average isn't
    * silently missing them. */
   excludedNoCadence?: number;
+  /** Runs under 1 km, left out of the chart like the cadence-less ones. */
+  excludedShort?: number;
   /** Runs with cadence but no recorded speed, excluded from pace-based
    * views (pace zones, scatter) only. */
   noPaceCount?: number;
+  /** Whose pace zones the zone view uses; absent from an older feed. */
+  paceZoneSource?: "athlete" | "default";
 }
 
 export function buildCadenceContextSummary(
@@ -53,7 +57,9 @@ export function buildCadenceContextSummary(
     overlayAxis,
     overlayStatus,
     excludedNoCadence,
+    excludedShort,
     noPaceCount,
+    paceZoneSource,
   } = input;
   if (!days) return null;
 
@@ -96,6 +102,18 @@ export function buildCadenceContextSummary(
   if (excludedNoCadence) {
     parts.push(
       `${excludedNoCadence} run${excludedNoCadence === 1 ? "" : "s"} with no recorded cadence excluded.`,
+    );
+  }
+  if (excludedShort) {
+    parts.push(
+      `${excludedShort} run${excludedShort === 1 ? "" : "s"} under 1 km excluded.`,
+    );
+  }
+  if (activeView === "zones" && paceZoneSource) {
+    parts.push(
+      paceZoneSource === "athlete"
+        ? "Pace zones: the athlete's Run sport settings."
+        : "Pace zones: fixed (the Run sport settings have no threshold pace).",
     );
   }
   if (noPaceCount) {

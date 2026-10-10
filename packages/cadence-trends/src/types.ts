@@ -1,3 +1,5 @@
+import { type PaceZone } from "@intervals-mcp/data";
+
 /** Summary data for a single run, returned by get-cadence-trend-data */
 export interface RunSummary {
   /** intervals.icu activity id, e.g. "i189807578". */
@@ -29,6 +31,14 @@ export interface CadenceTrendData {
    * excluded from pace-based views only. Optional so an older feed shape
    * still parses. */
   noPaceCount?: number;
+  /** Runs under 1 km, left out of `activities` like the cadence-less ones.
+   * Optional so an older feed shape still parses. */
+  excludedShort?: number;
+  /** The zones the zone view buckets runs by: the athlete's Run pace zones
+   * (slowest first), else the fixed `PACE_ZONES`. Absent from an older
+   * feed, which means the fixed zones. */
+  paceZones?: PaceZone[];
+  paceZoneSource?: "athlete" | "default";
 }
 
 /** Stream data for a single run used in overlay view (reuses activity-chart shape) */
@@ -88,7 +98,6 @@ export type OverlayRunStatus =
   | "noStreams"
   | "failed";
 
-/** Pace zone definition */
 /** View identifiers */
 export type ViewId = "trend" | "scatter" | "zones" | "overlay";
 

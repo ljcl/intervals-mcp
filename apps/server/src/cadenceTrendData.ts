@@ -39,6 +39,14 @@ export interface RunSummary {
   type: string;
 }
 
+/**
+ * Runs shorter than this are left out of the cadence views: a stub (a
+ * watch started by mistake, a 200 m warm-up saved on its own) has a cadence
+ * and pace that say nothing about how the athlete runs, and one such run
+ * moves a zone's average.
+ */
+export const MIN_CADENCE_RUN_DISTANCE_M = 1000;
+
 /** Response shape for `get-cadence-trend-data`. */
 export interface CadenceTrendData {
   /** Days of history the window covers, as requested. */
@@ -48,6 +56,16 @@ export interface CadenceTrendData {
    * of `activities` (see {@link buildCadenceTrendData}) rather than counted
    * toward it. */
   excludedNoCadence: number;
+  /** Runs with a recorded distance under {@link MIN_CADENCE_RUN_DISTANCE_M},
+   * left out of `activities` the same way. */
+  excludedShort: number;
+  /** The pace zones the zone view and text bucket runs by, slowest first
+   * for the athlete's own, fastest first for the fixed fallback. */
+  paceZones: PaceZone[];
+  /** athlete: the Run sport settings' threshold pace and pace zones;
+   * default: the fixed `PACE_ZONES`, because the settings have none or
+   * could not be read. */
+  paceZoneSource: "athlete" | "default";
   /** Runs included in `activities` (they have cadence) but with no recorded
    * speed, so `averagePace` is `null` there: counted here the same way
    * `excludedNoCadence` counts the cadence-less runs, so pace-based views
@@ -68,20 +86,33 @@ export interface CadenceTrendData {
  * cadence is left out of `activities` too, rather than plotted at a
  * fabricated `averageCadence: 0`: a zero nobody ran would drag the trend
  * line and every average toward it; `excludedNoCadence` counts how many
- * were left out so the view/text summary can say so.
+ * were left out so the view/text summary can say so. A run with a recorded
+ * distance under {@link MIN_CADENCE_RUN_DISTANCE_M} is left out too
+ * (`excludedShort`); a run with no distance at all (an indoor run with no
+ * foot pod) stays, as a cadence-only run. `paceZones` are the athlete's
+ * (`cadencePaceZones`), else the fixed `PACE_ZONES`.
  */
 export function buildCadenceTrendData(
   activities: IntervalsActivity[],
-  options: { days: number },
+  options: { days: number; paceZones?: PaceZone[] | null },
 ): CadenceTrendData {
   const runs = activities.filter((a) => a.type && isPaceActivity(a.type));
 
   const summaries: RunSummary[] = [];
   let excludedNoCadence = 0;
+  let excludedShort = 0;
   let noPaceCount = 0;
 
   for (const a of runs) {
     const type = a.type ?? "Run";
+    if (
+      a.distance &&
+      a.distance > 0 &&
+      a.distance < MIN_CADENCE_RUN_DISTANCE_M
+    ) {
+      excludedShort += 1;
+      continue;
+    }
     const averageCadence = activityCadenceSpm(a.average_cadence, type);
     if (averageCadence == null) {
       excludedNoCadence += 1;
@@ -109,11 +140,15 @@ export function buildCadenceTrendData(
     });
   }
 
+  const athleteZones = options.paceZones?.length ? options.paceZones : null;
   return {
     days: options.days,
     activities: summaries,
     excludedNoCadence,
+    excludedShort,
     noPaceCount,
+    paceZones: athleteZones ?? PACE_ZONES,
+    paceZoneSource: athleteZones ? "athlete" : "default",
   };
 }
 
@@ -121,13 +156,14 @@ export function buildCadenceTrendData(
  * names how many more there are. */
 export const MAX_CADENCE_RUN_LINES = 60;
 
-/** "faster than 4:00 /km", "4:00 to 4:30 /km", "slower than 5:30 /km". */
-function zoneRangeText(zone: PaceZone, index: number): string {
+/** "faster than 4:20 /km", "5:31-5:08 /km", "slower than 6:14 /km":
+ * slow limit first, as get-athlete-zones writes a zone. */
+function zoneRangeText(zone: PaceZone): string {
   const pace = (minPerKm: number) => formatPaceSeconds(minPerKm * 60);
-  if (index === 0) return `faster than ${pace(zone.maxPace)} /km`;
-  if (index === PACE_ZONES.length - 1)
-    return `slower than ${pace(zone.minPace)} /km`;
-  return `${pace(zone.minPace)} to ${pace(zone.maxPace)} /km`;
+  if (zone.minPace == null && zone.maxPace == null) return "any pace";
+  if (zone.minPace == null) return `faster than ${pace(zone.maxPace!)} /km`;
+  if (zone.maxPace == null) return `slower than ${pace(zone.minPace)} /km`;
+  return `${pace(zone.maxPace)}-${pace(zone.minPace)} /km`;
 }
 
 const runsText = (count: number) => `${count} ${count === 1 ? "run" : "runs"}`;
@@ -154,6 +190,11 @@ export function cadenceTrendLines(data: CadenceTrendData): string[] {
     ...(data.excludedNoCadence > 0
       ? [`Excluded (no cadence recorded): ${data.excludedNoCadence}`]
       : []),
+    ...(data.excludedShort > 0
+      ? [
+          `Excluded (under ${MIN_CADENCE_RUN_DISTANCE_M / 1000} km): ${data.excludedShort}`,
+        ]
+      : []),
     ...(data.noPaceCount > 0
       ? [`No pace recorded (cadence only): ${data.noPaceCount}`]
       : []),
@@ -174,9 +215,14 @@ export function cadenceTrendLines(data: CadenceTrendData): string[] {
   if (more > 0)
     lines.push(`  (${runsText(more)} more; a shorter days window lists them)`);
 
-  lines.push("", "Cadence by pace zone:");
-  for (const [index, stat] of computeZoneStats(runs).entries()) {
-    const label = `  ${stat.zone.label} (${zoneRangeText(stat.zone, index)})`;
+  lines.push(
+    "",
+    data.paceZoneSource === "athlete"
+      ? "Cadence by pace zone (the Run sport settings' pace zones):"
+      : "Cadence by pace zone (fixed zones: the Run sport settings have no threshold pace or pace zones):",
+  );
+  for (const stat of computeZoneStats(runs, data.paceZones)) {
+    const label = `  ${stat.zone.label} (${zoneRangeText(stat.zone)})`;
     lines.push(
       stat.count > 0
         ? `${label}: ${runsText(stat.count)}, mean ${stat.mean} spm (${stat.min} to ${stat.max})`

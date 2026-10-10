@@ -267,9 +267,14 @@ altitude overlays; cadence and grade where recorded).
 ### Cadence Trends
 
 Four views: Trend timeline, Scatter plot, Pace Zones, Overlay comparison.
-The pace zones (`PACE_ZONES`, `computeZoneStats`) and the scatter's
-cadence-against-pace line (`cadencePaceRegression`) come from
-`@intervals-mcp/data`, where view-cadence-trends' text reads them too.
+The zone view buckets runs by the feed's `paceZones`: the athlete's Run pace
+zones (slowest first), else the fixed `PACE_ZONES` for an older feed or an
+athlete with no threshold pace. Each bar's shade follows its zone's pace
+(`zoneOpacities`, darkest for the fastest), and the axis shortens "Zone 5a"
+to "Z5a". `computeZoneStats` and the scatter's cadence-against-pace line
+(`cadencePaceRegression`) come from `@intervals-mcp/data`, where
+view-cadence-trends' text reads them too. Runs under 1 km are not in the
+feed; the context summary names how many were left out.
 Calls `get-cadence-trend-data` on mount with `days` (the payload echoes
 `days`; the subtitle and context summary say "last 6 weeks" for a whole
 number of weeks, else "last 30 days", as the server's view text does) and

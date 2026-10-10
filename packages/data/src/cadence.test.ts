@@ -16,7 +16,7 @@ describe("computeZoneStats", () => {
       run(3.8, 185), // Threshold (<4)
       run(4.2, 180), // Tempo (4–4.5)
       run(4.4, 176), // Tempo
-      run(6.0, 165), // Easy (5.5–20)
+      run(6.0, 165), // Easy (slower than 5.5)
       run(6.0, 0), // dropout, excluded
     ]);
 
@@ -35,6 +35,34 @@ describe("computeZoneStats", () => {
     const byLabel = new Map(stats.map((s) => [s.zone.label, s]));
     expect(byLabel.get("Tempo")?.count).toBe(1);
     expect(stats.reduce((sum, s) => sum + s.count, 0)).toBe(1);
+  });
+});
+
+describe("computeZoneStats with the athlete's zones", () => {
+  const zones = [
+    { label: "Zone 1", minPace: 6, maxPace: null },
+    { label: "Zone 2", minPace: 5, maxPace: 6 },
+    { label: "Zone 3", minPace: null, maxPace: 5 },
+  ];
+
+  it("gives one stat per zone, in the zones' order", () => {
+    const stats = computeZoneStats([run(7, 160), run(5.5, 170)], zones);
+    expect(stats.map((s) => [s.zone.label, s.count])).toEqual([
+      ["Zone 1", 1],
+      ["Zone 2", 1],
+      ["Zone 3", 0],
+    ]);
+  });
+
+  it("counts a pace on a limit in the zone whose fast limit it is", () => {
+    const stats = computeZoneStats([run(5, 175), run(6, 165)], zones);
+    expect(stats.map((s) => s.count)).toEqual([1, 1, 0]);
+    expect(stats[1]?.mean).toBe(175);
+  });
+
+  it("puts any pace in an open zone, however fast or slow", () => {
+    const stats = computeZoneStats([run(2.5, 190), run(25, 150)], zones);
+    expect(stats.map((s) => s.count)).toEqual([1, 0, 1]);
   });
 });
 
