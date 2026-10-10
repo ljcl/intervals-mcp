@@ -12,21 +12,32 @@ Related docs: [mcp-apps.md](mcp-apps.md) for the UI packages,
 - Bun (TypeScript). Streamable HTTP on port 3000 (`/mcp`), deployed as a Docker
   container behind an HTTPS tunnel or reverse proxy. Monorepo: Bun workspaces +
   Turborepo (`apps/*`, `packages/*`).
-- **2026-07-28 only.** `apps/server/src/mcpEndpoint.ts` serves the
-  2026-07-28 revision per request — stateless, `_meta` envelope,
-  `server/discover`, `MCP-Protocol-Version`/`Mcp-Method`/`Mcp-Name` headers
-  (SEP-2243; the SDK rejects a request without them), `resultType` plus
-  `ttlMs`/`cacheScope` on results — and nothing else. `createMcpHandler` runs
-  with `legacy: "reject"`, so a 2025-era request (no envelope claim, e.g. an
-  `initialize` handshake) gets HTTP 400 and `-32022`
-  UnsupportedProtocolVersion with `data.supported: ["2026-07-28"]`; a 2025-era
-  notification gets 202 and is dropped.
-- Why no legacy fallback: every served request now passes the SDK's
-  header-vs-body check (`-32020` on a mismatch), so a proxy or WAF rule keyed
-  on `Mcp-Method`/`Mcp-Name` is sound. A fallback served claim-less requests
-  without that check, which let a request carry any headers past such a rule.
-  Every request also carries `clientInfo` and gets JSON rather than SSE
-  unless the handler streams progress. See #33.
+- **2026-07-28, plus read-only 2025-era serving.**
+  `apps/server/src/mcpEndpoint.ts` serves the 2026-07-28 revision per request
+  — stateless, `_meta` envelope, `server/discover`,
+  `MCP-Protocol-Version`/`Mcp-Method`/`Mcp-Name` headers (SEP-2243; the SDK
+  rejects an enveloped request without them), `resultType` plus
+  `ttlMs`/`cacheScope` on results. An envelope naming any other revision gets
+  HTTP 400 and `-32022` UnsupportedProtocolVersion with
+  `data.supported: ["2026-07-28"]`. Every such request carries `clientInfo`
+  and gets JSON rather than SSE unless the handler streams progress. See #33.
+- `createMcpHandler` runs with `legacy: "stateless"`, so a 2025-era request
+  (no envelope claim, e.g. an `initialize` handshake) is served too: a fresh
+  server answers each one, with no session. claude.ai needs this. Its chat
+  client (`Anthropic/ClaudeAI`) speaks 2026-07-28, but it loads an app's
+  `ui://` resource and data tool with a separate `claude-ai` 0.1.0 client
+  that speaks 2025-11-25. Under `legacy: "reject"` (2.5.1 and earlier) every
+  chart card in claude.ai failed with "Failed to load this connector": the
+  operator log had one refused `initialize` and one 405 `GET` per card.
+- The write guard: the SDK runs its header-vs-body check (`-32020` on a
+  mismatch) only for enveloped requests, so a 2025-era request can carry any
+  `Mcp-Method`/`Mcp-Name` past a proxy or WAF rule keyed on them. The SDK
+  passes each request's `era` to the server factory. On `legacy`,
+  `createServer` lists no tool that is not annotated read-only (`WRITE_TOOLS`,
+  today only `update-activity`), and `dispatchToolCall` gets `readOnly: true`
+  and refuses such a tool before it reads the arguments. The refusal is an
+  `isError` result, logged as an `error` call. A new write tool is guarded
+  through its annotations, with no change here.
 - Protocol sessions are gone with the revision that removed them. No
   `Mcp-Session-Id` is minted; standalone GET/DELETE answer 405.
 - The endpoint parses every POST body itself with `parseJsonWithLargeInts` and
@@ -580,15 +591,16 @@ dispatched without client information records `client_apps: false`. A host that
 renders apps without advertising them gets the "cannot display" text too; the
 log field is how an operator sees how many calls that affects.
 
-The reverse also happens, and the server cannot fix it: a host can try to
-render the app for a client that did not advertise it. On 2026-10-10
-(Sydney) the Claude iOS app showed its "Failed to load this connector" card
-for `view-activity-chart`, `view-activity-zones` and `view-training-load`
-calls from a cloud agent session. That session's client did not advertise the
-extension (each result had the "cannot display" text). The same day a Claude
-Code session's `resources/read` of `ui://activity-zones/app.html` returned the
-HTML as `text/html;profile=mcp-app`, so the resource itself was served. Hiding
-the `view-*` tools from such clients (#143) would stop the calls.
+The reverse also happens: a host can render the app for a client that did
+not advertise it. On 2026-10-10 (Sydney) the Claude iOS app showed its
+"Failed to load this connector" card for `view-activity-chart`,
+`view-activity-zones` and `view-training-load` calls from a cloud agent
+session, whose client did not advertise the extension (each result had the
+"cannot display" text). The app loads the card through claude.ai's own
+2025-11-25 client whichever client made the call, and the server refused that
+era then (see Runtime and transport). Hiding the `view-*` tools from clients
+that do not advertise the extension (#143) would also hide them from a
+session like that one, whose host can render the card.
 
 The records stay with the operator: the stderr line and the `/health`
 counters. The server does not advertise the `logging` capability, because
@@ -1001,8 +1013,12 @@ one against a document it never gets), every id advertised as a string,
 error for a rejected argument, the app resources and their `_meta.ui`, the
 prompts, the server instructions, and the display titles — and pins the
 result envelope (`resultType`, cache fields, per-response `serverInfo`).
-`mcpEndpoint.test.ts` pins the rejection of 2025-era traffic, including a
-claim-less `tools/call` with a spoofed `Mcp-Name`.
+`mcpEndpoint.test.ts` pins how each era reaches the server factory (a
+claim-less request with a spoofed `Mcp-Name` is still `legacy`) and the
+rejection of an unserved revision. The integration suite drives claude.ai's
+2025-era app loader through `sendLegacy` (`initialize`, `resources/read`, an
+app data tool) and pins the write guard: no `update-activity` in a 2025-era
+`tools/list`, and a refused call past a spoofed `Mcp-Name`.
 Asserting against the in-memory `TOOL_DEFS` table proves nothing: an annotation or
 schema that does not serialize cannot influence a host. The bootstrap was
 copied into three suites before the shared client existed; add to the client

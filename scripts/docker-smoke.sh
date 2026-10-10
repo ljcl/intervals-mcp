@@ -194,18 +194,52 @@ else
   fail "tool_call log line: $line"
 fi
 
-# A 2025-era handshake is rejected with the supported revision.
-init="$(curl -sS -w '\n%{http_code}' -X POST "$BASE/mcp" \
+# A 2025-era request, as claude.ai's MCP Apps loader sends it. The endpoint
+# serves it statelessly: one POST, one answer, no session.
+legacy() {
+  id=$((id + 1))
+  curl -sS -X POST "$BASE/mcp" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H 'Content-Type: application/json' \
+    -H 'Accept: application/json, text/event-stream' \
+    "${@:3}" \
+    -d "$(jq -cn --argjson id "$id" --arg method "$1" --argjson params "$2" '{jsonrpc: "2.0", id: $id, method: $method, params: $params}')" |
+    sed -n 's/^data: //p;/^{/p' |
+    jq -c --argjson id "$id" 'select(.id == $id)'
+}
+
+init="$(legacy initialize '{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"docker-smoke","version":"1.0"}}')"
+if jq -e '.result.protocolVersion == "2025-11-25"' <<<"$init" >/dev/null 2>&1; then
+  pass "a 2025-era initialize is served"
+else
+  fail "2025-era initialize: $init"
+fi
+
+# The 2025 path skips the Mcp-Method/Mcp-Name check, so the server refuses
+# every write on it, even past a spoofed Mcp-Name.
+write="$(legacy tools/call '{"name":"update-activity","arguments":{"id":"1","name":"x"}}' \
+  -H 'MCP-Protocol-Version: 2025-11-25' -H 'Mcp-Method: tools/call' -H 'Mcp-Name: get-wellness')"
+if jq -e '.result.isError == true and (.result.content[0].text | contains("2025 protocol revision"))' <<<"$write" >/dev/null 2>&1; then
+  pass "a 2025-era update-activity is refused"
+else
+  fail "2025-era update-activity: $write"
+fi
+
+# An envelope naming a revision the endpoint does not serve is rejected with
+# the supported revision.
+unserved="$(curl -sS -w '\n%{http_code}' -X POST "$BASE/mcp" \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"docker-smoke","version":"1.0"}}}')"
-init_status="$(tail -1 <<<"$init")"
-init_code="$(sed '$d' <<<"$init" | jq -r '.error.code')"
-if [ "$init_status" = 400 ] && [ "$init_code" = -32022 ]; then
-  pass "initialize rejected with 400 / -32022"
+  -H 'MCP-Protocol-Version: 2099-01-01' \
+  -H 'Mcp-Method: tools/list' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2099-01-01","io.modelcontextprotocol/clientInfo":{"name":"docker-smoke","version":"1.0"},"io.modelcontextprotocol/clientCapabilities":{}}}}')"
+unserved_status="$(tail -1 <<<"$unserved")"
+unserved_code="$(sed '$d' <<<"$unserved" | jq -r '.error.code')"
+if [ "$unserved_status" = 400 ] && [ "$unserved_code" = -32022 ]; then
+  pass "an unserved revision is rejected with 400 / -32022"
 else
-  fail "initialize returned HTTP $init_status, code $init_code"
+  fail "unserved revision returned HTTP $unserved_status, code $unserved_code"
 fi
 
 # Each refused /mcp request wrote one mcp_rejected line: the 401 from the

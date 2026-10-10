@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import {
   CLIENT_INFO_META_KEY,
   createMcpHandler,
+  type McpRequestContext,
   PROTOCOL_VERSION_META_KEY,
   type Server,
   TRACEPARENT_META_KEY,
@@ -57,16 +58,16 @@ export interface McpEndpoint {
 
 /**
  * The /mcp endpoint. `createMcpHandler` serves the 2026-07-28 revision per
- * request (stateless, `_meta` envelope, `server/discover`) and nothing else:
- * `legacy: "reject"` answers any 2025-era request (no envelope claim, e.g. an
- * `initialize` handshake) with HTTP 400 and `-32022` UnsupportedProtocolVersion,
- * whose `data.supported` names 2026-07-28. Legacy notifications get 202 and
- * are dropped; GET/DELETE answer 405.
+ * request (stateless, `_meta` envelope, `server/discover`). A 2025-era request
+ * (no envelope claim, e.g. an `initialize` handshake) is served too, by
+ * `legacy: "stateless"`: a fresh server answers each one, with no session, so
+ * GET and DELETE answer 405. claude.ai loads MCP Apps with a 2025-11-25
+ * client, so rejecting that era broke every chart card there.
  *
- * Rejecting the old era also closes a downgrade path: only enveloped requests
- * go through the SDK's `Mcp-Method`/`Mcp-Name` header-vs-body check (`-32020`),
- * so a claim-less request served by a legacy fallback could carry any headers
- * it liked past a proxy rule keyed on them.
+ * Only enveloped requests go through the SDK's `Mcp-Method`/`Mcp-Name`
+ * header-vs-body check (`-32020`). A 2025-era request can carry any headers
+ * past a proxy rule keyed on them, so `createServer` gets the request's era,
+ * and its 2025 path lists and runs no write tool.
  *
  * POST bodies are parsed here with the large-int-preserving reviver and handed
  * to the SDK as `parsedBody`, never re-read from the request: a 64-bit
@@ -80,9 +81,11 @@ export interface McpEndpoint {
  * go into that line, not into a second one. The `Authorization` header is
  * never read here.
  */
-export function createMcpEndpoint(createServer: () => Server): McpEndpoint {
-  const handler = createMcpHandler(() => createServer(), {
-    legacy: "reject",
+export function createMcpEndpoint(
+  createServer: (ctx: McpRequestContext) => Server,
+): McpEndpoint {
+  const handler = createMcpHandler((ctx) => createServer(ctx), {
+    legacy: "stateless",
     keepAliveMs: SSE_KEEP_ALIVE_MS,
     // Reporting only — the SDK already shaped the response by the time this
     // fires, so a throw here could not change what the client sees. During an

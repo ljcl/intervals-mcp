@@ -829,6 +829,11 @@ current activity reports "no change" and sends no PUT. Any field whose
 re-read value does not match what was sent (e.g. gear not applied) adds a
 warning rather than failing the call.
 
+A 2025-era client (no request envelope) does not get `update-activity`: its
+`tools/list` leaves the tool out, and a call returns an `isError` result that
+asks for a client that speaks 2026-07-28. Every tool not annotated read-only
+gets the same treatment (docs/architecture.md#runtime-and-transport).
+
 ## Activity ids
 
 Every activity-id input except `update-activity`'s accepts either a numeric id

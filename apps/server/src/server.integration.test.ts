@@ -23,6 +23,7 @@ import {
   getAthletePaceCurves,
   listActivities,
   searchActivities,
+  updateActivity,
 } from "./intervalsClient";
 import { INTERVALS_ID_HINT, INTERVALS_ID_HINT_LATEST } from "./tools/_ids";
 
@@ -39,6 +40,8 @@ vi.mock("./intervalsClient", async (importOriginal) => {
     getSportSettings: vi.fn(async () => null),
     listActivities: vi.fn(),
     searchActivities: vi.fn(),
+    // Never reached: the 2025-era write guard refuses update-activity first.
+    updateActivity: vi.fn(),
   };
 });
 
@@ -547,6 +550,88 @@ describe("tools/call on a view-* tool", () => {
 
     expect(text).not.toContain("rendered above");
     expect(text).toContain("The same data from get-activity-zones follows.");
+  });
+});
+
+describe("2025-era requests (claude.ai's MCP Apps loader)", () => {
+  // claude.ai loads an app's ui:// resource and its data tool with a
+  // 2025-11-25 client. The endpoint serves it statelessly, but that path
+  // skips the Mcp-Method/Mcp-Name check, so it lists and runs no write.
+  afterEach(() => {
+    mockedIntervalsActivity.mockReset();
+  });
+
+  it("answers initialize, reads an app resource and runs its data tool", async () => {
+    mockedIntervalsActivity.mockResolvedValue({
+      id: "123",
+      name: "Morning Run",
+      type: "Run",
+      start_date_local: "2026-06-01T07:00:00",
+      icu_hr_zones: [130, 155, 190],
+      icu_hr_zone_times: [600, 1800, 600],
+    } as never);
+    const client = await connectTestClient();
+
+    const init = await client.sendLegacy("initialize", {
+      protocolVersion: "2025-11-25",
+      capabilities: {},
+      clientInfo: { name: "claude-ai", version: "0.1.0" },
+    });
+    const read = await client.sendLegacy("resources/read", {
+      uri: "ui://activity-zones/app.html",
+    });
+    const call = await client.sendLegacy("tools/call", {
+      name: "get-activity-zones-data",
+      arguments: { id: "123" },
+    });
+
+    expect(init.error).toBeUndefined();
+    expect(init.result?.protocolVersion).toBe("2025-11-25");
+    const [content] = (read.result?.contents ?? []) as Array<
+      Record<string, unknown>
+    >;
+    expect(content?.mimeType).toBe("text/html;profile=mcp-app");
+    expect(content?._meta).toEqual({ ui: { prefersBorder: false } });
+    expect(String(content?.text)).toContain("<html");
+    expect(call.result?.isError).toBeUndefined();
+    const [block] = (call.result?.content ?? []) as Array<{ text: string }>;
+    expect(JSON.parse(block?.text ?? "").zoneSets).toHaveLength(1);
+  });
+
+  it("lists every tool but update-activity", async () => {
+    const client = await connectTestClient();
+
+    const legacy = await client.sendLegacy("tools/list");
+    const modern = await client.send("tools/list");
+
+    const names = (result: Record<string, unknown> | undefined) =>
+      ((result?.tools ?? []) as Array<{ name: string }>).map(
+        (tool) => tool.name,
+      );
+    expect(names(modern.result)).toContain("update-activity");
+    expect(names(legacy.result)).toEqual(
+      names(modern.result).filter((name) => name !== "update-activity"),
+    );
+  });
+
+  it("refuses update-activity, even past a spoofed Mcp-Name", async () => {
+    const client = await connectTestClient();
+
+    const { result, error } = await client.sendLegacy(
+      "tools/call",
+      { name: "update-activity", arguments: { id: "123", name: "x" } },
+      { "Mcp-Method": "tools/call", "Mcp-Name": "get-wellness" },
+    );
+
+    expect(error).toBeUndefined();
+    expect(result?.isError).toBe(true);
+    const [block] = (result?.content ?? []) as Array<{ text: string }>;
+    expect(block?.text).toBe(
+      "❌ update-activity changes data, and this client connects with a 2025 protocol revision, so the server does not run it. To make the change, use a client that speaks the 2026-07-28 revision.",
+    );
+    // Refused before the handler's fresh read of the activity.
+    expect(mockedIntervalsActivity).not.toHaveBeenCalled();
+    expect(vi.mocked(updateActivity)).not.toHaveBeenCalled();
   });
 });
 
