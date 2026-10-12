@@ -323,6 +323,7 @@ bun run typecheck:affected # Typecheck only changed packages
 bun run lint              # Lint all packages (Biome, root task)
 bun run lint:fix          # Auto-fix lint issues
 bun run knip              # Dead code / unused export analysis
+bun run audit             # Dependency audit gate (bun audit, high and above, less AUDIT_IGNORES)
 bun run boundaries        # Package boundary enforcement
 bun run dev               # Dev mode (via Turborepo)
 

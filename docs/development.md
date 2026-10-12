@@ -101,6 +101,7 @@ bun run test              # Vitest (server + any package with tests)
 bun run build             # Produces MCP App single-file HTML bundles
 bun run boundaries        # Package boundary enforcement
 bun run knip              # Dead code / unused export analysis
+bun run audit             # Dependency audit gate (bun audit, high and above, less AUDIT_IGNORES)
 bun run test:coverage     # Tests with coverage (per-package coverage/ output)
 bun run coverage:summary  # Aggregate coverage into one markdown table
 ```
@@ -232,24 +233,42 @@ open questions) belongs in [api-notes.md](api-notes.md), not here.
 
 ## Clearing a `bun audit` failure
 
-`ci.yml`'s `audit` job is advisory on PRs and main pushes and a **hard gate on
-the weekly schedule**. Findings are almost always transitive, and `bun update`
-will not touch them: it only moves within package.json ranges (every direct dep
-is exact-pinned for Dependabot), while the lockfile keeps serving whatever
-transitive versions resolved months ago. Re-resolve fully:
+`ci.yml`'s `audit` job runs `bun run audit` (`scripts/audit.ts`: `bun audit
+--audit-level=high` less a short ignore list). It is advisory on PRs and main
+pushes and a **hard gate on the weekly schedule**. Dependabot's bun ecosystem
+sends version updates but no security update PRs, so this job is what turns a
+new advisory into a red build. Findings are almost always transitive, and
+`bun update` will not touch them: it only moves within package.json ranges
+(every direct dep is exact-pinned for Dependabot), while the lockfile keeps
+serving whatever transitive versions resolved months ago. Try these in order:
+
+1. **`bun audit fix`.** It moves each vulnerable package to the lowest safe
+   version that every dependent's range allows, and changes only `bun.lock`
+   (or an exact pin that has to move). `bun audit fix --dry-run` shows the
+   plan first. This is the usual fix: a few lockfile lines, each one named.
+2. **Re-resolve fully**, when a range blocks the fix (see below).
+3. **Ignore it**, only when `bun audit fix` lists the advisory under "no
+   published version fixes" and its vulnerable code cannot be reached here.
+   Add the GHSA id, the package and that reason to `AUDIT_IGNORES` in
+   `scripts/audit.ts`. The gate fails once a fixed version ships (the
+   advisory leaves `bun audit fix`'s unfixable list), which tells you to run
+   `bun audit fix` and delete the entry. Each run prints the ignored
+   advisories with their reasons, so the list is never silent.
 
 ```bash
-rm -f bun.lock && bun install    # re-resolve every transitive dep
-bun audit --audit-level=high     # expect no output
+bun audit fix --dry-run          # what a targeted fix would change
+bun audit fix                    # apply it
+rm -f bun.lock && bun install    # or: re-resolve every transitive dep
+bun run audit                    # expect "No vulnerabilities found"
 ```
 
-That is a lockfile-only diff, but it re-races hoisting across the whole graph —
-run the entire verification sweep after it (`test:stories` especially, the only
-gate rendering the apps in a real browser). Check the diff for **downgrades and
-dropped packages**, not just bumps: the winner of the re-race is whichever
-constraint is hard, not whichever version is right. `overrides` in root
-package.json pins the cases where the race picks wrong (currently
-`react-is: 19.3.0` — hoisting can satisfy recharts' peer with
+A full re-resolve is a lockfile-only diff, but it re-races hoisting across the
+whole graph — run the entire verification sweep after it (`test:stories`
+especially, the only gate rendering the apps in a real browser). Check the diff
+for **downgrades and dropped packages**, not just bumps: the winner of the
+re-race is whichever constraint is hard, not whichever version is right.
+`overrides` in root package.json pins the cases where the race picks wrong
+(currently `react-is: 19.3.0` — hoisting can satisfy recharts' peer with
 pretty-format@27's `^17.0.1`, whose brand-check misses React 19 elements and
 silently stops fragment flattening).
 

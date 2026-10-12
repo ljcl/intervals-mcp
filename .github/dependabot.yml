@@ -1,6 +1,12 @@
 version: 2
 updates:
-  - package-ecosystem: npm
+  # bun, not npm: the npm ecosystem refuses a repo whose only lockfile is
+  # bun.lock ("misconfigured_tooling"), so every weekly run failed and no
+  # version update arrived. The groups and prefixes below behave the same:
+  # Dependabot registers a production/development check for bun too.
+  # GitHub's docs list no security updates for bun, so the weekly
+  # `bun run audit` in ci.yml is what catches a new advisory.
+  - package-ecosystem: bun
     directory: "/"
     schedule:
       interval: weekly
