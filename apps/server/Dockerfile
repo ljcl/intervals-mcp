@@ -17,7 +17,7 @@ WORKDIR /app
 # dockerRuntime.test.ts pins the tag to it. Only the binary is copied, so a
 # Node major can need extra shared libraries here (docs/development.md,
 # "Upgrading Node").
-FROM node:24.21.0-trixie-slim@sha256:8ec5d7557396cfe32d21c3f9c13072355ceab22b584578ca4bb28af31120cffe AS node
+FROM node:24.21.0-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66 AS node
 
 # turbo isolated here so it never reaches the runner; the version is derived
 # from the root package.json devDependency so a Dependabot turbo bump can
