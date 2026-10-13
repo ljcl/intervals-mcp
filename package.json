@@ -39,7 +39,7 @@
     "@types/bun": "1.4.2",
     "@vitest/browser-playwright": "4.1.11",
     "@vitest/coverage-v8": "4.1.11",
-    "dotenv": "18.0.1",
+    "dotenv": "18.0.5",
     "knip": "6.37.0",
     "playwright": "1.63.0",
     "turbo": "2.11.2",
