@@ -26,6 +26,7 @@
     "build:affected": "turbo run build --affected",
     "typecheck:affected": "turbo run //#typecheck:root && turbo run typecheck --affected",
     "knip": "knip",
+    "audit": "bun scripts/audit.ts",
     "storybook": "turbo run storybook --filter=@intervals-mcp/storybook",
     "build-storybook": "turbo run build:storybook --filter=@intervals-mcp/storybook",
     "coverage:summary": "bun scripts/coverage-summary.ts",

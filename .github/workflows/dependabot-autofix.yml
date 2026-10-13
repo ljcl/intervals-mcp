@@ -3,9 +3,11 @@ name: Dependabot autofix
 # Dependabot bumps package.json but cannot fix the collateral damage a bump
 # causes elsewhere in the repo, so its PRs used to go red on failures only a
 # human could clear:
-#   - bun.lock drift: Dependabot's npm ecosystem does not reliably update
+#   - bun.lock drift: Dependabot's npm ecosystem did not reliably update
 #     Bun's text lockfile in a workspaces monorepo, so `bun install
-#     --frozen-lockfile` in the setup composite fails (dependabot-core#14223).
+#     --frozen-lockfile` in the setup composite failed (dependabot-core#14223).
+#     dependabot.yml now uses the bun ecosystem, which writes bun.lock
+#     itself; the sync step stays as the guard if its result still drifts.
 #   - formatter bumps: a new Biome version can format existing code
 #     differently, so `bun run lint` fails on files the bump never touched.
 # This job regenerates bun.lock, applies formatter fixes, and pushes any

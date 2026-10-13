@@ -219,10 +219,12 @@ jobs:
         # with no local update path, so a hard gate would block unrelated work.
         # The weekly scheduled run DOES fail on findings, so new advisories
         # still surface between PRs (mirrors codeql.yml's cron pattern).
+        # scripts/audit.ts skips the advisories no published version fixes
+        # (each with its reason) and fails once one of them gets a fix.
         continue-on-error: ${{ github.event_name != 'schedule' }}
         run: |
           set +e
-          bun audit --audit-level=high > audit.txt 2>&1
+          bun run audit > audit.txt 2>&1
           status=$?
           cat audit.txt
           { echo '```'; cat audit.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
