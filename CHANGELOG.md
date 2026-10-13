@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.8.0](https://github.com/ljcl/intervals-mcp/compare/v2.7.0...v2.8.0) (2026-10-10)
+
+
+### Features
+
+* output schemas that survive a deploy, athlete pace zones in cadence trends ([#181](https://github.com/ljcl/intervals-mcp/issues/181)) ([788ebbd](https://github.com/ljcl/intervals-mcp/commit/788ebbd45aff3cf02ff887f6a0f991790ac41db9))
+
 ## [2.7.0](https://github.com/ljcl/intervals-mcp/compare/v2.6.0...v2.7.0) (2026-10-10)
 
 
