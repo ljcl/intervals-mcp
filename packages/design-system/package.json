@@ -16,12 +16,12 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@storybook/addon-a11y": "10.6.0",
-    "@storybook/addon-docs": "10.6.0",
-    "@storybook/react-vite": "10.6.0",
+    "@storybook/addon-a11y": "10.6.1",
+    "@storybook/addon-docs": "10.6.1",
+    "@storybook/react-vite": "10.6.1",
     "@intervals-mcp/tsconfig": "workspace:*",
-    "@types/react": "19.2.18",
-    "@types/react-dom": "19.2.4",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "typescript": "7.0.2",
