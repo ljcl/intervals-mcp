@@ -21,7 +21,7 @@
     "@intervals-mcp/fitness-trend": "workspace:*",
     "@intervals-mcp/route-map": "workspace:*",
     "@intervals-mcp/training-load": "workspace:*",
-    "dotenv": "18.0.1",
+    "dotenv": "18.0.5",
     "zod": "4.6.5"
   },
   "devDependencies": {
