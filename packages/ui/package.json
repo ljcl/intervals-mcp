@@ -13,11 +13,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@base-ui/react": "1.8.0",
+    "@base-ui/react": "1.9.0",
     "@modelcontextprotocol/ext-apps": "2.0.3",
     "@intervals-mcp/design-system": "workspace:*",
     "react": "19.3.0",
-    "zod": "4.6.5"
+    "zod": "4.6.6"
   },
   "devDependencies": {
     "@intervals-mcp/tsconfig": "workspace:*",

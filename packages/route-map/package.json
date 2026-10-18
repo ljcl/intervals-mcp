@@ -19,10 +19,10 @@
     "@intervals-mcp/data": "workspace:*",
     "@intervals-mcp/design-system": "workspace:*",
     "@intervals-mcp/ui": "workspace:*",
-    "maplibre-gl": "6.12.0",
+    "maplibre-gl": "6.14.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "zod": "4.6.5"
+    "zod": "4.6.6"
   },
   "devDependencies": {
     "@intervals-mcp/tsconfig": "workspace:*",
