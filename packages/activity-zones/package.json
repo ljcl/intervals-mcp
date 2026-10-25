@@ -18,8 +18,8 @@
     "@intervals-mcp/data": "workspace:*",
     "@intervals-mcp/design-system": "workspace:*",
     "@intervals-mcp/ui": "workspace:*",
-    "react": "19.3.0",
-    "react-dom": "19.3.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
     "recharts": "3.10.1"
   },
   "devDependencies": {
