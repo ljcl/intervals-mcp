@@ -28,16 +28,7 @@ export interface AuditIgnore {
   reason: string;
 }
 
-export const AUDIT_IGNORES: readonly AuditIgnore[] = [
-  {
-    id: "GHSA-vfj7-8cjw-p6xm",
-    package: "braces",
-    reason:
-      "build-time only, via vite-plugin-singlefile > micromatch. The plugin " +
-      "calls micromatch only for its inlinePattern option, which " +
-      "packages/vite-config never sets.",
-  },
-];
+export const AUDIT_IGNORES: readonly AuditIgnore[] = [];
 
 /** The part of `bun audit fix --dry-run --json` this gate reads. */
 export interface AuditFixPlan {
