@@ -10,8 +10,11 @@ name: Dependabot autofix
 #     itself; the sync step stays as the guard if its result still drifts.
 #   - formatter bumps: a new Biome version can format existing code
 #     differently, so `bun run lint` fails on files the bump never touched.
-# This job regenerates bun.lock, applies formatter fixes, and pushes any
-# resulting fixup commit back to the PR branch so the bump lands green.
+#   - toolchain pins: an oven/bun or node image bump leaves packageManager
+#     and .tool-versions on the old version, so dockerRuntime.test.ts fails.
+# This job syncs those pins, regenerates bun.lock, applies formatter fixes,
+# and pushes any resulting fixup commit back to the PR branch so the bump
+# lands green.
 #
 # Runs on pull_request_target because Dependabot PRs get a read-only token on
 # the plain pull_request event and so cannot push. Unlike the earlier
@@ -52,6 +55,27 @@ jobs:
           ref: ${{ github.event.pull_request.head.ref }}
           persist-credentials: false
 
+      - name: Sync toolchain pins with the Dockerfile
+        # Dependabot's docker ecosystem bumps the oven/bun and node image tags
+        # but never the files that pin the same versions for CI and local
+        # installs: root packageManager (Bun) and .tool-versions (Bun, Node).
+        # dockerRuntime.test.ts fails until they match. This runs before
+        # Install Bun, so the new Bun resolves bun.lock below. The greps let
+        # only digits and dots reach sed.
+        run: |
+          dockerfile=apps/server/Dockerfile
+          bun_version=$(grep -oE '^FROM oven/bun:[0-9]+\.[0-9]+\.[0-9]+' "$dockerfile" | cut -d: -f2 | sort -u)
+          if [ "$(printf '%s\n' "$bun_version" | grep -c .)" -eq 1 ]; then
+            sed -i -E "s/\"packageManager\": \"bun@[0-9.]+\"/\"packageManager\": \"bun@${bun_version}\"/" package.json
+            sed -i -E "s/^bun [0-9.]+$/bun ${bun_version}/" .tool-versions
+          else
+            echo "The oven/bun tags in $dockerfile disagree; leaving the Bun pins alone."
+          fi
+          node_version=$(grep -oE '^FROM node:[0-9]+\.[0-9]+\.[0-9]+' "$dockerfile" | cut -d: -f2 | sort -u)
+          if [ "$(printf '%s\n' "$node_version" | grep -c .)" -eq 1 ]; then
+            sed -i -E "s/^nodejs [0-9.]+$/nodejs ${node_version}/" .tool-versions
+          fi
+
       - name: Install Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
@@ -78,10 +102,10 @@ jobs:
         run: |
           git add -A
           if git diff --cached --quiet; then
-            echo "Lockfile and formatting already clean — nothing to do."
+            echo "Toolchain pins, lockfile and formatting already clean — nothing to do."
             exit 0
           fi
           git config user.name 'dependabot[bot]'
           git config user.email '49699333+dependabot[bot]@users.noreply.github.com'
-          git commit -m 'chore(deps): sync bun.lock and formatting with the bump'
+          git commit -m 'chore(deps): sync toolchain pins, bun.lock and formatting with the bump'
           git push "https://x-access-token:${PUSH_TOKEN}@github.com/${{ github.repository }}.git" HEAD:"$HEAD_REF"

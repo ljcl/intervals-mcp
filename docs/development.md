@@ -174,8 +174,9 @@ the line is not a full version or the setup action stops reading it.
 
 `.tool-versions` is the one home; CI and the Docker builder follow it. A
 Dependabot minor or patch PR for the `node` image changes only the
-Dockerfile, so its `check` fails until you bump the `nodejs` line on the same
-branch (the same rule as Bun). Dependabot ignores Node majors; do a major as
+Dockerfile; `dependabot-autofix.yml` then sets the `nodejs` line to the new
+tag on the same branch (for an `oven/bun` bump it does the same to
+`packageManager` and the `bun` line). Dependabot ignores Node majors; do a major as
 one PR:
 
 1. Wait for the new major's LTS date (see the
@@ -388,7 +389,7 @@ exists so a Bun or Vite change cannot make the image diverge from what CI
 checked. Bun still installs, runs turbo, and bundles the server.
 `dockerRuntime.test.ts` pins the stage's tag to `.tool-versions`, the same way
 it pins the `oven/bun` tags to `packageManager` (Dependabot bumps the image,
-never the file).
+never the file; `dependabot-autofix.yml` syncs the file).
 
 The builder then bundles the server with `bun build --target=bun` into
 `apps/server/dist/index.js` (plus a linked source map, so stack traces name the

@@ -154,4 +154,7 @@ Dependabot uses `fix(deps):` for production npm deps and Docker base images
 (they ship inside the published image, so a bump must cut a patch release to
 reach users) and `chore(deps):` / `chore(ci):` for dev tooling and GitHub
 Actions (no shipped artifact, no release). The npm groups are split by
-dependency type so one grouped PR never mixes the two prefixes.
+dependency type so one grouped PR never mixes the two prefixes. The `vitest`
+and `storybook` groups come first and take every update type, majors too,
+because those packages must share one version and fail CI when they arrive
+one PR at a time.
