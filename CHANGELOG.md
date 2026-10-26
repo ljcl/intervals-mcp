@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.8.1](https://github.com/ljcl/intervals-mcp/compare/v2.8.0...v2.8.1) (2026-10-26)
+
+
+### Bug Fixes
+
+* **deps:** bump Bun to 1.4.3, vitest to 5.0.5 and happy-dom to 21.0.4 ([#207](https://github.com/ljcl/intervals-mcp/issues/207)) ([42af417](https://github.com/ljcl/intervals-mcp/commit/42af4175c7c5e9064b5a097873213799dc46b6bf))
+* **deps:** bump node from `8ec5d75` to `173f125` in /apps/server ([#185](https://github.com/ljcl/intervals-mcp/issues/185)) ([f8116b6](https://github.com/ljcl/intervals-mcp/commit/f8116b62d04fad8966a186e304141417f44e5743))
+* **deps:** bump the production-minor-patch group across 1 directory with 7 updates ([#197](https://github.com/ljcl/intervals-mcp/issues/197)) ([91d5315](https://github.com/ljcl/intervals-mcp/commit/91d53152c472fcf8091b71146e040c05143f635d))
+* **deps:** bump the production-minor-patch group with 3 updates ([#184](https://github.com/ljcl/intervals-mcp/issues/184)) ([cb28bab](https://github.com/ljcl/intervals-mcp/commit/cb28bab848218fe3e1298dbb07fc26c0f0931763))
+* show Walk and Hike in km/h in the MCP Apps, as the text tools do ([#206](https://github.com/ljcl/intervals-mcp/issues/206)) ([1a9fef5](https://github.com/ljcl/intervals-mcp/commit/1a9fef5597f9ed594591e338e91deb0b1911b691))
+
 ## [2.8.0](https://github.com/ljcl/intervals-mcp/compare/v2.7.0...v2.8.0) (2026-10-10)
 
 
