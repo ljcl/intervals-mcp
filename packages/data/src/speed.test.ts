@@ -7,13 +7,16 @@ import {
 } from "./speed";
 
 describe("speedSport", () => {
-  it("groups run-like, swim and other types", () => {
-    for (const t of ["Run", "TrailRun", "VirtualRun", "Walk", "Hike"]) {
+  it("groups run, swim and other types", () => {
+    for (const t of ["Run", "TrailRun", "VirtualRun"]) {
       expect(speedSport(t), t).toBe("run");
     }
     expect(speedSport("Swim")).toBe("swim");
     expect(speedSport("OpenWaterSwim")).toBe("swim");
     expect(speedSport("Ride")).toBe("other");
+    // Walk and Hike show km/h, as the text tools give them (#172).
+    expect(speedSport("Walk")).toBe("other");
+    expect(speedSport("Hike")).toBe("other");
     expect(speedSport("")).toBe("other");
     expect(speedSport(null)).toBe("other");
     expect(speedSport(undefined)).toBe("other");
@@ -32,8 +35,8 @@ describe("speedDisplay: run", () => {
   });
   it("converts m/s to minutes per km with no cap", () => {
     expect(run.fromMps(4)).toBeCloseTo(4.1667, 4);
-    expect(speedDisplay("Walk").fromMps(1000 / 1200)).toBeCloseTo(20, 6);
-    expect(speedDisplay("Hike").fromMps(0.5)).toBeCloseTo(33.333, 2);
+    expect(run.fromMps(1000 / 1200)).toBeCloseTo(20, 6);
+    expect(speedDisplay("TrailRun").fromMps(0.5)).toBeCloseTo(33.333, 2);
   });
   it("treats a stopped or missing sample as a gap", () => {
     expect(run.fromMps(0)).toBeNull();
@@ -89,6 +92,12 @@ describe("speedDisplay: other sports", () => {
     expect(ride.formatMps(7.9)).toBe("28.4 km/h");
     expect(ride.formatMps(0)).toBe("0.0 km/h");
     expect(ride.formatMps(undefined)).toBe("—");
+  });
+  it("shows a walk or a hike in km/h (#172)", () => {
+    for (const t of ["Walk", "Hike"]) {
+      expect(speedDisplay(t), t).toBe(ride);
+    }
+    expect(speedDisplay("Walk").formatMps(1000 / 1200)).toBe("3.0 km/h");
   });
 });
 

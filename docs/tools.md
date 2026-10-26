@@ -165,7 +165,8 @@ from the activity's `gap` field, which intervals.icu reports in m/s, the
 same unit as `average_speed`) are set for Run/TrailRun/VirtualRun only: a
 Walk or Hike gets a cadence but no pace. Swims get `pace_min_per_100m` and
 every other non-run sport with a distance gets `speed_kmh` (Walk and Hike
-included), at activity and interval level, from `sportSpeed`. Ground
+included), at activity and interval level, from `sportSpeed`. The MCP Apps
+use the same rule, so a walk or a hike is km/h in the charts too. Ground
 contact time, vertical oscillation and step length show only for Run,
 TrailRun, VirtualRun, Walk and Hike, on intervals too: on a swim,
 intervals.icu's step length is about half a stroke, not a step

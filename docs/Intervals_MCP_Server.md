@@ -213,7 +213,8 @@ description is kept. (This is also the `annotate-last-run` prompt.)
   sending the same update again.
 - **Walks, hikes, and other non-running sports.** Pace fields
   (`pace_min_per_km`, `gap_min_per_km`) are only populated for Run/TrailRun/
-  VirtualRun; a Walk or Hike gets cadence and `speed_kmh` but no pace. A
+  VirtualRun; a Walk or Hike gets cadence and `speed_kmh` but no pace, and
+  the charts show it in km/h too. A
   swim gets `pace_min_per_100m` and no running dynamics; other sports with a
   distance get `speed_kmh`. Cadence itself is
   doubled to steps/min for Run/TrailRun/VirtualRun/Walk/Hike; other sports

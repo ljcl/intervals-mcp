@@ -25,7 +25,8 @@ function streamData(
 describe("paceCategory", () => {
   it("is run only when both activities are pace-per-km sports", () => {
     expect(paceCategory("Run", "TrailRun")).toBe("run");
-    expect(paceCategory("Run", "Walk")).toBe("run");
+    expect(paceCategory("Run", "Walk")).toBe("other");
+    expect(paceCategory("Walk", "Hike")).toBe("other");
     expect(paceCategory("Run", "Ride")).toBe("other");
     expect(paceCategory("Ride", "Ride")).toBe("other");
   });

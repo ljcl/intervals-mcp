@@ -1,4 +1,4 @@
-import { isRunning, isSwimming } from "./activity-types";
+import { isSwimming, PACE_ACTIVITY_TYPES } from "./activity-types";
 import { formatPace, MIN_MOVING_SPEED_MPS } from "./formatting";
 
 export { MIN_MOVING_SPEED_MPS };
@@ -20,12 +20,18 @@ export interface SpeedDisplay {
   formatMps(mps: number | null | undefined): string;
 }
 
+/**
+ * How a type's speed is shown: pace per km for the run types only
+ * (`PACE_ACTIVITY_TYPES`), pace per 100 m for a swim, km/h for everything
+ * else, Walk and Hike included (#172). The server's `sportSpeed` asks this
+ * too, so the text tools and the apps cannot pick different units.
+ */
 export function speedSport(
   activityType: string | null | undefined,
 ): SpeedSport {
   if (!activityType) return "other";
   if (isSwimming(activityType)) return "swim";
-  if (isRunning(activityType)) return "run";
+  if (PACE_ACTIVITY_TYPES.has(activityType)) return "run";
   return "other";
 }
 

@@ -92,15 +92,15 @@ describe("buildMetricSeries", () => {
     expect(swim.format(1)).toBe("1'40\" /100m");
   });
 
-  it("reads a walk as pace per km", () => {
+  it("reads a walk as km/h, as the text tools give it (#172)", () => {
     const walk = buildMetricSeries(
       makeData({
         activityType: "Walk",
         streams: { velocity_smooth: [1, 1, 1, 1] },
       }),
     )[0]!;
-    expect(walk.label).toBe("Pace");
-    expect(walk.format(1)).toBe("16'40\" /km");
+    expect(walk.label).toBe("Speed");
+    expect(walk.format(1)).toBe("3.6 km/h");
   });
 
   it("reads speed in km/h when the activity type is unknown", () => {

@@ -363,14 +363,17 @@ cancel, and called an unchanged runner "declined" (#42).
 **Pace per 100 m and km/h have one home.** `sportSpeed` in
 `utils/running.ts` gives `pace_min_per_100m` (Swim, OpenWaterSwim) and
 `speed_kmh` (every other type that is not a run) from distance over moving
-time. It converts with `speedDisplay` from `packages/data`, the apps' one
-conversion, so text and apps agree, and a swim slower than
+time. It takes the sport from `speedSport` and converts with `speedDisplay`,
+both from `packages/data`, the apps' one rule and conversion, so text and
+apps show every type in the same unit, and a swim slower than
 `MIN_MOVING_SPEED_MPS` has no pace in either. list-activities, get-activity
 (activity and intervals), compare-activities and `intervalLaps.ts` call it.
-`pace_min_per_km` keeps its own rule (`PACE_ACTIVITY_TYPES`), so Walk and
-Hike get km/h, not a pace (#86). That is one known split between text and
-apps: `speedDisplay` counts Walk and Hike as runs, so the apps show them as
-pace per km, while the text tools show km/h. A follow-up picks one.
+Walk and Hike get km/h everywhere: `speedSport` gives pace per km only to
+`PACE_ACTIVITY_TYPES`. The apps used to show them as pace per km, because
+`speedSport` asked `isRunning`, which includes Walk and Hike for their step
+cadence, while the text tools showed km/h (#172). A test in
+`running.test.ts` checks that the text unit and `speedDisplay`'s unit match
+for every type.
 
 **Training-load weeks have one definition.** `trainingLoad.ts` owns the
 window (`trainingLoadWindow`: `days` rounded up to whole Monday-to-Sunday
@@ -433,10 +436,12 @@ holds the LTHR and max HR checks against intervals.icu's HR curves, used by
 (`lthrEstimate`): the higher of the best 60-minute heart rate and 98% of the
 best 20-minute heart rate, both of the last 90 days.
 
-**Run types have one home.** `PACE_ACTIVITY_TYPES` in `utils/running.ts`
-(Run, TrailRun, VirtualRun). `get-running-summary` accepts exactly these,
-and `fitnessTrend.ts` re-exports them as `RUN_TYPES` for the run-only series
-and `get-training-load`. `STEP_CADENCE_ACTIVITY_TYPES` and
+**Run types have one home.** `PACE_ACTIVITY_TYPES` in `packages/data`
+(`activity-types.ts`: Run, TrailRun, VirtualRun), because `speedSport` there
+needs it; `utils/running.ts` re-exports it for the server.
+`get-running-summary` accepts exactly these, and `fitnessTrend.ts`
+re-exports them as `RUN_TYPES` for the run-only series and
+`get-training-load`. `STEP_CADENCE_ACTIVITY_TYPES` and
 `RUNNING_ACTIVITY_TYPES` add Walk and Hike on purpose: those have a step
 cadence but no pace.
 
