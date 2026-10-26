@@ -82,7 +82,8 @@ breaking them has shipped bugs — do not work around them locally.
   payload). HR-zone bounds: `resolveHrZones` in `activityZones.ts`; zone
   ranges from bounds: `zoneRanges` there (shared by `buildZoneSet` and
   `athleteZones.ts`, which holds the settings zones and the LTHR/max HR
-  checks). Run types: `PACE_ACTIVITY_TYPES` in `utils/running.ts`.
+  checks). Run types: `PACE_ACTIVITY_TYPES` in `packages/data`
+  (`activity-types.ts`; `utils/running.ts` re-exports it).
   Step-cadence spm and averaged running dynamics: `activityCadenceSpm`/
   `buildRunningDynamics` in `utils/running.ts` (shared by `get-activity` and
   `compare-activities`). Lap text rendering: `formatLapLine` in

@@ -6,7 +6,11 @@
  * - Cadence is returned as strides/min but runners think in steps/min
  * - Speed is returned as m/s but runners think in pace (min/km or min/mile)
  */
-import { speedDisplayForSport, speedSport } from "@intervals-mcp/data";
+import {
+  PACE_ACTIVITY_TYPES,
+  speedDisplayForSport,
+  speedSport,
+} from "@intervals-mcp/data";
 import { round } from "../formatters";
 import { type IntervalsActivity } from "../intervalsClient";
 
@@ -89,16 +93,18 @@ export function metersPerSecToPace(
 }
 
 /**
- * Activity types intervals.icu reports a pace string for: runs only, not
- * walks or hikes (those get a cadence but no pace_min_per_km in the
- * intervals.icu tools). Distinct from {@link STEP_CADENCE_ACTIVITY_TYPES}
- * below on purpose; see that set's comment.
+ * Activity types that get a pace per km: runs only, not walks or hikes
+ * (those get a cadence and km/h, in the text tools and the MCP Apps alike,
+ * #172). Distinct from {@link STEP_CADENCE_ACTIVITY_TYPES} below on purpose;
+ * see that set's comment.
  *
  * This is also the one run-type set: `get-running-summary` accepts exactly
  * these types, and `fitnessTrend.ts` re-exports it as `RUN_TYPES` for the
- * run-only CTL/ATL series and `get-training-load`.
+ * run-only CTL/ATL series and `get-training-load`. It lives in
+ * `packages/data` (`activity-types.ts`), because `speedSport` there needs it
+ * too; this re-export keeps the server's import path.
  */
-export const PACE_ACTIVITY_TYPES = new Set(["Run", "TrailRun", "VirtualRun"]);
+export { PACE_ACTIVITY_TYPES };
 
 /**
  * Activity types whose cadence (and step-based running dynamics: ground
@@ -206,15 +212,17 @@ interface SportSpeed {
 /**
  * Pace per 100 m for a swim, or km/h for any other type that is not a run
  * ({@link PACE_ACTIVITY_TYPES}), from distance (m) over moving time (s).
- * Walk and Hike get km/h, as get-activity-laps always gave them. Both are
- * null for a run (it has `pace_min_per_km`), and when distance or moving
- * time is missing or not positive.
+ * Walk and Hike get km/h. Both are null for a run (it has
+ * `pace_min_per_km`), and when distance or moving time is missing or not
+ * positive.
  *
- * The conversion is `speedDisplay`'s from `@intervals-mcp/data`, the one
- * the MCP Apps use (#63), so a swim slower than `MIN_MOVING_SPEED_MPS` has
- * no pace in either. Distance over moving time is intervals.icu's own basis:
- * the activity's `pace` field (m/s) equals it, while `average_speed` is the
- * device's figure (docs/api-notes.md).
+ * The sport and the conversion are `speedSport`'s and `speedDisplay`'s from
+ * `@intervals-mcp/data`, the ones the MCP Apps use (#63, #172), so the text
+ * tools and the apps show every type in the same unit, and a swim slower
+ * than `MIN_MOVING_SPEED_MPS` has no pace in either. Distance over moving
+ * time is intervals.icu's own basis: the activity's `pace` field (m/s)
+ * equals it, while `average_speed` is the device's figure
+ * (docs/api-notes.md).
  *
  * The one home for these two fields: list-activities, get-activity
  * (activity and intervals), compare-activities and `intervalLaps.ts`.
@@ -225,8 +233,9 @@ export function sportSpeed(
   movingTimeS: number | null | undefined,
 ): SportSpeed {
   const none: SportSpeed = { pace_min_per_100m: null, speed_kmh: null };
+  const sport = speedSport(type);
   if (
-    isPaceActivity(type) ||
+    sport === "run" ||
     !distanceM ||
     distanceM <= 0 ||
     !movingTimeS ||
@@ -234,7 +243,7 @@ export function sportSpeed(
   )
     return none;
   const mps = distanceM / movingTimeS;
-  if (speedSport(type) === "swim") {
+  if (sport === "swim") {
     const minutes = speedDisplayForSport("swim").fromMps(mps);
     return minutes == null
       ? none

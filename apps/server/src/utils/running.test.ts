@@ -260,6 +260,38 @@ describe("sportSpeed", () => {
       );
     }
   });
+
+  it("gives every type the unit the MCP Apps show (#172)", () => {
+    // The text tools' unit: pace_min_per_km for a pace type
+    // (isPaceActivity), else whichever sportSpeed field is set.
+    const textUnit = (type: string): string | null => {
+      if (isPaceActivity(type)) return "min/km";
+      const speed = sportSpeed(type, 5000, 1800);
+      if (speed.pace_min_per_100m != null) return "/100m";
+      return speed.speed_kmh != null ? "km/h" : null;
+    };
+    for (const type of [
+      "Run",
+      "TrailRun",
+      "VirtualRun",
+      "Walk",
+      "Hike",
+      "Swim",
+      "OpenWaterSwim",
+      "Ride",
+      "VirtualRide",
+      "GravelRide",
+      "MountainBikeRide",
+      "EBikeRide",
+      "Rowing",
+      "Kayaking",
+      "NordicSki",
+      "Workout",
+      "WeightTraining",
+    ]) {
+      expect(textUnit(type), type).toBe(speedDisplay(type).unit);
+    }
+  });
 });
 
 describe("gapPace", () => {

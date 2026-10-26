@@ -168,10 +168,16 @@ describe("ChartTooltip", () => {
       expect(markup).toContain("min/km Pace");
     });
 
-    it("reads a walk's slow pace as pace, not a capped value", () => {
-      const markup = paceMarkup("Walk", "Pace", 20);
+    it("reads a slow run's pace as pace, not a capped value", () => {
+      const markup = paceMarkup("Run", "Pace", 20);
       expect(markup).toContain("20&#x27;00&quot;");
       expect(markup).toContain("min/km Pace");
+    });
+
+    it("reads a walk as km/h (#172)", () => {
+      const markup = paceMarkup("Walk", "Speed", 3);
+      expect(markup).toContain(">3.0<");
+      expect(markup).toContain("km/h Speed");
     });
 
     it("reads a swim as m'ss /100m", () => {

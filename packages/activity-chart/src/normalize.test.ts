@@ -31,15 +31,28 @@ describe("toChartData", () => {
     expect(points[3]?.pace).toBeNull();
   });
 
-  it("plots a walk's real pace instead of capping it at 15 min/km", () => {
+  it("plots a slow run's real pace instead of capping it at 15 min/km", () => {
     const points = toChartData(
       streamData({
-        activityType: "Walk",
+        activityType: "Run",
         streams: { time: [0], velocity_smooth: [1000 / 1200] },
       }),
     );
 
     expect(points[0]?.pace).toBeCloseTo(20, 4);
+  });
+
+  it("plots a walk or a hike in km/h, as the text tools give it (#172)", () => {
+    for (const activityType of ["Walk", "Hike"]) {
+      const points = toChartData(
+        streamData({
+          activityType,
+          streams: { time: [0], velocity_smooth: [1000 / 1200] },
+        }),
+      );
+
+      expect(points[0]?.pace, activityType).toBeCloseTo(3, 4);
+    }
   });
 
   it("converts velocity to min/100m for swims, with no cap", () => {

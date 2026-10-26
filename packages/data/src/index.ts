@@ -1,4 +1,8 @@
-export { isRunning, isSwimming } from "./activity-types";
+export {
+  isRunning,
+  isSwimming,
+  PACE_ACTIVITY_TYPES,
+} from "./activity-types";
 export {
   type CadencePaceRun,
   cadencePaceRegression,
