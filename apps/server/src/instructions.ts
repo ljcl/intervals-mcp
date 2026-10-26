@@ -12,7 +12,7 @@
  */
 export function serverInstructions(timeZone: string): string {
   return [
-    "Intervals Extra reads one athlete's intervals.icu data. update-activity is its only write.",
+    "Intervals Extra reads one athlete's intervals.icu data. Its writes are update-activity, update-wellness and update-gear.",
     "",
     'Get activity ids from list-activities (e.g. "i189807578"), or pass id "latest" for the most recent run. Pass ids as quoted strings, never numbers: a large number loses digits.',
     "",
@@ -26,6 +26,6 @@ export function serverInstructions(timeZone: string): string {
     "",
     `Units: distance in km (m where the field name says so), pace as m:ss per km, heart rate in bpm. Dates are YYYY-MM-DD. Today and default date ranges are in the configured time zone, ${timeZone}.`,
     "",
-    'update-activity: show the athlete the exact change and wait for a yes before you call it. To add a note, use descriptionMode "append" so the existing description stays. If it says the update may already have been applied, check with get-activity before you try again.',
+    'Before a write, show the athlete the exact change and wait for a yes. To add a note, use descriptionMode or commentsMode "append" so the existing text stays. If a write says it may already have been applied, read the data again before you retry.',
   ].join("\n");
 }

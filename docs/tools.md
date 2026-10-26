@@ -16,7 +16,9 @@ reports which ([operations.md](operations.md#time-zone)).
 > verified against a real account. `get-fitness-trend`, `get-training-load`,
 > and `get-running-dynamics` are exercised by `scripts/live-check.ts`;
 > `update-activity`'s write path was verified once, separately, with
-> explicit user approval, see docs/api-notes.md. Every MCP App tool below
+> explicit user approval, see docs/api-notes.md. `update-wellness` and
+> `update-gear` send the requests the intervals.icu web app sends (read from
+> its code, docs/api-notes.md) and have not yet had a live write check. Every MCP App tool below
 > (see [Visualization tools](#visualization-tools)) reads intervals.icu
 > streams and activity data through the same adapter; the retired Strava
 > client has been deleted from the codebase (see AGENTS.md).
@@ -50,8 +52,8 @@ template literals in the tool files can open and close on a newline.
 The server sends a short orientation as its MCP `instructions` in
 `server/discover`, so every chat starts with the rules: where ids come from,
 which tool to call first, how to route fitness questions, the whole-body
-versus run-only rule, units and time zone, and how to use `update-activity`
-safely. The text lives in `apps/server/src/instructions.ts`. Keep it under
+versus run-only rule, units and time zone, and how to use the three write
+tools safely. The text lives in `apps/server/src/instructions.ts`. Keep it under
 1,800 characters with the longest time zone name it can carry (32 characters,
 `America/Argentina/ComodRivadavia`); the integration test measures both the
 configured zone and that one. When you rename, add or remove a tool, check the routing
@@ -70,8 +72,8 @@ descriptions.
 | `list-activities` | Compact, date-bounded activity list with units; the entry point for finding activity ids; swim pace per 100 m, speed for other sports, achievement types |
 | `get-activity` | One activity in detail: metrics, load, HR zones, running dynamics, intervals, gear name, achievements, HR recovery; use after list-activities |
 | `get-activity-streams` | Time-series streams for one activity, downsampled to a bounded number of points, including running dynamics |
-| `list-gear` | The athlete's gear (shoes) with mileage and retirement status |
-| `get-wellness` | Daily wellness (HRV, resting HR, sleep, weight, CTL/ATL/TSB) for a date or range |
+| `list-gear` | The athlete's gear (shoes) with mileage, purchase date, notes, retirement status, reminders and auto-assign rules |
+| `get-wellness` | Daily wellness (HRV, resting HR, sleep, weight, CTL/ATL/TSB, how the athlete feels) for a date or range |
 | `get-activity-laps` | Laps of an activity, derived from its intervals, with sport-aware pace/speed, GAP, HR, power, cadence |
 | `get-running-summary` | get-activity's detail fields for a run plus cadence, HR zone, and running-dynamics assessments, a lap breakdown, the weather with humidity and dew point from the FIT file, and decoupling and efficiency factor computed from the streams when intervals.icu has none |
 | `get-running-dynamics` | Ground contact time, vertical oscillation/ratio, step length, and cadence for a run, with VO/GCT target assessments and a per-WORK-interval breakdown |
@@ -88,6 +90,8 @@ descriptions.
 | `get-fitness-trend` | Fitness/fatigue/form (CTL/ATL/TSB), whole-body from intervals.icu wellness or run-only computed locally, with rest/planned-load projection and a solved taper to a target form on a target date; `newest` reads a past window, with no projection or taper |
 | `get-training-load` | Weekly running volume and volume-spike warnings, weekly intervals.icu training load and the types it covers, plus current CTL/ATL/TSB; `newest` ends the weeks on a past date |
 | `update-activity` | Update an activity's name, description, gear, RPE, or feel, echoing before/after values, with gear names (write tool) |
+| `update-wellness` | Log how the athlete feels on a day (soreness, fatigue, stress, mood, motivation, injury, sleep quality, comments), echoing before/after values (write tool) |
+| `update-gear` | Retire or un-retire a gear item, or add or reset a distance reminder on it, echoing before/after values (write tool) |
 
 `list-activities` defaults to the last 28 days (today back to 27 days
 earlier) in the server's time zone, sorted newest first. Filter
@@ -207,17 +211,24 @@ default types and 250 with all of them.
 
 `list-gear` returns each gear item's distance (km, including any starting
 distance entered in the UI when it was added, not just distance logged
-through activities), activity count, retirement status, and any usage
-reminders. Retired gear is excluded by default (`includeRetired`, default
-false). An account with no gear returns `count: 0` and a message pointing to
+through activities), activity count, purchase date (`purchased`, YYYY-MM-DD
+from either API format), `notes`, retirement status, usage reminders, and
+`auto_assign`, the rules that make intervals.icu put the gear on a new
+activity (the fixture's one rule is `type` `Run`). Each reminder carries its
+`id` (for `update-gear`'s `resetReminderId`), `distance_km`,
+`distance_used_km`, `percent_used` and `last_reset`. The text puts each
+reminder and any notes on their own indented lines. Retired gear is excluded
+by default (`includeRetired`, default false). An account with no gear returns `count: 0` and a message pointing to
 the intervals.icu Gear page.
 
 `get-wellness` returns daily wellness: HRV (both `hrv_rmssd_ms` and
 `hrv_sdnn_ms`), resting HR, sleep, weight, training load (`ctl`, `atl`,
 `ramp_rate`, and `tsb` = ctl minus atl from the unrounded values, each
 rounded to 0.1, through the same `ctlAtlTsb` as `get-fitness-trend`), and the subjective/device fields (readiness, soreness,
-fatigue, stress, mood, motivation, `spo2` (%), `respiration`
-(breaths/min), comments); `units` names all of these, including `spo2` and
+fatigue, stress, mood, motivation, `injury`, `sleep_quality`, `spo2` (%),
+`respiration` (breaths/min), comments). The 1 to 4 scores carry the web
+app's label in the text (`soreness 3 (High)`); on every scale 1 is the best
+state (docs/api-notes.md); `units` names all of these, including `spo2` and
 `respiration`. Takes either a single `date` or an `oldest`/`newest` range
 (max 90 calendar days inclusive); supplying `date` together with a range is
 a validation error. With nothing supplied it defaults to today in the
@@ -910,10 +921,47 @@ current activity reports "no change" and sends no PUT. Any field whose
 re-read value does not match what was sent (e.g. gear not applied) adds a
 warning rather than failing the call.
 
-A 2025-era client (no request envelope) does not get `update-activity`: its
-`tools/list` leaves the tool out, and a call returns an `isError` result that
-asks for a client that speaks 2026-07-28. Every tool not annotated read-only
-gets the same treatment (docs/architecture.md#runtime-and-transport).
+`update-wellness` logs the subjective wellness scores and comments for one
+day: `soreness`, `fatigue`, `stress` (1 low to 4 extreme), `mood` (1 great to
+4 grumpy), `motivation` (1 extreme to 4 low), `injury` (1 none, 2 niggle, 3
+poor, 4 injured), `sleepQuality` (1 great to 4 poor), and `comments`. `null`
+clears a score (sent as `-1`, as the web app does). `date` defaults to today
+in the server's time zone; a date after today is refused before any request.
+It follows `update-activity`'s pattern: a fresh read of
+`GET /athlete/{id}/wellness/{date}` (a day with no record reads as all
+null), a single unretried `PUT` of only the fields that differ, a fresh
+re-read, `changes: [{ field, before, after }]` under get-wellness's field
+names, and a warning for any value the re-read does not show.
+`commentsMode` works as `descriptionMode` does: with no mode, comments that
+would drop the day's comments are refused with no PUT, and an explicit
+`replace` quotes the removed text. It never sends `locked` or a device field
+(HRV, resting HR, sleep time, weight, readiness). A day the athlete locked in
+intervals.icu stops API changes, so a value it did not take gets a warning
+that names the lock. `structuredContent.day` is the re-read day in
+get-wellness's shape. A timeout, 5xx, or failure after the PUT says the
+update may already be applied and points at `get-wellness`.
+
+`update-gear` makes one change per call, chosen by exactly one of `retired`
+(`true` retires the item today in the server's time zone, `false` puts it
+back in use), `addReminderKm` (with optional `reminderName`, default the
+distance such as `700 km`), or `resetReminderId`. It reads the gear list
+fresh (`skipCache`), so an unknown `gearId` fails with the available ids and
+an unknown reminder id with the item's reminders; a reminder with the same
+name and distance as an existing one is refused, so a repeated call adds no
+duplicate; retiring retired gear (or the reverse) reports "no change". Then
+it sends one unretried write (`PUT /gear/{gearId}` with `retired`,
+`POST /gear/{gearId}/reminder`, or `PUT .../reminder/{id}?reset=true`), re-reads
+the list, and echoes `changes` with `action` and the re-read `gear` in
+list-gear's shape. The reply shows how much usage intervals.icu already
+counts toward a new reminder. The gear list is invalidated after every
+write, so get-activity's gear names stay current. Ambiguous outcomes say so
+and point at `list-gear`.
+
+A 2025-era client (no request envelope) does not get the write tools: its
+`tools/list` leaves `update-activity`, `update-wellness` and `update-gear`
+out, and a call returns an `isError` result that asks for a client that
+speaks 2026-07-28. Every tool not annotated read-only gets the same
+treatment (docs/architecture.md#runtime-and-transport).
 
 ## Activity ids
 
@@ -1071,12 +1119,14 @@ keystroke would cost an intervals.icu request.
 
 Every tool declares MCP annotations so a host can tell reads from writes. The
 read tools set `readOnlyHint: true` and `destructiveHint: false`, which is
-the combination clients use to offer a durable "always allow". One tool is a
-write and is expected to keep asking:
+the combination clients use to offer a durable "always allow". Three tools
+are writes and are expected to keep asking:
 
 | Tool | Why it asks |
 | ---- | ----------- |
 | `update-activity` | Overwrites an existing activity's fields |
+| `update-wellness` | Overwrites a day's wellness scores and comments |
+| `update-gear` | Retires gear or changes its reminders |
 
 No tool sets `anthropic/requiresUserInteraction`, so nothing opts out of
 "always allow" on purpose.
@@ -1097,6 +1147,9 @@ These examples assume you already have an activity id to pass to a tool.
 
 - "Update the title of activity 12345678 to 'Morning Threshold'"
 - "Add a note to my last ride: 'Felt strong on the climbs'"
+- "Log today: legs sore, tired, left calf tight"
+- "Remind me at 700 km on the new pair"
+- "Retire the old Dynafish shoes"
 
 **Analysis and visualization**
 

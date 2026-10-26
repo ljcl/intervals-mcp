@@ -8,18 +8,19 @@ is a map of that catalog by purpose, not a replacement for it.
 
 The server also sends a short version of this guide to every chat as its MCP
 instructions: the routing, the id format, units and time zone, and the
-`update-activity` rules. So a chat starts oriented without this file. This
+rules for the write tools. So a chat starts oriented without this file. This
 file stays the long form, for the full detail on each area.
 
 ## Overview
 
 intervals-mcp connects Claude to an athlete's intervals.icu account: activity
 history, wellness, fitness/fatigue trend, and detailed run analysis (hills,
-splits, intervals, aerobic decoupling, race prediction), plus one write tool
-to update an activity's name, description, gear, RPE, or feel. Read tools
-report numbers with explicit units and flag missing or ambiguous data rather
-than guessing; the write tool never claims a change happened when it isn't
-sure. Several tools have a matching interactive chart view (an MCP App) for
+splits, intervals, aerobic decoupling, race prediction), plus three write
+tools: update an activity's name, description, gear, RPE, or feel; log how
+the athlete feels on a day; and retire gear or set its mileage reminders.
+Read tools report numbers with explicit units and flag missing or ambiguous
+data rather than guessing; the write tools never claim a change happened
+when they are not sure. Several tools have a matching interactive chart view (an MCP App) for
 the same data.
 
 ## Tools by purpose
@@ -33,8 +34,8 @@ rather than (or alongside) text.
 | ---- | ------- | ---------- |
 | `list-activities` | What did I do recently? What's this activity's id? When did I last do X? Each entry carries `tags`, `race` and `achievement_types` (a best or threshold rise) | `oldest`/`newest` (YYYY-MM-DD, default last 28 days), `type` (`runs` for Run/TrailRun/VirtualRun, one type, or a comma list; for the most recent run, pass `id: "latest"` to the per-activity tool instead), `nameContains`, `search` (all history: name substring or `#tag`), `limit` |
 | `get-activity` | Full detail on one activity: gear name, swim pace per 100 m, HR recovery, and any best or threshold rise intervals.icu marked (an LTHR_UP is its estimate, not a changed setting; for a run PB, use `get-best-efforts`) | `id` |
-| `list-gear` | What shoes/bikes do I have, and their mileage? | `includeRetired` |
-| `get-wellness` | HRV, resting HR, sleep, weight, CTL/ATL/TSB for a day or range | `date`, or `oldest`/`newest` (max 90 days) |
+| `list-gear` | What shoes/bikes do I have, their mileage, reminders and auto-assign rules? | `includeRetired` |
+| `get-wellness` | HRV, resting HR, sleep, weight, CTL/ATL/TSB, how I felt, for a day or range | `date`, or `oldest`/`newest` (max 90 days) |
 
 ### Per-activity detail
 
@@ -72,6 +73,8 @@ rather than (or alongside) text.
 | Tool | Answers | Key params |
 | ---- | ------- | ---------- |
 | `update-activity` | Change an activity's name, description, gear, RPE, or feel | `id`, `name`, `description`, `descriptionMode`, `gearId`, `rpe`, `feel` |
+| `update-wellness` | Log today: legs sore, tired, left calf tight | `date`, `soreness`, `fatigue`, `stress`, `mood`, `motivation`, `injury`, `sleepQuality`, `comments`, `commentsMode` |
+| `update-gear` | Remind me at 700 km on the new pair; retire the old ones | `gearId`, one of `retired`, `addReminderKm` (+ `reminderName`), `resetReminderId` |
 
 ### Visualization (opens a view)
 
@@ -149,6 +152,20 @@ context, draft a short note, show it to the athlete and get confirmation,
 then `update-activity` with `descriptionMode: "append"` so the existing
 description is kept. (This is also the `annotate-last-run` prompt.)
 
+**Logging how the athlete feels.** Turn the athlete's words into the 1 to 4
+scores (1 is always the best state: soreness 1 low, mood 1 great, motivation
+1 extreme, injury 1 none, sleep quality 1 great), show them the exact values
+and get a yes, then `update-wellness`. Put free text such as "left calf
+tight" in `comments`, with `commentsMode: "append"` when the day already has
+comments. Later, `get-wellness` over a range shows when a niggle started, and
+`get-training-load` for the same weeks shows the load around it.
+
+**Shoe mileage.** `list-gear` shows each pair's distance, purchase date,
+reminders (with their ids) and auto-assign rules. `update-gear` with
+`addReminderKm` adds a reminder; the reply shows how much usage intervals.icu
+already counts toward it. `resetReminderId` restarts a reminder's count, and
+`retired: true` retires a pair today.
+
 ## Gotchas
 
 - **Activity id format.** Ids are digit strings, optionally prefixed with
@@ -204,13 +221,23 @@ description is kept. (This is also the `annotate-last-run` prompt.)
   error shows the existing text's length and first 120 characters. Resend
   with `append` to keep it and add below, or `replace` to overwrite it.
   After a `replace` that drops text, the reply quotes what was removed.
-- **`update-activity` write semantics.** It reads the activity fresh, sends
-  only the fields that actually changed, and reports exactly what changed
-  with before/after values. If the write times out or something fails
-  afterward (the confirming re-read, for instance), it does not know whether
-  the change landed and says so explicitly rather than guessing. If you see
-  that message, check with `get-activity` before retrying, rather than
-  sending the same update again.
+- **Write semantics (`update-activity`, `update-wellness`, `update-gear`).**
+  Each reads the data fresh, sends only what actually changes in one write
+  that is never retried, and reports exactly what changed with before/after
+  values. If the write times out or something fails afterward (the
+  confirming re-read, for instance), it does not know whether the change
+  landed and says so explicitly rather than guessing. If you see that
+  message, check with `get-activity`, `get-wellness` or `list-gear` before
+  retrying, rather than sending the same update again.
+- **A locked wellness day takes no API change.** The athlete can lock a day
+  in the intervals.icu wellness dialog, which stops integrations and the API
+  changing it. `update-wellness` then warns for each value that was not
+  applied; unlock the day on intervals.icu first. `update-wellness` itself
+  never locks a day, so a device sync later the same day still lands.
+- **One gear change per call.** `update-gear` takes exactly one of
+  `retired`, `addReminderKm` or `resetReminderId`. A reminder that matches an
+  existing one's name and distance is refused, so a repeat adds no
+  duplicate.
 - **Walks, hikes, and other non-running sports.** Pace fields
   (`pace_min_per_km`, `gap_min_per_km`) are only populated for Run/TrailRun/
   VirtualRun; a Walk or Hike gets cadence and `speed_kmh` but no pace, and
@@ -292,7 +319,8 @@ Reads are cached briefly to avoid re-fetching the same data:
 - Pace and heart rate curves: 10 minutes
 
 After `update-activity` writes, the affected activity's cache entry (and
-related list/gear entries) is cleared immediately, so a follow-up
+related list/gear entries) is cleared immediately; `update-wellness` clears
+the wellness entries and `update-gear` the gear list in the same way, so a follow-up
 `get-activity` reflects the change right away. Anything not written stays on
 its normal cache schedule, so a very recent edit made outside this
 conversation (directly on intervals.icu) may take up to the TTL above to

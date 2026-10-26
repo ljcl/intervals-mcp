@@ -32,6 +32,7 @@ Paths below are relative to the base URL above (spec lists them as `/api/v1/...`
 | Wellness | `GET /athlete/{id}/wellness{ext}` (date range; `.csv` for CSV), `POST`/`PUT /athlete/{id}/wellness` |
 | Wellness/{date} | `GET /athlete/{id}/wellness/{date}`, `PUT /athlete/{id}/wellness/{date}` |
 | Gear | `GET /athlete/{id}/gear{ext}` (list; `.csv` for CSV), `POST /athlete/{id}/gear` (create); per-item `PUT`/`DELETE /athlete/{id}/gear/{gearId}` |
+| Gear reminders | `POST /athlete/{id}/gear/{gearId}/reminder`; `PUT` (`reset`, `snoozeDays` query) and `DELETE /athlete/{id}/gear/{gearId}/reminder/{reminderId}` |
 | Interval search | `GET /athlete/{id}/activities/interval-search` |
 | Activities by id | `GET /athlete/{athleteId}/activities/{ids}` (comma-separated) |
 
@@ -690,3 +691,75 @@ They come from three moving times, and each tool now names its source
 intervals.icu's rules are not published, and copying them would change on
 the next server update, so the tools label the source rather than recompute
 a single time.
+
+## Wellness and gear writes (2026-10-27, #81, #85)
+
+How it was checked: live reads only (`GET /athlete/0/wellness/{date}`,
+`GET /athlete/0/gear`), plus the intervals.icu web app's own code
+(`https://intervals.icu/assets/index-tL6Ej919.js`, read 2026-10-27), which
+shows the requests its wellness dialog and gear pages send. No live write
+was made. `update-wellness` and `update-gear` send the same requests the web
+app sends.
+
+**Wellness**
+
+- `GET /athlete/0/wellness/{date}` answers 200 for a date with no record:
+  `id` is the date and every field is null (`tempWeight` and
+  `tempRestingHR` are `false`). Checked on 2030-01-01. Today's record
+  (2026-10-27) had every subjective field, `comments` and `locked` null.
+- The record carries `sleepQuality`, `injury` and `locked`, plus fields the
+  spec does not list (`floorsClimbed`).
+- Scales, from the web app's wellness dialog. Every score is 1 to 4, and 1
+  is the best state:
+
+  | Field | 1 | 2 | 3 | 4 |
+  | --- | --- | --- | --- | --- |
+  | `soreness`, `fatigue`, `stress` | Low | Avg | High | Extreme |
+  | `mood` | Great | Good | OK | Grumpy |
+  | `motivation` | Extreme | High | Avg | Low |
+  | `injury` | None | Niggle | Poor | Injured |
+  | `sleepQuality` | Great | Good | Avg | Poor |
+  | `hydration` (not written) | Good | OK | Poor | Bad |
+
+- The athlete's "invert" chart option (`invertSubWellness`) shows `5 - value`
+  in charts only. The stored value does not change.
+- Clearing: on save, the dialog sends `-1` for a numeric field the athlete
+  cleared, and `""` for cleared comments. `update-wellness` does the same.
+- `locked`: the dialog's help text says it "Prevent[s] updates to wellness
+  data on this day by integrations with other services and the API". The
+  dialog sends `locked` only when the athlete touches the toggle.
+  `update-wellness` never sends it, so a day it writes stays unlocked, and a
+  device sync later the same day can still write to it.
+- The spec says `PUT /athlete/{id}/wellness/{date}` changes "only fields
+  provided".
+- Not verified live: that a PUT on a date with no record creates one, that a
+  device sync after a manual PUT still lands (#81's acceptance check), and
+  what a PUT on a locked day returns (`update-wellness` warns from the
+  re-read either way). Each needs one approved live write.
+
+**Gear**
+
+- `GET /athlete/0/gear` on 2026-10-27: four shoes. `purchased` is
+  `2026-09-01T00:00:00` on one and `2026-09-24` on three; `notes` is null on
+  all; `activity_filters` is one rule on 71459
+  (`{ id: 1, field_id: "type", code: null, operator: null, value: ["Run"], not: false }`)
+  and null on the others; `reminders` is `[]` on all. Items also carry
+  `time` (s), `use_elapsed_time`, `component` and `component_ids`.
+- Retire: the web app sends `PUT /athlete/{id}/gear/{gearId}` with only
+  `{ "retired": "<local YYYY-MM-DD>" }`, and `{ "retired": "" }` to put the
+  item back in use.
+- New reminder: `POST /athlete/{id}/gear/{gearId}/reminder` with
+  `{ name, distance (m), time (s), activities, days }`. `update-gear` sends
+  only `name` and `distance`.
+- Reset: `PUT /athlete/{id}/gear/{gearId}/reminder/{reminderId}?reset=true`
+  with an empty body `{}`. The web app never sends `snoozeDays`, though the
+  spec marks it required, and has no snooze control. The dialog shows "Usage
+  calculated since {date}" and "Remember to reset reminders if you want to
+  receive more of these emails in future", so a reset restarts the usage
+  count and re-arms the reminder email.
+- Every gear write answers with the gear item.
+- Not verified live: a reminder's shape in a response (`id`,
+  `distance_used`, `percent_used`, `last_reset`, from the spec's
+  `GearReminder`), and from when a new reminder counts usage. The
+  `update-gear` reply echoes the re-read usage, so the first live write
+  shows it.

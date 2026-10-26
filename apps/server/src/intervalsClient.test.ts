@@ -19,6 +19,7 @@ import streamsMultilap from "./__fixtures__/intervals/streams-multilap.json";
 import wellness from "./__fixtures__/intervals/wellness.json";
 import { intervalsApi, RateLimitError } from "./fetchClient";
 import {
+  createGearReminder,
   getActivitiesByIds,
   getActivity,
   getActivityIntervals,
@@ -28,14 +29,18 @@ import {
   getAthleteTimeZone,
   getSportSettings,
   getWellness,
+  getWellnessDay,
   IntervalsApiError,
   type IntervalsInterval,
   listActivities,
   listGear,
   listSportSettings,
+  resetGearReminder,
   searchActivities,
   searchActivitiesByIntervals,
   updateActivity,
+  updateGear,
+  updateWellness,
 } from "./intervalsClient";
 
 /**
@@ -584,6 +589,160 @@ describe("intervalsClient", () => {
       await searchActivitiesByIntervals("k", band);
       await getActivitiesByIds("k", ["i1", "i2"], { intervals: true });
       expect(calls).toHaveLength(2);
+    });
+  });
+
+  describe("updateWellness", () => {
+    const day = { id: "2026-10-27", soreness: 3, comments: "calf tight" };
+
+    it("sends PUT to the day's path with only the provided keys", async () => {
+      const calls = mockJson(day);
+      const result = await updateWellness("k", "2026-10-27", {
+        soreness: 3,
+        comments: "calf tight",
+      });
+      expect(calls).toHaveLength(1);
+      expect(calls[0]?.method).toBe("PUT");
+      expect(new URL(calls[0]?.url ?? "").pathname).toBe(
+        "/api/v1/athlete/0/wellness/2026-10-27",
+      );
+      expect(JSON.parse(calls[0]?.body ?? "{}")).toEqual({
+        soreness: 3,
+        comments: "calf tight",
+      });
+      expect(result.soreness).toBe(3);
+    });
+
+    it("is not retried on a transient 5xx", async () => {
+      let count = 0;
+      globalThis.fetch = vi.fn(async () => {
+        count += 1;
+        return new Response("boom", { status: 503 });
+      }) as unknown as typeof fetch;
+
+      await expect(
+        updateWellness("k", "2026-10-27", { fatigue: 2 }),
+      ).rejects.toBeInstanceOf(IntervalsApiError);
+      expect(count).toBe(1);
+    });
+
+    it("invalidates the day and every wellness range, even after a failed PUT", async () => {
+      mockJson(day);
+      await getWellnessDay("k", "2026-10-27");
+      let calls = mockJson([day]);
+      await getWellness("k", { oldest: "2026-10-20", newest: "2026-10-27" });
+      expect(calls).toHaveLength(1);
+
+      mockJson({}, 503);
+      await expect(
+        updateWellness("k", "2026-10-27", { fatigue: 2 }),
+      ).rejects.toBeInstanceOf(IntervalsApiError);
+
+      calls = mockJson(day);
+      await getWellnessDay("k", "2026-10-27");
+      expect(calls).toHaveLength(1);
+      calls = mockJson([day]);
+      await getWellness("k", { oldest: "2026-10-20", newest: "2026-10-27" });
+      expect(calls).toHaveLength(1);
+    });
+  });
+
+  describe("getWellnessDay", () => {
+    it("reads one day and parses injury, sleepQuality and locked", async () => {
+      const calls = mockJson({
+        id: "2026-10-27",
+        injury: 2,
+        sleepQuality: 1,
+        locked: null,
+      });
+      const result = await getWellnessDay("k", "2026-10-27");
+      expect(new URL(calls[0]?.url ?? "").pathname).toBe(
+        "/api/v1/athlete/0/wellness/2026-10-27",
+      );
+      expect(result.injury).toBe(2);
+      expect(result.sleepQuality).toBe(1);
+      expect(result.locked).toBeNull();
+    });
+
+    it("skips the cache when asked", async () => {
+      const calls = mockJson({ id: "2026-10-27" });
+      await getWellnessDay("k", "2026-10-27", { skipCache: true });
+      await getWellnessDay("k", "2026-10-27", { skipCache: true });
+      expect(calls).toHaveLength(2);
+    });
+  });
+
+  describe("gear writes", () => {
+    const gearItem = gearFixture[0]!;
+
+    it("updateGear sends PUT with only the patch", async () => {
+      const calls = mockJson({ ...gearItem, retired: "2026-10-27" });
+      const result = await updateGear("k", gearItem.id, {
+        retired: "2026-10-27",
+      });
+      expect(calls[0]?.method).toBe("PUT");
+      expect(new URL(calls[0]?.url ?? "").pathname).toBe(
+        `/api/v1/athlete/0/gear/${gearItem.id}`,
+      );
+      expect(JSON.parse(calls[0]?.body ?? "{}")).toEqual({
+        retired: "2026-10-27",
+      });
+      expect(result.retired).toBe("2026-10-27");
+    });
+
+    it("createGearReminder sends POST with name and metres", async () => {
+      const calls = mockJson(gearItem);
+      await createGearReminder("k", gearItem.id, {
+        name: "700 km",
+        distance: 700000,
+      });
+      expect(calls[0]?.method).toBe("POST");
+      expect(new URL(calls[0]?.url ?? "").pathname).toBe(
+        `/api/v1/athlete/0/gear/${gearItem.id}/reminder`,
+      );
+      expect(JSON.parse(calls[0]?.body ?? "{}")).toEqual({
+        name: "700 km",
+        distance: 700000,
+      });
+    });
+
+    it("resetGearReminder sends PUT with reset=true and an empty body", async () => {
+      const calls = mockJson(gearItem);
+      await resetGearReminder("k", gearItem.id, 7);
+      const url = new URL(calls[0]?.url ?? "");
+      expect(calls[0]?.method).toBe("PUT");
+      expect(url.pathname).toBe(
+        `/api/v1/athlete/0/gear/${gearItem.id}/reminder/7`,
+      );
+      expect(url.searchParams.get("reset")).toBe("true");
+      expect(JSON.parse(calls[0]?.body ?? "null")).toEqual({});
+    });
+
+    it("is not retried on a 5xx and invalidates the gear list after it", async () => {
+      let calls = mockJson(gearFixture);
+      await listGear("k");
+      expect(calls).toHaveLength(1);
+
+      let count = 0;
+      globalThis.fetch = vi.fn(async () => {
+        count += 1;
+        return new Response("boom", { status: 503 });
+      }) as unknown as typeof fetch;
+      await expect(
+        updateGear("k", gearItem.id, { retired: "" }),
+      ).rejects.toBeInstanceOf(IntervalsApiError);
+      expect(count).toBe(1);
+
+      calls = mockJson(gearFixture);
+      await listGear("k");
+      expect(calls).toHaveLength(1);
+    });
+
+    it("parses purchased, notes and activity_filters from the fixture", async () => {
+      mockJson(gearFixture);
+      const [first] = await listGear("k");
+      expect(first?.purchased).toBe(gearItem.purchased);
+      expect(first?.activity_filters).toEqual(gearItem.activity_filters);
     });
   });
 

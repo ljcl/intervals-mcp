@@ -81,6 +81,8 @@ describe("mapWellnessDay", () => {
       stress: 1,
       mood: 4,
       motivation: 5,
+      injury: 2,
+      sleepQuality: 1,
       spO2: 96,
       respiration: 14,
       comments: "Felt good",
@@ -93,6 +95,8 @@ describe("mapWellnessDay", () => {
     expect(day.stress).toBe(1);
     expect(day.mood).toBe(4);
     expect(day.motivation).toBe(5);
+    expect(day.injury).toBe(2);
+    expect(day.sleep_quality).toBe(1);
     expect(day.spo2).toBe(96);
     expect(day.respiration).toBe(14);
     expect(day.comments).toBe("Felt good");
@@ -128,6 +132,36 @@ describe("formatWellnessText", () => {
     expect(text).toContain("resting HR 54");
     expect(text).toContain("sleep 7.5 h");
     expect(text.split("\n").length).toBeGreaterThan(1);
+  });
+
+  it("labels each 1 to 4 score as the web app does", () => {
+    const day = mapWellnessDay({
+      id: "2026-09-10",
+      soreness: 3,
+      mood: 1,
+      injury: 2,
+      sleepQuality: 4,
+      motivation: 5,
+    } as IntervalsWellness);
+    const text = formatWellnessText({
+      oldest: "2026-09-10",
+      newest: "2026-09-10",
+      count: 1,
+      units: {
+        hrv: "ms",
+        resting_hr: "bpm",
+        sleep: "hours",
+        weight: "kg",
+        spo2: "%",
+        respiration: "breaths/min",
+      },
+      hrv_note: "note",
+      days: [day],
+    });
+
+    expect(text).toContain(
+      "soreness 3 (High), mood 1 (Great), motivation 5, injury 2 (Niggle), sleep quality 4 (Poor)",
+    );
   });
 
   it("reports no-data text for a single day with no record", () => {

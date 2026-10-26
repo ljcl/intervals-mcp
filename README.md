@@ -181,7 +181,7 @@ Add to `.vscode/mcp.json` in your workspace (or run **MCP: Add Server** from the
 
 #### Other clients (generic Streamable HTTP)
 
-Any client that speaks [Streamable HTTP](https://modelcontextprotocol.io/docs/concepts/transports) can connect to the `/mcp` endpoint directly. The endpoint serves the 2026-07-28 revision: clients send stateless requests carrying the `io.modelcontextprotocol/*` envelope keys and the `Mcp-Method`/`Mcp-Name` headers (`server/discover` advertises capabilities). A 2025-era client (one that opens with `initialize`) is served statelessly too, because claude.ai loads MCP Apps that way, but it gets no write tool: `update-activity` needs a 2026-07-28 client. POST JSON-RPC messages with an `Accept: application/json, text/event-stream` header. Protocol details: [docs/architecture.md](docs/architecture.md#runtime-and-transport).
+Any client that speaks [Streamable HTTP](https://modelcontextprotocol.io/docs/concepts/transports) can connect to the `/mcp` endpoint directly. The endpoint serves the 2026-07-28 revision: clients send stateless requests carrying the `io.modelcontextprotocol/*` envelope keys and the `Mcp-Method`/`Mcp-Name` headers (`server/discover` advertises capabilities). A 2025-era client (one that opens with `initialize`) is served statelessly too, because claude.ai loads MCP Apps that way, but it gets no write tool: `update-activity`, `update-wellness` and `update-gear` need a 2026-07-28 client. POST JSON-RPC messages with an `Accept: application/json, text/event-stream` header. Protocol details: [docs/architecture.md](docs/architecture.md#runtime-and-transport).
 
 ## Tools
 

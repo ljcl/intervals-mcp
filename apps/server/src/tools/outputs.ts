@@ -1352,33 +1352,83 @@ export const ActivityStreamsOutputSchema = z.object({
 // ---------- list-gear ----------
 const GearReminderEntrySchema = z
   .object({
+    id: z
+      .number()
+      .int()
+      .optional()
+      .describe("Reminder id, for update-gear's resetReminderId"),
     name: z.string().nullable(),
-    distance_km: z.number().optional().describe("1 dp"),
+    distance_km: z
+      .number()
+      .optional()
+      .describe("1 dp; the usage after which the reminder fires"),
+    distance_used_km: z
+      .number()
+      .optional()
+      .describe("1 dp; usage counted since last_reset or since it was added"),
     days: z.number().optional(),
+    last_reset: z
+      .string()
+      .nullable()
+      .optional()
+      .describe("When the usage count last restarted (ISO date-time)"),
     percent_used: z.number().optional(),
   })
   .catchall(z.number())
   .describe(
     "Known reminder fields mapped; any other numeric field the API sends passes through raw",
   );
+const GearAutoAssignRuleSchema = z.object({
+  field: z
+    .string()
+    .nullable()
+    .describe("The activity field the rule tests, e.g. type"),
+  operator: z.string().nullable(),
+  value: z.unknown().describe('The value it matches, e.g. ["Run"]'),
+  not: z.boolean().describe("True when the rule matches the opposite"),
+});
+/** One gear item, as list-gear and update-gear report it. */
+const GearEntrySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  type: z.string(),
+  distance_km: z
+    .number()
+    .describe(
+      "1 dp; includes any starting distance entered in the UI, not just distance logged through this API",
+    ),
+  activities: z.number().int(),
+  retired: z
+    .union([z.string(), z.boolean()])
+    .nullable()
+    .describe("Retirement date; null while the item is in use"),
+  purchased: z.string().nullable().describe("Purchase date YYYY-MM-DD"),
+  notes: z.string().nullable(),
+  reminders: z.array(GearReminderEntrySchema),
+  auto_assign: z
+    .array(GearAutoAssignRuleSchema)
+    .describe("Rules that make intervals.icu put this gear on a new activity"),
+});
 export const GearListOutputSchema = z.object({
   count: z.number().int(),
   units: z.object({ distance: z.literal("km") }),
-  gear: z.array(
-    z.object({
-      id: z.string(),
-      name: z.string(),
-      type: z.string(),
-      distance_km: z
-        .number()
-        .describe(
-          "1 dp; includes any starting distance entered in the UI, not just distance logged through this API",
-        ),
-      activities: z.number().int(),
-      retired: z.union([z.string(), z.boolean()]).nullable(),
-      reminders: z.array(GearReminderEntrySchema),
-    }),
-  ),
+  gear: z.array(GearEntrySchema),
+});
+
+// ---------- update-gear ----------
+/** One field a write changed, echoing the pre-write and post-write values
+ * (the post-write value comes from a fresh re-read). Shared by
+ * update-wellness and update-gear. */
+const WriteChangeSchema = z.object({
+  field: z.string(),
+  before: z.union([z.string(), z.number(), z.null()]),
+  after: z.union([z.string(), z.number(), z.null()]),
+});
+export const GearWriteOutputSchema = z.object({
+  action: z.enum(["retire", "unretire", "add_reminder", "reset_reminder"]),
+  gear: GearEntrySchema.describe("The item as freshly re-read"),
+  changes: z.array(WriteChangeSchema),
+  warnings: z.array(z.string()),
 });
 
 // ---------- get-wellness ----------
@@ -1395,11 +1445,25 @@ const WellnessDayEntrySchema = z.object({
   tsb: z.number().nullable().describe("ctl minus atl, 1 dp"),
   ramp_rate: z.number().nullable(),
   readiness: z.number().nullable(),
-  soreness: z.number().nullable(),
-  fatigue: z.number().nullable(),
-  stress: z.number().nullable(),
-  mood: z.number().nullable(),
-  motivation: z.number().nullable(),
+  soreness: z
+    .number()
+    .nullable()
+    .describe("1 low, 2 average, 3 high, 4 extreme"),
+  fatigue: z
+    .number()
+    .nullable()
+    .describe("1 low, 2 average, 3 high, 4 extreme"),
+  stress: z.number().nullable().describe("1 low, 2 average, 3 high, 4 extreme"),
+  mood: z.number().nullable().describe("1 great, 2 good, 3 OK, 4 grumpy"),
+  motivation: z
+    .number()
+    .nullable()
+    .describe("1 extreme, 2 high, 3 average, 4 low"),
+  injury: z.number().nullable().describe("1 none, 2 niggle, 3 poor, 4 injured"),
+  sleep_quality: z
+    .number()
+    .nullable()
+    .describe("1 great, 2 good, 3 average, 4 poor"),
   spo2: z.number().nullable(),
   respiration: z.number().nullable(),
   comments: z.string().nullable(),
@@ -1418,6 +1482,21 @@ export const WellnessOutputSchema = z.object({
   }),
   hrv_note: z.string(),
   days: z.array(WellnessDayEntrySchema),
+});
+
+// ---------- update-wellness ----------
+export const WellnessWriteOutputSchema = z.object({
+  date: z.string().describe("ISO date YYYY-MM-DD"),
+  locked: z
+    .boolean()
+    .describe(
+      "True when the day is locked in intervals.icu, which stops the API changing it",
+    ),
+  day: WellnessDayEntrySchema.describe(
+    "The day as freshly re-read, in get-wellness's shape",
+  ),
+  changes: z.array(WriteChangeSchema),
+  warnings: z.array(z.string()),
 });
 
 // ---------- dev-only schema drift guard ----------

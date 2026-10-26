@@ -1,4 +1,8 @@
-import { type CallFailure, noteCallFailure } from "../callScope";
+import {
+  CallCancelledError,
+  type CallFailure,
+  noteCallFailure,
+} from "../callScope";
 import { HttpError, RateLimitError, RequestTimeoutError } from "../fetchClient";
 
 /**
@@ -86,6 +90,26 @@ export function noteToolFailure(error: unknown): void {
   } catch {
     // Telemetry never fails the call it describes.
   }
+}
+
+/**
+ * True when a failed write never reached intervals.icu, so the tool can
+ * report a plain failure: a 4xx `HttpError` (the request itself was
+ * rejected), a `RateLimitError` (throttled before it ran), or a
+ * `CallCancelledError` (FetchClient never interrupts a started write, so a
+ * cancel means it never left). Anything else (a timeout, a 5xx, a network
+ * fault, an unparseable 200) leaves the outcome unknown, and the write tools
+ * say it may already have been applied (docs/architecture.md, Input
+ * validation). Branches on the type and status only.
+ */
+export function isDefiniteWriteRejection(error: unknown): boolean {
+  return (
+    error instanceof CallCancelledError ||
+    error instanceof RateLimitError ||
+    (error instanceof HttpError &&
+      error.response.status >= 400 &&
+      error.response.status < 500)
+  );
 }
 
 /**

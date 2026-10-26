@@ -47,7 +47,12 @@ vi.mock("../intervalsClient", async (importOriginal) => {
     getActivityFile: vi.fn(),
     updateActivity: vi.fn(),
     listGear: vi.fn(),
+    updateGear: vi.fn(),
+    createGearReminder: vi.fn(),
+    resetGearReminder: vi.fn(),
     getWellness: vi.fn(),
+    getWellnessDay: vi.fn(),
+    updateWellness: vi.fn(),
     getSportSettings: vi.fn(),
     listSportSettings: vi.fn(),
     getAthleteHrCurves: vi.fn(),
@@ -136,6 +141,19 @@ beforeEach(() => {
   );
   vi.mocked(client.getWellness).mockImplementation(async (_key, range) =>
     wellnessIn(range),
+  );
+  // A long comments text on the day, so update-wellness echoes its largest
+  // reply (a replace quotes the comments it removed).
+  vi.mocked(client.getWellnessDay).mockImplementation(async (_key, date) => ({
+    ...(wellnessFixture[0] as unknown as client.IntervalsWellness),
+    id: date,
+    comments: "x".repeat(2000),
+  }));
+  vi.mocked(client.updateWellness).mockImplementation(async (_key, date) => ({
+    id: date,
+  }));
+  vi.mocked(client.updateGear).mockResolvedValue(
+    gearFixture[0] as unknown as client.IntervalsGear,
   );
   vi.mocked(client.getSportSettings).mockResolvedValue(
     sportSettingsRunFixture as unknown as client.IntervalsSportSettings,
@@ -347,6 +365,26 @@ const CASES: Record<string, SizeCase[]> = {
     },
   ],
   "list-gear": [{ label: "with retired", args: { includeRetired: true } }],
+  "update-wellness": [
+    {
+      label: "every field, comments replaced",
+      args: {
+        date: "2026-09-10",
+        soreness: 3,
+        fatigue: 3,
+        stress: 2,
+        mood: 2,
+        motivation: 2,
+        injury: 2,
+        sleepQuality: 3,
+        comments: "y".repeat(2000),
+        commentsMode: "replace",
+      },
+    },
+  ],
+  "update-gear": [
+    { label: "retire", args: { gearId: "71459", retired: true } },
+  ],
   "get-wellness": [
     {
       label: "90-day range",

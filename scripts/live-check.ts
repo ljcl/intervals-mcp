@@ -3,10 +3,11 @@
  * directly against a real account, using the key from the root `.env`. Text
  * tools go through their exported `Tool.execute`; app data tools
  * (`get-*-data`, private handlers in `server.ts`) go through the same
- * `dispatchToolCall` a real request uses. `update-activity` is a write tool
- * and is deliberately not called here; it was checked once, separately,
- * with explicit user approval (see docs/api-notes.md's "update-activity
- * live write check").
+ * `dispatchToolCall` a real request uses. The write tools
+ * (`update-activity`, `update-wellness`, `update-gear`) are deliberately not
+ * called here; `update-activity` was checked once, separately, with
+ * explicit user approval (see docs/api-notes.md's "update-activity live
+ * write check").
  *
  * Prints only a short summary per tool (ok/error, a handful of numbers, and
  * the response size against the budget) so this is safe to run and paste

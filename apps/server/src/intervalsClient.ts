@@ -251,20 +251,41 @@ const IntervalsStreamsResponseSchema = z.array(IntervalsStreamSchema);
 
 // --- Gear schema ---
 // A reminder's known fields per the intervals.icu OpenAPI spec's
-// GearReminder (name, distance in metres, days, percent_used); the real
-// account's gear all has `reminders: []`, so this is unverified against a
-// live response and deliberately permissive (`.passthrough()`) so an
-// unrecognised field is preserved rather than dropped.
+// GearReminder (id, name, distance in metres, days, last_reset,
+// percent_used, distance_used in metres); the real account's gear all has
+// `reminders: []`, so this is unverified against a live response and
+// deliberately permissive (`.passthrough()`) so an unrecognised field is
+// preserved rather than dropped.
 const IntervalsGearReminderSchema = z
   .object({
+    id: z.number().nullable().optional(),
     name: z.string().nullable().optional(),
     distance: z.number().nullable().optional(),
     days: z.number().nullable().optional(),
+    last_reset: z.string().nullable().optional(),
     percent_used: z.number().nullable().optional(),
+    distance_used: z.number().nullable().optional(),
   })
   .passthrough();
 
 export type IntervalsGearReminder = z.infer<typeof IntervalsGearReminderSchema>;
+
+/** One auto-assign rule (OpenAPI `ActivityFilter`): intervals.icu puts the
+ * gear on a new activity whose `field_id` matches `value`. The fixture's one
+ * rule is `{ field_id: "type", value: ["Run"] }`; `value` is untyped in the
+ * spec, so it stays loose. */
+const IntervalsActivityFilterSchema = z
+  .object({
+    field_id: z.string().nullable().optional(),
+    operator: z.string().nullable().optional(),
+    value: z.unknown().optional(),
+    not: z.boolean().nullable().optional(),
+  })
+  .passthrough();
+
+export type IntervalsActivityFilter = z.infer<
+  typeof IntervalsActivityFilterSchema
+>;
 
 const IntervalsGearSchema = z
   .object({
@@ -273,11 +294,20 @@ const IntervalsGearSchema = z
     type: z.string().nullable().optional(),
     distance: z.number().nullable().optional(),
     activities: z.number().nullable().optional(),
-    // The OpenAPI spec types `retired` as a string (a retirement date); the
-    // real account's gear only ever has it `null` (active). Accepting a
-    // boolean too is defensive: a strict `z.string()` would throw on any
-    // account where the API reports it that way instead.
+    // The OpenAPI spec types `retired` as a string (a retirement date), and
+    // the web app writes a local YYYY-MM-DD to retire and "" to un-retire
+    // (docs/api-notes.md). Accepting a boolean too is defensive: a strict
+    // `z.string()` would throw on any account where the API reports it that
+    // way instead.
     retired: z.union([z.string(), z.boolean()]).nullable().optional(),
+    /** Purchase date: seen as both `2026-09-01T00:00:00` and `2026-09-24`
+     * (docs/api-notes.md). */
+    purchased: z.string().nullable().optional(),
+    notes: z.string().nullable().optional(),
+    activity_filters: z
+      .array(IntervalsActivityFilterSchema)
+      .nullable()
+      .optional(),
     reminders: z.array(IntervalsGearReminderSchema).optional(),
     /** The owning athlete, equal to an activity's `icu_athlete_id`
      * (docs/api-notes.md). */
@@ -321,9 +351,14 @@ const IntervalsWellnessSchema = z
     stress: z.number().nullable().optional(),
     mood: z.number().nullable().optional(),
     motivation: z.number().nullable().optional(),
+    injury: z.number().nullable().optional(),
+    sleepQuality: z.number().nullable().optional(),
     spO2: z.number().nullable().optional(),
     respiration: z.number().nullable().optional(),
     comments: z.string().nullable().optional(),
+    /** Set in the web app's wellness dialog: it stops integrations and the
+     * API from changing the day (docs/api-notes.md). Null when never set. */
+    locked: z.boolean().nullable().optional(),
   })
   .passthrough();
 
@@ -988,6 +1023,166 @@ export async function listGear(
     handleApiError(error, context);
   }
   return parseOrThrow(IntervalsGearResponseSchema, data, context);
+}
+
+/** Writable gear fields for {@link updateGear}. `retired` is a local
+ * YYYY-MM-DD to retire, `""` to un-retire (docs/api-notes.md). */
+export interface IntervalsGearUpdate {
+  retired?: string;
+}
+
+/** A new distance reminder for {@link createGearReminder}; `distance` is in
+ * metres. */
+export interface IntervalsGearReminderCreate {
+  name: string;
+  distance: number;
+}
+
+/**
+ * Runs one gear write and invalidates the gear list in a `finally`, whatever
+ * the outcome, for the same reason as {@link updateActivity}: a failed write
+ * may still have changed state. The list carries the gear names that
+ * get-activity and get-running-summary show, so this keeps them current too.
+ * Every gear write answers with the gear item.
+ */
+async function writeGear(
+  apiKey: string,
+  context: string,
+  send: () => Promise<{ data: unknown }>,
+): Promise<IntervalsGear> {
+  requireApiKey(apiKey);
+  let data: unknown;
+  try {
+    data = (await send()).data;
+  } catch (error) {
+    handleApiError(error, context);
+  } finally {
+    intervalsApi.invalidatePath(athletePath("/gear"));
+  }
+  return parseOrThrow(IntervalsGearSchema, data, context);
+}
+
+/** Updates a gear item via `PUT /athlete/{id}/gear/{gearId}`, sending only the
+ * keys in `patch`. Unretried, like every write. */
+export async function updateGear(
+  apiKey: string,
+  gearId: string,
+  patch: IntervalsGearUpdate,
+): Promise<IntervalsGear> {
+  return writeGear(apiKey, `updateGear for ID ${gearId}`, () =>
+    intervalsApi.put<unknown>(athletePath(`/gear/${gearId}`), patch, {
+      headers: authHeaders(apiKey),
+    }),
+  );
+}
+
+/** Adds a reminder via `POST /athlete/{id}/gear/{gearId}/reminder`. */
+export async function createGearReminder(
+  apiKey: string,
+  gearId: string,
+  reminder: IntervalsGearReminderCreate,
+): Promise<IntervalsGear> {
+  return writeGear(apiKey, `createGearReminder for gear ${gearId}`, () =>
+    intervalsApi.post<unknown>(
+      athletePath(`/gear/${gearId}/reminder`),
+      reminder,
+      { headers: authHeaders(apiKey) },
+    ),
+  );
+}
+
+/**
+ * Resets a reminder's usage count via
+ * `PUT /athlete/{id}/gear/{gearId}/reminder/{reminderId}?reset=true` with an
+ * empty body, as the web app's Reset button sends it (docs/api-notes.md).
+ */
+export async function resetGearReminder(
+  apiKey: string,
+  gearId: string,
+  reminderId: number,
+): Promise<IntervalsGear> {
+  return writeGear(
+    apiKey,
+    `resetGearReminder ${reminderId} for gear ${gearId}`,
+    () =>
+      intervalsApi.put<unknown>(
+        athletePath(`/gear/${gearId}/reminder/${reminderId}`),
+        {},
+        { headers: authHeaders(apiKey), params: { reset: true } },
+      ),
+  );
+}
+
+/**
+ * Fetches one day's wellness record via `GET /athlete/{id}/wellness/{date}`.
+ * A day with no record still answers 200, with every field null
+ * (docs/api-notes.md). `options.skipCache: true` bypasses the response
+ * cache, for `update-wellness`'s reads around its write.
+ */
+export async function getWellnessDay(
+  apiKey: string,
+  date: string,
+  options: { skipCache?: boolean } = {},
+): Promise<IntervalsWellness> {
+  requireApiKey(apiKey);
+  const context = `getWellnessDay for ${date}`;
+
+  let data: unknown;
+  try {
+    const response = await intervalsApi.get<unknown>(
+      athletePath(`/wellness/${date}`),
+      { headers: authHeaders(apiKey), skipCache: options.skipCache },
+    );
+    data = response.data;
+  } catch (error) {
+    handleApiError(error, context);
+  }
+  return parseOrThrow(IntervalsWellnessSchema, data, context);
+}
+
+/** Writable wellness fields for {@link updateWellness}. A numeric field set
+ * to `-1` clears it, and `comments: ""` clears the comments, as the web app
+ * does (docs/api-notes.md). */
+export interface IntervalsWellnessUpdate {
+  soreness?: number;
+  fatigue?: number;
+  stress?: number;
+  mood?: number;
+  motivation?: number;
+  injury?: number;
+  sleepQuality?: number;
+  comments?: string;
+}
+
+/**
+ * Updates one day's wellness via `PUT /athlete/{id}/wellness/{date}`, which
+ * changes only the fields sent (OpenAPI `updateWellness`). Unretried, like
+ * every write. Invalidates the athlete's wellness reads (the day, every
+ * range, and the fitness reads built on them) in a `finally`, whatever the
+ * outcome, for the same reason as {@link updateActivity}.
+ */
+export async function updateWellness(
+  apiKey: string,
+  date: string,
+  patch: IntervalsWellnessUpdate,
+): Promise<IntervalsWellness> {
+  requireApiKey(apiKey);
+  const context = `updateWellness for ${date}`;
+
+  let data: unknown;
+  try {
+    const response = await intervalsApi.put<unknown>(
+      athletePath(`/wellness/${date}`),
+      patch,
+      { headers: authHeaders(apiKey) },
+    );
+    data = response.data;
+  } catch (error) {
+    handleApiError(error, context);
+  } finally {
+    intervalsApi.invalidatePath(athletePath("/wellness"));
+  }
+  return parseOrThrow(IntervalsWellnessSchema, data, context);
 }
 
 /**

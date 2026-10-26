@@ -110,7 +110,17 @@ vi.mock("./intervalsClient", async (importOriginal) => {
     ),
     getActivitiesByIds: vi.fn(async () => structuredClone(activitiesSimilar)),
     listGear: vi.fn(async () => structuredClone(gear)),
+    updateGear: vi.fn(async () => structuredClone(gear[0])),
+    createGearReminder: vi.fn(async () => structuredClone(gear[0])),
+    resetGearReminder: vi.fn(async () => structuredClone(gear[0])),
     getWellness: vi.fn(async () => structuredClone(wellness)),
+    getWellnessDay: vi.fn(async (_key: string, date: string) => ({
+      ...structuredClone(wellness[0]),
+      id: date,
+    })),
+    updateWellness: vi.fn(async (_key: string, date: string) => ({
+      id: date,
+    })),
     getSportSettings: vi.fn(async () => structuredClone(sportSettingsRun)),
     listSportSettings: vi.fn(async () => structuredClone(sportSettings)),
     getAthleteHrCurves: vi.fn(async () => structuredClone(hrCurves)),
@@ -160,6 +170,11 @@ const CALLS: Array<[tool: string, args: Record<string, unknown>]> = [
   ["list-gear", {}],
   ["get-wellness", {}],
   ["get-athlete-zones", {}],
+  // The re-read is the recorded day, so the write echoes a not-applied
+  // warning: the larger shape.
+  ["update-wellness", { date: wellness[0]!.id, soreness: 3, injury: null }],
+  ["update-gear", { gearId: gear[0]!.id, retired: true }],
+  ["update-gear", { gearId: gear[0]!.id, addReminderKm: 700 }],
 ];
 
 const validators = new AjvJsonSchemaValidator();

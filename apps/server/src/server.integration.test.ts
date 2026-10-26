@@ -18,12 +18,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getTimeZone, setAthleteTimeZone } from "./config";
 import { serverInstructions } from "./instructions";
 import {
+  createGearReminder,
   getActivity,
   getActivityStreams,
   getAthletePaceCurves,
+  getWellnessDay,
   listActivities,
+  listGear,
   searchActivities,
   updateActivity,
+  updateGear,
+  updateWellness,
 } from "./intervalsClient";
 import { INTERVALS_ID_HINT, INTERVALS_ID_HINT_LATEST } from "./tools/_ids";
 
@@ -43,8 +48,13 @@ vi.mock("./intervalsClient", async (importOriginal) => {
     getSportSettings: vi.fn(async () => null),
     listActivities: vi.fn(),
     searchActivities: vi.fn(),
-    // Never reached: the 2025-era write guard refuses update-activity first.
+    // Never reached: the 2025-era write guard refuses the writes first.
     updateActivity: vi.fn(),
+    getWellnessDay: vi.fn(),
+    updateWellness: vi.fn(),
+    listGear: vi.fn(),
+    updateGear: vi.fn(),
+    createGearReminder: vi.fn(),
   };
 });
 
@@ -195,6 +205,13 @@ const ID_FIELD_COUNT = 23;
  */
 const NON_NUMERIC_ID_FIELDS = new Set(["gearId"]);
 
+/**
+ * intervals.icu types a gear reminder id as an int32 (OpenAPI
+ * `GearReminder.id`), so it can never pass 2^53 and lose digits in a host's
+ * `JSON.parse`. It stays the integer the API uses.
+ */
+const INT32_ID_FIELDS = new Set(["resetReminderId"]);
+
 interface AdvertisedIdField {
   tool: string;
   field: string;
@@ -328,6 +345,10 @@ describe("tools/list", () => {
     // Activity ids already exceed 2^53, so a host that generates a JSON
     // number loses digits before validation can see them.
     for (const { tool, field, prop } of ids) {
+      if (INT32_ID_FIELDS.has(field)) {
+        expect(prop.type, `${tool}.${field}`).toBe("integer");
+        continue;
+      }
       expect(prop.type, `${tool}.${field} must be advertised as a string`).toBe(
         "string",
       );
@@ -353,7 +374,8 @@ describe("tools/list", () => {
     // matched at the end of the description so a copy of it would not
     // accidentally pass.
     for (const { tool, field, prop } of ids) {
-      if (NON_NUMERIC_ID_FIELDS.has(field)) continue;
+      if (NON_NUMERIC_ID_FIELDS.has(field) || INT32_ID_FIELDS.has(field))
+        continue;
       const description = prop.description ?? "";
       // update-activity alone refuses "latest" (a write must name its target).
       const noLatest = tool === "update-activity" && field === "id";
@@ -609,7 +631,9 @@ describe("2025-era requests (claude.ai's MCP Apps loader)", () => {
     expect(JSON.parse(block?.text ?? "").zoneSets).toHaveLength(1);
   });
 
-  it("lists every tool but update-activity", async () => {
+  const WRITES = ["update-activity", "update-wellness", "update-gear"];
+
+  it("lists every tool but the writes", async () => {
     const client = await connectTestClient();
 
     const legacy = await client.sendLegacy("tools/list");
@@ -619,18 +643,22 @@ describe("2025-era requests (claude.ai's MCP Apps loader)", () => {
       ((result?.tools ?? []) as Array<{ name: string }>).map(
         (tool) => tool.name,
       );
-    expect(names(modern.result)).toContain("update-activity");
+    for (const write of WRITES) expect(names(modern.result)).toContain(write);
     expect(names(legacy.result)).toEqual(
-      names(modern.result).filter((name) => name !== "update-activity"),
+      names(modern.result).filter((name) => !WRITES.includes(name)),
     );
   });
 
-  it("refuses update-activity, even past a spoofed Mcp-Name", async () => {
+  it.each([
+    ["update-activity", { id: "123", name: "x" }],
+    ["update-wellness", { soreness: 2 }],
+    ["update-gear", { gearId: "71459", retired: true }],
+  ])("refuses %s, even past a spoofed Mcp-Name", async (tool, args) => {
     const client = await connectTestClient();
 
     const { result, error } = await client.sendLegacy(
       "tools/call",
-      { name: "update-activity", arguments: { id: "123", name: "x" } },
+      { name: tool, arguments: args },
       { "Mcp-Method": "tools/call", "Mcp-Name": "get-wellness" },
     );
 
@@ -638,11 +666,16 @@ describe("2025-era requests (claude.ai's MCP Apps loader)", () => {
     expect(result?.isError).toBe(true);
     const [block] = (result?.content ?? []) as Array<{ text: string }>;
     expect(block?.text).toBe(
-      "❌ update-activity changes data, and this client connects with a 2025 protocol revision, so the server does not run it. To make the change, use a client that speaks the 2026-07-28 revision.",
+      `❌ ${tool} changes data, and this client connects with a 2025 protocol revision, so the server does not run it. To make the change, use a client that speaks the 2026-07-28 revision.`,
     );
-    // Refused before the handler's fresh read of the activity.
+    // Refused before the handler's fresh read.
     expect(mockedIntervalsActivity).not.toHaveBeenCalled();
+    expect(vi.mocked(getWellnessDay)).not.toHaveBeenCalled();
+    expect(vi.mocked(listGear)).not.toHaveBeenCalled();
     expect(vi.mocked(updateActivity)).not.toHaveBeenCalled();
+    expect(vi.mocked(updateWellness)).not.toHaveBeenCalled();
+    expect(vi.mocked(updateGear)).not.toHaveBeenCalled();
+    expect(vi.mocked(createGearReminder)).not.toHaveBeenCalled();
   });
 });
 

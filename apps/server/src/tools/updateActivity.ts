@@ -1,6 +1,4 @@
 import { z } from "zod";
-import { CallCancelledError } from "../callScope";
-import { HttpError, RateLimitError } from "../fetchClient";
 import {
   getActivity as fetchActivity,
   type IntervalsActivity,
@@ -20,7 +18,11 @@ import {
   isGearRetired,
 } from "../utils/activityWrite";
 import { WRITE_DESTRUCTIVE } from "./_annotations";
-import { noteToolFailure, toolErrorText } from "./_errors";
+import {
+  isDefiniteWriteRejection,
+  noteToolFailure,
+  toolErrorText,
+} from "./_errors";
 import { intervalsActivityIdInput } from "./_ids";
 import { resolveActivityGearName } from "./getActivity";
 import {
@@ -33,7 +35,8 @@ const name = "update-activity";
 
 const description = `
 Updates one intervals.icu activity's name, description, gear, RPE or feel.
-It is the only tool that writes: confirm the change with the athlete first.
+It writes data: confirm the change with the athlete first. To log how the
+athlete feels on a day, use update-wellness.
 To add a note, use descriptionMode "append" so the existing description
 stays.
 
@@ -339,23 +342,12 @@ export const updateActivityTool = {
       try {
         await putActivity(apiKey, id, patch);
       } catch (putError) {
-        // A 4xx (the request itself was rejected, e.g. a bad gear id) or a
-        // RateLimitError (throttled before it ran) never reached the write,
-        // so rethrow for the normal error path. Anything else (a timeout, a 5xx,
-        // a network fault, or the client failing to parse an otherwise-200
-        // response) leaves the write's outcome unknown, so it gets the same
-        // honest "may already have been applied" text rather than either a
-        // flat failure or a silent success.
-        // A CallCancelledError is a definite non-write too: FetchClient gives
-        // a started write neither the call signal nor a retry wait, so a
-        // cancel error means the PUT never left.
-        const isDefiniteRejection =
-          putError instanceof CallCancelledError ||
-          putError instanceof RateLimitError ||
-          (putError instanceof HttpError &&
-            putError.response.status >= 400 &&
-            putError.response.status < 500);
-        if (isDefiniteRejection) {
+        // A rejection that never reached the write (a 4xx such as a bad gear
+        // id, a RateLimitError, a CallCancelledError) takes the normal error
+        // path. Anything else leaves the write's outcome unknown, so it gets
+        // the honest "may already have been applied" text rather than either
+        // a flat failure or a silent success.
+        if (isDefiniteWriteRejection(putError)) {
           throw putError;
         }
         const detail =
