@@ -32,7 +32,11 @@ gh api -X POST "repos/${REPO}/pages" -f build_type=workflow >/dev/null 2>&1 \
   || echo "  - Pages: already configured or needs manual enable in Settings > Pages"
 
 # 4. Branch protection on main.
-#    - require these status checks to pass (strict / up to date):
+#    - require these status checks to pass, but not on an up-to-date branch
+#      (strict: false). Strict mode left green Dependabot PRs waiting as
+#      "behind" with auto-merge armed, because Dependabot rebases only on a
+#      conflict (#185 waited 13 days). CI still runs on every push to main,
+#      and the release PR re-runs it on the latest main before a release.
 #        check      ci.yml: lint, test, typecheck, build, boundaries
 #        pr-title   pr-title.yml: a Conventional Commit title, or release-please
 #                   skips the release without an error
@@ -45,7 +49,7 @@ gh api -X PUT "repos/${REPO}/branches/main/protection" \
   --input - >/dev/null <<'JSON'
 {
   "required_status_checks": {
-    "strict": true,
+    "strict": false,
     "contexts": ["check", "pr-title", "docker-ok"]
   },
   "enforce_admins": false,

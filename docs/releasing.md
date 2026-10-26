@@ -17,7 +17,11 @@ Branch protection on `main` requires three checks: `check` (ci.yml),
 `pr-title` (pr-title.yml) and `docker-ok` (docker.yml's aggregator, which
 passes only when the image built and passed the smoke test on both arches, or
 the PR touched nothing the image uses). Dependabot's auto-merge waits on the
-same three. A `refs/tags/v*` ruleset lets only admins create, move or delete a
+same three. The checks need not run on a branch that is up to date with
+`main` (`strict: false`): with strict mode, a green Dependabot PR waited as
+"behind" whenever another PR merged first, because Dependabot rebases only on
+a conflict. CI runs again on every push to `main`, and the release PR runs it
+on the latest `main`, so a bad combination is caught before a release. A `refs/tags/v*` ruleset lets only admins create, move or delete a
 release tag, since both publish workflows ship whatever a tag points at.
 `scripts/setup-branch-protection.sh` applies all of this, and re-running it
 converges; renaming any of those three jobs silently unrequires its check.
@@ -154,4 +158,14 @@ Dependabot uses `fix(deps):` for production npm deps and Docker base images
 (they ship inside the published image, so a bump must cut a patch release to
 reach users) and `chore(deps):` / `chore(ci):` for dev tooling and GitHub
 Actions (no shipped artifact, no release). The npm groups are split by
-dependency type so one grouped PR never mixes the two prefixes.
+dependency type so one grouped PR never mixes the two prefixes. The `vitest`
+and `storybook` groups come first and take every update type, majors too,
+because those packages must share one version and fail CI when they arrive
+one PR at a time.
+
+`dependabot-autofix.yml` pushes its fixup commit (toolchain pins, `bun.lock`,
+formatting) with the `DEPENDABOT_PAT` Actions secret: a fine-grained token
+for this repository only, with Contents read and write. A push made with
+`GITHUB_TOKEN` starts no workflows, so without the secret the fixed PR has no
+checks on its head and cannot merge. When the token expires, the autofix job
+fails at its push step; make a new token and replace the secret.

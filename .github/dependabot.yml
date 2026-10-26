@@ -28,6 +28,25 @@ updates:
       prefix: "fix(deps)"
       prefix-development: "chore(deps)"
     groups:
+      # Families that must share one version. Their majors fall outside the
+      # minor-patch groups, so each package arrived as its own PR and none
+      # could pass alone: vitest refuses mixed versions ("Running mixed
+      # versions is not supported"), and Storybook addons peer on the same
+      # storybook release. These take every update type, so a major is one
+      # PR. They come first because a dependency joins the first group it
+      # matches.
+      vitest:
+        applies-to: version-updates
+        dependency-type: development
+        patterns:
+          - "vitest"
+          - "@vitest/*"
+      storybook:
+        applies-to: version-updates
+        dependency-type: development
+        patterns:
+          - "storybook"
+          - "@storybook/*"
       production-minor-patch:
         applies-to: version-updates
         dependency-type: production
