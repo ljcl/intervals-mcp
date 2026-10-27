@@ -47,14 +47,17 @@ export function argShape(inputSchema: {
 }
 
 /**
- * Spellings of the same activity-id input. A key in one group maps to the
- * member of that group the tool takes; groups never map onto each other, so
- * a bare `id` is not guessed into a pair tool's first slot.
+ * Spellings of the same input: the activity ids, and a window's last day
+ * (#175; a model asked for "my load as of April" sends `endDate` or `asOf`).
+ * A key in one group maps to the member of that group the tool takes;
+ * groups never map onto each other, so a bare `id` is not guessed into a
+ * pair tool's first slot.
  */
 const ALIAS_GROUPS: string[][] = [
   ["id", "activity_id", "activityId"],
   ["activityId1", "activity_id_1", "activity_id1", "activityId_1", "id1"],
   ["activityId2", "activity_id_2", "activity_id2", "activityId_2", "id2"],
+  ["newest", "endDate", "end_date", "asOf", "as_of"],
 ];
 
 const toCamel = (key: string) =>
@@ -118,7 +121,10 @@ export function normalizeArgs(
     const target = shape.keys.includes(key)
       ? key
       : canonicalKey(key, shape.keys);
-    if (target && target !== key && !(target in args)) out[target] = value;
+    // The first spelling wins; a second (`endDate` and `asOf`) stays a key
+    // the ignored-arguments note names, rather than silently replacing it.
+    if (target && target !== key && !(target in args) && !(target in out))
+      out[target] = value;
     else out[key] = value;
   }
   if (context) rangeToWindow(out, shape, context.today);

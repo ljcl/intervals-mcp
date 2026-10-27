@@ -949,8 +949,11 @@ over 25,000 tokens: a 61 KB `get-activity-streams` payload and a 150 KB
 driven by each tool's advertised JSON schema rather than a per-tool table
 (#78). It renames an activity-id spelling (`id`, `activity_id`, `activityId`;
 `activityId1`, `activity_id_1`, `id1` and the same for 2) to the one the tool
-takes, and a camelCase/snake_case variant (`max_points`) to the tool's key,
-only when the tool's own key is absent. It matches an enum value ignoring
+takes, a window's last day (`endDate`, `end_date`, `asOf`, `as_of`) to
+`newest` on a tool that takes `newest` (#175), and a camelCase/snake_case
+variant (`max_points`) to the tool's key, only when the tool's own key is
+absent. When two spellings of one key arrive, the first is used and the
+second is left for the ignored-arguments note. It matches an enum value ignoring
 case, spaces, hyphens and underscores, with a trailing "k" read as "km"
 ("Half Marathon", "5K"), only when exactly one option matches. The
 advertised schemas and `tool-surface.lock.json` do not change. A call that

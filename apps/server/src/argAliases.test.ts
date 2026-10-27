@@ -100,6 +100,58 @@ describe("normalizeArgs: activity id spellings", () => {
   it("does not map a single-id spelling onto a pair tool", () => {
     expect(normalizeArgs({ id: "i1" }, pair)).toEqual({ id: "i1" });
   });
+
+  it("keeps the first of two spellings and leaves the second", () => {
+    expect(
+      normalizeArgs({ activity_id: "i1", activityId: "i2" }, single),
+    ).toEqual({ id: "i1", activityId: "i2" });
+  });
+});
+
+describe("normalizeArgs: newest spellings (#175)", () => {
+  const trainingLoad = argShape({
+    type: "object",
+    properties: {
+      days: { type: "integer" },
+      runOnly: { type: "boolean" },
+      newest: { type: "string" },
+    },
+  });
+
+  it.each(["endDate", "end_date", "asOf", "as_of"])(
+    "maps %s to newest",
+    (from) => {
+      expect(
+        normalizeArgs({ [from]: "2026-04-12", days: 84 }, trainingLoad),
+      ).toEqual({ newest: "2026-04-12", days: 84 });
+    },
+  );
+
+  it("keeps newest when the caller sent endDate too", () => {
+    const args = normalizeArgs(
+      { newest: "2026-04-12", endDate: "2026-03-01" },
+      trainingLoad,
+    );
+    expect(args).toEqual({ newest: "2026-04-12", endDate: "2026-03-01" });
+    expect(ignoredArgsText(args, trainingLoad)).toBe(
+      'Ignored argument "endDate" (this tool takes: days, runOnly, newest).',
+    );
+  });
+
+  it("keeps the first of endDate and asOf and names the second", () => {
+    const args = normalizeArgs(
+      { endDate: "2026-04-12", asOf: "2026-03-01" },
+      trainingLoad,
+    );
+    expect(args).toEqual({ newest: "2026-04-12", asOf: "2026-03-01" });
+    expect(ignoredArgsText(args, trainingLoad)).toContain('"asOf"');
+  });
+
+  it("leaves endDate alone on a tool that takes no newest", () => {
+    expect(normalizeArgs({ endDate: "2026-04-12" }, single)).toEqual({
+      endDate: "2026-04-12",
+    });
+  });
 });
 
 describe("normalizeArgs: camelCase and snake_case", () => {

@@ -996,7 +996,8 @@ default 42) for `view-cadence-trends` and `get-cadence-trend-data`.
 `view-training-load`, `view-fitness-trend` and their feeds take `days` and an
 optional `newest`, the same field as the text tool. The old
 `activity_id`, `activity_id_1`/`activity_id_2` and `weeks` are still accepted
-through the alias layer.
+through the alias layer, and so are `endDate`, `end_date`, `asOf` and `as_of`
+for `newest`.
 
 | Tool | Description |
 | ---- | ----------- |

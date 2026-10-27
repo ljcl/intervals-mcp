@@ -765,6 +765,22 @@ describe("tools/call forgiving arguments (#78)", () => {
     expect(JSON.stringify(result?.content)).not.toContain("Ignored");
   });
 
+  it("reads endDate as newest, with no ignored-arguments note (#175)", async () => {
+    vi.mocked(listActivities).mockResolvedValueOnce([] as never);
+
+    const client = await connectTestClient();
+    const { result } = await client.send("tools/call", {
+      name: "list-activities",
+      arguments: { endDate: "2026-04-12" },
+    });
+
+    expect(result?.isError).toBeFalsy();
+    expect(vi.mocked(listActivities).mock.calls[0]?.[1]?.newest).toBe(
+      "2026-04-12",
+    );
+    expect(JSON.stringify(result?.content)).not.toContain("Ignored");
+  });
+
   it("says which keys a successful call ignored (#151)", async () => {
     mockedAthleteCurves.mockResolvedValue({
       list: [],
