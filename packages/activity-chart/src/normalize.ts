@@ -20,6 +20,8 @@ export interface ChartLap {
   endTime: number;
   startDistance: number;
   endDistance: number;
+  /** The lap's own distance in metres, from the wire when it has one. */
+  distance: number;
   isRest: boolean;
 }
 
@@ -50,9 +52,19 @@ export function toLapData(data: ActivityStreamData): ChartLap[] {
     // Keyed off the band's raw type, not the display name ("Recovery" is a
     // name too) or distance (nullable, and a real recovery can be nonzero).
     const isRest = lap.type === "RECOVERY";
-    const lapDistance = endDistance - startDistance;
-    const name = swimming ? formatSwimLapName(lap.name, lapDistance) : lap.name;
-    return { name, startTime, endTime, startDistance, endDistance, isRest };
+    // The band's end index spills into the next lap's first sample, so the
+    // stream difference overstates the lap; the wire distance is exact.
+    const distance = lap.distance ?? endDistance - startDistance;
+    const name = swimming ? formatSwimLapName(lap.name, distance) : lap.name;
+    return {
+      name,
+      startTime,
+      endTime,
+      startDistance,
+      endDistance,
+      distance,
+      isRest,
+    };
   });
 }
 
