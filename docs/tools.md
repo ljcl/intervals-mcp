@@ -791,7 +791,9 @@ projection, is ignored and named in a warning) projects with a specific plan
 instead. `tsb_positive_date` (only with a projection) is today when TSB is
 already ≥ 0 today, and the text says "already positive today"; otherwise it is
 the first projected date TSB reaches 0, or null. `targetDate`/`targetTsb`
-solve a load taper landing on a target form. `targetDate` must be a real
+solve a load taper landing on a target form. The plan holds the recent daily
+load until the last 28 days, then solves a weekly step-down over those 28
+days. `targetDate` must be a real
 calendar date, after today, and at most 180 days ahead (`MAX_TAPER_DAYS`);
 any other date is an error before any fetch, in this tool and in the app
 pair. `bands` date the deep-fatigue, fresh and steep-ramp stretches. A fresh

@@ -178,6 +178,16 @@ export const RAMP_RISK_PER_WEEK = 5;
  * is, not how much work it prescribes.
  */
 export const TAPER_WEEK_DECAY = 0.75;
+/**
+ * Last days before the target date the taper solver scales; days before
+ * them hold at the recent daily load. A day's load lowers TSB on the target
+ * date only when it falls within about 15 days of it (fatigue decays faster
+ * than fitness, so load further out leaves more fitness than fatigue by race
+ * day). Over 28 days the default shape still lowers TSB as it grows (slope
+ * about −0.18 per unit), but from about 38 days its slope turns positive and
+ * the solver contradicted itself (#221).
+ */
+export const TAPER_SOLVE_DAYS = 28;
 /** Days averaged for the "percentage of recent training" comparison. */
 export const RECENT_LOAD_DAYS = 28;
 /**
@@ -470,12 +480,13 @@ export function taperWeekWeights(days: number): number[] {
  * linearly too: two projections (rest, and the shape at k = 1) pin the line
  * and the exact `k` follows. No search, no tolerance.
  *
- * Fatigue decays faster than fitness (`b < a`), so more load always means less
- * form on the target date: the line slopes down, and the two clamps are the
- * interesting cases. `k < 0` means even complete rest arrives short of the
- * target — the date is too soon. A daily load above `MAX_TAPER_DAILY_LOAD`
- * means the target is so negative it would take racing every day to hit;
- * both report the TSB that actually lands.
+ * Only the last {@link TAPER_SOLVE_DAYS} days are scaled; earlier days hold
+ * at `recentLoad` in both projections. Within that span more load means less
+ * form on the target date, so the line slopes down, and the two clamps are
+ * the interesting cases. `k < 0` means even complete rest arrives short of
+ * the target. A daily load above `MAX_TAPER_DAILY_LOAD` means the target is
+ * so negative it would take racing every day to hit; both report the TSB
+ * that actually lands.
  */
 export function solveTaperPlan(
   start: { ctl: number; atl: number },
@@ -501,29 +512,36 @@ export function solveTaperPlan(
     };
   }
 
-  const weekWeights = request.weekWeights ?? taperWeekWeights(days);
+  const taperDays = Math.min(days, TAPER_SOLVE_DAYS);
+  const leadInDays = days - taperDays;
+  const weekWeights = request.weekWeights ?? taperWeekWeights(taperDays);
   const shape = Array.from(
-    { length: days },
+    { length: taperDays },
     (_, i) => weekWeights[Math.min(Math.floor(i / 7), weekWeights.length - 1)]!,
   );
+  const leadIn = Array.from({ length: leadInDays }, () => recentLoad);
 
-  const restTsb = finalTsb(
-    start,
-    shape.map(() => 0),
-  );
-  const unitTsb = finalTsb(start, shape);
+  const restTsb = finalTsb(start, [...leadIn, ...shape.map(() => 0)]);
+  const unitTsb = finalTsb(start, [...leadIn, ...shape]);
   const slope = unitTsb - restTsb;
 
   let note: string | null = null;
   let feasible = true;
-  // slope is < 0 for any positive shape; the guard is for a degenerate
-  // all-zero shape, where no load moves TSB and rest is the only answer.
-  let scale = slope === 0 ? 0 : (targetTsb - restTsb) / slope;
-
-  if (scale <= 0) {
-    scale = 0;
+  let scale = 0;
+  if (slope >= 0) {
+    // Not reachable with the default shape over TAPER_SOLVE_DAYS: only a
+    // degenerate caller shape (all zero, or loaded only far from the target)
+    // fails to lower TSB, and then rest is the only answer.
     feasible = false;
-    note = `Even complete rest only reaches TSB ${formatSigned(round1(restTsb))} by ${targetDate}, short of the ${formatSigned(round1(targetTsb))} target: the target date is too soon, or the target too high.`;
+    note = `This plan shape cannot lower TSB by ${targetDate}; complete rest lands on TSB ${formatSigned(round1(restTsb))}.`;
+  } else if (restTsb < targetTsb) {
+    feasible = false;
+    note =
+      leadInDays > 0
+        ? `Even complete rest over the last ${taperDays} days only reaches TSB ${formatSigned(round1(restTsb))} by ${targetDate}, short of the ${formatSigned(round1(targetTsb))} target: the target is too high for current fitness.`
+        : `Even complete rest only reaches TSB ${formatSigned(round1(restTsb))} by ${targetDate}, short of the ${formatSigned(round1(targetTsb))} target: the target date is too soon, or the target too high.`;
+  } else {
+    scale = (targetTsb - restTsb) / slope;
   }
 
   // A loop, not `Math.max(...shape)`: spreading a long array overflows the
@@ -537,18 +555,24 @@ export function solveTaperPlan(
     note = `Reaching TSB ${formatSigned(round1(targetTsb))} by ${targetDate} would take more than ${MAX_TAPER_DAILY_LOAD} training load a day; the plan is capped there.`;
   }
 
-  const loads = shape.map((weight) => weight * scale);
+  const loads = [...leadIn, ...shape.map((weight) => weight * scale)];
   const projected = projectLoads(start, firstDate, loads);
   const landing = projected.days[projected.days.length - 1]!;
 
+  // Lead-in and taper weeks are chunked separately, so no week mixes held
+  // load with solved load; a short lead-in week sits just before the taper.
   const weeks: TaperWeek[] = [];
-  for (let week = 0; week * 7 < days; week++) {
-    const slice = loads.slice(week * 7, week * 7 + 7);
+  const weekStarts: number[] = [];
+  for (let day = 0; day < leadInDays; day += 7) weekStarts.push(day);
+  for (let day = leadInDays; day < days; day += 7) weekStarts.push(day);
+  for (const [week, first] of weekStarts.entries()) {
+    const end = Math.min(first + 7, first < leadInDays ? leadInDays : days);
+    const slice = loads.slice(first, end);
     const weekLoad = slice.reduce((sum, load) => sum + load, 0);
     weeks.push({
       week: week + 1,
-      start_date: addDays(firstDate, week * 7),
-      end_date: addDays(firstDate, week * 7 + slice.length - 1),
+      start_date: addDays(firstDate, first),
+      end_date: addDays(firstDate, end - 1),
       days: slice.length,
       daily_load: round1(weekLoad / slice.length),
       week_load: round1(weekLoad),
