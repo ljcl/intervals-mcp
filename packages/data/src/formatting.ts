@@ -116,6 +116,15 @@ export function windowShortLabel(days: number): string {
 }
 
 /**
+ * True for a past window (`newest` before today, #80). Older payloads carry
+ * no `endsToday`, and read as today. The one rule the training-load and
+ * fitness-trend cards read for a window that ends before today.
+ */
+export function isPastWindow(data: { endsToday?: boolean }): boolean {
+  return data.endsToday === false;
+}
+
+/**
  * "Last 84 days", or "84 days to 12 Apr 2026" for a look-back that ends on
  * a past day (`pastEndDate`, YYYY-MM-DD; the year is spelled out). The one
  * home for the subtitle the training-load and fitness-trend cards show with

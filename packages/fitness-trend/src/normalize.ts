@@ -1,6 +1,7 @@
 import {
   formatShortDate,
   formatSignedTsb,
+  isPastWindow,
   lookbackLabel,
 } from "@intervals-mcp/data";
 import { type SummaryStat } from "@intervals-mcp/ui";
@@ -35,17 +36,8 @@ export function buildBaseArgs(
   };
 }
 
-/**
- * True for a past window (`newest` before today, #80): no projection or
- * taper, and its last day is history. Older payloads carry no `endsToday`,
- * and read as today. The one rule the subtitle, narration and model context
- * read.
- */
-export function isPastWindow(
-  data: Pick<FitnessTrendData, "endsToday">,
-): boolean {
-  return data.endsToday === false;
-}
+// A past window has no projection or taper (#80).
+export { isPastWindow };
 
 /**
  * One chart row per date. Recorded days carry `ctl`/`atl`/`tsb`; projected

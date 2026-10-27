@@ -10,6 +10,7 @@ import {
   PillGroup,
   Skeleton,
   SummaryBar,
+  scopeOf,
   useModelContextSync,
   useServerToolFetcher,
   useViewTool,
@@ -46,9 +47,6 @@ import {
   type FitnessTrendData,
   type TrendBand,
 } from "./types";
-
-const scopeOf = (runOnly: boolean): Scope =>
-  runOnly ? "runOnly" : "wholeBody";
 
 interface AppProps {
   app: ReturnType<typeof useApp>["app"];
