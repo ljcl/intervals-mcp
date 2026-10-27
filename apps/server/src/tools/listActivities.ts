@@ -198,6 +198,8 @@ interface ListTextOptions {
   keepOldest?: boolean;
   /** The `type` filter in effect, repeated in the paging hint. */
   typeFilter?: string;
+  /** The `nameContains` filter in effect, repeated in the paging hint. */
+  nameContains?: string;
   /** Extra lines after the activities, before the budget and paging lines. */
   notes?: string[];
 }
@@ -231,9 +233,12 @@ export function formatActivityListText(
     const typePart = options.typeFilter
       ? `type: ${JSON.stringify(options.typeFilter)}, `
       : "";
+    const namePart = options.nameContains
+      ? `nameContains: ${JSON.stringify(options.nameContains)}, `
+      : "";
     const call = response.search
       ? `search: ${JSON.stringify(response.search)}, ${typePart}${options.keepOldest ? `oldest: ${oldest}, ` : ""}newest: ${oldestShown}`
-      : `${typePart}oldest: ${oldest}, newest: ${oldestShown}`;
+      : `${typePart}${namePart}oldest: ${oldest}, newest: ${oldestShown}`;
     lines.push(
       `For the ${matched - count} older matches, call again with ${call}.`,
     );
@@ -388,6 +393,7 @@ export const listActivitiesTool = {
         notes,
         keepOldest: Boolean(rawOldest),
         typeFilter: type,
+        nameContains,
       });
       for (let pass = 0; pass < 5; pass += 1) {
         const chars = responseSize(text, response);
@@ -406,6 +412,7 @@ export const listActivitiesTool = {
           notes,
           keepOldest: Boolean(rawOldest),
           typeFilter: type,
+          nameContains,
         });
       }
 
