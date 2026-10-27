@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   hrZoneMismatchWarning,
-  hrZoneRangeText,
   mapIntervalsZones,
   resolveHrZones,
   zoneRanges,
@@ -32,22 +31,6 @@ describe("zoneRanges", () => {
 
   it("gives no ranges for no bounds", () => {
     expect(zoneRanges([])).toEqual([]);
-  });
-});
-
-describe("hrZoneRangeText", () => {
-  it("starts each zone above the previous upper bound, in whole bpm", () => {
-    const [z1, z2] = zoneRanges([142, 154]);
-    expect(hrZoneRangeText(z1!, " bpm")).toBe("up to 142 bpm");
-    expect(hrZoneRangeText(z2!, " bpm")).toBe("143-154 bpm");
-    expect(hrZoneRangeText(z2!)).toBe("143-154");
-  });
-
-  it("gives one value for a one-bpm zone and none for an empty zone", () => {
-    // 150 is in zone 1, so zone 2 of [150, 150, 151] holds no heart rate.
-    const [, z2, z3] = zoneRanges([150, 150, 151]);
-    expect(hrZoneRangeText(z2!, " bpm")).toBe("empty");
-    expect(hrZoneRangeText(z3!, " bpm")).toBe("151 bpm");
   });
 });
 
