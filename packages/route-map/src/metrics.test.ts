@@ -121,6 +121,15 @@ describe("buildMetricSeries", () => {
     expect(series.format(0.05)).toBe("—");
   });
 
+  it("leaves stopped samples out of the pace domain (#231)", () => {
+    const series = buildMetricSeries(
+      makeData({ streams: { velocity_smooth: [0, 0.1, 3, 4] } }),
+    )[0]!;
+    expect(series.min).toBeGreaterThanOrEqual(3);
+    expect(series.format(series.min)).not.toBe("—");
+    expect(series.values).toEqual([0, 0.1, 3, 4]);
+  });
+
   it("keeps null samples and computes the color domain from the rest", () => {
     const series = buildMetricSeries(
       makeData({ streams: { heartrate: [140, null, 150, 160] } }),
