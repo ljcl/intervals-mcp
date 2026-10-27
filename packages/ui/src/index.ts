@@ -43,6 +43,7 @@ export {
   parseIdToolArgs,
   toolArgId,
   toolArgRecord,
+  windowToolArgs,
 } from "./toolArgs";
 export {
   detectMobile,
