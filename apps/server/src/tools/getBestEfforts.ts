@@ -195,11 +195,13 @@ export function resolveWindow(
   if (window === "all") {
     return { curveId: "all", oldest: ALL_TIME_START, newest: today };
   }
+  // Each curve's `start_date_local` is today - 364 / today - 89: the curve
+  // covers 365 / 90 days including today (docs/api-notes.md).
   if (window === "1y") {
-    return { curveId: "1y", oldest: addDays(today, -365), newest: today };
+    return { curveId: "1y", oldest: addDays(today, -364), newest: today };
   }
   if (window === "90d") {
-    return { curveId: "90d", oldest: addDays(today, -90), newest: today };
+    return { curveId: "90d", oldest: addDays(today, -89), newest: today };
   }
 
   const match = WINDOW_RANGE_RE.exec(window);
