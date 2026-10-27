@@ -383,9 +383,11 @@ export function ActivityChart({
   });
 
   const [hoveredLegendKey, setHoveredLegendKey] = useState<string | null>(null);
-  // Mobile defaults to smoothed because the Smooth toggle is hidden there —
-  // the raw traces are too noisy to read at small sizes anyway.
+  // Mobile is always smoothed because the Smooth toggle is hidden there —
+  // the raw traces are too noisy to read at small sizes anyway. Derived, not
+  // initial state, so a card that narrows after mount is smoothed too.
   const [smooth, setSmooth] = useState(isMobile);
+  const smoothed = isMobile || smooth;
 
   // X-axis brush window. Controlled so the zoom survives preset,
   // legend, and smooth toggles (those rebuild the memoized tree, and an
@@ -501,7 +503,7 @@ export function ActivityChart({
         activityName: meta.name,
         availableMetrics: [...availableMetrics],
         hidden,
-        smooth,
+        smooth: smoothed,
         paceLabel: meta.speed.label.toLowerCase(),
         // The brush's own axis, so the summary matches the tick labels.
         zoomWindow: describeZoomWindow(
@@ -512,12 +514,20 @@ export function ActivityChart({
         ),
         dynamicsSummary,
       }),
-    [meta, hidden, smooth, availableMetrics, data, zoomRange, dynamicsSummary],
+    [
+      meta,
+      hidden,
+      smoothed,
+      availableMetrics,
+      data,
+      zoomRange,
+      dynamicsSummary,
+    ],
   );
 
   const displayData = useMemo(
-    () => (smooth ? smoothData(data) : data),
-    [data, smooth],
+    () => (smoothed ? smoothData(data) : data),
+    [data, smoothed],
   );
 
   // Rendered plot width, used to decide how many lap/segment band labels fit
@@ -650,9 +660,17 @@ export function ActivityChart({
           ? ["grade"]
           : [],
       lapCount: bandLaps.length,
-      smoothed: smooth,
+      smoothed,
     });
-  }, [meta, displayData, availableMetrics, hidden, isMobile, bandLaps, smooth]);
+  }, [
+    meta,
+    displayData,
+    availableMetrics,
+    hidden,
+    isMobile,
+    bandLaps,
+    smoothed,
+  ]);
 
   // The Recharts tree is memoized WITHOUT the hover state: hovering the
   // legend only flips a data attribute on the wrapper div (dimming is CSS),

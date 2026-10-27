@@ -522,6 +522,43 @@ export const RunningDynamicsFormMobile = meta.story({
 });
 
 /**
+ * #267: a card that mounts on desktop and then narrows to mobile is smoothed,
+ * since the Smooth toggle it could have used is hidden there.
+ */
+function NarrowsAfterMount(props: ComponentProps<typeof ActivityChart>) {
+  const [mode, setMode] = useState(props.mode);
+  return (
+    <>
+      <ActivityChart {...props} mode={mode} />
+      <button type="button" onClick={() => setMode("mobile")}>
+        Narrow to mobile
+      </button>
+    </>
+  );
+}
+
+export const SmoothedAfterNarrowingToMobile = meta.story({
+  args: {
+    data: toChartData(tempoRun),
+    meta: extractMeta(tempoRun),
+    laps: toLapData(tempoRun),
+  },
+  render: (args) => <NarrowsAfterMount {...args} />,
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const descText = () =>
+      canvasElement.querySelector("desc")?.textContent ?? "";
+    await waitFor(() => expect(descText()).toContain("Pace ranges"));
+    await expect(descText()).not.toContain("Values are smoothed.");
+
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Narrow to mobile" }),
+    );
+
+    await waitFor(() => expect(descText()).toContain("Values are smoothed."));
+  },
+});
+
+/**
  * `set-brush-window` driven the way the host drives it: through a real
  * `ViewToolRegistry`, with a stub app that records the model context the chart
  * reports back. One button per call, so each play function reads the tool's
