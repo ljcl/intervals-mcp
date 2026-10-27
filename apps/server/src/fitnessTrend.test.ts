@@ -351,6 +351,20 @@ describe("planned-load projection", () => {
     expect(trend.projection.map((d) => d.load)).toEqual([0, 90, 0, 45]);
   });
 
+  it("adds up two planned loads on the same date (#223)", () => {
+    const trend = buildFitnessTrend(
+      { days: block(12) },
+      {
+        projectDays: 2,
+        plannedLoads: [
+          { date: "2026-06-29", load: 50 },
+          { date: "2026-06-29", load: 30 },
+        ],
+      },
+    );
+    expect(trend.projection.map((d) => d.load)).toEqual([80, 0]);
+  });
+
   it("ignores planned days past the projection window", () => {
     const trend = buildFitnessTrend(
       { days: block(12) },

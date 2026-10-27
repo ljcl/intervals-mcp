@@ -340,9 +340,12 @@ export function resolvePlannedLoads(
     return loads;
   }
 
-  const byDate = new Map(
-    (planned as PlannedLoad[]).map(({ date, load }) => [date, load]),
-  );
+  // Two entries on one date (an AM/PM double day) add up; a Map built from
+  // the entries kept only the last (#223).
+  const byDate = new Map<string, number>();
+  for (const { date, load } of planned as PlannedLoad[]) {
+    byDate.set(date, (byDate.get(date) ?? 0) + load);
+  }
   for (let i = 0; i < loads.length; i++) {
     loads[i] = byDate.get(addDays(startDate, i)) ?? 0;
   }

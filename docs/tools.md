@@ -771,11 +771,12 @@ notes that some types (e.g. strength) may count toward fatigue (ATL) only,
 per this athlete's intervals.icu settings. `projectDays` (default 0, or when
 `plannedLoads` is given and this is omitted, the days out to its latest date,
 capped at 60) projects TSB forward assuming rest, or `plannedLoads`
-(`[{ date: YYYY-MM-DD, load }]`, dates after today; unlisted dates in the
-projection count as rest; an entry on or before today, or beyond the
-projection, is ignored and named in a warning) projects with a specific plan
-instead. `tsb_positive_date` (only with a projection) is today when TSB is
-already ≥ 0 today, and the text says "already positive today"; otherwise it is
+(`[{ date: YYYY-MM-DD, load }]`, dates after today; two entries on one date
+add up; unlisted dates in the projection count as rest; an entry on or before
+today, or beyond the projection, is ignored and named in a warning) projects
+with a specific plan instead. `tsb_positive_date` (only with a projection) is
+today when TSB is already ≥ 0 today, and the text says "already positive
+today"; otherwise it is
 the first projected date TSB reaches 0, or null. `targetDate`/`targetTsb`
 solve a load taper landing on a target form. `targetDate` must be a real
 calendar date, after today, and at most 180 days ahead (`MAX_TAPER_DAYS`);
