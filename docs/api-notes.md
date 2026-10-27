@@ -573,7 +573,7 @@ activities came back in 86 KB.
   swim checked). So on a swim neither field is a step length or a distance
   per stroke. `get-activity` reports the step-based fields (ground contact
   time, vertical oscillation, step length) only for the step-cadence types
-  (`STEP_CADENCE_ACTIVITY_TYPES`), on intervals as on the whole activity.
+  (`isRunning`, `packages/data`), on intervals as on the whole activity.
 - Swim intervals (`?intervals=true`): WORK intervals carry
   `average_cadence`, `average_step_length` and `average_stride`. RECOVERY
   intervals have `distance`, `average_speed` and cadence null.

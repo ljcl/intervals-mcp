@@ -15,7 +15,7 @@ import {
   type DynamicsStatus,
   GCT_TARGET,
   isPaceActivity,
-  isStepCadenceActivity,
+  isRunning,
   paceFromDistanceTime,
   paceSecPerKmFromDistanceTime,
   VO_TARGET,
@@ -206,7 +206,7 @@ export function mapRunningDynamics(
   const activityId = activity.id;
   const activityName = activity.name ?? type;
 
-  if (!isStepCadenceActivity(type)) {
+  if (!isRunning(type)) {
     return {
       activity_id: activityId,
       activity_name: activityName,

@@ -11,8 +11,6 @@ import {
   formatPaceSeconds,
   gapPace,
   isPaceActivity,
-  isRunningActivity,
-  isStepCadenceActivity,
   matchesTypeFilter,
   metersPerSecToPace,
   paceFromDistanceTime,
@@ -43,36 +41,6 @@ describe("formatPaceSeconds", () => {
 
   it("returns 0:00 for a negative input", () => {
     expect(formatPaceSeconds(-5)).toBe("0:00");
-  });
-});
-
-describe("isRunningActivity", () => {
-  it("returns true for Run", () => {
-    expect(isRunningActivity("Run")).toBe(true);
-  });
-
-  it("returns true for VirtualRun", () => {
-    expect(isRunningActivity("VirtualRun")).toBe(true);
-  });
-
-  it("returns true for TrailRun", () => {
-    expect(isRunningActivity("TrailRun")).toBe(true);
-  });
-
-  it("returns true for Walk", () => {
-    expect(isRunningActivity("Walk")).toBe(true);
-  });
-
-  it("returns true for Hike", () => {
-    expect(isRunningActivity("Hike")).toBe(true);
-  });
-
-  it("returns false for Ride", () => {
-    expect(isRunningActivity("Ride")).toBe(false);
-  });
-
-  it("returns false for Swim", () => {
-    expect(isRunningActivity("Swim")).toBe(false);
   });
 });
 
@@ -132,21 +100,6 @@ describe("isPaceActivity", () => {
 
   it("returns false for a non-foot sport", () => {
     expect(isPaceActivity("Ride")).toBe(false);
-  });
-});
-
-describe("isStepCadenceActivity", () => {
-  it("returns true for runs, walks, and hikes", () => {
-    expect(isStepCadenceActivity("Run")).toBe(true);
-    expect(isStepCadenceActivity("TrailRun")).toBe(true);
-    expect(isStepCadenceActivity("VirtualRun")).toBe(true);
-    expect(isStepCadenceActivity("Walk")).toBe(true);
-    expect(isStepCadenceActivity("Hike")).toBe(true);
-  });
-
-  it("returns false for a non-foot sport", () => {
-    expect(isStepCadenceActivity("Ride")).toBe(false);
-    expect(isStepCadenceActivity("Swim")).toBe(false);
   });
 });
 

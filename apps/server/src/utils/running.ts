@@ -7,6 +7,7 @@
  * - Speed is returned as m/s but runners think in pace (min/km or min/mile)
  */
 import {
+  isRunning,
   isSwimming,
   PACE_ACTIVITY_TYPES,
   speedDisplayForSport,
@@ -15,21 +16,13 @@ import {
 import { round } from "../formatters";
 import { type IntervalsActivity } from "../intervalsClient";
 
-/** Activity types that use steps-per-minute cadence */
-export const RUNNING_ACTIVITY_TYPES = [
-  "Run",
-  "VirtualRun",
-  "TrailRun",
-  "Walk",
-  "Hike",
-];
-
 /**
- * Check if an activity type is a running activity.
+ * True when a type reports cadence (and step-based dynamics) in steps/min,
+ * doubled from strides/min: Run/TrailRun/VirtualRun/Walk/Hike. Its one home
+ * is `packages/data`, so the apps' `cadenceLabel` and the text tools'
+ * doubling read the same list.
  */
-export function isRunningActivity(activityType: string): boolean {
-  return RUNNING_ACTIVITY_TYPES.includes(activityType);
-}
+export { isRunning };
 
 /**
  * Pace conversion result. It has no km/h on purpose: km/h (and pace per
@@ -96,8 +89,8 @@ export function metersPerSecToPace(
 /**
  * Activity types that get a pace per km: runs only, not walks or hikes
  * (those get a cadence and km/h, in the text tools and the MCP Apps alike,
- * #172). Distinct from {@link STEP_CADENCE_ACTIVITY_TYPES} below on purpose;
- * see that set's comment.
+ * #172). Distinct from the step-cadence types ({@link isRunning}) on
+ * purpose: a Walk or Hike has a step cadence but no pace.
  *
  * This is also the one run-type set: `get-running-summary` accepts exactly
  * these types, and `fitnessTrend.ts` re-exports it as `RUN_TYPES` for the
@@ -106,23 +99,6 @@ export function metersPerSecToPace(
  * too; this re-export keeps the server's import path.
  */
 export { PACE_ACTIVITY_TYPES };
-
-/**
- * Activity types whose cadence (and step-based running dynamics: ground
- * contact time, vertical oscillation, step length, stride) intervals.icu
- * tools report in steps/min, doubled from strides/min: runs, plus walks and
- * hikes, matching {@link RUNNING_ACTIVITY_TYPES} above (the same
- * Strava-era set) rather than {@link PACE_ACTIVITY_TYPES}.
- * A Walk or Hike has a step cadence worth doubling even though intervals.icu
- * doesn't compute a pace for it.
- */
-export const STEP_CADENCE_ACTIVITY_TYPES = new Set([
-  "Run",
-  "TrailRun",
-  "VirtualRun",
-  "Walk",
-  "Hike",
-]);
 
 /** True when `type` gets a pace string (Run/TrailRun/VirtualRun only). */
 export function isPaceActivity(type: string): boolean {
@@ -147,16 +123,8 @@ export function matchesTypeFilter(type: string, filter: string): boolean {
 }
 
 /**
- * True when `type` reports cadence (and step-based dynamics) in steps/min,
- * doubled from strides/min: Run/TrailRun/VirtualRun/Walk/Hike.
- */
-export function isStepCadenceActivity(type: string): boolean {
-  return STEP_CADENCE_ACTIVITY_TYPES.has(type);
-}
-
-/**
  * Cadence in the unit `type` reports it in: strides/min doubled to
- * steps/min for a step-cadence type (see {@link isStepCadenceActivity}), or
+ * steps/min for a step-cadence type (see {@link isRunning}), or
  * the raw rate unchanged for anything else (cycling rpm, a swim's stroke
  * rate, ...). `null` when `strides` is missing.
  *
@@ -169,7 +137,7 @@ export function isStepCadenceActivity(type: string): boolean {
  * strides/min in the other. Doubling here does not gate on the field being
  * present *at all* for a non-step-cadence type; a caller like `get-activity`
  * that wants `null` rather than a mislabelled raw rate for those types (e.g.
- * a swim's stroke rate is not steps/min) checks {@link isStepCadenceActivity}
+ * a swim's stroke rate is not steps/min) checks {@link isRunning}
  * itself before deciding whether to call this.
  */
 export function cadenceSpm(
@@ -177,7 +145,7 @@ export function cadenceSpm(
   type: string,
 ): number | null {
   if (strides == null) return null;
-  return isStepCadenceActivity(type) ? strides * 2 : strides;
+  return isRunning(type) ? strides * 2 : strides;
 }
 
 /**
@@ -185,7 +153,7 @@ export function cadenceSpm(
  * or `null` when either is missing or non-positive. Does not gate on
  * activity type: a caller decides whether `type` should show a pace at all
  * via {@link isPaceActivity} before calling this, the same way
- * {@link cadenceSpm}'s callers decide with {@link isStepCadenceActivity}.
+ * {@link cadenceSpm}'s callers decide with {@link isRunning}.
  *
  * The one home for distance/time -> pace-string, shared by `list-activities`
  * (which previously computed the m/s intermediate inline) and `get-activity`
@@ -365,7 +333,7 @@ export function assessCadence(spm: number | null | undefined): string | null {
 
 /**
  * Cadence in steps/min (doubled from intervals.icu's strides/min for a
- * step-cadence type, see {@link isStepCadenceActivity}), rounded to a whole
+ * step-cadence type, see {@link isRunning}), rounded to a whole
  * step, or `null` for a non-step-cadence type.
  *
  * The one home for this field, shared by `get-activity`'s activity- and
@@ -376,7 +344,7 @@ export function activityCadenceSpm(
   rawCadence: number | null | undefined,
   type: string,
 ): number | null {
-  if (!isStepCadenceActivity(type)) return null;
+  if (!isRunning(type)) return null;
   const spm = cadenceSpm(rawCadence, type);
   return spm == null ? null : Math.round(spm);
 }
@@ -497,8 +465,7 @@ export function buildRunningDynamics(
   a: IntervalsActivity,
   type: string,
 ): RunningDynamicsAvg | null {
-  if (!isStepCadenceActivity(type) || a.average_stance_time == null)
-    return null;
+  if (!isRunning(type) || a.average_stance_time == null) return null;
   return {
     stance_time_ms: round(a.average_stance_time),
     vertical_oscillation_mm:
