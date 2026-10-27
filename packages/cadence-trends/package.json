@@ -16,7 +16,6 @@
   "dependencies": {
     "@base-ui/react": "1.9.0",
     "@modelcontextprotocol/ext-apps": "2.0.3",
-    "@modelcontextprotocol/client": "2.3.1",
     "@intervals-mcp/data": "workspace:*",
     "@intervals-mcp/design-system": "workspace:*",
     "@intervals-mcp/ui": "workspace:*",
