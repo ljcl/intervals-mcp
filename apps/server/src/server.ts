@@ -95,6 +95,7 @@ import {
   isActivityIdSchema,
 } from "./tools/_ids";
 import {
+  type ComparisonResult,
   compareActivitiesTool,
   loadComparison,
 } from "./tools/compareActivities";
@@ -878,10 +879,12 @@ interface ViewText {
  * numbers in the same call whether or not the athlete sees the chart. The
  * data is the text twin's own text, run here with the view's arguments,
  * because the twin is the numbers' one home. With no twin, or when the twin
- * fails, it is `lines`, and `footer` names the text tool to call for more.
+ * fails, it is `buildLines()`, and `footer` names the text tool to call for
+ * more. The twin runs first so a view whose twin answers never loads its
+ * data a second time just to throw its own lines away.
  */
 async function viewResult(
-  lines: string[],
+  buildLines: () => Promise<string[]>,
   view: ViewText,
   args: Record<string, unknown>,
   token: string,
@@ -903,7 +906,7 @@ async function viewResult(
         ? [
             header(`Its data follows, then the text of ${view.twin}.`),
             "",
-            ...lines,
+            ...(await buildLines()),
             "",
             twinText,
           ]
@@ -911,7 +914,7 @@ async function viewResult(
       return { content: [{ type: "text", text: text.join("\n") }] };
     }
   }
-  const text = [header("Its data follows."), "", ...lines];
+  const text = [header("Its data follows."), "", ...(await buildLines())];
   if (view.footer) text.push("", `For detail, call ${view.footer}.`);
   return { content: [{ type: "text", text: text.join("\n") }] };
 }
@@ -996,7 +999,7 @@ async function handleViewActivityChart(
     );
   }
   return viewResult(
-    lines,
+    async () => lines,
     {
       kind: "activity chart",
       // get-activity-streams would only repeat that there are none.
@@ -1100,7 +1103,7 @@ async function handleViewCadenceTrends(
   // The lines carry every number the chart draws: no twin, no footer.
   const lines = cadenceTrendLines(data);
   return viewResult(
-    lines,
+    async () => lines,
     { kind: "cadence trends chart" },
     args,
     token,
@@ -1162,12 +1165,26 @@ async function handleViewTrainingLoad(
 ): Promise<ToolCallResult> {
   const resolved = appWindowEnd(args);
   if ("invalid" in resolved) return resolved.invalid;
-  const data = await loadTrainingLoadAppData(
-    token,
+  return viewResult(
+    () =>
+      loadTrainingLoadAppData(token, args, resolved.end, progress).then(
+        trainingLoadViewLines,
+      ),
+    {
+      kind: "training load chart",
+      // runOnly carries over: never mix whole-body and run-only numbers.
+      footer: "get-training-load with the same arguments",
+      twin: getTrainingLoadTool.name,
+    },
     args,
-    resolved.end,
+    token,
     progress,
+    context,
   );
+}
+
+/** The training-load view's own text, when its twin fails. */
+function trainingLoadViewLines(data: TrainingLoadAppData): string[] {
   const warningWeeks = data.weeks.filter((w) => w.warning).length;
   const inProgress = data.weeks.find((w) => w.inProgress);
   // A past window's last week is cut off at newest, not in progress.
@@ -1180,7 +1197,7 @@ async function handleViewTrainingLoad(
     ? "run-only load, CTL/ATL computed locally"
     : `whole-body load${data.activityTypesIncluded.length > 0 ? ` (${data.activityTypesIncluded.join(", ")})` : ""}, CTL/ATL from intervals.icu`;
 
-  const lines = [
+  return [
     `Training Load (${data.startDate} to ${data.endDate}, CTL/ATL source: ${data.source})`,
     ...(pastWindow
       ? [`Past window: it ends on ${data.endDate}, before today.`]
@@ -1203,19 +1220,6 @@ async function handleViewTrainingLoad(
         ]
       : []),
   ];
-  return viewResult(
-    lines,
-    {
-      kind: "training load chart",
-      // runOnly carries over: never mix whole-body and run-only numbers.
-      footer: "get-training-load with the same arguments",
-      twin: getTrainingLoadTool.name,
-    },
-    args,
-    token,
-    progress,
-    context,
-  );
 }
 
 /**
@@ -1348,12 +1352,28 @@ async function handleViewFitnessTrend(
   if ("invalid" in resolved) return resolved.invalid;
   const invalid = fitnessTrendTargetError(args, resolved.end);
   if (invalid) return invalid;
-  const data = await loadFitnessTrendAppData(
-    token,
+  return viewResult(
+    () =>
+      loadFitnessTrendAppData(token, args, resolved.end, progress).then(
+        fitnessTrendViewLines,
+      ),
+    {
+      kind: "fitness trend chart",
+      // runOnly carries over: never mix whole-body and run-only numbers.
+      footer: "get-fitness-trend with the same arguments",
+      // The view's projectDays default (14) reaches the twin, whose own is 0,
+      // so the text projects as far as the chart does.
+      twin: getFitnessTrendTool.name,
+    },
     args,
-    resolved.end,
+    token,
     progress,
+    context,
   );
+}
+
+/** The fitness-trend view's own text, when its twin fails. */
+function fitnessTrendViewLines(data: FitnessTrendAppData): string[] {
   const current = data.current;
   const lines =
     data.endsToday === false
@@ -1389,22 +1409,7 @@ async function handleViewFitnessTrend(
   for (const flag of data.flags) {
     lines.push(`Flag: ${flag}`);
   }
-
-  return viewResult(
-    lines,
-    {
-      kind: "fitness trend chart",
-      // runOnly carries over: never mix whole-body and run-only numbers.
-      footer: "get-fitness-trend with the same arguments",
-      // The view's projectDays default (14) reaches the twin, whose own is 0,
-      // so the text projects as far as the chart does.
-      twin: getFitnessTrendTool.name,
-    },
-    args,
-    token,
-    progress,
-    context,
-  );
+  return lines;
 }
 
 /** Shared fetch + mapping for the activity-zones view and data tools. */
@@ -1437,7 +1442,25 @@ async function handleViewActivityZones(
   progress: ReportProgress,
   context: ToolCallContext,
 ): Promise<ToolCallResult> {
-  const data = await loadActivityZonesData(token, String(args.id));
+  return viewResult(
+    () =>
+      loadActivityZonesData(token, String(args.id)).then(
+        activityZonesViewLines,
+      ),
+    {
+      kind: "zone distribution chart",
+      footer: "get-activity-zones",
+      twin: getActivityZonesTool.name,
+    },
+    args,
+    token,
+    progress,
+    context,
+  );
+}
+
+/** The activity-zones view's own text, when its twin fails. */
+function activityZonesViewLines(data: ActivityZonesData): string[] {
   const lines = [`Activity Zones: ${data.name} (${data.date})`];
   if (data.zoneSets.length === 0) {
     lines.push(
@@ -1455,18 +1478,7 @@ async function handleViewActivityZones(
       );
     }
   }
-  return viewResult(
-    lines,
-    {
-      kind: "zone distribution chart",
-      footer: "get-activity-zones",
-      twin: getActivityZonesTool.name,
-    },
-    args,
-    token,
-    progress,
-    context,
-  );
+  return lines;
 }
 /** Stream types the route-map app needs: latlng plus the chartable metrics. */
 const ROUTE_MAP_STREAM_TYPES: IntervalsStreamType[] = [
@@ -1562,7 +1574,7 @@ async function handleViewRouteMap(
   // only this view has, so its lines stay ahead of them. Its pace and GAP
   // are a running model, so other sports get the footer instead.
   return viewResult(
-    lines,
+    async () => lines,
     {
       kind: "route map",
       footer: "get-activity",
@@ -1603,11 +1615,27 @@ async function handleViewCompareActivities(
   progress: ReportProgress,
   context: ToolCallContext,
 ): Promise<ToolCallResult> {
-  const data = await loadComparison(
+  return viewResult(
+    () =>
+      loadComparison(
+        token,
+        String(args.activityId1),
+        String(args.activityId2),
+      ).then(compareActivitiesViewLines),
+    {
+      kind: "activity comparison",
+      footer: "compare-activities",
+      twin: compareActivitiesTool.name,
+    },
+    args,
     token,
-    String(args.activityId1),
-    String(args.activityId2),
+    progress,
+    context,
   );
+}
+
+/** The compare view's own text, when its twin fails. */
+function compareActivitiesViewLines(data: ComparisonResult): string[] {
   const lines = [
     `Activity 1: ${data.activity_1.name} (${data.activity_1.date}), ${data.activity_1.distance_km} km in ${data.activity_1.moving_time}`,
     `Activity 2: ${data.activity_2.name} (${data.activity_2.date}), ${data.activity_2.distance_km} km in ${data.activity_2.moving_time}`,
@@ -1623,18 +1651,7 @@ async function handleViewCompareActivities(
   for (const warning of data.warnings ?? []) {
     lines.push(`Warning: ${warning}`);
   }
-  return viewResult(
-    lines,
-    {
-      kind: "activity comparison",
-      footer: "compare-activities",
-      twin: compareActivitiesTool.name,
-    },
-    args,
-    token,
-    progress,
-    context,
-  );
+  return lines;
 }
 
 interface ToolCallResult {
