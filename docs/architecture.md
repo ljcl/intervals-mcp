@@ -943,7 +943,9 @@ over 25,000 tokens: a 61 KB `get-activity-streams` payload and a 150 KB
 - A tool whose input can ask for more than fits measures the built response
   and shrinks it, rather than reject the call or change the schema:
   `get-activity-streams` re-downsamples to fewer points, `list-activities`
-  returns a shorter page with `truncated: true`. The text says what was cut
+  returns a shorter page with `truncated: true`, `get-activity-laps` and
+  `get-running-summary` keep the first laps that fit (`fitListToBudget`,
+  `lap_count` stays the full count). The text says what was cut
   and how to get the rest. Measuring beats a fixed cell cap because widths
   differ (a `latlng` cell costs about four `heartrate` cells).
 - A response that a closed set bounds, not an input, needs no shrink.

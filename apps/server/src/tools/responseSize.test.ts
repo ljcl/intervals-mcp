@@ -175,7 +175,10 @@ interface SizeCase {
   /** Swap a mock before the call, for a case needing different data. */
   setup?: () => void;
   /** Extra assertions on the result, to prove the case reached its largest path. */
-  check?: (result: { structuredContent?: unknown }) => void;
+  check?: (result: {
+    structuredContent?: unknown;
+    content: Array<{ type: string; text?: string }>;
+  }) => void;
 }
 
 const ALL_STREAM_TYPES = [
@@ -192,6 +195,29 @@ const ALL_STREAM_TYPES = [
   "vertical_ratio",
   "step_length",
 ];
+
+/** The multi-lap run's 18 laps repeated 9 times: 162 laps, a 100+ km ultra's worth. */
+const ultraLaps = () =>
+  vi.mocked(client.getActivity).mockImplementation(async (_key, id) => ({
+    ...multilapActivity,
+    id,
+    icu_intervals: Array.from(
+      { length: 9 },
+      () => multilapActivity.icu_intervals ?? [],
+    ).flat(),
+  }));
+
+/** The response kept fewer laps than the activity has, and says so. */
+const lapsCut = (result: {
+  structuredContent?: unknown;
+  content: Array<{ type: string; text?: string }>;
+}) => {
+  const kept = (result.structuredContent as { laps: unknown[] }).laps.length;
+  expect(kept).toBeLessThan(162);
+  expect(result.content[0]?.text).toContain(
+    `first ${kept} of 162 laps, to stay under the response size limit.`,
+  );
+};
 
 const longRunStreams = () =>
   vi.mocked(client.getActivityStreams).mockResolvedValue(LONG_RUN);
@@ -279,8 +305,14 @@ const CASES: Record<string, SizeCase[]> = {
     },
   ],
   "get-activity-zones": [{ label: "multi-lap", args: { id: ID } }],
-  "get-activity-laps": [{ label: "multi-lap", args: { id: ID } }],
-  "get-running-summary": [{ label: "multi-lap", args: { id: ID } }],
+  "get-activity-laps": [
+    { label: "multi-lap", args: { id: ID } },
+    { label: "162 laps", args: { id: ID }, setup: ultraLaps, check: lapsCut },
+  ],
+  "get-running-summary": [
+    { label: "multi-lap", args: { id: ID } },
+    { label: "162 laps", args: { id: ID }, setup: ultraLaps, check: lapsCut },
+  ],
   "get-running-dynamics": [{ label: "multi-lap", args: { id: ID } }],
   "get-aerobic-analysis": [
     { label: "with breakdown", args: { id: ID, includeBreakdown: true } },
