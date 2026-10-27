@@ -164,16 +164,22 @@ export function isAbortError(error: unknown): boolean {
   return name === "TimeoutError" || name === "AbortError";
 }
 
-/** Reads a response's `Retry-After` header into a snapshot. */
+/**
+ * Reads a response's `Retry-After` header into a snapshot. The header is
+ * either seconds or an HTTP date; a date becomes the seconds left until it,
+ * 0 once it has passed.
+ */
 export function parseRateLimitHeaders(headers: Headers): RateLimitSnapshot {
-  const retryAfterRaw = headers.get("retry-after");
-  return {
-    retryAfterSeconds:
-      retryAfterRaw !== null && Number.isFinite(Number(retryAfterRaw))
-        ? Number(retryAfterRaw)
-        : undefined,
-    observedAt: Date.now(),
-  };
+  const raw = headers.get("retry-after");
+  const observedAt = Date.now();
+  let retryAfterSeconds: number | undefined;
+  if (raw !== null) {
+    const date = Date.parse(raw);
+    if (Number.isFinite(Number(raw))) retryAfterSeconds = Number(raw);
+    else if (!Number.isNaN(date))
+      retryAfterSeconds = Math.max(0, Math.ceil((date - observedAt) / 1000));
+  }
+  return { retryAfterSeconds, observedAt };
 }
 
 /**
