@@ -12,8 +12,6 @@ import {
   type MetricKey,
 } from "./types";
 
-export { isRunning, isSwimming };
-
 export interface ChartLap {
   name: string;
   startTime: number;
@@ -155,12 +153,8 @@ export function toChartData(data: ActivityStreamData): ChartDataPoint[] {
   // when the device never recorded the metric).
   if (points.length > 0 && points.every((p) => !p.altitude)) {
     for (const p of points) p.altitude = undefined;
-  } else if (points.length > 0 && points.every((p) => p.altitude === 0)) {
-    for (const p of points) p.altitude = undefined;
   }
   if (points.length > 0 && points.every((p) => !p.grade)) {
-    for (const p of points) p.grade = undefined;
-  } else if (points.length > 0 && points.every((p) => p.grade === 0)) {
     for (const p of points) p.grade = undefined;
   }
 
@@ -195,14 +189,12 @@ export function smoothData(
   if (len < 3) return points;
 
   let effectiveWindow = windowSize;
-  if (effectiveWindow <= 0 && len >= 2) {
+  if (effectiveWindow <= 0) {
     const firstTime = points[0]!.time;
     const lastTime = points[len - 1]!.time;
     const avgInterval = (lastTime - firstTime) / (len - 1);
     effectiveWindow = avgInterval > 0 ? Math.round(30 / avgInterval) : 10;
     effectiveWindow = Math.max(3, Math.min(60, effectiveWindow));
-  } else if (effectiveWindow <= 0) {
-    effectiveWindow = 10;
   }
 
   return smooth(points, SMOOTH_KEYS, effectiveWindow);
