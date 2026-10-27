@@ -6,6 +6,7 @@ import {
   parseIdToolArgs,
   toolArgId,
   toolArgRecord,
+  windowToolArgs,
 } from "./toolArgs";
 
 describe("toolArgRecord", () => {
@@ -113,5 +114,43 @@ describe("activity-id spellings", () => {
       "activityId_2",
       "id2",
     ]);
+  });
+});
+
+describe("windowToolArgs", () => {
+  const KEYS = ["days", "runOnly", "newest", "projectDays", "targetTsb"];
+
+  it.each([
+    [{ weeks: 26 }, { days: 182 }],
+    [{ weeks: "4" }, { days: 28 }],
+    [{ endDate: "2026-04-12" }, { newest: "2026-04-12" }],
+    [{ end_date: "2026-04-12" }, { newest: "2026-04-12" }],
+    [{ asOf: "2026-04-12" }, { newest: "2026-04-12" }],
+    [{ as_of: "2026-04-12" }, { newest: "2026-04-12" }],
+    [{ run_only: true }, { runOnly: true }],
+    [
+      { project_days: 7, target_tsb: 5 },
+      { projectDays: 7, targetTsb: 5 },
+    ],
+  ])("reads %j as %j", (raw, expected) => {
+    expect(windowToolArgs(raw, KEYS)).toEqual(expected);
+  });
+
+  it("lets the tool's own key and the first spelling win", () => {
+    expect(
+      windowToolArgs(
+        { newest: "2026-05-01", endDate: "2026-04-12", days: 14, weeks: 2 },
+        KEYS,
+      ),
+    ).toEqual({ newest: "2026-05-01", days: 14 });
+    expect(
+      windowToolArgs({ endDate: "2026-04-12", asOf: "2026-03-01" }, KEYS),
+    ).toEqual({ newest: "2026-04-12" });
+  });
+
+  it("drops keys the tool does not take", () => {
+    expect(windowToolArgs({ foo: 1, newest: "2026-04-12" }, ["days"])).toEqual(
+      {},
+    );
   });
 });

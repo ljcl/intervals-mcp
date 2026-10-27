@@ -8,6 +8,7 @@ import {
   Skeleton,
   useServerToolData,
   type ViewToolRegistry,
+  windowToolArgs,
 } from "@intervals-mcp/ui";
 import { type useApp } from "@modelcontextprotocol/ext-apps/react";
 import { StrictMode } from "react";
@@ -76,13 +77,17 @@ function AppContent({
   );
 }
 
+const TOOL_ARG_KEYS = ["days", "runOnly", "newest"];
+
 function Root() {
   return (
     <AppRoot<ToolArgs>
       appInfo={{ name: "Training Load", version: "1.0.0" }}
       // Every argument is optional, so no input can be unusable and no
       // `missingArgsMessage` applies — the window falls back to a default.
-      parseToolInput={(args) => (args as ToolArgs | undefined) ?? {}}
+      // The server's argument aliases too, so the chart reads the window the
+      // text answered for (#227).
+      parseToolInput={(args) => windowToolArgs(args, TOOL_ARG_KEYS) as ToolArgs}
       viewTools={VIEW_TOOLS}
       loading={<LoadingSkeleton />}
     >

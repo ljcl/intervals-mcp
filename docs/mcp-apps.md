@@ -40,7 +40,9 @@ Every app's `main.tsx` is the same four-branch state machine, so it lives in
   `ACTIVITY_ID2_ARG_KEYS`, mirroring the server's `ALIAS_GROUPS` in
   `argAliases.ts`): single-activity apps use its `parseIdToolArgs`, and
   route-map, compare-activities and cadence-trends keep a small
-  `src/toolArgs.ts` for their extra fields.
+  `src/toolArgs.ts` for their extra fields. Windowed apps (training-load,
+  fitness-trend) use its `windowToolArgs`, which also maps the
+  `endDate`/`asOf` spellings of `newest` and snake_case keys (#227).
 - **`"latest"` is pinned to the run the app first showed.** A view tool
   called with `id: "latest"` hands the app `toolArgs` holding the word, and
   its tool result names the run in `_meta["intervals-mcp/resolvedArgs"]`

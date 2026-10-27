@@ -65,3 +65,46 @@ export function parseIdToolArgs(raw: unknown): IdToolArgs | null {
   const id = toolArgId(toolArgRecord(raw), ...ID_ARG_KEYS);
   return id === null ? null : { id };
 }
+
+/** Spellings of a window's last day; mirrors the server's `ALIAS_GROUPS`. */
+const NEWEST_ARG_KEYS = ["newest", "endDate", "end_date", "asOf", "as_of"];
+
+const toCamel = (key: string) =>
+  key.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase());
+
+/**
+ * The raw arguments with the server's renames applied for a tool that takes
+ * `keys` (`normalizeArgs` in `apps/server/src/argAliases.ts`): an alias of
+ * `newest`, a snake_case spelling of a key, and `weeks` read as `days`
+ * (`weeks * 7`). The tool's own key and the first spelling win, as on the
+ * server, so the app reads the window the text tool answered for.
+ */
+export function windowToolArgs(
+  raw: unknown,
+  keys: readonly string[],
+): Record<string, unknown> {
+  const args = toolArgRecord(raw);
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(args)) {
+    const target = keys.includes(key)
+      ? key
+      : NEWEST_ARG_KEYS.includes(key) && keys.includes("newest")
+        ? "newest"
+        : keys.includes(toCamel(key))
+          ? toCamel(key)
+          : null;
+    if (target && !(target in out) && !(target !== key && target in args))
+      out[target] = value;
+  }
+  const weeks = args.weeks;
+  if (
+    out.days === undefined &&
+    keys.includes("days") &&
+    !keys.includes("weeks") &&
+    (typeof weeks === "number" ||
+      (typeof weeks === "string" && weeks !== "")) &&
+    Number.isFinite(Number(weeks))
+  )
+    out.days = Number(weeks) * 7;
+  return out;
+}
