@@ -1563,13 +1563,16 @@ async function handleViewRouteMap(
     lines.push(`Warning: ${warning}`);
   }
   // The climbs come from get-hill-analysis, their one home; the waypoints
-  // only this view has, so its lines stay ahead of them.
+  // only this view has, so its lines stay ahead of them. Its pace and GAP
+  // are a running model, so other sports get the footer instead.
   return viewResult(
     lines,
     {
       kind: "route map",
       footer: "get-activity",
-      twin: getHillAnalysisTool.name,
+      twin: isPaceActivity(data.activityType ?? "")
+        ? getHillAnalysisTool.name
+        : undefined,
       keepLines: true,
     },
     args,
