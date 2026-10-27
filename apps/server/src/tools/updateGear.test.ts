@@ -44,7 +44,7 @@ const mockedReset = vi.mocked(resetGearReminder);
 function shoe(overrides: Partial<IntervalsGear> = {}): IntervalsGear {
   return {
     id: "71459",
-    name: "Dynafish Xiaonian B",
+    name: "Daily Trainer B",
     type: "Shoes",
     distance: 62030.29,
     activities: 1,
@@ -111,7 +111,7 @@ describe("updateGearTool.execute", () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain(
-      'Unknown gear id "999". Available gear: 71459 (Dynafish Xiaonian B)',
+      'Unknown gear id "999". Available gear: 71459 (Daily Trainer B)',
     );
     expect(mockedPut).not.toHaveBeenCalled();
   });
@@ -134,7 +134,7 @@ describe("updateGearTool.execute", () => {
       skipCache: true,
     });
     expect(result.content[0]?.text).toBe(
-      'Retired gear "Dynafish Xiaonian B" [71459] on 2026-10-27.',
+      'Retired gear "Daily Trainer B" [71459] on 2026-10-27.',
     );
     const structured = GearWriteOutputSchema.parse(result.structuredContent);
     expect(structured.action).toBe("retire");
@@ -156,7 +156,7 @@ describe("updateGearTool.execute", () => {
       retired: "",
     });
     expect(result.content[0]?.text).toBe(
-      'Put gear "Dynafish Xiaonian B" [71459] back in use (was retired 2026-01-01).',
+      'Put gear "Daily Trainer B" [71459] back in use (was retired 2026-01-01).',
     );
   });
 
@@ -167,7 +167,7 @@ describe("updateGearTool.execute", () => {
 
     expect(mockedPut).not.toHaveBeenCalled();
     expect(result.content[0]?.text).toBe(
-      'No change: gear "Dynafish Xiaonian B" [71459] is already in use.',
+      'No change: gear "Daily Trainer B" [71459] is already in use.',
     );
   });
 
@@ -197,7 +197,7 @@ describe("updateGearTool.execute", () => {
       distance: 700000,
     });
     expect(result.content[0]?.text).toBe(
-      'Added reminder 3 "700 km": 700.0 km, 62.0 km used (9%) to gear "Dynafish Xiaonian B" [71459].',
+      'Added reminder 3 "700 km": 700.0 km, 62.0 km used (9%) to gear "Daily Trainer B" [71459].',
     );
     const structured = GearWriteOutputSchema.parse(result.structuredContent);
     expect(structured.gear.reminders[0]).toMatchObject({
@@ -256,7 +256,7 @@ describe("updateGearTool.execute", () => {
 
     expect(mockedReset).toHaveBeenCalledWith("test-token", "71459", 3);
     expect(result.content[0]?.text).toBe(
-      'Reset reminder 3 "Replace": 700.0 km, 0.0 km used (0%) on gear "Dynafish Xiaonian B" [71459].',
+      'Reset reminder 3 "Replace": 700.0 km, 0.0 km used (0%) on gear "Daily Trainer B" [71459].',
     );
     expect(
       GearWriteOutputSchema.parse(result.structuredContent).changes,
