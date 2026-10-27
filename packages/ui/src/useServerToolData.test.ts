@@ -41,6 +41,56 @@ const textResult = (text: string) => ({ content: [{ type: "text", text }] });
 const flush = () => act(() => new Promise<void>((r) => setTimeout(r, 0)));
 
 describe("useServerToolData", () => {
+  it("keeps the latest args' result when an earlier call resolves last (#228)", async () => {
+    const pending = new Map<string, (value: unknown) => void>();
+    const { app } = fakeApp(
+      (args) =>
+        new Promise((resolve) => {
+          pending.set(String(args.arguments?.id), resolve);
+        }),
+    );
+
+    const harness = await renderHook(
+      ({ args }) => useServerToolData<{ id: string }>(app, "get-data", args),
+      { args: { id: "B" } },
+    );
+    await harness.rerender({ args: { id: "A" } });
+
+    pending.get("A")!(textResult(JSON.stringify({ id: "A" })));
+    await flush();
+    expect(harness.current().data).toEqual({ id: "A" });
+    expect(harness.current().loading).toBe(false);
+
+    pending.get("B")!(textResult(JSON.stringify({ id: "B" })));
+    await flush();
+    expect(harness.current().data).toEqual({ id: "A" });
+
+    await harness.unmount();
+  });
+
+  it("stays loading while a stale call finishes first", async () => {
+    const pending = new Map<string, (value: unknown) => void>();
+    const { app } = fakeApp(
+      (args) =>
+        new Promise((resolve) => {
+          pending.set(String(args.arguments?.id), resolve);
+        }),
+    );
+
+    const harness = await renderHook(
+      ({ args }) => useServerToolData<{ id: string }>(app, "get-data", args),
+      { args: { id: "A" } },
+    );
+    await harness.rerender({ args: { id: "B" } });
+
+    pending.get("A")!(textResult(JSON.stringify({ id: "A" })));
+    await flush();
+    expect(harness.current().data).toBeNull();
+    expect(harness.current().loading).toBe(true);
+
+    await harness.unmount();
+  });
+
   it("starts loading and resolves with the parsed payload", async () => {
     const { app, calls } = fakeApp(() =>
       textResult(JSON.stringify({ weeks: 6 })),

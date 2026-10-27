@@ -1,5 +1,5 @@
 import { type App } from "@modelcontextprotocol/ext-apps";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { parseTextContent, progressCallOptions } from "./serverToolResult";
 
 export interface ServerToolData<T> {
@@ -24,6 +24,9 @@ export interface ServerToolData<T> {
  * `args` may be an inline object literal; the fetch is keyed on its JSON
  * serialization, so a new-but-equal object does not refetch.
  *
+ * The latest call always wins (#228): a call superseded by new args or a
+ * retry applies nothing (data, error, progress or loading) when it lands.
+ *
  * Progress: the tools behind training-load, fitness-trend, and
  * cadence-trends page through an athlete's history and can outrun the host's
  * default request timeout on a long one. `resetTimeoutOnProgress` restarts
@@ -42,9 +45,12 @@ export function useServerToolData<T>(
   const [progress, setProgress] = useState<string | null>(null);
 
   const argsKey = JSON.stringify(args);
+  const latestCall = useRef(0);
 
   const fetchData = useCallback(async () => {
     if (!app) return;
+    const call = ++latestCall.current;
+    const isLatest = () => call === latestCall.current;
     try {
       setLoading(true);
       setError(null);
@@ -56,8 +62,11 @@ export function useServerToolData<T>(
           name: toolName,
           arguments: JSON.parse(argsKey) as Record<string, unknown>,
         },
-        progressCallOptions(setProgress),
+        progressCallOptions((message) => {
+          if (isLatest()) setProgress(message);
+        }),
       );
+      if (!isLatest()) return;
       const parsed = parseTextContent<T>(result, toolName);
       if (!parsed.ok) {
         setError(parsed.error);
@@ -65,9 +74,9 @@ export function useServerToolData<T>(
       }
       setData(parsed.data);
     } catch (err) {
-      setError(String(err));
+      if (isLatest()) setError(String(err));
     } finally {
-      setLoading(false);
+      if (isLatest()) setLoading(false);
     }
   }, [app, toolName, argsKey]);
 
