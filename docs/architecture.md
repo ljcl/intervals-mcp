@@ -468,10 +468,16 @@ the forward-looking ones — `plannedLoads` projects a prescribed load instead o
 rest, and `solveTaperPlan` finds the weekly load taper that lands on a target
 form on a target date. TSB after n days is linear in the daily loads, so two
 projections (rest, and the taper shape at scale 1) pin a line and the exact
-scale follows — no bisection, no tolerance. Fatigue decays faster than fitness,
-so the line always slopes down; the two clamps are the honest answers: a target
-even complete rest cannot reach in time, and one that would take racing every
-day (`MAX_TAPER_DAILY_LOAD`). Both report the form that actually lands rather
+scale follows — no bisection, no tolerance. The solver scales only the last
+`TAPER_SOLVE_DAYS` (28) days; earlier days hold at the recent daily load. A
+day's load lowers race-day TSB only within about 15 days of the race, because
+fatigue decays faster than fitness, so load further out leaves more fitness
+than fatigue by race day. Scaled over every day, the default shape's line
+turned flat at about 35 days and sloped up from about 38, and the plan
+contradicted itself: "complete rest falls short" next to 0 load for six weeks
+(#221). Over 28 days the line slopes down; the two clamps are the honest
+answers: a target even complete rest cannot reach in time, and one that would
+take racing every day (`MAX_TAPER_DAILY_LOAD`). Both report the form that actually lands rather
 than inventing a plan. Keep new projection math here, not in a tool —
 `get-fitness-trend` and the fitness-trend app both read one solve.
 

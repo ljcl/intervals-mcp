@@ -21,6 +21,7 @@ import {
   RECENT_LOAD_DAYS,
   recentDailyLoad,
   solveTaperPlan,
+  TAPER_SOLVE_DAYS,
   TAPER_WEEK_DECAY,
   taperTargetDateError,
   taperWeekWeights,
@@ -523,6 +524,68 @@ describe("solveTaperPlan", () => {
       targetTsb: 10,
     });
     expect(plan.days).toHaveLength(300_000);
+  });
+
+  // Load more than about 15 days out raises TSB on the target date, so a
+  // plan scaled over every day stopped lowering TSB from about 38 days and
+  // contradicted itself: "complete rest falls short" next to 0 load (#221).
+  it.each([35, 42, 90, MAX_TAPER_DAYS])(
+    "lands on the target %i days out, holding recent load before the last 28 days",
+    (days) => {
+      const from = "2026-06-28";
+      const plan = solveTaperPlan(
+        { ctl: 60, atl: 65 },
+        from,
+        { targetDate: addDays(from, days), targetTsb: 10 },
+        50,
+      );
+      expect(plan.feasible).toBe(true);
+      expect(plan.note).toBeNull();
+      expect(plan.achieved_tsb).toBeCloseTo(10, 1);
+      expect(plan.days).toHaveLength(days);
+      const leadIn = days - TAPER_SOLVE_DAYS;
+      expect(plan.days.slice(0, leadIn).every((d) => d.load === 50)).toBe(true);
+      // The solved part is a real taper, stepping down to the target date.
+      const taperWeeks = plan.weeks.slice(-4);
+      expect(taperWeeks.map((w) => w.days)).toEqual([7, 7, 7, 7]);
+      expect(taperWeeks[0]!.start_date).toBe(addDays(from, leadIn + 1));
+      expect(taperWeeks[0]!.daily_load).toBeGreaterThan(0);
+      expect(taperWeeks[3]!.daily_load).toBeLessThan(taperWeeks[0]!.daily_load);
+      expect(plan.weeks.at(-1)!.end_date).toBe(addDays(from, days));
+      expect(plan.weeks.map((w) => w.week)).toEqual(
+        plan.weeks.map((_, i) => i + 1),
+      );
+    },
+  );
+
+  it("keeps a short lead-in week apart from the solved taper weeks", () => {
+    const plan = solveTaperPlan(
+      { ctl: 60, atl: 65 },
+      "2026-06-28",
+      { targetDate: addDays("2026-06-28", 45), targetTsb: 10 },
+      50,
+    );
+    // 17 held days, then 4 solved weeks.
+    expect(plan.weeks.map((w) => w.days)).toEqual([7, 7, 3, 7, 7, 7, 7]);
+    expect(plan.weeks.slice(0, 3).map((w) => w.daily_load)).toEqual([
+      50, 50, 50,
+    ]);
+    expect(plan.weeks.slice(0, 3).map((w) => w.pct_of_recent)).toEqual([
+      100, 100, 100,
+    ]);
+  });
+
+  it("says when rest falls short of the target on a long plan", () => {
+    const plan = solveTaperPlan(
+      { ctl: 20, atl: 20 },
+      "2026-06-28",
+      { targetDate: addDays("2026-06-28", 60), targetTsb: 25 },
+      20,
+    );
+    expect(plan.feasible).toBe(false);
+    expect(plan.note).toContain(`over the last ${TAPER_SOLVE_DAYS} days`);
+    expect(plan.note).toContain("too high for current fitness");
+    expect(plan.achieved_tsb).toBeLessThan(25);
   });
 
   it("omits pct_of_recent when there is no recent load to compare to", () => {
