@@ -7,7 +7,6 @@ import {
   CS_MODEL_MIN_SECONDS,
   criticalSpeedModel,
   criticalSpeedPredict,
-  daysBetween,
   extrapolationWeight,
   formatRaceTime,
   gradeConfidence,
@@ -65,21 +64,6 @@ describe("riegelPredict", () => {
     expect(riegelPredict(1200, 0, 10000)).toBeNull();
     expect(riegelPredict(1200, 5000, 0)).toBeNull();
     expect(riegelPredict(Number.NaN, 5000, 10000)).toBeNull();
-  });
-});
-
-describe("daysBetween", () => {
-  it("counts whole days back from the reference", () => {
-    expect(daysBetween("2026-07-01", "2026-07-28")).toBe(27);
-    expect(daysBetween("2026-07-28", "2026-07-28")).toBe(0);
-  });
-
-  it("is negative for a date after the reference", () => {
-    expect(daysBetween("2026-08-01", "2026-07-28")).toBe(-4);
-  });
-
-  it("returns 0 rather than NaN for an unparseable date", () => {
-    expect(daysBetween("not-a-date", REFERENCE)).toBe(0);
   });
 });
 
@@ -685,6 +669,40 @@ describe("paceCurveSourceEfforts", () => {
     const efforts = effortsFor(curves());
     const fiveK = efforts.find((e) => e.activityId === "i2");
     expect(fiveK?.name).toBe("5000 m");
+  });
+
+  // An effort with no date read as 0 days old: a dateless 2400 s 10K
+  // outranked a 2700 s one from last week as the "recent" fastest (#225).
+  it("skips a point whose activity is missing from the map or has no date", () => {
+    const base = curves();
+    const efforts = effortsFor({
+      ...base,
+      list: [
+        {
+          ...base.list[0]!,
+          distance: [5000, 10000, 10000],
+          values: [1100, 2400, 2450],
+          activity_id: ["i2", "gone", "i6"],
+        },
+        {
+          ...base.list[1]!,
+          distance: [10000],
+          values: [2700],
+          activity_id: ["i7"],
+        },
+      ],
+      activities: {
+        ...base.activities,
+        i6: { id: "i6", name: "No date" },
+        i7: { id: "i7", name: "Last week", start_date_local: "2026-07-21" },
+      },
+    } as unknown as IntervalsAthletePaceCurves);
+
+    expect(efforts.map((e) => e.activityId)).toEqual(["i2", "i7"]);
+    const sources = selectSourceEfforts(efforts, "2026-07-28");
+    expect(sources.find((s) => s.distanceMeters === 10000)?.activityId).toBe(
+      "i7",
+    );
   });
 
   it("returns nothing for a missing all/90d curve", () => {
