@@ -352,6 +352,11 @@ curves for a 90-day window (37 runs) and a 2-month range.
   for a one-day custom range with one run gave the same `distance[]` and
   `values[]` as that run's own curve. The athlete curves have no
   `start_index`/`end_index`.
+- The `90d` and `1y` pace curves cover 90 and 365 days including today,
+  like the HR curves: on 2026-10-27 (Australia/Sydney) `start_date_local` was
+  2026-07-30 and 2025-10-28, and `end_date_local` 2026-10-28 (midnight after
+  today) for both. Their `days` (91, 366) counts one more day than that.
+  `get-best-efforts` labels its window from today - 89 / today - 364 (#275).
 - `subMaxEfforts=N` on `GET /athlete/0/pace-curves.json` adds
   `submax_values` and `submax_activity_id` to each curve: N rows, row r
   holding the (r+2)th best time and its activity at each grid index. A row

@@ -98,21 +98,21 @@ describe("resolveWindow", () => {
     expect(result.oldest).toBe("1986-01-01");
   });
 
-  it('maps "1y" to 365 days before today, curveId "1y"', () => {
+  it('maps "1y" to the 365 days through today, curveId "1y"', () => {
     const result = resolveWindow("1y", "UTC");
     if ("error" in result) throw new Error("expected a resolved window");
     expect(result.curveId).toBe("1y");
-    // 366 calendar days inclusive (oldest through newest), matching the
-    // intervals.icu "1y" curve's own `days: 366`.
+    // 365 calendar days inclusive (oldest through newest): the "1y"
+    // curve's `start_date_local` is today - 364, though it says `days: 366`.
     const days =
       (Date.parse(`${result.newest}T00:00:00Z`) -
         Date.parse(`${result.oldest}T00:00:00Z`)) /
         86_400_000 +
       1;
-    expect(days).toBe(366);
+    expect(days).toBe(365);
   });
 
-  it('maps "90d" to 90 days before today, curveId "90d"', () => {
+  it('maps "90d" to the 90 days through today, curveId "90d"', () => {
     const result = resolveWindow("90d", "UTC");
     if ("error" in result) throw new Error("expected a resolved window");
     expect(result.curveId).toBe("90d");
@@ -121,7 +121,7 @@ describe("resolveWindow", () => {
         Date.parse(`${result.oldest}T00:00:00Z`)) /
         86_400_000 +
       1;
-    expect(days).toBe(91);
+    expect(days).toBe(90);
   });
 
   it("maps a custom YYYY-MM-DD..YYYY-MM-DD range to an r.<oldest>.<newest> curve id", () => {
