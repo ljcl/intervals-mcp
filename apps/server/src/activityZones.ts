@@ -7,6 +7,7 @@
  * so the chart and the text can never disagree on the numbers.
  */
 import { type ZoneSet } from "@intervals-mcp/data";
+import { round } from "./formatters";
 import {
   type IntervalsActivity,
   type IntervalsSportSettings,
@@ -22,8 +23,6 @@ export interface ActivityZonesData {
   /** Set when HR zones were dropped because bounds/times counts disagreed. */
   hrZoneWarning: string | null;
 }
-
-const round1 = (value: number) => Math.round(value * 10) / 10;
 
 /** One zone's range, from ascending upper bounds. */
 export interface ZoneRange {
@@ -89,7 +88,7 @@ export function buildZoneSet(
     buckets: zoneRanges(bounds).map((range, i) => ({
       ...range,
       seconds: times[i] ?? 0,
-      pct: round1(((times[i] ?? 0) / totalSeconds) * 100),
+      pct: round(((times[i] ?? 0) / totalSeconds) * 100, 1),
     })),
   };
 }

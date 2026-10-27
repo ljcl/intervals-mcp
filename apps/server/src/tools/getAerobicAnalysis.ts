@@ -6,7 +6,7 @@ import {
   computeAerobicAnalysis,
   interpretDecoupling,
 } from "../aerobicAnalysis";
-import { formatSigned } from "../formatters";
+import { formatSigned, round } from "../formatters";
 import { gradeAdjustedSpeeds } from "../hillAnalysis";
 import {
   getActivity,
@@ -117,8 +117,6 @@ const EF_UNITS: Record<Basis, string> = {
   power: "W/beat",
 };
 
-const round = (value: number, dp = 2) =>
-  Math.round(value * 10 ** dp) / 10 ** dp;
 const toMinutes = (seconds: number) => Math.round(seconds / 60);
 /** Bare `m:ss`, no unit suffix; the structured field name (`*_min_per_km`)
  * carries the unit, `formatPaceSeconds` is the one home for the rendering. */
@@ -128,7 +126,7 @@ const paceMinPerKm = (metersPerSecond: number) =>
 function halfOut(half: AerobicAnalysis["firstHalf"], basis: Basis) {
   const isSpeed = basis !== "power";
   return {
-    avg_output: round(half.avgOutput),
+    avg_output: round(half.avgOutput, 2),
     avg_pace_min_per_km: isSpeed ? paceMinPerKm(half.avgOutput) : null,
     avg_hr: round(half.avgHeartrate, 0),
     output_per_beat: round(half.ratio * (isSpeed ? 60 : 1), 3),
@@ -353,7 +351,7 @@ export const getAerobicAnalysisTool = {
             ? {
                 first_half: halfOut(analysis.firstHalf, basis),
                 second_half: halfOut(analysis.secondHalf, basis),
-                normalized_output: round(analysis.normalizedOutput),
+                normalized_output: round(analysis.normalizedOutput, 2),
                 normalized_pace_min_per_km:
                   basis === "power"
                     ? null

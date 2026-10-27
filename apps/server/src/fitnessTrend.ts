@@ -13,7 +13,7 @@
  * (relative effort, TRIMP, or anything else) and how it maps to each series.
  */
 
-import { formatSigned } from "./formatters";
+import { formatSigned, round } from "./formatters";
 import { addDays, daysBetween, isValidCalendarDate } from "./utils/localDate";
 import { PACE_ACTIVITY_TYPES } from "./utils/running";
 
@@ -208,9 +208,6 @@ export const MAX_TAPER_DAYS = 180;
 const CTL_DECAY = Math.exp(-1 / CTL_TIME_CONSTANT_DAYS);
 const ATL_DECAY = Math.exp(-1 / ATL_TIME_CONSTANT_DAYS);
 
-/** Round to one decimal place, the display precision every value here uses. */
-export const round1 = (value: number) => Math.round(value * 10) / 10;
-
 /**
  * Display CTL/ATL/TSB from raw (unrounded) CTL and ATL: TSB is CTL − ATL of
  * the raw values, then each is rounded to 0.1. The one home for this, used by
@@ -221,7 +218,7 @@ export function ctlAtlTsb(
   ctl: number,
   atl: number,
 ): { ctl: number; atl: number; tsb: number } {
-  return { ctl: round1(ctl), atl: round1(atl), tsb: round1(ctl - atl) };
+  return { ctl: round(ctl, 1), atl: round(atl, 1), tsb: round(ctl - atl, 1) };
 }
 
 /**
@@ -238,7 +235,7 @@ function deltaLookup(series: FitnessTrendDay[]) {
     metric: "ctl" | "tsb",
   ): number | null => {
     const prior = byDate.get(addDays(day.date, -days));
-    return prior ? round1(day[metric] - prior[metric]) : null;
+    return prior ? round(day[metric] - prior[metric], 1) : null;
   };
 }
 
@@ -303,7 +300,7 @@ export function buildFitnessTrend(
   for (const { date, ctlLoad, atlLoad } of input.days) {
     ctl = ctlLoad * (1 - CTL_DECAY) + ctl * CTL_DECAY;
     atl = atlLoad * (1 - ATL_DECAY) + atl * ATL_DECAY;
-    series.push({ date, load: round1(atlLoad), ...ctlAtlTsb(ctl, atl) });
+    series.push({ date, load: round(atlLoad, 1), ...ctlAtlTsb(ctl, atl) });
   }
 
   const endDate = series[series.length - 1]?.date;
@@ -409,7 +406,7 @@ export function projectLoads(
     atl = load * (1 - ATL_DECAY) + atl * ATL_DECAY;
     const tsb = ctl - atl;
     const date = addDays(startDate, i);
-    days.push({ date, load: round1(load), ...ctlAtlTsb(ctl, atl) });
+    days.push({ date, load: round(load, 1), ...ctlAtlTsb(ctl, atl) });
     const eligible =
       options.positiveDateFrom === undefined ||
       date >= options.positiveDateFrom;
@@ -481,7 +478,7 @@ export function recentDailyLoad(
   const tail = series.slice(-window);
   if (tail.length === 0) return 0;
   const total = tail.reduce((sum, day) => sum + day.load, 0);
-  return round1(total / tail.length);
+  return round(total / tail.length, 1);
 }
 
 /**
@@ -523,7 +520,7 @@ export function solveTaperPlan(
     return {
       target_date: targetDate,
       target_tsb: targetTsb,
-      achieved_tsb: round1(start.ctl - start.atl),
+      achieved_tsb: round(start.ctl - start.atl, 1),
       feasible: false,
       note: `${targetDate} is not after ${fromDate}: a taper needs at least one day to work with.`,
       weeks: [],
@@ -554,13 +551,13 @@ export function solveTaperPlan(
     // degenerate caller shape (all zero, or loaded only far from the target)
     // fails to lower TSB, and then rest is the only answer.
     feasible = false;
-    note = `This plan shape cannot lower TSB by ${targetDate}; complete rest lands on TSB ${formatSigned(round1(restTsb))}.`;
+    note = `This plan shape cannot lower TSB by ${targetDate}; complete rest lands on TSB ${formatSigned(round(restTsb, 1))}.`;
   } else if (restTsb < targetTsb) {
     feasible = false;
     note =
       leadInDays > 0
-        ? `Even complete rest over the last ${taperDays} days only reaches TSB ${formatSigned(round1(restTsb))} by ${targetDate}, short of the ${formatSigned(round1(targetTsb))} target: the target is too high for current fitness.`
-        : `Even complete rest only reaches TSB ${formatSigned(round1(restTsb))} by ${targetDate}, short of the ${formatSigned(round1(targetTsb))} target: the target date is too soon, or the target too high.`;
+        ? `Even complete rest over the last ${taperDays} days only reaches TSB ${formatSigned(round(restTsb, 1))} by ${targetDate}, short of the ${formatSigned(round(targetTsb, 1))} target: the target is too high for current fitness.`
+        : `Even complete rest only reaches TSB ${formatSigned(round(restTsb, 1))} by ${targetDate}, short of the ${formatSigned(round(targetTsb, 1))} target: the target date is too soon, or the target too high.`;
   } else {
     scale = (targetTsb - restTsb) / slope;
   }
@@ -573,7 +570,7 @@ export function solveTaperPlan(
   if (peakLoad > MAX_TAPER_DAILY_LOAD) {
     scale = MAX_TAPER_DAILY_LOAD / peakWeight;
     feasible = false;
-    note = `Reaching TSB ${formatSigned(round1(targetTsb))} by ${targetDate} would take more than ${MAX_TAPER_DAILY_LOAD} training load a day; the plan is capped there.`;
+    note = `Reaching TSB ${formatSigned(round(targetTsb, 1))} by ${targetDate} would take more than ${MAX_TAPER_DAILY_LOAD} training load a day; the plan is capped there.`;
   }
 
   const loads = [...leadIn, ...shape.map((weight) => weight * scale)];
@@ -595,8 +592,8 @@ export function solveTaperPlan(
       start_date: addDays(firstDate, first),
       end_date: addDays(firstDate, end - 1),
       days: slice.length,
-      daily_load: round1(weekLoad / slice.length),
-      week_load: round1(weekLoad),
+      daily_load: round(weekLoad / slice.length, 1),
+      week_load: round(weekLoad, 1),
       pct_of_recent:
         recentLoad > 0
           ? Math.round((weekLoad / (recentLoad * slice.length)) * 100)
@@ -612,7 +609,10 @@ export function solveTaperPlan(
     note,
     weeks,
     days: projected.days,
-    total_load: round1(loads.reduce((sum, load) => sum + load, 0)),
+    total_load: round(
+      loads.reduce((sum, load) => sum + load, 0),
+      1,
+    ),
     recent_daily_load: recentLoad,
   };
 }
@@ -924,10 +924,10 @@ export function trendBands(
         start,
         end,
         isNow(end)
-          ? `TSB at ${formatSigned(round1(series[end]!.tsb))} (fresh since ${startDate}, peak ${formatSigned(round1(peak))}): fresh and race-ready now, but fitness decays if this holds for long.`
+          ? `TSB at ${formatSigned(round(series[end]!.tsb, 1))} (fresh since ${startDate}, peak ${formatSigned(round(peak, 1))}): fresh and race-ready now, but fitness decays if this holds for long.`
           : toPastEnd(end)
-            ? `TSB at ${formatSigned(round1(series[end]!.tsb))} on ${lastDate}, ${lastDateIs} (fresh since ${startDate}, peak ${formatSigned(round1(peak))}).`
-            : `Fresh from ${startDate} to ${series[end]!.date} (${days} days, TSB peak ${formatSigned(round1(peak))}).`,
+            ? `TSB at ${formatSigned(round(series[end]!.tsb, 1))} on ${lastDate}, ${lastDateIs} (fresh since ${startDate}, peak ${formatSigned(round(peak, 1))}).`
+            : `Fresh from ${startDate} to ${series[end]!.date} (${days} days, TSB peak ${formatSigned(round(peak, 1))}).`,
       ),
     );
   }

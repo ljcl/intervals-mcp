@@ -15,6 +15,7 @@
  * why the prediction is or is not trustworthy.
  */
 
+import { round } from "./formatters";
 import { type IntervalsAthletePaceCurves } from "./intervalsClient";
 import { daysBetween, isValidCalendarDate } from "./utils/localDate";
 import { paceFromDistanceTime } from "./utils/running";
@@ -166,8 +167,6 @@ export interface SplitPlan {
   totalSeconds: number;
   splits: Split[];
 }
-
-const round1 = (value: number) => Math.round(value * 10) / 10;
 
 /**
  * Riegel's equivalent time at `targetMeters` for an effort of
@@ -348,12 +347,12 @@ export function gradeConfidence(
   if (stretch > 2) {
     demoteTo("low");
     notes.push(
-      `Extrapolated ${stretch.toFixed(1)}× beyond your longest recorded effort (${round1(longestSource / 1000)} km): Riegel over-predicts across gaps this wide.`,
+      `Extrapolated ${stretch.toFixed(1)}× beyond your longest recorded effort (${round(longestSource / 1000, 1)} km): Riegel over-predicts across gaps this wide.`,
     );
   } else if (stretch > 1.3) {
     demoteTo("medium");
     notes.push(
-      `Extrapolated ${stretch.toFixed(1)}× beyond your longest recorded effort (${round1(longestSource / 1000)} km).`,
+      `Extrapolated ${stretch.toFixed(1)}× beyond your longest recorded effort (${round(longestSource / 1000, 1)} km).`,
     );
   }
 
@@ -485,7 +484,7 @@ export function predictRace(
             rangeSeconds: slowestSeconds - fastestSeconds,
             rangePct:
               predictedSeconds > 0
-                ? round1(
+                ? round(
                     ((slowestSeconds - fastestSeconds) / predictedSeconds) *
                       100,
                   )
