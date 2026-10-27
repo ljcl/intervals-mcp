@@ -32,7 +32,7 @@ import {
   buildRunningDynamics,
   gapPace,
   isPaceActivity,
-  isStepCadenceActivity,
+  isRunning,
   paceFromDistanceTime,
   type RunningDynamicsAvg,
   sportSpeed,
@@ -231,7 +231,7 @@ function mapInterval(
   // A swim's step length is not a step (docs/api-notes.md): step-based
   // fields only for a step-cadence type, as buildRunningDynamics does for
   // the whole activity.
-  const steps = isStepCadenceActivity(type);
+  const steps = isRunning(type);
   return {
     type: interval.type ?? null,
     label: interval.label ?? null,
@@ -650,9 +650,7 @@ export const getActivityTool = {
       ]);
 
       const type = activity.type ?? "Workout";
-      const sportSettings = isStepCadenceActivity(type)
-        ? sportSettingsResult
-        : null;
+      const sportSettings = isRunning(type) ? sportSettingsResult : null;
 
       // The gear read waits for the activity on purpose: only the activity
       // names the gear id, and most activities have none, so a concurrent

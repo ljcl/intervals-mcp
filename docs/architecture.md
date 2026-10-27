@@ -460,9 +460,10 @@ best 20-minute heart rate, both of the last 90 days.
 needs it; `utils/running.ts` re-exports it for the server.
 `get-running-summary` accepts exactly these, and `fitnessTrend.ts`
 re-exports them as `RUN_TYPES` for the run-only series and
-`get-training-load`. `STEP_CADENCE_ACTIVITY_TYPES` and
-`RUNNING_ACTIVITY_TYPES` add Walk and Hike on purpose: those have a step
-cadence but no pace.
+`get-training-load`. The step-cadence types (`isRunning` in the same file,
+re-exported by `utils/running.ts`) add Walk and Hike on purpose: those have a
+step cadence but no pace. The apps' `cadenceLabel` and the text tools'
+`cadenceSpm` both read that one list.
 
 **Stream wire precision has one home.** `STREAM_DECIMALS` in
 `streamPrecision.ts`. `get-activity-streams` and the chart and route-map app

@@ -24,7 +24,7 @@ import {
   formatPaceSeconds,
   gapPace,
   isPaceActivity,
-  isRunningActivity,
+  isRunning,
   paceFromDistanceTime,
   type RunningDynamicsAvg,
   sportSpeed,
@@ -306,12 +306,12 @@ export function buildComparison(
   const type2 = activity2.type ?? "Workout";
 
   const warnings: string[] = [];
-  if (!isRunningActivity(type1)) {
+  if (!isRunning(type1)) {
     warnings.push(
       `Activity 1 (${activity1.name ?? type1}) is not a running activity (${type1})`,
     );
   }
-  if (!isRunningActivity(type2)) {
+  if (!isRunning(type2)) {
     warnings.push(
       `Activity 2 (${activity2.name ?? type2}) is not a running activity (${type2})`,
     );
