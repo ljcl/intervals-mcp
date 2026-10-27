@@ -8,6 +8,7 @@
  */
 
 import {
+  MIN_MOVING_SPEED_MPS,
   normalizeValue,
   percentileDomain,
   rampColor,
@@ -78,7 +79,13 @@ export function buildMetricSeries(data: RouteMapData): MetricSeries[] {
       label: display.label,
       shortLabel: display.label,
       values: velocity,
-      ...domainOf(velocity),
+      // Stopped samples have no pace to show, so they would leave the
+      // legend's slow end a dash; they still color as the slowest bin.
+      ...domainOf(
+        velocity.map((v) =>
+          v != null && v >= MIN_MOVING_SPEED_MPS ? v : null,
+        ),
+      ),
       format: display.formatMps,
     });
   }
