@@ -34,6 +34,7 @@ import {
 import { READ_ONLY } from "./_annotations";
 import { toolErrorText } from "./_errors";
 import { intervalsActivityIdInput } from "./_ids";
+import { fitListToBudget } from "./_responseBudget";
 import {
   type ActivityDetail,
   formatAchievementsLine,
@@ -76,7 +77,7 @@ Notes:
 - HR zones use the activity's own bounds, else the Run sport settings; the
   zone summary is left out, with a note, when neither matches.
 - The text lists at most 20 laps; get-activity-laps and structuredContent.laps
-  have all of them.
+  have all of them, up to the response size limit (about 80+ laps).
 `;
 
 const inputSchema = z.object({
@@ -367,7 +368,10 @@ function formatDynamicsAssessmentLine(d: RunningSummary): string | null {
 }
 
 /** Builds the tool's text response. Exported for direct testing. */
-export function formatRunningSummaryText(d: RunningSummary): string {
+export function formatRunningSummaryText(
+  d: RunningSummary,
+  lapTotal = d.laps.length,
+): string {
   const lines = [`${d.date} ${d.type} ${d.name} [${d.id}]`];
   if (d.is_strava_stub) lines.push(STRAVA_STUB_NOTE);
 
@@ -408,10 +412,14 @@ export function formatRunningSummaryText(d: RunningSummary): string {
     lines.push(`Laps (${LAP_MOVING_TIME_NOTE}):`);
     const shown = d.laps.slice(0, MAX_LAP_LINES);
     for (const lap of shown) lines.push(formatLapLine(lap, "spm"));
-    const remaining = d.laps.length - shown.length;
+    const remaining = lapTotal - shown.length;
     if (remaining > 0)
       lines.push(
-        `(${remaining} more: get-activity-laps lists all ${d.laps.length})`,
+        `(${remaining} more: get-activity-laps lists all ${lapTotal})`,
+      );
+    if (d.laps.length < lapTotal)
+      lines.push(
+        `structuredContent.laps keeps the first ${d.laps.length} of ${lapTotal} laps, to stay under the response size limit.`,
       );
   }
 
@@ -475,11 +483,18 @@ export const getRunningSummaryTool = {
       );
       warnOnSchemaDrift(name, RunningSummaryOutputSchema, summary);
 
+      // The text caps its lap lines; the structured laps need the budget (#234).
+      const { text, structured } = fitListToBudget(summary.laps.length, (n) => {
+        const shown = { ...summary, laps: summary.laps.slice(0, n) };
+        return {
+          text: formatRunningSummaryText(shown, summary.laps.length),
+          structured: shown,
+        };
+      });
+
       return {
-        content: [
-          { type: "text" as const, text: formatRunningSummaryText(summary) },
-        ],
-        structuredContent: summary,
+        content: [{ type: "text" as const, text }],
+        structuredContent: structured,
       };
     } catch (error) {
       return {

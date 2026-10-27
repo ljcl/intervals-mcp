@@ -14,6 +14,7 @@ import { NO_PROGRESS, type ReportProgress } from "../progress";
 import { READ_ONLY } from "./_annotations";
 import { toolErrorText } from "./_errors";
 import { intervalsActivityIdInput } from "./_ids";
+import { fitListToBudget } from "./_responseBudget";
 import { ActivityLapsOutputSchema, warnOnSchemaDrift } from "./outputs";
 
 const name = "get-activity-laps";
@@ -38,6 +39,8 @@ Notes:
 - Cadence is steps per minute for Run, TrailRun, VirtualRun, Walk and Hike,
   strokes per minute for swims, rpm otherwise (units.cadence_label).
 - An activity with no intervals gives a valid payload with lap_count: 0.
+- Very long lap lists (about 80+) keep the first laps that fit the response
+  size limit; lap_count stays the full count and the text says so.
 `;
 
 const inputSchema = z.object({
@@ -102,6 +105,11 @@ export function formatActivityLapsText(response: ActivityLapsResponse): string {
   for (const lap of response.laps)
     lines.push(formatLapLine(lap, response.units.cadence_label));
 
+  if (response.laps.length < response.lap_count)
+    lines.push(
+      `Showing the first ${response.laps.length} of ${response.lap_count} laps, to stay under the response size limit.`,
+    );
+
   return lines.join("\n");
 }
 
@@ -152,11 +160,15 @@ export const getActivityLapsTool = {
 
       warnOnSchemaDrift(name, ActivityLapsOutputSchema, response);
 
+      // A 100 km ultra with 1 km auto-laps is ~50k characters (#234).
+      const { text, structured } = fitListToBudget(laps.length, (n) => {
+        const shown = { ...response, laps: laps.slice(0, n) };
+        return { text: formatActivityLapsText(shown), structured: shown };
+      });
+
       return {
-        content: [
-          { type: "text" as const, text: formatActivityLapsText(response) },
-        ],
-        structuredContent: response,
+        content: [{ type: "text" as const, text }],
+        structuredContent: structured,
       };
     } catch (error) {
       return {
