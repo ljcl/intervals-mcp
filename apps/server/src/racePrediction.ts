@@ -574,7 +574,8 @@ export function buildSplits(
 
 /**
  * Parse a goal time written the way runners write it: "1:45:00", "45:30",
- * "1h45m", or a bare number of seconds. Returns null if it is not a time.
+ * "1h45m", or a bare number of seconds. Returns null if it is not a time,
+ * or is a zero time ("0:00", "0h"), which no race has.
  */
 export function parseGoalTime(input: string): number | null {
   const trimmed = input.trim().toLowerCase();
@@ -590,18 +591,19 @@ export function parseGoalTime(input: string): number | null {
     const seconds = Number(hms[3]);
     if (hasHours && (hms[2]!.length > 2 || minutes > 59)) return null;
     if (seconds > 59) return null;
-    return hours * 3600 + minutes * 60 + seconds;
+    const total = hours * 3600 + minutes * 60 + seconds;
+    return total > 0 ? total : null;
   }
 
   const human = trimmed.match(
     /^(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?\s*(?:(\d+)\s*s)?$/,
   );
   if (human && (human[1] || human[2] || human[3])) {
-    return (
+    const total =
       Number(human[1] ?? 0) * 3600 +
       Number(human[2] ?? 0) * 60 +
-      Number(human[3] ?? 0)
-    );
+      Number(human[3] ?? 0);
+    return total > 0 ? total : null;
   }
 
   if (/^\d+(\.\d+)?$/.test(trimmed)) {

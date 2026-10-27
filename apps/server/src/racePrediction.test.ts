@@ -585,6 +585,12 @@ describe("parseGoalTime", () => {
     expect(parseGoalTime("1:075:00")).toBeNull();
     expect(parseGoalTime("0")).toBeNull();
   });
+
+  it("rejects a zero time in every form, as it does a bare 0", () => {
+    expect(parseGoalTime("0:00")).toBeNull();
+    expect(parseGoalTime("00:00:00")).toBeNull();
+    expect(parseGoalTime("0h")).toBeNull();
+  });
 });
 
 describe("formatters", () => {
