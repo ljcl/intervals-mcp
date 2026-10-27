@@ -245,6 +245,13 @@ describe("getRacePredictionTool.execute", () => {
     expect(mockedAthleteCurves).not.toHaveBeenCalled();
   });
 
+  it("rejects a 0:00 goal time rather than dropping the target plan", async () => {
+    const result = await run({ raceDistance: "10km", goalTime: "0:00" });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain('Could not read "0:00"');
+  });
+
   it("adds a non-standard requested race to the prediction table", async () => {
     mockedAthleteCurves.mockResolvedValueOnce(curvesWithPoint(10000, 2400));
 
