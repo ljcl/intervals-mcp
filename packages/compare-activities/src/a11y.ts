@@ -3,7 +3,7 @@ import {
   type SpeedSport,
   speedDisplayForSport,
 } from "@intervals-mcp/data";
-import { alignedKey } from "./align";
+import { alignedKey, type PairCadenceUnit } from "./align";
 import { type AlignedPoint, type AxisKey, type MetricKey } from "./types";
 
 /**
@@ -20,8 +20,8 @@ export interface CompareA11yInput {
   metric: MetricKey;
   axis: AxisKey;
   category: SpeedSport;
-  /** Cadence unit switch: spm when both activities are runs, rpm otherwise. */
-  bothRunning: boolean;
+  /** The pair's cadence unit, from `pairCadenceUnit`. */
+  cadenceUnit: PairCadenceUnit;
   data: AlignedPoint[];
   hidden: { a: boolean; b: boolean };
 }
@@ -47,7 +47,7 @@ function formatRange(
   range: { min: number; max: number },
   metric: MetricKey,
   category: SpeedSport,
-  bothRunning: boolean,
+  cadenceUnit: PairCadenceUnit,
 ): string {
   switch (metric) {
     case "pace": {
@@ -60,7 +60,7 @@ function formatRange(
     case "power":
       return `${Math.round(range.min)} to ${Math.round(range.max)} W`;
     case "cadence":
-      return `${Math.round(range.min)} to ${Math.round(range.max)} ${bothRunning ? "spm" : "rpm"}`;
+      return `${Math.round(range.min)} to ${Math.round(range.max)} ${cadenceUnit}`;
     case "altitude":
       return `${Math.round(range.min)} to ${Math.round(range.max)} m`;
   }
@@ -79,7 +79,7 @@ export function buildCompareA11yTitle(nameA: string, nameB: string): string {
 }
 
 export function buildCompareA11yDescription(input: CompareA11yInput): string {
-  const { nameA, nameB, metric, axis, category, bothRunning, data, hidden } =
+  const { nameA, nameB, metric, axis, category, cadenceUnit, data, hidden } =
     input;
   const parts: string[] = [];
 
@@ -111,7 +111,7 @@ export function buildCompareA11yDescription(input: CompareA11yInput): string {
     const range = sideRange(data, side, metric);
     if (range) {
       parts.push(
-        `"${name}" ranges from ${formatRange(range, metric, category, bothRunning)}.`,
+        `"${name}" ranges from ${formatRange(range, metric, category, cadenceUnit)}.`,
       );
     }
   }

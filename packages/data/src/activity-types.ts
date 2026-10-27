@@ -28,3 +28,20 @@ export function isRunning(activityType: string): boolean {
 export function isSwimming(activityType: string): boolean {
   return SWIMMING_TYPES.has(activityType);
 }
+
+/** A cadence unit label: steps, strokes or revolutions per minute. */
+export type CadenceLabel = "spm" | "strokes/min" | "rpm";
+
+/**
+ * The label for a type's cadence, in the unit the text tools and the MCP
+ * Apps show it: steps per minute for the step-cadence types
+ * ({@link isRunning}; doubled from intervals.icu's strides per minute),
+ * strokes per minute for a swim (intervals.icu's `average_cadence` and
+ * cadence stream count strokes there, docs/api-notes.md), rpm otherwise.
+ * The one home for this label: the server's `cadenceLabel`
+ * (`intervalLaps.ts`) re-exports it.
+ */
+export function cadenceLabel(activityType: string): CadenceLabel {
+  if (isRunning(activityType)) return "spm";
+  return isSwimming(activityType) ? "strokes/min" : "rpm";
+}

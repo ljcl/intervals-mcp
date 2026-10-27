@@ -1,4 +1,5 @@
 import {
+  cadenceLabel,
   formatDistance,
   formatTime,
   percentileRange,
@@ -268,7 +269,7 @@ export function ChartTooltip({
 
   const unitMap: Record<string, string> = {
     Altitude: "m",
-    Cadence: meta.isRunning ? "spm" : "rpm",
+    Cadence: cadenceLabel(meta.activityType),
     Grade: "%",
     "Heart Rate": "bpm",
     Power: "W",

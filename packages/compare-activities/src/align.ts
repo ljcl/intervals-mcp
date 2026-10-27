@@ -1,4 +1,6 @@
 import {
+  type CadenceLabel,
+  cadenceLabel,
   isRunning,
   type SpeedSport,
   smooth,
@@ -20,6 +22,20 @@ import {
 export function paceCategory(typeA: string, typeB: string): SpeedSport {
   const sport = speedSport(typeA);
   return sport === speedSport(typeB) ? sport : "other";
+}
+
+/** A cadence unit both lines share, or "/min" for a mixed pair. */
+export type PairCadenceUnit = CadenceLabel | "/min";
+
+/**
+ * The cadence axis unit for a pair, from `cadenceLabel`. Two activities with
+ * the same unit share it (two walks are spm: their cadence is doubled like a
+ * run's). A mixed pair, such as a run against a ride, plots steps against
+ * revolutions, so no one unit fits both: "/min" is all they have in common.
+ */
+export function pairCadenceUnit(typeA: string, typeB: string): PairCadenceUnit {
+  const unit = cadenceLabel(typeA);
+  return unit === cadenceLabel(typeB) ? unit : "/min";
 }
 
 /** Per-sample metric values, index-aligned with the `time`/`distance` axes.
@@ -65,6 +81,7 @@ export function toMetricSeries(
     series.values.power = streams.watts;
   }
   if (streams.cadence?.length === len) {
+    // The same rule as cadenceLabel's "spm".
     const doubled = isRunning(data.activityType);
     // A null sample must stay null: never become 0 via `null * 2`.
     series.values.cadence = streams.cadence.map((c) =>

@@ -265,8 +265,9 @@ minute for swims, rpm otherwise, with the unit named in
 `units.cadence_label` (`spm`, `strokes/min` or `rpm`). `units.cadence` stays
 `spm` or `rpm` (so `rpm` on a swim) for hosts holding the older output
 schema; `get-hill-analysis`, `get-split-analysis` and
-`get-interval-analysis` carry the same pair, and `cadenceLabel`/`cadenceUnit`
-(`intervalLaps.ts`) are their one home (#173). The response also carries
+`get-interval-analysis` carry the same pair. `cadenceLabel` (`packages/data`,
+which the MCP Apps use too) and `cadenceUnit` (`intervalLaps.ts`) are their
+one home (#173). The response also carries
 `device_lap_count` (`icu_lap_count`) and `intervals_edited`
 (`icu_intervals_edited`); the text flags it when intervals were edited or
 the interval count differs from the device's lap count. An activity with no

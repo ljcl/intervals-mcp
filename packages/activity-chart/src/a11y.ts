@@ -1,4 +1,4 @@
-import { formatTime } from "@intervals-mcp/data";
+import { cadenceLabel, formatTime } from "@intervals-mcp/data";
 import { metricLabel } from "./contextSummary";
 import {
   type ActivityMeta,
@@ -125,7 +125,7 @@ function describeSeries(
     case "altitude":
       return `Altitude ranges from ${Math.round(range.min)} to ${Math.round(range.max)} m.`;
     case "cadence":
-      return `Cadence ranges from ${Math.round(range.min)} to ${Math.round(range.max)} ${meta.isRunning ? "spm" : "rpm"}.`;
+      return `Cadence ranges from ${Math.round(range.min)} to ${Math.round(range.max)} ${cadenceLabel(meta.activityType)}.`;
     case "grade":
       return `Grade ranges from ${range.min.toFixed(1)}% to ${range.max.toFixed(1)}%.`;
   }
