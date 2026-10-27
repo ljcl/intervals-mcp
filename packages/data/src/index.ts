@@ -16,7 +16,6 @@ export {
 } from "./cadence";
 export { fitnessSourceLabel, formatSignedTsb } from "./fitness";
 export {
-  formatClock,
   formatDistance,
   formatDurationShort,
   formatPace,

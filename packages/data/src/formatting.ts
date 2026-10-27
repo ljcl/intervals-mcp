@@ -8,24 +8,6 @@ export function formatTime(seconds: number): string {
   return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
 }
 
-/**
- * "4:04" under an hour, "1:02:05" above — the leading unit is never
- * zero-padded, so an effort time reads the way a watch shows it.
- *
- * Distinct from `formatTime`, which always pads minutes to two digits
- * ("02:05") because its callers align it in a column.
- */
-export function formatClock(seconds: number): string {
-  const total = Math.round(seconds);
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  const secs = total % 60;
-  const mm = hours > 0 ? String(minutes).padStart(2, "0") : String(minutes);
-  return hours > 0
-    ? `${hours}:${mm}:${String(secs).padStart(2, "0")}`
-    : `${mm}:${String(secs).padStart(2, "0")}`;
-}
-
 const MONTHS = [
   "Jan",
   "Feb",

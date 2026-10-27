@@ -76,14 +76,6 @@ describe("TtlLruCache", () => {
     expect(cache.get("c")).toBe("C");
   });
 
-  it("deletes a single key", () => {
-    const cache = new TtlLruCache<string>();
-    cache.set("a", "A", 1000);
-    expect(cache.delete("a")).toBe(true);
-    expect(cache.delete("a")).toBe(false);
-    expect(cache.get("a")).toBeUndefined();
-  });
-
   it("invalidates every key matching a predicate", () => {
     const cache = new TtlLruCache<string>();
     cache.set("/activities/1", "detail", 1000);
@@ -167,7 +159,7 @@ describe("TtlLruCache byte budget (#71)", () => {
     expect(cache.get("c")).toBe("C");
   });
 
-  it("keeps the byte count exact through delete, deleteMatching, clear and expiry", () => {
+  it("keeps the byte count exact through deleteMatching, clear and expiry", () => {
     const clock = fakeClock();
     const cache = new TtlLruCache<string>({ now: clock.now });
     cache.set("/a/1", "x", 1000, 10);
@@ -176,9 +168,9 @@ describe("TtlLruCache byte budget (#71)", () => {
     cache.set("/b/2", "x", 1000, 40);
     expect(cache.bytes).toBe(100);
 
-    expect(cache.delete("/b/2")).toBe(true);
+    expect(cache.deleteMatching((key) => key === "/b/2")).toBe(1);
     expect(cache.bytes).toBe(60);
-    expect(cache.delete("/b/2")).toBe(false);
+    expect(cache.deleteMatching((key) => key === "/b/2")).toBe(0);
     expect(cache.bytes).toBe(60);
 
     expect(cache.deleteMatching((key) => key.startsWith("/a/"))).toBe(2);

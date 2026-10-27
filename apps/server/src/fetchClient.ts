@@ -525,18 +525,6 @@ export class FetchClient {
   }
 
   /**
-   * Invalidates every cached read on the same branch as `path` (descendants
-   * and ancestors, same rule as {@link invalidateWritten}), for a branch a
-   * write's own request URL doesn't itself touch, e.g. `updateActivity`
-   * dropping the athlete's activities list and gear list alongside the
-   * written activity's own cache entry, which the write already invalidates
-   * automatically.
-   */
-  invalidatePath(path: string): void {
-    this.invalidateWritten(path);
-  }
-
-  /**
    * The snapshot from the most recent response that carried `Retry-After`,
    * or `null` until one does. intervals.icu sends none.
    */
@@ -821,8 +809,10 @@ export class FetchClient {
    * value.
    *
    * A dropped in-flight entry keeps serving the waiters it already has.
+   * Callers also use it for a branch the write's own URL does not touch,
+   * e.g. `updateActivity` dropping the activities and gear lists.
    */
-  private invalidateWritten(url: string): void {
+  invalidateWritten(url: string): void {
     const writePath = this.toPath(url);
     const onBranch = (key: string): boolean => {
       const keyPath = this.toPath(key);

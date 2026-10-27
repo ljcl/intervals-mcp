@@ -106,11 +106,6 @@ export class TtlLruCache<V = unknown> {
     }
   }
 
-  /** Removes a single entry. Returns true if it existed. */
-  delete(key: string): boolean {
-    return this.remove(key);
-  }
-
   /**
    * Removes every entry whose key satisfies `predicate`. Used to invalidate all
    * cached resources under a written path. Returns the number removed.

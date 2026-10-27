@@ -927,10 +927,10 @@ export async function updateActivity(
   } catch (error) {
     handleApiError(error, context);
   } finally {
-    intervalsApi.invalidatePath(`/activity/${id}`);
-    intervalsApi.invalidatePath(athletePath("/activities"));
-    intervalsApi.invalidatePath(athletePath("/gear"));
-    intervalsApi.invalidatePath(athletePath("/pace-curves.json"));
+    intervalsApi.invalidateWritten(`/activity/${id}`);
+    intervalsApi.invalidateWritten(athletePath("/activities"));
+    intervalsApi.invalidateWritten(athletePath("/gear"));
+    intervalsApi.invalidateWritten(athletePath("/pace-curves.json"));
   }
   return parseOrThrow(IntervalsActivitySchema, data, context);
 }
@@ -1060,7 +1060,7 @@ async function writeGear(
   } catch (error) {
     handleApiError(error, context);
   } finally {
-    intervalsApi.invalidatePath(athletePath("/gear"));
+    intervalsApi.invalidateWritten(athletePath("/gear"));
   }
   return parseOrThrow(IntervalsGearSchema, data, context);
 }
@@ -1183,7 +1183,7 @@ export async function updateWellness(
   } catch (error) {
     handleApiError(error, context);
   } finally {
-    intervalsApi.invalidatePath(athletePath("/wellness"));
+    intervalsApi.invalidateWritten(athletePath("/wellness"));
   }
   return parseOrThrow(IntervalsWellnessSchema, data, context);
 }

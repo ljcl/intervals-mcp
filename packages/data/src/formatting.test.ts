@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  formatClock,
   formatDistance,
   formatDurationShort,
   formatPace,
@@ -27,25 +26,6 @@ describe("formatTime", () => {
 
   it("truncates fractional seconds", () => {
     expect(formatTime(59.9)).toBe("00:59");
-  });
-});
-
-describe("formatClock", () => {
-  it("leaves the leading minute unpadded under an hour", () => {
-    expect(formatClock(24)).toBe("0:24");
-    expect(formatClock(244)).toBe("4:04");
-    expect(formatClock(770)).toBe("12:50");
-  });
-
-  it("pads minutes once an hours segment appears", () => {
-    expect(formatClock(3725)).toBe("1:02:05");
-    expect(formatClock(3924)).toBe("1:05:24");
-    expect(formatClock(3600)).toBe("1:00:00");
-  });
-
-  it("rounds fractional seconds rather than truncating", () => {
-    // 119.6s truncates to 1:59, which reads as a different effort time.
-    expect(formatClock(119.6)).toBe("2:00");
   });
 });
 
