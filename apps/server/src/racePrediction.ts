@@ -16,6 +16,7 @@
  */
 
 import { type IntervalsAthletePaceCurves } from "./intervalsClient";
+import { daysBetween, isValidCalendarDate } from "./utils/localDate";
 import { paceFromDistanceTime } from "./utils/running";
 
 /** Riegel's fatigue exponent. 1.06 is the value from the original paper. */
@@ -166,17 +167,7 @@ export interface SplitPlan {
   splits: Split[];
 }
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
 const round1 = (value: number) => Math.round(value * 10) / 10;
-
-/** Whole days between two YYYY-MM-DD dates; negative if `date` is later. */
-export function daysBetween(date: string, reference: string): number {
-  const from = Date.parse(`${date}T00:00:00Z`);
-  const to = Date.parse(`${reference}T00:00:00Z`);
-  if (Number.isNaN(from) || Number.isNaN(to)) return 0;
-  return Math.round((to - from) / DAY_MS);
-}
 
 /**
  * Riegel's equivalent time at `targetMeters` for an effort of
@@ -707,7 +698,10 @@ export function criticalSpeedPredict(
 
 /** One list item's index-aligned `distance`/`values`/`activity_id` arrays,
  * turned into {@link SourceEffort}s. Points under `minDistanceMeters`, or
- * with no recorded value or owning activity at that index, are skipped. */
+ * with no recorded value or owning activity at that index, are skipped, and
+ * so are points whose activity is missing from `activities` or has no date:
+ * an undated effort read as 0 days old and outranked a dated recent one
+ * (#225). */
 function sourceEffortsFromCurve(
   item: IntervalsAthletePaceCurves["list"][number] | undefined,
   activities: IntervalsAthletePaceCurves["activities"],
@@ -728,14 +722,16 @@ function sourceEffortsFromCurve(
       continue;
     }
     const activity = activities[activityId];
+    const date = activity?.start_date_local?.split("T")[0];
+    if (!activity || !date || !isValidCalendarDate(date)) continue;
     efforts.push({
       name: `${Math.round(distanceMeters)} m`,
       distanceMeters,
       elapsedSeconds,
-      date: (activity?.start_date_local ?? "").split("T")[0] ?? "",
+      date,
       activityId,
-      activityName: activity?.name ?? "Unknown activity",
-      race: activity?.race === true,
+      activityName: activity.name ?? "Unknown activity",
+      race: activity.race === true,
     });
   }
   return efforts;
