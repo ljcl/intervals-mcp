@@ -759,8 +759,35 @@ app sends.
   receive more of these emails in future", so a reset restarts the usage
   count and re-arms the reminder email.
 - Every gear write answers with the gear item.
-- Not verified live: a reminder's shape in a response (`id`,
-  `distance_used`, `percent_used`, `last_reset`, from the spec's
-  `GearReminder`), and from when a new reminder counts usage. The
-  `update-gear` reply echoes the re-read usage, so the first live write
-  shows it.
+
+**Gear live write check (2026-10-27, user-approved, #85)**
+
+Two writes on one pair of shoes (71459, 176.9 km), approved by the user
+before running, through `updateGearTool.execute` with the real key:
+`addReminderKm: 700` with `reminderName: "Replace shoes"`, then
+`resetReminderId` on the new reminder. The reminder stays on the shoes as a
+real one; `update-gear` has no delete, so remove it in the web app if it is
+not wanted.
+
+- A reminder in the gear list has `id`, `gear_id`, `name`, `distance` (m),
+  `time`, `activities`, `days`, `last_reset`, `starting_distance` (m),
+  `starting_time` (s), `starting_activities`, `snoozed_until`,
+  `percent_used`, `distance_used` (m), `time_used`, `activities_used` and
+  `days_used`. A field the POST did not send (`time`, `activities`, `days`)
+  is 0, not null.
+- A new reminder counts from the moment it is added:
+  `starting_distance` was the item's whole distance (176906.7 m) and
+  `distance_used` was 0. So the usage that `update-gear`'s reply echoes for
+  a new reminder is 0, not the item's total.
+- `last_reset` is the start of the local day, not the time of the write. A
+  reminder added in the afternoon in Sydney on 2026-10-27 had
+  `last_reset: "2026-10-26T13:00:00.000+00:00"` (00:00 AEDT).
+- So a reset on the day the reminder was added (or last reset) leaves
+  `last_reset` as it was. The reset answered 200, and the re-read was the
+  same as before. Before this check, `update-gear` warned that such a reset
+  "could not be confirmed". It now treats a drop in `distance_used` as a
+  confirmation too, and when `last_reset` already shows today with no usage
+  counted, it says the re-read cannot show the reset instead of warning.
+- Not verified live: that a reset moves `starting_distance` to the item's
+  current distance (no run was logged between the add and the reset), and
+  what `snoozed_until` holds.

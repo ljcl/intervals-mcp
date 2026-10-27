@@ -5,9 +5,9 @@
  * (`get-*-data`, private handlers in `server.ts`) go through the same
  * `dispatchToolCall` a real request uses. The write tools
  * (`update-activity`, `update-wellness`, `update-gear`) are deliberately not
- * called here; `update-activity` was checked once, separately, with
- * explicit user approval (see docs/api-notes.md's "update-activity live
- * write check").
+ * called here; `update-activity` and `update-gear` were each checked once,
+ * separately, with explicit user approval (see docs/api-notes.md's
+ * "update-activity live write check" and "Gear live write check").
  *
  * Prints only a short summary per tool (ok/error, a handful of numbers, and
  * the response size against the budget) so this is safe to run and paste

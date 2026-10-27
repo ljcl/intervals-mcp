@@ -129,6 +129,16 @@ function gearLabel(gear: IntervalsGear): string {
   return `"${gear.name ?? "Gear"}" [${gear.id}]`;
 }
 
+/** True when `instant` (an ISO timestamp) falls on today in the configured
+ * time zone. */
+function isToday(instant: string | null | undefined): boolean {
+  if (!instant) return false;
+  const at = new Date(instant);
+  if (Number.isNaN(at.getTime())) return false;
+  const tz = getTimeZone();
+  return todayLocal(tz, at) === todayLocal(tz);
+}
+
 /** "700 km" with no trailing ".0", the default reminder name. */
 function kmText(km: number): string {
   return `${Number.isInteger(km) ? km : km.toFixed(1)} km`;
@@ -336,14 +346,25 @@ export const updateGearTool = {
           before: old?.last_reset ?? null,
           after: now?.last_reset ?? null,
         });
+        // intervals.icu stores last_reset as the start of the local day
+        // (docs/api-notes.md), so a second reset on one day leaves it as it
+        // was; then only a drop in distance_used shows the reset landed.
+        let sameDayNote = "";
         if (!now) {
           warnings.push(`reminder ${id} is missing from the re-read.`);
-        } else if ((now.last_reset ?? null) === (old?.last_reset ?? null)) {
-          warnings.push(
-            `the reset could not be confirmed: last_reset still shows ${now.last_reset ?? "nothing"}.`,
-          );
+        } else if (
+          (now.last_reset ?? null) === (old?.last_reset ?? null) &&
+          !((now.distance_used ?? 0) < (old?.distance_used ?? 0))
+        ) {
+          if ((now.distance_used ?? 0) === 0 && isToday(now.last_reset)) {
+            sameDayNote = ` last_reset already showed today and no usage was counted, so the re-read cannot show the reset.`;
+          } else {
+            warnings.push(
+              `the reset could not be confirmed: last_reset still shows ${now.last_reset ?? "nothing"}.`,
+            );
+          }
         }
-        summary = `Reset reminder ${now ? describeReminder(mapGearReminder(now)) : id} on gear ${gearLabel(after)}.`;
+        summary = `Reset reminder ${now ? describeReminder(mapGearReminder(now)) : id} on gear ${gearLabel(after)}.${sameDayNote}`;
       }
 
       const structured = {
