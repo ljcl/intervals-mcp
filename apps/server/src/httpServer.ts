@@ -25,6 +25,14 @@ export const IDLE_TIMEOUT_SECONDS = 120;
  */
 export const SHUTDOWN_GRACE_MS = 8_000;
 
+/**
+ * Largest request body `Bun.serve` reads; a larger one gets 413 before it is
+ * read. The endpoint parses every body itself and hands the SDK `parsedBody`,
+ * which skips the SDK's own 4 MiB limit, so without this Bun's 128 MiB
+ * default applied. A tool call's arguments are a few hundred bytes.
+ */
+export const MAX_REQUEST_BODY_BYTES = 4 * 1024 * 1024;
+
 /** Routes one request: `/mcp` behind the optional bearer secret, `/health`, else 404. */
 export function routeRequest(
   mcp: Pick<McpEndpoint, "handleRequest">,
@@ -53,6 +61,7 @@ export function serveOptions(
   return {
     ...listen,
     idleTimeout: IDLE_TIMEOUT_SECONDS,
+    maxRequestBodySize: MAX_REQUEST_BODY_BYTES,
     fetch: (req: Request) => routeRequest(mcp, req),
   };
 }
