@@ -362,12 +362,21 @@ export function resampleOverlayRuns(
   return rows;
 }
 
-/** Apply simple moving average to overlay points */
-export function smoothOverlayPoints(
-  points: OverlayPoint[],
-  windowSize = 30,
-): OverlayPoint[] {
-  return smooth(points, ["cadence"], windowSize);
+const smoothedOverlays = new WeakMap<OverlayStreamData, OverlayPoint[]>();
+
+/**
+ * A loaded run's overlay points, smoothed with a 30-sample moving average.
+ * Cached per stream object: the fetch store hands out a new map on every
+ * update (another run's progress tick too), but a loaded run keeps its
+ * `data` object, so each stream is smoothed once.
+ */
+export function overlayPoints(data: OverlayStreamData): OverlayPoint[] {
+  let points = smoothedOverlays.get(data);
+  if (!points) {
+    points = smooth(toOverlayPoints(data), ["cadence"], 30);
+    smoothedOverlays.set(data, points);
+  }
+  return points;
 }
 
 /** Dot size based on distance: min 4px, max 12px, scaled linearly */
