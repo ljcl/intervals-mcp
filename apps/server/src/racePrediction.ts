@@ -590,12 +590,16 @@ export function parseGoalTime(input: string): number | null {
   const trimmed = input.trim().toLowerCase();
   if (trimmed === "") return null;
 
-  const hms = trimmed.match(/^(?:(\d+):)?(\d{1,2}):(\d{1,2})$/);
+  // Without an hours part the minutes may run past 59: "75:30" is a
+  // 1:15:30 half marathon written as MM:SS (#226).
+  const hms = trimmed.match(/^(?:(\d+):)?(\d+):(\d{1,2})$/);
   if (hms) {
-    const hours = hms[1] ? Number(hms[1]) : 0;
+    const hasHours = hms[1] !== undefined;
+    const hours = hasHours ? Number(hms[1]) : 0;
     const minutes = Number(hms[2]);
     const seconds = Number(hms[3]);
-    if (minutes > 59 || seconds > 59) return null;
+    if (hasHours && (hms[2]!.length > 2 || minutes > 59)) return null;
+    if (seconds > 59) return null;
     return hours * 3600 + minutes * 60 + seconds;
   }
 

@@ -576,6 +576,10 @@ describe("parseGoalTime", () => {
     expect(parseGoalTime("1:45:00")).toBe(6300);
     expect(parseGoalTime("45:30")).toBe(2730);
     expect(parseGoalTime("  20:00 ")).toBe(1200);
+    // MM:SS past an hour, as the tool's own error message invites (#226).
+    expect(parseGoalTime("75:30")).toBe(4530);
+    expect(parseGoalTime("90:00")).toBe(5400);
+    expect(parseGoalTime("210:00")).toBe(12600);
   });
 
   it("parses the h/m/s shorthand", () => {
@@ -594,6 +598,7 @@ describe("parseGoalTime", () => {
     expect(parseGoalTime("soon")).toBeNull();
     expect(parseGoalTime("1:75:00")).toBeNull();
     expect(parseGoalTime("45:75")).toBeNull();
+    expect(parseGoalTime("1:075:00")).toBeNull();
     expect(parseGoalTime("0")).toBeNull();
   });
 });
