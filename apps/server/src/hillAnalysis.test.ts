@@ -68,6 +68,23 @@ function buildStreams(legs: Leg[]): HillStreams {
   };
 }
 
+/** Keep every `n`th sample (and the first), as a sparse recording would. */
+function everyNth(streams: HillStreams, n: number): HillStreams {
+  const keep = <T>(values: T[] | undefined) =>
+    values?.filter((_, i) => i % n === 0);
+  return {
+    time: keep(streams.time)!,
+    distance: keep(streams.distance)!,
+    altitude: keep(streams.altitude),
+    grade_smooth: keep(streams.grade_smooth),
+    heartrate: keep(streams.heartrate),
+    velocity_smooth: keep(streams.velocity_smooth),
+    cadence: keep(streams.cadence),
+    watts: keep(streams.watts),
+    moving: keep(streams.moving),
+  };
+}
+
 const flat = (lengthM: number, extra: Partial<Leg> = {}): Leg => ({
   lengthM,
   gradePct: 0,
@@ -304,6 +321,24 @@ describe("computeHillAnalysis", () => {
     // 2.5 m/s = 400 s/km raw; GAP must be meaningfully faster than raw pace.
     expect(c.paceSecPerKm).toBeCloseTo(400, -1);
     expect(c.gapPaceSecPerKm!).toBeLessThan(c.paceSecPerKm!);
+  });
+
+  // Smart recording samples every 10-20 s. Moving time took the 10 s
+  // average weight cap, so a 15 s sample counted as 10 s and the pace came
+  // out a third too fast (#222).
+  it("reports the true pace and power when samples are 15 s apart", () => {
+    const sparse = everyNth(
+      buildStreams([flat(1000), climb(600, { watts: 250 }), flat(1000)]),
+      15,
+    );
+    const analysis = computeHillAnalysis(sparse);
+    expect(analysis.climbs).toHaveLength(1);
+    const c = analysis.climbs[0]!;
+    // 2.5 m/s = 400 s/km, the pace get-split-analysis reports too.
+    expect(c.paceSecPerKm).toBeCloseTo(400, -1);
+    expect(c.movingTimeS).toBeCloseTo(c.lengthM / 2.5, -1);
+    // Power coverage compares capped weights, so full coverage stays full.
+    expect(c.avgWatts).toBeCloseTo(250, 0);
   });
 
   it("ignores bumps shorter than the minimum length", () => {

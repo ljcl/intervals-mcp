@@ -132,7 +132,10 @@ export function interpretDecoupling(pct: number): string {
 }
 
 interface WeightedSample {
+  /** Capped duration: weights the averages only. */
   weight: number;
+  /** Real duration: moving time and the warm-up skip (#222). */
+  seconds: number;
   heartrate: number;
   output: number;
 }
@@ -160,17 +163,19 @@ function collectMovingSamples(
     const hr = heartrate?.[i];
     const out = output[i];
     if (hr == null || hr <= 0 || out == null) continue;
-    samples.push({ weight, heartrate: hr, output: out });
+    samples.push({ weight, seconds: dt, heartrate: hr, output: out });
   }
   return { samples, stoppedSeconds };
 }
 
 function summarizeHalf(samples: WeightedSample[]): HalfSummary {
   let weight = 0;
+  let seconds = 0;
   let outputSum = 0;
   let hrSum = 0;
   for (const s of samples) {
     weight += s.weight;
+    seconds += s.seconds;
     outputSum += s.output * s.weight;
     hrSum += s.heartrate * s.weight;
   }
@@ -180,7 +185,7 @@ function summarizeHalf(samples: WeightedSample[]): HalfSummary {
     avgOutput,
     avgHeartrate,
     ratio: avgHeartrate > 0 ? avgOutput / avgHeartrate : 0,
-    seconds: weight,
+    seconds,
   };
 }
 
@@ -248,12 +253,12 @@ export function computeAerobicAnalysis(
   let skipped = 0;
   let firstIndex = 0;
   while (firstIndex < samples.length && skipped < excludeWarmup) {
-    skipped += samples[firstIndex]!.weight;
+    skipped += samples[firstIndex]!.seconds;
     firstIndex++;
   }
   const analysed = samples.slice(firstIndex);
 
-  const movingSeconds = analysed.reduce((sum, s) => sum + s.weight, 0);
+  const movingSeconds = analysed.reduce((sum, s) => sum + s.seconds, 0);
   if (movingSeconds <= 0) {
     throw new AerobicAnalysisError(
       "No usable moving samples remain after exclusions: the activity may be entirely stopped time, lack HR coverage, or the warm-up exclusion may exceed its length.",
@@ -265,13 +270,14 @@ export function computeAerobicAnalysis(
     );
   }
 
-  // Split halves by cumulative moving time.
-  const halfSeconds = movingSeconds / 2;
+  // Split halves by cumulative capped weight, like the averages, so one
+  // long gap cannot form a half on its own.
+  const halfWeight = analysed.reduce((sum, s) => sum + s.weight, 0) / 2;
   let cumulative = 0;
   let splitIndex = analysed.length;
   for (let i = 0; i < analysed.length; i++) {
     cumulative += analysed[i]!.weight;
-    if (cumulative >= halfSeconds) {
+    if (cumulative >= halfWeight) {
       splitIndex = i + 1;
       break;
     }

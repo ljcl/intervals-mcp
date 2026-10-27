@@ -89,6 +89,21 @@ const gapVsRaw = (analysis: ReturnType<typeof computeSplitAnalysis>) =>
   ) / analysis.totals.avgPaceSecPerKm!;
 
 describe("computeSplitAnalysis", () => {
+  // Averages cap a sample's weight at 10 s, but power coverage divided the
+  // capped watts weight by the full moving time, so 15 s samples covered
+  // 10/15 = 67% and full power was dropped (#222).
+  it("keeps full power and the true pace when samples are 15 s apart", () => {
+    const sparse = streams([{ metres: 5000, secPerKm: 300 }], {
+      sampleMetres: 50,
+    });
+    sparse.watts = sparse.time.map(() => 250);
+    const analysis = computeSplitAnalysis(sparse);
+    for (const split of analysis.splits) {
+      expect(split.paceSecPerKm).toBeCloseTo(300, 0);
+      expect(split.avgWatts).toBe(250);
+    }
+  });
+
   it("splits an even flat run into equal kilometres", () => {
     const analysis = computeSplitAnalysis(flat5k());
 

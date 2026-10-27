@@ -200,6 +200,8 @@ interface Aggregates {
   startIdx: number;
   endIdx: number;
   movingTimeS: number;
+  /** Sum of the capped weights: the power-coverage denominator. */
+  weightS: number;
   distanceM: number;
   hrSum: number;
   hrW: number;
@@ -219,6 +221,7 @@ function aggregate(
     startIdx: start,
     endIdx: end,
     movingTimeS: 0,
+    weightS: 0,
     distanceM: distance[end]! - distance[start]!,
     hrSum: 0,
     hrW: 0,
@@ -231,8 +234,11 @@ function aggregate(
     const dt = time[i]! - time[i - 1]!;
     if (dt <= 0) continue;
     if (moving && moving[i] === false) continue;
+    // Moving time is real time (`deriveMoving` already ruled the gap
+    // moving); only the averages cap a long gap's weight (#222).
     const weight = Math.min(dt, MAX_SAMPLE_GAP_SECONDS);
-    agg.movingTimeS += weight;
+    agg.movingTimeS += dt;
+    agg.weightS += weight;
     const hr = heartrate?.[i];
     if (hr != null && hr > 0) {
       agg.hrSum += hr * weight;
@@ -259,6 +265,7 @@ function mergeAggregates(a: Aggregates, b: Aggregates): Aggregates {
     startIdx: a.startIdx,
     endIdx: b.endIdx,
     movingTimeS: a.movingTimeS + b.movingTimeS,
+    weightS: a.weightS + b.weightS,
     distanceM: a.distanceM + b.distanceM,
     hrSum: a.hrSum + b.hrSum,
     hrW: a.hrW + b.hrW,
@@ -291,8 +298,8 @@ function toRep(
     // a power-stream gap should report no power, not a skewed one.
     avgWatts:
       agg.wattsW > 0 &&
-      agg.movingTimeS > 0 &&
-      agg.wattsW / agg.movingTimeS >= POWER_COVERAGE_MIN
+      agg.weightS > 0 &&
+      agg.wattsW / agg.weightS >= POWER_COVERAGE_MIN
         ? round(agg.wattsSum / agg.wattsW, 0)
         : null,
     intensityPct: null,

@@ -489,6 +489,9 @@ function summarizeSegment(
   const lengthM = distance[end]! - distance[start]!;
 
   let movingTimeS = 0;
+  // Sum of the capped weights: the denominator for power coverage, since
+  // wattsW is capped the same way.
+  let weightS = 0;
   let hrSum = 0;
   let hrW = 0;
   let cadSum = 0;
@@ -502,8 +505,11 @@ function summarizeSegment(
     const dt = time[i]! - time[i - 1]!;
     if (dt <= 0) continue;
     if (moving && moving[i] === false) continue;
+    // Moving time is real time (`deriveMoving` already ruled the gap
+    // moving); only the averages cap a long gap's weight (#222).
     const weight = Math.min(dt, MAX_SAMPLE_GAP_SECONDS);
-    movingTimeS += weight;
+    movingTimeS += dt;
+    weightS += weight;
 
     const hr = heartrate?.[i];
     if (hr != null && hr > 0) {
@@ -555,9 +561,7 @@ function summarizeSegment(
     // Omit power when coverage is too thin to be meaningful — a segment sitting
     // in a power-stream gap should report no power, not a skewed one.
     avgWatts:
-      wattsW > 0 &&
-      movingTimeS > 0 &&
-      wattsW / movingTimeS >= POWER_COVERAGE_MIN
+      wattsW > 0 && weightS > 0 && wattsW / weightS >= POWER_COVERAGE_MIN
         ? round(wattsSum / wattsW, 0)
         : null,
     hrPerGapSpeed:
