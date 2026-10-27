@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createShutdown,
   IDLE_TIMEOUT_SECONDS,
+  MAX_REQUEST_BODY_BYTES,
   routeRequest,
   SHUTDOWN_GRACE_MS,
   serveOptions,
@@ -27,6 +28,15 @@ describe("serveOptions", () => {
     expect(options.idleTimeout).toBe(IDLE_TIMEOUT_SECONDS);
     expect(options.port).toBe(3000);
     expect(options.hostname).toBe("0.0.0.0");
+  });
+
+  it("caps the request body, since the SDK's limit does not apply to a parsed body", () => {
+    const options = serveOptions(fakeMcp(), {
+      port: 3000,
+      hostname: "0.0.0.0",
+    });
+    expect(options.maxRequestBodySize).toBe(MAX_REQUEST_BODY_BYTES);
+    expect(MAX_REQUEST_BODY_BYTES).toBe(4 * 1024 * 1024);
   });
 
   it("keeps the idle timeout above the SSE keep-alive interval and within Bun's limit", () => {
