@@ -35,7 +35,7 @@ describe("mapGear", () => {
     const entry = mapGear(byId("71459"));
 
     expect(entry.id).toBe("71459");
-    expect(entry.name).toBe("Dynafish Xiaonian B");
+    expect(entry.name).toBe("Daily Trainer B");
     expect(entry.type).toBe("Shoes");
     // 62030.29 m rounds to 62.0 km
     expect(entry.distance_km).toBe(62.0);
@@ -153,7 +153,7 @@ describe("formatGearListText", () => {
     const lines = text.split("\n");
     expect(lines[0]).toBe("Gear: 1");
     expect(lines[1]).toBe(
-      "Dynafish Xiaonian B (Shoes): 62.0 km, 1 activities, purchased 2026-09-01, auto-assign: type Run [71459]",
+      "Daily Trainer B (Shoes): 62.0 km, 1 activities, purchased 2026-09-01, auto-assign: type Run [71459]",
     );
     expect(lines).toHaveLength(2);
   });
@@ -181,7 +181,7 @@ describe("formatGearListText", () => {
     });
 
     expect(text.split("\n").slice(1)).toEqual([
-      "BMAI Jingtan Fly (Shoes): 168.0 km, 0 activities, purchased 2026-09-24, retired 2026-01-01 [71460]",
+      "Race Shoe A (Shoes): 168.0 km, 0 activities, purchased 2026-09-24, retired 2026-01-01 [71460]",
       "  notes: Race shoes",
       '  reminder 3 "Replace soon": 700.0 km, 210.4 km used (30%)',
       '  reminder "Check": no limit',

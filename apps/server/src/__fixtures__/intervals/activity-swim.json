@@ -81,7 +81,7 @@
   "analyzed": "2026-09-24T00:22:38.050+00:00",
   "icu_w_prime": null,
   "p_max": null,
-  "threshold_pace": 0.8333333,
+  "threshold_pace": 0.8,
   "icu_hr_zones": [146, 154, 163, 171, 176, 181, 190],
   "pace_zones": null,
   "lthr": 172,

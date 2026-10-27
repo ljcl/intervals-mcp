@@ -1150,7 +1150,7 @@ These examples assume you already have an activity id to pass to a tool.
 - "Add a note to my last ride: 'Felt strong on the climbs'"
 - "Log today: legs sore, tired, left calf tight"
 - "Remind me at 700 km on the new pair"
-- "Retire the old Dynafish shoes"
+- "Retire my old daily trainers"
 
 **Analysis and visualization**
 
