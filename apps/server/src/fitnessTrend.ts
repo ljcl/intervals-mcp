@@ -233,21 +233,39 @@ function deltaLookup(series: FitnessTrendDay[]) {
 }
 
 /**
- * CTL change over the `days` calendar days to the series' last day, by date;
- * null when the day `days` before it is not in the series. The one home for
- * the 7-day CTL change: `get-fitness-trend`'s `ctl_7d_delta`, the steep-ramp
- * bands, and the fitness-trend app's narration (through its payload) all
- * read it.
+ * Days before a displayed window that the 7-day CTL change and the
+ * steep-ramp bands look back into. Without them the first 7 days of a
+ * window had no prior day: a 7-day window never showed a ramp or a
+ * `ctl_7d_delta`, and a ramp starting in week 1 was dated a week late
+ * (#224).
  */
-export function ctlDelta(series: FitnessTrendDay[], days: number) {
+export const TREND_LOOKBACK_DAYS = 7;
+
+/**
+ * CTL change over the `days` calendar days to the series' last day, by date;
+ * null when the day `days` before it is in neither the series nor
+ * `lookback` (days just before the series, read only as prior days). The
+ * one home for the 7-day CTL change: `get-fitness-trend`'s `ctl_7d_delta`,
+ * the steep-ramp bands, and the fitness-trend app's narration (through its
+ * payload) all read it.
+ */
+export function ctlDelta(
+  series: FitnessTrendDay[],
+  days: number,
+  lookback: FitnessTrendDay[] = [],
+) {
   const last = series[series.length - 1];
-  return last ? deltaLookup(series)(last, days, "ctl") : null;
+  return last ? deltaLookup([...lookback, ...series])(last, days, "ctl") : null;
 }
 
 /** TSB change over the `days` calendar days to the last day; see {@link ctlDelta}. */
-export function tsbDelta(series: FitnessTrendDay[], days: number) {
+export function tsbDelta(
+  series: FitnessTrendDay[],
+  days: number,
+  lookback: FitnessTrendDay[] = [],
+) {
   const last = series[series.length - 1];
-  return last ? deltaLookup(series)(last, days, "tsb") : null;
+  return last ? deltaLookup([...lookback, ...series])(last, days, "tsb") : null;
 }
 
 /**
@@ -727,12 +745,17 @@ export interface TrendBand {
   reason: string;
 }
 
-/** How `trendBands` and `computeFlags` word a band that runs to the last day. */
+/** How `trendBands` and `computeFlags` read the window around `series`. */
 interface TrendBandOptions {
   /** False for a past window (`newest` before today). Default true. */
   endsToday?: boolean;
   /** The window's last day (today, or `newest`). */
   endDate?: string;
+  /**
+   * Days just before `series` (up to {@link TREND_LOOKBACK_DAYS}), read only
+   * as the 7-day CTL ramp's prior days and never banded themselves.
+   */
+  lookback?: FitnessTrendDay[];
 }
 
 /**
@@ -780,7 +803,7 @@ export function trendBands(
   const isNow = (end: number) => end === lastIndex && endsToday;
   /** The band runs to the last day of a past window: its reason is dated. */
   const toPastEnd = (end: number) => end === lastIndex && !endsToday;
-  const deltaAt = deltaLookup(series);
+  const deltaAt = deltaLookup([...(options.lookback ?? []), ...series]);
   const calendarDays = (start: number, end: number) =>
     daysBetween(series[start]!.date, series[end]!.date) + 1;
 

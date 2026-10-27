@@ -780,7 +780,10 @@ the first projected date TSB reaches 0, or null. `targetDate`/`targetTsb`
 solve a load taper landing on a target form. `targetDate` must be a real
 calendar date, after today, and at most 180 days ahead (`MAX_TAPER_DAYS`);
 any other date is an error before any fetch, in this tool and in the app
-pair. `bands` date the deep-fatigue, fresh and steep-ramp stretches. A fresh
+pair. `bands` date the deep-fatigue, fresh and steep-ramp stretches. The
+7-day CTL change (`trend.ctl_7d_delta` and the steep-ramp bands) also reads
+the 7 days before the window, so it does not depend on where the window
+starts; those days are never banded or listed in `daily`. A fresh
 band starts at TSB +15 and holds until TSB drops below +12; fresh bands 2
 days apart or less merge, and a fresh band needs 3 days unless it runs to the
 last day. A band that runs to the last day has a present-tense reason ("now")

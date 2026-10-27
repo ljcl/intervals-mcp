@@ -585,6 +585,16 @@ describe("ctlDelta / tsbDelta", () => {
     expect(tsbDelta(series, 7)).toBeNull();
     expect(ctlDelta([], 7)).toBeNull();
   });
+
+  it("reads the day N back from the lookback before the series (#224)", () => {
+    const lookback = [day("2026-07-01", 30, -10)];
+    const series = [day("2026-07-08", 36, 4)];
+    expect(ctlDelta(series, 7)).toBeNull();
+    expect(ctlDelta(series, 7, lookback)).toBe(6);
+    expect(tsbDelta(series, 7, lookback)).toBe(14);
+    // The last day is always the series', never the lookback's.
+    expect(ctlDelta([], 7, lookback)).toBeNull();
+  });
 });
 
 describe("taperTargetDateError", () => {
@@ -799,6 +809,37 @@ describe("trendBands", () => {
     expect(ramp[0]!.reason).toContain(
       `CTL climbed ${RAMP_RISK_PER_WEEK * 2.8}`,
     );
+  });
+
+  // Without a lookback the first 7 days had no prior day, so a 7-day
+  // window never showed a ramp and a week-1 ramp was dated late (#224).
+  it("bands a ramp from the first day when the lookback carries the prior week", () => {
+    const date = (i: number) => addDays("2026-07-01", i);
+    const all = Array.from({ length: 14 }, (_, i) =>
+      day(date(i), -5, 40 + i * 2),
+    );
+    const lookback = all.slice(0, 7);
+    const series = all.slice(7);
+    expect(trendBands(series).filter((b) => b.kind === "steep-ramp")).toEqual(
+      [],
+    );
+    const ramp = trendBands(series, { lookback }).filter(
+      (b) => b.kind === "steep-ramp",
+    );
+    expect(ramp).toHaveLength(1);
+    // Never earlier than the window: the lookback is not banded.
+    expect(ramp[0]!.start_date).toBe(series[0]!.date);
+    expect(ramp[0]!.end_date).toBe(series.at(-1)!.date);
+    expect(computeFlags(series, { lookback })).toEqual([ramp[0]!.reason]);
+  });
+
+  it("does not band the lookback days themselves", () => {
+    // Deep fatigue only in the lookback: nothing in the window to band.
+    const lookback = Array.from({ length: DEEP_FATIGUE_DAYS + 1 }, (_, i) =>
+      day(addDays("2026-07-01", i), DEEP_FATIGUE_TSB - 5),
+    );
+    const series = [day(addDays("2026-07-01", DEEP_FATIGUE_DAYS + 1), 0)];
+    expect(trendBands(series, { lookback })).toEqual([]);
   });
 
   it("returns nothing for an empty series", () => {

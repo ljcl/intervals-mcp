@@ -1563,8 +1563,10 @@ describe("fitness trend handlers", () => {
       expect(parsed.taper).toBeNull();
       expect(parsed.tsbPositiveDate).toBeNull();
       expect(parsed.warnings[0]).toBe(PAST_NOTE);
+      // The window starts 2026-01-13; the read goes 7 days earlier for the
+      // 7-day CTL lookback (#224).
       expect(mockedWellness.mock.calls[0]![1]).toEqual({
-        oldest: "2026-01-13",
+        oldest: "2026-01-06",
         newest: NEWEST,
       });
     });

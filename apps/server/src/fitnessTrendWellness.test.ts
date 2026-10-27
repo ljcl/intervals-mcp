@@ -76,6 +76,52 @@ describe("loadWellnessFitnessSeries", () => {
     expect(result.gapDates).toEqual(["2026-06-27", "2026-06-28"]);
   });
 
+  it("reads lookback days in the same request, kept apart from the window (#224)", async () => {
+    mockedWellness.mockResolvedValueOnce([
+      row("2026-06-24", { ctl: 30 }),
+      row("2026-06-26", { ctl: 35 }),
+      row("2026-06-27", { ctl: 36 }),
+      row("2026-06-28", { ctl: 37 }),
+    ]);
+
+    const result = await loadWellnessFitnessSeries(
+      "key",
+      { oldest: "2026-06-27", newest: "2026-06-28" },
+      { lookbackDays: 3 },
+    );
+
+    expect(mockedWellness).toHaveBeenLastCalledWith(
+      "key",
+      { oldest: "2026-06-24", newest: "2026-06-28" },
+      { fields: FITNESS_TREND_WELLNESS_FIELDS },
+    );
+    expect(result.lookback.map((d) => d.date)).toEqual([
+      "2026-06-24",
+      "2026-06-26",
+    ]);
+    expect(result.series.map((d) => d.date)).toEqual([
+      "2026-06-27",
+      "2026-06-28",
+    ]);
+    // 2026-06-25 is missing, but it is before the window: not a gap.
+    expect(result.gapDates).toEqual([]);
+  });
+
+  it("seeds from the window, never from a lookback day", async () => {
+    mockedWellness.mockResolvedValueOnce([row("2026-06-25", { ctl: 30 })]);
+
+    const result = await loadWellnessFitnessSeries(
+      "key",
+      { oldest: "2026-06-27", newest: "2026-06-28" },
+      { lookbackDays: 7 },
+    );
+
+    expect(result.lookback).toHaveLength(1);
+    expect(result.series).toEqual([]);
+    expect(result.seed).toBeNull();
+    expect(result.asOfDate).toBeNull();
+  });
+
   it("returns a null seed/as-of for a window with no usable wellness at all", async () => {
     mockedWellness.mockResolvedValueOnce([]);
 

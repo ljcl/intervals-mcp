@@ -95,6 +95,36 @@ describe("get-fitness-trend execute (whole-body, default)", () => {
     vi.useRealTimers();
   });
 
+  it("reads the 7 days before the window for the ramp and ctl_7d_delta (#224)", async () => {
+    // CTL climbs 1/day for 14 days; the window is the last 7 of them.
+    mockedWellness.mockResolvedValueOnce(
+      wellnessWindow(TODAY, 14, (daysAgo) => ({ ctl: 60 - daysAgo, atl: 70 })),
+    );
+    mockedListActivities.mockResolvedValueOnce([]);
+
+    const result = await getFitnessTrendTool.execute(
+      { ...DEFAULT_INPUT, days: 7 },
+      "test-key",
+    );
+
+    expect(mockedWellness.mock.calls[0]![1]).toEqual({
+      oldest: addDays(TODAY, -13),
+      newest: TODAY,
+    });
+    const structured = result.structuredContent as {
+      daily: { date: string }[];
+      trend: { ctl_7d_delta: number } | null;
+      bands: { kind: string; start_date: string }[];
+      warnings: string[];
+    };
+    // The lookback rows feed the deltas only, not the series or the gaps.
+    expect(structured.daily).toHaveLength(7);
+    expect(structured.warnings.join(" ")).not.toMatch(/no wellness/);
+    expect(structured.trend!.ctl_7d_delta).toBe(7);
+    const ramp = structured.bands.filter((b) => b.kind === "steep-ramp");
+    expect(ramp[0]!.start_date).toBe(addDays(TODAY, -6));
+  });
+
   it("reads whole-body CTL/ATL directly from wellness, never recomputing the recurrence", async () => {
     // These ctl/atl jumps are impossible from the standard 42/7-day
     // recurrence fed ctlLoad/atlLoad (a real model could never move ATL from
@@ -676,6 +706,36 @@ describe("get-fitness-trend execute (runOnly: true)", () => {
     );
   });
 
+  // The 7-day CTL lookback only saw the displayed window: days: 7 gave no
+  // ramp flag and no ctl_7d_delta, though days: 14 showed the ramp (#224).
+  it("flags a ramp and reports ctl_7d_delta on a 7-day window", async () => {
+    const activities = Array.from({ length: 60 }, (_, i) =>
+      run(i, { icu_training_load: i < 7 ? 250 : 40 }),
+    );
+    const flagsFor = async (days: number) => {
+      mockedListActivities.mockResolvedValueOnce(activities);
+      const result = await getFitnessTrendTool.execute(
+        { ...DEFAULT_INPUT, days, runOnly: true },
+        "test-key",
+      );
+      return result.structuredContent as {
+        flags: string[];
+        bands: { kind: string; start_date: string }[];
+        trend: { ctl_7d_delta: number; tsb_7d_delta: number } | null;
+      };
+    };
+
+    const week = await flagsFor(7);
+    const fortnight = await flagsFor(14);
+    expect(week.trend).not.toBeNull();
+    expect(week.trend!.ctl_7d_delta).toBeGreaterThanOrEqual(5);
+    expect(week.trend).toEqual(fortnight.trend);
+    expect(week.flags.join(" ")).toContain("steep ramp");
+    expect(week.flags).toEqual(fortnight.flags);
+    const ramp = (b: { kind: string }) => b.kind === "steep-ramp";
+    expect(week.bands.filter(ramp)[0]!.start_date).toBe(addDays(TODAY, -6));
+  });
+
   it("only sums Run/TrailRun/VirtualRun load, ignoring other types", async () => {
     mockedListActivities.mockResolvedValueOnce([
       run(0, { type: "Run", icu_training_load: 60 }),
@@ -773,8 +833,10 @@ describe("get-fitness-trend with newest (#80)", () => {
     });
 
     expect(result.isError).toBeUndefined();
+    // The window starts 2026-01-13; the read goes 7 days earlier for the
+    // 7-day CTL lookback (#224).
     expect(mockedWellness.mock.calls[0]![1]).toEqual({
-      oldest: "2026-01-13",
+      oldest: "2026-01-06",
       newest: NEWEST,
     });
     expect(mockedListActivities.mock.calls[0]![1]).toEqual({
