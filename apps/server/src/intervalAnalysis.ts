@@ -623,7 +623,8 @@ export function computeFade(reps: WorkRep[]): IntervalFade | null {
       : null;
 
   const parts: string[] = [];
-  if (paceDriftPct != null) {
+  // 0 (or -0) is no drift, not "0% faster".
+  if (paceDriftPct != null && paceDriftPct !== 0) {
     parts.push(
       paceDriftPct > 0
         ? `${paceDriftPct}% slower`
