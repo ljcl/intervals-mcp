@@ -95,7 +95,6 @@ import {
   isActivityIdSchema,
 } from "./tools/_ids";
 import {
-  type ComparisonResult,
   compareActivitiesTool,
   loadComparison,
 } from "./tools/compareActivities";
@@ -1065,7 +1064,7 @@ async function loadCadenceTrendData(
   apiKey: string,
   args: Record<string, unknown>,
 ): Promise<CadenceTrendData> {
-  const days = Number(args.days) || 42;
+  const days = args.days as number;
   const tz = getTimeZone();
   const newest = todayLocal(tz);
   const oldest = addDays(newest, -(days - 1));
@@ -1124,8 +1123,8 @@ async function loadTrainingLoadAppData(
   end: WindowEnd,
   progress: ReportProgress,
 ): Promise<TrainingLoadAppData> {
-  const days = Number(args.days) || 84;
-  const runOnly = Boolean(args.runOnly);
+  const days = args.days as number;
+  const runOnly = args.runOnly as boolean;
 
   const { lookback, runs, baselineRuns, loadActivities, current, source } =
     await loadTrainingLoadInputs(apiKey, { days, runOnly, end }, progress);
@@ -1234,12 +1233,12 @@ async function loadFitnessTrendAppData(
   end: WindowEnd,
   progress: ReportProgress,
 ): Promise<FitnessTrendAppData> {
-  const days = Number(args.days) || 90;
-  const runOnly = args.runOnly === true;
-  const projectDays = Number(args.projectDays ?? 14);
+  const days = args.days as number;
+  const runOnly = args.runOnly as boolean;
+  const projectDays = args.projectDays as number;
   const targetDate =
     typeof args.targetDate === "string" ? args.targetDate : undefined;
-  const targetTsb = Number(args.targetTsb ?? 10);
+  const targetTsb = args.targetTsb as number;
 
   // A past window drops projectDays and the taper in the loader, the one
   // home for that rule, so the default fortnight never reaches it.
@@ -1493,10 +1492,7 @@ async function loadRouteMapData(
   args: Record<string, unknown>,
   token: string,
 ): Promise<RouteMapData> {
-  const activityId = args.id ? String(args.id) : undefined;
-  if (!activityId) {
-    throw new Error("id is required.");
-  }
+  const activityId = String(args.id);
 
   const activity = await getIntervalsActivity(token, activityId, {
     intervals: true,
@@ -1589,22 +1585,15 @@ async function handleViewRouteMap(
  * request URL, so opening the compare app reads each activity once, for the
  * view, the data tool and the app's two streams calls together.
  */
-async function loadCompareActivitiesData(
-  args: Record<string, unknown>,
-  token: string,
-): Promise<ComparisonResult> {
-  return loadComparison(
-    token,
-    String(args.activityId1),
-    String(args.activityId2),
-  );
-}
-
 async function handleGetCompareActivitiesData(
   args: Record<string, unknown>,
   token: string,
 ): Promise<ToolCallResult> {
-  const data = await loadCompareActivitiesData(args, token);
+  const data = await loadComparison(
+    token,
+    String(args.activityId1),
+    String(args.activityId2),
+  );
   return { content: [{ type: "text", text: JSON.stringify(data) }] };
 }
 
@@ -1614,7 +1603,11 @@ async function handleViewCompareActivities(
   progress: ReportProgress,
   context: ToolCallContext,
 ): Promise<ToolCallResult> {
-  const data = await loadCompareActivitiesData(args, token);
+  const data = await loadComparison(
+    token,
+    String(args.activityId1),
+    String(args.activityId2),
+  );
   const lines = [
     `Activity 1: ${data.activity_1.name} (${data.activity_1.date}), ${data.activity_1.distance_km} km in ${data.activity_1.moving_time}`,
     `Activity 2: ${data.activity_2.name} (${data.activity_2.date}), ${data.activity_2.distance_km} km in ${data.activity_2.moving_time}`,
