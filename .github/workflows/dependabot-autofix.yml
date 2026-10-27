@@ -25,7 +25,9 @@ name: Dependabot autofix
 #     repo; the author check alone is spoofable by enabling Dependabot on a
 #     fork, the head-repo check closes that hole;
 #   - checkout does not persist credentials, and the push token is exposed
-#     only to the final push step, after all dependency code has run;
+#     only to the final push step, after all dependency code has run; that
+#     step's commit and push run with hooks off (core.hooksPath=/dev/null),
+#     since dependency code could have written .git/hooks to run there;
 #   - bun does not run lifecycle scripts for untrusted dependencies.
 
 on: # zizmor: ignore[dangerous-triggers] (justified above)
@@ -107,5 +109,5 @@ jobs:
           fi
           git config user.name 'dependabot[bot]'
           git config user.email '49699333+dependabot[bot]@users.noreply.github.com'
-          git commit -m 'chore(deps): sync toolchain pins, bun.lock and formatting with the bump'
-          git push "https://x-access-token:${PUSH_TOKEN}@github.com/${{ github.repository }}.git" HEAD:"$HEAD_REF"
+          git -c core.hooksPath=/dev/null commit -m 'chore(deps): sync toolchain pins, bun.lock and formatting with the bump'
+          git -c core.hooksPath=/dev/null push "https://x-access-token:${PUSH_TOKEN}@github.com/${{ github.repository }}.git" HEAD:"$HEAD_REF"
