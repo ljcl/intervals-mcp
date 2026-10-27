@@ -147,6 +147,21 @@ describe("parseRateLimitHeaders", () => {
     const snapshot = parseRateLimitHeaders(new Headers());
     expect(snapshot.retryAfterSeconds).toBeUndefined();
   });
+
+  it("reads an HTTP-date Retry-After as the seconds left, 0 once passed", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2026-10-21T07:27:00Z"));
+      const at = (value: string) =>
+        parseRateLimitHeaders(new Headers({ "retry-after": value }))
+          .retryAfterSeconds;
+      expect(at("Wed, 21 Oct 2026 07:28:00 GMT")).toBe(60);
+      expect(at("Wed, 21 Oct 2026 07:26:00 GMT")).toBe(0);
+      expect(at("soon")).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("describeRateLimit", () => {
@@ -396,6 +411,38 @@ describe("FetchClient retry and rate-limit behaviour", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     // Waited exactly the Retry-After window (2s) before retrying.
     expect(sleeps).toEqual([2000]);
+  });
+
+  it("waits until an HTTP-date Retry-After on a 429", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-21T07:27:57Z"));
+    const sleeps: number[] = [];
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        makeResponse("rate limited", {
+          status: 429,
+          headers: { "retry-after": "Wed, 21 Oct 2026 07:28:00 GMT" },
+        }),
+      )
+      .mockResolvedValueOnce(makeResponse('{"ok":true}'));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new FetchClient("https://example.test", {
+      maxRetries: 2,
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+    });
+
+    try {
+      const result = await client.get<{ ok: boolean }>("/thing");
+      expect(result.data.ok).toBe(true);
+      expect(sleeps).toEqual([3000]);
+      expect(client.getRateLimitSnapshot()?.retryAfterSeconds).toBe(3);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("throws a structured RateLimitError once retries are exhausted", async () => {

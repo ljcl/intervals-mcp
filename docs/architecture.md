@@ -74,7 +74,8 @@ All rate-limit awareness and backoff lives here — add retry/limit logic here,
 never per-tool.
 
 - Parses only `Retry-After` into a snapshot
-  (`intervalsApi.getRateLimitSnapshot()`). intervals.icu sends no
+  (`intervalsApi.getRateLimitSnapshot()`), in either form the header takes:
+  seconds, or an HTTP date read as the seconds left until it. intervals.icu sends no
   `X-RateLimit-*` quota windows (verified 2026-09-24), so none are parsed and
   the client paces itself instead; see "Request pacing" below. The snapshot
   is stored only when a response carries `Retry-After`, so a header-less
