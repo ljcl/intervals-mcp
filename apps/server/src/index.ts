@@ -1,5 +1,3 @@
-import path from "node:path";
-import * as dotenv from "dotenv";
 import { initAthleteTimeZone } from "./athleteTimeZone";
 import {
   checkConfig,
@@ -11,12 +9,6 @@ import { createShutdown, serveOptions } from "./httpServer";
 import { warnIfMcpUnprotected } from "./mcpAuth";
 import { createMcpEndpoint } from "./mcpEndpoint";
 import { createServer } from "./server";
-
-// Load .env file from monorepo root
-dotenv.config({
-  path: path.resolve(import.meta.dirname, "..", "..", "..", ".env"),
-  quiet: true,
-});
 
 // Every bad variable gets its own line, then the process stops.
 const { errors, warnings } = checkConfig();
