@@ -148,6 +148,29 @@ describe("computeAerobicAnalysis", () => {
     expect(Math.abs(analysis.decouplingPct)).toBeLessThan(2);
   });
 
+  // Moving time took the 10 s average weight cap, so 15 s samples counted
+  // two thirds of the real time: a 12-minute run read as 8 minutes, and a
+  // 10-minute warm-up skip ate 15 minutes (#222).
+  it("counts real moving time when samples are 15 s apart", () => {
+    const time = Array.from({ length: 49 }, (_, i) => i * 15);
+    const sparse = {
+      time,
+      heartrate: time.map(() => 150),
+      watts: time.map(() => 250),
+      moving: time.map(() => true),
+    };
+    const analysis = computeAerobicAnalysis(sparse);
+    expect(analysis.movingSeconds).toBe(720);
+    expect(analysis.firstHalf.seconds + analysis.secondHalf.seconds).toBe(720);
+    expect(analysis.warnings.join(" ")).not.toMatch(/minutes of moving time/);
+
+    const skipped = computeAerobicAnalysis(sparse, {
+      excludeWarmupSeconds: 300,
+    });
+    expect(skipped.excludedWarmupSeconds).toBe(300);
+    expect(skipped.movingSeconds).toBe(420);
+  });
+
   it("throws an actionable error without a heart rate stream", () => {
     const streams = makeStreams(3600, { watts: () => 250 });
     expect(() => computeAerobicAnalysis(streams)).toThrow(AerobicAnalysisError);

@@ -186,6 +186,40 @@ describe("computeIntervalAnalysis — stream path", () => {
     expect(analysis.reps.every((rep) => rep.intensityPct === null)).toBe(true);
   });
 
+  // Moving time took the 10 s average weight cap, so a 1200 m rep sampled
+  // every 15 s read 200 s (2:47/km) instead of 300 s (4:10/km) (#222).
+  it("reports the true rep pace and power when samples are 15 s apart", () => {
+    const dense = buildStreams([
+      easy(600),
+      stop(30),
+      work(300, { speedMs: 4, watts: 260 }),
+      stop(90),
+      work(300, { speedMs: 4, watts: 260 }),
+      stop(90),
+      work(300, { speedMs: 4, watts: 260 }),
+      stop(90),
+      easy(400),
+    ]);
+    const keep = <T>(values: T[] | undefined) =>
+      values?.filter((_, i) => i % 15 === 0);
+    const analysis = computeIntervalAnalysis({
+      time: keep(dense.time)!,
+      distance: keep(dense.distance)!,
+      heartrate: keep(dense.heartrate),
+      velocity_smooth: keep(dense.velocity_smooth),
+      cadence: keep(dense.cadence),
+      watts: keep(dense.watts),
+      moving: keep(dense.moving),
+    });
+    expect(analysis.reps).toHaveLength(3);
+    for (const rep of analysis.reps) {
+      expect(Math.abs(rep.paceSecPerKm! - 250)).toBeLessThan(10);
+      expect(Math.abs(rep.movingTimeS - 300)).toBeLessThanOrEqual(15);
+      // Coverage compares capped weights, so full coverage stays full.
+      expect(rep.avgWatts).toBeCloseTo(260, 0);
+    }
+  });
+
   it("reports per-rep power and excludes zero-watt dropouts (ljcl/strava-mcp#213)", () => {
     const streams = buildStreams([
       easy(600),

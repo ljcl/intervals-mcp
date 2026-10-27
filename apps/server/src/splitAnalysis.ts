@@ -151,6 +151,8 @@ export interface Bin {
   endM: number;
   distanceM: number;
   movingTimeS: number;
+  /** Sum of the capped weights: the power-coverage denominator. */
+  weightS: number;
   elapsedTimeS: number;
   hrSum: number;
   hrW: number;
@@ -170,6 +172,7 @@ function emptyBin(startM: number, endM: number): Bin {
     endM,
     distanceM: 0,
     movingTimeS: 0,
+    weightS: 0,
     elapsedTimeS: 0,
     hrSum: 0,
     hrW: 0,
@@ -243,7 +246,10 @@ export function binByDistance(
       const bin = binAt(d0);
       if (!bin) continue;
       bin.elapsedTimeS += dt;
-      if (isMoving) bin.movingTimeS += dt;
+      if (isMoving) {
+        bin.movingTimeS += dt;
+        bin.weightS += weight;
+      }
       observeAltitude(bin, altitude?.[i]);
       continue;
     }
@@ -269,6 +275,7 @@ export function binByDistance(
 
       const binWeight = weight * share;
       bin.movingTimeS += dt * share;
+      bin.weightS += binWeight;
       if (hr != null && hr > 0) {
         bin.hrSum += hr * binWeight;
         bin.hrW += binWeight;
@@ -509,8 +516,8 @@ export function computeSplitAnalysis(
       // Omit power when coverage is too thin to be meaningful.
       avgWatts:
         bin.wattsW > 0 &&
-        bin.movingTimeS > 0 &&
-        bin.wattsW / bin.movingTimeS >= POWER_COVERAGE_MIN
+        bin.weightS > 0 &&
+        bin.wattsW / bin.weightS >= POWER_COVERAGE_MIN
           ? Math.round(bin.wattsSum / bin.wattsW)
           : null,
     };

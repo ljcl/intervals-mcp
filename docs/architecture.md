@@ -321,7 +321,14 @@ altitude window) and `gapGrades` (that grade averaged over a centred 100 m
 window, clamped to ±30%, plus a noise measure). `splitAnalysis.ts` imports
 them rather than re-deriving them, along
 with `MAX_SAMPLE_GAP_SECONDS` and `POWER_COVERAGE_MIN`, so a hilly split and a
-hilly climb are corrected identically. `gapFactor` never sees a raw
+hilly climb are corrected identically. `MAX_SAMPLE_GAP_SECONDS` (10 s) caps
+a sample's weight in the HR, cadence, power and GAP averages only. Moving
+time, and so pace, adds each sample's full gap in every tool (`deriveMoving`
+has already ruled the gap moving), and power coverage divides the capped
+power weight by the capped weight total. When the hill, interval and aerobic
+tools counted the capped weight as moving time, 15 s smart-recording samples
+made a climb or rep a third too fast, and a different pace from
+`get-split-analysis` for the same stretch (#222). `gapFactor` never sees a raw
 per-sample grade. The Minetti curve is convex, so zero-mean grade noise
 applied sample by sample still raises the mean factor (Jensen's
 inequality): ±5% noise gave a mean factor of 1.03 and ±10% gave 1.13, so a
