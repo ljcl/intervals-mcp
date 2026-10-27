@@ -17,9 +17,8 @@ import {
 } from "./types";
 
 /**
- * "18 runs · last 6 weeks" — the header subtitle. Counts every run in the
- * window, including the cadence-less ones the charts drop, because it is
- * describing the window rather than the plotted series.
+ * "18 runs · last 6 weeks" — the header subtitle. Counts the feed's runs,
+ * which already leave out cadence-less ones (`excludedNoCadence`).
  */
 export function buildCadenceSubtitle(runCount: number, days: number): string {
   const runLabel = `${runCount} ${runCount === 1 ? "run" : "runs"}`;
@@ -27,17 +26,19 @@ export function buildCadenceSubtitle(runCount: number, days: number): string {
 }
 
 /**
- * Compute summary stats: current period avg, previous period avg, delta.
- * `now` is injectable so tests are deterministic.
+ * Compute summary stats: the all-runs average (the text tool's "Average
+ * cadence"), each half-window's average, and their delta, null when either
+ * half has no runs. `now` is injectable so tests are deterministic.
  */
 export function computeSummaryStats(
   activities: RunSummary[],
   days: number,
   now = Date.now(),
 ): {
+  average: number;
   currentAvg: number;
   previousAvg: number;
-  delta: number;
+  delta: number | null;
   runCount: number;
 } {
   const halfWindow = (days / 2) * 24 * 60 * 60 * 1000;
@@ -59,9 +60,11 @@ export function computeSummaryStats(
   const currentAvg = avg(recent);
   const previousAvg = avg(older);
   return {
+    average: avg([...recent, ...older]),
     currentAvg,
     previousAvg,
-    delta: currentAvg - previousAvg,
+    delta:
+      recent.length > 0 && older.length > 0 ? currentAvg - previousAvg : null,
     runCount: activities.length,
   };
 }

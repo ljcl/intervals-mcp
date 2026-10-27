@@ -275,7 +275,25 @@ describe("computeSummaryStats", () => {
     expect(stats.currentAvg).toBe(178);
     expect(stats.previousAvg).toBe(170);
     expect(stats.delta).toBe(8);
+    expect(stats.average).toBe(175);
     expect(stats.runCount).toBe(3);
+  });
+
+  it("shows no trend when one half of the window has no runs (#229)", () => {
+    const injured = computeSummaryStats(
+      [run({ date: "2026-06-20T00:00:00Z", averageCadence: 171 })],
+      42,
+      NOW,
+    );
+    expect(injured.delta).toBeNull();
+    expect(injured.average).toBe(171);
+
+    const newRunner = computeSummaryStats(
+      [run({ date: "2026-07-08T00:00:00Z", averageCadence: 171 })],
+      42,
+      NOW,
+    );
+    expect(newRunner.delta).toBeNull();
   });
 
   it("ignores zero-cadence runs and handles empty halves", () => {
@@ -287,7 +305,8 @@ describe("computeSummaryStats", () => {
 
     expect(stats.currentAvg).toBe(0);
     expect(stats.previousAvg).toBe(0);
-    expect(stats.delta).toBe(0);
+    expect(stats.delta).toBeNull();
+    expect(stats.average).toBe(0);
   });
 
   it("halves a window of days that is not whole weeks", () => {
