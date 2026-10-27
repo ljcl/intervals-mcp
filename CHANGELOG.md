@@ -1,5 +1,25 @@
 # Changelog
 
+## [2.9.2](https://github.com/ljcl/intervals-mcp/compare/v2.9.1...v2.9.2) (2026-10-27)
+
+
+### Bug Fixes
+
+* cap /mcp request bodies at 4 MiB ([#281](https://github.com/ljcl/intervals-mcp/issues/281)) ([68cfeaf](https://github.com/ljcl/intervals-mcp/commit/68cfeafedfc7225bb3c968cb465a05c2a83a31db))
+* close six correctness and safety gaps from the audit ([#278](https://github.com/ljcl/intervals-mcp/issues/278)) ([f89378e](https://github.com/ljcl/intervals-mcp/commit/f89378eec72d843d4b66692a3723f9c5d7fb8651))
+* honour a Retry-After header sent as an HTTP date ([#290](https://github.com/ljcl/intervals-mcp/issues/290)) ([b851e46](https://github.com/ljcl/intervals-mcp/commit/b851e46a4fc8b236a8ab9ac7e1d2277774856185))
+* keep the activity chart smoothed after it narrows to mobile ([#283](https://github.com/ljcl/intervals-mcp/issues/283)) ([f987141](https://github.com/ljcl/intervals-mcp/commit/f987141c6e2b97b8b8804d03d88b0c8d05ce4f91))
+* label the best-efforts 90d and 1y windows from the curve's first day ([#291](https://github.com/ljcl/intervals-mcp/issues/291)) ([8525be0](https://github.com/ljcl/intervals-mcp/commit/8525be0f27164c42e9f52cb4293ff27fca7f0d8d))
+* leave the pace phrase out of interval fade text when the drift is 0% ([#288](https://github.com/ljcl/intervals-mcp/issues/288)) ([5f37231](https://github.com/ljcl/intervals-mcp/commit/5f372312f8b608826532b77a5bb6512a6a29ad88))
+* reject a 0:00 goal time instead of silently dropping the target plan ([#289](https://github.com/ljcl/intervals-mcp/issues/289)) ([5f97585](https://github.com/ljcl/intervals-mcp/commit/5f9758551fa61b962a42bbbcff57afe8aac47545))
+* split the cadence-trends Trend halves by whole days ([#292](https://github.com/ljcl/intervals-mcp/issues/292)) ([443d206](https://github.com/ljcl/intervals-mcp/commit/443d206a050a7726471f7d952871d1d1c0f29a4a))
+* treat inherited names like constructor as unknown tools ([#280](https://github.com/ljcl/intervals-mcp/issues/280)) ([91ce86f](https://github.com/ljcl/intervals-mcp/commit/91ce86fc5a7a0889763e72d1686be7f44e2570fb))
+
+
+### Performance Improvements
+
+* smooth each cadence-trends overlay stream once ([#293](https://github.com/ljcl/intervals-mcp/issues/293)) ([9459554](https://github.com/ljcl/intervals-mcp/commit/94595542ef307d51330316ef44726b978ce844f8))
+
 ## [2.9.1](https://github.com/ljcl/intervals-mcp/compare/v2.9.0...v2.9.1) (2026-10-27)
 
 
