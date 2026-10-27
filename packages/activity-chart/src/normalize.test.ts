@@ -323,6 +323,14 @@ describe("toLapData", () => {
     expect(laps[0]?.endDistance).toBe(500);
   });
 
+  it("labels swim laps with the wire distance, not the stream spill (#230)", () => {
+    const laps = toLapData(poolSwim);
+    expect(laps.map((l) => l.distance)).toEqual(
+      poolSwim.laps!.map((l) => l.distance),
+    );
+    expect(laps[0]?.name).toBe("500m");
+  });
+
   it("returns empty without laps or a time stream", () => {
     expect(toLapData(streamData({ streams: { time: [0, 1] } }))).toEqual([]);
     expect(

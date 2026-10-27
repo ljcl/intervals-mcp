@@ -541,11 +541,12 @@ export function ActivityChart({
     return () => ro.disconnect();
   }, []);
 
-  // Bands drawn behind the chart (skip zero-width swim rests at the wall).
+  // Bands drawn behind the chart (skip swim rests at the wall, which cover
+  // no distance; older feeds carry no RECOVERY type, only a 0 m lap).
   const bandLaps = useMemo(
     () =>
       (laps ?? []).filter(
-        (lap) => !(meta.isSwimming && lap.startDistance === lap.endDistance),
+        (lap) => !(meta.isSwimming && (lap.isRest || lap.distance === 0)),
       ),
     [laps, meta.isSwimming],
   );
@@ -648,13 +649,10 @@ export function ActivityChart({
         isMobile && availableMetrics.has("grade") && !hidden.has("grade")
           ? ["grade"]
           : [],
-      lapCount:
-        laps?.filter(
-          (lap) => !(meta.isSwimming && lap.startDistance === lap.endDistance),
-        ).length ?? 0,
+      lapCount: bandLaps.length,
       smoothed: smooth,
     });
-  }, [meta, displayData, availableMetrics, hidden, isMobile, laps, smooth]);
+  }, [meta, displayData, availableMetrics, hidden, isMobile, bandLaps, smooth]);
 
   // The Recharts tree is memoized WITHOUT the hover state: hovering the
   // legend only flips a data attribute on the wrapper div (dimming is CSS),

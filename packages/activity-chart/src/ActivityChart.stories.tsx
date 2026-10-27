@@ -280,6 +280,7 @@ const denseLaps = Array.from({ length: 16 }, (_, i) => {
     endTime: start + 195,
     startDistance: 0,
     endDistance: 0,
+    distance: 0,
     isRest: i % 2 === 1,
   };
 });
