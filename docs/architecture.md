@@ -33,8 +33,8 @@ Related docs: [mcp-apps.md](mcp-apps.md) for the UI packages,
   mismatch) only for enveloped requests, so a 2025-era request can carry any
   `Mcp-Method`/`Mcp-Name` past a proxy or WAF rule keyed on them. The SDK
   passes each request's `era` to the server factory. On `legacy`,
-  `createServer` lists no tool that is not annotated read-only (`WRITE_TOOLS`,
-  today only `update-activity`), and `dispatchToolCall` gets `readOnly: true`
+  `createServer` lists no tool that is not annotated read-only (`WRITE_TOOLS`:
+  `update-activity`, `update-wellness`, `update-gear`), and `dispatchToolCall` gets `readOnly: true`
   and refuses such a tool before it reads the arguments. The refusal is an
   `isError` result, logged as an `error` call. A new write tool is guarded
   through its annotations, with no change here.
@@ -172,7 +172,7 @@ per-tool. Path patterns and current TTLs (`fetchClient.ts`):
 | `/activity/{id}/intervals` | 10m | Same |
 | `/activity/{id}` | 10m | Invalidated on `update-activity` writes |
 | `/activity/{id}/file` | 10m | The original upload's bytes, read for its weather (`activityWeather.ts`); it never changes, and the TTL bounds the memory a 150 KB to 1 MB file holds |
-| `/athlete/{id}/gear` | 10m | Rarely changes |
+| `/athlete/{id}/gear` | 10m | Rarely changes; invalidated on `update-activity` and `update-gear` writes |
 | `/athlete/{id}/sport-settings/{sport}` | 1h | Rarely changes |
 | `/athlete/{id}/sport-settings` | 10m | Every group at once (`get-athlete-zones`); shorter than one sport's settings, so a changed LTHR shows soon |
 | `/athlete/{id}/hr-curves.json` | 10m | Recomputed from history, like the pace curves |
@@ -180,7 +180,7 @@ per-tool. Path patterns and current TTLs (`fetchClient.ts`):
 | `/athlete/{id}/activities/search-full` | 1m | Same freshness as the listing |
 | `/athlete/{id}/activities/interval-search` | 1m | Same freshness as the listing |
 | `/athlete/{id}/activities/{ids}` (`i`-prefixed, comma-separated) | 10m | The same rows as `/activity/{id}`; dropped with the activities list on `update-activity` |
-| `/athlete/{id}/wellness*` | 5m | intervals.icu updates wellness through the day |
+| `/athlete/{id}/wellness*` | 5m | intervals.icu updates wellness through the day; invalidated on `update-wellness` writes |
 | `/athlete/{id}/pace-curves.json` | 10m | Recomputed from history a few times a day at most |
 
 Everything else is left uncached.
@@ -618,7 +618,7 @@ notes them with `noteCallFailure` (see below), so every catch block that
 translates an error reports it without its own code. The two kinds of branch
 that return `isError` without it note the error themselves: the stream tools'
 `IntervalsStreamsUnavailableError` and analysis-error branches, and
-`update-activity`'s two ambiguous-write branches. The last note wins. A call
+the two ambiguous-write branches of each write tool. The last note wins. A call
 that returns `isError` with no note, such as an argument refusal, logs the
 `ToolErrorResult` sentinel. An unknown tool and an `invalid_args` call carry no
 failure; their `outcome` says why.
@@ -759,9 +759,10 @@ upstream work:
 
 Above `FetchClient`:
 
-- `update-activity` treats `CallCancelledError` from the PUT as a definite
-  non-write. The write never left, so the text is a plain failure, not "may
-  already have been applied".
+- The write tools (`update-activity`, `update-wellness`, `update-gear`)
+  treat `CallCancelledError` from the write as a definite non-write
+  (`isDefiniteWriteRejection` in `tools/_errors.ts`). The write never left,
+  so the text is a plain failure, not "may already have been applied".
 - `finish` in `dispatchToolCall` records outcome `cancelled` when the signal
   has aborted. It reads the signal before it returns, because the SDK aborts
   it after every response. The SDK drops the result of an aborted call.
@@ -1026,17 +1027,33 @@ fresh re-read does not match what was sent), `composeDescription`
 (replace/append), and `discardedDescription` (the existing text a write
 would drop, shared by that refusal and the reply).
 
+**`update-wellness` and `update-gear` follow the same pattern.**
+`update-wellness` (`tools/updateWellness.ts`) reads the day fresh, refuses
+`comments` with no `commentsMode` that would drop the day's comments (the
+same `discardedDescription` rule), sends only the scores and comments that
+differ (`buildWellnessPatch` in `utils/wellnessWrite.ts`; a cleared score is
+`-1`), and diffs the fresh re-read (`diffWellnessWrite`). A date after today
+is refused before any request. `update-gear` (`tools/updateGear.ts`) makes
+exactly one change per call (its schema refuses zero or several), so one
+call is one write. It checks the gear and reminder ids against a
+`skipCache: true` gear list, refuses a reminder that duplicates an existing
+name and distance (so a blind retry adds nothing), and confirms against a
+fresh re-read. Both invalidate their branch in the client's `finally`
+(`/athlete/{id}/wellness`, `/athlete/{id}/gear`).
+
 **A write that may have landed is never silently treated as failed.**
-`update-activity` (`tools/updateActivity.ts`) can tell a definite rejection
-of the PUT from an ambiguous one: a 4xx `HttpError` (the request itself was
+`update-activity` (`tools/updateActivity.ts`), `update-wellness` and
+`update-gear` share `isDefiniteWriteRejection` (`tools/_errors.ts`) to tell
+a definite rejection of the write from an ambiguous one: a 4xx `HttpError` (the request itself was
 rejected, e.g. a bad gear id) or a `RateLimitError` (throttled before it
 ran) never reached the write, so those report a normal error. Anything
 else (the PUT times out (`RequestTimeoutError`), returns a 5xx, a network
 fault, or the client fails to parse an otherwise-200 response) leaves the
 write's outcome unknown, same as a failure after the PUT resolved (the
 confirming re-read, or diffing its response). All of these report an
-`isError` that says so explicitly and points at `get-activity` to check
-before sending the same update again, rather than either claiming success,
+`isError` that says so explicitly and points at the read tool to check
+(`get-activity`, `get-wellness`, `list-gear`) before sending the same
+update again, rather than either claiming success,
 reporting a flat failure, or inviting a blind retry that could double the
 effect of a write that already landed.
 
@@ -1075,7 +1092,7 @@ never sets it. `serverInstructions` (`instructions.ts`) builds the short
 orientation that `server/discover` sends to every chat: where ids come from,
 which tool to call first for one run, how to route fitness questions, the
 whole-body versus run-only rule, units and the configured time zone, and how
-to use `update-activity` safely. `createServer` builds it so that it can name
+to use the write tools safely. `createServer` builds it so that it can name
 the time zone. docs/Intervals_MCP_Server.md stays the long form. The
 integration suite checks the 1,800-character cap and that every tool the
 text names exists.
@@ -1101,8 +1118,8 @@ result envelope (`resultType`, cache fields, per-response `serverInfo`).
 claim-less request with a spoofed `Mcp-Name` is still `legacy`) and the
 rejection of an unserved revision. The integration suite drives claude.ai's
 2025-era app loader through `sendLegacy` (`initialize`, `resources/read`, an
-app data tool) and pins the write guard: no `update-activity` in a 2025-era
-`tools/list`, and a refused call past a spoofed `Mcp-Name`.
+app data tool) and pins the write guard: no write tool in a 2025-era `tools/list`, and a
+refused call to each past a spoofed `Mcp-Name`.
 Asserting against the in-memory `TOOL_DEFS` table proves nothing: an annotation or
 schema that does not serialize cannot influence a host. The bootstrap was
 copied into three suites before the shared client existed; add to the client

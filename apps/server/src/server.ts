@@ -119,6 +119,8 @@ import { getWellnessTool } from "./tools/getWellness";
 import { listActivitiesTool } from "./tools/listActivities";
 import { listGearTool } from "./tools/listGear";
 import { updateActivityTool } from "./tools/updateActivity";
+import { updateGearTool } from "./tools/updateGear";
+import { updateWellnessTool } from "./tools/updateWellness";
 import {
   buildTrainingLoadData,
   type TrainingLoadAppData,
@@ -482,6 +484,8 @@ const TOOLS = [
   listGearTool,
   getWellnessTool,
   getAthleteZonesTool,
+  updateWellnessTool,
+  updateGearTool,
 ] as const;
 
 /** Converts every tool implementation to the low-level TOOL_DEFS array. */

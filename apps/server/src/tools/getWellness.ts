@@ -8,6 +8,12 @@ import {
 } from "../intervalsClient";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
 import { dateInputSchema, todayLocal, validateRange } from "../utils/localDate";
+import {
+  WELLNESS_SCORE_NAMES,
+  WELLNESS_SCORES,
+  type WellnessScore,
+  wellnessScoreLabel,
+} from "../utils/wellnessWrite";
 import { READ_ONLY } from "./_annotations";
 import { toolErrorText } from "./_errors";
 import { WellnessOutputSchema, warnOnSchemaDrift } from "./outputs";
@@ -18,8 +24,9 @@ const description = `
 Returns daily wellness from intervals.icu for a day or a date range: HRV
 (rMSSD, SDNN or both), resting HR, sleep, weight, CTL/ATL/TSB, and the
 subjective scores the athlete or a device logged (readiness, soreness,
-fatigue, stress, mood, motivation, SpO2, respiration, comments). Use it to
-explain how a run felt or to check recovery.
+fatigue, stress, mood, motivation, injury, sleep quality, SpO2,
+respiration, comments). Use it to explain how a run felt or to check
+recovery. To log how the athlete feels, use update-wellness.
 
 For form trends, a projection or a taper, use get-fitness-trend; this tool
 reports each day's recorded values only.
@@ -68,6 +75,8 @@ export interface WellnessDayEntry {
   stress: number | null;
   mood: number | null;
   motivation: number | null;
+  injury: number | null;
+  sleep_quality: number | null;
   spo2: number | null;
   respiration: number | null;
   comments: string | null;
@@ -98,6 +107,8 @@ export function mapWellnessDay(w: IntervalsWellness): WellnessDayEntry {
     stress: w.stress ?? null,
     mood: w.mood ?? null,
     motivation: w.motivation ?? null,
+    injury: w.injury ?? null,
+    sleep_quality: w.sleepQuality ?? null,
     spo2: w.spO2 ?? null,
     respiration: w.respiration ?? null,
     comments: w.comments ?? null,
@@ -145,6 +156,13 @@ function buildHrvNote(days: WellnessDayEntry[]): string {
   return "No HRV recorded.";
 }
 
+/** "soreness 3 (High)": the score with the web app's label for it. */
+function formatScore(score: WellnessScore, value: number): string {
+  const label = wellnessScoreLabel(score, value);
+  const name = WELLNESS_SCORES[score].output.replace("_", " ");
+  return label ? `${name} ${value} (${label})` : `${name} ${value}`;
+}
+
 function formatWellnessDayBlock(d: WellnessDayEntry): string {
   const lines = [`Wellness ${d.date}`];
 
@@ -167,11 +185,10 @@ function formatWellnessDayBlock(d: WellnessDayEntry): string {
 
   const subjective: string[] = [];
   if (d.readiness != null) subjective.push(`readiness ${d.readiness}`);
-  if (d.soreness != null) subjective.push(`soreness ${d.soreness}`);
-  if (d.fatigue != null) subjective.push(`fatigue ${d.fatigue}`);
-  if (d.stress != null) subjective.push(`stress ${d.stress}`);
-  if (d.mood != null) subjective.push(`mood ${d.mood}`);
-  if (d.motivation != null) subjective.push(`motivation ${d.motivation}`);
+  for (const score of WELLNESS_SCORE_NAMES) {
+    const value = d[WELLNESS_SCORES[score].output];
+    if (value != null) subjective.push(formatScore(score, value));
+  }
   if (d.spo2 != null) subjective.push(`SpO2 ${d.spo2}%`);
   if (d.respiration != null) subjective.push(`respiration ${d.respiration}`);
   if (d.sleep_score != null) subjective.push(`sleep score ${d.sleep_score}`);

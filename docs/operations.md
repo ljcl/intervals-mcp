@@ -263,8 +263,8 @@ docker compose logs | grep '"event":"tool_call"' | grep -v '"client_name"'
 ## Securing the endpoint
 
 A tunnel makes `/mcp` reachable by anyone who discovers the URL — including
-the `update-activity` write tool and the intervals.icu API key configured on
-the server. Set `MCP_AUTH_TOKEN` to a long random secret
+the write tools (`update-activity`, `update-wellness`, `update-gear`) and
+the intervals.icu API key configured on the server. Set `MCP_AUTH_TOKEN` to a long random secret
 (`openssl rand -hex 32`); the server then requires
 `Authorization: Bearer <token>` on every `/mcp` request, returning 401
 otherwise. Without it the endpoint stays open and the server logs a startup
@@ -285,10 +285,11 @@ The server also serves 2025-era requests (no envelope), because claude.ai
 loads MCP Apps with a 2025-11-25 client. Those requests skip the header check,
 so they can carry any `Mcp-Name`, or none. A rule keyed on the headers cannot
 see what they call. For that reason the server never runs a write on that
-path: a 2025-era `tools/list` leaves out `update-activity`, and a 2025-era
-call to it gets an `isError` result. To make the instance read-only for every
-client, deny `Mcp-Name: update-activity` at the proxy. A 2026-07-28 client
-must send that header, and a 2025-era client cannot run the tool at all. An
+path: a 2025-era `tools/list` leaves out the write tools, and a 2025-era
+call to one gets an `isError` result. To make the instance read-only for
+every client, deny `Mcp-Name` values `update-activity`, `update-wellness` and
+`update-gear` at the proxy. A 2026-07-28 client must send that header, and a
+2025-era client cannot run a write at all. An
 envelope naming any revision other than 2026-07-28 gets HTTP 400 with
 JSON-RPC error `-32022` naming `2026-07-28` as the supported revision.
 

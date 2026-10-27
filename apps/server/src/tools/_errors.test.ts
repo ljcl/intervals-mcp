@@ -4,10 +4,15 @@ import {
   handledRateLimit,
   handledSubscriptionRequired,
 } from "../__fixtures__";
-import { type CallScope, runInCallScope } from "../callScope";
+import {
+  CallCancelledError,
+  type CallScope,
+  runInCallScope,
+} from "../callScope";
 import { HttpError, RequestTimeoutError } from "../fetchClient";
 import { IntervalsApiError } from "../intervalsClient";
 import {
+  isDefiniteWriteRejection,
   noteToolFailure,
   prefixedErrorText,
   toolErrorText,
@@ -337,5 +342,26 @@ describe("unavailableReason", () => {
     );
     expect(unavailableReason(null)).toBe("the request failed");
     expect(unavailableReason("boom")).toBe("the request failed");
+  });
+});
+
+describe("isDefiniteWriteRejection", () => {
+  const http = (status: number) =>
+    new HttpError(`PUT: ${status}`, { status, statusText: "", data: "" });
+
+  it("is true for a 4xx, a rate limit and a cancel: the write never ran", () => {
+    expect(isDefiniteWriteRejection(http(400))).toBe(true);
+    expect(isDefiniteWriteRejection(http(404))).toBe(true);
+    expect(isDefiniteWriteRejection(handledRateLimit("PUT"))).toBe(true);
+    expect(isDefiniteWriteRejection(new CallCancelledError("PUT"))).toBe(true);
+  });
+
+  it("is false when the write may have landed", () => {
+    expect(isDefiniteWriteRejection(http(503))).toBe(false);
+    expect(
+      isDefiniteWriteRejection(new RequestTimeoutError("https://x", 30000)),
+    ).toBe(false);
+    expect(isDefiniteWriteRejection(new Error("bad body"))).toBe(false);
+    expect(isDefiniteWriteRejection(undefined)).toBe(false);
   });
 });

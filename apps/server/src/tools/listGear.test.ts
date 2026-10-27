@@ -70,6 +70,11 @@ describe("mapGear", () => {
   it("treats null and false retired as active", () => {
     expect(isRetired(byId("71459"))).toBe(false);
     expect(isRetired({ id: "1", retired: false } as IntervalsGear)).toBe(false);
+    // Un-retiring writes "", so an item may come back with it.
+    expect(isRetired({ id: "1", retired: "" } as IntervalsGear)).toBe(false);
+    expect(
+      mapGear({ id: "1", retired: "" } as IntervalsGear).retired,
+    ).toBeNull();
   });
 
   it("falls back to defaults when name/type/distance/activities are missing", () => {
@@ -137,7 +142,7 @@ describe("formatGearListText", () => {
     );
   });
 
-  it("renders one line per item with distance, activities, and id", () => {
+  it("renders one line per item with distance, activities, purchase date, auto-assign rules and id", () => {
     const entry = mapGear(byId("71459"));
     const text = formatGearListText({
       count: 1,
@@ -148,15 +153,26 @@ describe("formatGearListText", () => {
     const lines = text.split("\n");
     expect(lines[0]).toBe("Gear: 1");
     expect(lines[1]).toBe(
-      "Dynafish Xiaonian B (Shoes): 62.0 km, 1 activities [71459]",
+      "Dynafish Xiaonian B (Shoes): 62.0 km, 1 activities, purchased 2026-09-01, auto-assign: type Run [71459]",
     );
+    expect(lines).toHaveLength(2);
   });
 
-  it("flags retired items and reminder counts", () => {
+  it("shows the retirement date, notes, and one line per reminder with its id", () => {
     const entry = {
-      ...mapGear(byId("71459")),
+      ...mapGear(byId("71460")),
       retired: "2026-01-01",
-      reminders: [{ name: "Replace soon" }],
+      notes: "Race shoes",
+      reminders: [
+        {
+          id: 3,
+          name: "Replace soon",
+          distance_km: 700,
+          distance_used_km: 210.4,
+          percent_used: 30.06,
+        },
+        { name: "Check" },
+      ],
     };
     const text = formatGearListText({
       count: 1,
@@ -164,8 +180,66 @@ describe("formatGearListText", () => {
       gear: [entry],
     });
 
-    expect(text).toContain("retired");
-    expect(text).toContain("1 reminder");
+    expect(text.split("\n").slice(1)).toEqual([
+      "BMAI Jingtan Fly (Shoes): 168.0 km, 0 activities, purchased 2026-09-24, retired 2026-01-01 [71460]",
+      "  notes: Race shoes",
+      '  reminder 3 "Replace soon": 700.0 km, 210.4 km used (30%)',
+      '  reminder "Check": no limit',
+    ]);
+  });
+
+  it("formats a negated rule with an operator", () => {
+    const entry = {
+      ...mapGear(byId("71460")),
+      auto_assign: [
+        { field: "type", operator: null, value: ["Run", "Walk"], not: true },
+        { field: "distance", operator: ">", value: 5000, not: false },
+      ],
+    };
+    const text = formatGearListText({
+      count: 1,
+      units: { distance: "km" },
+      gear: [entry],
+    });
+
+    expect(text).toContain(
+      "auto-assign: type not Run, Walk; distance > 5000 [71460]",
+    );
+  });
+});
+
+describe("mapGear new fields", () => {
+  it("reads purchased in both API formats as YYYY-MM-DD, and the fixture's rule", () => {
+    expect(mapGear(byId("71459")).purchased).toBe("2026-09-01");
+    expect(mapGear(byId("71460")).purchased).toBe("2026-09-24");
+    expect(mapGear(byId("71459")).auto_assign).toEqual([
+      { field: "type", operator: null, value: ["Run"], not: false },
+    ]);
+    expect(mapGear(byId("71460")).auto_assign).toEqual([]);
+    expect(mapGear(byId("71460")).notes).toBeNull();
+  });
+
+  it("maps a reminder's id, usage in km and last reset", () => {
+    expect(
+      mapGearReminder({
+        id: 3,
+        gear_id: "71459",
+        name: "Replace",
+        distance: 700000,
+        distance_used: 62030.29,
+        last_reset: "2026-10-01T00:00:00Z",
+        percent_used: 8.86,
+        starting_distance: 0,
+      } as IntervalsGearReminder),
+    ).toEqual({
+      id: 3,
+      name: "Replace",
+      distance_km: 700,
+      distance_used_km: 62,
+      last_reset: "2026-10-01T00:00:00Z",
+      percent_used: 8.86,
+      starting_distance: 0,
+    });
   });
 });
 

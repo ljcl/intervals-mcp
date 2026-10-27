@@ -98,6 +98,8 @@ const EXPECTED_CLASS: Record<string, "read" | "destroy"> = {
 
   // Writes.
   "update-activity": "destroy",
+  "update-wellness": "destroy",
+  "update-gear": "destroy",
 };
 
 const ANNOTATIONS_FOR_CLASS = {

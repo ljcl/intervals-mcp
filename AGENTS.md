@@ -154,6 +154,10 @@ breaking them has shipped bugs — do not work around them locally.
   itself times out, or anything fails after it resolved (the confirming
   re-read, parsing), it cannot tell whether the write landed, so it says so
   and points at `get-activity` rather than inviting a blind retry.
+  `update-wellness` and `update-gear` follow the same pattern (pointing at
+  `get-wellness`/`list-gear`); all three decide "never sent" with
+  `isDefiniteWriteRejection` (`tools/_errors.ts`). `update-gear` makes one
+  change per call, so a call is one write.
 - **Annotations come from the three `_annotations.ts` constants**, never inline
   objects — they decide whether hosts grant reads durably or re-prompt forever.
   `READ_ONLY` states `destructiveHint: false` explicitly (its documented
