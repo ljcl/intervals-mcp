@@ -250,16 +250,24 @@ export function App({
         stats={[
           {
             label: "Avg Cadence",
-            value: stats.currentAvg > 0 ? `${stats.currentAvg} spm` : "—",
+            value: stats.average > 0 ? `${stats.average} spm` : "—",
           },
           {
             label: "Trend",
             value:
-              stats.delta !== 0
-                ? `${stats.delta > 0 ? "+" : ""}${stats.delta} spm`
-                : "flat",
+              stats.delta === null
+                ? "—"
+                : stats.delta !== 0
+                  ? `${stats.delta > 0 ? "+" : ""}${stats.delta} spm`
+                  : "flat",
             direction:
-              stats.delta > 0 ? "up" : stats.delta < 0 ? "down" : "flat",
+              stats.delta === null
+                ? undefined
+                : stats.delta > 0
+                  ? "up"
+                  : stats.delta < 0
+                    ? "down"
+                    : "flat",
           },
           {
             label: "Runs",
