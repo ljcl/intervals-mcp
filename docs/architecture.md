@@ -69,12 +69,12 @@ Related docs: [mcp-apps.md](mcp-apps.md) for the UI packages,
 All rate-limit awareness and backoff lives here — add retry/limit logic here,
 never per-tool.
 
-- Parses `X-RateLimit-*` / `Retry-After` headers into a snapshot
-  (`intervalsApi.getRateLimitSnapshot()`); intervals.icu sends none of these
-  today (verified 2026-09-24), so the client paces itself instead of reacting
-  to headers; see "Request pacing" below. The snapshot is stored only when a
-  response carries rate-limit data, so a header-less response never replaces
-  it and the snapshot stays `null` today.
+- Parses only `Retry-After` into a snapshot
+  (`intervalsApi.getRateLimitSnapshot()`). intervals.icu sends no
+  `X-RateLimit-*` quota windows (verified 2026-09-24), so none are parsed and
+  the client paces itself instead; see "Request pacing" below. The snapshot
+  is stored only when a response carries `Retry-After`, so a header-less
+  response never replaces it and the snapshot stays `null` today.
 - Retries 429s honouring `Retry-After` (bounded, so a call never blocks on a
   full 15-minute window). The 429 path reads that response's own snapshot, so
   a header-less 429 still gets a `RateLimitError` ("wait a few minutes").

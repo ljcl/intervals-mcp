@@ -33,31 +33,12 @@ export class HttpError extends Error {
 }
 
 /**
- * A single rate-limit window: how many requests are allowed and how many
- * have been used. The convention this parses (two windows, 15-minute and
- * daily, for both an overall and a read-only quota) is a third-party API's;
- * intervals.icu sends none of these headers (verified 2026-09-24), so this
- * stays dormant for it and is kept generic for any future host that does.
- */
-export interface RateLimitWindow {
-  limit: number;
-  usage: number;
-}
-
-/**
- * Snapshot of the rate-limit headers from the most recent response, when the
- * upstream API sends them.
- *
- * Parses comma-separated `X-RateLimit-Limit` / `X-RateLimit-Usage` (overall)
- * and `X-ReadRateLimit-Limit` / `X-ReadRateLimit-Usage` (read-only) headers,
- * each formatted `"<15-min>,<daily>"`. A `Retry-After` header may also
- * accompany a 429.
+ * The `Retry-After` header of the most recent response that carried one.
+ * intervals.icu sends no rate-limit headers (verified 2026-09-24), so there
+ * is no quota window to parse; a 429 from it or Cloudflare may still carry
+ * `Retry-After`.
  */
 export interface RateLimitSnapshot {
-  shortTerm?: RateLimitWindow;
-  daily?: RateLimitWindow;
-  readShortTerm?: RateLimitWindow;
-  readDaily?: RateLimitWindow;
   retryAfterSeconds?: number;
   /** `Date.now()` when this snapshot was captured. */
   observedAt: number;
@@ -65,16 +46,15 @@ export interface RateLimitSnapshot {
 
 /**
  * Thrown when a request answers 429 and we have either exhausted our retries or
- * the window will not reset soon enough to be worth waiting on. Carries the parsed
- * rate-limit snapshot so callers can surface a structured, actionable message
- * (which window is exhausted, when it resets).
+ * its `Retry-After` is too long to be worth waiting on. Carries the parsed
+ * snapshot so callers can surface an actionable message.
  */
 export class RateLimitError extends HttpError {
   rateLimit: RateLimitSnapshot;
   retryAfterSeconds: number | null;
   /**
-   * The window description on its own — which window is exhausted and when it
-   * resets — with no caller context in front of it. `handleApiError` rethrows
+   * The rate-limit description on its own, with no caller context in front
+   * of it. `handleApiError` rethrows
    * this error unmodified, so a tool composing its own sentence ("the scan
    * stopped after 5 of 20 activities…") reads the useful half from here
    * rather than quoting an internal function name at the athlete.
@@ -184,153 +164,27 @@ export function isAbortError(error: unknown): boolean {
   return name === "TimeoutError" || name === "AbortError";
 }
 
-/** Parses the rate-limit convention's comma-separated `"<15-min>,<daily>"` header pair. */
-function parsePair(
-  limitHeader: string | null,
-  usageHeader: string | null,
-): { short?: RateLimitWindow; day?: RateLimitWindow } {
-  if (!limitHeader || !usageHeader) return {};
-  const limits = limitHeader.split(",").map((v) => Number(v.trim()));
-  const usages = usageHeader.split(",").map((v) => Number(v.trim()));
-  const result: { short?: RateLimitWindow; day?: RateLimitWindow } = {};
-  if (Number.isFinite(limits[0]) && Number.isFinite(usages[0])) {
-    result.short = { limit: limits[0] as number, usage: usages[0] as number };
-  }
-  if (Number.isFinite(limits[1]) && Number.isFinite(usages[1])) {
-    result.day = { limit: limits[1] as number, usage: usages[1] as number };
-  }
-  return result;
-}
-
-/** Reads the rate-limit headers from a response into a snapshot. */
+/** Reads a response's `Retry-After` header into a snapshot. */
 export function parseRateLimitHeaders(headers: Headers): RateLimitSnapshot {
-  const overall = parsePair(
-    headers.get("x-ratelimit-limit"),
-    headers.get("x-ratelimit-usage"),
-  );
-  const read = parsePair(
-    headers.get("x-readratelimit-limit"),
-    headers.get("x-readratelimit-usage"),
-  );
   const retryAfterRaw = headers.get("retry-after");
-  const retryAfter =
-    retryAfterRaw !== null && Number.isFinite(Number(retryAfterRaw))
-      ? Number(retryAfterRaw)
-      : undefined;
-
   return {
-    shortTerm: overall.short,
-    daily: overall.day,
-    readShortTerm: read.short,
-    readDaily: read.day,
-    retryAfterSeconds: retryAfter,
+    retryAfterSeconds:
+      retryAfterRaw !== null && Number.isFinite(Number(retryAfterRaw))
+        ? Number(retryAfterRaw)
+        : undefined,
     observedAt: Date.now(),
   };
 }
 
-/** True when the snapshot holds at least one value parsed from a header. */
-function carriesRateLimitData(s: RateLimitSnapshot): boolean {
-  return (
-    s.shortTerm !== undefined ||
-    s.daily !== undefined ||
-    s.readShortTerm !== undefined ||
-    s.readDaily !== undefined ||
-    s.retryAfterSeconds !== undefined
-  );
-}
-
-/** Next quarter-hour boundary (UTC): when a 15-minute rate-limit window resets. */
-function next15MinReset(now: Date): Date {
-  const reset = new Date(now);
-  const nextQuarter = (Math.floor(now.getUTCMinutes() / 15) + 1) * 15;
-  // setUTCMinutes overflows past 59 into the next hour, which is what we want.
-  reset.setUTCMinutes(nextQuarter, 0, 0);
-  return reset;
-}
-
-/** Next UTC midnight: when a daily rate-limit window resets. */
-function nextDailyReset(now: Date): Date {
-  return new Date(
-    Date.UTC(
-      now.getUTCFullYear(),
-      now.getUTCMonth(),
-      now.getUTCDate() + 1,
-      0,
-      0,
-      0,
-    ),
-  );
-}
-
 /**
- * Builds a structured, actionable description of an exhausted rate limit:
- * which window is exhausted, current usage, and when it resets.
+ * Describes an exhausted rate limit. intervals.icu paces requests itself and
+ * names no window, so there is no reset time to report.
  */
-export function describeRateLimit(
-  snapshot: RateLimitSnapshot,
-  now = new Date(),
-): string {
-  const parts: string[] = [];
-
-  const dailyExhausted =
-    snapshot.daily && snapshot.daily.usage >= snapshot.daily.limit;
-  const shortExhausted =
-    snapshot.shortTerm && snapshot.shortTerm.usage >= snapshot.shortTerm.limit;
-
-  // Prefer reporting the window that is actually exhausted; the daily window is
-  // the more serious one when both are hit.
-  if (dailyExhausted && snapshot.daily) {
-    const reset = nextDailyReset(now);
-    const mins = Math.max(
-      1,
-      Math.round((reset.getTime() - now.getTime()) / 60000),
-    );
-    parts.push(
-      `Daily rate limit reached (${snapshot.daily.usage}/${snapshot.daily.limit} requests). Resets at ${reset.toISOString()} (~${mins} min).`,
-    );
-  } else if (shortExhausted && snapshot.shortTerm) {
-    const reset = next15MinReset(now);
-    const mins = Math.max(
-      1,
-      Math.round((reset.getTime() - now.getTime()) / 60000),
-    );
-    parts.push(
-      `15-minute rate limit reached (${snapshot.shortTerm.usage}/${snapshot.shortTerm.limit} requests). Resets at ${reset.toISOString()} (~${mins} min).`,
-    );
-  } else if (snapshot.shortTerm !== undefined || snapshot.daily !== undefined) {
-    // 429 with rate-limit headers present but neither window cleanly
-    // exhausted (e.g. the read-only quota, which this snapshot doesn't carry
-    // separately), the 15-minute window is the most likely culprit, and
-    // headers being present at all means this is a response following that convention.
-    const reset = next15MinReset(now);
-    const mins = Math.max(
-      1,
-      Math.round((reset.getTime() - now.getTime()) / 60000),
-    );
-    parts.push(
-      `Rate limit reached. The 15-minute window resets at ${reset.toISOString()} (~${mins} min).`,
-    );
-  } else {
-    // No rate-limit headers at all: intervals.icu sends none (see the
-    // `intervalsApi` client below) and paces requests itself instead, so
-    // there is no window boundary to report. Guessing at a quarter-hour
-    // reset here would be actively wrong for a provider that paces itself instead.
-    parts.push("Rate limit reached; wait a few minutes and retry.");
-  }
-
-  if (snapshot.shortTerm) {
-    parts.push(
-      `15-min usage: ${snapshot.shortTerm.usage}/${snapshot.shortTerm.limit}.`,
-    );
-  }
-  if (snapshot.daily) {
-    parts.push(`Daily usage: ${snapshot.daily.usage}/${snapshot.daily.limit}.`);
-  }
-  if (snapshot.retryAfterSeconds !== undefined) {
-    parts.push(`Retry-After: ${snapshot.retryAfterSeconds}s.`);
-  }
-
-  return parts.join(" ");
+export function describeRateLimit(snapshot: RateLimitSnapshot): string {
+  const advice = "Rate limit reached; wait a few minutes and retry.";
+  return snapshot.retryAfterSeconds === undefined
+    ? advice
+    : `${advice} Retry-After: ${snapshot.retryAfterSeconds}s.`;
 }
 
 interface FetchConfig {
@@ -683,8 +537,8 @@ export class FetchClient {
   }
 
   /**
-   * The rate-limit snapshot from the most recent response that carried
-   * rate-limit data, or `null` until one does. intervals.icu sends none.
+   * The snapshot from the most recent response that carried `Retry-After`,
+   * or `null` until one does. intervals.icu sends none.
    */
   getRateLimitSnapshot(): RateLimitSnapshot | null {
     return this.rateLimit;
@@ -1073,10 +927,10 @@ export class FetchClient {
           : networkError;
       }
 
-      // Capture rate-limit headers from every response, success or error. A
-      // response with none must not overwrite an earlier snapshot.
+      // Capture Retry-After from every response, success or error. A
+      // response without one must not overwrite an earlier snapshot.
       const snapshot = parseRateLimitHeaders(response.headers);
-      if (carriesRateLimitData(snapshot)) this.rateLimit = snapshot;
+      if (snapshot.retryAfterSeconds !== undefined) this.rateLimit = snapshot;
 
       if (!response.ok) {
         const status = response.status;

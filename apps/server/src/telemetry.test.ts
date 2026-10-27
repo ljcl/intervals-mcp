@@ -271,17 +271,14 @@ describe("recordToolCall", () => {
 
   it("reads the rate-limit snapshot from intervalsApi, not the retired Strava client", () => {
     mockedSnapshot.mockReturnValue({
-      shortTerm: { usage: 1, limit: 100 },
-      daily: { usage: 2, limit: 1000 },
+      retryAfterSeconds: 1,
       observedAt: 1_752_300_000_000,
-    } as ReturnType<typeof intervalsApi.getRateLimitSnapshot>);
+    });
 
     recordToolCall({ tool: "get-best-efforts", duration_ms: 5, outcome: "ok" });
 
     expect(mockedSnapshot).toHaveBeenCalled();
-    expect(lastRecord().rate_limit).toMatchObject({
-      shortTerm: { usage: 1, limit: 100 },
-    });
+    expect(lastRecord().rate_limit).toMatchObject({ retryAfterSeconds: 1 });
   });
 });
 

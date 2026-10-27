@@ -128,80 +128,45 @@ describe("parseJsonWithLargeInts", () => {
 });
 
 describe("parseRateLimitHeaders", () => {
-  it("parses overall and read windows plus retry-after", () => {
-    const headers = new Headers({
-      "x-ratelimit-limit": "100,1000",
-      "x-ratelimit-usage": "42,512",
-      "x-readratelimit-limit": "100,1000",
-      "x-readratelimit-usage": "30,400",
-      "retry-after": "120",
+  it("parses retry-after and ignores quota window headers", () => {
+    const snapshot = parseRateLimitHeaders(
+      new Headers({
+        "x-ratelimit-limit": "100,1000",
+        "x-ratelimit-usage": "42,512",
+        "retry-after": "120",
+      }),
+    );
+
+    expect(snapshot).toEqual({
+      retryAfterSeconds: 120,
+      observedAt: expect.any(Number),
     });
-
-    const snapshot = parseRateLimitHeaders(headers);
-
-    expect(snapshot.shortTerm).toEqual({ limit: 100, usage: 42 });
-    expect(snapshot.daily).toEqual({ limit: 1000, usage: 512 });
-    expect(snapshot.readShortTerm).toEqual({ limit: 100, usage: 30 });
-    expect(snapshot.readDaily).toEqual({ limit: 1000, usage: 400 });
-    expect(snapshot.retryAfterSeconds).toBe(120);
-    expect(typeof snapshot.observedAt).toBe("number");
   });
 
-  it("leaves windows undefined when headers are absent", () => {
+  it("leaves retryAfterSeconds undefined when the header is absent", () => {
     const snapshot = parseRateLimitHeaders(new Headers());
-    expect(snapshot.shortTerm).toBeUndefined();
-    expect(snapshot.daily).toBeUndefined();
     expect(snapshot.retryAfterSeconds).toBeUndefined();
   });
 });
 
 describe("describeRateLimit", () => {
-  it("reports the exhausted 15-minute window with a reset time", () => {
-    const message = describeRateLimit({
-      shortTerm: { limit: 100, usage: 100 },
-      daily: { limit: 1000, usage: 500 },
-      observedAt: Date.now(),
-    });
-
-    expect(message).toContain("15-minute rate limit reached");
-    expect(message).toContain("100/100");
-    expect(message).toContain("Resets at");
-  });
-
-  it("prefers the daily window when it is the exhausted one", () => {
-    const message = describeRateLimit({
-      shortTerm: { limit: 100, usage: 10 },
-      daily: { limit: 1000, usage: 1000 },
-      observedAt: Date.now(),
-    });
-
-    expect(message).toContain("Daily rate limit reached");
-    expect(message).toContain("1000/1000");
-  });
-
-  it("falls back to provider-neutral guidance when no rate-limit headers were seen at all", () => {
-    // intervals.icu sends no X-RateLimit-* headers (docs/api-notes.md); a 429
-    // from it carries an empty snapshot. Guessing at Strava's quarter-hour
-    // reset here would be wrong for that provider.
+  it("gives provider-neutral guidance with no Retry-After", () => {
+    // intervals.icu sends no rate-limit headers (docs/api-notes.md) and
+    // paces itself, so there is no window reset to report.
     const message = describeRateLimit({ observedAt: Date.now() });
 
     expect(message).toBe("Rate limit reached; wait a few minutes and retry.");
-    expect(message).not.toContain("Strava");
-    expect(message).not.toContain("15-minute window resets at");
   });
 
-  it("keeps the 15-minute reset detail when headers are present but neither window is cleanly exhausted", () => {
-    // e.g. Strava's read-only quota tripped, which this snapshot shape
-    // doesn't carry separately from the overall quota.
+  it("appends the Retry-After when one was sent", () => {
     const message = describeRateLimit({
-      shortTerm: { limit: 100, usage: 10 },
-      daily: { limit: 1000, usage: 10 },
+      retryAfterSeconds: 30,
       observedAt: Date.now(),
     });
 
-    expect(message).toContain("Rate limit reached.");
-    expect(message).toContain("15-minute window resets at");
-    expect(message).not.toContain("Strava");
+    expect(message).toBe(
+      "Rate limit reached; wait a few minutes and retry. Retry-After: 30s.",
+    );
   });
 });
 
@@ -297,23 +262,39 @@ describe("FetchClient retry and rate-limit behaviour", () => {
       sleep: async () => {},
     });
 
-  it("captures rate-limit headers after a successful request", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      makeResponse('{"ok":true}', {
-        headers: {
-          "x-ratelimit-limit": "100,1000",
-          "x-ratelimit-usage": "10,200",
-        },
-      }),
-    );
+  it("captures Retry-After after a successful request", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        makeResponse('{"ok":true}', { headers: { "retry-after": "5" } }),
+      );
     vi.stubGlobal("fetch", fetchMock);
 
     const client = newClient();
     await client.get("/thing");
 
-    const snapshot = client.getRateLimitSnapshot();
-    expect(snapshot?.shortTerm).toEqual({ limit: 100, usage: 10 });
-    expect(snapshot?.daily).toEqual({ limit: 1000, usage: 200 });
+    expect(client.getRateLimitSnapshot()).toMatchObject({
+      retryAfterSeconds: 5,
+    });
+  });
+
+  it("stores no snapshot from quota window headers alone", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        makeResponse('{"ok":true}', {
+          headers: {
+            "x-ratelimit-limit": "100,1000",
+            "x-ratelimit-usage": "10,200",
+          },
+        }),
+      ),
+    );
+
+    const client = newClient();
+    await client.get("/thing");
+
+    expect(client.getRateLimitSnapshot()).toBeNull();
   });
 
   it("keeps the snapshot null when a response carries no rate-limit headers", async () => {
@@ -332,12 +313,7 @@ describe("FetchClient retry and rate-limit behaviour", () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
-        makeResponse("{}", {
-          headers: {
-            "x-ratelimit-limit": "100,1000",
-            "x-ratelimit-usage": "10,200",
-          },
-        }),
+        makeResponse("{}", { headers: { "retry-after": "5" } }),
       )
       .mockResolvedValueOnce(makeResponse("{}"));
     vi.stubGlobal("fetch", fetchMock);
@@ -347,7 +323,7 @@ describe("FetchClient retry and rate-limit behaviour", () => {
     const first = client.getRateLimitSnapshot();
     await client.get("/two");
 
-    expect(first?.shortTerm).toEqual({ limit: 100, usage: 10 });
+    expect(first?.retryAfterSeconds).toBe(5);
     expect(client.getRateLimitSnapshot()).toBe(first);
   });
 
@@ -401,8 +377,6 @@ describe("FetchClient retry and rate-limit behaviour", () => {
           status: 429,
           headers: {
             "retry-after": "2",
-            "x-ratelimit-limit": "100,1000",
-            "x-ratelimit-usage": "100,500",
           },
         }),
       )
@@ -430,8 +404,6 @@ describe("FetchClient retry and rate-limit behaviour", () => {
         status: 429,
         headers: {
           "retry-after": "1",
-          "x-ratelimit-limit": "100,1000",
-          "x-ratelimit-usage": "100,500",
         },
       }),
     );
@@ -448,8 +420,10 @@ describe("FetchClient retry and rate-limit behaviour", () => {
 
     const err = await client.get("/thing").catch((e) => e);
     expect(err).toBeInstanceOf(RateLimitError);
-    expect(err.message).toContain("15-minute rate limit reached");
-    expect(err.rateLimit.shortTerm).toEqual({ limit: 100, usage: 100 });
+    expect(err.message).toBe(
+      "Rate limit reached; wait a few minutes and retry. Retry-After: 1s.",
+    );
+    expect(err.rateLimit.retryAfterSeconds).toBe(1);
   });
 
   it("does not wait out a Retry-After that exceeds the cap", async () => {

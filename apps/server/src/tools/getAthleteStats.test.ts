@@ -600,6 +600,6 @@ describe("getAthleteStatsTool.execute", () => {
     expect(result.isError).toBe(true);
     const text = result.content[0]?.text ?? "";
     expect(text.startsWith("❌")).toBe(true);
-    expect(text).toContain("rate limit");
+    expect(text).toContain("Retry-After: 60s");
   });
 });

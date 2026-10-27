@@ -36,7 +36,7 @@ describe("toolErrorText", () => {
 
     expect(text.startsWith("❌ ")).toBe(true);
     expect(text).toBe(
-      "❌ Rate limit reached while trying to fetch activity 789. 15-minute rate limit reached (100/100 requests). Retry after the window resets.",
+      "❌ Rate limit reached while trying to fetch activity 789. Rate limit reached; wait a few minutes and retry. Retry-After: 60s. Retry after the window resets.",
     );
     // The client function's name is internal detail, not athlete guidance.
     expect(text).not.toContain("getActivityById");

@@ -37,14 +37,14 @@ breaking them has shipped bugs — do not work around them locally.
   `parseJsonWithLargeInts` → SDK `parsedBody`; that seam keeps 64-bit ids
   intact.
 - **Rate limits and retries live in `fetchClient.ts`, never per-tool.**
-  Parses `X-RateLimit-*`/`Retry-After` into a snapshot; bounded retries honour
-  `Retry-After`; transient 5xx (Cloudflare 520-524 too)/network faults retry
+  Parses only `Retry-After` into a snapshot (intervals.icu sends no
+  `X-RateLimit-*` windows); bounded retries honour `Retry-After`; transient 5xx (Cloudflare 520-524 too)/network faults retry
   GET/HEAD only, never writes. The body read is inside the attempt, so its
   timeout retries and is a `RequestTimeoutError`. Error bodies reach a
   message only through `summarizeErrorBody` (an HTML page becomes its title).
   A cancelled call starts no new attempt, retry or wait; a started write is
   never interrupted (docs/architecture.md#cancellation). The snapshot is
-  stored only when a response carries rate-limit headers; `FetchClient`
+  stored only when a response carries `Retry-After`; `FetchClient`
   counts upstream attempts for `/health`.
 - **Error types survive translation.** `handleApiError` rethrows
   `RateLimitError` unmodified (its `detail` is the bare window description a

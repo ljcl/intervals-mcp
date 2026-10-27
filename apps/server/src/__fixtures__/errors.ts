@@ -13,12 +13,12 @@ import { HttpError, RateLimitError } from "../fetchClient";
  */
 export function handledRateLimit(
   context: string,
-  detail = "15-minute rate limit reached (100/100 requests).",
+  detail = "Rate limit reached; wait a few minutes and retry. Retry-After: 60s.",
 ): RateLimitError {
   return new RateLimitError(
     `intervals.icu rate limit exceeded in ${context}. ${detail}`,
     { status: 429, statusText: "Too Many Requests", data: "" },
-    { observedAt: Date.now(), shortTerm: { limit: 100, usage: 100 } },
+    { observedAt: Date.now(), retryAfterSeconds: 60 },
     60,
     detail,
   );
