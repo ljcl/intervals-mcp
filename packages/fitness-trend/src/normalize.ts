@@ -132,10 +132,12 @@ export function hasRecordedLoad(data: FitnessTrendData): boolean {
   );
 }
 
-/** Axis label of the last recorded day — where the plan takes over. */
-export function handoverLabel(data: FitnessTrendData): string | null {
-  const last = data.series[data.series.length - 1];
-  return last ? formatShortDate(last.date) : null;
+/**
+ * Axis date of the last recorded day, where the plan takes over. The axis is
+ * keyed on the date, not its day-month label, which repeats across a year.
+ */
+export function handoverDate(data: FitnessTrendData): string | null {
+  return data.series[data.series.length - 1]?.date ?? null;
 }
 
 /** Fill colors per band kind. Fatigue reads as a warning, freshness does not. */

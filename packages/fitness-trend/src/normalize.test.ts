@@ -15,7 +15,7 @@ import {
   buildTrendSubtitle,
   countBandKinds,
   formatTaperWeek,
-  handoverLabel,
+  handoverDate,
   hasRecordedLoad,
   isPastWindow,
   isPlanned,
@@ -145,18 +145,17 @@ describe("hasRecordedLoad", () => {
   });
 });
 
-describe("handoverLabel", () => {
-  it("names the last recorded day", () => {
-    expect(handoverLabel(mockFitnessTrendData)).toBe(
-      formatShortDate(
-        mockFitnessTrendData.series[mockFitnessTrendData.series.length - 1]!
-          .date,
-      ),
+describe("handoverDate", () => {
+  it("is the last recorded date itself, so a year-long window cannot repeat it", () => {
+    // A day-month label ("28 Oct") recurs a year apart and Recharts then
+    // positions by index, losing the handover line and the bands.
+    expect(handoverDate(mockFitnessTrendData)).toBe(
+      mockFitnessTrendData.series[mockFitnessTrendData.series.length - 1]!.date,
     );
   });
 
   it("is null with no recorded days", () => {
-    expect(handoverLabel({ ...mockFitnessTrendData, series: [] })).toBeNull();
+    expect(handoverDate({ ...mockFitnessTrendData, series: [] })).toBeNull();
   });
 });
 

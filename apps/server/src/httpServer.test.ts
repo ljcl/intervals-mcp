@@ -68,6 +68,43 @@ describe("routeRequest", () => {
     expect(mcp.handleRequest).not.toHaveBeenCalled();
   });
 
+  describe("Origin check (DNS rebinding)", () => {
+    afterEach(() => {
+      delete process.env.PUBLIC_URL;
+      vi.restoreAllMocks();
+    });
+
+    const post = (origin?: string) =>
+      new Request("http://127.0.0.1:3000/mcp", {
+        method: "POST",
+        headers: origin ? { origin } : {},
+      });
+
+    it("refuses /mcp from a foreign web page, and logs the refusal", async () => {
+      const log = vi.spyOn(console, "error").mockImplementation(() => {});
+      const mcp = fakeMcp();
+      const response = await routeRequest(mcp, post("https://evil.example"));
+      expect(response.status).toBe(403);
+      expect(mcp.handleRequest).not.toHaveBeenCalled();
+      const line = JSON.parse(String(log.mock.calls[0]?.[0]));
+      expect(line).toMatchObject({ event: "mcp_rejected", status: 403 });
+    });
+
+    it("lets through requests with no Origin, from localhost, or from PUBLIC_URL", async () => {
+      process.env.PUBLIC_URL = "https://mcp.example.com/mcp";
+      for (const origin of [
+        undefined,
+        "http://localhost:6274",
+        "https://mcp.example.com",
+      ]) {
+        const mcp = fakeMcp();
+        const response = await routeRequest(mcp, post(origin));
+        expect(response.status, origin).toBe(200);
+        expect(mcp.handleRequest).toHaveBeenCalled();
+      }
+    });
+  });
+
   it("answers /health", async () => {
     const response = await routeRequest(
       fakeMcp(),

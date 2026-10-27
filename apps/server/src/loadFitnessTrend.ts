@@ -20,6 +20,7 @@ import {
   type FitnessTrendDay,
   type PlannedLoad,
   projectFromWellness,
+  RECENT_LOAD_DAYS,
   RUN_ONLY_RUNWAY_DAYS,
   RUN_TYPES,
   type TaperPlan,
@@ -193,7 +194,11 @@ export async function loadFitnessTrend(
     } = await loadWellnessFitnessSeries(
       apiKey,
       { oldest: windowStart, newest: endDate },
-      { lookbackDays: TREND_LOOKBACK_DAYS },
+      {
+        lookbackDays: taper
+          ? Math.max(TREND_LOOKBACK_DAYS, RECENT_LOAD_DAYS)
+          : TREND_LOOKBACK_DAYS,
+      },
     );
 
     displaySeries = series;
@@ -216,7 +221,7 @@ export async function loadFitnessTrend(
     // to sync or project: a trailing gap there is only a gap.
     const projected = endsToday
       ? projectFromWellness(
-          { series, seed, asOfDate, endDate },
+          { series, seed, asOfDate, endDate, lookback: wellnessLookback },
           {
             projectDays,
             plannedLoads,

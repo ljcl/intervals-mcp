@@ -79,6 +79,17 @@ describe("computeAerobicAnalysis", () => {
     expect(analysis.movingSeconds).toBeLessThan(3700);
   });
 
+  it("drops 0 W samples while moving, as power dropouts, like split/hill/interval analysis", () => {
+    const streams = makeStreams(3600, {
+      heartrate: () => 150,
+      watts: (t) => (t > 2400 && t <= 2700 ? 0 : 250),
+      moving: () => true,
+    });
+    const analysis = computeAerobicAnalysis(streams);
+    expect(analysis.decouplingPct).toBeCloseTo(0, 1);
+    expect(analysis.normalizedOutput).toBeCloseTo(250, 0);
+  });
+
   it("uses the speed basis when the caller passes speed, not watts", () => {
     const streams = makeStreams(3600, {
       heartrate: () => 150,

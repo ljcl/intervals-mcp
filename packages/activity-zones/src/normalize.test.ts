@@ -16,11 +16,20 @@ import {
 } from "./normalize";
 
 describe("formatZoneRange", () => {
-  it("formats bounded and open-ended ranges", () => {
-    expect(formatZoneRange(hrZoneSet.buckets[0]!, "bpm")).toBe("0–120 bpm");
-    expect(formatZoneRange(hrZoneSet.buckets[4]!, "bpm")).toBe("175–197 bpm");
+  it("reads HR ranges as get-activity-zones does: upper bound inclusive, whole bpm", () => {
+    expect(formatZoneRange(hrZoneSet.buckets[0]!, hrZoneSet)).toBe(
+      "up to 120 bpm",
+    );
+    expect(formatZoneRange(hrZoneSet.buckets[4]!, hrZoneSet)).toBe(
+      "176-197 bpm",
+    );
+  });
+
+  it("formats an open-ended power range", () => {
     // Power's top bucket still models an open-ended sentinel.
-    expect(formatZoneRange(powerZoneSet.buckets[5]!, "W")).toBe("400+ W");
+    expect(formatZoneRange(powerZoneSet.buckets[5]!, powerZoneSet)).toBe(
+      "400+ W",
+    );
   });
 });
 
@@ -30,7 +39,7 @@ describe("buildZoneRows", () => {
     expect(rows).toHaveLength(5);
     expect(rows[0]).toEqual({
       label: "Z1",
-      range: "0–120 bpm",
+      range: "up to 120 bpm",
       minutes: 10,
       seconds: 600,
       pct: 15,

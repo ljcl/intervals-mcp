@@ -541,6 +541,25 @@ describe("get-fitness-trend execute (whole-body, default)", () => {
     expect(text).toContain("Week 1 (");
   });
 
+  it("bases the taper's recent load on 28 days, however short the display window", async () => {
+    // Load 80 every day but today (a rest day): 27 x 80 / 28 = 77.1.
+    mockedWellness.mockResolvedValueOnce(
+      wellnessWindow(TODAY, 35, (daysAgo) => ({
+        ctl: 50,
+        atl: 60,
+        atlLoad: daysAgo === 0 ? 0 : 80,
+      })),
+    );
+    mockedListActivities.mockResolvedValueOnce([]);
+
+    const result = await getFitnessTrendTool.execute(
+      { ...DEFAULT_INPUT, days: 1, targetDate: inDays(54) },
+      "test-key",
+    );
+
+    expect(result.content[0]?.text).toContain("(recent average 77.1/day)");
+  });
+
   it("says so when even rest cannot reach the target in time", async () => {
     mockedWellness.mockResolvedValueOnce([
       wellnessRow(TODAY, { ctl: 30, atl: 230 }),

@@ -27,14 +27,22 @@ export function composeDescription(
 /**
  * The existing description text that writing `next` would lose, or `null`
  * when nothing is lost: the existing text is empty or whitespace-only, or
- * `next` already contains it (compared trimmed).
+ * `next` already contains it (compared trimmed) with no letter or digit glued
+ * to either end, so "ok" is not kept by "broke".
  */
 export function discardedDescription(
   existing: string | null | undefined,
   next: string | null | undefined,
 ): string | null {
   if (!existing || existing.trim() === "") return null;
-  return (next ?? "").includes(existing.trim()) ? null : existing;
+  const kept = existing.trim();
+  const text = next ?? "";
+  const glued = (c: string | undefined) =>
+    c !== undefined && /[\p{L}\p{N}]/u.test(c);
+  for (let i = text.indexOf(kept); i !== -1; i = text.indexOf(kept, i + 1)) {
+    if (!glued(text[i - 1]) && !glued(text[i + kept.length])) return null;
+  }
+  return existing;
 }
 
 /**

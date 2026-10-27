@@ -142,7 +142,7 @@ interface WeightedSample {
 
 /**
  * Flatten the streams into duration-weighted moving samples on the chosen
- * basis, dropping stopped samples and zero/absent HR.
+ * basis, dropping stopped samples, zero/absent HR and zero/absent output.
  */
 function collectMovingSamples(
   streams: AerobicStreams,
@@ -162,7 +162,9 @@ function collectMovingSamples(
     }
     const hr = heartrate?.[i];
     const out = output[i];
-    if (hr == null || hr <= 0 || out == null) continue;
+    // Zero output while moving is a sensor dropout (split/hill/interval
+    // analysis drop 0 W the same way), not a real effort.
+    if (hr == null || hr <= 0 || out == null || out <= 0) continue;
     samples.push({ weight, seconds: dt, heartrate: hr, output: out });
   }
   return { samples, stoppedSeconds };

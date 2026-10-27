@@ -1,3 +1,4 @@
+import { formatShortDate } from "@intervals-mcp/data";
 import { GRID_DASHARRAY, getChartTokens } from "@intervals-mcp/design-system";
 import { EmptyState } from "@intervals-mcp/ui";
 import { useMemo } from "react";
@@ -18,7 +19,7 @@ import styles from "./chartView.module.css";
 import {
   BAND_COLORS,
   buildChartRows,
-  handoverLabel,
+  handoverDate,
   hasRecordedLoad,
   isPlanned,
 } from "./normalize";
@@ -80,19 +81,19 @@ export function TrendChart({
       }),
     [data, showCtl, showAtl, showTsb, showPlan, hiddenBandKinds],
   );
-  const handover = handoverLabel(data);
+  const handover = handoverDate(data);
   const planned = isPlanned(data);
 
-  // Bands are dated; the axis is categorical, so each band maps to the axis
-  // labels of the rows it covers.
+  // The categorical axis is keyed on the date, so a band spans the rows of
+  // its own dates; one whose dates are not charted is skipped.
   const bands = useMemo(() => {
-    const labelByDate = new Map(rows.map((row) => [row.date, row.label]));
-    return data.bands.flatMap((band) => {
-      if (hiddenBandKinds.includes(band.kind)) return [];
-      const x1 = labelByDate.get(band.startDate);
-      const x2 = labelByDate.get(band.endDate);
-      return x1 && x2 ? [{ ...band, x1, x2 }] : [];
-    });
+    const dates = new Set(rows.map((row) => row.date));
+    return data.bands.filter(
+      (band) =>
+        !hiddenBandKinds.includes(band.kind) &&
+        dates.has(band.startDate) &&
+        dates.has(band.endDate),
+    );
   }, [data.bands, rows, hiddenBandKinds]);
 
   if (!hasRecordedLoad(data)) {
@@ -125,7 +126,8 @@ export function TrendChart({
             vertical={false}
           />
           <XAxis
-            dataKey="label"
+            dataKey="date"
+            tickFormatter={(date: string) => formatShortDate(date)}
             tick={{
               fontSize: tokens.axisFont,
               fill: "var(--color-text-tertiary)",
@@ -183,8 +185,8 @@ export function TrendChart({
             <ReferenceArea
               key={`${band.kind}-${band.startDate}`}
               yAxisId="load"
-              x1={band.x1}
-              x2={band.x2}
+              x1={band.startDate}
+              x2={band.endDate}
               fill={BAND_COLORS[band.kind]}
               fillOpacity={0.12}
               ifOverflow="extendDomain"

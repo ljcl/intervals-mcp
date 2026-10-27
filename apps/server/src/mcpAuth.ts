@@ -1,4 +1,8 @@
 import { timingSafeEqual } from "node:crypto";
+import {
+  localhostAllowedOrigins,
+  originValidationResponse,
+} from "@modelcontextprotocol/server";
 import { recordRejectedRequest } from "./telemetry";
 
 /**
@@ -88,6 +92,34 @@ export function unauthorizedMcpResponse(req: Request): Response | null {
       },
     },
   );
+}
+
+/**
+ * Returns a 403 Response when a browser page from a foreign origin calls
+ * /mcp, or null when it may proceed. Without this, a page using DNS
+ * rebinding reaches a local server that runs with no MCP_AUTH_TOKEN. MCP
+ * clients that are not browsers send no Origin and pass; localhost and the
+ * PUBLIC_URL host are allowed.
+ */
+export function foreignOriginResponse(req: Request): Response | null {
+  const allowed = localhostAllowedOrigins();
+  try {
+    if (process.env.PUBLIC_URL) {
+      allowed.push(new URL(process.env.PUBLIC_URL).hostname);
+    }
+  } catch {
+    // An unparsable PUBLIC_URL only feeds the startup warning; allow localhost.
+  }
+  const denied = originValidationResponse(req, allowed);
+  if (!denied) return null;
+  recordRejectedRequest({
+    status: denied.status,
+    reason: "Origin not allowed",
+    http_method: req.method,
+    mcp_method: req.headers.get("mcp-method") ?? undefined,
+    protocol_version: req.headers.get("mcp-protocol-version") ?? undefined,
+  });
+  return denied;
 }
 
 /**
