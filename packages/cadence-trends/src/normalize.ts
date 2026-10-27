@@ -29,6 +29,9 @@ export function buildCadenceSubtitle(runCount: number, days: number): string {
  * Compute summary stats: the all-runs average (the text tool's "Average
  * cadence"), each half-window's average, and their delta, null when either
  * half has no runs. `now` is injectable so tests are deterministic.
+ *
+ * The halves are cut in whole days, the viewer's today against each run's
+ * own calendar date, so the split does not change with the time of day.
  */
 export function computeSummaryStats(
   activities: RunSummary[],
@@ -42,15 +45,16 @@ export function computeSummaryStats(
   runCount: number;
 } {
   const halfWindow = (days / 2) * 24 * 60 * 60 * 1000;
+  const local = new Date(now);
+  const today = Date.UTC(
+    local.getFullYear(),
+    local.getMonth(),
+    local.getDate(),
+  );
+  const isRecent = (a: RunSummary) => today - dayTimestamp(a.date) < halfWindow;
 
-  const recent = activities.filter(
-    (a) =>
-      now - new Date(a.date).getTime() < halfWindow && a.averageCadence > 0,
-  );
-  const older = activities.filter(
-    (a) =>
-      now - new Date(a.date).getTime() >= halfWindow && a.averageCadence > 0,
-  );
+  const recent = activities.filter((a) => isRecent(a) && a.averageCadence > 0);
+  const older = activities.filter((a) => !isRecent(a) && a.averageCadence > 0);
 
   const avg = (arr: RunSummary[]) =>
     arr.length > 0
