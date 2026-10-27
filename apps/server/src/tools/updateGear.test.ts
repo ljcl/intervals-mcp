@@ -9,6 +9,7 @@ import { HttpError, RequestTimeoutError } from "../fetchClient";
 import {
   createGearReminder,
   type IntervalsGear,
+  type IntervalsGearReminder,
   listGear,
   updateGear as putGear,
   resetGearReminder,
@@ -263,6 +264,72 @@ describe("updateGearTool.execute", () => {
     ).toEqual([
       { field: "last_reset", before: null, after: "2026-10-27T00:00:00Z" },
     ]);
+  });
+
+  describe("reset confirmation", () => {
+    // 00:00 on 2026-10-27 in Sydney, the day the clock is pinned to: the
+    // live value a reminder added that day carried (docs/api-notes.md).
+    const todayStart = "2026-10-26T13:00:00.000+00:00";
+
+    async function reset(
+      before: Partial<IntervalsGearReminder>,
+      after: Partial<IntervalsGearReminder>,
+    ) {
+      mockedList.mockResolvedValueOnce([
+        shoe({ reminders: [{ ...reminder, ...before }] }),
+      ]);
+      mockedReset.mockResolvedValueOnce(shoe());
+      mockedList.mockResolvedValueOnce([
+        shoe({ reminders: [{ ...reminder, ...after }] }),
+      ]);
+      const result = await run({ gearId: "71459", resetReminderId: 3 });
+      return {
+        text: result.content[0]?.text,
+        warnings: GearWriteOutputSchema.parse(result.structuredContent)
+          .warnings,
+      };
+    }
+
+    it("does not warn on a same-day reset with no usage counted", async () => {
+      const unused = { last_reset: todayStart, distance_used: 0 };
+      const { text, warnings } = await reset(unused, unused);
+
+      expect(warnings).toEqual([]);
+      expect(text).toContain(
+        "last_reset already showed today and no usage was counted, so the re-read cannot show the reset.",
+      );
+    });
+
+    it("confirms a same-day reset by the drop in usage", async () => {
+      const { text, warnings } = await reset(
+        { last_reset: todayStart, distance_used: 5000 },
+        { last_reset: todayStart, distance_used: 0, percent_used: 0 },
+      );
+
+      expect(warnings).toEqual([]);
+      expect(text).not.toContain("cannot show");
+    });
+
+    it("warns when last_reset stays on an earlier day", async () => {
+      const old = { last_reset: "2026-10-20T13:00:00.000+00:00" };
+      const { text, warnings } = await reset(
+        { ...old, distance_used: 0 },
+        { ...old, distance_used: 0 },
+      );
+
+      expect(warnings).toEqual([
+        "the reset could not be confirmed: last_reset still shows 2026-10-20T13:00:00.000+00:00.",
+      ]);
+      expect(text).toContain("Warning: the reset could not be confirmed");
+    });
+
+    it("warns when a same-day reset leaves usage counted", async () => {
+      const used = { last_reset: todayStart, distance_used: 5000 };
+      const { warnings } = await reset(used, used);
+
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain("the reset could not be confirmed");
+    });
   });
 
   it("names the reminders when the reminder id is unknown", async () => {

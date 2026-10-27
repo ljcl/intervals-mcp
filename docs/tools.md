@@ -18,7 +18,9 @@ reports which ([operations.md](operations.md#time-zone)).
 > `update-activity`'s write path was verified once, separately, with
 > explicit user approval, see docs/api-notes.md. `update-wellness` and
 > `update-gear` send the requests the intervals.icu web app sends (read from
-> its code, docs/api-notes.md) and have not yet had a live write check. Every MCP App tool below
+> its code, docs/api-notes.md). `update-gear`'s add-reminder and reset paths
+> had one approved live write check (2026-10-27); `update-wellness` has not
+> had one yet. Every MCP App tool below
 > (see [Visualization tools](#visualization-tools)) reads intervals.icu
 > streams and activity data through the same adapter; the retired Strava
 > client has been deleted from the codebase (see AGENTS.md).
@@ -965,7 +967,12 @@ it sends one unretried write (`PUT /gear/{gearId}` with `retired`,
 `POST /gear/{gearId}/reminder`, or `PUT .../reminder/{id}?reset=true`), re-reads
 the list, and echoes `changes` with `action` and the re-read `gear` in
 list-gear's shape. The reply shows how much usage intervals.icu already
-counts toward a new reminder. The gear list is invalidated after every
+counts toward a new reminder. intervals.icu stores a reminder's `last_reset`
+as the start of the local day, so a second reset on one day does not change
+it: a reset counts as confirmed when `last_reset` changes or
+`distance_used` drops, and when `last_reset` already shows today with no
+usage counted, the reply says the re-read cannot show the reset rather than
+warning. The gear list is invalidated after every
 write, so get-activity's gear names stay current. Ambiguous outcomes say so
 and point at `list-gear`.
 
