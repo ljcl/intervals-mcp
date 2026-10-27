@@ -626,6 +626,11 @@ export interface ProjectFromWellnessInput {
   asOfDate: string | null;
   /** Today, in the caller's configured time zone. */
   endDate: string;
+  /**
+   * Days just before `series`, so a taper's recent load spans
+   * {@link RECENT_LOAD_DAYS} however short the displayed window is.
+   */
+  lookback?: FitnessTrendDay[];
 }
 
 export interface ProjectFromWellnessOptions {
@@ -662,7 +667,7 @@ export function projectFromWellness(
   input: ProjectFromWellnessInput,
   options: ProjectFromWellnessOptions,
 ): ProjectFromWellnessResult {
-  const { series, seed, asOfDate, endDate } = input;
+  const { series, seed, asOfDate, endDate, lookback = [] } = input;
   const { projectDays, plannedLoads, taper } = options;
   const warnings: string[] = [];
 
@@ -703,7 +708,7 @@ export function projectFromWellness(
         { ctl: todaySeed.ctl, atl: todaySeed.atl },
         endDate,
         taper,
-        recentDailyLoad(series, RECENT_LOAD_DAYS),
+        recentDailyLoad([...lookback, ...series], RECENT_LOAD_DAYS),
       ),
       unsyncedDays,
       warnings,
@@ -779,8 +784,9 @@ interface TrendBandOptions {
   /** The window's last day (today, or `newest`). */
   endDate?: string;
   /**
-   * Days just before `series` (up to {@link TREND_LOOKBACK_DAYS}), read only
-   * as the 7-day CTL ramp's prior days and never banded themselves.
+   * Days just before `series` (at least {@link TREND_LOOKBACK_DAYS}), read
+   * only as the 7-day CTL ramp's prior days (looked up by date) and never
+   * banded themselves.
    */
   lookback?: FitnessTrendDay[];
 }

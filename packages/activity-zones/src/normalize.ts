@@ -2,6 +2,7 @@ import {
   dominantBucket,
   formatDurationShort,
   formatShortDate,
+  hrZoneRangeText,
 } from "@intervals-mcp/data";
 import { type SummaryStat } from "@intervals-mcp/ui";
 import { type ActivityZonesData, type ZoneBucket, type ZoneSet } from "./types";
@@ -9,23 +10,27 @@ import { type ActivityZonesData, type ZoneBucket, type ZoneSet } from "./types";
 /** One chart row per zone bucket. */
 export interface ZoneRow {
   label: string;
-  /** "0–120 bpm" or "175+ bpm". */
+  /** "up to 120 bpm", "176-197 bpm", or "400+ W". */
   range: string;
   minutes: number;
   seconds: number;
   pct: number;
 }
 
-export function formatZoneRange(bucket: ZoneBucket, unit: string): string {
-  return bucket.max == null
-    ? `${bucket.min}+ ${unit}`
+export function formatZoneRange(
+  bucket: ZoneBucket,
+  { type, unit }: Pick<ZoneSet, "type" | "unit">,
+): string {
+  if (bucket.max == null) return `${bucket.min}+ ${unit}`;
+  return type === "heartrate"
+    ? hrZoneRangeText({ min: bucket.min, max: bucket.max }, ` ${unit}`)
     : `${bucket.min}–${bucket.max} ${unit}`;
 }
 
 export function buildZoneRows(set: ZoneSet): ZoneRow[] {
   return set.buckets.map((bucket) => ({
     label: `Z${bucket.zone}`,
-    range: formatZoneRange(bucket, set.unit),
+    range: formatZoneRange(bucket, set),
     minutes: Math.round((bucket.seconds / 60) * 10) / 10,
     seconds: bucket.seconds,
     pct: bucket.pct,

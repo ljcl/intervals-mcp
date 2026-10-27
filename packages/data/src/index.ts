@@ -45,4 +45,9 @@ export {
   speedDisplayForSport,
   speedSport,
 } from "./speed";
-export { dominantBucket, type ZoneBucket, type ZoneSet } from "./zones";
+export {
+  dominantBucket,
+  hrZoneRangeText,
+  type ZoneBucket,
+  type ZoneSet,
+} from "./zones";

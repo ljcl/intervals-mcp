@@ -29,6 +29,25 @@ export interface ZoneSet {
   buckets: ZoneBucket[];
 }
 
+/**
+ * The one home for an HR zone's range as text, used by every text tool that
+ * prints HR zones and by the activity-zones app. Heart rate is whole bpm, and
+ * an upper bound is inclusive (docs/api-notes.md), so the previous zone's
+ * bound belongs to the zone below: zone 2 of [142, 154] reads "143-154", and
+ * zone 1 reads "up to 142". A zone whose upper bound is not above the
+ * previous one holds no heart rate and reads "empty". `unit` (for example
+ * " bpm") follows each number range.
+ */
+export function hrZoneRangeText(
+  { min, max }: { min: number; max: number },
+  unit = "",
+): string {
+  if (min <= 0) return `up to ${max}${unit}`;
+  const from = min + 1;
+  if (from > max) return "empty";
+  return from === max ? `${max}${unit}` : `${from}-${max}${unit}`;
+}
+
 /** The bucket with the most time in a set (first wins ties). */
 export function dominantBucket(set: ZoneSet): ZoneBucket {
   return set.buckets.reduce((top, bucket) =>

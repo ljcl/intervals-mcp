@@ -1,5 +1,5 @@
 import { handleHealth } from "./health";
-import { unauthorizedMcpResponse } from "./mcpAuth";
+import { foreignOriginResponse, unauthorizedMcpResponse } from "./mcpAuth";
 import { type McpEndpoint } from "./mcpEndpoint";
 
 /**
@@ -33,7 +33,7 @@ export function routeRequest(
   const url = new URL(req.url);
 
   if (url.pathname === "/mcp") {
-    const denied = unauthorizedMcpResponse(req);
+    const denied = foreignOriginResponse(req) ?? unauthorizedMcpResponse(req);
     if (denied) return denied;
     return mcp.handleRequest(req);
   }

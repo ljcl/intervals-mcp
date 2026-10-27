@@ -53,6 +53,12 @@ describe("discardedDescription", () => {
   it("returns null when the new text already contains the existing text, compared trimmed", () => {
     expect(discardedDescription("old notes\n", "old notes\n\nnew")).toBeNull();
     expect(discardedDescription("old notes", "old notes")).toBeNull();
+    expect(discardedDescription("ok", "Race: ok. Then new")).toBeNull();
+  });
+
+  it("returns the existing text when the new text only holds it inside a word", () => {
+    expect(discardedDescription("ok", "Shoe lace broke")).toBe("ok");
+    expect(discardedDescription("Run", "Runner's high")).toBe("Run");
   });
 });
 

@@ -13,7 +13,7 @@ rate limits, and endpoint security. For the code behind these see
 | `TZ` | No | IANA zone for today and default date ranges, e.g. `Australia/Sydney`. Unset, blank or exactly `UTC` (compose's default) means the athlete's intervals.icu time zone ([Time zone](#time-zone)); `Etc/UTC` pins UTC; an unknown zone stops startup |
 | `MCP_AUTH_TOKEN` | No | Shared secret; when set, `/mcp` and the detailed half of `/health` require `Authorization: Bearer <token>` (or `?token=` for `/health`). Use at least 32 characters; a shorter one logs a startup `WARNING`, and surrounding whitespace stops startup |
 | `PORT` | No | Server port, 1-65535; blank or unset means `3000`. The image's `HEALTHCHECK` reads it |
-| `PUBLIC_URL` | No | Public URL, used only to warn when `/mcp` is exposed without `MCP_AUTH_TOKEN` |
+| `PUBLIC_URL` | No | Public URL. Warns at startup when `/mcp` is exposed without `MCP_AUTH_TOKEN`, and its host is allowed as a browser `Origin` on `/mcp` besides localhost |
 
 ### Startup checks
 
@@ -245,6 +245,8 @@ A 401 has one of three reasons: `no Authorization header`,
 `bearer token does not match MCP_AUTH_TOKEN`. The server does not read the
 body of an unauthenticated request. A 401 line therefore carries only
 `status`, `code`, `reason`, `http_method`, `mcp_method` and `protocol_version`.
+A 403 with reason `Origin not allowed` is a browser page from a host other
+than localhost or `PUBLIC_URL` calling `/mcp` (see "Securing the endpoint").
 
 To find clients whose envelope names a revision the server does not serve:
 
@@ -269,6 +271,11 @@ the intervals.icu API key configured on the server. Set `MCP_AUTH_TOKEN` to a lo
 `Authorization: Bearer <token>` on every `/mcp` request, returning 401
 otherwise. Without it the endpoint stays open and the server logs a startup
 warning when `PUBLIC_URL` is configured.
+
+Whether or not the token is set, `/mcp` refuses (403) a request whose
+`Origin` header names a host other than localhost or the `PUBLIC_URL` host,
+so a web page cannot reach a local server through DNS rebinding. MCP
+clients that are not browsers send no `Origin` and are unaffected.
 
 Set it in `.env` (`docker-compose.yml` forwards it automatically), or pass it
 through yourself when running the published image without that compose file

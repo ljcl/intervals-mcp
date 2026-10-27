@@ -793,7 +793,8 @@ today when TSB is already ≥ 0 today, and the text says "already positive
 today"; otherwise it is
 the first projected date TSB reaches 0, or null. `targetDate`/`targetTsb`
 solve a load taper landing on a target form. The plan holds the recent daily
-load until the last 28 days, then solves a weekly step-down over those 28
+load (the average of the last 28 days, read past the start of a shorter
+`days` window) until the last 28 days, then solves a weekly step-down over those 28
 days. `targetDate` must be a real
 calendar date, after today, and at most 180 days ahead (`MAX_TAPER_DAYS`);
 any other date is an error before any fetch, in this tool and in the app
@@ -919,7 +920,8 @@ were sent. `descriptionMode` is `replace` (overwrites) or `append` (keeps
 the existing text and adds the new text below it, separated by a blank
 line). With no mode it replaces, but only when no existing text is lost:
 the activity has no description (or only whitespace), or the new text
-already contains it (compared trimmed). Otherwise the call fails before
+already contains it (compared trimmed) with no letter or digit glued to
+either end, so an existing "ok" is not kept by "broke". Otherwise the call fails before
 the gear check and sends no PUT. The error gives the existing
 description's length and first 120 characters, and asks for `append` or
 `replace`. When an explicit `replace` drops existing text, the text reply
