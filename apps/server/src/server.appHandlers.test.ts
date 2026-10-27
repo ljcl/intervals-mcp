@@ -2493,4 +2493,25 @@ describe("view tools and hosts that cannot render MCP Apps (#77)", () => {
     expect(text).not.toContain("get-split-analysis");
     expect(text.endsWith("For detail, call get-activity-streams.")).toBe(true);
   });
+
+  it("gives a ride's route map no running hill twin and names get-activity", async () => {
+    mockedIntervalsActivity.mockResolvedValue(run({ type: "Ride" }));
+    mockedIntervalsStreams.mockImplementation(async () => [
+      ...runStreams(),
+      {
+        type: "altitude",
+        data: Array.from({ length: 701 }, (_, i) => 10 + i * 0.06),
+      },
+    ]);
+
+    const result = await dispatchToolCall(
+      "view-route-map",
+      { id: "123" },
+      { client: { rendersApps: false } },
+    );
+
+    const text = result.content[0]?.text ?? "";
+    expect(text).not.toContain("GAP");
+    expect(text.endsWith("For detail, call get-activity.")).toBe(true);
+  });
 });
