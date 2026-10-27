@@ -1865,9 +1865,9 @@ describe("route map handlers", () => {
     mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
     mockedIntervalsStreams.mockRejectedValueOnce(
       new RateLimitError(
-        "15-minute rate limit reached (100/100 requests).",
+        "Rate limit reached; wait a few minutes and retry. Retry-After: 60s.",
         { status: 429, statusText: "Too Many Requests", data: "" },
-        { observedAt: Date.now(), shortTerm: { limit: 100, usage: 100 } },
+        { observedAt: Date.now(), retryAfterSeconds: 60 },
         60,
       ),
     );
@@ -1877,7 +1877,7 @@ describe("route map handlers", () => {
     });
 
     expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toContain("rate limit");
+    expect(result.content[0]?.text).toContain("Retry-After: 60s");
   });
 
   it("get-route-map-data anchors waypoints on the distance stream and drops out-of-range ones", async () => {

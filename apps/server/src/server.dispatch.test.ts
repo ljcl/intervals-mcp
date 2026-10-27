@@ -410,9 +410,11 @@ describe("dispatchToolCall input validation", () => {
     expect(result.isError).toBe(true);
     const text = result.content[0]?.text ?? "";
     expect(text.startsWith("❌")).toBe(true);
-    expect(text).toContain("rate limit");
+    expect(text).toContain("Retry-After: 60s");
     expect(text).toContain("get-training-load-data");
-    expect(text).toContain("15-minute rate limit reached (100/100 requests).");
+    expect(text).toContain(
+      "Rate limit reached; wait a few minutes and retry. Retry-After: 60s.",
+    );
     expect(text).not.toContain("Tool error");
   });
 

@@ -68,10 +68,9 @@ describe("handleHealth", () => {
   it("reports version, api key state, athlete id, and rate-limit snapshot as JSON", async () => {
     mockedApiKeyConfigured.mockReturnValue(true);
     mockedSnapshot.mockReturnValue({
-      shortTerm: { usage: 42, limit: 100 },
-      daily: { usage: 310, limit: 1000 },
+      retryAfterSeconds: 42,
       observedAt: 1_752_300_000_000,
-    } as ReturnType<typeof intervalsApi.getRateLimitSnapshot>);
+    });
 
     const { req, url } = get();
     const response = handleHealth(req, url);
@@ -83,7 +82,7 @@ describe("handleHealth", () => {
     expect(body.uptime_seconds).toBeGreaterThanOrEqual(0);
     expect(body.api_key_configured).toBe(true);
     expect(body.athlete_id).toBe("0");
-    expect(body.rate_limit.shortTerm.usage).toBe(42);
+    expect(body.rate_limit.retryAfterSeconds).toBe(42);
   });
 
   it("reports rate_limit as null when the snapshot is null", async () => {

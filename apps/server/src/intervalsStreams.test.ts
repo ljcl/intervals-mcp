@@ -35,9 +35,9 @@ const notFound = () =>
 
 const rateLimited = () =>
   new RateLimitError(
-    "15-minute rate limit reached (100/100 requests).",
+    "Rate limit reached; wait a few minutes and retry. Retry-After: 60s.",
     { status: 429, statusText: "Too Many Requests", data: "" },
-    { observedAt: Date.now(), shortTerm: { limit: 100, usage: 100 } },
+    { observedAt: Date.now(), retryAfterSeconds: 60 },
     60,
   );
 

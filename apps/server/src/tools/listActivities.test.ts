@@ -478,7 +478,7 @@ describe("listActivitiesTool.execute", () => {
     const result = await listActivitiesTool.execute({ limit: 30 }, "key");
 
     expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toContain("rate limit");
+    expect(result.content[0]?.text).toContain("Retry-After: 60s");
   });
 
   it('treats type "runs" as Run, TrailRun and VirtualRun', async () => {

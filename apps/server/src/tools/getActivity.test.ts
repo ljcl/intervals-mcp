@@ -985,6 +985,6 @@ describe("getActivityTool.execute", () => {
     );
 
     expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toContain("rate limit");
+    expect(result.content[0]?.text).toContain("Retry-After: 60s");
   });
 });

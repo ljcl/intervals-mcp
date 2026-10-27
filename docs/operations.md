@@ -120,11 +120,11 @@ release-please bumps, so it tracks the release you are running. An `:edge` or
 `time_zone` is the zone local dates use. `time_zone_source` says where it came
 from: `env` (`TZ`), `intervals.icu` (the athlete's setting) or `fallback` (the
 process zone); see [Time zone](#time-zone).
-`rate_limit` is a snapshot parsed from the most recent intervals.icu response
-that carried `X-RateLimit-*`/`Retry-After` headers
-(`intervalsApi.getRateLimitSnapshot()`). It is `null` until one does.
-intervals.icu sends none of these today (verified 2026-09-24), so it stays
-`null` even after calls have been made.
+`rate_limit` is the `Retry-After` (`retryAfterSeconds`) of the most recent
+intervals.icu response that carried one, with when it was seen
+(`observedAt`), from `intervalsApi.getRateLimitSnapshot()`. It is `null`
+until one does. intervals.icu sends none today (verified 2026-09-24), so it
+stays `null` even after calls have been made.
 `upstream_requests` counts the requests this process sent to intervals.icu,
 retries included. Cache hits and reads that join an in-flight request count
 nothing. The two windows are a rolling 15 minutes and the UTC day, both on the
@@ -316,10 +316,9 @@ The HTTP layer handles rate limits centrally: passive, nothing to configure
 - Each activity's streams are fetched once, in one request that carries
   every stream type the tools use. All tools and apps share that response
   for 10 minutes.
-- If a response ever does carry `X-RateLimit-*`/`Retry-After` headers, the
-  client still parses and honours them: a rate-limit response gets bounded
-  retries respecting `Retry-After`, and a genuinely exhausted limit surfaces
-  as a structured message naming which window is gone and when it resets.
+- If a rate-limit response (429) ever carries `Retry-After`, the client
+  honours it with bounded retries. `X-RateLimit-*` quota windows are not
+  parsed.
 - Transient `5xx` (including Cloudflare's `520`-`524`), network faults, and
   timeouts retry with bounded exponential backoff; only idempotent reads are
   retried, never writes. A timeout while the response body is still arriving
@@ -336,9 +335,8 @@ The HTTP layer handles rate limits centrally: passive, nothing to configure
   server's outbound IP address or its `User-Agent`, not at the key.
 
 Read `upstream_requests` from [`/health`](#health-check) to see where you
-stand. `rate_limit` reports the snapshot from the most recent intervals.icu
-response that carried rate-limit headers. It is `null` today, since
-intervals.icu sends none.
+stand. `rate_limit` reports the most recent `Retry-After` intervals.icu sent.
+It is `null` today, since intervals.icu sends none.
 
 ## Docker notes
 

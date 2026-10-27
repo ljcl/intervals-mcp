@@ -474,7 +474,7 @@ describe("getActivityStreamsTool.execute", () => {
     );
 
     expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toContain("rate limit");
+    expect(result.content[0]?.text).toContain("Retry-After: 60s");
   });
 
   it("reports a heart-rate dropout as a gap, never as 0 bpm or a diluted mean", async () => {
