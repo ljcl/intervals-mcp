@@ -22,6 +22,7 @@ export {
   formatPace,
   formatShortDate,
   formatTime,
+  isPastWindow,
   lookbackLabel,
   MIN_MOVING_SPEED_MPS,
   type ShortDateYear,

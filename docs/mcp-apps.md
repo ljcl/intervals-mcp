@@ -475,7 +475,7 @@ CTL/ATL/TSB follow `runOnly`.
   (`endsToday: false`) the last week is partial only when `newest` is not a
   Sunday, and the legend key ("Partial week"), tooltip, narration and model
   context say "partial" instead of "in progress". All four read one rule,
-  `isPastWindow` (`normalize.ts`); the tooltip's word comes from
+  `isPastWindow` (`packages/data`, shared with fitness-trend); the tooltip's word comes from
   `partialWeekWord`, which calls it. The subtitle spells out a past window's
   last day with its year ("12 weeks · 19 Jan – 12 Apr 2026"), so an old
   block does not read as this year's.
@@ -522,7 +522,8 @@ CTL/ATL/TSB follow `runOnly`.
 - `set-scope` (`scope`, `show`, `hide`) lets the model switch the pills and the
   legend toggles for `trend`, `load` and `warnings`, setting the same state the
   pills do (no second fetch path). `resolveSetScope` (`src/setScope.ts`,
-  unit-tested) refuses a series named in both lists and `warnings` when the
+  unit-tested, on the toggle rules both scope cards share in
+  `packages/ui/src/setScope.ts`) refuses a series named in both lists and `warnings` when the
   landing scope flags no week (a scope still loading is given the benefit of
   the doubt). The reply claims "Showing" only for a chart that is drawn
   (`landingFor`): a scope still loading is "Switching to ...; it is still
@@ -602,7 +603,7 @@ has no projection and no taper, so the chart has no forward half, no plan
 legend key and no handover line, and the card shows the past-window note from
 `warnings`. Its subtitle spells out the last day's year, and the narration
 dates the 7-day change ("over the 7 days to 12 Apr 2026"), as the text tool
-does; both read `isPastWindow` (`normalize.ts`). With no data yet, either
+does; both read `isPastWindow` (`packages/data`). With no data yet, either
 card's subtitle is `lookbackLabel` (`packages/data`): "Last 90 days", or
 "90 days to 12 Apr 2026" when the arguments carry `newest`.
 

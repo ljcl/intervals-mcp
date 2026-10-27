@@ -3,6 +3,7 @@ import {
   formatDurationShort,
   formatShortDate,
   formatSignedTsb,
+  isPastWindow,
   lookbackLabel,
 } from "@intervals-mcp/data";
 import { type SummaryStat } from "@intervals-mcp/ui";
@@ -56,17 +57,8 @@ export function buildDataArgs(args: {
   };
 }
 
-/**
- * True for a past window (`newest` before today, #80): its partial last
- * week is cut off at `endDate`, not in progress. Older payloads carry no
- * `endsToday`, and read as today. The one rule the legend, tooltip,
- * subtitle, narration and model context read.
- */
-export function isPastWindow(
-  data: Pick<TrainingLoadData, "endsToday">,
-): boolean {
-  return data.endsToday === false;
-}
+// A past window: its partial last week is cut off at `endDate` (#80).
+export { isPastWindow };
 
 /**
  * What the partial last week is called: "in progress" when the window ends

@@ -6,6 +6,7 @@ import {
   formatPace,
   formatShortDate,
   formatTime,
+  isPastWindow,
   lookbackLabel,
   windowLabel,
   windowShortLabel,
@@ -153,6 +154,15 @@ describe("windowShortLabel", () => {
     [30, "30d"],
   ])("reads %i days as %s", (days, label) => {
     expect(windowShortLabel(days)).toBe(label);
+  });
+});
+
+describe("isPastWindow", () => {
+  it("is true only for an explicit endsToday: false", () => {
+    expect(isPastWindow({ endsToday: false })).toBe(true);
+    expect(isPastWindow({ endsToday: true })).toBe(false);
+    // Older payloads carry no endsToday and read as today.
+    expect(isPastWindow({})).toBe(false);
   });
 });
 

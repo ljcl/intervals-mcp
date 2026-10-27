@@ -34,6 +34,19 @@ export {
   type SummaryBarProps,
   type SummaryStat,
 } from "./SummaryBar";
+export {
+  capitalised,
+  describeLanding,
+  type Landing,
+  type Scope,
+  type SetScopeArgs,
+  type SetScopeOk,
+  type SetScopeResult,
+  scopeLanding,
+  scopeName,
+  scopeOf,
+  settleSetScope,
+} from "./setScope";
 export { Tooltip, TooltipEntry } from "./Tooltip";
 export {
   ACTIVITY_ID1_ARG_KEYS,
