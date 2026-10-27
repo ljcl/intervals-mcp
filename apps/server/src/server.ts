@@ -1269,6 +1269,7 @@ async function loadFitnessTrendAppData(
       days,
       endDate: loaded.endDate,
       endsToday: loaded.endsToday,
+      ctl7dDelta: loaded.ctl7dDelta,
       activitiesIncluded: loaded.activitiesIncluded,
       activitiesMissingLoad: loaded.activitiesMissingLoad,
       source: loaded.source,

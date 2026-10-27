@@ -1,13 +1,11 @@
 import { z } from "zod";
 import { getTimeZone } from "../config";
 import {
-  ctlDelta,
   type FitnessTrendDay,
   MAX_TAPER_DAYS,
   type PlannedLoad,
   type TaperWeek,
   taperTargetDateError,
-  tsbDelta,
 } from "../fitnessTrend";
 import { formatSigned } from "../formatters";
 import { loadFitnessTrend } from "../loadFitnessTrend";
@@ -263,6 +261,8 @@ export const getFitnessTrendTool = {
         activitiesMissingLoad,
         bands,
         flags,
+        ctl7dDelta: ctl7d,
+        tsb7dDelta: tsb7d,
       } = loaded;
 
       // A past window uses no plannedLoads, so there is nothing to warn
@@ -274,10 +274,8 @@ export const getFitnessTrendTool = {
         ...loaded.warnings,
       ];
 
-      // By date, not array index: a gappy whole-body series is not
-      // contiguous. The app narrates the same `ctlDelta`.
-      const ctl7d = ctlDelta(displaySeries, 7);
-      const tsb7d = tsbDelta(displaySeries, 7);
+      // The loader's `ctlDelta`, by date over its 7-day lookback; the app
+      // narrates the same value.
       const trendSummary =
         ctl7d !== null && tsb7d !== null
           ? { ctl_7d_delta: ctl7d, tsb_7d_delta: tsb7d }

@@ -426,7 +426,15 @@ the app gets it as `ctl7dDelta` in its payload, because an MCP App cannot
 import server code. The app used to count 7 rows back, and a whole-body
 series leaves out days with no wellness, so with 2 missing days it described
 9 calendar days as "the last 7 days" and gave a different number from the
-text tool.
+text tool. `loadFitnessTrend` passes both the deltas and the bands a
+`TREND_LOOKBACK_DAYS` (7) lookback: run-only cuts it from its runway, and
+whole-body reads it in the same wellness request, which starts 7 days
+before the window. The lookback days are prior days only: never in the
+series, the gaps, the seed or a band. Without it the first 7 days of a
+window had no prior day, so a 7-day window showed no ramp and no
+`ctl_7d_delta`, and a ramp that started in week 1 was dated a week late
+(#224). The loader computes `ctl7dDelta` once; the text tool and the app
+payload both read that value.
 
 **HR zone bounds have one home.** `resolveHrZones` in `activityZones.ts`:
 the activity's own `icu_hr_zones` first, else the Run sport settings group

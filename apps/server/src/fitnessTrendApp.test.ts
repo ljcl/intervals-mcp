@@ -14,7 +14,12 @@ function block(): FitnessTrendLoadDay[] {
   });
 }
 
-const META = { days: 90, activitiesIncluded: 21, activitiesMissingLoad: 2 };
+const META = {
+  days: 90,
+  ctl7dDelta: 4.2,
+  activitiesIncluded: 21,
+  activitiesMissingLoad: 2,
+};
 
 describe("mapFitnessTrendApp", () => {
   it("carries the series, projection, and meta through unchanged", () => {
@@ -30,6 +35,7 @@ describe("mapFitnessTrendApp", () => {
     expect(data.flags).toBe(trend.flags);
     expect(data.activitiesIncluded).toBe(21);
     expect(data.activitiesMissingLoad).toBe(2);
+    expect(data.ctl7dDelta).toBe(4.2);
     expect(data.taper).toBeNull();
     expect(data.asOf).toBe(trend.current!.date);
     expect(data.source).toBe("intervals.icu");
@@ -55,6 +61,7 @@ describe("mapFitnessTrendApp", () => {
 
     const data = mapFitnessTrendApp(trend, {
       days: 90,
+      ctl7dDelta: null,
       activitiesIncluded: 0,
       activitiesMissingLoad: 0,
     });

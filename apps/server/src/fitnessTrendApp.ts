@@ -8,11 +8,7 @@
  * carrying only what the chart draws.
  */
 
-import {
-  ctlDelta,
-  type FitnessTrendDay,
-  type FitnessTrendResult,
-} from "./fitnessTrend";
+import { type FitnessTrendDay, type FitnessTrendResult } from "./fitnessTrend";
 
 export interface TrendBandData {
   kind: "deep-fatigue" | "fresh" | "steep-ramp";
@@ -101,6 +97,8 @@ export interface FitnessTrendAppMeta {
   endDate?: string;
   /** Defaults to true; see {@link FitnessTrendAppData.endsToday}. */
   endsToday?: boolean;
+  /** The loader's 7-day CTL change, read over its lookback before the window. */
+  ctl7dDelta: number | null;
   /** Count of activities within the window whose load fed the series. */
   activitiesIncluded: number;
   /** Count of activities within the window with no usable load, excluded from the series. */
@@ -147,7 +145,7 @@ export function mapFitnessTrendApp(
       : null,
     current: trend.current,
     tsbPositiveDate: trend.tsbPositiveDate,
-    ctl7dDelta: ctlDelta(trend.days, 7),
+    ctl7dDelta: meta.ctl7dDelta,
     bands: trend.bands.map((band) => ({
       kind: band.kind,
       startDate: band.start_date,

@@ -48,34 +48,52 @@ export interface WellnessFitnessSeries {
   asOfDate: string | null;
   /** Calendar dates inside the range with no recorded `ctl`/`atl`, oldest first. */
   gapDates: string[];
+  /**
+   * Recorded days in the `lookbackDays` before `range.oldest`, oldest first:
+   * prior days for the 7-day CTL change only, never part of `series`,
+   * `seed` or `gapDates`. Empty when no lookback was asked for.
+   */
+  lookback: FitnessTrendDay[];
 }
 
 /**
  * Fetches wellness across `range` and builds the read (never recomputed)
  * whole-body series, the seed for a forward projection/taper, and any gaps.
+ * `lookbackDays` widens the one request back that far for
+ * {@link WellnessFitnessSeries.lookback}.
  */
 export async function loadWellnessFitnessSeries(
   apiKey: string,
   range: { oldest: string; newest: string },
+  options: { lookbackDays?: number } = {},
 ): Promise<WellnessFitnessSeries> {
-  const wellness = await getWellness(apiKey, range, {
-    fields: FITNESS_TREND_WELLNESS_FIELDS,
-  });
+  const lookbackStart = addDays(range.oldest, -(options.lookbackDays ?? 0));
+  const wellness = await getWellness(
+    apiKey,
+    { oldest: lookbackStart, newest: range.newest },
+    { fields: FITNESS_TREND_WELLNESS_FIELDS },
+  );
   const byDate = new Map(
     wellness
       .filter((w) => w.ctl != null && w.atl != null)
       .map((w) => [w.id, w]),
   );
 
+  const lookback: FitnessTrendDay[] = [];
   const series: FitnessTrendDay[] = [];
   const gapDates: string[] = [];
-  for (let date = range.oldest; date <= range.newest; date = addDays(date, 1)) {
+  for (
+    let date = lookbackStart;
+    date <= range.newest;
+    date = addDays(date, 1)
+  ) {
+    const inRange = date >= range.oldest;
     const w = byDate.get(date);
     if (!w) {
-      gapDates.push(date);
+      if (inRange) gapDates.push(date);
       continue;
     }
-    series.push({
+    (inRange ? series : lookback).push({
       date,
       load: round1(w.atlLoad ?? 0),
       ...ctlAtlTsb(w.ctl!, w.atl!),
@@ -90,5 +108,6 @@ export async function loadWellnessFitnessSeries(
     seed: lastRow ? { ctl: lastRow.ctl!, atl: lastRow.atl! } : null,
     asOfDate: lastDate,
     gapDates,
+    lookback,
   };
 }

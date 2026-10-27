@@ -16,14 +16,17 @@
 import {
   buildRunOnlyFitnessTrend,
   computeFlags,
+  ctlDelta,
   type FitnessTrendDay,
   type PlannedLoad,
   projectFromWellness,
   RUN_ONLY_RUNWAY_DAYS,
   RUN_TYPES,
   type TaperPlan,
+  TREND_LOOKBACK_DAYS,
   type TrendBand,
   trendBands,
+  tsbDelta,
 } from "./fitnessTrend";
 import { loadWellnessFitnessSeries } from "./fitnessTrendWellness";
 import { listActivities } from "./intervalsClient";
@@ -79,6 +82,9 @@ export interface FitnessTrendLoadResult {
   warnings: string[];
   bands: TrendBand[];
   flags: string[];
+  /** CTL/TSB change over the 7 days to the series' last day; null without that prior day. */
+  ctl7dDelta: number | null;
+  tsb7dDelta: number | null;
 }
 
 /**
@@ -105,6 +111,8 @@ export async function loadFitnessTrend(
 
   let source: "intervals.icu" | "computed";
   let displaySeries: FitnessTrendDay[];
+  // Prior days for the 7-day CTL change and the ramp bands only.
+  let lookback: FitnessTrendDay[];
   let current: FitnessTrendDay | null;
   let projection: FitnessTrendDay[];
   let tsbPositiveDate: string | null;
@@ -148,6 +156,7 @@ export async function loadFitnessTrend(
     // The runway settles CTL; trim the display (and the bands/flags read
     // off it) back to the requested window.
     displaySeries = trend.days.slice(-days);
+    lookback = trend.days.slice(-(days + TREND_LOOKBACK_DAYS), -days);
     current = trend.current;
     projection = trend.projection;
     tsbPositiveDate = trend.tsbPositiveDate;
@@ -175,13 +184,20 @@ export async function loadFitnessTrend(
     progress(`Fetching wellness ${windowStart} to ${endDate}…`, {
       important: true,
     });
-    const { series, seed, asOfDate, gapDates } =
-      await loadWellnessFitnessSeries(apiKey, {
-        oldest: windowStart,
-        newest: endDate,
-      });
+    const {
+      series,
+      seed,
+      asOfDate,
+      gapDates,
+      lookback: wellnessLookback,
+    } = await loadWellnessFitnessSeries(
+      apiKey,
+      { oldest: windowStart, newest: endDate },
+      { lookbackDays: TREND_LOOKBACK_DAYS },
+    );
 
     displaySeries = series;
+    lookback = wellnessLookback;
     current =
       series.length > 0
         ? {
@@ -301,7 +317,9 @@ export async function loadFitnessTrend(
     activitiesIncluded,
     activitiesMissingLoad,
     warnings,
-    bands: trendBands(displaySeries, { endsToday, endDate }),
-    flags: computeFlags(displaySeries, { endsToday, endDate }),
+    bands: trendBands(displaySeries, { endsToday, endDate, lookback }),
+    flags: computeFlags(displaySeries, { endsToday, endDate, lookback }),
+    ctl7dDelta: ctlDelta(displaySeries, 7, lookback),
+    tsb7dDelta: tsbDelta(displaySeries, 7, lookback),
   };
 }
