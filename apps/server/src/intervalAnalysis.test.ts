@@ -871,6 +871,15 @@ describe("computeFade", () => {
     expect(fade!.summary).toContain("faster");
     expect(fade!.summary).toContain("lower HR");
   });
+
+  it("leaves out the pace phrase when the drift rounds to 0%", () => {
+    const fade = computeFade([rep(1, 240, 170), rep(2, 240.04, 174)]);
+    expect(fade!.paceDriftPct).toBe(0);
+    expect(fade!.summary).toBe("rep 2 was at 4 bpm higher HR than rep 1");
+
+    const same = computeFade([rep(1, 240, 170), rep(2, 240, 170)]);
+    expect(same!.summary).toBe("no measurable drift between rep 1 and rep 2");
+  });
 });
 
 describe("computeHrSignal", () => {
