@@ -1,5 +1,30 @@
 # Changelog
 
+## [2.9.1](https://github.com/ljcl/intervals-mcp/compare/v2.9.0...v2.9.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* add up two planned loads on the same date ([#243](https://github.com/ljcl/intervals-mcp/issues/243)) ([4f154f3](https://github.com/ljcl/intervals-mcp/commit/4f154f32aa00ec03af8103e0b7a3acd1e5c62fd1))
+* count a sample's full gap as moving time in the hill, interval and aerobic tools ([#242](https://github.com/ljcl/intervals-mcp/issues/242)) ([910d2f1](https://github.com/ljcl/intervals-mcp/commit/910d2f13aa7ea0feb8d690d6569552ba843b4e2e))
+* give the route-map pace legend a real pace at its slow end on runs with stops ([#253](https://github.com/ljcl/intervals-mcp/issues/253)) ([a19e0de](https://github.com/ljcl/intervals-mcp/commit/a19e0de5db800a6182d4ac273cf4a03512dc3141))
+* give view-route-map no running hill twin on non-pace sports ([#249](https://github.com/ljcl/intervals-mcp/issues/249)) ([f169955](https://github.com/ljcl/intervals-mcp/commit/f16995554093c6ef613c79f31a6beeb021c370a5))
+* hold get-activity-laps and get-running-summary laps to the response budget ([#250](https://github.com/ljcl/intervals-mcp/issues/250)) ([880574e](https://github.com/ljcl/intervals-mcp/commit/880574e7949edba662358e0d111711aaaf524545))
+* keep nameContains in the list-activities paging hint ([#248](https://github.com/ljcl/intervals-mcp/issues/248)) ([984fc47](https://github.com/ljcl/intervals-mcp/commit/984fc472b63739affb38392359e48c6dee7d9484))
+* label swim laps with their wire distance in the activity chart ([#252](https://github.com/ljcl/intervals-mcp/issues/252)) ([b24aca6](https://github.com/ljcl/intervals-mcp/commit/b24aca60d36b0282ae892379313e65ed893d90df))
+* let the latest useServerToolData call win over an out-of-order response ([#255](https://github.com/ljcl/intervals-mcp/issues/255)) ([73035e6](https://github.com/ljcl/intervals-mcp/commit/73035e63ac5cb74fce0e1f9e64d0d7435783e7bf))
+* read MM:SS goal times of 60 minutes or more in get-race-prediction ([#244](https://github.com/ljcl/intervals-mcp/issues/244)) ([458285a](https://github.com/ljcl/intervals-mcp/commit/458285aa2a2449b12c555b1aba3709ca024dfc9f))
+* read the 7 days before the window for the ramp flag and ctl_7d_delta ([#246](https://github.com/ljcl/intervals-mcp/issues/246)) ([f3bddb2](https://github.com/ljcl/intervals-mcp/commit/f3bddb21e91ce7ae7da7ec14d32a11444de5f989))
+* read the server's argument aliases in the training-load and fitness-trend apps ([#254](https://github.com/ljcl/intervals-mcp/issues/254)) ([cf23c43](https://github.com/ljcl/intervals-mcp/commit/cf23c43f9713458702d30ed2fcf88ad3e8a73ba5))
+* show no cadence trend when one half of the window has no runs ([#251](https://github.com/ljcl/intervals-mcp/issues/251)) ([1c99807](https://github.com/ljcl/intervals-mcp/commit/1c99807c666cf071b9106628aa7bb9ea42891fe8))
+* skip an undated pace-curve effort in get-race-prediction ([#245](https://github.com/ljcl/intervals-mcp/issues/245)) ([9270820](https://github.com/ljcl/intervals-mcp/commit/9270820f9b3e2cbfb917b9c90356e96a691d5c30))
+* solve the taper over the last 28 days so long plans reach the target ([#241](https://github.com/ljcl/intervals-mcp/issues/241)) ([14d32f0](https://github.com/ljcl/intervals-mcp/commit/14d32f07cf35be4ebdbdf4a20d5c5b1078a84068))
+
+
+### Performance Improvements
+
+* run the view twin first so a view loads its data once ([#257](https://github.com/ljcl/intervals-mcp/issues/257)) ([fcf910b](https://github.com/ljcl/intervals-mcp/commit/fcf910b9a2eb6f6abe831c08e7ab229295db69af))
+
 ## [2.9.0](https://github.com/ljcl/intervals-mcp/compare/v2.8.1...v2.9.0) (2026-10-27)
 
 
