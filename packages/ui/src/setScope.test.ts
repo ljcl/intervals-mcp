@@ -55,4 +55,19 @@ describe("describeLanding", () => {
       "Runs only failed to load: down. The card shows the error with a retry. Hidden: a.",
     );
   });
+
+  it("strips a long run of closing stops", () => {
+    expect(
+      describeLanding(
+        {
+          scope: "wholeBody",
+          status: "failed",
+          error: `down${".".repeat(50_000)}`,
+        },
+        [],
+      ),
+    ).toBe(
+      "Whole body failed to load: down. The card shows the error with a retry. Nothing hidden.",
+    );
+  });
 });

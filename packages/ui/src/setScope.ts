@@ -125,5 +125,9 @@ export function describeLanding(landing: Landing, hidden: string[]): string {
 
 /** The error as the card shows it, without a leading "Error:" or closing stop. */
 function failureReason(error: string): string {
-  return error.replace(/^Error:\s*/, "").replace(/\.+$/, "");
+  const text = error.replace(/^Error:\s*/, "");
+  // A loop, not /\.+$/: that regex backtracks quadratically on a run of dots.
+  let end = text.length;
+  while (end > 0 && text[end - 1] === ".") end -= 1;
+  return text.slice(0, end);
 }
