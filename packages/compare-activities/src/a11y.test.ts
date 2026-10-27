@@ -21,7 +21,7 @@ describe("buildCompareA11yDescription", () => {
     nameA: "Steady",
     nameB: "Race",
     category: "run" as const,
-    bothRunning: true,
+    cadenceUnit: "spm" as const,
     data,
     hidden: { a: false, b: false },
   };
@@ -51,7 +51,7 @@ describe("buildCompareA11yDescription", () => {
     const text = buildCompareA11yDescription({
       ...base,
       category: "swim",
-      bothRunning: false,
+      cadenceUnit: "/min" as const,
       data: [
         { x: 0, aPace: 1.5, bPace: 1.75 },
         { x: 100, aPace: 1.75, bPace: 2 },
@@ -67,12 +67,29 @@ describe("buildCompareA11yDescription", () => {
     const text = buildCompareA11yDescription({
       ...base,
       category: "other",
-      bothRunning: false,
+      cadenceUnit: "/min" as const,
       metric: "pace",
       axis: "time",
     });
     expect(text).toContain("Overlay of speed");
     expect(text).toContain("km/h");
+  });
+
+  it("narrates cadence in the pair's unit", () => {
+    const cadence: AlignedPoint[] = [
+      { x: 0, aCadence: 20, bCadence: 22 },
+      { x: 100, aCadence: 24, bCadence: 26 },
+    ];
+    const swims = buildCompareA11yDescription({
+      ...base,
+      category: "swim",
+      cadenceUnit: "strokes/min",
+      data: cadence,
+      metric: "cadence",
+      axis: "time",
+    });
+    expect(swims).toContain('"Steady" ranges from 20 to 24 strokes/min.');
+    expect(swims).not.toContain("rpm");
   });
 
   it("notes a hidden line instead of its range", () => {

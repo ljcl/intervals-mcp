@@ -43,6 +43,28 @@ describe("ChartTooltip", () => {
     expect(markup.match(/>0\.0</g)).toHaveLength(3);
   });
 
+  it("labels a swim's cadence strokes/min", () => {
+    const markup = renderToStaticMarkup(
+      <ChartTooltip
+        active
+        payload={[
+          { name: "Cadence", dataKey: "cadence", value: 22, color: "#ee1" },
+        ]}
+        label={1200}
+        meta={{
+          name: "Pool Swim",
+          activityType: "Swim",
+          isRunning: false,
+          isSwimming: true,
+          speed: speedDisplay("Swim"),
+        }}
+      />,
+    );
+
+    expect(markup).toContain("strokes/min Cadence");
+    expect(markup).not.toContain("rpm");
+  });
+
   it("still drops entries with no reading at this point", () => {
     const markup = renderToStaticMarkup(
       <ChartTooltip

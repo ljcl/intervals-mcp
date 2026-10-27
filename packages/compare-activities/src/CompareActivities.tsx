@@ -34,7 +34,9 @@ import { buildCompareA11yDescription, buildCompareA11yTitle } from "./a11y";
 import {
   alignedKey,
   alignSeries,
+  type PairCadenceUnit,
   paceCategory,
+  pairCadenceUnit,
   sharedAxes,
   sharedMetrics,
   toMetricSeries,
@@ -76,7 +78,7 @@ function metricLabel(metric: MetricKey, display: SpeedDisplay): string {
 function metricUnit(
   metric: MetricKey,
   display: SpeedDisplay,
-  bothRunning: boolean,
+  cadenceUnit: PairCadenceUnit,
 ): string {
   switch (metric) {
     case "pace":
@@ -86,7 +88,7 @@ function metricUnit(
     case "power":
       return "W";
     case "cadence":
-      return bothRunning ? "spm" : "rpm";
+      return cadenceUnit;
     case "altitude":
       return "m";
   }
@@ -125,7 +127,7 @@ interface CompareTooltipProps {
   label?: number;
   metric: MetricKey;
   category: SpeedSport;
-  bothRunning: boolean;
+  cadenceUnit: PairCadenceUnit;
   axis: AxisKey;
 }
 
@@ -135,7 +137,7 @@ export function CompareTooltip({
   label,
   metric,
   category,
-  bothRunning,
+  cadenceUnit,
   axis,
 }: CompareTooltipProps) {
   if (!active || !payload?.length) return null;
@@ -145,7 +147,7 @@ export function CompareTooltip({
   if (!entries.length) return null;
 
   const display = speedDisplayForSport(category);
-  const unit = metricUnit(metric, display, bothRunning);
+  const unit = metricUnit(metric, display, cadenceUnit);
   const aEntry = entries.find((e) => e.dataKey === alignedKey("a", metric));
   const bEntry = entries.find((e) => e.dataKey === alignedKey("b", metric));
 
@@ -339,7 +341,7 @@ export function CompareActivities({
 
   const category = paceCategory(a.activityType, b.activityType);
   const display = speedDisplayForSport(category);
-  const bothRunning = category === "run";
+  const cadenceUnit = pairCadenceUnit(a.activityType, b.activityType);
 
   const seriesA = useMemo(() => toMetricSeries(a, category), [a, category]);
   const seriesB = useMemo(() => toMetricSeries(b, category), [b, category]);
@@ -419,12 +421,12 @@ export function CompareActivities({
             metric,
             axis,
             category,
-            bothRunning,
+            cadenceUnit,
             data: aligned,
             hidden,
           })
         : "",
-    [a.name, b.name, metric, axis, category, bothRunning, aligned, hidden],
+    [a.name, b.name, metric, axis, category, cadenceUnit, aligned, hidden],
   );
 
   // Pace axis domain: 2nd to 98th percentile across both lines, so a stop or
@@ -493,7 +495,7 @@ export function CompareActivities({
               <CompareTooltip
                 metric={metric}
                 category={category}
-                bothRunning={bothRunning}
+                cadenceUnit={cadenceUnit}
                 axis={axis}
               />
             }
@@ -532,7 +534,7 @@ export function CompareActivities({
     axis,
     category,
     display,
-    bothRunning,
+    cadenceUnit,
     hidden,
     isMobile,
     paceDomain,

@@ -4,6 +4,7 @@ import {
   alignSeries,
   type MetricSeries,
   paceCategory,
+  pairCadenceUnit,
   sharedAxes,
   sharedMetrics,
   toMetricSeries,
@@ -21,6 +22,22 @@ function streamData(
     streams: { time: [0, 10, 20, 30], ...overrides },
   };
 }
+
+describe("pairCadenceUnit", () => {
+  it("shares the unit when both activities have the same one", () => {
+    expect(pairCadenceUnit("Run", "TrailRun")).toBe("spm");
+    // Walks are doubled like runs, so spm even though their pace is km/h.
+    expect(pairCadenceUnit("Walk", "Hike")).toBe("spm");
+    expect(pairCadenceUnit("Run", "Walk")).toBe("spm");
+    expect(pairCadenceUnit("Swim", "OpenWaterSwim")).toBe("strokes/min");
+    expect(pairCadenceUnit("Ride", "VirtualRide")).toBe("rpm");
+  });
+
+  it("falls back to /min for a mixed pair", () => {
+    expect(pairCadenceUnit("Run", "Ride")).toBe("/min");
+    expect(pairCadenceUnit("Swim", "Ride")).toBe("/min");
+  });
+});
 
 describe("paceCategory", () => {
   it("is run only when both activities are pace-per-km sports", () => {

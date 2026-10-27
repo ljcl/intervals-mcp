@@ -111,6 +111,18 @@ describe("buildChartA11yDescription", () => {
     expect(desc).toContain("Pace ranges between 1'48\" and 2'06\" per 100 m.");
   });
 
+  it("narrates a swim's cadence in strokes/min", () => {
+    const desc = buildChartA11yDescription({
+      meta: swimMeta,
+      data: [
+        { time: 0, timeFormatted: "00:00", cadence: 20 },
+        { time: 1500, timeFormatted: "25:00", cadence: 24 },
+      ],
+      visibleMetrics: ["cadence"],
+    });
+    expect(desc).toContain("Cadence ranges from 20 to 24 strokes/min.");
+  });
+
   it("says so when every series is toggled off", () => {
     const desc = buildChartA11yDescription({
       meta: runMeta,

@@ -1,4 +1,6 @@
 export {
+  type CadenceLabel,
+  cadenceLabel,
   isRunning,
   isSwimming,
   PACE_ACTIVITY_TYPES,

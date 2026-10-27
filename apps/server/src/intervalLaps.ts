@@ -8,7 +8,7 @@
  * consumer; a later phase's activity-chart lap markers reuse this same
  * mapper rather than re-deriving laps from intervals a second time.
  */
-import { isSwimming } from "@intervals-mcp/data";
+import { type CadenceLabel, cadenceLabel } from "@intervals-mcp/data";
 import { formatDuration, round } from "./formatters";
 import {
   type IntervalsActivity,
@@ -18,7 +18,6 @@ import {
   cadenceSpm,
   gapPace,
   isPaceActivity,
-  isStepCadenceActivity,
   paceFromDistanceTime,
   sportSpeed,
 } from "./utils/running";
@@ -146,16 +145,11 @@ export function mapIntervalsToLaps(
 
 /**
  * The label for a cadence in the unit `type` reports it in (see
- * `cadenceSpm`): steps per minute for a step-cadence type, strokes per
- * minute for a swim (docs/api-notes.md, Swims), rpm otherwise. The one home
- * for this label, in the text tools and in `units.cadence_label`.
+ * `cadenceSpm`), from `@intervals-mcp/data` so the text tools and the MCP
+ * Apps share one copy: spm, strokes/min for a swim, or rpm. The text tools
+ * print it, and `units.cadence_label` carries it.
  */
-export type CadenceLabel = "spm" | "strokes/min" | "rpm";
-
-export function cadenceLabel(type: string): CadenceLabel {
-  if (isStepCadenceActivity(type)) return "spm";
-  return isSwimming(type) ? "strokes/min" : "rpm";
-}
+export { type CadenceLabel, cadenceLabel };
 
 /**
  * `units.cadence`: the value published before `cadence_label`, so "rpm" on a

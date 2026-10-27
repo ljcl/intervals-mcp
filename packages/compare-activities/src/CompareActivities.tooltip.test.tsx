@@ -1,6 +1,7 @@
 import { type SpeedSport } from "@intervals-mcp/data";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { type PairCadenceUnit, pairCadenceUnit } from "./align";
 import { CompareTooltip } from "./CompareActivities";
 
 const paceEntries = (a: number, b: number) => [
@@ -16,7 +17,7 @@ const render = (category: SpeedSport, a: number, b: number) =>
       label={600}
       metric="pace"
       category={category}
-      bothRunning={category === "run"}
+      cadenceUnit={category === "run" ? "spm" : "/min"}
       axis="time"
     />,
   );
@@ -43,5 +44,29 @@ describe("CompareTooltip pace delta", () => {
     expect(markup).toContain("+2.5");
     expect(markup).toContain("km/h");
     expect(markup).toContain(">20.0<");
+  });
+});
+
+describe("CompareTooltip cadence unit", () => {
+  const renderCadence = (cadenceUnit: PairCadenceUnit) =>
+    renderToStaticMarkup(
+      <CompareTooltip
+        active
+        payload={[
+          { dataKey: "aCadence", name: "Morning", value: 21, color: "#58f" },
+          { dataKey: "bCadence", name: "Evening", value: 23, color: "#f85" },
+        ]}
+        label={600}
+        metric="cadence"
+        category="swim"
+        cadenceUnit={cadenceUnit}
+        axis="time"
+      />,
+    );
+
+  it("labels two swims' cadence strokes/min, never rpm", () => {
+    const markup = renderCadence(pairCadenceUnit("Swim", "OpenWaterSwim"));
+    expect(markup).toContain("strokes/min");
+    expect(markup).not.toContain("rpm");
   });
 });

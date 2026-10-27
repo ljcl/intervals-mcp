@@ -88,8 +88,10 @@ breaking them has shipped bugs — do not work around them locally.
   `buildRunningDynamics` in `utils/running.ts` (shared by `get-activity` and
   `compare-activities`). Lap text rendering: `formatLapLine` in
   `intervalLaps.ts` (shared by `get-activity-laps` and `get-running-summary`).
-  Cadence unit label (spm, strokes/min, rpm): `cadenceLabel` there;
-  `cadenceUnit` is the legacy `units.cadence` value. Swim SWOLF and distance
+  Cadence unit label (spm, strokes/min, rpm): `cadenceLabel` in
+  `packages/data` (`activity-types.ts`; `intervalLaps.ts` re-exports it for
+  the text tools, the apps import it); `cadenceUnit` in `intervalLaps.ts` is
+  the legacy `units.cadence` value. Swim SWOLF and distance
   per stroke: `swimStrokeMetrics` in `utils/running.ts`.
   Interval reps from laps: `selectCleanWorkLaps`/`repsFromLaps` in
   `intervalAnalysis.ts`; similar-session rules: `intervalSimilarity.ts`.
