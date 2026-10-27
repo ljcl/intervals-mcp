@@ -12,7 +12,7 @@ import {
   type IntervalStreams,
   repsFromLaps,
 } from "../intervalAnalysis";
-import { cadenceUnit } from "../intervalLaps";
+import { cadenceLabel, cadenceUnit } from "../intervalLaps";
 import {
   pickCandidates,
   type RepStructure,
@@ -477,7 +477,7 @@ export const getIntervalAnalysisTool = {
         athleteMaxHr: activity.athlete_max_hr,
         hrZones: activity.icu_hr_zones,
       });
-      const cadenceUnitLabel = cadenceUnit(type);
+      const cadenceUnitLabel = cadenceLabel(type);
       const similar = findSimilar
         ? await findSimilarSessions(
             apiKey,
@@ -544,7 +544,8 @@ export const getIntervalAnalysisTool = {
           pace: "min/km" as const,
           time: "s" as const,
           hr: "bpm" as const,
-          cadence: cadenceUnitLabel,
+          cadence: cadenceUnit(type),
+          cadence_label: cadenceUnitLabel,
           power: "W" as const,
         },
         warnings: analysis.warnings,

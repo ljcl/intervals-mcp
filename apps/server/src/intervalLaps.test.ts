@@ -4,6 +4,7 @@ import multilapIntervals from "./__fixtures__/intervals/activity-multilap-interv
 import activitySwimFixture from "./__fixtures__/intervals/activity-swim.json";
 import activitySwimIntervalsFixture from "./__fixtures__/intervals/activity-swim-intervals.json";
 import {
+  cadenceLabel,
   cadenceUnit,
   formatLapLine,
   type LapEntry,
@@ -147,10 +148,11 @@ describe("mapIntervalsToLaps", () => {
     expect(laps[0]!.pace_min_per_100m).toBe("1:43");
     expect(laps[0]!.speed_kmh).toBeNull();
     expect(laps[0]!.pace_min_per_km).toBeNull();
-    expect(formatLapLine(laps[0]!, cadenceUnit("Swim"))).toContain(
-      "8:40, 1:43 /100m, HR 136/153",
-    );
-    expect(formatLapLine(laps[0]!, cadenceUnit("Swim"))).not.toContain("km/h");
+    const line = formatLapLine(laps[0]!, cadenceLabel("Swim"));
+    expect(line).toContain("8:40, 1:43 /100m, HR 136/153");
+    expect(line).toContain("cadence 22 strokes/min");
+    expect(line).not.toContain("km/h");
+    expect(line).not.toContain("rpm");
   });
 
   it("gives a run lap no pace per 100 m", () => {
@@ -164,12 +166,24 @@ describe("mapIntervalsToLaps", () => {
   });
 });
 
+describe("cadenceLabel", () => {
+  it("is spm for step-cadence types, strokes/min for swims, rpm otherwise", () => {
+    expect(cadenceLabel("Run")).toBe("spm");
+    expect(cadenceLabel("Walk")).toBe("spm");
+    expect(cadenceLabel("Swim")).toBe("strokes/min");
+    expect(cadenceLabel("OpenWaterSwim")).toBe("strokes/min");
+    expect(cadenceLabel("Ride")).toBe("rpm");
+    expect(cadenceLabel("WeightTraining")).toBe("rpm");
+  });
+});
+
 describe("cadenceUnit", () => {
-  it("is spm for step-cadence types and rpm otherwise", () => {
+  it("keeps its two published values: a swim stays rpm (#173)", () => {
     expect(cadenceUnit("Run")).toBe("spm");
     expect(cadenceUnit("Walk")).toBe("spm");
     expect(cadenceUnit("Ride")).toBe("rpm");
     expect(cadenceUnit("WeightTraining")).toBe("rpm");
+    expect(cadenceUnit("Swim")).toBe("rpm");
   });
 });
 

@@ -6,17 +6,14 @@ import {
   type HillSegment,
   type HillStreams,
 } from "../hillAnalysis";
+import { cadenceLabel, cadenceUnit } from "../intervalLaps";
 import { getActivity } from "../intervalsClient";
 import {
   IntervalsStreamsUnavailableError,
   loadIntervalsStreams,
 } from "../intervalsStreams";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
-import {
-  cadenceSpm,
-  formatPaceSeconds,
-  isStepCadenceActivity,
-} from "../utils/running";
+import { cadenceSpm, formatPaceSeconds } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
 import { noteToolFailure, toolErrorText } from "./_errors";
 import { intervalsActivityIdInput } from "./_ids";
@@ -189,9 +186,8 @@ export const getHillAnalysisTool = {
           time: "s" as const,
           grade: "%" as const,
           hr: "bpm" as const,
-          cadence: isStepCadenceActivity(type)
-            ? ("spm" as const)
-            : ("rpm" as const),
+          cadence: cadenceUnit(type),
+          cadence_label: cadenceLabel(type),
           power: "W" as const,
         },
         warnings: analysis.warnings,
@@ -232,12 +228,11 @@ export const getHillAnalysisTool = {
       }
 
       if (structured.descents.length > 0) {
-        const cadenceUnit = isStepCadenceActivity(type) ? "spm" : "rpm";
         lines.push(`Descents:`);
         for (const d of structured.descents) {
           const cadence =
             d.avg_cadence != null
-              ? `, cadence ${d.avg_cadence} ${cadenceUnit}`
+              ? `, cadence ${d.avg_cadence} ${structured.units.cadence_label}`
               : "";
           lines.push(`${segmentLine(d)}${cadence}`);
         }

@@ -8,6 +8,7 @@
  * consumer; a later phase's activity-chart lap markers reuse this same
  * mapper rather than re-deriving laps from intervals a second time.
  */
+import { isSwimming } from "@intervals-mcp/data";
 import { formatDuration, round } from "./formatters";
 import {
   type IntervalsActivity,
@@ -143,9 +144,27 @@ export function mapIntervalsToLaps(
   );
 }
 
-/** The unit `average_cadence` is reported in for a given activity type. */
+/**
+ * The label for a cadence in the unit `type` reports it in (see
+ * `cadenceSpm`): steps per minute for a step-cadence type, strokes per
+ * minute for a swim (docs/api-notes.md, Swims), rpm otherwise. The one home
+ * for this label, in the text tools and in `units.cadence_label`.
+ */
+export type CadenceLabel = "spm" | "strokes/min" | "rpm";
+
+export function cadenceLabel(type: string): CadenceLabel {
+  if (isStepCadenceActivity(type)) return "spm";
+  return isSwimming(type) ? "strokes/min" : "rpm";
+}
+
+/**
+ * `units.cadence`: the value published before `cadence_label`, so "rpm" on a
+ * swim too. A host can validate against an output schema cached before a
+ * deploy, and that schema allows only these two values (docs/architecture.md,
+ * "Output schemas outlive a deploy"). New readers use {@link cadenceLabel}.
+ */
 export function cadenceUnit(type: string): "spm" | "rpm" {
-  return isStepCadenceActivity(type) ? "spm" : "rpm";
+  return cadenceLabel(type) === "spm" ? "spm" : "rpm";
 }
 
 /**
@@ -155,7 +174,7 @@ export function cadenceUnit(type: string): "spm" | "rpm" {
  * copy (the running-summary one hardcoded "spm" and omitted speed/watts/
  * grade, fields that just never applied to its runs-only laps).
  */
-export function formatLapLine(lap: LapEntry, cadence: "spm" | "rpm"): string {
+export function formatLapLine(lap: LapEntry, cadence: CadenceLabel): string {
   const parts: string[] = [];
   if (lap.distance_km != null) parts.push(`${lap.distance_km.toFixed(2)} km`);
   parts.push(lap.moving_time);

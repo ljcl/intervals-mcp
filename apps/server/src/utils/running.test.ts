@@ -17,6 +17,7 @@ import {
   metersPerSecToPace,
   paceFromDistanceTime,
   sportSpeed,
+  swimStrokeMetrics,
 } from "./running";
 
 describe("formatPaceSeconds", () => {
@@ -495,5 +496,47 @@ describe("matchesTypeFilter", () => {
     ["TrailRun", "Run", false],
   ])("%s against %s is %s", (type, filter, expected) => {
     expect(matchesTypeFilter(type, filter)).toBe(expected);
+  });
+});
+
+describe("swimStrokeMetrics", () => {
+  // The activity-swim.json fixture: 1,500 m in 1,489 s at 21.71 strokes/min.
+  const swim = {
+    SWOLF: 33.79523102972242,
+    average_cadence: 21.707745,
+    distance: 1500,
+    moving_time: 1489,
+  };
+
+  it("reports intervals.icu's SWOLF and distance over its stroke count", () => {
+    expect(swimStrokeMetrics(swim, "Swim")).toEqual({
+      swolf: 33.8,
+      distance_per_stroke_m: 2.78,
+    });
+    expect(swimStrokeMetrics(swim, "OpenWaterSwim").swolf).toBe(33.8);
+  });
+
+  it("reports nothing for a run, where intervals.icu's SWOLF has no meaning", () => {
+    const none = { swolf: null, distance_per_stroke_m: null };
+    expect(swimStrokeMetrics({ ...swim, SWOLF: 17.6 }, "Run")).toEqual(none);
+    expect(swimStrokeMetrics(swim, "Ride")).toEqual(none);
+  });
+
+  it("drops a SWOLF that is not a finite number, and a stroke count of 0", () => {
+    expect(swimStrokeMetrics({ ...swim, SWOLF: "Infinity" }, "Swim")).toEqual({
+      swolf: null,
+      distance_per_stroke_m: 2.78,
+    });
+    expect(
+      swimStrokeMetrics(
+        {
+          SWOLF: null,
+          average_cadence: null,
+          distance: 1500,
+          moving_time: 1489,
+        },
+        "Swim",
+      ),
+    ).toEqual({ swolf: null, distance_per_stroke_m: null });
   });
 });

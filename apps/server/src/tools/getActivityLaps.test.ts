@@ -111,7 +111,10 @@ describe("getActivityLapsTool.execute", () => {
       unknown
     >;
     const laps = structured.laps as Array<Record<string, unknown>>;
-    expect(structured.units).toMatchObject({ cadence: "rpm" });
+    expect(structured.units).toMatchObject({
+      cadence: "rpm",
+      cadence_label: "rpm",
+    });
     expect(laps[0]?.pace_min_per_km).toBeNull();
     expect(laps[0]?.speed_kmh).toBe(36);
     expect(laps[0]?.average_cadence).toBe(88);
@@ -139,6 +142,14 @@ describe("getActivityLapsTool.execute", () => {
     const text = result.content[0]?.text ?? "";
     expect(text).toContain("1:43 /100m");
     expect(text).toContain("swim paces include the rests inside each interval");
+    // A swim's cadence is its stroke rate. units.cadence keeps its published
+    // value for hosts with a cached schema; cadence_label names it.
+    expect(text).toContain("cadence 22 strokes/min");
+    expect(text).not.toContain("rpm");
+    expect(result.structuredContent?.units).toMatchObject({
+      cadence: "rpm",
+      cadence_label: "strokes/min",
+    });
   });
 
   it("returns a valid empty payload when the activity has no intervals", async () => {
@@ -178,6 +189,7 @@ describe("getActivityLapsTool.execute", () => {
         hr: "bpm",
         elevation: "m",
         cadence: "spm",
+        cadence_label: "spm",
         gradient: "%",
       },
       laps: [],
@@ -266,6 +278,7 @@ describe("formatActivityLapsText", () => {
         hr: "bpm",
         elevation: "m",
         cadence: "spm",
+        cadence_label: "spm",
         gradient: "%",
       },
       laps: [],

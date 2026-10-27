@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { formatDuration, formatSigned } from "../formatters";
+import { cadenceLabel, cadenceUnit } from "../intervalLaps";
 import { getActivity, type IntervalsActivity } from "../intervalsClient";
 import {
   IntervalsStreamsUnavailableError,
@@ -16,7 +17,6 @@ import {
 import {
   cadenceSpm,
   formatPaceSeconds,
-  isStepCadenceActivity,
   paceFromDistanceTime,
 } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
@@ -290,9 +290,8 @@ export const getSplitAnalysisTool = {
           time: "s" as const,
           grade: "%" as const,
           hr: "bpm" as const,
-          cadence: isStepCadenceActivity(type)
-            ? ("spm" as const)
-            : ("rpm" as const),
+          cadence: cadenceUnit(type),
+          cadence_label: cadenceLabel(type),
           power: "W" as const,
         },
         warnings: analysis.warnings,

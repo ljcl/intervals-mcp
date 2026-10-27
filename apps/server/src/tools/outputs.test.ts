@@ -152,6 +152,8 @@ describe("schemas align with the real tool rawObjects", () => {
       elevation_gain_m: 120,
       pool_length_m: null,
       lengths: null,
+      swolf: null,
+      distance_per_stroke_m: null,
       load: {
         training_load: 60,
         hr_load: 60,
@@ -266,6 +268,8 @@ describe("schemas align with the real tool rawObjects", () => {
       elevation_gain_m: null,
       pool_length_m: 50,
       lengths: 30,
+      swolf: 33.8,
+      distance_per_stroke_m: 2.78,
       load: {
         training_load: 31,
         hr_load: 31,

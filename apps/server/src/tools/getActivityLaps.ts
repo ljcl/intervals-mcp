@@ -1,5 +1,7 @@
 import { z } from "zod";
 import {
+  type CadenceLabel,
+  cadenceLabel,
   cadenceUnit,
   formatLapLine,
   LAP_MOVING_TIME_NOTE,
@@ -34,7 +36,7 @@ Notes:
 - The count can differ from the device lap count (device_lap_count) when laps
   were edited in intervals.icu; the text says so.
 - Cadence is steps per minute for Run, TrailRun, VirtualRun, Walk and Hike,
-  rpm otherwise.
+  strokes per minute for swims, rpm otherwise (units.cadence_label).
 - An activity with no intervals gives a valid payload with lap_count: 0.
 `;
 
@@ -61,6 +63,7 @@ interface ActivityLapsResponse {
     hr: "bpm";
     elevation: "m";
     cadence: "spm" | "rpm";
+    cadence_label: CadenceLabel;
     gradient: "%";
   };
   laps: LapEntry[];
@@ -97,7 +100,7 @@ export function formatActivityLapsText(response: ActivityLapsResponse): string {
   if (flags.length > 0) lines.push(`Note: ${flags.join("; ")}.`);
 
   for (const lap of response.laps)
-    lines.push(formatLapLine(lap, response.units.cadence));
+    lines.push(formatLapLine(lap, response.units.cadence_label));
 
   return lines.join("\n");
 }
@@ -141,6 +144,7 @@ export const getActivityLapsTool = {
           hr: "bpm",
           elevation: "m",
           cadence: cadenceUnit(sportType),
+          cadence_label: cadenceLabel(sportType),
           gradient: "%",
         },
         laps,

@@ -206,6 +206,9 @@ const IntervalsActivitySchema = z
     /** Pool swims only: the length count and the pool length (m). */
     lengths: z.number().nullable().optional(),
     pool_length: z.number().nullable().optional(),
+    /** Seconds plus strokes per 25 m. Set on runs too, where it means
+     * nothing and can be the string "Infinity" (docs/api-notes.md, Swims). */
+    SWOLF: z.union([z.number(), z.string()]).nullable().optional(),
     /** Bests and threshold rises intervals.icu marked; null when none.
      * `.catch(null)`: a malformed entry must not fail every activity read. */
     icu_achievements: z

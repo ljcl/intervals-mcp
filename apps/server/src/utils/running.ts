@@ -7,6 +7,7 @@
  * - Speed is returned as m/s but runners think in pace (min/km or min/mile)
  */
 import {
+  isSwimming,
   PACE_ACTIVITY_TYPES,
   speedDisplayForSport,
   speedSport,
@@ -253,6 +254,44 @@ export function sportSpeed(
   return kmh == null
     ? none
     : { pace_min_per_100m: null, speed_kmh: round(kmh, 1) };
+}
+
+export interface SwimStrokeMetrics {
+  swolf: number | null;
+  distance_per_stroke_m: number | null;
+}
+
+/**
+ * A swim's SWOLF and distance per stroke, or nulls for every other sport:
+ * intervals.icu sets `SWOLF` on runs too, where it means nothing
+ * (docs/api-notes.md, Swims). SWOLF is intervals.icu's own field, seconds
+ * plus strokes per 25 m whatever the pool length. Distance per stroke
+ * divides the distance by intervals.icu's stroke count,
+ * `average_cadence × moving_time / 60` (`average_cadence` is strokes per
+ * minute on a swim). The one home for both, read by get-activity.
+ */
+export function swimStrokeMetrics(
+  activity: Pick<
+    IntervalsActivity,
+    "SWOLF" | "average_cadence" | "distance" | "moving_time"
+  >,
+  type: string,
+): SwimStrokeMetrics {
+  if (!isSwimming(type)) return { swolf: null, distance_per_stroke_m: null };
+  const { SWOLF, average_cadence, distance, moving_time } = activity;
+  const swolf =
+    typeof SWOLF === "number" && Number.isFinite(SWOLF) && SWOLF > 0
+      ? round(SWOLF, 1)
+      : null;
+  const strokes =
+    average_cadence != null && moving_time != null
+      ? (average_cadence * moving_time) / 60
+      : 0;
+  const distancePerStroke =
+    distance != null && distance > 0 && strokes > 0
+      ? round(distance / strokes, 2)
+      : null;
+  return { swolf, distance_per_stroke_m: distancePerStroke };
 }
 
 /**
