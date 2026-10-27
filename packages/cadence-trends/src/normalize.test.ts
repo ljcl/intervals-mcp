@@ -11,6 +11,7 @@ import {
   buildZoneRows,
   computeSummaryStats,
   dayTimestamp,
+  overlayPoints,
   overlayRunLabel,
   overlayRunStatus,
   resampleOverlayRuns,
@@ -338,6 +339,21 @@ describe("computeSummaryStats", () => {
 
     expect(stats.currentAvg).toBe(180);
     expect(stats.previousAvg).toBe(170);
+  });
+});
+
+describe("overlayPoints", () => {
+  it("smooths each loaded stream once", () => {
+    const data = {
+      activityId: "1",
+      activityType: "Run",
+      name: "Run",
+      streams: { time: [0, 60], distance: [0, 500], cadence: [85, 87] },
+    };
+    const points = overlayPoints(data);
+    expect(points).toHaveLength(2);
+    expect(overlayPoints(data)).toBe(points);
+    expect(overlayPoints({ ...data })).not.toBe(points);
   });
 });
 

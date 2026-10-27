@@ -16,9 +16,8 @@ import { buildCadenceContextSummary } from "./contextSummary";
 import {
   buildCadenceSubtitle,
   computeSummaryStats,
+  overlayPoints,
   overlayRunStatus,
-  smoothOverlayPoints,
-  toOverlayPoints,
 } from "./normalize";
 import { OverlayView } from "./OverlayView";
 import { RunSelectList } from "./RunSelectList";
@@ -134,9 +133,7 @@ export function App({
       if (!entry) continue;
       map.set(run.id, {
         run,
-        points: entry.data
-          ? smoothOverlayPoints(toOverlayPoints(entry.data))
-          : null,
+        points: entry.data ? overlayPoints(entry.data) : null,
         loading: entry.loading,
         error: entry.error,
         progress: entry.progress,
