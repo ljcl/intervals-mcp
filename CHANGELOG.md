@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.9.0](https://github.com/ljcl/intervals-mcp/compare/v2.8.1...v2.9.0) (2026-10-27)
+
+
+### Features
+
+* accept endDate and asOf as spellings of newest ([#212](https://github.com/ljcl/intervals-mcp/issues/212)) ([6c3751e](https://github.com/ljcl/intervals-mcp/commit/6c3751e09a32991c4464c73cbdb79e9930e21c68))
+* log wellness and manage gear from the chat (update-wellness, update-gear) ([#210](https://github.com/ljcl/intervals-mcp/issues/210)) ([03aae2a](https://github.com/ljcl/intervals-mcp/commit/03aae2ab5def002b768258841b147a633d56adf4))
+
+
+### Bug Fixes
+
+* confirm a same-day gear reminder reset, and record the live gear write check ([#216](https://github.com/ljcl/intervals-mcp/issues/216)) ([0927cee](https://github.com/ljcl/intervals-mcp/commit/0927cee16095d465bcdb4cc8b2213c8a44852c44))
+* label a swim's stroke rate as strokes/min and report SWOLF ([#214](https://github.com/ljcl/intervals-mcp/issues/214)) ([ca507c9](https://github.com/ljcl/intervals-mcp/commit/ca507c9349f649d5b31abfe7520f9ec6038b4baa))
+* label swim cadence strokes/min in the activity-chart and compare apps ([#215](https://github.com/ljcl/intervals-mcp/issues/215)) ([7477cea](https://github.com/ljcl/intervals-mcp/commit/7477ceab0c7be541c36516c4d5657069a40721be))
+
 ## [2.8.1](https://github.com/ljcl/intervals-mcp/compare/v2.8.0...v2.8.1) (2026-10-26)
 
 
