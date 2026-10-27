@@ -1,3 +1,4 @@
+import { round } from "./formatters";
 import { hasRealSample, interpolateNulls } from "./hillAnalysis";
 
 /**
@@ -193,9 +194,6 @@ export interface IntervalAnalysis {
   warnings: string[];
 }
 
-const round = (value: number, dp = 2) =>
-  Math.round(value * 10 ** dp) / 10 ** dp;
-
 interface Aggregates {
   startIdx: number;
   endIdx: number;
@@ -288,7 +286,7 @@ function toRep(
   const speed = avgSpeed(agg);
   return {
     index,
-    startKm: round(streams.distance[agg.startIdx]! / 1000),
+    startKm: round(streams.distance[agg.startIdx]! / 1000, 2),
     distanceM: Math.round(agg.distanceM),
     movingTimeS: Math.round(agg.movingTimeS),
     paceSecPerKm: speed > 0 ? Math.round(1000 / speed) : null,
@@ -576,7 +574,7 @@ function lapReps(laps: IntervalLap[], blocks: IntervalLap[][]): WorkRep[] {
     const intensity = blockMean(block, "intensity");
     return {
       index: i + 1,
-      startKm: round(startKmByLap.get(block[0]!.lapIndex) ?? 0),
+      startKm: round(startKmByLap.get(block[0]!.lapIndex) ?? 0, 2),
       distanceM: Math.round(block.reduce((sum, l) => sum + l.distanceM, 0)),
       movingTimeS: Math.round(block.reduce((sum, l) => sum + l.movingTimeS, 0)),
       paceSecPerKm: speed > 0 ? Math.round(1000 / speed) : null,
@@ -801,7 +799,7 @@ export function computeIntervalAnalysis(
     return {
       startTimeS: Math.round(rest.startTimeS),
       durationS: Math.round(rest.durationS),
-      atKm: round(normalized.distance[rest.startIdx]! / 1000),
+      atKm: round(normalized.distance[rest.startIdx]! / 1000, 2),
       kind,
       reason,
     } satisfies RestSegment;

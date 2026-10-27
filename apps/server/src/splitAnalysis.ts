@@ -16,6 +16,7 @@
  * server, and the climb tool and this one share it.
  */
 
+import { round } from "./formatters";
 import {
   computeGrades,
   type GradeSource,
@@ -141,9 +142,6 @@ export interface SplitAnalysis {
   };
   warnings: string[];
 }
-
-const round = (value: number, dp = 2) =>
-  Math.round(value * 10 ** dp) / 10 ** dp;
 
 /** Running accumulator for one distance bucket. */
 export interface Bin {

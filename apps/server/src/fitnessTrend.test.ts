@@ -28,6 +28,7 @@ import {
   trendBands,
   tsbDelta,
 } from "./fitnessTrend";
+import { round } from "./formatters";
 import { addDays } from "./utils/localDate";
 
 type LoadOverride = number | [ctlLoad: number, atlLoad: number];
@@ -190,8 +191,6 @@ describe("buildFitnessTrend", () => {
 describe("exact reproduction of the 42/7 recurrence", () => {
   const CTL_DECAY = Math.exp(-1 / CTL_TIME_CONSTANT_DAYS);
   const ATL_DECAY = Math.exp(-1 / ATL_TIME_CONSTANT_DAYS);
-  const round1 = (value: number) => Math.round(value * 10) / 10;
-
   /**
    * Independent reference implementation of `x_t = x_{t-1}·exp(-1/N) +
    * load_t·(1 - exp(-1/N))`, rounded the same way the module rounds its
@@ -206,7 +205,7 @@ describe("exact reproduction of the 42/7 recurrence", () => {
     return days.map(({ ctlLoad, atlLoad }) => {
       ctl = ctl * CTL_DECAY + ctlLoad * (1 - CTL_DECAY);
       atl = atl * ATL_DECAY + atlLoad * (1 - ATL_DECAY);
-      return { ctl: round1(ctl), atl: round1(atl) };
+      return { ctl: round(ctl, 1), atl: round(atl, 1) };
     });
   }
 
@@ -215,7 +214,7 @@ describe("exact reproduction of the 42/7 recurrence", () => {
     let s = seed;
     return Array.from({ length: count }, () => {
       s = (s * 1103515245 + 12345) & 0x7fffffff;
-      return round1((s / 0x7fffffff) * 120);
+      return round((s / 0x7fffffff) * 120, 1);
     });
   }
 
@@ -296,8 +295,8 @@ describe("exact reproduction of the 42/7 recurrence", () => {
       seed: { ctl: 60, atl: 75 },
     });
     // Zero load every day: both curves purely decay from the seed.
-    expect(trend.days[0]!.ctl).toBeCloseTo(round1(60 * CTL_DECAY), 9);
-    expect(trend.days[0]!.atl).toBeCloseTo(round1(75 * ATL_DECAY), 9);
+    expect(trend.days[0]!.ctl).toBeCloseTo(round(60 * CTL_DECAY, 1), 9);
+    expect(trend.days[0]!.atl).toBeCloseTo(round(75 * ATL_DECAY, 1), 9);
     expect(trend.days[9]!.ctl).toBeLessThan(trend.days[0]!.ctl);
   });
 });

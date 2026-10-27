@@ -10,6 +10,7 @@
  * grade-adjusted speed, so a slower-but-easier late climb is not misread as
  * fade. Altitude comes from intervals.icu's elevation stream.
  */
+import { round } from "./formatters";
 
 /**
  * Streams as returned by `loadIntervalsStreams`, index-aligned. Every
@@ -468,9 +469,6 @@ function averageGrade(
   return weight > 0 ? sum / weight : 0;
 }
 
-const round = (value: number, dp = 2) =>
-  Math.round(value * 10 ** dp) / 10 ** dp;
-
 /**
  * `grades` is the detection grade (drives the average when there is no
  * altitude); `gapGrade` is {@link gapGrades}' averaged grade for GAP.
@@ -541,8 +539,8 @@ function summarizeSegment(
     movingTimeS > 0 && lengthM > 0 ? movingTimeS / (lengthM / 1000) : null;
 
   return {
-    startKm: round(distance[start]! / 1000),
-    endKm: round(distance[end]! / 1000),
+    startKm: round(distance[start]! / 1000, 2),
+    endKm: round(distance[end]! / 1000, 2),
     lengthM: Math.round(lengthM),
     elevationChangeM: altitude
       ? round(altitude[end]! - altitude[start]!, 1)
@@ -605,8 +603,8 @@ export function computeDrift(
 
   return {
     basis: useHr ? "hr_per_gap" : "gap_pace",
-    earlyValue: round(earlyValue),
-    lateValue: round(lateValue),
+    earlyValue: round(earlyValue, 2),
+    lateValue: round(lateValue, 2),
     driftPct: round(((lateValue - earlyValue) / earlyValue) * 100, 1),
     earlyClimbs: early.length,
     lateClimbs: late.length,
