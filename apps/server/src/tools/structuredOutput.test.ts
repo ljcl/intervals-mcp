@@ -86,6 +86,7 @@ describe("activity read tools", () => {
         hr: "bpm",
         elevation: "m",
         cadence: "spm",
+        cadence_label: "spm",
         gradient: "%",
       },
       laps: [],

@@ -181,6 +181,20 @@ describe("buildActivityStreamsResult", () => {
     expect(result.units.cadence).toBe("rpm");
   });
 
+  it("reports a swim's raw stroke rate in strokes/min", () => {
+    const swimActivity: IntervalsActivity = { ...runActivity, type: "Swim" };
+    const result = buildActivityStreamsResult(
+      swimActivity,
+      streams,
+      ["cadence"],
+      100,
+    );
+
+    expect(result.streams.cadence?.[0]).toBe(63);
+    expect(result.units.cadence).toBe("strokes/min");
+    expect(formatActivityStreamsText(result)).toMatch(/cadence:.*strokes\/min/);
+  });
+
   it("doubles cadence and reports spm for a Walk (a step-cadence type, not a pace type)", () => {
     const walkActivity: IntervalsActivity = { ...runActivity, type: "Walk" };
     const result = buildActivityStreamsResult(

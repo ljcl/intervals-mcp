@@ -220,6 +220,21 @@ const speedKmhField = () =>
       "km/h to 1 dp, from distance over moving time; every sport except Run, TrailRun, VirtualRun and swims, when a distance was recorded",
     );
 
+// The cadence unit pair every analysis `units` object carries (#173).
+// `cadence` keeps its two published values, so a host holding an older
+// cached schema still accepts the result (docs/architecture.md, "Output
+// schemas outlive a deploy"); `cadence_label` names a swim's stroke rate.
+const cadenceUnitFields = () => ({
+  cadence: z
+    .union([z.literal("spm"), z.literal("rpm")])
+    .describe("Kept for older clients: rpm on a swim too; read cadence_label"),
+  cadence_label: z
+    .enum(["spm", "strokes/min", "rpm"])
+    .describe(
+      "spm: steps per minute (Run, TrailRun, VirtualRun, Walk, Hike); strokes/min: swims; rpm: every other sport",
+    ),
+});
+
 // ---------- compare-activities ----------
 const CompareRunningDynamicsSchema = z.object({
   stance_time_ms: z.number().nullable(),
@@ -622,7 +637,7 @@ export const HillAnalysisOutputSchema = z.object({
     time: z.literal("s"),
     grade: z.literal("%"),
     hr: z.literal("bpm"),
-    cadence: z.union([z.literal("spm"), z.literal("rpm")]),
+    ...cadenceUnitFields(),
     power: z.literal("W"),
   }),
   warnings: z.array(z.string()),
@@ -857,7 +872,7 @@ export const SplitAnalysisOutputSchema = z.object({
     time: z.literal("s"),
     grade: z.literal("%"),
     hr: z.literal("bpm"),
-    cadence: z.union([z.literal("spm"), z.literal("rpm")]),
+    ...cadenceUnitFields(),
     power: z.literal("W"),
   }),
   warnings: z.array(z.string()),
@@ -1047,7 +1062,7 @@ export const IntervalAnalysisOutputSchema = z.object({
     pace: z.literal("min/km"),
     time: z.literal("s"),
     hr: z.literal("bpm"),
-    cadence: z.union([z.literal("spm"), z.literal("rpm")]),
+    ...cadenceUnitFields(),
     power: z.literal("W"),
   }),
   warnings: z.array(z.string()),
@@ -1282,6 +1297,18 @@ export const ActivityDetailOutputSchema = z.object({
     .int()
     .nullable()
     .describe("Pool lengths swum; pool swims only"),
+  swolf: z
+    .number()
+    .nullable()
+    .describe(
+      "intervals.icu's SWOLF: seconds plus strokes per 25 m, whatever the pool length; swims only",
+    ),
+  distance_per_stroke_m: z
+    .number()
+    .nullable()
+    .describe(
+      "Distance over intervals.icu's stroke count (average_cadence × moving_time / 60); swims only",
+    ),
   load: ActivityLoadSchema,
   decoupling_pct: z.number().nullable(),
   efficiency_factor: z.number().nullable(),
@@ -1789,7 +1816,7 @@ export const ActivityLapsOutputSchema = z.object({
     time: z.literal("s"),
     hr: z.literal("bpm"),
     elevation: z.literal("m"),
-    cadence: z.union([z.literal("spm"), z.literal("rpm")]),
+    ...cadenceUnitFields(),
     gradient: z.literal("%"),
   }),
   laps: z.array(IntervalsLapEntrySchema),

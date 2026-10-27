@@ -244,8 +244,10 @@ already counts toward it. `resetReminderId` restarts a reminder's count, and
   the charts show it in km/h too. A
   swim gets `pace_min_per_100m` and no running dynamics; other sports with a
   distance get `speed_kmh`. Cadence itself is
-  doubled to steps/min for Run/TrailRun/VirtualRun/Walk/Hike; other sports
-  report the raw rate in rpm. HR zone tools generally need the activity's own
+  doubled to steps/min for Run/TrailRun/VirtualRun/Walk/Hike; a swim reports
+  its stroke rate in strokes/min, and other sports the raw rate in rpm
+  (`units.cadence_label`). `get-activity` adds SWOLF and distance per stroke
+  for swims. HR zone tools generally need the activity's own
   recorded zone bounds or a matching Run sport-settings group; without
   either, HR zone data comes back empty rather than wrong.
 - **Two sources of zone bounds.** `get-athlete-zones` gives today's sport

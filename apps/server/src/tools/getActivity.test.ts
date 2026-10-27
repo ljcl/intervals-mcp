@@ -121,6 +121,9 @@ describe("mapActivityDetail", () => {
     expect(detail.elevation_gain_m).toBe(85);
     expect(detail.pool_length_m).toBeNull();
     expect(detail.lengths).toBeNull();
+    // intervals.icu sends SWOLF 17.6 on this run; it has no meaning there.
+    expect(detail.swolf).toBeNull();
+    expect(detail.distance_per_stroke_m).toBeNull();
     expect(detail.achievements).toEqual([]);
     expect(detail.hr_recovery).toBeNull();
     expect(detail.load).toEqual({
@@ -351,6 +354,10 @@ describe("mapActivityDetail", () => {
     expect(detail.pool_length_m).toBe(50);
     expect(detail.average_cadence_spm).toBeNull();
     expect(detail.running_dynamics).toBeNull();
+    // intervals.icu's SWOLF 33.795; 1,500 m over 21.71 strokes/min for
+    // 1,489 s (538.7 strokes).
+    expect(detail.swolf).toBe(33.8);
+    expect(detail.distance_per_stroke_m).toBe(2.78);
     expect(detail.achievements).toEqual([]);
     // intervals.icu's own icu_hrr: a 60 s window, start_time 1458 s.
     expect(detail.hr_recovery).toEqual({
@@ -531,7 +538,7 @@ describe("formatActivityDetailText", () => {
     const lines = text.split("\n");
 
     expect(lines[1]).toBe(
-      "1.50 km, 24:49 moving (intervals.icu), 1:39 /100m, 30 lengths of 50 m, HR 149/165",
+      "1.50 km, 24:49 moving (intervals.icu), 1:39 /100m, 30 lengths of 50 m, SWOLF 33.8, 2.78 m per stroke, HR 149/165",
     );
     // The interval paces count the rests at the wall; the activity's does
     // not, so the header says so.

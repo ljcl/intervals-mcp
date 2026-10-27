@@ -563,7 +563,8 @@ activities came back in 86 KB.
   `SWOLF` field equals `(moving_time + average_cadence × moving_time / 60)
   × 25 / distance` (seconds plus strokes per 25 m) on all 28 swims of 2026,
   pool and open water. `SWOLF` is also set on runs, where it has no
-  meaning. No tool reads it.
+  meaning, sometimes as the string `"Infinity"`. `get-activity` reports it
+  on swims only (`swimStrokeMetrics`).
 - `average_stride` is `(distance / moving_time) / (2 × average_cadence /
   60)` on swims too: intervals.icu doubles the cadence as for a run.
   `average_step_length` (mm) is within -1% to +2.5% of `average_stride` on

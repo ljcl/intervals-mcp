@@ -156,7 +156,13 @@ recovery over a window it picks (60 s on every activity checked; it can
 start before an effort ends): `drop_bpm`, `start_bpm`, `end_bpm`,
 `window_s`, `start_time_s`, or null. The text prints the achievements after
 the metrics line and the HR recovery after the load line. Pool swims also
-report `lengths` and `pool_length_m`. HR zone boundaries come from
+report `lengths` and `pool_length_m`. Swims, pool and open water, report
+`swolf` (intervals.icu's own `SWOLF`: seconds plus strokes per 25 m,
+whatever the pool length) and `distance_per_stroke_m` (distance over
+intervals.icu's stroke count, `average_cadence × moving_time / 60`), from
+`swimStrokeMetrics` (`utils/running.ts`). Every other sport gets null for
+both: intervals.icu sets `SWOLF` on runs too, where it means nothing
+(docs/api-notes.md, Swims). HR zone boundaries come from
 the activity's own recorded `icu_hr_zones` when present (any activity
 type), the same source `get-activity-zones` reads; otherwise they fall back
 to the athlete's Run sport settings group (`types` Run, VirtualRun,
@@ -197,7 +203,7 @@ averages it with real samples, and a bucket of only dropout samples is
 `null`. `time` is always fetched to size the buckets, but
 only returned when requested. cadence is doubled to steps/min (unit `spm`)
 for Run/TrailRun/VirtualRun/Walk/Hike; other sport types keep the raw rate,
-reported in `rpm`. A requested type the activity's streams don't include
+reported in `strokes/min` for a swim and `rpm` otherwise (`cadenceLabel`). A requested type the activity's streams don't include
 comes back in `missing` rather than failing the call; an activity with no
 streams at all fails with a clear message naming the id. The text response
 repeats the returned columns as a CSV block (header row of `type_unit`
@@ -254,8 +260,13 @@ report `pace_min_per_100m` and other distance sports `speed_kmh`, both from
 `sportSpeed` (distance over moving time), so they match `get-activity`'s
 intervals. A swim lap's moving time includes its rests at the wall, so the
 text adds a note that swim paces include them. Cadence is spm
-(doubled from strides) for Run/TrailRun/VirtualRun/Walk/Hike, rpm otherwise,
-with the unit named in `units.cadence`. The response also carries
+(doubled from strides) for Run/TrailRun/VirtualRun/Walk/Hike, strokes per
+minute for swims, rpm otherwise, with the unit named in
+`units.cadence_label` (`spm`, `strokes/min` or `rpm`). `units.cadence` stays
+`spm` or `rpm` (so `rpm` on a swim) for hosts holding the older output
+schema; `get-hill-analysis`, `get-split-analysis` and
+`get-interval-analysis` carry the same pair, and `cadenceLabel`/`cadenceUnit`
+(`intervalLaps.ts`) are their one home (#173). The response also carries
 `device_lap_count` (`icu_lap_count`) and `intervals_edited`
 (`icu_intervals_edited`); the text flags it when intervals were edited or
 the interval count differs from the device's lap count. An activity with no

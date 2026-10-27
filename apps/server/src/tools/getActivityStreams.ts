@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { round } from "../formatters";
+import { cadenceLabel } from "../intervalLaps";
 import {
   getActivity as getActivityClient,
   type IntervalsActivity,
@@ -13,7 +14,7 @@ import {
 import { NO_PROGRESS, type ReportProgress } from "../progress";
 import { downsampleColumns, lastValuePerBucket } from "../streamDownsample";
 import { LATLNG_DECIMALS, STREAM_DECIMALS } from "../streamPrecision";
-import { cadenceSpm, isStepCadenceActivity } from "../utils/running";
+import { cadenceSpm } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
 import { noteToolFailure, toolErrorText } from "./_errors";
 import { intervalsActivityIdInput } from "./_ids";
@@ -69,7 +70,7 @@ Notes:
 - time is always fetched but only returned when requested.
 - A requested type the activity lacks is listed in missing, not an error.
 - Cadence is steps per minute (spm) for Run, TrailRun, VirtualRun, Walk and
-  Hike, rpm otherwise.
+  Hike, strokes per minute (strokes/min) for swims, rpm otherwise.
 `;
 
 const inputSchema = z.object({
@@ -95,7 +96,7 @@ type GetActivityStreamsInput = z.infer<typeof inputSchema>;
 /**
  * Default per-type unit. `cadence`'s default ("spm") applies only when the
  * activity is a step-cadence type; {@link buildActivityStreamsResult}
- * overrides it to "rpm" otherwise (see {@link isStepCadenceActivity}).
+ * replaces it with the type's own label otherwise (see `cadenceLabel`).
  */
 const UNITS: Record<StreamType, string> = {
   time: "s",
@@ -138,7 +139,7 @@ export function buildActivityStreamsResult(
   maxPoints: number,
 ): ActivityStreamsResult {
   const type = activity.type ?? "Workout";
-  const cadenceUnit = isStepCadenceActivity(type) ? "spm" : "rpm";
+  const cadenceUnit = cadenceLabel(type);
 
   const originalPoints = loaded.length;
 
@@ -213,7 +214,8 @@ export function buildActivityStreamsResult(
 /**
  * `units` is the result's own per-type unit map, not the static `UNITS`
  * constant: `cadence`'s actual unit depends on the activity type (`spm` for
- * a step-cadence type, `rpm` otherwise, see `buildActivityStreamsResult`),
+ * a step-cadence type, `strokes/min` for a swim, `rpm` otherwise, see
+ * `buildActivityStreamsResult`),
  * and reading it from the static table here would print "spm" on a Ride's
  * summary line even though its CSV column and structuredContent both say
  * "rpm".

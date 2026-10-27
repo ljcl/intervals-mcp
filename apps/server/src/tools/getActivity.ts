@@ -36,6 +36,7 @@ import {
   paceFromDistanceTime,
   type RunningDynamicsAvg,
   sportSpeed,
+  swimStrokeMetrics,
 } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
 import { toolErrorText } from "./_errors";
@@ -65,6 +66,8 @@ Notes:
   so it is left out.
 - A swim interval's pace includes the rests inside it, so it can be slower
   than the activity's pace.
+- Swims also get SWOLF (seconds plus strokes per 25 m) and distance per
+  stroke; other sports never do.
 - achievements lists only what intervals.icu marked on this activity. Only
   threshold rises (LTHR_UP) have been seen: an estimate from this effort,
   which may not be in the sport settings. An empty list does not prove there
@@ -161,6 +164,9 @@ export interface ActivityDetail {
   /** Pool swims only. */
   pool_length_m: number | null;
   lengths: number | null;
+  /** From `swimStrokeMetrics`: swims only. */
+  swolf: number | null;
+  distance_per_stroke_m: number | null;
   load: ActivityLoad;
   decoupling_pct: number | null;
   efficiency_factor: number | null;
@@ -378,6 +384,7 @@ export function mapActivityDetail(
         : round(activity.total_elevation_gain),
     pool_length_m: activity.pool_length ?? null,
     lengths: activity.lengths ?? null,
+    ...swimStrokeMetrics(activity, type),
     load: {
       training_load: activity.icu_training_load ?? null,
       hr_load: activity.hr_load ?? null,
@@ -433,6 +440,9 @@ export function formatMetricsLine(
   if (d.speed_kmh != null) parts.push(`${d.speed_kmh} km/h`);
   if (d.lengths != null && d.pool_length_m != null)
     parts.push(`${d.lengths} lengths of ${d.pool_length_m} m`);
+  if (d.swolf != null) parts.push(`SWOLF ${d.swolf}`);
+  if (d.distance_per_stroke_m != null)
+    parts.push(`${d.distance_per_stroke_m} m per stroke`);
   if (d.average_hr != null) {
     const max = d.max_hr != null ? `/${Math.round(d.max_hr)}` : "";
     parts.push(`HR ${Math.round(d.average_hr)}${max}`);
