@@ -279,6 +279,22 @@ describe("computeSummaryStats", () => {
     expect(stats.runCount).toBe(3);
   });
 
+  it("splits the same way at any time of the same day (#276)", () => {
+    const runs = [
+      // Exactly 21 days back: the older half of a 42-day window, all day.
+      run({ date: "2026-07-06", averageCadence: 170 }),
+      run({ date: "2026-07-26", averageCadence: 180 }),
+    ];
+    const morning = new Date(2026, 6, 27, 0, 30).getTime();
+    const evening = new Date(2026, 6, 27, 23, 30).getTime();
+
+    for (const now of [morning, evening]) {
+      const stats = computeSummaryStats(runs, 42, now);
+      expect(stats.currentAvg).toBe(180);
+      expect(stats.previousAvg).toBe(170);
+    }
+  });
+
   it("shows no trend when one half of the window has no runs (#229)", () => {
     const injured = computeSummaryStats(
       [run({ date: "2026-06-20T00:00:00Z", averageCadence: 171 })],
