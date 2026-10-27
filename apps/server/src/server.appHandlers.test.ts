@@ -512,10 +512,10 @@ describe("training load handlers", () => {
   }
 
   it("view-training-load summarises totals and warning weeks when its twin fails", async () => {
+    // The twin runs first and its read fails, so the text is the view's own summary.
+    mockedIntervalsList.mockRejectedValueOnce(new Error("twin down"));
     mockedIntervalsList.mockResolvedValueOnce([intervalsRun()]);
     mockedWellness.mockResolvedValueOnce([]);
-    // The twin's own read fails, so the text is the view's own summary.
-    mockedIntervalsList.mockRejectedValueOnce(new Error("twin down"));
 
     const result = await dispatchToolCall(
       "view-training-load",
@@ -535,6 +535,8 @@ describe("training load handlers", () => {
   });
 
   it("view-training-load prints the whole-body scope and the current fitness line when its twin fails", async () => {
+    // The twin runs first and its read fails, so the text is the view's own summary.
+    mockedIntervalsList.mockRejectedValueOnce(new Error("twin down"));
     mockedIntervalsList.mockResolvedValueOnce([
       intervalsRun(),
       intervalsRun({
@@ -553,8 +555,6 @@ describe("training load handlers", () => {
         atlLoad: 0,
       } as IntervalsWellness,
     ]);
-    // The twin's own read fails, so the text is the view's own summary.
-    mockedIntervalsList.mockRejectedValueOnce(new Error("twin down"));
 
     const result = await dispatchToolCall(
       "view-training-load",
@@ -576,10 +576,10 @@ describe("training load handlers", () => {
   });
 
   it("view-training-load prints the run-only scope and the locally computed current when its twin fails", async () => {
+    // The twin runs first and its read fails, so the text is the view's own summary.
+    mockedIntervalsList.mockRejectedValueOnce(new Error("twin down"));
     const run = intervalsRun();
     mockedIntervalsList.mockResolvedValueOnce([run]);
-    // The twin's own read fails, so the text is the view's own summary.
-    mockedIntervalsList.mockRejectedValueOnce(new Error("twin down"));
     const viewResult = await dispatchToolCall(
       "view-training-load",
       { runOnly: true },
@@ -603,10 +603,10 @@ describe("training load handlers", () => {
   });
 
   it("view-training-load leaves the Current line out when there is no fitness to read and its twin fails", async () => {
+    // The twin runs first and its read fails, so the text is the view's own summary.
+    mockedIntervalsList.mockRejectedValueOnce(new Error("twin down"));
     mockedIntervalsList.mockResolvedValueOnce([intervalsRun()]);
     mockedWellness.mockResolvedValueOnce([]);
-    // The twin's own read fails, so the text is the view's own summary.
-    mockedIntervalsList.mockRejectedValueOnce(new Error("twin down"));
 
     const result = await dispatchToolCall(
       "view-training-load",
@@ -1152,10 +1152,10 @@ describe("fitness trend handlers", () => {
   });
 
   it("view-fitness-trend prints the same headline numbers as the chart when its twin fails", async () => {
+    // The twin runs first and its read fails, so the text is the view's own summary.
+    mockedWellness.mockRejectedValueOnce(new Error("twin down"));
     mockedWellness.mockResolvedValueOnce(wellnessSeries(TODAY, 91, 21, 80));
     mockedIntervalsList.mockResolvedValueOnce([]);
-    // The twin's own read fails, so the text is the view's own summary.
-    mockedWellness.mockRejectedValueOnce(new Error("twin down"));
     const targetDate = inDays(14);
 
     const result = await dispatchToolCall(
@@ -1183,6 +1183,8 @@ describe("fitness trend handlers", () => {
   });
 
   it("view-fitness-trend reports the fresh date when only resting", async () => {
+    // The twin runs first and its read fails, so the text is the view's own summary.
+    mockedWellness.mockRejectedValueOnce(new Error("twin down"));
     mockedWellness.mockResolvedValueOnce(wellnessSeries(TODAY, 91, 10, 80));
     mockedIntervalsList.mockResolvedValueOnce([]);
 
@@ -1194,6 +1196,8 @@ describe("fitness trend handlers", () => {
   });
 
   it("view-fitness-trend reports today, not a past catch-up date, when already positive", async () => {
+    // The twin runs first and its read fails, so the text is the view's own summary.
+    mockedWellness.mockRejectedValueOnce(new Error("twin down"));
     mockedWellness.mockResolvedValueOnce(
       laggingPositiveWellnessSeries(TODAY, 91, 2),
     );
@@ -1207,8 +1211,9 @@ describe("fitness trend handlers", () => {
   });
 
   it("view-fitness-trend and its data feed say already positive when synced and positive", async () => {
-    // The view, its twin (get-fitness-trend) and the data feed each read.
-    for (let call = 0; call < 3; call++) {
+    // The view's twin (get-fitness-trend) answers, so only it and the data
+    // feed read.
+    for (let call = 0; call < 2; call++) {
       mockedWellness.mockResolvedValueOnce(
         laggingPositiveWellnessSeries(TODAY, 91, 0),
       );
@@ -1572,6 +1577,8 @@ describe("fitness trend handlers", () => {
     });
 
     it("view-fitness-trend titles a past window with its last day", async () => {
+      // The twin runs first and its read fails, so the text is the view's own.
+      mockedWellness.mockRejectedValueOnce(new Error("twin down"));
       mockedWellness.mockResolvedValueOnce(wellnessSeries(NEWEST, 90, 21, 80));
       mockedIntervalsList.mockResolvedValueOnce([]);
 
@@ -2000,12 +2007,10 @@ describe("compare activities handlers", () => {
   it.each(["view-compare-activities", "get-compare-activities-data"])(
     "%s reads each activity with the app's streams URL (intervals: true)",
     async (tool) => {
-      // The view's own reads, then its twin's; the data tool has no twin.
-      const reads = tool === "view-compare-activities" ? 2 : 1;
-      for (let read = 0; read < reads; read++)
-        mockedIntervalsActivity
-          .mockResolvedValueOnce(compareActivity({ id: "i1" }))
-          .mockResolvedValueOnce(compareActivity({ id: "i2" }));
+      // The view's twin answers, so the view never loads its own copy.
+      mockedIntervalsActivity
+        .mockResolvedValueOnce(compareActivity({ id: "i1" }))
+        .mockResolvedValueOnce(compareActivity({ id: "i2" }));
 
       const result = await dispatchToolCall(
         tool,
@@ -2015,10 +2020,10 @@ describe("compare activities handlers", () => {
 
       // Same options as get-activity-streams-raw, so opening the app reads
       // each activity once (#71); server.streamSharing.test.ts counts that
-      // at the wire. Here the mocked client has no cache, so the view's
-      // twin (compare-activities) reads both again.
+      // at the wire. Here the mocked client has no cache, so this counts
+      // the reads the call itself makes: one per activity.
       expect(result.isError).toBeUndefined();
-      expect(mockedIntervalsActivity).toHaveBeenCalledTimes(2 * reads);
+      expect(mockedIntervalsActivity).toHaveBeenCalledTimes(2);
       for (const call of mockedIntervalsActivity.mock.calls)
         expect(call[2]).toEqual({ intervals: true });
       expect(mockedIntervalsActivity).toHaveBeenCalledWith("test-token", "i1", {
@@ -2085,9 +2090,9 @@ describe("activity zones handlers", () => {
   });
 
   it("view-activity-zones summarises the dominant zone for the model when its twin fails", async () => {
-    mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
-    // The twin's own read fails, so the text is the view's own summary.
+    // The twin runs first and its read fails, so the text is the view's own summary.
     mockedIntervalsActivity.mockRejectedValueOnce(new Error("twin down"));
+    mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
 
     const result = await dispatchToolCall(
       "view-activity-zones",
@@ -2108,6 +2113,8 @@ describe("activity zones handlers", () => {
   });
 
   it("view-activity-zones handles an activity with no zone data", async () => {
+    // The twin runs first and its read fails, so the text is the view's own summary.
+    mockedIntervalsActivity.mockRejectedValueOnce(new Error("twin down"));
     mockedIntervalsActivity.mockResolvedValueOnce(
       intervalsActivity({ icu_hr_zones: null, icu_hr_zone_times: null }),
     );
@@ -2433,11 +2440,11 @@ describe("view tools and hosts that cannot render MCP Apps (#77)", () => {
   );
 
   it("names the text tool instead when the twin fails", async () => {
-    // The view's own read succeeds; the twin's read of the same activity
-    // fails, so the view keeps its summary and points at the tool.
+    // The twin runs first and its read fails; the view's own read of the
+    // same activity succeeds, so it gives its summary and points at the tool.
     mockedIntervalsActivity
-      .mockResolvedValueOnce(run())
-      .mockRejectedValueOnce(new Error("upstream down"));
+      .mockRejectedValueOnce(new Error("upstream down"))
+      .mockResolvedValueOnce(run());
 
     const result = await dispatchToolCall(
       "view-activity-zones",
