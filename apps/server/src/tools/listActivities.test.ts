@@ -777,4 +777,23 @@ describe("listActivitiesTool.execute paging hint with type", () => {
       'call again with type: "runs", oldest: 2026-08-28, newest: 2026-09-24.',
     );
   });
+
+  it("carries nameContains into a list paging hint", async () => {
+    const runs = Array.from({ length: 3 }, (_, n) => ({
+      ...fixture[0]!,
+      id: `i73${n}`,
+      name: "Saturday parkrun",
+      start_date_local: `2026-09-2${4 - n}T07:00:00`,
+    })) as IntervalsActivity[];
+    mockedListActivities.mockResolvedValueOnce(runs);
+
+    const result = await listActivitiesTool.execute(
+      { nameContains: "parkrun", limit: 1 },
+      "key",
+    );
+
+    expect(result.content[0]!.text).toContain(
+      'call again with nameContains: "parkrun", oldest: 2026-08-28, newest: 2026-09-24.',
+    );
+  });
 });
