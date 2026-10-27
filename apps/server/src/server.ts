@@ -1791,7 +1791,10 @@ async function runToolCall(
     return result;
   };
 
-  const handler = APP_TOOL_HANDLERS[name] ?? TOOL_EXECUTORS.get(name);
+  // hasOwn: an inherited name (`constructor`, `__proto__`) is not a tool.
+  const handler = Object.hasOwn(APP_TOOL_HANDLERS, name)
+    ? APP_TOOL_HANDLERS[name]
+    : TOOL_EXECUTORS.get(name);
   if (!handler) {
     return finish(
       "error",

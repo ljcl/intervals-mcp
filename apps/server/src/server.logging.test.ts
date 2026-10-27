@@ -80,6 +80,19 @@ describe("dispatch telemetry", () => {
     });
   });
 
+  it.each(["constructor", "toString", "__proto__"])(
+    "treats the inherited name %s as an unknown tool",
+    async (name) => {
+      const result = await dispatchToolCall(name, {}, { readOnly: true });
+
+      expect(result.isError).toBe(true);
+      expect(result.content).toEqual([
+        { type: "text", text: expect.stringContaining("Unknown tool") },
+      ]);
+      expect(Object.keys(toolCallStats())).toEqual(["unknown"]);
+    },
+  );
+
   it("bounds the name of an unknown tool in the line and the counters", async () => {
     const name = `\u202e${"x".repeat(500)}`;
 
