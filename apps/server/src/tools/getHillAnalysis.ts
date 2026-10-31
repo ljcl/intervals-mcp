@@ -33,8 +33,9 @@ For per-km pacing on a hilly course, use get-split-analysis; for whole-run
 aerobic durability, get-aerobic-analysis.
 
 Notes:
-- Grade comes from intervals.icu's smoothed grade stream, else from altitude
-  over about 30 m; grade_source says which. Grade-adjusted pace uses grade
+- Grade comes from altitude over about 30 m, the same altitude each
+  segment's grade and gain are read from, else from intervals.icu's smoothed
+  grade stream; grade_source says which. Grade-adjusted pace uses grade
   averaged over 100 m, and a noisy elevation track adds a warning.
 - With no elevation data (no grade and no real altitude samples), it
   returns an error rather than treating the run as flat.

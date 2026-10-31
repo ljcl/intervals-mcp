@@ -42,8 +42,9 @@ Notes:
 - Halves are cut at the exact midpoint of recorded distance.
 - Stopped time is excluded from pace. A trailing partial split is marked and
   left out of fastest and slowest.
-- Grade comes from intervals.icu's smoothed grade, else altitude, and is
-  averaged over 100 m before the grade adjustment. A noisy elevation track
+- Grade comes from altitude, the same altitude each split's grade is read
+  from, else intervals.icu's smoothed grade, and is averaged over 100 m
+  before the grade adjustment. A noisy elevation track
   adds a warning. With no elevation data, the grade-adjusted figures are
   null and the verdict is on the clock only.
 - Elevation gain is intervals.icu's own total (as get-activity reports it)

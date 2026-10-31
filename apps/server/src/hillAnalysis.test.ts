@@ -118,8 +118,19 @@ describe("gapFactor", () => {
 });
 
 describe("computeGrades", () => {
-  it("prefers the grade_smooth stream", () => {
+  it("derives grade from altitude even when grade_smooth is present", () => {
+    const streams = buildStreams([flat(200), climb(400), flat(200)]);
+    // grade_smooth disagrees with the altitude the segments report (#297).
+    streams.grade_smooth = streams.grade_smooth!.map(() => -5);
+    const result = computeGrades(normalizeHillStreams(streams));
+    expect(result.source).toBe("computed");
+    const mid = Math.floor(streams.time.length / 2);
+    expect(result.grades[mid]).toBeCloseTo(6, 0);
+  });
+
+  it("uses the grade_smooth stream when there is no altitude", () => {
     const streams = buildStreams([flat(100)]);
+    streams.altitude = undefined;
     const result = computeGrades(normalizeHillStreams(streams));
     expect(result.source).toBe("grade_smooth");
     expect(result.grades).toEqual(streams.grade_smooth);
@@ -154,6 +165,7 @@ describe("computeGrades", () => {
 
   it("keeps grade_smooth as the source and interpolates across a partial null run", () => {
     const streams = buildStreams([flat(200), climb(400), flat(200)]);
+    streams.altitude = undefined;
     const grade = streams.grade_smooth as (number | null)[];
     // Blank out a short mid-climb stretch; the values on either side are
     // both real recorded samples, not the whole stream going dark.
@@ -278,7 +290,7 @@ describe("computeHillAnalysis", () => {
     const analysis = computeHillAnalysis(buildStreams([flat(5000)]));
     expect(analysis.climbs).toHaveLength(0);
     expect(analysis.drift).toBeNull();
-    expect(analysis.gradeSource).toBe("grade_smooth");
+    expect(analysis.gradeSource).toBe("computed");
     expect(analysis.warnings.join(" ")).toContain("flat activity");
   });
 
@@ -302,8 +314,9 @@ describe("computeHillAnalysis", () => {
     const analysis = computeHillAnalysis(withGaps);
     expect(analysis.climbs).toHaveLength(1);
     // The surviving samples are all 155 bpm, so the average must hold there,
-    // not be dragged toward zero by the null samples.
-    expect(analysis.climbs[0]!.avgHr).toBe(155);
+    // not be dragged toward zero by the null samples. (The trailing 30 m
+    // altitude window carries the climb a few 140 bpm samples past its top.)
+    expect(analysis.climbs[0]!.avgHr).toBeGreaterThanOrEqual(154);
   });
 
   it("detects a single sustained climb with sane metrics", () => {
@@ -317,9 +330,11 @@ describe("computeHillAnalysis", () => {
     expect(c.lengthM).toBeLessThanOrEqual(600);
     expect(c.avgGradePct).toBeCloseTo(6, 0);
     expect(c.elevationChangeM).toBeGreaterThan(25);
-    expect(c.avgHr).toBe(155);
-    // 2.5 m/s = 400 s/km raw; GAP must be meaningfully faster than raw pace.
-    expect(c.paceSecPerKm).toBeCloseTo(400, -1);
+    // Within a beat: the trailing 30 m altitude window lags the top.
+    expect(c.avgHr).toBeGreaterThanOrEqual(154);
+    // 2.5 m/s = 400 s/km raw, less a few faster samples past the top that
+    // the trailing altitude window keeps; GAP must be meaningfully faster.
+    expect(Math.abs(c.paceSecPerKm! - 400)).toBeLessThanOrEqual(10);
     expect(c.gapPaceSecPerKm!).toBeLessThan(c.paceSecPerKm!);
   });
 
@@ -471,11 +486,12 @@ describe("computeHillAnalysis", () => {
   it("warns on a noisy elevation track and keeps climb GAP on the averaged grade", () => {
     const streams = buildStreams([flat(1000), climb(600), flat(1000)]);
     const clean = computeHillAnalysis(streams);
-    // ±8% alternating noise on top of the climb's real grade. (On the flat
-    // too, the raw grade would open phantom climbs: detection still reads
-    // the per-sample grade.)
-    streams.grade_smooth = streams.grade_smooth!.map((g, i) =>
-      g === 6 ? g + (i % 2 === 0 ? 8 : -8) : g,
+    // About ±2 m of barometric noise on the climb's altitude, on a 13-sample
+    // cycle so the 30 m (12-sample) altitude window cannot cancel it. (On
+    // the flat too, the raw grade would open phantom climbs: detection still
+    // reads the per-sample grade.)
+    streams.altitude = streams.altitude!.map((a, i) =>
+      streams.grade_smooth![i] === 6 ? a! + (((i * 5) % 13) - 6) / 3 : a,
     );
     const noisy = computeHillAnalysis(streams);
     expect(clean.warnings.join(" ")).not.toContain("noisy");

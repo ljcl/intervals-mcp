@@ -39,6 +39,25 @@ const hillyStreams = streamsHilly as unknown as IntervalsStream[];
 const flatActivity = activityFixture as unknown as IntervalsActivity;
 const flatStreams = streamsFixture as unknown as IntervalsStream[];
 
+/**
+ * #297: a segment's GAP must lean the way its reported grade does. A GAP
+ * slower than pace on ground reported flat or uphill, or faster than pace on
+ * ground reported 1% or more downhill, means grade and GAP read different
+ * elevation sources.
+ */
+function gapAgreesWithGrade(segment: {
+  avg_grade_pct: number | null;
+  pace_sec_per_km: number | null;
+  gap_pace_sec_per_km: number | null;
+}): boolean {
+  const { avg_grade_pct: grade, pace_sec_per_km: pace } = segment;
+  const gap = segment.gap_pace_sec_per_km;
+  if (grade == null || pace == null || gap == null) return true;
+  if (grade >= 0 && gap > pace) return false;
+  if (grade <= -1 && gap < pace) return false;
+  return true;
+}
+
 beforeEach(() => {
   mockedGetActivity.mockReset();
   mockedGetActivityStreams.mockReset();
@@ -57,7 +76,7 @@ describe("get-split-analysis", () => {
     expect(result.isError).toBeUndefined();
     const text = result.content[0]?.text ?? "";
     expect(text).toContain("Split Analysis:");
-    expect(text).toContain("Grade source: grade_smooth");
+    expect(text).toContain("Grade source: computed");
     expect(text).toContain("Splits (km):");
     expect(text).toMatch(/\d+:\d{2} \/km/);
 
@@ -69,7 +88,7 @@ describe("get-split-analysis", () => {
       }>;
       totals: { distance_m: number };
     };
-    expect(structured.grade_source).toBe("grade_smooth");
+    expect(structured.grade_source).toBe("computed");
     expect(structured.splits.length).toBeGreaterThan(0);
     expect(structured.splits[0]!.pace_min_per_km).toMatch(/^\d+:\d{2}$/);
     expect(structured.totals.distance_m).toBeGreaterThan(1800);
@@ -77,6 +96,22 @@ describe("get-split-analysis", () => {
     // Run cadence is doubled to spm for display.
     expect(cadenced?.avg_cadence).toBeGreaterThan(100);
     expect(SplitAnalysisOutputSchema.safeParse(structured).success).toBe(true);
+  });
+
+  it("gives every hilly-fixture split a GAP on the side of pace its grade says (#297)", async () => {
+    mockedGetActivity.mockResolvedValue(hillyActivity);
+    mockedGetActivityStreams.mockResolvedValue(hillyStreams);
+
+    const result = await getSplitAnalysisTool.execute(
+      { id: "i189757207" },
+      "test-key",
+    );
+
+    const structured = result.structuredContent as {
+      splits: Parameters<typeof gapAgreesWithGrade>[0][];
+    };
+    expect(structured.splits.length).toBeGreaterThan(1);
+    expect(structured.splits.filter((s) => !gapAgreesWithGrade(s))).toEqual([]);
   });
 
   it("streams request includes grade, altitude, and cadence types", async () => {

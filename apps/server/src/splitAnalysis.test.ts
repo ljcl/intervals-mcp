@@ -384,8 +384,16 @@ describe("split verdict", () => {
     expect(analysis.verdict!.gapDeltaPct).toBeNull();
   });
 
-  it("reports grade_smooth as the source when the stream is present", () => {
+  it("derives grade from altitude even when grade_smooth is present", () => {
     const analysis = computeSplitAnalysis(flat5k());
+    expect(analysis.gradeSource).toBe("computed");
+  });
+
+  it("reports grade_smooth as the source when there is no altitude", () => {
+    const analysis = computeSplitAnalysis({
+      ...flat5k(),
+      altitude: undefined,
+    });
     expect(analysis.gradeSource).toBe("grade_smooth");
   });
 });
@@ -406,7 +414,12 @@ describe("grade-adjusted pace on noisy elevation (#45)", () => {
   });
 
   it("keeps GAP within 1% of raw pace with random ±10% grade noise", () => {
-    const analysis = computeSplitAnalysis(flat10k(seededNoise(10, 1001)));
+    // grade_smooth itself is noisy here, so leave out the altitude that
+    // would otherwise be read first through its 30 m window.
+    const analysis = computeSplitAnalysis({
+      ...flat10k(seededNoise(10, 1001)),
+      altitude: undefined,
+    });
     expect(gapVsRaw(analysis)).toBeLessThan(0.01);
     expect(analysis.warnings.join(" ")).toContain("elevation track is noisy");
   });

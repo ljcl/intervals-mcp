@@ -27,7 +27,7 @@ export interface HillStreams {
   distance: (number | null)[];
   /** Elevation in metres. */
   altitude?: (number | null)[];
-  /** intervals.icu's smoothed grade in percent, preferred when present. */
+  /** intervals.icu's smoothed grade in percent, used only without altitude. */
   grade_smooth?: (number | null)[];
   heartrate?: (number | null)[];
   /** Smoothed speed in m/s. */
@@ -54,7 +54,7 @@ export const CLIMB_GRACE_DISTANCE_M = 150;
 export const CLIMB_MIN_LENGTH_M = 200;
 /** Minimum average grade (%) for a validated climb. */
 export const CLIMB_MIN_AVG_GRADE_PCT = 2;
-/** Window (m) for deriving grade from altitude when grade_smooth is absent. */
+/** Window (m) for deriving grade from altitude. */
 export const GRADE_WINDOW_M = 30;
 /**
  * Centred window (m) that grade is averaged over before {@link gapFactor}
@@ -266,10 +266,13 @@ export function normalizeHillStreams(
 }
 
 /**
- * Per-sample grade in percent: intervals.icu's grade_smooth when present,
- * otherwise altitude change over a trailing ~GRADE_WINDOW_M window
- * (single-sample altitude noise otherwise produces phantom micro-climbs).
- * Reports which source it used so callers can say so.
+ * Per-sample grade in percent: altitude change over a trailing
+ * ~GRADE_WINDOW_M window (single-sample altitude noise otherwise produces
+ * phantom micro-climbs) whenever altitude has real samples, else
+ * intervals.icu's grade_smooth. Altitude comes first because every reported
+ * grade and elevation change is read from it, and grade_smooth follows
+ * `fixed_altitude` instead, which disagrees with it locally
+ * (docs/api-notes.md, #297). Reports which source it used so callers can say so.
  */
 export function computeGrades(
   streams: Pick<
@@ -278,10 +281,8 @@ export function computeGrades(
   >,
 ): { grades: number[]; source: GradeSource } {
   const { distance, altitude, grade_smooth } = streams;
-  if (grade_smooth) {
-    return { grades: grade_smooth, source: "grade_smooth" };
-  }
   if (!altitude || altitude.length !== distance.length) {
+    if (grade_smooth) return { grades: grade_smooth, source: "grade_smooth" };
     throw new HillAnalysisError(
       "Neither a grade nor an altitude stream is available: hill analysis needs elevation data.",
     );
@@ -630,11 +631,6 @@ export function computeHillAnalysis(streams: HillStreams): HillAnalysis {
   const normalized = normalizeHillStreams(streams);
   const warnings: string[] = [];
   const { grades, source: gradeSource } = computeGrades(normalized);
-  if (gradeSource === "computed") {
-    warnings.push(
-      "No smoothed-grade stream; grade was derived from altitude over ~30 m windows.",
-    );
-  }
   const gap = gapGrades(grades, normalized.distance);
   if (gap.warning) warnings.push(gap.warning);
   if (!normalized.heartrate) {

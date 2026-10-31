@@ -123,11 +123,20 @@ at `apps/server/src/__fixtures__/intervals/`.
   percent of FTP, whether `icu_zone_times` has one entry per `icu_power_zones` bound or one
   extra (SS), and whether pairing by `id` (rather than by array index, as `activityZones.ts`
   did before this was dropped) is needed to line entries up correctly.
-- `fixed_altitude` (m) is present on Apple Watch runs, but what it holds (a corrected track, or
-  a terrain-model lookup) is not known: `docs/intervals-openapi.json` does not mention it, and
-  no probe compared it with `altitude` (checked 2026-09-27, no live access). Hill and split
-  analysis use `grade_smooth` and `altitude` only. Compare the two streams on a run with a
-  noisy barometric track before using `fixed_altitude` for grade.
+- `grade_smooth` follows `fixed_altitude`, not the barometric `altitude` (2026-10-31, read-only,
+  4 Apple Watch (Watch7,5) runs of 12-15 km, the hilliest in the last year). Against grade from
+  `fixed_altitude` over a centred window it correlates at r 0.48-0.53 (20 m), 0.57-0.62 (50 m)
+  and 0.66-0.71 (100 m); against grade from `altitude`, r -0.04 to 0.15 at every window. Its sd
+  is about 8 points, against 2.1-2.4 for 100 m altitude-derived grade. `altitude` and
+  `fixed_altitude` correlate at r 0.88 with a mean absolute difference of about 5.5 m.
+  `total_elevation_gain` (379-460 m) tracks `fixed_altitude` (458-584 m summed raw), not
+  `altitude` (119-220 m). Per-km mean grade from all three agrees within about 1 point; they
+  disagree locally (in `streams-hilly.json`, a km reported flat got a GAP 13% slower than its
+  pace). Hill and split analysis
+  (and `get-aerobic-analysis`'s GAP basis) derive grade from `altitude`, the stream their
+  reported grade and elevation change read, and use `grade_smooth` only without altitude
+  (#297). What `fixed_altitude` itself is (a corrected track or a terrain-model lookup) is
+  still not known: `docs/intervals-openapi.json` does not mention it.
 - A stream that is entirely null (`allNull: true`) reaches the analysis modules as an array of
   nulls. Hill and split analysis treat an all-null `altitude` as no altitude, not as flat
   ground (#45).

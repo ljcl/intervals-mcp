@@ -298,6 +298,20 @@ describe("grade-adjusted basis (#74)", () => {
     },
   );
 
+  it("reads grade from altitude even when grade_smooth disagrees with it (#297)", () => {
+    const streams = outAndBack(true);
+    const gap = gradeAdjustedSpeeds({
+      ...streams,
+      grade_smooth: streams.time.map(() => 0),
+    });
+    expect(gap!.gradeSource).toBe("computed");
+    const adjusted = computeAerobicAnalysis({
+      ...streams,
+      velocity_smooth: gap!.speeds,
+    });
+    expect(Math.abs(adjusted.decouplingPct)).toBeLessThan(1);
+  });
+
   it("has no grade-adjusted speed without elevation data", () => {
     const { altitude: _altitude, ...streams } = outAndBack(true);
     expect(gradeAdjustedSpeeds(streams)).toBeNull();
