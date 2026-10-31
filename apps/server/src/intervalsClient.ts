@@ -201,6 +201,7 @@ const IntervalsActivitySchema = z
     icu_intervals_edited: z.boolean().nullable().optional(),
     recording_stops: z.array(z.number()).nullable().optional(),
     icu_warmup_time: z.number().nullable().optional(),
+    icu_cooldown_time: z.number().nullable().optional(),
     icu_average_watts: z.number().nullable().optional(),
     icu_ftp: z.number().nullable().optional(),
     /** Pool swims only: the length count and the pool length (m). */
@@ -401,6 +402,7 @@ const IntervalsSportSettingsSchema = z
       .catch(null),
     ftp: z.number().nullable().optional(),
     warmup_time: z.number().nullable().optional(),
+    cooldown_time: z.number().nullable().optional(),
   })
   .passthrough();
 

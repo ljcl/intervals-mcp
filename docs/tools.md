@@ -295,7 +295,7 @@ full list.
 When intervals.icu has no `decoupling` or no `icu_efficiency_factor`, the
 summary computes both from the streams on the grade-adjusted basis, through
 `streamAerobicAnalysis` (`getAerobicAnalysis.ts`), the stream path
-get-aerobic-analysis uses, with its warm-up exclusion. It fills only the
+get-aerobic-analysis uses, with its warm-up and cool-down exclusions. It fills only the
 missing ones. `decoupling_source` and `efficiency_factor_source` say
 `intervals.icu` or `computed`, `aerobic_basis` is `gap` (or `pace` with no
 elevation data), and `aerobic_note` says why a missing value was not
@@ -573,7 +573,11 @@ device name starting
 with `Watch` (an Apple Watch) adds a warning that the power stream is
 Apple's own estimate, not a power meter reading. Warm-up exclusion defaults
 to the activity's `icu_warmup_time`, then the athlete's Run sport-settings
-`warmup_time`, then 5 minutes; intensity factor's threshold power defaults to
+`warmup_time`, then 5 minutes. Cool-down exclusion (`excludeCooldownMinutes`,
+`breakdown.excluded_cooldown_minutes`) resolves the same way from
+`icu_cooldown_time`, `cooldown_time`, then 5 minutes, and trims moving time
+from the end, so a slow finish or a walk to stop the watch does not read as
+drift (#296); intensity factor's threshold power defaults to
 the athlete's Run sport-settings `ftp`, then the activity's `icu_ftp`.
 
 `get-interval-analysis` classifies every stopped segment (from the derived

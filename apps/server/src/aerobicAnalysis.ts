@@ -42,6 +42,8 @@ export interface AerobicStreams {
 export interface AerobicAnalysisOptions {
   /** Moving seconds to drop from the start before splitting halves. */
   excludeWarmupSeconds?: number;
+  /** Moving seconds to drop from the end before splitting halves (#296). */
+  excludeCooldownSeconds?: number;
   /** Threshold power for IF; typically the athlete's FTP. */
   thresholdPower?: number | null;
 }
@@ -78,12 +80,14 @@ export interface AerobicAnalysis {
   /** Normalized power / threshold power; null off the power basis or when no
    * threshold is known. */
   intensityFactor: number | null;
-  /** Moving seconds analysed (after warm-up exclusion). */
+  /** Moving seconds analysed (after warm-up and cool-down exclusion). */
   movingSeconds: number;
   /** Stopped seconds excluded via the moving stream. */
   excludedStoppedSeconds: number;
   /** Warm-up seconds excluded via options. */
   excludedWarmupSeconds: number;
+  /** Cool-down seconds excluded via options. */
+  excludedCooldownSeconds: number;
   warnings: string[];
 }
 
@@ -258,12 +262,21 @@ export function computeAerobicAnalysis(
     skipped += samples[firstIndex]!.seconds;
     firstIndex++;
   }
-  const analysed = samples.slice(firstIndex);
+  // Cool-down exclusion counts moving time back from the end, so a slow
+  // finish or a walk to stop the watch is not read as drift (#296).
+  const excludeCooldown = Math.max(0, options.excludeCooldownSeconds ?? 0);
+  let skippedCooldown = 0;
+  let lastIndex = samples.length;
+  while (lastIndex > firstIndex && skippedCooldown < excludeCooldown) {
+    lastIndex--;
+    skippedCooldown += samples[lastIndex]!.seconds;
+  }
+  const analysed = samples.slice(firstIndex, lastIndex);
 
   const movingSeconds = analysed.reduce((sum, s) => sum + s.seconds, 0);
   if (movingSeconds <= 0) {
     throw new AerobicAnalysisError(
-      "No usable moving samples remain after exclusions: the activity may be entirely stopped time, lack HR coverage, or the warm-up exclusion may exceed its length.",
+      "No usable moving samples remain after exclusions: the activity may be entirely stopped time, lack HR coverage, or the warm-up and cool-down exclusions may exceed its length.",
     );
   }
   if (movingSeconds < MIN_MOVING_SECONDS) {
@@ -321,6 +334,7 @@ export function computeAerobicAnalysis(
     movingSeconds,
     excludedStoppedSeconds: stoppedSeconds,
     excludedWarmupSeconds: skipped,
+    excludedCooldownSeconds: skippedCooldown,
     warnings,
   };
 }

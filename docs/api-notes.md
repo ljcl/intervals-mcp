@@ -108,6 +108,11 @@ at `apps/server/src/__fixtures__/intervals/`.
   raw pace, or grade-adjusted pace) was never observed either, so `get-aerobic-analysis` reports
   them with `basis: null` and no efficiency unit, and keeps them apart from any value it computes
   (#74).
+- `GET /activity/{id}/power-vs-hr` on 4 Apple Watch runs (2026-10-31, read-only), none with a power
+  stream and all with `decoupling` null, returns `warmup`, `cooldown`, `start`, `mid` and `end` all
+  0, so it cannot confirm which window intervals.icu excludes. Every probed run carries
+  `icu_warmup_time: 300` and `icu_cooldown_time: 300`. `get-aerobic-analysis` leaves out both
+  (#296).
 - Power zones are dropped from `mapIntervalsZones` (`activityZones.ts`) and the
   `get-activity-zones`/activity-zones-app outputs for now, rather than shipped unverified.
   `icu_zone_times`'s `{id, secs}` shape (per `IntervalsZoneTimeSchema`) has not been exercised

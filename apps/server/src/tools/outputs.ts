@@ -434,6 +434,7 @@ export const AerobicAnalysisOutputSchema = z.object({
       moving_minutes: z.number(),
       excluded_stopped_minutes: z.number(),
       excluded_warmup_minutes: z.number(),
+      excluded_cooldown_minutes: z.number(),
     })
     .nullable()
     .describe("Null when both values are intervals.icu's own (basis is null)"),
