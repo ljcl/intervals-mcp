@@ -14,7 +14,6 @@ one.
 ## Reporting a vulnerability
 
 Please do **not** open a public issue for security problems.
-
 - Preferred: [report a vulnerability privately via GitHub](https://github.com/ljcl/intervals-mcp/security/advisories/new)
   (Security tab → "Report a vulnerability").
 - Fallback: email <luke@lukeclark.com.au> with "intervals-mcp security" in the
@@ -28,14 +27,12 @@ project, so those are targets rather than guarantees.
 ## Scope
 
 In scope:
-
 - The MCP server (`apps/server`): config and startup, `/mcp` transport, and
   how tool handlers hold and use the intervals.icu API key.
 - The published Docker image (`ghcr.io/ljcl/intervals-mcp`).
 - The MCP App bundles served as resources (`ui://.../app.html`).
 
 Out of scope:
-
 - intervals.icu itself. Report intervals.icu platform issues to intervals.icu.
 - Vulnerabilities that require an already-compromised host or a
   misconfigured deployment (for example, exposing the server publicly without

@@ -3,46 +3,52 @@
 Contract: `docs/intervals-openapi.json`, from `https://intervals.icu/api/v1/docs` (refresh with the curl in docs/development.md). Record anything the spec does not say here, with the date and how it was verified.
 
 ## Auth
+
 - HTTP Basic. Username is the literal `API_KEY`, password is the personal key (`securitySchemes.APIKey`). A bearer scheme exists for OAuth apps; not used.
 - Athlete path id `0` means the key's own athlete (`INTERVALS_ATHLETE_ID` default).
 - Send a descriptive `User-Agent` (`intervals-mcp/<version> (+https://github.com/ljcl/intervals-mcp)`); some clients meet a Cloudflare challenge without one.
 
 ## Base URL and ids
+
 - Base: `https://intervals.icu/api/v1`.
 - Activity ids are strings such as `i12345678`. Pass through unchanged.
 - `/activity/{id}` is global, not athlete-scoped. Resolve gear against the activity's own `athlete_id`.
 - The singular `/event/` route 404s; events use `/athlete/{id}/events/{eventId}` (not used: RunFun owns the plan).
 
 ## Endpoints (verified against spec)
+
 Paths below are relative to the base URL above (spec lists them as `/api/v1/...`; verified 2026-09-24 against `docs/intervals-openapi.json`, `jq -r '.paths|keys[]'`).
 
-| Need | Method and path |
-| --- | --- |
-| Activities list | `GET /athlete/{id}/activities` |
-| Activity | `GET /activity/{id}`, `PUT /activity/{id}`, `DELETE /activity/{id}` |
-| Streams | `GET /activity/{id}/streams{ext}` (`ext` empty for JSON, `.csv` for CSV) |
-| Intervals | `GET /activity/{id}/intervals`, `PUT /activity/{id}/intervals` |
-| Best efforts | `GET /activity/{id}/best-efforts` |
-| HR curve | `GET /athlete/{id}/hr-curves{ext}` (across activities), `GET /activity/{id}/hr-curve{ext}` (one activity) |
-| Pace curve | `GET /athlete/{id}/pace-curves{ext}` (across activities), `GET /activity/{id}/pace-curve{ext}` (one activity) |
-| File | `GET /activity/{id}/file` (original upload; spec summary says "Strava activities not supported") |
-| Fit file | `GET /activity/{id}/fit-file` (intervals.icu-generated) |
-| Athlete | `GET /athlete/{id}`, `PUT /athlete/{id}` |
-| Sport settings | `GET /athlete/{athleteId}/sport-settings`, `POST`/`PUT` (create/update); per-id `GET`/`PUT`/`DELETE /athlete/{athleteId}/sport-settings/{id}` |
-| Wellness | `GET /athlete/{id}/wellness{ext}` (date range; `.csv` for CSV), `POST`/`PUT /athlete/{id}/wellness` |
-| Wellness/{date} | `GET /athlete/{id}/wellness/{date}`, `PUT /athlete/{id}/wellness/{date}` |
-| Gear | `GET /athlete/{id}/gear{ext}` (list; `.csv` for CSV), `POST /athlete/{id}/gear` (create); per-item `PUT`/`DELETE /athlete/{id}/gear/{gearId}` |
-| Gear reminders | `POST /athlete/{id}/gear/{gearId}/reminder`; `PUT` (`reset`, `snoozeDays` query) and `DELETE /athlete/{id}/gear/{gearId}/reminder/{reminderId}` |
-| Interval search | `GET /athlete/{id}/activities/interval-search` |
-| Activities by id | `GET /athlete/{athleteId}/activities/{ids}` (comma-separated) |
+| Need             | Method and path                                                                                                                                 |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Activities list  | `GET /athlete/{id}/activities`                                                                                                                  |
+| Activity         | `GET /activity/{id}`, `PUT /activity/{id}`, `DELETE /activity/{id}`                                                                             |
+| Streams          | `GET /activity/{id}/streams{ext}` (`ext` empty for JSON, `.csv` for CSV)                                                                        |
+| Intervals        | `GET /activity/{id}/intervals`, `PUT /activity/{id}/intervals`                                                                                  |
+| Best efforts     | `GET /activity/{id}/best-efforts`                                                                                                               |
+| HR curve         | `GET /athlete/{id}/hr-curves{ext}` (across activities), `GET /activity/{id}/hr-curve{ext}` (one activity)                                       |
+| Pace curve       | `GET /athlete/{id}/pace-curves{ext}` (across activities), `GET /activity/{id}/pace-curve{ext}` (one activity)                                   |
+| File             | `GET /activity/{id}/file` (original upload; spec summary says "Strava activities not supported")                                                |
+| Fit file         | `GET /activity/{id}/fit-file` (intervals.icu-generated)                                                                                         |
+| Athlete          | `GET /athlete/{id}`, `PUT /athlete/{id}`                                                                                                        |
+| Sport settings   | `GET /athlete/{athleteId}/sport-settings`, `POST`/`PUT` (create/update); per-id `GET`/`PUT`/`DELETE /athlete/{athleteId}/sport-settings/{id}`   |
+| Wellness         | `GET /athlete/{id}/wellness{ext}` (date range; `.csv` for CSV), `POST`/`PUT /athlete/{id}/wellness`                                             |
+| Wellness/{date}  | `GET /athlete/{id}/wellness/{date}`, `PUT /athlete/{id}/wellness/{date}`                                                                        |
+| Gear             | `GET /athlete/{id}/gear{ext}` (list; `.csv` for CSV), `POST /athlete/{id}/gear` (create); per-item `PUT`/`DELETE /athlete/{id}/gear/{gearId}`   |
+| Gear reminders   | `POST /athlete/{id}/gear/{gearId}/reminder`; `PUT` (`reset`, `snoozeDays` query) and `DELETE /athlete/{id}/gear/{gearId}/reminder/{reminderId}` |
+| Interval search  | `GET /athlete/{id}/activities/interval-search`                                                                                                  |
+| Activities by id | `GET /athlete/{athleteId}/activities/{ids}` (comma-separated)                                                                                   |
 
 ## Writes
+
 - `PUT /activity/{id}` takes only the fields to change. To clear a numeric field send `-1`.
 
 ## Pagination
+
 - List endpoints have no pagination. Page by date with `oldest` / `newest` (ISO local dates).
 
 ## Rate limits
+
 - Draft (June 2026, go-live unconfirmed): 5,000 requests/day and 2,500 per rolling 15 minutes per key, about 10/s per IP.
 - No `X-RateLimit-*` or `Retry-After` headers observed on 2026-09-24; the client throttles itself (see `intervalsApi` in fetchClient.ts).
 
@@ -50,7 +56,6 @@ Paths below are relative to the base URL above (spec lists them as `/api/v1/...`
 
 Captured with `scripts/capture-intervals-fixtures.ts` against a real account; sanitized fixtures
 at `apps/server/src/__fixtures__/intervals/`.
-
 - `GET /athlete/0/activities?oldest=&newest=` returns an array; no pagination; all sources `OAUTH_CLIENT`, `oauth_client_name: "HealthFit"`, `file_type: "fit"`, `device_name: "Watch7,5"`, `strava_id: null`.
 - `GET /activity/{id}` has `average_cadence` in strides/min (83.2 means 166 spm), running-dynamics averages `average_stance_time` (ms), `average_vertical_oscillation` (mm), `average_vertical_ratio` (%), `average_step_length` (mm), `average_stride` (m); `average_leg_spring_stiffness`, `average_impact_loading_rate`, `average_stance_time_balance` are null for Apple Watch. `icu_intervals` is empty unless `?intervals=true`. `gear` is `null` when no gear is assigned, otherwise `{ id, name: null, distance: null, primary: null }` (name/distance are not populated on the activity; resolve them via `GET /athlete/{id}/gear`). `stream_types` lists available streams.
 - `GET /activity/{id}/intervals` returns `{ id, analyzed, icu_intervals[], icu_groups[] }`; intervals carry `type` (`WORK`/`RECOVERY`), `distance`, `moving_time`, `average_heartrate`, `average_cadence`, `average_stance_time`, `average_vertical_oscillation`, `average_step_length`.
@@ -82,15 +87,14 @@ at `apps/server/src/__fixtures__/intervals/`.
 
 ## Phase 2 probes (2026-09-24 research, verified before the analysis tools were built)
 
-| Endpoint | Status | Shape and units |
-| --- | --- | --- |
-| `GET /athlete/0/pace-curves.json?type=Run&curves=all,90d,...` | 200 | Works with athlete id `0`; `{list[{id,label,distance[],values[] s,activity_id[],paceModels[{type:"CS",criticalSpeed m/s,dPrime m,r2}]}], activities{}}`. Curve ids used: `1y` (get-best-efforts default), `all`, `90d` (get-race-prediction) |
-| `GET /athlete/0/activity-pace-curves.json?...` | 403 | Athlete id `0` is denied (2026-09-25). On 2026-10-08 the bare numeric id was denied too, and the `i`-prefixed id from `GET /athlete/0` worked. Not used since #82: `pace-curves.json` with `subMaxEfforts` gives the same ranks |
-| `GET /athlete/{numericId}/athlete-summary.json?start&end` | 200 | Weekly rows (Monday-aligned, newest first), totals plus `byCategory[]`; probed but not used: get-athlete-stats instead fetches `list-activities`' underlying `/activities` and aggregates run totals (`aggregateRunTotals`) and per-sport totals (`aggregateSportTotals`) locally, so its bucket boundaries (Monday-aligned week, local calendar month/year) match the rest of the server rather than this endpoint's own |
-| `GET /activity/{id}/interval-stats?start_index&end_index` | 200 | Interval-shaped stats for any stream index range, including `gap` (m/s) |
-| `GET /activity/{id}/time-at-hr` | 200 | `{max_bpm, min_bpm, secs[], cumulative_secs[]}` |
-| `GET /activity/{id}/streams.json` | 200 | `moving` is never returned (silently omitted, not an error); `grade_smooth` (%) and `fixed_altitude` (m) are present; `gap` is not a valid stream type (422 "Invalid stream type") |
-
+| Endpoint                                                      | Status | Shape and units                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /athlete/0/pace-curves.json?type=Run&curves=all,90d,...` | 200    | Works with athlete id `0`; `{list[{id,label,distance[],values[] s,activity_id[],paceModels[{type:"CS",criticalSpeed m/s,dPrime m,r2}]}], activities{}}`. Curve ids used: `1y` (get-best-efforts default), `all`, `90d` (get-race-prediction)                                                                                                                                                                              |
+| `GET /athlete/0/activity-pace-curves.json?...`                | 403    | Athlete id `0` is denied (2026-09-25). On 2026-10-08 the bare numeric id was denied too, and the `i`-prefixed id from `GET /athlete/0` worked. Not used since #82: `pace-curves.json` with `subMaxEfforts` gives the same ranks                                                                                                                                                                                           |
+| `GET /athlete/{numericId}/athlete-summary.json?start&end`     | 200    | Weekly rows (Monday-aligned, newest first), totals plus `byCategory[]`; probed but not used: get-athlete-stats instead fetches `list-activities`' underlying `/activities` and aggregates run totals (`aggregateRunTotals`) and per-sport totals (`aggregateSportTotals`) locally, so its bucket boundaries (Monday-aligned week, local calendar month/year) match the rest of the server rather than this endpoint's own |
+| `GET /activity/{id}/interval-stats?start_index&end_index`     | 200    | Interval-shaped stats for any stream index range, including `gap` (m/s)                                                                                                                                                                                                                                                                                                                                                   |
+| `GET /activity/{id}/time-at-hr`                               | 200    | `{max_bpm, min_bpm, secs[], cumulative_secs[]}`                                                                                                                                                                                                                                                                                                                                                                           |
+| `GET /activity/{id}/streams.json`                             | 200    | `moving` is never returned (silently omitted, not an error); `grade_smooth` (%) and `fixed_altitude` (m) are present; `gap` is not a valid stream type (422 "Invalid stream type")                                                                                                                                                                                                                                        |
 - `pace-curves.json` gives each grid distance to the run that is fastest there, so one long run
   owns a long stretch of the grid. In the 2026-09-25 probe (`pace-curves.json` fixture), the 91
   points of 1,500 m and up on each of `all` and `90d` came from 6 runs, and one 42.8 km run held
@@ -147,7 +151,6 @@ at `apps/server/src/__fixtures__/intervals/`.
 
 Fetched wellness and activities 2026-01-01..2026-09-24 (267 wellness rows, 244 activities),
 sport-settings, fitness-model-events, athlete-summary, and one activity, all against athlete 0.
-
 - Every wellness row has `ctl`, `atl`, `rampRate`, `ctlLoad`, `atlLoad` (floats). `ctlLoad`/`atlLoad`
   are that day's load feeding each curve and differ on about 1 in 5 days (e.g. `ctlLoad` 0,
   `atlLoad` 21 on a day with a WeightTraining-only session).
@@ -179,7 +182,6 @@ sport-settings, fitness-model-events, athlete-summary, and one activity, all aga
 
 Two reads against athlete 0 for the year to date: `GET /athlete/0/activities?oldest=&newest=`
 (253 rows) and `GET /athlete/0/wellness?oldest=&newest=&fields=id,atlLoad,ctlLoad` (281 rows).
-
 - `type` was set on every row. It is the intervals.icu type name. The spec lists 60 values
   (`Ride` to `Other`) and has no separate sport category. 8 types appeared: Run, Swim,
   OpenWaterSwim, Ride, Walk, WeightTraining, Pilates and Workout. `sub_type` was null on every row.
@@ -206,7 +208,6 @@ Two reads against athlete 0 for the year to date: `GET /athlete/0/activities?old
 
 `GET /activity/{id}/streams.json?types=latlng,velocity_smooth,cadence,heartrate,altitude,distance,time,stance_time,vertical_oscillation,vertical_ratio,step_length,grade_smooth`
 (all 12 requested types), 200, about 201 KB:
-
 - Response order is not request order (observed: time, cadence, heartrate,
   distance, altitude, latlng, velocity_smooth, grade_smooth, then the
   dynamics streams). Every item carries `allNull, anomalies, custom, data,
@@ -255,7 +256,6 @@ itself.
 
 intervals.icu returns 0, not `null`, for a heart-rate sample where the
 sensor lost contact.
-
 - Live check on 2026-09-26: a 42 km run had a heart-rate dropout in the
   first 5 km. Before the fix (#46), `get-activity-streams` with
   `maxPoints: 2000` returned 141 buckets at 0 bpm and 12 buckets between 25
@@ -274,7 +274,6 @@ sensor lost contact.
 
 intervals.icu never returns a `moving` stream, so `loadIntervalsStreams`
 derives it (docs/architecture.md, "Streams").
-
 - Verified: the `time` stream keeps auto-pause gaps (38 to 76 s on this
   account, 2026-09-24). In `streams-multilap.json` the 74 s gap (t=164 to
   t=238) has `distance` flat at 525.92 m and `velocity_smooth` `null` on
@@ -341,7 +340,6 @@ strongest feeling and 5 the weakest, as `update-activity`'s tool description say
 
 Three runs (6.1, 21.2 and 31.0 km), all with auto-pause stops, and athlete
 curves for a 90-day window (37 runs) and a 2-month range.
-
 - `GET /activity/{id}/pace-curve.json` returns one `PaceCurve`: `distance[]`
   (m, the same fixed grid as the athlete curves, up to the largest grid
   point the run covers), `values[]` (whole seconds), `start_index[]` and
@@ -409,7 +407,6 @@ curves for a 90-day window (37 runs) and a 2-month range.
 ## Sport settings and HR curves (2026-10-08, #79, live read-only)
 
 Sport settings:
-
 - `GET /athlete/0/sport-settings` returns an array with one entry per settings
   group (4 on this account: a ride group, `Run`/`VirtualRun`/`TrailRun`,
   `Swim`/`OpenWaterSwim`, and `Other`), about 10 KB. Each entry has the same
@@ -442,7 +439,6 @@ Sport settings:
   power-meter data to check them. `get-athlete-zones` reports `ftp` only.
 
 HR curves:
-
 - `GET /athlete/0/hr-curves.json?type=Run&curves=90d,1y` returns 200 with
   athlete id `0`. The spec marks `f1`, `f2` and `f3` as required; every call
   left them out and got 200.
@@ -481,7 +477,6 @@ HR curves:
 29 read-only GETs against one account. Its runs are Apple Watch runs with device laps.
 
 `GET /athlete/{id}/activities/interval-search?minSecs&maxSecs&minIntensity&maxIntensity&minReps&maxReps&type&limit`:
-
 - Athlete id `0` works.
 - `minSecs`, `maxSecs`, `minIntensity` and `maxIntensity` are required. A missing one returns 422 with a JSON body `{status, error}` that names the parameter.
 - `limit` must be 100 or less. `limit=400` returns 422 "limit must be <= 100".
@@ -494,7 +489,6 @@ HR curves:
 - The match rule cannot be reproduced from an activity's current `icu_intervals`. With `minReps=5&maxReps=5`, 1 of the 4 returned runs had only 1 interval in the band, and 2 runs with 5 such intervals were not returned. Treat the result as candidates, and check each candidate from its own intervals.
 
 Interval `intensity`:
-
 - An interval's `intensity` is a whole percent of the sport's threshold: heart rate or pace, per the athlete's settings.
 - On this account's runs it is `floor(average_heartrate * 100 / lthr)`, with the activity's own `lthr`, for all 341 intervals with heart rate across 30 runs. So it is heart rate as a percent of LTHR, although the Run sport settings also have a threshold pace.
 - On this account's swims it is pace: `floor(average_speed * 100 / threshold_pace)` on all 6 WORK intervals of a pool swim and all 23 of an open-water swim (from the saved #86 probes, no new request). The pool swim's RECOVERY intervals have a null `intensity`.
@@ -505,7 +499,6 @@ Interval `intensity`:
 - An interval's `zone` places it in the athlete's real zones. No tool reads it. The fixture capture nulls it, and it rewrites a run interval's `intensity` against the synthetic LTHR (any other sport's to null), because both give away the real thresholds.
 
 `GET /athlete/{athleteId}/activities/{ids}`:
-
 - Athlete id `0` works. `ids` is a comma-separated list of `i`-prefixed ids. A bare numeric id is dropped.
 - A repeated id and an unknown id are dropped with no error: 21 ids with one repeat and one unknown id returned 19 rows.
 - Rows do not come back in request order. On 4 reads they came back oldest first by `start_date_local`. Key the result by `id`.
@@ -694,7 +687,6 @@ activities came back in 86 KB.
 One 12.03 km run gave three paces in three tools: 5:08, 5:05 and 5:11 /km.
 They come from three moving times, and each tool now names its source
 (`moving_time_source`):
-
 - `moving_time` is 3,700 s (5:08 /km): intervals.icu's own rule.
 - The streams have 7 auto-pause gaps of 199 s in total, so elapsed time
   (3,871 s) minus the gaps is 3,672 s (5:05 /km). The FIT session's
@@ -722,7 +714,6 @@ was made. `update-wellness` and `update-gear` send the same requests the web
 app sends.
 
 **Wellness**
-
 - `GET /athlete/0/wellness/{date}` answers 200 for a date with no record:
   `id` is the date and every field is null (`tempWeight` and
   `tempRestingHR` are `false`). Checked on 2030-01-01. Today's record
@@ -732,14 +723,14 @@ app sends.
 - Scales, from the web app's wellness dialog. Every score is 1 to 4, and 1
   is the best state:
 
-  | Field | 1 | 2 | 3 | 4 |
-  | --- | --- | --- | --- | --- |
-  | `soreness`, `fatigue`, `stress` | Low | Avg | High | Extreme |
-  | `mood` | Great | Good | OK | Grumpy |
-  | `motivation` | Extreme | High | Avg | Low |
-  | `injury` | None | Niggle | Poor | Injured |
-  | `sleepQuality` | Great | Good | Avg | Poor |
-  | `hydration` (not written) | Good | OK | Poor | Bad |
+  | Field                           | 1       | 2      | 3    | 4       |
+  | ------------------------------- | ------- | ------ | ---- | ------- |
+  | `soreness`, `fatigue`, `stress` | Low     | Avg    | High | Extreme |
+  | `mood`                          | Great   | Good   | OK   | Grumpy  |
+  | `motivation`                    | Extreme | High   | Avg  | Low     |
+  | `injury`                        | None    | Niggle | Poor | Injured |
+  | `sleepQuality`                  | Great   | Good   | Avg  | Poor    |
+  | `hydration` (not written)       | Good    | OK     | Poor | Bad     |
 
 - The athlete's "invert" chart option (`invertSubWellness`) shows `5 - value`
   in charts only. The stored value does not change.
@@ -758,7 +749,6 @@ app sends.
   re-read either way). Each needs one approved live write.
 
 **Gear**
-
 - `GET /athlete/0/gear` on 2026-10-27: four shoes. `purchased` is
   `2026-09-01T00:00:00` on one and `2026-09-24` on three; `notes` is null on
   all; `activity_filters` is one rule on 71459
@@ -787,7 +777,6 @@ before running, through `updateGearTool.execute` with the real key:
 `resetReminderId` on the new reminder. The reminder stays on the shoes as a
 real one; `update-gear` has no delete, so remove it in the web app if it is
 not wanted.
-
 - A reminder in the gear list has `id`, `gear_id`, `name`, `distance` (m),
   `time`, `activities`, `days`, `last_reset`, `starting_distance` (m),
   `starting_time` (s), `starting_activities`, `snoozed_until`,

@@ -9,7 +9,6 @@ then per-app details. Read this before adding or substantially changing an app.
 Every app's `main.tsx` is the same four-branch state machine, so it lives in
 `packages/ui` (`AppShell.tsx`, with the host wiring in `hostRoot.ts`) rather
 than in each app.
-
 - **`AppRoot`** connects to the host and renders: connect error → unusable input
   → waiting for input → content. `children` is a render prop, so it only runs
   once `app` and `toolArgs` are non-null and the content component never
@@ -100,7 +99,6 @@ model should know about.
 
 Use `useMobileMode(hostCtx)` from `@intervals-mcp/ui`. Do not roll your own
 detection. Five signals at a 640px breakpoint, any one triggers mobile:
-
 1. `host.platform === "mobile"` (strongest, rarely populated)
 2. `deviceCapabilities.touch && !deviceCapabilities.hover`
 3. `containerDimensions.width` or `maxWidth` under the breakpoint
@@ -126,7 +124,6 @@ what renders inside the host iframe, not Storybook's padded canvas.
 ## Card chrome and theming
 
 MCP Apps own their outer chrome, not the host:
-
 1. Server emits `_meta: { ui: { prefersBorder: false } }` on BOTH the resource
    descriptor AND the content response. Both derive from the `APP_RESOURCES`
    table in `server.ts` via `appResourceMeta`, so a new app is one table entry
@@ -183,7 +180,6 @@ anything needing focus management, positioning, dismissal, or roving tabindex
 before hand-rolling these. Keep styling in CSS Modules with `data-*` selectors
 (Base UI exposes `data-pressed`, `data-disabled`, etc.). Use `@base-ui/react`,
 not the frozen `@base-ui-components/react`.
-
 - `Pill` / `PillGroup` and `Legend` / `LegendItem` are built on Base UI
   `Toggle` / `ToggleGroup`: the group provides `role="group"`, arrow-key roving
   focus, one Tab stop; pressed values derive from children props so public APIs
@@ -206,7 +202,7 @@ answers "still loading, or it failed to load" (a card showing its ErrorState
 never mounts the handler either), not an SDK throw.
 
 **There is deliberately no host-capability gate**: `McpUiHostCapabilities` has
-no key meaning "the host calls tools the *app* exposes", a gate could not work
+no key meaning "the host calls tools the _app_ exposes", a gate could not work
 anyway (capabilities arrive after registration must have happened), and none is
 needed — registering pre-connect sends nothing, so an unsupporting host sees
 one extra key it already ignores.
@@ -238,7 +234,6 @@ calls the tool.
 
 `view-activity-chart` renders an interactive Recharts chart (HR, power, pace,
 altitude overlays; cadence and grade where recorded).
-
 - X-axis `Brush` zoom: drag handles to zoom into a window; the window is
   controlled state joined to the memoized chart-tree deps (an uncontrolled
   Brush resets whenever the tree rebuilds), so it survives preset/legend/
@@ -336,7 +331,6 @@ reads the chart's own data and Recharts skips a null pace; a Scatter-level
 The most complex app; defaults to a MapLibre basemap with a pure-SVG offline
 grid fallback (no Recharts). Calls `get-route-map-data` (app-only) with
 `id`.
-
 - Geometry always comes from the `latlng` stream: intervals.icu has no
   encoded-polyline endpoint (`GET /activity/{id}/map` returns the same
   latlng stream at the same resolution, nothing more; see docs/api-notes.md).
@@ -408,10 +402,15 @@ grid fallback (no Recharts). Calls `get-route-map-data` (app-only) with
 `_meta.ui.csp` on **both** descriptor and content response:
 
 ```jsonc
-{ "ui": { "prefersBorder": false, "csp": {
-  "connectDomains": ["https://tiles.openfreemap.org"],
-  "resourceDomains": ["https://tiles.openfreemap.org"]
-} } }
+{
+  "ui": {
+    "prefersBorder": false,
+    "csp": {
+      "connectDomains": ["https://tiles.openfreemap.org"],
+      "resourceDomains": ["https://tiles.openfreemap.org"]
+    }
+  }
+}
 ```
 
 Tile origin is OpenFreeMap's public Liberty instance: $0, no key, no infra, one
@@ -454,7 +453,6 @@ the same way, so the data tool reads the same past window; without it the
 window ends today. `buildDataArgs` (`normalize.ts`) builds the arguments,
 unit-tested. Volume and spike warnings are always run-based; load and
 CTL/ATL/TSB follow `runOnly`.
-
 - Server-side aggregation is pure and unit-tested in
   `apps/server/src/trainingLoad.ts` (`buildTrainingLoadData`): Monday-start
   weekly buckets over a whole-week window (`days` rounded up to whole weeks,
@@ -544,7 +542,6 @@ delta summary bar. That tool reuses the text tool's aggregate logic, extracted
 as pure `buildComparison` in `apps/server/src/tools/compareActivities.ts`.
 Every read uses the `?intervals=true` activity URL, so opening the app reads
 each activity and its streams once (#71).
-
 - Alignment is pure and unit-tested in `src/align.ts`: both activities
   resample onto one uniform grid over the shared distance or time axis
   (`alignSeries`, linear interpolation, light post-smoothing), so the tooltip
@@ -572,7 +569,6 @@ each activity and its streams once (#71).
 
 One activity's time-in-zone distribution (ljcl/strava-mcp#34). Calls
 `get-activity-zones-data` on mount.
-
 - The server maps the activity's own `icu_zone_times`/`icu_hr_zones` fields
   (same `GET /activity/{id}` fetch behind the `get-activity-zones` text tool)
   to chart-ready sets in `apps/server/src/activityZones.ts`
@@ -607,7 +603,6 @@ dates the 7-day change ("over the 7 days to 12 Apr 2026"), as the text tool
 does; both read `isPastWindow` (`packages/data`). With no data yet, either
 card's subtitle is `lookbackLabel` (`packages/data`): "Last 90 days", or
 "90 days to 12 Apr 2026" when the arguments carry `newest`.
-
 - **No new math.** `fitnessTrend.ts` computes series, bands, taper;
   `fitnessTrendApp.ts` (`mapFitnessTrendApp`) only renames to camelCase for the
   wire. The `view-` tool's text prints the same headline numbers and weekly

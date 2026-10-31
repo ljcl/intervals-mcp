@@ -83,7 +83,10 @@ async ({ orderId }) => {
     return {
       isError: true,
       content: [
-        { type: "text", text: `No order found with id '${orderId}'. Check the id and retry.` },
+        {
+          type: "text",
+          text: `No order found with id '${orderId}'. Check the id and retry.`,
+        },
       ],
     };
   }
@@ -112,7 +115,11 @@ server.registerResource(
   },
   async (uri) => ({
     contents: [
-      { uri: uri.href, mimeType: "application/json", text: JSON.stringify(loadConfig()) },
+      {
+        uri: uri.href,
+        mimeType: "application/json",
+        text: JSON.stringify(loadConfig()),
+      },
     ],
   }),
 );
@@ -135,7 +142,9 @@ server.registerResource(
   }),
   { title: "User profile", description: "A user's public profile by id." },
   async (uri, { userId }) => ({
-    contents: [{ uri: uri.href, text: JSON.stringify(await db.users.get(userId)) }],
+    contents: [
+      { uri: uri.href, text: JSON.stringify(await db.users.get(userId)) },
+    ],
   }),
 );
 ```
@@ -158,7 +167,10 @@ server.registerPrompt(
     description: "Produce a focused code review of a snippet.",
     argsSchema: {
       code: z.string().describe("The code to review"),
-      focus: z.string().optional().describe("Optional area to emphasize, e.g. 'security'"),
+      focus: z
+        .string()
+        .optional()
+        .describe("Optional area to emphasize, e.g. 'security'"),
     },
   },
   ({ code, focus }) => ({

@@ -1,4 +1,5 @@
 ---
+
 name: github-actions-docs
 description: Use when users ask how to write, explain, customize, migrate, secure, or troubleshoot GitHub Actions workflows, workflow syntax, triggers, matrices, runners, reusable workflows, artifacts, caching, secrets, OIDC, deployments, custom actions, or Actions Runner Controller, especially when they need official GitHub documentation, exact links, or docs-grounded YAML guidance.
 ---
@@ -8,7 +9,6 @@ GitHub Actions questions are easy to answer from stale memory. Use this skill to
 ## When to Use
 
 Use this skill when the request is about:
-
 - GitHub Actions concepts, terminology, or product boundaries
 - Workflow YAML, triggers, jobs, matrices, concurrency, variables, contexts, or expressions
 - GitHub-hosted runners, larger runners, self-hosted runners, or Actions Runner Controller
@@ -19,7 +19,6 @@ Use this skill when the request is about:
 - Troubleshooting workflow behavior when the user needs documentation, syntax guidance, or official references
 
 Do not use this skill for:
-
 - A specific failing PR check, missing workflow log, or CI failure triage. Use `gh-fix-ci`.
 - General GitHub pull request, branch, or repository operations. Use `github`.
 - CodeQL-specific configuration or code scanning guidance. Use `codeql`.
@@ -30,7 +29,6 @@ Do not use this skill for:
 ### 1. Classify the request
 
 Decide which bucket the question belongs to before searching:
-
 - Getting started or tutorials
 - Workflow authoring and syntax
 - Runners and execution environment
@@ -67,7 +65,6 @@ If you need a quick starting point, load `references/topic-map.md` and jump to t
 ## Answer Shape
 
 Use a compact structure unless the user asks for depth:
-
 1. Direct answer
 2. Relevant docs
 3. Example YAML or steps, only if needed

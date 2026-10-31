@@ -2,7 +2,6 @@
 
 Improvements and changes are tracked as GitHub Issues and triaged on the
 "intervals-mcp backlog" Project board (https://github.com/users/ljcl/projects/3).
-
 - File issues via the templates (Improvement, Bug report); blank issues are
   allowed.
 - Labels: `type:*` mirrors Conventional Commit types (feat, fix, perf,
@@ -65,7 +64,7 @@ Hosted-build notes: `field_names` **is** deployed — pass
 `["Status","Priority","Effort"]` to `list_project_items` / `get_project_item`
 instead of numeric ids. `projects_write.update_project_item` takes one field
 per call via `updated_field`, accepts the by-name shape
-(`{"name":"Priority","value":"P1"}` — option *name*, not option id), and
+(`{"name":"Priority","value":"P1"}` — option _name_, not option id), and
 resolves the target from `item_owner` + `item_repo` + `issue_number`, so item
 ids are no longer needed. Ids stay discoverable via `list_project_fields`.
 
@@ -73,31 +72,31 @@ ids are no longer needed. Ids stay discoverable via `list_project_fields`.
 
 Project number 3, owner `ljcl`.
 
-| Field | Field id |
-| ----- | -------- |
-| Status | PVTSSF_lAHOABzAhM4BkfpazhjQC3o |
+| Field    | Field id                       |
+| -------- | ------------------------------ |
+| Status   | PVTSSF_lAHOABzAhM4BkfpazhjQC3o |
 | Priority | PVTSSF_lAHOABzAhM4BkfpazhjQC4Y |
-| Effort | PVTSSF_lAHOABzAhM4BkfpazhjQC4c |
+| Effort   | PVTSSF_lAHOABzAhM4BkfpazhjQC4c |
 
-| Status option | id |
-| ------------- | -- |
-| Backlog | f75ad846 |
-| Ready | a057814c |
-| In progress | 47fc9ee4 |
-| In review | 2ba31d84 |
-| Done | 98236657 |
+| Status option | id       |
+| ------------- | -------- |
+| Backlog       | f75ad846 |
+| Ready         | a057814c |
+| In progress   | 47fc9ee4 |
+| In review     | 2ba31d84 |
+| Done          | 98236657 |
 
-| Priority option | id |
-| --------------- | -- |
-| P1 | fc38b480 |
-| P2 | d2ef2472 |
-| P3 | 5197fbf4 |
+| Priority option | id       |
+| --------------- | -------- |
+| P1              | fc38b480 |
+| P2              | d2ef2472 |
+| P3              | 5197fbf4 |
 
-| Effort option | id |
-| ------------- | -- |
-| S | ed6278ac |
-| M | c5c30106 |
-| L | 7270adf2 |
+| Effort option | id       |
+| ------------- | -------- |
+| S             | ed6278ac |
+| M             | c5c30106 |
+| L             | 7270adf2 |
 
 ## Reading issue bodies before rewriting them
 

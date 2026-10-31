@@ -7,23 +7,22 @@ Remote MCP server connecting AI tools to intervals.icu run data.
 Reference docs live in `docs/`. Read the relevant one before working in its area;
 this file holds only the invariants that apply to every change.
 
-| Doc | Read before |
-| --- | ----------- |
-| [docs/architecture.md](docs/architecture.md) | Changing server internals (transport, HTTP layer, cache, errors, analysis math, tool metadata) |
-| [docs/mcp-apps.md](docs/mcp-apps.md) | Adding or changing an MCP App package, `packages/ui`, or `packages/data` |
-| [docs/tools.md](docs/tools.md) | Adding, renaming, or describing tools/prompts — it is the single catalog; keep it current |
-| [docs/api-notes.md](docs/api-notes.md) | Calling the intervals.icu API; record verified behaviour here |
-| [docs/operations.md](docs/operations.md) | Configuring or debugging a deployed instance |
-| [docs/development.md](docs/development.md) | Turborepo, coverage gates, Storybook gates, Docker image build |
-| [docs/releasing.md](docs/releasing.md) | Shipping — PR titles are Conventional Commits; release automation does the rest |
-| [docs/project.md](docs/project.md) | Filing/triaging issues, editing the project board |
-| [docs/Intervals_MCP_Server.md](docs/Intervals_MCP_Server.md) | Capability reference to upload as project knowledge in a Claude project using this server |
+| Doc                                                          | Read before                                                                                    |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| [docs/architecture.md](docs/architecture.md)                 | Changing server internals (transport, HTTP layer, cache, errors, analysis math, tool metadata) |
+| [docs/mcp-apps.md](docs/mcp-apps.md)                         | Adding or changing an MCP App package, `packages/ui`, or `packages/data`                       |
+| [docs/tools.md](docs/tools.md)                               | Adding, renaming, or describing tools/prompts — it is the single catalog; keep it current      |
+| [docs/api-notes.md](docs/api-notes.md)                       | Calling the intervals.icu API; record verified behaviour here                                  |
+| [docs/operations.md](docs/operations.md)                     | Configuring or debugging a deployed instance                                                   |
+| [docs/development.md](docs/development.md)                   | Turborepo, coverage gates, Storybook gates, Docker image build                                 |
+| [docs/releasing.md](docs/releasing.md)                       | Shipping — PR titles are Conventional Commits; release automation does the rest                |
+| [docs/project.md](docs/project.md)                           | Filing/triaging issues, editing the project board                                              |
+| [docs/Intervals_MCP_Server.md](docs/Intervals_MCP_Server.md) | Capability reference to upload as project knowledge in a Claude project using this server      |
 
 ## Architecture invariants
 
 One line each; full rationale in docs/architecture.md. These exist because
 breaking them has shipped bugs — do not work around them locally.
-
 - **2026-07-28 is the revision; 2025-era requests are served read-only.**
   `mcpEndpoint.ts` serves both statelessly per request with
   `legacy: "stateless"`, because claude.ai loads MCP Apps with a 2025-11-25
@@ -247,16 +246,16 @@ breaking them has shipped bugs — do not work around them locally.
 
 Project-scoped Agent Skills are vendored under `.agents/skills/` and surfaced to Claude Code via
 symlinks in `.claude/skills/`. Externally-sourced skills are tracked in `skills-lock.json` (source
-+ content hash); locally-authored skills are not locked.
+- content hash); locally-authored skills are not locked.
 
-- `mcp-authoring` — locally-authored, framework-neutral guidance for building and reviewing MCP
+* `mcp-authoring` — locally-authored, framework-neutral guidance for building and reviewing MCP
   servers and apps (primitives, tool schema design, MCP App UI, OAuth, testing). Use it when
   changing server tools, resources, or the MCP App packages.
-- `backlog-sweep` — locally-authored procedure for re-verifying open GitHub issues against the
+* `backlog-sweep` — locally-authored procedure for re-verifying open GitHub issues against the
   current code and fixing drift. Run it after an epic, breaking change, or wide refactor merges,
   or before planning a batch of backlog work.
-- `bun` — Bun runtime, package manager, test runner, and bundler usage (well-known source).
-- `github-actions-docs` — docs-grounded help for the workflows under `.github/` (GitHub source).
+* `bun` — Bun runtime, package manager, test runner, and bundler usage (well-known source).
+* `github-actions-docs` — docs-grounded help for the workflows under `.github/` (GitHub source).
 
 ## Styling
 
@@ -295,7 +294,6 @@ interactive-control migration.
 The complete shell/mobile/theming/view-tool guide plus per-app details:
 [docs/mcp-apps.md](docs/mcp-apps.md) — read it before adding or substantially changing an app.
 Non-negotiables:
-
 - Every app's `main.tsx` is `AppRoot`'s four-branch state machine (connect error → unusable input
   → waiting for input → content) from `packages/ui`; pre-content states render inside the same
   `AppShell` so card chrome is stable from first paint.

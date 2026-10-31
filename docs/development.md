@@ -107,7 +107,6 @@ bun run coverage:summary  # Aggregate coverage into one markdown table
 ```
 
 Supplementary when the change touches UI:
-
 - Storybook sweep: look at each affected story in desktop and the
   `claudeIosCard` mobile viewport (`bun run shots <story-id>…` renders PNGs).
 - MCP endpoint smoke test: `cd apps/server && bun run start`, then
@@ -179,7 +178,6 @@ Dockerfile; `dependabot-autofix.yml` then sets the `nodejs` line to the new
 tag on the same branch (for an `oven/bun` bump it does the same to
 `packageManager` and the `bun` line). Dependabot ignores Node majors; do a major as
 one PR:
-
 1. Wait for the new major's LTS date (see the
    [release schedule](https://github.com/nodejs/release#release-schedule));
    odd majors never get LTS.
@@ -202,7 +200,6 @@ one PR:
 
 `workflow-lint.yml` runs [zizmor](https://docs.zizmor.sh) on any change under
 `.github/`; run it locally with `zizmor .github`. Conventions it enforces:
-
 - Each job gets only the permissions it uses; a job that installs
   dependencies never also holds a deploy or publish permission
   (`storybook.yml` builds in one job and deploys from another).
@@ -246,7 +243,6 @@ new advisory into a red build. Findings are almost always transitive, and
 `bun update` will not touch them: it only moves within package.json ranges
 (every direct dep is exact-pinned for Dependabot), while the lockfile keeps
 serving whatever transitive versions resolved months ago. Try these in order:
-
 1. **`bun audit fix`.** It moves each vulnerable package to the lowest safe
    version that every dependent's range allows, and changes only `bun.lock`
    (or an exact pin that has to move). `bun audit fix --dry-run` shows the
@@ -327,7 +323,6 @@ package's bare `vitest run`) defines one `storybook` project via
 `@storybook/addon-vitest`'s `storybookTest` plugin, rendering each story in
 headless Chromium. All stories use CSF factories, so no vitest setup file is
 needed. Config caveats:
-
 - The addon pins project root to `apps/storybook` but resolves co-located story
   globs against `test.dir` — the project's `test.dir` must stay at repo root or
   no story files are found.
@@ -368,7 +363,6 @@ per-file `a11y` parameter to route around a violation.
 
 What the sweep that made this repo-wide actually found: all violations were
 `color-contrast`, none structural. Three conventions keep the checks honest:
-
 - The design-system preview decorator paints `--color-background-primary` on
   the theme wrapper (axe otherwise measures dark-mode text against the white
   test canvas).

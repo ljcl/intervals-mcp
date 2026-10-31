@@ -1,9 +1,10 @@
 ---
+
 name: Bun
 description: Use when building, running, testing, or bundling JavaScript/TypeScript applications. Reach for Bun when you need to execute scripts, manage dependencies, run tests, or bundle code for production. Bun is a drop-in replacement for Node.js with integrated package manager, test runner, and bundler.
 metadata:
-    mintlify-proj: bun
-    version: "1.0"
+mintlify-proj: bun
+version: "1.0"
 ---
 
 # Bun Skill
@@ -26,17 +27,17 @@ Bun is an all-in-one JavaScript/TypeScript toolkit that replaces Node.js, npm, J
 
 ### Core Commands
 
-| Command | Purpose |
-|---------|---------|
-| `bun run <file>` | Execute a TypeScript/JavaScript file |
-| `bun run <script>` | Run a package.json script |
-| `bun install` | Install all dependencies from package.json |
-| `bun add <pkg>` | Add a package to dependencies |
-| `bun add -d <pkg>` | Add a package to devDependencies |
-| `bun remove <pkg>` | Remove a package |
-| `bun test` | Run all test files matching patterns |
-| `bun build <entry>` | Bundle code for production |
-| `bunx <pkg>` | Execute a package without installing |
+| Command             | Purpose                                    |
+| ------------------- | ------------------------------------------ |
+| `bun run <file>`    | Execute a TypeScript/JavaScript file       |
+| `bun run <script>`  | Run a package.json script                  |
+| `bun install`       | Install all dependencies from package.json |
+| `bun add <pkg>`     | Add a package to dependencies              |
+| `bun add -d <pkg>`  | Add a package to devDependencies           |
+| `bun remove <pkg>`  | Remove a package                           |
+| `bun test`          | Run all test files matching patterns       |
+| `bun build <entry>` | Bundle code for production                 |
+| `bunx <pkg>`        | Execute a package without installing       |
 
 ### File Patterns Recognized
 
@@ -46,55 +47,56 @@ Bun is an all-in-one JavaScript/TypeScript toolkit that replaces Node.js, npm, J
 
 ### Configuration Files
 
-| File | Purpose |
-|------|---------|
-| `bunfig.toml` | Bun-specific configuration (optional) |
-| `package.json` | Dependencies, scripts, workspaces |
-| `tsconfig.json` | TypeScript compiler options |
-| `bun.lock` | Lockfile (auto-generated, commit to version control) |
+| File            | Purpose                                              |
+| --------------- | ---------------------------------------------------- |
+| `bunfig.toml`   | Bun-specific configuration (optional)                |
+| `package.json`  | Dependencies, scripts, workspaces                    |
+| `tsconfig.json` | TypeScript compiler options                          |
+| `bun.lock`      | Lockfile (auto-generated, commit to version control) |
 
 ### Key Environment Variables
 
-| Variable | Purpose |
-|----------|---------|
-| `BUN_PORT` | Default port for `Bun.serve()` |
-| `PORT` | Fallback port if `BUN_PORT` not set |
-| `NODE_PORT` | Another fallback port |
+| Variable                 | Purpose                               |
+| ------------------------ | ------------------------------------- |
+| `BUN_PORT`               | Default port for `Bun.serve()`        |
+| `PORT`                   | Fallback port if `BUN_PORT` not set   |
+| `NODE_PORT`              | Another fallback port                 |
 | `BUN_INSTALL_GLOBAL_DIR` | Directory for global package installs |
 
 ## Decision Guidance
 
 ### When to Use `bun run` vs `bun build`
 
-| Scenario | Use |
-|----------|-----|
-| Executing a script during development | `bun run` |
-| Running a package.json script | `bun run <script>` |
+| Scenario                                  | Use                          |
+| ----------------------------------------- | ---------------------------- |
+| Executing a script during development     | `bun run`                    |
+| Running a package.json script             | `bun run <script>`           |
 | Creating a production bundle for browsers | `bun build --target browser` |
-| Creating a production bundle for servers | `bun build --target bun` |
-| Creating a standalone executable | `bun build --compile` |
+| Creating a production bundle for servers  | `bun build --target bun`     |
+| Creating a standalone executable          | `bun build --compile`        |
 
 ### When to Use `bun install` vs `bun add`
 
-| Scenario | Use |
-|----------|-----|
-| Installing all dependencies from package.json | `bun install` |
-| Adding a new package to the project | `bun add <pkg>` |
-| Adding a dev dependency | `bun add -d <pkg>` |
-| Installing globally (system-wide) | `bun add -g <pkg>` |
-| Installing from git | `bun add git@github.com:user/repo.git` |
+| Scenario                                      | Use                                    |
+| --------------------------------------------- | -------------------------------------- |
+| Installing all dependencies from package.json | `bun install`                          |
+| Adding a new package to the project           | `bun add <pkg>`                        |
+| Adding a dev dependency                       | `bun add -d <pkg>`                     |
+| Installing globally (system-wide)             | `bun add -g <pkg>`                     |
+| Installing from git                           | `bun add git@github.com:user/repo.git` |
 
 ### When to Use `--watch` vs `--hot`
 
-| Scenario | Use |
-|----------|-----|
-| Re-run a script when files change | `bun run --watch <file>` |
-| Hot reload with HMR for web development | `bun --hot run <file>` |
-| Re-run tests when files change | `bun test --watch` |
+| Scenario                                | Use                      |
+| --------------------------------------- | ------------------------ |
+| Re-run a script when files change       | `bun run --watch <file>` |
+| Hot reload with HMR for web development | `bun --hot run <file>`   |
+| Re-run tests when files change          | `bun test --watch`       |
 
 ## Workflow
 
 ### 1. Initialize a Project
+
 ```bash
 bun init my-app
 cd my-app
@@ -102,12 +104,14 @@ cd my-app
 Choose a template: Blank, React, or Library. This creates `package.json`, `tsconfig.json`, and a starter file.
 
 ### 2. Install Dependencies
+
 ```bash
 bun install
 ```
 Reads `package.json`, downloads packages, and creates `bun.lock`. Runs lifecycle scripts for trusted dependencies only.
 
 ### 3. Add New Packages
+
 ```bash
 bun add react
 bun add -d @types/react
@@ -115,6 +119,7 @@ bun add -d @types/react
 Updates `package.json` and `bun.lock`. Use `-d` for dev dependencies, `--optional` for optional, `--peer` for peer.
 
 ### 4. Run Scripts
+
 ```bash
 bun run dev
 bun run build
@@ -123,6 +128,7 @@ bun run test
 Executes scripts defined in `package.json`. Bun respects lifecycle hooks (`pre<script>`, `post<script>`).
 
 ### 5. Write and Run Tests
+
 ```bash
 # Create a test file
 echo 'import { test, expect } from "bun:test"; test("math", () => expect(2+2).toBe(4));' > math.test.ts
@@ -134,6 +140,7 @@ bun test --coverage
 ```
 
 ### 6. Build for Production
+
 ```bash
 bun build ./src/index.tsx --outdir ./dist
 bun build ./src/index.tsx --outfile ./app --compile
@@ -141,12 +148,13 @@ bun build ./src/index.tsx --outfile ./app --compile
 Bundles code, handles TypeScript/JSX transpilation, tree-shakes dead code, minifies if requested.
 
 ### 7. Create an HTTP Server
+
 ```typescript
 const server = Bun.serve({
   port: 3000,
   routes: {
     "/": () => new Response("Hello"),
-    "/api/users/:id": req => new Response(`User ${req.params.id}`),
+    "/api/users/:id": (req) => new Response(`User ${req.params.id}`),
   },
 });
 console.log(`Server at ${server.url}`);
@@ -169,7 +177,6 @@ Run with `bun run server.ts`. Supports routing, WebSockets, streaming, and TLS.
 ## Verification Checklist
 
 Before submitting work with Bun:
-
 - [ ] Run `bun install` to verify dependencies resolve without errors
 - [ ] Run `bun test` to ensure all tests pass
 - [ ] Run `bun run build` (or equivalent) to verify the build succeeds
