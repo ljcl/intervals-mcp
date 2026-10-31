@@ -740,7 +740,9 @@ roughly 3 to 60 minute efforts; a prediction outside that window, a marathon
 for instance, is still returned and flagged rather than hidden. `raceDistance`
 (optional; `5km`, `10km`, `15km`, `10 mile`, `half marathon`, `marathon` or
 `50km`, "5K" style still accepted) adds a km split table (even and negative-split) for that race, and
-`goalTime` paces it to a goal instead of the prediction. Output is km only, no
+`goalTime` paces it to a goal instead of the prediction; a two-part time is
+M:SS unless that is faster than 2:30 /km, then H:MM ("1:45" for a half marathon),
+and the result warns when it made that reading. Output is km only, no
 mile paces or splits. Pace is a flat `pace_sec_per_km`/`pace_min_per_km` pair
 (bare `m:ss`), matching every other tool, wherever a prediction, the goal
 target, or a split row reports one; `units.distance` is `"m"`, matching the
