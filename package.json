@@ -33,16 +33,16 @@
     "shots": "bun scripts/story-shots.ts"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.15",
+    "@biomejs/biome": "2.6.2",
     "@intervals-mcp/tsconfig": "workspace:*",
-    "@storybook/addon-vitest": "10.6.2",
-    "@types/bun": "1.4.3",
+    "@storybook/addon-vitest": "10.6.3",
+    "@types/bun": "1.4.4",
     "@vitest/browser-playwright": "5.0.5",
     "@vitest/coverage-v8": "5.0.5",
-    "dotenv": "18.0.8",
+    "dotenv": "18.0.9",
     "knip": "6.42.1",
     "playwright": "1.64.1",
-    "turbo": "2.11.9",
+    "turbo": "2.11.10",
     "typescript": "7.0.2",
     "vitest": "5.0.5"
   },
