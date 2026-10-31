@@ -318,8 +318,8 @@ Non-negotiables:
 
 ```bash
 bun install               # Install all deps (workspace-aware)
-bun run check             # Full verification: lint + test + typecheck + build + boundaries
-bun run check:affected    # Same, but only packages changed since main (root lint + typecheck:root always run)
+bun run check             # Full verification: lint + knip + test + typecheck + build + boundaries
+bun run check:affected    # Same, but only packages changed since main (root lint, knip and typecheck:root always run)
 bun run build             # Build all packages (via Turborepo)
 bun run build:affected    # Build only changed packages
 bun run test              # Run all tests (via Turborepo)
