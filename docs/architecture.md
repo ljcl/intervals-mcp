@@ -72,7 +72,6 @@ Related docs: [mcp-apps.md](mcp-apps.md) for the UI packages,
 
 All rate-limit awareness and backoff lives here — add retry/limit logic here,
 never per-tool.
-
 - Parses only `Retry-After` into a snapshot
   (`intervalsApi.getRateLimitSnapshot()`), in either form the header takes:
   seconds, or an HTTP date read as the seconds left until it. intervals.icu sends no
@@ -141,7 +140,7 @@ never per-tool.
 intervals.icu sends no `X-RateLimit-*` or `Retry-After` headers (verified
 2026-09-24), so there is nothing in a response to react to. Instead
 `intervalsApi` (`fetchClient.ts`) enforces `minIntervalMs: 200`: a minimum
-gap between the *start* of consecutive request attempts, shared across
+gap between the _start_ of consecutive request attempts, shared across
 concurrent callers via a single next-available-slot clock, not a per-caller
 delay. Draft limits (go-live unconfirmed): 5,000 requests/day and 2,500 per
 rolling 15 minutes per key, about 10/s per IP. 200ms spacing respects the
@@ -171,25 +170,24 @@ the counters can over-count until it catches up.
 lives in `intervalsCacheTtl`, keyed by request path: add caching there, not
 per-tool. Path patterns and current TTLs (`fetchClient.ts`):
 
-| Path | TTL | Rationale |
-| ---- | --- | --------- |
-| `/activity/{id}/streams*` | 10m | One superset URL per activity (see [Streams](#streams)); immutable once processed |
-| `/activity/{id}/intervals` | 10m | Same |
-| `/activity/{id}` | 10m | Invalidated on `update-activity` writes |
-| `/activity/{id}/file` | 10m | The original upload's bytes, read for its weather (`activityWeather.ts`); it never changes, and the TTL bounds the memory a 150 KB to 1 MB file holds |
-| `/athlete/{id}/gear` | 10m | Rarely changes; invalidated on `update-activity` and `update-gear` writes |
-| `/athlete/{id}/sport-settings/{sport}` | 1h | Rarely changes |
-| `/athlete/{id}/sport-settings` | 10m | Every group at once (`get-athlete-zones`); shorter than one sport's settings, so a changed LTHR shows soon |
-| `/athlete/{id}/hr-curves.json` | 10m | Recomputed from history, like the pace curves |
-| `/athlete/{id}/activities` | 1m | A newly recorded activity should show up quickly |
-| `/athlete/{id}/activities/search-full` | 1m | Same freshness as the listing |
-| `/athlete/{id}/activities/interval-search` | 1m | Same freshness as the listing |
-| `/athlete/{id}/activities/{ids}` (`i`-prefixed, comma-separated) | 10m | The same rows as `/activity/{id}`; dropped with the activities list on `update-activity` |
-| `/athlete/{id}/wellness*` | 5m | intervals.icu updates wellness through the day; invalidated on `update-wellness` writes |
-| `/athlete/{id}/pace-curves.json` | 10m | Recomputed from history a few times a day at most |
+| Path                                                             | TTL | Rationale                                                                                                                                             |
+| ---------------------------------------------------------------- | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/activity/{id}/streams*`                                        | 10m | One superset URL per activity (see [Streams](#streams)); immutable once processed                                                                     |
+| `/activity/{id}/intervals`                                       | 10m | Same                                                                                                                                                  |
+| `/activity/{id}`                                                 | 10m | Invalidated on `update-activity` writes                                                                                                               |
+| `/activity/{id}/file`                                            | 10m | The original upload's bytes, read for its weather (`activityWeather.ts`); it never changes, and the TTL bounds the memory a 150 KB to 1 MB file holds |
+| `/athlete/{id}/gear`                                             | 10m | Rarely changes; invalidated on `update-activity` and `update-gear` writes                                                                             |
+| `/athlete/{id}/sport-settings/{sport}`                           | 1h  | Rarely changes                                                                                                                                        |
+| `/athlete/{id}/sport-settings`                                   | 10m | Every group at once (`get-athlete-zones`); shorter than one sport's settings, so a changed LTHR shows soon                                            |
+| `/athlete/{id}/hr-curves.json`                                   | 10m | Recomputed from history, like the pace curves                                                                                                         |
+| `/athlete/{id}/activities`                                       | 1m  | A newly recorded activity should show up quickly                                                                                                      |
+| `/athlete/{id}/activities/search-full`                           | 1m  | Same freshness as the listing                                                                                                                         |
+| `/athlete/{id}/activities/interval-search`                       | 1m  | Same freshness as the listing                                                                                                                         |
+| `/athlete/{id}/activities/{ids}` (`i`-prefixed, comma-separated) | 10m | The same rows as `/activity/{id}`; dropped with the activities list on `update-activity`                                                              |
+| `/athlete/{id}/wellness*`                                        | 5m  | intervals.icu updates wellness through the day; invalidated on `update-wellness` writes                                                               |
+| `/athlete/{id}/pace-curves.json`                                 | 10m | Recomputed from history a few times a day at most                                                                                                     |
 
 Everything else is left uncached.
-
 - Date-range reads (`list-activities`, `get-wellness`) key on calendar-day
   `oldest`/`newest` bounds (`YYYY-MM-DD`), not an epoch timestamp, so no
   quantization step is needed: two calls resolving the same default window
@@ -210,7 +208,7 @@ Everything else is left uncached.
   successfully; `updateActivity` (`intervalsClient.ts`) additionally
   invalidates the activity, the athlete's activities list, the gear list,
   and the athlete pace curves (their `activities` map carries the run names
-  `get-best-efforts` reports) in a `finally`, so a *failed* PUT that may
+  `get-best-efforts` reports) in a `finally`, so a _failed_ PUT that may
   still have mutated state server-side (a 5xx, a network fault, a timeout)
   does not leave a stale pre-write entry being served afterward.
 - `skipCache: true` bypasses entirely; the `update-activity` append read uses
@@ -721,7 +719,6 @@ A caller's `progressToken` becomes a `ReportProgress` closure (`progress.ts`),
 passed to every handler as its third argument — always present (`NO_PROGRESS`
 when none was requested), so a tool never checks whether progress was asked
 for.
-
 - `progress` is a plain **tick counter with no `total`**, and the count lives
   in the message: the spec requires one token's progress to strictly increase,
   and a call with several phases ("page 3 of ?", then "activity 87 of 120")
@@ -752,7 +749,6 @@ covers argument validation, `"latest"` resolution and the handler.
 one.
 
 The SDK aborts `ctx.mcpReq.signal` when:
-
 - the client closes the request. A 2026-07-28 SDK client does this for a user
   cancel and for its own timeout. The endpoint then answers 499 with no body.
 - the SSE response stream is cancelled.
@@ -767,7 +763,6 @@ its upstream request when the client goes.
 
 `FetchClient` reads the signal once per request and stops a cancelled call's
 upstream work:
-
 - A caller's own read combines the call signal with the per-attempt timeout
   (`AbortSignal.any`), so a cancel aborts an attempt on the wire.
 - The timeout is created when the attempt starts, never while the attempt
@@ -787,7 +782,6 @@ upstream work:
 - A cache hit is still served to a cancelled call.
 
 Above `FetchClient`:
-
 - The write tools (`update-activity`, `update-wellness`, `update-gear`)
   treat `CallCancelledError` from the write as a definite non-write
   (`isDefiniteWriteRejection` in `tools/_errors.ts`). The write never left,
@@ -829,7 +823,6 @@ uses: "today", default date windows, and the server instructions.
 athlete's zone is module state in `config.ts`, so none of the callers change
 and `config.ts` never imports the client (no `config` to `intervalsClient`
 cycle).
-
 - **Precedence.** A `TZ` other than exactly `UTC`, then the athlete's zone,
   then the process zone (UTC when Intl cannot name a usable one). Exactly
   `UTC` counts as unset because `docker-compose.yml` injects `TZ=${TZ:-UTC}`;
@@ -917,7 +910,6 @@ every get-running-summary and compare-activities call failed on such a host:
 the cached 2.6.0 schemas required `weather_temp_c`, which 2.7.0 removed, and
 closed every object with `additionalProperties: false`, so each new field was
 an error too. Two rules prevent this:
-
 - `toOutputSchema` (server.ts) publishes every output object open (no
   `additionalProperties: false`), so adding a field is always safe. The
   integration suite checks it on the wire.
@@ -947,7 +939,6 @@ stays under `RESPONSE_BUDGET_CHARS` (40,000 characters, `tools/_responseBudget.t
 Some hosts forward both copies to the model, and Claude Code refuses a result
 over 25,000 tokens: a 61 KB `get-activity-streams` payload and a 150 KB
 `get-race-prediction` one both shipped before the budget existed (#40, #41).
-
 - A tool whose input can ask for more than fits measures the built response
   and shrinks it, rather than reject the call or change the schema:
   `get-activity-streams` re-downsamples to fewer points, `list-activities`
@@ -996,7 +987,6 @@ keys the tool takes (#151), never an answer that reads as if they were used.
 **One naming scheme for inputs.** The alias layer above exists for models and
 hosts that still use older spellings; the advertised schemas follow this
 scheme:
-
 - Inputs are camelCase. A single activity id is `id`; a pair is
   `activityId1`/`activityId2`. The app tools and their data feeds take them
   (`activity_id` and `activity_id_1`/`activity_id_2` are accepted, never

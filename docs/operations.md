@@ -6,14 +6,14 @@ rate limits, and endpoint security. For the code behind these see
 
 ## Environment variables
 
-| Variable | Required | Description |
-| -------- | -------- | ----------- |
-| `INTERVALS_API_KEY` | Yes | intervals.icu personal API key (Settings, Developer Settings) |
-| `INTERVALS_ATHLETE_ID` | No | Athlete id: `0` (default, the API key's own athlete), a number, or i-prefixed such as `i12345` |
-| `TZ` | No | IANA zone for today and default date ranges, e.g. `Australia/Sydney`. Unset, blank or exactly `UTC` (compose's default) means the athlete's intervals.icu time zone ([Time zone](#time-zone)); `Etc/UTC` pins UTC; an unknown zone stops startup |
-| `MCP_AUTH_TOKEN` | No | Shared secret; when set, `/mcp` and the detailed half of `/health` require `Authorization: Bearer <token>` (or `?token=` for `/health`). Use at least 32 characters; a shorter one logs a startup `WARNING`, and surrounding whitespace stops startup |
-| `PORT` | No | Server port, 1-65535; blank or unset means `3000`. The image's `HEALTHCHECK` reads it |
-| `PUBLIC_URL` | No | Public URL. Warns at startup when `/mcp` is exposed without `MCP_AUTH_TOKEN`, and its host is allowed as a browser `Origin` on `/mcp` besides localhost |
+| Variable               | Required | Description                                                                                                                                                                                                                                           |
+| ---------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `INTERVALS_API_KEY`    | Yes      | intervals.icu personal API key (Settings, Developer Settings)                                                                                                                                                                                         |
+| `INTERVALS_ATHLETE_ID` | No       | Athlete id: `0` (default, the API key's own athlete), a number, or i-prefixed such as `i12345`                                                                                                                                                        |
+| `TZ`                   | No       | IANA zone for today and default date ranges, e.g. `Australia/Sydney`. Unset, blank or exactly `UTC` (compose's default) means the athlete's intervals.icu time zone ([Time zone](#time-zone)); `Etc/UTC` pins UTC; an unknown zone stops startup      |
+| `MCP_AUTH_TOKEN`       | No       | Shared secret; when set, `/mcp` and the detailed half of `/health` require `Authorization: Bearer <token>` (or `?token=` for `/health`). Use at least 32 characters; a shorter one logs a startup `WARNING`, and surrounding whitespace stops startup |
+| `PORT`                 | No       | Server port, 1-65535; blank or unset means `3000`. The image's `HEALTHCHECK` reads it                                                                                                                                                                 |
+| `PUBLIC_URL`           | No       | Public URL. Warns at startup when `/mcp` is exposed without `MCP_AUTH_TOKEN`, and its host is allowed as a browser `Origin` on `/mcp` besides localhost                                                                                               |
 
 ### Startup checks
 
@@ -28,7 +28,6 @@ than 32 characters only logs a `WARNING`.
 
 "Today" and every default date range use one zone. The server picks it in
 this order:
-
 1. `TZ`, when it names a zone other than exactly `UTC`.
 2. The athlete's `timezone` in intervals.icu, read once at startup from
    `GET /athlete/{id}` (the `INTERVALS_ATHLETE_ID` athlete).
@@ -309,7 +308,6 @@ athlete id or quota state.
 The HTTP layer handles rate limits centrally: passive, nothing to configure
 (see [architecture.md](architecture.md#request-pacing) and
 [architecture.md](architecture.md#response-cache) for the implementation):
-
 - intervals.icu sends no `X-RateLimit-*` or `Retry-After` headers (verified
   2026-09-24). Draft limits (go-live unconfirmed): 5,000 requests/day and
   2,500 per rolling 15 minutes per API key, about 10/s per IP. With no

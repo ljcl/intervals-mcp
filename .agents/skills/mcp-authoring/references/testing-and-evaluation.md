@@ -20,7 +20,10 @@ await client.connect(
 );
 
 const { tools } = await client.listTools();
-const result = await client.callTool({ name: "greet", arguments: { name: "Ada" } });
+const result = await client.callTool({
+  name: "greet",
+  arguments: { name: "Ada" },
+});
 // assert on `result.content` / `result.structuredContent`
 ```
 

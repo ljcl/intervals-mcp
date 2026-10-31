@@ -30,7 +30,6 @@ so the three workflows never cancel a PR run: a stack push starts each upper
 PR twice for one commit, and a cancelled newest run blocked the merge.
 
 Normal semver applies (the package is past 1.0.0):
-
 - `fix:` bumps patch; so do `perf:` and `revert:`, which also get changelog
   sections
 - `feat:` bumps minor
@@ -53,7 +52,6 @@ registering a stale image.)
 
 Merging that PR pushes the `vX.Y.Z` tag (via the `RELEASE_PLEASE_PAT` secret),
 triggering:
-
 - `docker.yml` → publishes `ghcr.io/ljcl/intervals-mcp:X.Y.Z`, `:X.Y` and
   `:latest`
 - `publish-mcp.yml` → publishes `server.json` to the MCP registry via GitHub OIDC
@@ -68,7 +66,6 @@ mislabeled `fix:` on a planning doc cannot cut an empty release. A commit
 touching excluded and non-excluded paths still counts.
 
 Escapes:
-
 - Force a version: set `"release-as": "X.Y.Z"` on the `.` package in
   `release-please-config.json` and merge; the release PR retargets on the next
   run. Remove it once that release ships, or every later release PR stays
@@ -112,7 +109,6 @@ BuildKit falls back to Docker Hub when the mirror does not hold an image yet
 (for example a digest that Dependabot has just bumped) or answers with an
 error. For that fallback each leg logs in to Docker Hub first when the
 repository has both of these:
-
 - variable `DOCKERHUB_USERNAME`: the Docker Hub account name
 - secret `DOCKERHUB_TOKEN`: a Docker Hub personal access token with
   **Public Repo Read-only** scope

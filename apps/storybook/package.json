@@ -20,11 +20,11 @@
     "@intervals-mcp/vite-config": "workspace:*"
   },
   "devDependencies": {
-    "@storybook/addon-a11y": "10.6.2",
-    "@storybook/addon-docs": "10.6.2",
-    "@storybook/addon-mcp": "10.6.2",
-    "@storybook/addon-vitest": "10.6.2",
-    "@storybook/react-vite": "10.6.2",
+    "@storybook/addon-a11y": "10.6.3",
+    "@storybook/addon-docs": "10.6.3",
+    "@storybook/addon-mcp": "10.6.3",
+    "@storybook/addon-vitest": "10.6.3",
+    "@storybook/react-vite": "10.6.3",
     "@intervals-mcp/tsconfig": "workspace:*",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
@@ -34,7 +34,7 @@
     "react-dom": "19.3.1",
     "storybook": "10.6.3",
     "typescript": "7.0.2",
-    "vite": "8.3.4",
+    "vite": "8.3.5",
     "vitest": "5.0.5"
   }
 }

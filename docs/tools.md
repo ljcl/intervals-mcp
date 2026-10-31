@@ -29,7 +29,6 @@ reports which ([operations.md](operations.md#time-zone)).
 
 A tool's `description` is what a model reads to choose the tool, so every
 description has the same three parts:
-
 1. What the tool does and when to use it, with an example request where it
    helps ("how was my run?").
 2. When not to use it, and which tool to use instead. Tools that overlap
@@ -69,31 +68,31 @@ descriptions.
 
 ## intervals.icu tools
 
-| Tool | Description |
-| ---- | ----------- |
-| `list-activities` | Compact, date-bounded activity list with units; the entry point for finding activity ids; swim pace per 100 m, speed for other sports, achievement types |
-| `get-activity` | One activity in detail: metrics, load, HR zones, running dynamics, intervals, gear name, achievements, HR recovery; use after list-activities |
-| `get-activity-streams` | Time-series streams for one activity, downsampled to a bounded number of points, including running dynamics |
-| `list-gear` | The athlete's gear (shoes) with mileage, purchase date, notes, retirement status, reminders and auto-assign rules |
-| `get-wellness` | Daily wellness (HRV, resting HR, sleep, weight, CTL/ATL/TSB, how the athlete feels) for a date or range |
-| `get-activity-laps` | Laps of an activity, derived from its intervals, with sport-aware pace/speed, GAP, HR, power, cadence |
-| `get-running-summary` | get-activity's detail fields for a run plus cadence, HR zone, and running-dynamics assessments, a lap breakdown, the weather with humidity and dew point from the FIT file, and decoupling and efficiency factor computed from the streams when intervals.icu has none |
-| `get-running-dynamics` | Ground contact time, vertical oscillation/ratio, step length, and cadence for a run, with VO/GCT target assessments and a per-WORK-interval breakdown |
-| `get-activity-zones` | Time spent in each HR zone for an activity, from the activity's own recorded zone bounds |
-| `get-athlete-zones` | The athlete's own LTHR, max HR, HR and pace zones, threshold pace and FTP from sport settings, with a check of LTHR and max HR against recent heart rate bests |
-| `compare-activities` | Compare two activities side-by-side: pace, HR, cadence, load, running dynamics and weather, plus activity2-activity1 differences, an efficiency verdict, and a per-km table with a constant-offset or growing-drift verdict |
-| `get-hill-analysis` | Climb/descent detection with GAP and early-vs-late climb effort drift |
-| `get-split-analysis` | Even km splits with a two-halves pacing verdict stated on the clock and grade-adjusted |
-| `get-aerobic-analysis` | Aerobic decoupling and efficiency factor on a grade-adjusted, pace or power basis from streams, with intervals.icu's own values labelled apart |
-| `get-interval-analysis` | Interval detection with urban-stop-aware rest classification and rep fade; with findSimilar, earlier sessions with the same reps |
-| `get-best-efforts` | Best times at standard running distances: over your history from intervals.icu's pace curves, or inside one run with where each started |
-| `get-race-prediction` | Predicted race times from intervals.icu pace-curve points (Riegel) alongside intervals.icu's own critical-speed model, with confidence, source point, and km goal-pace splits |
-| `get-athlete-stats` | Run totals and totals for every sport (count, moving time, distance and whole-body load per activity type) for this week, the last 4 weeks, this month and YTD, aggregated from list-activities data |
-| `get-fitness-trend` | Fitness/fatigue/form (CTL/ATL/TSB), whole-body from intervals.icu wellness or run-only computed locally, with rest/planned-load projection and a solved taper to a target form on a target date; `newest` reads a past window, with no projection or taper |
-| `get-training-load` | Weekly running volume and volume-spike warnings, weekly intervals.icu training load and the types it covers, plus current CTL/ATL/TSB; `newest` ends the weeks on a past date |
-| `update-activity` | Update an activity's name, description, gear, RPE, or feel, echoing before/after values, with gear names (write tool) |
-| `update-wellness` | Log how the athlete feels on a day (soreness, fatigue, stress, mood, motivation, injury, sleep quality, comments), echoing before/after values (write tool) |
-| `update-gear` | Retire or un-retire a gear item, or add or reset a distance reminder on it, echoing before/after values (write tool) |
+| Tool                    | Description                                                                                                                                                                                                                                                            |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list-activities`       | Compact, date-bounded activity list with units; the entry point for finding activity ids; swim pace per 100 m, speed for other sports, achievement types                                                                                                               |
+| `get-activity`          | One activity in detail: metrics, load, HR zones, running dynamics, intervals, gear name, achievements, HR recovery; use after list-activities                                                                                                                          |
+| `get-activity-streams`  | Time-series streams for one activity, downsampled to a bounded number of points, including running dynamics                                                                                                                                                            |
+| `list-gear`             | The athlete's gear (shoes) with mileage, purchase date, notes, retirement status, reminders and auto-assign rules                                                                                                                                                      |
+| `get-wellness`          | Daily wellness (HRV, resting HR, sleep, weight, CTL/ATL/TSB, how the athlete feels) for a date or range                                                                                                                                                                |
+| `get-activity-laps`     | Laps of an activity, derived from its intervals, with sport-aware pace/speed, GAP, HR, power, cadence                                                                                                                                                                  |
+| `get-running-summary`   | get-activity's detail fields for a run plus cadence, HR zone, and running-dynamics assessments, a lap breakdown, the weather with humidity and dew point from the FIT file, and decoupling and efficiency factor computed from the streams when intervals.icu has none |
+| `get-running-dynamics`  | Ground contact time, vertical oscillation/ratio, step length, and cadence for a run, with VO/GCT target assessments and a per-WORK-interval breakdown                                                                                                                  |
+| `get-activity-zones`    | Time spent in each HR zone for an activity, from the activity's own recorded zone bounds                                                                                                                                                                               |
+| `get-athlete-zones`     | The athlete's own LTHR, max HR, HR and pace zones, threshold pace and FTP from sport settings, with a check of LTHR and max HR against recent heart rate bests                                                                                                         |
+| `compare-activities`    | Compare two activities side-by-side: pace, HR, cadence, load, running dynamics and weather, plus activity2-activity1 differences, an efficiency verdict, and a per-km table with a constant-offset or growing-drift verdict                                            |
+| `get-hill-analysis`     | Climb/descent detection with GAP and early-vs-late climb effort drift                                                                                                                                                                                                  |
+| `get-split-analysis`    | Even km splits with a two-halves pacing verdict stated on the clock and grade-adjusted                                                                                                                                                                                 |
+| `get-aerobic-analysis`  | Aerobic decoupling and efficiency factor on a grade-adjusted, pace or power basis from streams, with intervals.icu's own values labelled apart                                                                                                                         |
+| `get-interval-analysis` | Interval detection with urban-stop-aware rest classification and rep fade; with findSimilar, earlier sessions with the same reps                                                                                                                                       |
+| `get-best-efforts`      | Best times at standard running distances: over your history from intervals.icu's pace curves, or inside one run with where each started                                                                                                                                |
+| `get-race-prediction`   | Predicted race times from intervals.icu pace-curve points (Riegel) alongside intervals.icu's own critical-speed model, with confidence, source point, and km goal-pace splits                                                                                          |
+| `get-athlete-stats`     | Run totals and totals for every sport (count, moving time, distance and whole-body load per activity type) for this week, the last 4 weeks, this month and YTD, aggregated from list-activities data                                                                   |
+| `get-fitness-trend`     | Fitness/fatigue/form (CTL/ATL/TSB), whole-body from intervals.icu wellness or run-only computed locally, with rest/planned-load projection and a solved taper to a target form on a target date; `newest` reads a past window, with no projection or taper             |
+| `get-training-load`     | Weekly running volume and volume-spike warnings, weekly intervals.icu training load and the types it covers, plus current CTL/ATL/TSB; `newest` ends the weeks on a past date                                                                                          |
+| `update-activity`       | Update an activity's name, description, gear, RPE, or feel, echoing before/after values, with gear names (write tool)                                                                                                                                                  |
+| `update-wellness`       | Log how the athlete feels on a day (soreness, fatigue, stress, mood, motivation, injury, sleep quality, comments), echoing before/after values (write tool)                                                                                                            |
+| `update-gear`           | Retire or un-retire a gear item, or add or reset a distance reminder on it, echoing before/after values (write tool)                                                                                                                                                   |
 
 `list-activities` defaults to the last 28 days (today back to 27 days
 earlier) in the server's time zone, sorted newest first. Filter
@@ -1055,27 +1054,26 @@ optional `newest`, the same field as the text tool. The old
 through the alias layer, and so are `endDate`, `end_date`, `asOf` and `as_of`
 for `newest`.
 
-| Tool | Description |
-| ---- | ----------- |
-| `view-activity-chart` | Interactive chart with HR, power, pace, altitude, cadence, grade, and running-dynamics overlays; interval bands (MCP App) |
-| `get-activity-streams-raw` | Downsampled per-sample streams plus interval bands for the activity chart UI (app-only) |
-| `view-cadence-trends` | Interactive cadence trends with timeline, scatter, zones, and overlay views (MCP App) |
-| `get-cadence-trend-data` | Summary cadence/pace data for the cadence trends UI (app-only) |
-| `view-route-map` | Interactive map of an activity's GPS track, fit to bounds with start/finish markers; optional distance-anchored waypoints (MCP App) |
-| `get-route-map-data` | `[lat, lng]` coordinates from the activity's latlng stream plus index-aligned metric streams and WORK-interval end markers for the route map UI (app-only) |
-| `view-training-load` | Weekly running-volume bars with a rolling trend line, volume-spike warning weeks, a weekly load line, and Fitness/Fatigue/Form tiles; `runOnly` picks the scope load and CTL/ATL/TSB cover, and a Whole body/Runs only toggle in the card switches it, caching each side; `newest` ends the chart on a past date, and a past partial week is labelled partial. Its text adds a `Scope:` line (whole-body with the activity types, or run-only, and where CTL/ATL came from) and a `Current (as of DATE): CTL x / ATL y / TSB +z` line when fitness is known (`End of window` and a `Past window:` line for a past window); its `Load:` total is the payload's `totals.load` (MCP App) |
-| `get-training-load-data` | Per-week volume, trend value, warning flags, weekly load, and current CTL/ATL/TSB for the training-load UI; `runOnly` (default false) switches load and CTL/ATL/TSB between whole-body and run-only, while volume and spike warnings stay run-based (app-only) |
-| `view-compare-activities` | Interactive overlay of two activities' streams on a shared distance/time axis with a delta summary (MCP App) |
-| `get-compare-activities-data` | Aggregate comparison (summaries, activity2−activity1 differences, efficiency) for the compare-activities UI (app-only) |
-| `view-activity-zones` | Time-in-zone bar chart for one activity's HR zones with an easy/moderate/hard split (power zones dropped for now; see docs/api-notes.md) (MCP App) |
-| `get-activity-zones-data` | Per-zone time distributions (bucket bounds, seconds, percentages) for the activity-zones UI (app-only) |
-| `view-fitness-trend` | CTL/ATL/TSB over time with shaded fatigue/freshness/ramp bands and a dashed taper plan or rest projection past today; a Whole body/Runs only toggle switches scope, caching each side; `newest` charts a past block with no projection (MCP App) |
-| `get-fitness-trend-data` | Per-day CTL/ATL/TSB, the projection, the solved taper, and the dated warning bands for the fitness-trend UI; `runOnly` switches between whole-body (intervals.icu wellness) and run-only (computed) (app-only) |
+| Tool                          | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `view-activity-chart`         | Interactive chart with HR, power, pace, altitude, cadence, grade, and running-dynamics overlays; interval bands (MCP App)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `get-activity-streams-raw`    | Downsampled per-sample streams plus interval bands for the activity chart UI (app-only)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `view-cadence-trends`         | Interactive cadence trends with timeline, scatter, zones, and overlay views (MCP App)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `get-cadence-trend-data`      | Summary cadence/pace data for the cadence trends UI (app-only)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `view-route-map`              | Interactive map of an activity's GPS track, fit to bounds with start/finish markers; optional distance-anchored waypoints (MCP App)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `get-route-map-data`          | `[lat, lng]` coordinates from the activity's latlng stream plus index-aligned metric streams and WORK-interval end markers for the route map UI (app-only)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `view-training-load`          | Weekly running-volume bars with a rolling trend line, volume-spike warning weeks, a weekly load line, and Fitness/Fatigue/Form tiles; `runOnly` picks the scope load and CTL/ATL/TSB cover, and a Whole body/Runs only toggle in the card switches it, caching each side; `newest` ends the chart on a past date, and a past partial week is labelled partial. Its text adds a `Scope:` line (whole-body with the activity types, or run-only, and where CTL/ATL came from) and a `Current (as of DATE): CTL x / ATL y / TSB +z` line when fitness is known (`End of window` and a `Past window:` line for a past window); its `Load:` total is the payload's `totals.load` (MCP App) |
+| `get-training-load-data`      | Per-week volume, trend value, warning flags, weekly load, and current CTL/ATL/TSB for the training-load UI; `runOnly` (default false) switches load and CTL/ATL/TSB between whole-body and run-only, while volume and spike warnings stay run-based (app-only)                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `view-compare-activities`     | Interactive overlay of two activities' streams on a shared distance/time axis with a delta summary (MCP App)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `get-compare-activities-data` | Aggregate comparison (summaries, activity2−activity1 differences, efficiency) for the compare-activities UI (app-only)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `view-activity-zones`         | Time-in-zone bar chart for one activity's HR zones with an easy/moderate/hard split (power zones dropped for now; see docs/api-notes.md) (MCP App)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `get-activity-zones-data`     | Per-zone time distributions (bucket bounds, seconds, percentages) for the activity-zones UI (app-only)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `view-fitness-trend`          | CTL/ATL/TSB over time with shaded fatigue/freshness/ramp bands and a dashed taper plan or rest projection past today; a Whole body/Runs only toggle switches scope, caching each side; `newest` charts a past block with no projection (MCP App)                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `get-fitness-trend-data`      | Per-day CTL/ATL/TSB, the projection, the solved taper, and the dated warning bands for the fitness-trend UI; `runOnly` switches between whole-body (intervals.icu wellness) and run-only (computed) (app-only)                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 
 Every `view-*` result carries the chart's data, so the model has the numbers
 in the same call whether or not the athlete sees the chart. Only its first
 line depends on the client (`viewHeader`, `clientCapabilities.ts`):
-
 - A client whose request capabilities advertise `io.modelcontextprotocol/ui`
   with `text/html;profile=mcp-app` (`clientSupportsMcpApps`) reads
   `Interactive <kind> shown.`
@@ -1090,7 +1088,6 @@ request's envelope, and the server reads them there. A 2025-era request has
 none on `tools/call`, because the server serves that era statelessly.
 
 Then the data:
-
 - A view with a text twin runs the twin in the same call, with the view's own
   arguments, and gives `The same data from <twin> follows.`, a blank line and
   the twin's text. The view's defaults reach the twin, so
@@ -1123,15 +1120,15 @@ never mentions on-screen UI to a client that did not advertise MCP Apps:
 `view-route-map` says "No GPS track is recorded for this activity." rather
 than calling the map empty, and lists waypoints without the map legend.
 
-| Tool | Chart kind | Text twin | Footer when the twin fails |
-| ---- | ---------- | --------- | -------------------------- |
-| `view-activity-chart` | `activity chart` | `get-split-analysis` (Run, TrailRun, VirtualRun with streams) | `get-activity-streams` (`get-activity` when the activity has no streams) |
-| `view-cadence-trends` | `cadence trends chart` | none: its lines are the data | none |
-| `view-training-load` | `training load chart` | `get-training-load` | `get-training-load with the same arguments` |
-| `view-fitness-trend` | `fitness trend chart` | `get-fitness-trend` | `get-fitness-trend with the same arguments` |
-| `view-activity-zones` | `zone distribution chart` | `get-activity-zones` | `get-activity-zones` |
-| `view-route-map` | `route map` | `get-hill-analysis`, after its own lines | `get-activity` |
-| `view-compare-activities` | `activity comparison` | `compare-activities` | `compare-activities` |
+| Tool                      | Chart kind                | Text twin                                                     | Footer when the twin fails                                               |
+| ------------------------- | ------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `view-activity-chart`     | `activity chart`          | `get-split-analysis` (Run, TrailRun, VirtualRun with streams) | `get-activity-streams` (`get-activity` when the activity has no streams) |
+| `view-cadence-trends`     | `cadence trends chart`    | none: its lines are the data                                  | none                                                                     |
+| `view-training-load`      | `training load chart`     | `get-training-load`                                           | `get-training-load with the same arguments`                              |
+| `view-fitness-trend`      | `fitness trend chart`     | `get-fitness-trend`                                           | `get-fitness-trend with the same arguments`                              |
+| `view-activity-zones`     | `zone distribution chart` | `get-activity-zones`                                          | `get-activity-zones`                                                     |
+| `view-route-map`          | `route map`               | `get-hill-analysis`, after its own lines                      | `get-activity`                                                           |
+| `view-compare-activities` | `activity comparison`     | `compare-activities`                                          | `compare-activities`                                                     |
 
 Every `*-data` app-only tool reads intervals.icu streams through
 `loadIntervalsStreams` (see docs/architecture.md#streams) and downsamples to
@@ -1152,13 +1149,13 @@ plotting them at zero.
 
 Reusable multi-step workflows a host can offer as slash commands or starters.
 
-| Prompt | Arguments | What it does |
-| ------ | --------- | ------------ |
-| `weekly-review` | `weeks` (optional, 1-52, default 4) | Reviews recent training (load trend, key workouts across the whole window, cadence patterns), ending with focus points for next week |
-| `annotate-last-run` | `id` (optional, defaults to the newest Run, TrailRun or VirtualRun; `activity_id` still accepted) | Analyses a run and appends a short coaching note to its activity description. Confirms before writing |
-| `race-readiness` | `raceDate` (required, after today, at most 180 days ahead), `distance` (optional), `targetTsb` (optional, default 10) | Race-day form and the taper that lands on it, predicted time, last 7 days of recovery, recent load; ends with a ready / nearly / not-yet verdict |
-| `run-debrief` | `id` (optional, defaults to the newest run) | The run summary, then the one analysis that fits the session (intervals, splits, hills or aerobic), plus that day's wellness |
-| `injury-check` | none | Load spikes and warnings, the 4-week HRV and resting-HR trend, form flags and shoe mileage; ends with a risk read and what to change, not a diagnosis |
+| Prompt              | Arguments                                                                                                             | What it does                                                                                                                                          |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `weekly-review`     | `weeks` (optional, 1-52, default 4)                                                                                   | Reviews recent training (load trend, key workouts across the whole window, cadence patterns), ending with focus points for next week                  |
+| `annotate-last-run` | `id` (optional, defaults to the newest Run, TrailRun or VirtualRun; `activity_id` still accepted)                     | Analyses a run and appends a short coaching note to its activity description. Confirms before writing                                                 |
+| `race-readiness`    | `raceDate` (required, after today, at most 180 days ahead), `distance` (optional), `targetTsb` (optional, default 10) | Race-day form and the taper that lands on it, predicted time, last 7 days of recovery, recent load; ends with a ready / nearly / not-yet verdict      |
+| `run-debrief`       | `id` (optional, defaults to the newest run)                                                                           | The run summary, then the one analysis that fits the session (intervals, splits, hills or aerobic), plus that day's wellness                          |
+| `injury-check`      | none                                                                                                                  | Load spikes and warnings, the 4-week HRV and resting-HR trend, form flags and shoe mileage; ends with a risk read and what to change, not a diagnosis |
 
 In Claude Desktop and Claude Code these appear in the prompt picker once the
 server is connected. `annotate-last-run` uses a write tool (`update-activity`),
@@ -1179,11 +1176,11 @@ read tools set `readOnlyHint: true` and `destructiveHint: false`, which is
 the combination clients use to offer a durable "always allow". Three tools
 are writes and are expected to keep asking:
 
-| Tool | Why it asks |
-| ---- | ----------- |
-| `update-activity` | Overwrites an existing activity's fields |
+| Tool              | Why it asks                                     |
+| ----------------- | ----------------------------------------------- |
+| `update-activity` | Overwrites an existing activity's fields        |
 | `update-wellness` | Overwrites a day's wellness scores and comments |
-| `update-gear` | Retires gear or changes its reminders |
+| `update-gear`     | Retires gear or changes its reminders           |
 
 No tool sets `anthropic/requiresUserInteraction`, so nothing opts out of
 "always allow" on purpose.
@@ -1201,7 +1198,6 @@ level does not always write through to every tool.
 These examples assume you already have an activity id to pass to a tool.
 
 **Activity writing**
-
 - "Update the title of activity 12345678 to 'Morning Threshold'"
 - "Add a note to my last ride: 'Felt strong on the climbs'"
 - "Log today: legs sore, tired, left calf tight"
@@ -1209,25 +1205,21 @@ These examples assume you already have an activity id to pass to a tool.
 - "Retire my old daily trainers"
 
 **Analysis and visualization**
-
 - "Show me the HR zone breakdown for activity 12345678"
 - "Compare my two long runs from last week"
 - "Show me the cadence trends for my last 10 runs"
 - "View the route map for my last ride"
 
 **Zones and thresholds**
-
 - "What are my heart rate zones? Is 150 bpm zone 2 for me?"
 - "Is my LTHR out of date?"
 
 **Stats**
-
 - "What are my running stats for this year?"
 - "How many strength sessions have I done this month?"
 - "How far have I swum this year?"
 
 **Training analysis**
-
 - "Break down the intervals in activity 12345678 — did I fade across the reps?"
 - "How much did the climbs cost me on Sunday's long run?"
 - "Did I positive-split Sunday's long run, or was that just the hills?"

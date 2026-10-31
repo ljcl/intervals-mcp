@@ -1,12 +1,13 @@
 ---
+
 name: mcp-authoring
 description: >-
-  Best practices for authoring MCP (Model Context Protocol) servers and apps.
-  Use when building, reviewing, debugging, or designing an MCP server or MCP app:
-  choosing between tools/resources/prompts/UI, designing tool schemas and
-  descriptions, adding a UI surface, securing a server with OAuth, or testing and
-  evaluating MCP tools. Framework-neutral guidance; examples use the official MCP
-  TypeScript SDK.
+Best practices for authoring MCP (Model Context Protocol) servers and apps.
+Use when building, reviewing, debugging, or designing an MCP server or MCP app:
+choosing between tools/resources/prompts/UI, designing tool schemas and
+descriptions, adding a UI surface, securing a server with OAuth, or testing and
+evaluating MCP tools. Framework-neutral guidance; examples use the official MCP
+TypeScript SDK.
 ---
 
 # Authoring MCP Servers and Apps
@@ -20,17 +21,17 @@ any SDK. Examples target `@modelcontextprotocol/sdk` v1.x; v2 wraps tool input/o
 
 | You need                                          | Use a        | Examples                                      |
 | ------------------------------------------------- | ------------ | --------------------------------------------- |
-| To *do* something (effects, mutations, API calls) | **Tool**     | `send-email`, `create-issue`, `search-orders` |
-| To *expose* read-only data the client can fetch   | **Resource** | app config, a user profile, a doc by URI      |
+| To _do_ something (effects, mutations, API calls) | **Tool**     | `send-email`, `create-issue`, `search-orders` |
+| To _expose_ read-only data the client can fetch   | **Resource** | app config, a user profile, a doc by URI      |
 | A reusable, user-invoked interaction template     | **Prompt**   | `review-code`, `summarize-thread`             |
 | A visual surface (browse, compare, select)        | **App / UI** | a results grid, a calendar, a dashboard       |
 
 Quick rules of thumb:
-- **Tool vs Resource:** a tool *acts* and is model-invoked; a resource *is data* and
+- **Tool vs Resource:** a tool _acts_ and is model-invoked; a resource _is data_ and
   is client-fetched. If it has side effects, it is a tool.
 - **Prompt:** user-initiated, not model-initiated. Surfaced as a slash command or
   menu item in the host. Don't use prompts for things the model should call itself.
-- **UI:** add one when *seeing* beats *reading* (browsing many items, comparing
+- **UI:** add one when _seeing_ beats _reading_ (browsing many items, comparing
   side-by-side, or interactive selection). See [references/mcp-apps-ui.md](references/mcp-apps-ui.md).
 
 ## Core principles

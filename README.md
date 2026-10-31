@@ -191,16 +191,16 @@ App's data handler talk to intervals.icu directly.
 
 ## Documentation
 
-| Doc | Contents |
-| --- | -------- |
-| [docs/tools.md](docs/tools.md) | Full tool catalog, prompts, permission behaviour, example requests |
-| [docs/operations.md](docs/operations.md) | Environment variables, the API key, health endpoint, rate limits, endpoint security |
-| [docs/architecture.md](docs/architecture.md) | Server architecture: transport, HTTP layer, cache, error taxonomy, analysis math |
-| [docs/api-notes.md](docs/api-notes.md) | Calling the intervals.icu API: auth, endpoints, verified behaviour from Phases 1 and 2 |
-| [docs/mcp-apps.md](docs/mcp-apps.md) | MCP App packages: shared shell, mobile, theming, per-app details |
-| [docs/development.md](docs/development.md) | Monorepo mechanics: Turborepo, coverage gates, Storybook gates, Docker build |
-| [docs/releasing.md](docs/releasing.md) | Release automation: Conventional Commit PR titles, release-please, publishing |
-| [docs/project.md](docs/project.md) | Issue tracking and project board |
+| Doc                                                          | Contents                                                                                  |
+| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| [docs/tools.md](docs/tools.md)                               | Full tool catalog, prompts, permission behaviour, example requests                        |
+| [docs/operations.md](docs/operations.md)                     | Environment variables, the API key, health endpoint, rate limits, endpoint security       |
+| [docs/architecture.md](docs/architecture.md)                 | Server architecture: transport, HTTP layer, cache, error taxonomy, analysis math          |
+| [docs/api-notes.md](docs/api-notes.md)                       | Calling the intervals.icu API: auth, endpoints, verified behaviour from Phases 1 and 2    |
+| [docs/mcp-apps.md](docs/mcp-apps.md)                         | MCP App packages: shared shell, mobile, theming, per-app details                          |
+| [docs/development.md](docs/development.md)                   | Monorepo mechanics: Turborepo, coverage gates, Storybook gates, Docker build              |
+| [docs/releasing.md](docs/releasing.md)                       | Release automation: Conventional Commit PR titles, release-please, publishing             |
+| [docs/project.md](docs/project.md)                           | Issue tracking and project board                                                          |
 | [docs/Intervals_MCP_Server.md](docs/Intervals_MCP_Server.md) | Capability reference to upload as project knowledge in a Claude project using this server |
 
 PRs are squash-merged and the **PR title becomes the commit on `main`**, so write it as a [Conventional Commit](https://www.conventionalcommits.org/) (`fix:` patch, `feat:` minor, any `!` or `BREAKING CHANGE:` footer major; `chore:`/`docs:`/`refactor:`/`ci:` release nothing). A CI check rejects non-conforming titles; see [docs/releasing.md](docs/releasing.md).

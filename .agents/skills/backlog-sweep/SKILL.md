@@ -1,12 +1,13 @@
 ---
+
 name: backlog-sweep
 description: >-
-  Re-verify every open GitHub issue against the current codebase and fix what has
-  gone stale. Use after an epic, breaking change, or wide refactor merges (those
-  invalidate file/line references and premises in open issues), before planning a
-  batch of backlog work, or when asked to triage the backlog. Covers verifying
-  issue premises in code, updating bodies with dated triage footers, closing
-  shipped work with evidence, and filing issues for gaps discovered on the way.
+Re-verify every open GitHub issue against the current codebase and fix what has
+gone stale. Use after an epic, breaking change, or wide refactor merges (those
+invalidate file/line references and premises in open issues), before planning a
+batch of backlog work, or when asked to triage the backlog. Covers verifying
+issue premises in code, updating bodies with dated triage footers, closing
+shipped work with evidence, and filing issues for gaps discovered on the way.
 ---
 
 # Backlog sweep
@@ -31,7 +32,7 @@ board (see docs/project.md for labels and board fields).
 
 1. **Gather.** List all open issues, and skim recently closed ones — open issues
    cross-reference them ("coordinate with #N", "after #N lands"), and whether #N
-   closed as *completed* or *not planned* changes what the open issue should say.
+   closed as _completed_ or _not planned_ changes what the open issue should say.
    Note recent merged PRs / releases since the last sweep for context.
 
 2. **Verify each open issue against the code, not from memory.** For every claim,
@@ -67,9 +68,9 @@ board (see docs/project.md for labels and board fields).
      Decode entities before re-writing, and put HTML-shaped payloads in fenced
      code blocks when filing (docs/project.md, "Reading issue bodies before
      rewriting them").
-   - **Close only with evidence.** Fully-delivered work closes as *completed*
+   - **Close only with evidence.** Fully-delivered work closes as _completed_
      with a link to the PR/commit that shipped it. Obsolete work closes as
-     *not planned* with a short rationale (see ljcl/strava-mcp#25 for the shape). When in
+     _not planned_ with a short rationale (see ljcl/strava-mcp#25 for the shape). When in
      doubt, update rather than close.
 
 4. **File issues for gaps found along the way.** Sweeps surface real gaps —
@@ -82,7 +83,6 @@ board (see docs/project.md for labels and board fields).
    filed. The Project board's Status/Priority/Effort fields **are** writable by
    agents, so apply re-prioritisation (e.g. a newly unblocked issue) directly.
    Two paths, by session type:
-
    - **Local sessions** (gh CLI with `project` scope):
      `gh project item-edit --project-id PVT_kwHOABzAhM4Bkfpa --id <item-id>
      --field-id <field-id> --single-select-option-id <option-id>`. Discover

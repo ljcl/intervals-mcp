@@ -30,51 +30,51 @@ rather than (or alongside) text.
 
 ### Discovery
 
-| Tool | Answers | Key params |
-| ---- | ------- | ---------- |
-| `list-activities` | What did I do recently? What's this activity's id? When did I last do X? Each entry carries `tags`, `race` and `achievement_types` (a best or threshold rise) | `oldest`/`newest` (YYYY-MM-DD, default last 28 days), `type` (`runs` for Run/TrailRun/VirtualRun, one type, or a comma list; for the most recent run, pass `id: "latest"` to the per-activity tool instead), `nameContains`, `search` (all history: name substring or `#tag`), `limit` |
-| `get-activity` | Full detail on one activity: gear name, swim pace per 100 m, HR recovery, and any best or threshold rise intervals.icu marked (an LTHR_UP is its estimate, not a changed setting; for a run PB, use `get-best-efforts`) | `id` |
-| `list-gear` | What shoes/bikes do I have, their mileage, reminders and auto-assign rules? | `includeRetired` |
-| `get-wellness` | HRV, resting HR, sleep, weight, CTL/ATL/TSB, how I felt, for a day or range | `date`, or `oldest`/`newest` (max 90 days) |
+| Tool              | Answers                                                                                                                                                                                                                 | Key params                                                                                                                                                                                                                                                                             |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list-activities` | What did I do recently? What's this activity's id? When did I last do X? Each entry carries `tags`, `race` and `achievement_types` (a best or threshold rise)                                                           | `oldest`/`newest` (YYYY-MM-DD, default last 28 days), `type` (`runs` for Run/TrailRun/VirtualRun, one type, or a comma list; for the most recent run, pass `id: "latest"` to the per-activity tool instead), `nameContains`, `search` (all history: name substring or `#tag`), `limit` |
+| `get-activity`    | Full detail on one activity: gear name, swim pace per 100 m, HR recovery, and any best or threshold rise intervals.icu marked (an LTHR_UP is its estimate, not a changed setting; for a run PB, use `get-best-efforts`) | `id`                                                                                                                                                                                                                                                                                   |
+| `list-gear`       | What shoes/bikes do I have, their mileage, reminders and auto-assign rules?                                                                                                                                             | `includeRetired`                                                                                                                                                                                                                                                                       |
+| `get-wellness`    | HRV, resting HR, sleep, weight, CTL/ATL/TSB, how I felt, for a day or range                                                                                                                                             | `date`, or `oldest`/`newest` (max 90 days)                                                                                                                                                                                                                                             |
 
 ### Per-activity detail
 
-| Tool | Answers | Key params |
-| ---- | ------- | ---------- |
-| `get-activity-laps` | What were the lap splits? | `id` |
-| `get-running-summary` | One-shot run readout: metrics, HR zones, cadence, dynamics, laps, weather (with humidity and dew point when the FIT file has them), and decoupling and efficiency factor (computed from the streams when intervals.icu has none) | `id` |
-| `get-running-dynamics` | Ground contact time, vertical oscillation/ratio, step length | `id`, `includeIntervals` |
-| `get-activity-zones` | Time in each HR zone (power zones are not reported yet) | `id` |
-| `get-activity-streams` | Raw time-series (HR, pace, cadence, power, altitude...) | `id`, `types`, `maxPoints` |
+| Tool                   | Answers                                                                                                                                                                                                                          | Key params                 |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| `get-activity-laps`    | What were the lap splits?                                                                                                                                                                                                        | `id`                       |
+| `get-running-summary`  | One-shot run readout: metrics, HR zones, cadence, dynamics, laps, weather (with humidity and dew point when the FIT file has them), and decoupling and efficiency factor (computed from the streams when intervals.icu has none) | `id`                       |
+| `get-running-dynamics` | Ground contact time, vertical oscillation/ratio, step length                                                                                                                                                                     | `id`, `includeIntervals`   |
+| `get-activity-zones`   | Time in each HR zone (power zones are not reported yet)                                                                                                                                                                          | `id`                       |
+| `get-activity-streams` | Raw time-series (HR, pace, cadence, power, altitude...)                                                                                                                                                                          | `id`, `types`, `maxPoints` |
 
 ### Per-activity analysis
 
-| Tool | Answers | Key params |
-| ---- | ------- | ---------- |
-| `get-hill-analysis` | How did the climbs go, and did I fade on them late? | `id` |
-| `get-split-analysis` | Did I positive-split, or was that the hills? | `id` |
-| `get-aerobic-analysis` | Did I decouple? What's my efficiency factor? | `id`, `basis` (gap, pace or power; gap corrects for hills) |
-| `get-interval-analysis` | Interval workout breakdown: pace/HR per rep, did reps fade? Am I faster than the last times I did this workout? | `id`, `findSimilar` |
-| `compare-activities` | How does this run compare to that one? Was the gap there from km 1 (conditions) or did it grow (fatigue)? Was the weather different? | `activityId1`, `activityId2` |
+| Tool                    | Answers                                                                                                                              | Key params                                                 |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
+| `get-hill-analysis`     | How did the climbs go, and did I fade on them late?                                                                                  | `id`                                                       |
+| `get-split-analysis`    | Did I positive-split, or was that the hills?                                                                                         | `id`                                                       |
+| `get-aerobic-analysis`  | Did I decouple? What's my efficiency factor?                                                                                         | `id`, `basis` (gap, pace or power; gap corrects for hills) |
+| `get-interval-analysis` | Interval workout breakdown: pace/HR per rep, did reps fade? Am I faster than the last times I did this workout?                      | `id`, `findSimilar`                                        |
+| `compare-activities`    | How does this run compare to that one? Was the gap there from km 1 (conditions) or did it grow (fatigue)? Was the weather different? | `activityId1`, `activityId2`                               |
 
 ### Fitness, load, and performance
 
-| Tool | Answers | Key params |
-| ---- | ------- | ---------- |
-| `get-athlete-stats` | Run totals, and totals for every sport (strength sessions, swim distance), this week/month/YTD | (none) |
-| `get-fitness-trend` | Am I fresh or fatigued? What if I taper for a race? | `days`, `newest`, `runOnly`, `projectDays`/`plannedLoads`, `targetDate`/`targetTsb` |
-| `get-training-load` | Weekly volume, volume-spike flags, weekly load | `days`, `newest`, `runOnly` |
-| `get-best-efforts` | My best 5K/10K/half/marathon times; my fastest 5K inside one run, and where | `distances`, `window`, `topN`, `id` |
-| `get-race-prediction` | What could I run for X? What pace do I need for a goal time? | `raceDistance` (`5km`, `10km`, `15km`, `10 mile`, `half marathon`, `marathon`, `50km`), `goalTime` |
-| `get-athlete-zones` | What are my HR zones? Is 150 bpm zone 2? What is my threshold pace? Is my LTHR out of date? | `sport` (default Run) |
+| Tool                  | Answers                                                                                        | Key params                                                                                         |
+| --------------------- | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `get-athlete-stats`   | Run totals, and totals for every sport (strength sessions, swim distance), this week/month/YTD | (none)                                                                                             |
+| `get-fitness-trend`   | Am I fresh or fatigued? What if I taper for a race?                                            | `days`, `newest`, `runOnly`, `projectDays`/`plannedLoads`, `targetDate`/`targetTsb`                |
+| `get-training-load`   | Weekly volume, volume-spike flags, weekly load                                                 | `days`, `newest`, `runOnly`                                                                        |
+| `get-best-efforts`    | My best 5K/10K/half/marathon times; my fastest 5K inside one run, and where                    | `distances`, `window`, `topN`, `id`                                                                |
+| `get-race-prediction` | What could I run for X? What pace do I need for a goal time?                                   | `raceDistance` (`5km`, `10km`, `15km`, `10 mile`, `half marathon`, `marathon`, `50km`), `goalTime` |
+| `get-athlete-zones`   | What are my HR zones? Is 150 bpm zone 2? What is my threshold pace? Is my LTHR out of date?    | `sport` (default Run)                                                                              |
 
 ### Writes
 
-| Tool | Answers | Key params |
-| ---- | ------- | ---------- |
-| `update-activity` | Change an activity's name, description, gear, RPE, or feel | `id`, `name`, `description`, `descriptionMode`, `gearId`, `rpe`, `feel` |
-| `update-wellness` | Log today: legs sore, tired, left calf tight | `date`, `soreness`, `fatigue`, `stress`, `mood`, `motivation`, `injury`, `sleepQuality`, `comments`, `commentsMode` |
-| `update-gear` | Remind me at 700 km on the new pair; retire the old ones | `gearId`, one of `retired`, `addReminderKm` (+ `reminderName`), `resetReminderId` |
+| Tool              | Answers                                                    | Key params                                                                                                          |
+| ----------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `update-activity` | Change an activity's name, description, gear, RPE, or feel | `id`, `name`, `description`, `descriptionMode`, `gearId`, `rpe`, `feel`                                             |
+| `update-wellness` | Log today: legs sore, tired, left calf tight               | `date`, `soreness`, `fatigue`, `stress`, `mood`, `motivation`, `injury`, `sleepQuality`, `comments`, `commentsMode` |
+| `update-gear`     | Remind me at 700 km on the new pair; retire the old ones   | `gearId`, one of `retired`, `addReminderKm` (+ `reminderName`), `resetReminderId`                                   |
 
 ### Visualization (opens a view)
 
@@ -83,15 +83,15 @@ tools are app-only: they are hidden from the model's tool list, so for the
 same numbers as text use the matching read tool (e.g. `get-fitness-trend`,
 `get-training-load`).
 
-| View tool | Data tool | Shows |
-| --------- | --------- | ----- |
-| `view-activity-chart` | `get-activity-streams-raw` | HR, power, pace, altitude, cadence, grade, and dynamics overlays with interval bands |
-| `view-cadence-trends` | `get-cadence-trend-data` | Cadence over time: timeline, scatter, zones, overlay views |
-| `view-route-map` | `get-route-map-data` | GPS track with start/finish markers and optional waypoints |
-| `view-training-load` | `get-training-load-data` | Weekly volume bars with a trend line and volume-spike weeks, a weekly load line, and Fitness/Fatigue/Form tiles; `runOnly` picks the starting scope; toggles whole-body vs runs-only; `newest` for a past block |
-| `view-compare-activities` | `get-compare-activities-data` | Two activities' streams overlaid with a delta summary |
-| `view-activity-zones` | `get-activity-zones-data` | Time-in-zone bar chart for HR |
-| `view-fitness-trend` | `get-fitness-trend-data` | CTL/ATL/TSB over time with fatigue/freshness bands and a taper plan; toggles whole-body vs runs-only; `newest` for a past block, with no projection |
+| View tool                 | Data tool                     | Shows                                                                                                                                                                                                           |
+| ------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `view-activity-chart`     | `get-activity-streams-raw`    | HR, power, pace, altitude, cadence, grade, and dynamics overlays with interval bands                                                                                                                            |
+| `view-cadence-trends`     | `get-cadence-trend-data`      | Cadence over time: timeline, scatter, zones, overlay views                                                                                                                                                      |
+| `view-route-map`          | `get-route-map-data`          | GPS track with start/finish markers and optional waypoints                                                                                                                                                      |
+| `view-training-load`      | `get-training-load-data`      | Weekly volume bars with a trend line and volume-spike weeks, a weekly load line, and Fitness/Fatigue/Form tiles; `runOnly` picks the starting scope; toggles whole-body vs runs-only; `newest` for a past block |
+| `view-compare-activities` | `get-compare-activities-data` | Two activities' streams overlaid with a delta summary                                                                                                                                                           |
+| `view-activity-zones`     | `get-activity-zones-data`     | Time-in-zone bar chart for HR                                                                                                                                                                                   |
+| `view-fitness-trend`      | `get-fitness-trend-data`      | CTL/ATL/TSB over time with fatigue/freshness bands and a taper plan; toggles whole-body vs runs-only; `newest` for a past block, with no projection                                                             |
 
 Once a chart is open, the model can adjust it with that chart's own tool:
 `set-brush-window` (activity chart: zoom to a stretch), `set-viewport` (route
@@ -312,7 +312,6 @@ may take a moment longer than a single-field lookup; this is normal pacing,
 not an error.
 
 Reads are cached briefly to avoid re-fetching the same data:
-
 - Activity detail, streams, and intervals, plus gear: 10 minutes
 - Sport settings: 1 hour (every group at once, as `get-athlete-zones`
   reads them: 10 minutes)
