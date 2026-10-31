@@ -227,7 +227,6 @@ export interface NormalizedHillStreams {
   altitude?: number[];
   grade_smooth?: number[];
   heartrate?: (number | null)[];
-  velocity_smooth?: (number | null)[];
   watts?: (number | null)[];
   cadence?: (number | null)[];
   moving?: boolean[];
@@ -258,7 +257,6 @@ export function normalizeHillStreams(
       ? interpolateNulls(streams.grade_smooth)
       : undefined,
     heartrate: streams.heartrate,
-    velocity_smooth: streams.velocity_smooth,
     watts: streams.watts,
     cadence: streams.cadence,
     moving: streams.moving,
@@ -371,8 +369,9 @@ export function gapGrades(grades: number[], distance: number[]): GapGrades {
 /**
  * Per-sample grade-adjusted speed (m/s) for a caller that needs a GAP stream
  * rather than segment averages (`get-aerobic-analysis`): `velocity_smooth`
- * times {@link gapFactor} of {@link gapGrades}' averaged grade, the same GAP
- * the hill and split tools report. Null without a distance stream, a speed
+ * times {@link gapFactor} of {@link gapGrades}' averaged grade, the same
+ * grade and factor the hill and split tools use (they sum grade-adjusted
+ * distance over moving time instead, #298). Null without a distance stream, a speed
  * stream, or any elevation data; a null speed sample stays null.
  */
 export function gradeAdjustedSpeeds(
@@ -480,8 +479,7 @@ function summarizeSegment(
   gapGrade: number[],
   range: IndexRange,
 ): HillSegment {
-  const { time, distance, altitude, heartrate, velocity_smooth, watts } =
-    streams;
+  const { time, distance, altitude, heartrate, watts } = streams;
   const cadence = streams.cadence;
   const moving = streams.moving;
   const { start, end } = range;
@@ -497,10 +495,13 @@ function summarizeSegment(
   let cadW = 0;
   let wattsSum = 0;
   let wattsW = 0;
-  let gapSpeedSum = 0;
-  let gapW = 0;
+  // Grade-adjusted metres over the same moving time pace uses (#298); every
+  // metre of the range counts, as it does in `lengthM`.
+  let gapDistanceM = 0;
 
   for (let i = start + 1; i <= end; i++) {
+    gapDistanceM +=
+      (distance[i]! - distance[i - 1]!) * gapFactor(gapGrade[i]! / 100);
     const dt = time[i]! - time[i - 1]!;
     if (dt <= 0) continue;
     if (moving && moving[i] === false) continue;
@@ -527,14 +528,9 @@ function summarizeSegment(
       wattsSum += w * weight;
       wattsW += weight;
     }
-    const v = velocity_smooth?.[i] ?? (distance[i]! - distance[i - 1]!) / dt;
-    if (v != null && v > 0) {
-      gapSpeedSum += v * gapFactor(gapGrade[i]! / 100) * weight;
-      gapW += weight;
-    }
   }
 
-  const gapSpeed = gapW > 0 ? gapSpeedSum / gapW : 0;
+  const gapSpeed = movingTimeS > 0 ? gapDistanceM / movingTimeS : 0;
   const avgHr = hrW > 0 ? hrSum / hrW : null;
   const paceSecPerKm =
     movingTimeS > 0 && lengthM > 0 ? movingTimeS / (lengthM / 1000) : null;

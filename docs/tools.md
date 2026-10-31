@@ -498,7 +498,11 @@ counts as no altitude, not as flat ground. GAP applies the Minetti factor to
 grade averaged over a centred 100 m window (`gapGrades`), clamped to ±30%,
 never to the raw per-sample grade: the curve is convex, so zero-mean grade
 noise applied per sample made GAP too fast (±10% noise, 13% too fast on the
-flat). When the raw grade swings more than 3 points (RMS) around that
+flat). A segment's or split's GAP is its grade-adjusted metres (each
+sample's distance times the Minetti factor) over the same moving time its
+pace uses, never `velocity_smooth` (about 1% above distance over time), so
+a flat km's GAP equals its pace (#298). When the raw grade swings more than
+3 points (RMS) around that
 average, both tools add a warning that the elevation track is noisy and GAP
 is approximate. A null sample in `distance`/`altitude`/grade
 is interpolated between its known neighbours (held flat across a leading or

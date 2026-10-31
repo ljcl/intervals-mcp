@@ -444,6 +444,29 @@ describe("grade-adjusted pace on noisy elevation (#45)", () => {
     expect(analysis.warnings.join(" ")).not.toContain("noisy");
   });
 
+  // velocity_smooth runs about 1% above distance over time on real
+  // recordings; GAP rides the same distance and moving time as pace (#298).
+  it("gives a flat run GAP equal to pace when velocity_smooth reads 1% fast", () => {
+    const fast = flat5k();
+    fast.velocity_smooth = fast.velocity_smooth!.map((v) => v! * 1.01);
+    const analysis = computeSplitAnalysis(fast);
+    for (const split of analysis.splits) {
+      expect(split.gapPaceSecPerKm).toBe(split.paceSecPerKm);
+    }
+    expect(analysis.totals.avgGapPaceSecPerKm).toBe(
+      analysis.totals.avgPaceSecPerKm,
+    );
+  });
+
+  it("keeps the Minetti value on a +3% climb whatever velocity_smooth says", () => {
+    const climb = streams([{ metres: 5000, secPerKm: 300, gradePct: 3 }]);
+    climb.velocity_smooth = climb.velocity_smooth!.map((v) => v! * 1.01);
+    const analysis = computeSplitAnalysis(climb);
+    expect(
+      Math.abs(analysis.totals.avgGapPaceSecPerKm! - 300 / gapFactor(0.03)),
+    ).toBeLessThanOrEqual(1);
+  });
+
   it("adds no noise warning on a clean hilly course", () => {
     const analysis = computeSplitAnalysis(
       streams([

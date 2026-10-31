@@ -338,6 +338,23 @@ describe("computeHillAnalysis", () => {
     expect(c.gapPaceSecPerKm!).toBeLessThan(c.paceSecPerKm!);
   });
 
+  // velocity_smooth runs about 1% above distance over time on real
+  // recordings; segment GAP rides the same distance and moving time as pace
+  // (#298), so the speed stream cannot move it.
+  it("takes climb GAP from distance over moving time, not velocity_smooth", () => {
+    const streams = buildStreams([flat(1000), climb(500), flat(1000)]);
+    const base = computeHillAnalysis(streams).climbs[0]!;
+    const fast = computeHillAnalysis({
+      ...streams,
+      velocity_smooth: streams.velocity_smooth!.map((v) => v! * 1.01),
+    }).climbs[0]!;
+    expect(fast.gapPaceSecPerKm).toBe(base.gapPaceSecPerKm);
+    // 6% climb: GAP is the pace divided by the Minetti factor, edges aside.
+    expect(
+      Math.abs(base.gapPaceSecPerKm! - base.paceSecPerKm! / gapFactor(0.06)),
+    ).toBeLessThanOrEqual(8);
+  });
+
   // Smart recording samples every 10-20 s. Moving time took the 10 s
   // average weight cap, so a 15 s sample counted as 10 s and the pace came
   // out a third too fast (#222).

@@ -158,8 +158,8 @@ export interface Bin {
   cadW: number;
   wattsSum: number;
   wattsW: number;
-  gapSpeedSum: number;
-  gapW: number;
+  /** Metres weighted by gapFactor: grade-adjusted distance. */
+  gapDistanceM: number;
   startAlt: number | null;
   endAlt: number | null;
 }
@@ -178,8 +178,7 @@ function emptyBin(startM: number, endM: number): Bin {
     cadW: 0,
     wattsSum: 0,
     wattsW: 0,
-    gapSpeedSum: 0,
-    gapW: 0,
+    gapDistanceM: 0,
     startAlt: null,
     endAlt: null,
   };
@@ -205,8 +204,7 @@ export function binByDistance(
   }
   if (bins.length === 0) return bins;
 
-  const { time, distance, altitude, heartrate, velocity_smooth, watts } =
-    streams;
+  const { time, distance, altitude, heartrate, watts } = streams;
   const cadence = streams.cadence;
   const moving = streams.moving;
   const lastEdge = edges[edges.length - 1]!;
@@ -253,7 +251,6 @@ export function binByDistance(
     }
 
     const gapSpeedFactor = gapGrade ? gapFactor(gapGrade[i]! / 100) : null;
-    const speed = velocity_smooth?.[i] ?? dd / dt;
     const hr = heartrate?.[i];
     const cad = cadence?.[i];
     // Run power of exactly 0 while moving is a stream dropout, not a real
@@ -268,6 +265,9 @@ export function binByDistance(
       const share = Math.min(overlap / dd, 1);
 
       bin.distanceM += dd * share;
+      if (gapSpeedFactor != null) {
+        bin.gapDistanceM += dd * share * gapSpeedFactor;
+      }
       bin.elapsedTimeS += dt * share;
       if (!isMoving) continue;
 
@@ -286,10 +286,6 @@ export function binByDistance(
         bin.wattsSum += w * binWeight;
         bin.wattsW += binWeight;
       }
-      if (gapSpeedFactor != null && speed != null && speed > 0) {
-        bin.gapSpeedSum += speed * gapSpeedFactor * binWeight;
-        bin.gapW += binWeight;
-      }
     }
 
     const endBin = binAt(d1);
@@ -305,11 +301,14 @@ function paceFromBin(bin: Bin): number | null {
   return bin.movingTimeS / (bin.distanceM / SPLIT_LENGTH_M);
 }
 
-/** Grade-adjusted seconds per km from a bin's mean flat-equivalent speed. */
+/**
+ * Grade-adjusted seconds per km: the bin's moving time over its
+ * grade-adjusted distance, the same basis as {@link paceFromBin}, so a flat
+ * bin's GAP is its pace (#298).
+ */
 function gapPaceFromBin(bin: Bin): number | null {
-  if (bin.gapW <= 0) return null;
-  const gapSpeed = bin.gapSpeedSum / bin.gapW;
-  return gapSpeed > 0 ? SPLIT_LENGTH_M / gapSpeed : null;
+  if (bin.movingTimeS <= 0 || bin.gapDistanceM <= 0) return null;
+  return bin.movingTimeS / (bin.gapDistanceM / SPLIT_LENGTH_M);
 }
 
 function shapeOf(deltaPct: number): SplitShape {
