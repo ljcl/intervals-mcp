@@ -82,6 +82,9 @@
         "apps/storybook/.storybook/**",
         "packages/*/src/**",
         "packages/design-system/stories/**",
+        "packages/vite-config/**",
+        "!packages/vite-config/node_modules/**",
+        "scripts/playwright-chromium.ts",
         "packages/*/package.json",
         "apps/storybook/package.json",
         "bun.lock"
@@ -93,6 +96,9 @@
         "apps/storybook/.storybook/**",
         "packages/*/src/**",
         "packages/design-system/stories/**",
+        "packages/vite-config/**",
+        "!packages/vite-config/node_modules/**",
+        "scripts/playwright-chromium.ts",
         "packages/*/package.json",
         "apps/storybook/package.json",
         "bun.lock"
