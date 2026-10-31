@@ -166,8 +166,9 @@ jobs:
       # reads the repo tree, so it cannot see what the build context left
       # out, a broken CMD or HEALTHCHECK, uid 65534 permissions, or an
       # arm64-only failure. This loads the same build into the runner's
-      # docker (no attestations; the push build below reuses the builder's
-      # layers), and a failing leg keeps `merge` from publishing any tag.
+      # docker (no attestations; on non-PR events the push build below reuses
+      # the builder's layers), and a failing leg keeps `merge` from publishing
+      # any tag. On a PR this is the only build, and docker-ok rests on it.
       - name: Build for smoke test
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -189,15 +190,18 @@ jobs:
             echo "::notice::scripts/docker-smoke.sh is not in this checkout; smoke test skipped"
           fi
 
-      - name: Build (push by digest on non-PR)
+      # Skipped on PRs (#330): it pushed nothing there, and its only output was
+      # a PR-scoped layer cache no other ref can read.
+      - name: Build (push by digest)
         id: build
+        if: github.event_name != 'pull_request'
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: apps/server/Dockerfile
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
-          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' }}
+          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
           # Verified against the published v2.8.0 index rather than assumed:
           # push-by-digest does NOT strip attestations here — BuildKit's default
           # mode=min provenance was already riding along, one attestation
@@ -209,13 +213,12 @@ jobs:
           # `imagetools create`.
           # mode=max records the full build definition; safe here because the
           # build takes no build-args and no secrets.
-          # PR builds push nothing, so they skip both: the attestations would
-          # be thrown away, and the SBOM scanner image is a Docker Hub pull
-          # (see the login step above and the rate-limit note in the merge job).
-          provenance: ${{ github.event_name == 'pull_request' && 'false' || 'mode=max' }}
-          sbom: ${{ github.event_name != 'pull_request' }}
+          provenance: mode=max
+          sbom: true
           cache-from: type=gha,scope=${{ steps.prep.outputs.pair }}
-          cache-to: type=gha,mode=max,scope=${{ steps.prep.outputs.pair }}
+          # Only main writes the cache: every PR and tag ref can read main's
+          # entries, but nothing else can read a tag's, and they evicted main's.
+          cache-to: ${{ github.ref == 'refs/heads/main' && format('type=gha,mode=max,scope={0}', steps.prep.outputs.pair) || '' }}
 
       - name: Export digest
         if: github.event_name != 'pull_request'
