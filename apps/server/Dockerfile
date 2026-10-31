@@ -6,7 +6,7 @@
 # dockerRuntime.test.ts); Dependabot bumps tag and digest together.
 
 # Shell base: bun + a shell, used by every build-time stage
-FROM oven/bun:1.4.3@sha256:ec06c3b6cea04192ae6770c434f668ca41d343ad19fa6472216c7b48be39c598 AS base
+FROM oven/bun:1.4.4@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d AS base
 WORKDIR /app
 
 # Node for the MCP App builds only; it never reaches the runner. Vite and the
@@ -17,7 +17,7 @@ WORKDIR /app
 # dockerRuntime.test.ts pins the tag to it. Only the binary is copied, so a
 # Node major can need extra shared libraries here (docs/development.md,
 # "Upgrading Node").
-FROM node:24.21.0-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66 AS node
+FROM node:24.22.0-trixie-slim@sha256:a6155384446670e9719bdc4fd0ebe4d4b29fb32a8d6aa523da3547a6cfbcf22c AS node
 
 # turbo isolated here so it never reaches the runner; the version is derived
 # from the root package.json devDependency so a Dependabot turbo bump can
@@ -51,7 +51,7 @@ RUN turbo run build --filter=@intervals-mcp/server^...
 RUN bun build apps/server/src/index.ts --target=bun --outdir apps/server/dist --sourcemap=linked
 
 # 3) Distroless runner: COPY only. nonroot (65534), no shell, ENTRYPOINT is bun.
-FROM oven/bun:1.4.3-distroless@sha256:1aaa515018b0b37d95dbdebd55d1b7f37ad258a6289ba63e4bc3b9c9e3038697 AS runner
+FROM oven/bun:1.4.4-distroless@sha256:153a951ae40106e125898103e6e990ee0f38e6aee7f561029e26cf9fbed23470 AS runner
 WORKDIR /app
 
 # MCP registry ownership proof: publish-mcp.yml publishes server.json as an OCI
