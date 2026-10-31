@@ -614,6 +614,35 @@ export function parseGoalTime(input: string): number | null {
   return null;
 }
 
+/** Faster than this per km (beyond world-record pace) cannot be a runner's M:SS. */
+export const MIN_PLAUSIBLE_GOAL_PACE_SEC_PER_KM = 150;
+
+/**
+ * `parseGoalTime` for a known race distance. A two-part time is M:SS, unless
+ * that reading is faster than world-record pace: "1:45" for a half marathon
+ * is then 1h45, not 1m45s (#301). `readAsHmm` lets the caller say so. A
+ * distance of 0 (none known) never reinterprets.
+ */
+export function parseGoalTimeForDistance(
+  input: string,
+  distanceMeters: number,
+): { seconds: number; readAsHmm: boolean } | null {
+  const seconds = parseGoalTime(input);
+  if (seconds === null) return null;
+  const twoPart = input.trim().match(/^(\d+):(\d{1,2})$/);
+  if (
+    twoPart &&
+    distanceMeters > 0 &&
+    seconds / (distanceMeters / 1000) < MIN_PLAUSIBLE_GOAL_PACE_SEC_PER_KM
+  ) {
+    return {
+      seconds: Number(twoPart[1]) * 3600 + Number(twoPart[2]) * 60,
+      readAsHmm: true,
+    };
+  }
+  return { seconds, readAsHmm: false };
+}
+
 /** M:SS or H:MM:SS, always zero-padded — split tables need aligned columns. */
 export function formatRaceTime(seconds: number): string {
   const total = Math.round(Math.max(0, seconds));

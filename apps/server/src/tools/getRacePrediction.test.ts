@@ -245,6 +245,19 @@ describe("getRacePredictionTool.execute", () => {
     expect(mockedAthleteCurves).not.toHaveBeenCalled();
   });
 
+  it("reads a half marathon goal of 1:45 as hours and says so (#301)", async () => {
+    mockedAthleteCurves.mockResolvedValueOnce(curvesWithPoint(10000, 2400));
+
+    const result = await run({
+      raceDistance: "half marathon",
+      goalTime: "1:45",
+    });
+
+    expect(target(result).total_seconds).toBe(6300);
+    expect(result.content[0]?.text).toContain("as 1:45:00 (hours:minutes)");
+    expect(payload(result).warnings.join()).toContain("hours:minutes");
+  });
+
   it("rejects a 0:00 goal time rather than dropping the target plan", async () => {
     const result = await run({ raceDistance: "10km", goalTime: "0:00" });
 

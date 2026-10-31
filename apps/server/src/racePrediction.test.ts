@@ -15,6 +15,7 @@ import {
   NEGATIVE_SPLIT_PCT,
   paceCurveSourceEfforts,
   parseGoalTime,
+  parseGoalTimeForDistance,
   predictRace,
   RACE_DISTANCES,
   RACE_WEIGHT,
@@ -552,6 +553,39 @@ describe("buildSplits", () => {
   it("returns an empty table for degenerate inputs", () => {
     expect(buildSplits(0, 10000, "km").splits).toEqual([]);
     expect(buildSplits(2400, 0, "km").splits).toEqual([]);
+  });
+});
+
+describe("parseGoalTimeForDistance", () => {
+  const read = (input: string, km: number) =>
+    parseGoalTimeForDistance(input, km * 1000);
+
+  it("reads a two-part time faster than world-record pace as H:MM (#301)", () => {
+    expect(read("1:45", 21.0975)).toEqual({ seconds: 6300, readAsHmm: true });
+    expect(read("3:30", 42.195)).toEqual({ seconds: 12600, readAsHmm: true });
+  });
+
+  it("keeps M:SS when the pace is plausible", () => {
+    expect(read("17:30", 5)).toEqual({ seconds: 1050, readAsHmm: false });
+    expect(read("45:30", 10)).toEqual({ seconds: 2730, readAsHmm: false });
+    expect(read("75:30", 21.0975)).toEqual({ seconds: 4530, readAsHmm: false });
+  });
+
+  it("leaves three-part, shorthand and unreadable goals to parseGoalTime", () => {
+    expect(read("1:45:00", 21.0975)).toEqual({
+      seconds: 6300,
+      readAsHmm: false,
+    });
+    expect(read("1h45m", 21.0975)).toEqual({ seconds: 6300, readAsHmm: false });
+    expect(read("0:00", 10)).toBeNull();
+    expect(read("soon", 10)).toBeNull();
+  });
+
+  it("does not reinterpret without a distance", () => {
+    expect(parseGoalTimeForDistance("1:45", 0)).toEqual({
+      seconds: 105,
+      readAsHmm: false,
+    });
   });
 });
 

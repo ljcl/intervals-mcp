@@ -14,7 +14,7 @@ import {
   isWithinCriticalSpeedValidity,
   NEGATIVE_SPLIT_PCT,
   paceCurveSourceEfforts,
-  parseGoalTime,
+  parseGoalTimeForDistance,
   predictRace,
   RACE_DISTANCES,
   RACE_WEIGHT,
@@ -69,7 +69,7 @@ const inputSchema = z.object({
     .string()
     .optional()
     .describe(
-      "Pace the splits to this target instead of the prediction ('1:45:00', '45:30', '1h45m'). Needs raceDistance.",
+      "Pace the splits to this target instead of the prediction ('1:45:00', '45:30', '1h45m'). A two-part time is M:SS, or H:MM if that would beat world-record pace ('1:45' for a half marathon). Needs raceDistance.",
     ),
 });
 
@@ -196,8 +196,16 @@ export const getRacePredictionTool = {
     progress: ReportProgress = NO_PROGRESS,
   ) => {
     // Reject a bad goal time before spending a request on it.
-    const goalSeconds = goalTime !== undefined ? parseGoalTime(goalTime) : null;
-    if (goalTime !== undefined && goalSeconds === null) {
+    // Without raceDistance the goal paces nothing, so there is no pace to judge it by.
+    const goal =
+      goalTime !== undefined
+        ? parseGoalTimeForDistance(
+            goalTime,
+            raceDistance ? RACE_DISTANCES[raceDistance] : 0,
+          )
+        : null;
+    const goalSeconds = goal?.seconds ?? null;
+    if (goalTime !== undefined && goal === null) {
       return {
         content: [
           {
@@ -235,6 +243,11 @@ export const getRacePredictionTool = {
       const csModelSource: "90d" | "all" = csModelFromRecent ? "90d" : "all";
 
       const warnings: string[] = [];
+      if (goal?.readAsHmm) {
+        warnings.push(
+          `Read goalTime "${goalTime}" as ${formatRaceTime(goal.seconds)} (hours:minutes), since minutes:seconds would be faster than world-record pace. Use H:MM:SS to be explicit.`,
+        );
+      }
       if (!allCurve && !recentCurve) {
         warnings.push(
           'Neither the "all" nor "90d" pace curve was returned by intervals.icu.',
