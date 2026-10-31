@@ -1,9 +1,11 @@
 /**
- * Live check: calls every intervals.icu read tool and app data tool
- * directly against a real account, using the key from the root `.env`. Text
- * tools go through their exported `Tool.execute`; app data tools
- * (`get-*-data`, private handlers in `server.ts`) go through the same
- * `dispatchToolCall` a real request uses. The write tools
+ * Live check: calls every intervals.icu read tool, and the app data tools
+ * whose shape a mock can drift from (cadence trend, route map, compare
+ * activities, fitness trend; not activity zones or training load), directly
+ * against a real account, using the key from the root `.env`. Text tools go
+ * through their exported `Tool.execute`; app data tools (`get-*-data`,
+ * private handlers in `server.ts`) go through the same `dispatchToolCall` a
+ * real request uses. The write tools
  * (`update-activity`, `update-wellness`, `update-gear`) are deliberately not
  * called here; `update-activity` and `update-gear` were each checked once,
  * separately, with explicit user approval (see docs/api-notes.md's

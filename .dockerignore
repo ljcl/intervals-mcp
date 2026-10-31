@@ -56,8 +56,9 @@ docker-compose.yml
 # Pytest
 .pytest_cache/
 
-# Tests, fixtures and stories never ship: the runner copies apps/server/src
-# wholesale, and fixtures are captured from a real account.
+# Tests, fixtures and stories never ship: they would bloat the build context
+# and invalidate the build stage's cache, and fixtures are captured from a
+# real account. (The runner copies only the apps/server/dist bundle.)
 **/__fixtures__/
 **/*.test.ts
 **/*.test.tsx
