@@ -327,7 +327,7 @@ window, clamped to ±30%, plus a noise measure). `splitAnalysis.ts` imports
 them rather than re-deriving them, along
 with `MAX_SAMPLE_GAP_SECONDS` and `POWER_COVERAGE_MIN`, so a hilly split and a
 hilly climb are corrected identically. `MAX_SAMPLE_GAP_SECONDS` (10 s) caps
-a sample's weight in the HR, cadence, power and GAP averages only. Moving
+a sample's weight in the HR, cadence and power averages and the aerobic GAP basis only (split and climb GAP is grade-adjusted distance over moving time, not a capped-weight average). Moving
 time, and so pace, adds each sample's full gap in every tool (`deriveMoving`
 has already ruled the gap moving), and power coverage divides the capped
 power weight by the capped weight total. When the hill, interval and aerobic

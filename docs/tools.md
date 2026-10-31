@@ -506,7 +506,7 @@ a flat km's GAP equals its pace (#298). When the raw grade swings more than
 average, both tools add a warning that the elevation track is noisy and GAP
 is approximate. A null sample in `distance`/`altitude`/grade
 is interpolated between its known neighbours (held flat across a leading or
-trailing gap) rather than treated as zero; a null HR/cadence/velocity sample
+trailing gap) rather than treated as zero; a null HR/cadence sample
 is simply excluded from whatever average it would have fed. Pace is a bare
 `m:ss` string in `pace_min_per_km`/`gap_pace_min_per_km`, the `/km` suffix
 added only in the text output; splits are kilometres only. GAP here is
