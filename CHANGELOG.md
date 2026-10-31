@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.9.3](https://github.com/ljcl/intervals-mcp/compare/v2.9.2...v2.9.3) (2026-10-31)
+
+
+### Bug Fixes
+
+* compute split and climb GAP on the distance and moving time pace uses ([#344](https://github.com/ljcl/intervals-mcp/issues/344)) ([80d838a](https://github.com/ljcl/intervals-mcp/commit/80d838a0dd45c2ae7ffa04b9115b9bdb15c81390))
+* keep running models out of ride and swim analysis ([#346](https://github.com/ljcl/intervals-mcp/issues/346)) ([8d2066b](https://github.com/ljcl/intervals-mcp/commit/8d2066b9d6a54662a5519998c5118fec9ae84c96))
+* leave the cool-down out of computed aerobic decoupling ([#342](https://github.com/ljcl/intervals-mcp/issues/342)) ([6f30028](https://github.com/ljcl/intervals-mcp/commit/6f30028bec5d2fe288f66b7b5fb4413f95c1b408))
+* leave the warm-up km out of the per-km drift fit ([#345](https://github.com/ljcl/intervals-mcp/issues/345)) ([f047e4f](https://github.com/ljcl/intervals-mcp/commit/f047e4fea53910bf6dad4c43848d438bbef910ab))
+* read a half or marathon goal written as H:MM as hours ([#347](https://github.com/ljcl/intervals-mcp/issues/347)) ([6df8213](https://github.com/ljcl/intervals-mcp/commit/6df8213fb00174da7929011753b723d63c40ffc4))
+* take GAP grade from the altitude the splits and climbs report ([#343](https://github.com/ljcl/intervals-mcp/issues/343)) ([f7a3d5f](https://github.com/ljcl/intervals-mcp/commit/f7a3d5fcd2753771b1a1436a5872d6fc88d774c9))
+
 ## [2.9.2](https://github.com/ljcl/intervals-mcp/compare/v2.9.1...v2.9.2) (2026-10-27)
 
 
