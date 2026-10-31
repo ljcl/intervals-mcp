@@ -210,6 +210,9 @@ one PR:
   syntax), which pins them to the running commit. actionlint does not know
   `$/` yet and reports it as an invalid format.
 - Values from expressions reach `run:` scripts through `env:`, never inline.
+- A new composite action under `.github/actions/` needs its directory added to
+  the github-actions `directories` in `dependabot.yml`, or its pins never get
+  bumped.
 - An intentional exception carries `# zizmor: ignore[<audit>]` with the
   reason beside it (the three `pull_request_target` workflows).
 - Dependabot waits 7 days (`cooldown`) before proposing a version update;
