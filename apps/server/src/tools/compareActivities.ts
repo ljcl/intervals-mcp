@@ -45,8 +45,9 @@ better, grade-adjusted when both runs have GAP). Use it for the same route on
 two days, progress over time, or two races.
 
 A per-km table pairs the runs at the same distance (pace, HR and
-efficiency difference) with a verdict: constant offset (the gap is there
-from km 1: conditions or recovery) or growing drift (it grows: fatigue).
+efficiency difference) with a verdict, fitted after the warm-up km:
+constant offset (the gap is there from the start: conditions or recovery)
+or growing drift (it grows: fatigue).
 For one run's aerobic durability, use get-aerobic-analysis.
 
 Notes:

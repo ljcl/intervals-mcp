@@ -114,11 +114,17 @@ export function compareKmSplits(
   const count = Math.min(full1.length, full2.length);
   if (count === 0) return null;
   const basis = gradeAdjusted ? "gap" : "pace";
-  const warmupKm = Math.max(
-    1,
-    warmupKmCount(full1, warmupSeconds),
-    warmupKmCount(full2, warmupSeconds),
+  // Clamped to the paired km, so a long warm-up on the longer run cannot
+  // name km that were not compared.
+  const warmupKm = Math.min(
+    count,
+    Math.max(
+      1,
+      warmupKmCount(full1, warmupSeconds),
+      warmupKmCount(full2, warmupSeconds),
+    ),
   );
+  const leftOut = warmupKm === 1 ? "km 1" : `km 1 to ${warmupKm}`;
 
   const rows: KmComparisonRow[] = [];
   // The unrounded gaps of the km that have both, for the fitted line.
@@ -172,7 +178,7 @@ export function compareKmSplits(
       efficiency_gap_last_km_pct: null,
       hr_gap_first_km_bpm: null,
       hr_gap_last_km_bpm: null,
-      interpretation: `No verdict: fewer than ${MIN_KM_FOR_VERDICT} full km have heart rate in both runs after the warm-up (km 1 to ${warmupKm} left out).`,
+      interpretation: `No verdict: fewer than ${MIN_KM_FOR_VERDICT} full km have heart rate in both runs after the warm-up (${leftOut} left out).`,
     };
 
   const firstKm = kms[0]!;
@@ -193,8 +199,8 @@ export function compareKmSplits(
   const hrText = `the HR gap from ${formatSigned(Math.round(hrFirst))} to ${formatSigned(Math.round(hrLast))} bpm`;
   const interpretation =
     verdict === "constant offset"
-      ? `Constant offset: ${effText} and ${hrText} (fitted over ${kms.length} km from km ${firstKm}, the warm-up km 1 to ${warmupKm} left out). A gap that is there from km ${firstKm} points to conditions or recovery, not to fatigue during the run.`
-      : `Growing drift: ${effText} and ${hrText} (fitted over ${kms.length} km from km ${firstKm}, the warm-up km 1 to ${warmupKm} left out). ${change < 0 ? "Activity 2" : "Activity 1"} lost efficiency as the run went on, which points to fatigue, or heat building up, during the run.`;
+      ? `Constant offset: ${effText} and ${hrText} (fitted over ${kms.length} km from km ${firstKm}, the warm-up ${leftOut} left out). A gap that is there from km ${firstKm} points to conditions or recovery, not to fatigue during the run.`
+      : `Growing drift: ${effText} and ${hrText} (fitted over ${kms.length} km from km ${firstKm}, the warm-up ${leftOut} left out). ${change < 0 ? "Activity 2" : "Activity 1"} lost efficiency as the run went on, which points to fatigue, or heat building up, during the run.`;
 
   return {
     basis,

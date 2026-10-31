@@ -75,7 +75,7 @@ describe("compareKmSplits", () => {
     expect(result?.rows[1]?.efficiency_delta_pct).toBeNull();
     expect(result?.verdict).toBeNull();
     expect(result?.interpretation).toBe(
-      "No verdict: fewer than 3 full km have heart rate in both runs after the warm-up (km 1 to 1 left out).",
+      "No verdict: fewer than 3 full km have heart rate in both runs after the warm-up (km 1 left out).",
     );
   });
 
@@ -134,7 +134,7 @@ describe("compareKmSplits", () => {
       expect(result?.rows).toHaveLength(km);
       expect(result?.rows[0]?.hr_delta_bpm).toBe(13);
       expect(result?.interpretation).toContain(
-        "from km 2, the warm-up km 1 to 1 left out",
+        "from km 2, the warm-up km 1 left out",
       );
     }
   });
@@ -169,6 +169,17 @@ describe("compareKmSplits", () => {
     ).toContain("from km 2");
   });
 
+  it("names only the km that were paired when the warm-up is longer than the comparison", () => {
+    const result = compareKmSplits(
+      run([150, 150, 150, 150, 150]),
+      run([150, 150, 150, 150, 150]),
+      true,
+      3000,
+    );
+    expect(result?.verdict).toBeNull();
+    expect(result?.interpretation).toContain("(km 1 to 5 left out)");
+  });
+
   it("gives no verdict when the warm-up leaves fewer than 3 km to fit", () => {
     const result = compareKmSplits(
       run([150, 150, 150]),
@@ -178,7 +189,7 @@ describe("compareKmSplits", () => {
     expect(result?.rows).toHaveLength(3);
     expect(result?.verdict).toBeNull();
     expect(result?.interpretation).toBe(
-      "No verdict: fewer than 3 full km have heart rate in both runs after the warm-up (km 1 to 1 left out).",
+      "No verdict: fewer than 3 full km have heart rate in both runs after the warm-up (km 1 left out).",
     );
   });
 });

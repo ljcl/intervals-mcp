@@ -342,7 +342,7 @@ export const CompareActivitiesOutputSchema = z.object({
         .enum(["constant offset", "growing drift"])
         .nullable()
         .describe(
-          "From a line fitted to the per-km efficiency gap: a change of 3 points or more from the first km to the last is growing drift. Null with fewer than 3 km of heart rate in both",
+          "From a line fitted to the per-km efficiency gap: the warm-up km are left out, and a change of 3 points or more from the first fitted km to the last is growing drift. Null with fewer than 3 fitted km with heart rate in both",
         ),
       efficiency_gap_first_km_pct: z.number().nullable(),
       efficiency_gap_last_km_pct: z.number().nullable(),
