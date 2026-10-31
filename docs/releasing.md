@@ -84,8 +84,10 @@ Escapes:
 ## Image publishing and attestations
 
 `docker.yml`'s build legs set `provenance: mode=max` and `sbom: true` on every
-build that pushes (BuildKit's defaults are `mode=min` provenance and no SBOM);
-PR builds push nothing and skip both. The merge job
+build that pushes (BuildKit's defaults are `mode=min` provenance and no SBOM).
+A PR runs only the smoke build, which carries neither, and only main writes the
+`type=gha` layer cache: PR and tag caches are readable by no other ref and
+pushed main's out of the 10 GB Actions cache. The merge job
 adds a Sigstore-backed provenance attestation over the final index digest
 (`actions/attest-build-provenance`, verifiable with `gh attestation verify`;
 see [operations.md](operations.md#verifying-a-pulled-image)).
