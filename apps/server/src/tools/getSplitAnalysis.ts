@@ -17,10 +17,11 @@ import {
 import {
   cadenceSpm,
   formatPaceSeconds,
+  isPaceActivity,
   paceFromDistanceTime,
 } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
-import { noteToolFailure, toolErrorText } from "./_errors";
+import { notARunText, noteToolFailure, toolErrorText } from "./_errors";
 import { intervalsActivityIdInput } from "./_ids";
 import { SplitAnalysisOutputSchema, warnOnSchemaDrift } from "./outputs";
 
@@ -50,6 +51,8 @@ Notes:
 - Elevation gain is intervals.icu's own total (as get-activity reports it)
   when the activity has one, else summed from the altitude samples.
 - An activity with no recorded streams (a manual entry) returns an error.
+- Runs only (Run, TrailRun, VirtualRun): any other type returns an error
+  pointing at get-activity.
 `;
 
 const inputSchema = z.object({
@@ -208,6 +211,17 @@ export const getSplitAnalysisTool = {
       const activity = await getActivity(apiKey, id);
       const type = activity.type ?? "Workout";
       const displayName = activity.name ?? type;
+      if (!isPaceActivity(type)) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: notARunText(name, activity, id, type),
+            },
+          ],
+          isError: true,
+        };
+      }
 
       progress(`Fetching streams for "${displayName}"`);
       let analysis: SplitAnalysis;

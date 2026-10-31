@@ -340,6 +340,91 @@ describe("get-interval-analysis", () => {
     expect(result.content[0]?.text).toContain("clean structured laps");
   });
 
+  it("paces a swim's reps per 100 m and a ride's in km/h, never per km (#300)", async () => {
+    const lap = (distance: number, moving_time: number): IntervalsInterval => ({
+      type: "WORK",
+      distance,
+      moving_time,
+      average_speed: distance / moving_time,
+      average_heartrate: 140,
+    });
+    // 3 × 200 m in 3:20 with 100 m easy between, inside a warm-up and cool-down.
+    const icu_intervals = [
+      lap(400, 480),
+      lap(200, 200),
+      lap(100, 150),
+      lap(200, 200),
+      lap(100, 150),
+      lap(200, 200),
+      lap(200, 240),
+    ];
+    const time: number[] = [];
+    const distance: number[] = [];
+    const heartrate: number[] = [];
+    for (let s = 0; s < 1600; s++) {
+      time.push(s);
+      distance.push(s);
+      heartrate.push(140);
+    }
+    mockedGetActivityStreams.mockResolvedValue([
+      { type: "time", data: time },
+      { type: "distance", data: distance },
+      { type: "heartrate", data: heartrate },
+    ] as unknown as IntervalsStream[]);
+
+    mockedGetActivity.mockResolvedValue({
+      ...multilapActivity,
+      type: "Swim",
+      icu_intervals,
+    } as IntervalsActivity);
+    const swim = await getIntervalAnalysisTool.execute(
+      { id: "i189757183", findSimilar: false },
+      "test-key",
+    );
+    const swimReps = (
+      swim.structuredContent as {
+        reps: Array<{
+          pace_min_per_km: string | null;
+          pace_min_per_100m: string | null;
+          speed_kmh: number | null;
+        }>;
+      }
+    ).reps;
+    expect(swimReps).toHaveLength(3);
+    expect(swimReps[0]).toMatchObject({
+      pace_min_per_km: null,
+      pace_min_per_100m: "1:40",
+      speed_kmh: null,
+    });
+    const swimText = swim.content[0]?.text ?? "";
+    expect(swimText).toContain("200 m in 3:20, 1:40 /100m");
+    expect(swimText).not.toContain("/km");
+
+    mockedGetActivity.mockResolvedValue({
+      ...multilapActivity,
+      type: "Ride",
+      icu_intervals: icu_intervals.map((l) => ({
+        ...l,
+        distance: (l.distance ?? 0) * 10,
+        average_speed: (l.average_speed ?? 0) * 10,
+      })),
+    } as IntervalsActivity);
+    const ride = await getIntervalAnalysisTool.execute(
+      { id: "i189757183", findSimilar: false },
+      "test-key",
+    );
+    const rideRep = (
+      ride.structuredContent as {
+        reps: Array<{
+          pace_min_per_km: string | null;
+          speed_kmh: number | null;
+        }>;
+      }
+    ).reps[0];
+    expect(rideRep).toMatchObject({ pace_min_per_km: null, speed_kmh: 36 });
+    expect(ride.content[0]?.text).toContain("2000 m in 3:20, 36 km/h");
+  });
+
   it("errors cleanly for an activity with no recorded streams", async () => {
     mockedGetActivity.mockResolvedValue({
       ...multilapActivity,

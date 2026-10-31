@@ -207,6 +207,25 @@ describe("get-hill-analysis", () => {
     expect(result.content[0]?.text).toContain("needs elevation data");
   });
 
+  it("refuses a ride before reading its streams, naming get-activity (#300)", async () => {
+    mockedGetActivity.mockResolvedValue({
+      ...hillyActivity,
+      name: "Hill reps",
+      type: "Ride",
+    } as IntervalsActivity);
+
+    const result = await getHillAnalysisTool.execute(
+      { id: "i189757207" },
+      "test-key",
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toBe(
+      '❌ Activity "Hill reps" [i189757207] is a Ride, not a run. get-hill-analysis covers Run, TrailRun and VirtualRun only; use get-activity for other activity types.',
+    );
+    expect(mockedGetActivityStreams).not.toHaveBeenCalled();
+  });
+
   it("errors cleanly for an activity with no recorded streams, naming it", async () => {
     mockedGetActivity.mockResolvedValue({
       ...hillyActivity,

@@ -20,7 +20,7 @@ import {
   loadIntervalsStreams,
 } from "../intervalsStreams";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
-import { formatPaceSeconds } from "../utils/running";
+import { formatPaceSeconds, isPaceActivity } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
 import { noteToolFailure, toolErrorText } from "./_errors";
 import { intervalsActivityIdInput } from "./_ids";
@@ -55,7 +55,10 @@ Notes:
   are split.
 - On the power basis, an Apple Watch power stream is Apple's estimate, not a
   power meter reading; the response warns.
-- Works for any endurance activity with heart rate.
+- Works for any endurance activity with heart rate. The default basis is gap
+  on a run; on any other sport it is power when the activity recorded power,
+  else pace, and a gap request uses pace. Sport settings and FTP are the
+  activity's own sport's.
 `;
 
 const inputSchema = z.object({
@@ -64,7 +67,7 @@ const inputSchema = z.object({
     .enum(["gap", "pace", "power"])
     .optional()
     .describe(
-      'Output basis, computed from streams: "gap" is grade-adjusted speed (hills do not count as drift), "pace" raw velocity_smooth, "power" the watts stream. Omit it to take intervals.icu\'s own values when the activity has both, else "gap".',
+      'Output basis, computed from streams: "gap" is grade-adjusted speed (hills do not count as drift), "pace" raw velocity_smooth, "power" the watts stream. Omit it to take intervals.icu\'s own values when the activity has both, else "gap" on a run and, on another sport, "power" when it recorded power, else "pace". "gap" is runs only: another sport gets "pace".',
     ),
   excludeWarmupMinutes: z
     .number()
@@ -72,7 +75,7 @@ const inputSchema = z.object({
     .max(120)
     .optional()
     .describe(
-      "Moving minutes to drop from the start before splitting halves. Defaults to the activity's icu_warmup_time, then the athlete's Run sport-settings warmup_time, then 5 minutes.",
+      "Moving minutes to drop from the start before splitting halves. Defaults to the activity's icu_warmup_time, then the athlete's sport-settings warmup_time for its sport, then 5 minutes.",
     ),
   excludeCooldownMinutes: z
     .number()
@@ -80,20 +83,20 @@ const inputSchema = z.object({
     .max(120)
     .optional()
     .describe(
-      "Moving minutes to drop from the end before splitting halves. Defaults to the activity's icu_cooldown_time, then the athlete's Run sport-settings cooldown_time, then 5 minutes.",
+      "Moving minutes to drop from the end before splitting halves. Defaults to the activity's icu_cooldown_time, then the athlete's sport-settings cooldown_time for its sport, then 5 minutes.",
     ),
   thresholdPower: z
     .number()
     .positive()
     .optional()
     .describe(
-      "Threshold power (FTP) in watts for the intensity factor, power basis only. Defaults to the athlete's Run sport-settings ftp, then the activity's icu_ftp.",
+      "Threshold power (FTP) in watts for the intensity factor, power basis only. Defaults to the activity's icu_ftp, then the athlete's sport-settings ftp for its sport.",
     ),
   includeBreakdown: z
     .boolean()
     .default(false)
     .describe(
-      "Compute from streams (on the gap basis unless basis is set) even when intervals.icu already reports both decoupling and efficiency factor; its values then stay in intervals_icu.",
+      "Compute from streams (on the default basis unless basis is set) even when intervals.icu already reports both decoupling and efficiency factor; its values then stay in intervals_icu.",
     ),
 });
 
@@ -154,8 +157,8 @@ export interface StreamAerobicResult {
 /**
  * Decoupling and efficiency factor computed from the activity's streams on
  * `basis`. The warm-up is excluded as this tool does by default (the
- * activity's `icu_warmup_time`, then the Run sport settings' `warmup_time`,
- * then 5 minutes) unless `excludeWarmupSeconds` is set; the cool-down the
+ * activity's `icu_warmup_time`, then `sportSettings`' `warmup_time`, then 5
+ * minutes) unless `excludeWarmupSeconds` is set; the cool-down the
  * same way from `icu_cooldown_time` and `cooldown_time` (#296). The one home of the
  * stream path, shared with get-running-summary, which fills intervals.icu's
  * missing values from it on the gap basis. Throws
@@ -246,12 +249,15 @@ export const getAerobicAnalysisTool = {
   ) => {
     try {
       progress(`Fetching activity ${id}`);
-      const [activity, sportSettings] = await Promise.all([
-        getActivity(apiKey, id),
-        getSportSettings(apiKey, "Run").catch(() => null),
-      ]);
+      const activity = await getActivity(apiKey, id);
       const type = activity.type ?? "Workout";
       const displayName = activity.name ?? type;
+      // The activity's own sport group: intervals.icu resolves any type to
+      // its group (docs/api-notes.md), so a ride reads the ride settings.
+      const sportSettings = await getSportSettings(apiKey, type).catch(
+        () => null,
+      );
+      const isRun = isPaceActivity(type);
 
       const decouplingFromApi = activity.decoupling ?? null;
       const efficiencyFromApi = activity.icu_efficiency_factor ?? null;
@@ -264,13 +270,28 @@ export const getAerobicAnalysisTool = {
         decouplingFromApi != null &&
         efficiencyFromApi != null;
 
-      let basis: Basis | null = useApiValues ? null : (requestedBasis ?? "gap");
+      // GAP is a running model: another sport defaults to power when it
+      // recorded a power stream, else raw pace (#300).
+      const defaultBasis: Basis = isRun
+        ? "gap"
+        : activity.stream_types?.includes("watts")
+          ? "power"
+          : "pace";
+      let basis: Basis | null = useApiValues
+        ? null
+        : (requestedBasis ?? defaultBasis);
+      const warnings: string[] = [];
+      if (basis === "gap" && !isRun) {
+        basis = "pace";
+        warnings.push(
+          `Grade-adjusted pace is a running model, so this ${type} uses raw pace.`,
+        );
+      }
       // Only the gap basis can fall back (to pace), so power is settled here.
       const resolvedThresholdPower =
         basis === "power"
-          ? (thresholdPower ?? sportSettings?.ftp ?? activity.icu_ftp ?? null)
+          ? (thresholdPower ?? activity.icu_ftp ?? sportSettings?.ftp ?? null)
           : null;
-      const warnings: string[] = [];
       let analysis: AerobicAnalysis | null = null;
 
       if (basis != null) {
@@ -318,7 +339,7 @@ export const getAerobicAnalysisTool = {
 
       if (basis === "power" && resolvedThresholdPower == null) {
         warnings.push(
-          "No threshold power is set on the athlete's Run sport settings or the activity; intensity factor cannot be computed.",
+          `No threshold power is set on the activity or the athlete's ${type} sport settings; intensity factor cannot be computed.`,
         );
       }
       const isAppleWatch = (activity.device_name ?? "").startsWith("Watch");
