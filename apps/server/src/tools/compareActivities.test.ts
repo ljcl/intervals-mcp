@@ -383,10 +383,31 @@ describe("compare-activities execute", () => {
       result.structuredContent,
     ).km_comparison;
     expect(km?.verdict).toBe("growing drift");
-    expect(km?.hr_gap_first_km_bpm).toBe(2);
+    // The fit starts at km 2, km 1 being warm-up.
+    expect(km?.hr_gap_first_km_bpm).toBe(4);
     expect(km?.hr_gap_last_km_bpm).toBe(16);
     expect(km?.interpretation).toContain(
       "Activity 2 lost efficiency as the run went on",
+    );
+  });
+
+  it("starts the per-km fit after the larger icu_warmup_time of the two runs", async () => {
+    mockedGetActivity.mockResolvedValueOnce(fakeActivity({}));
+    mockedGetActivity.mockResolvedValueOnce({
+      ...faster,
+      icu_warmup_time: 600,
+    });
+    mockedGetActivityStreams.mockImplementation(async (_key, id) =>
+      syntheticStreams(kmLegs(8, () => (id === "i100" ? 150 : 159))),
+    );
+
+    const result = await compareActivitiesTool.execute(
+      { activityId1: "i100", activityId2: "i200" },
+      "test-token",
+    );
+
+    expect(result.content[0]?.text).toContain(
+      "from km 3, the warm-up km 1 to 2",
     );
   });
 

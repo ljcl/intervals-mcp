@@ -45,8 +45,9 @@ better, grade-adjusted when both runs have GAP). Use it for the same route on
 two days, progress over time, or two races.
 
 A per-km table pairs the runs at the same distance (pace, HR and
-efficiency difference) with a verdict: constant offset (the gap is there
-from km 1: conditions or recovery) or growing drift (it grows: fatigue).
+efficiency difference) with a verdict, fitted after the warm-up km:
+constant offset (the gap is there from the start: conditions or recovery)
+or growing drift (it grows: fatigue).
 For one run's aerobic durability, use get-aerobic-analysis.
 
 Notes:
@@ -195,6 +196,7 @@ export type SideSplits =
 function kmComparisonOf(
   splits1: SideSplits | undefined,
   splits2: SideSplits | undefined,
+  warmupSeconds: number,
 ): { comparison: KmComparison | null; note: string | null } {
   if (!splits1 || !splits2)
     return { comparison: null, note: "the streams were not read" };
@@ -212,6 +214,7 @@ function kmComparisonOf(
     splits2.analysis.splits,
     splits1.analysis.gradeSource !== "none" &&
       splits2.analysis.gradeSource !== "none",
+    warmupSeconds,
   );
   return comparison
     ? { comparison, note: null }
@@ -330,7 +333,11 @@ export function buildComparison(
       : buildActivityWeather(activity2, null),
   );
   const weatherDiff = weatherDifference(summary1.weather, summary2.weather);
-  const km = kmComparisonOf(extras.splits1, extras.splits2);
+  const km = kmComparisonOf(
+    extras.splits1,
+    extras.splits2,
+    Math.max(activity1.icu_warmup_time ?? 0, activity2.icu_warmup_time ?? 0),
+  );
 
   const distanceDiff = round(summary2.distance_km - summary1.distance_km, 2);
 

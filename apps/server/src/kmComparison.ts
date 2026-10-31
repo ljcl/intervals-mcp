@@ -75,6 +75,16 @@ function fitLine(
   return { intercept: meanY - slope * meanX, slope };
 }
 
+/** How many leading km a run's moving time needs to cover `seconds`. */
+function warmupKmCount(full: Split[], seconds: number): number {
+  let time = 0;
+  for (let i = 0; i < full.length; i++) {
+    if (time >= seconds) return i;
+    time += full[i]!.movingTimeS;
+  }
+  return full.length;
+}
+
 const pace = (seconds: number | null) =>
   seconds == null ? null : formatPaceSeconds(seconds);
 
@@ -86,7 +96,10 @@ function efficiency(paceSecPerKm: number | null, hr: number | null) {
 
 /**
  * Pairs the full km both runs covered (a trailing partial split is left
- * out) and states the verdict. `gradeAdjusted` is true when both runs have
+ * out) and states the verdict. Heart rate is still rising in the first km
+ * of a cold start, so the fit leaves out the warm-up: km 1, or the km that
+ * cover the larger `warmupSeconds` of the two runs (#299). Those km stay in
+ * `rows`. `gradeAdjusted` is true when both runs have
  * elevation data, so the efficiency uses grade-adjusted pace and a hillier
  * km does not read as lost efficiency. Null when the runs share no full km.
  */
@@ -94,12 +107,24 @@ export function compareKmSplits(
   splits1: Split[],
   splits2: Split[],
   gradeAdjusted: boolean,
+  warmupSeconds = 0,
 ): KmComparison | null {
   const full1 = splits1.filter((s) => !s.partial);
   const full2 = splits2.filter((s) => !s.partial);
   const count = Math.min(full1.length, full2.length);
   if (count === 0) return null;
   const basis = gradeAdjusted ? "gap" : "pace";
+  // Clamped to the paired km, so a long warm-up on the longer run cannot
+  // name km that were not compared.
+  const warmupKm = Math.min(
+    count,
+    Math.max(
+      1,
+      warmupKmCount(full1, warmupSeconds),
+      warmupKmCount(full2, warmupSeconds),
+    ),
+  );
+  const leftOut = warmupKm === 1 ? "km 1" : `km 1 to ${warmupKm}`;
 
   const rows: KmComparisonRow[] = [];
   // The unrounded gaps of the km that have both, for the fitted line.
@@ -120,7 +145,7 @@ export function compareKmSplits(
     );
     const effGap =
       ef1 != null && ef2 != null ? ((ef2 - ef1) / ef1) * 100 : null;
-    if (effGap != null) {
+    if (effGap != null && km > warmupKm) {
       kms.push(km);
       effGaps.push(effGap);
       // A km with an efficiency on both runs has HR on both.
@@ -153,7 +178,7 @@ export function compareKmSplits(
       efficiency_gap_last_km_pct: null,
       hr_gap_first_km_bpm: null,
       hr_gap_last_km_bpm: null,
-      interpretation: `No verdict: fewer than ${MIN_KM_FOR_VERDICT} full km have heart rate in both runs.`,
+      interpretation: `No verdict: fewer than ${MIN_KM_FOR_VERDICT} full km have heart rate in both runs after the warm-up (${leftOut} left out).`,
     };
 
   const firstKm = kms[0]!;
@@ -174,8 +199,8 @@ export function compareKmSplits(
   const hrText = `the HR gap from ${formatSigned(Math.round(hrFirst))} to ${formatSigned(Math.round(hrLast))} bpm`;
   const interpretation =
     verdict === "constant offset"
-      ? `Constant offset: ${effText} and ${hrText} (fitted over ${kms.length} km). A gap that is there from km ${firstKm} points to conditions or recovery, not to fatigue during the run.`
-      : `Growing drift: ${effText} and ${hrText} (fitted over ${kms.length} km). ${change < 0 ? "Activity 2" : "Activity 1"} lost efficiency as the run went on, which points to fatigue, or heat building up, during the run.`;
+      ? `Constant offset: ${effText} and ${hrText} (fitted over ${kms.length} km from km ${firstKm}, the warm-up ${leftOut} left out). A gap that is there from km ${firstKm} points to conditions or recovery, not to fatigue during the run.`
+      : `Growing drift: ${effText} and ${hrText} (fitted over ${kms.length} km from km ${firstKm}, the warm-up ${leftOut} left out). ${change < 0 ? "Activity 2" : "Activity 1"} lost efficiency as the run went on, which points to fatigue, or heat building up, during the run.`;
 
   return {
     basis,

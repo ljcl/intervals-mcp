@@ -446,12 +446,15 @@ own stream path), and `compareKmSplits` (`kmComparison.ts`) gives each km's
 pace, HR and efficiency factor on both runs with the differences. The
 efficiency is `speedEfficiencyFactor` on grade-adjusted pace when both runs
 have elevation data (`basis: "gap"`), else on moving pace. The verdict fits
-a line to the per-km efficiency gap: a change of 3 points or more from the
-first km to the last is `growing drift` (fatigue or heat building up during
-the run), anything less is a `constant offset` (the gap is there from km 1:
-conditions or recovery). `interpretation` gives the fitted efficiency and
-HR gaps at the first and last km, and names the run that lost efficiency.
-With fewer than 3 km of heart rate in both runs there is no verdict. A
+a line to the per-km efficiency gap, leaving out the warm-up: km 1, or the km
+covering the larger `icu_warmup_time` of the two runs (heart rate is still
+rising in a cold first km). Those km stay in `rows`, and `interpretation` says
+where the fit starts. A change of 3 points or more from the first fitted km to
+the last is `growing drift` (fatigue or heat building up during the run),
+anything less is a `constant offset` (the gap is there from the start:
+conditions or recovery). `interpretation` gives the fitted efficiency and HR
+gaps at the first and last fitted km, and names the run that lost efficiency.
+With fewer than 3 fitted km of heart rate in both runs there is no verdict. A
 side that is not a run or has no streams gives `km_comparison: null` and
 `km_comparison_note` says why; a rate limit fails the call. Two 4-hour runs
 pair about 46 km, inside the response budget (responseSize.test.ts).
