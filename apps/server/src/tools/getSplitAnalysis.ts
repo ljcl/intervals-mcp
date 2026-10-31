@@ -63,6 +63,7 @@ const STREAM_TYPES = [
   "altitude",
   "grade_smooth",
   "heartrate",
+  // Not read for GAP (#298); the loader derives `moving` from it.
   "velocity_smooth",
   "cadence",
   "watts",
@@ -181,7 +182,6 @@ export async function loadSplitAnalysis(
     altitude: streams.altitude,
     grade_smooth: streams.grade_smooth,
     heartrate: streams.heartrate,
-    velocity_smooth: streams.velocity_smooth,
     cadence: streams.cadence,
     watts: streams.watts,
     moving: streams.moving,

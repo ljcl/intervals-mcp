@@ -327,7 +327,7 @@ window, clamped to ±30%, plus a noise measure). `splitAnalysis.ts` imports
 them rather than re-deriving them, along
 with `MAX_SAMPLE_GAP_SECONDS` and `POWER_COVERAGE_MIN`, so a hilly split and a
 hilly climb are corrected identically. `MAX_SAMPLE_GAP_SECONDS` (10 s) caps
-a sample's weight in the HR, cadence, power and GAP averages only. Moving
+a sample's weight in the HR, cadence and power averages and the aerobic GAP basis only (split and climb GAP is grade-adjusted distance over moving time, not a capped-weight average). Moving
 time, and so pace, adds each sample's full gap in every tool (`deriveMoving`
 has already ruled the gap moving), and power coverage divides the capped
 power weight by the capped weight total. When the hill, interval and aerobic
@@ -363,7 +363,9 @@ to each run's grade-adjusted speed (or moving speed, on both sides, when
 either run has no `gap`). The aerobic tool's default `gap` basis reads
 `gradeAdjustedSpeeds` (`hillAnalysis.ts`): `velocity_smooth` times the same
 averaged-grade GAP factor the hill and split tools use, so it never builds a
-second GAP. On raw speed, an out-and-back course at a steady heart rate
+second GAP. (The hill and split tools sum grade-adjusted distance over the
+moving time their pace uses instead, #298; the aerobic basis stays
+velocity-based and sits about 1% faster than distance over time.) On raw speed, an out-and-back course at a steady heart rate
 decoupled by -19% one way round and +16% the other; grade-adjusted, both
 are about 0% (#74). intervals.icu's own `decoupling` and
 `icu_efficiency_factor` never carry a basis label the tool did not compute:
