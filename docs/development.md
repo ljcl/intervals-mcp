@@ -335,8 +335,10 @@ needed. Config caveats:
   Chromium and blocking downloads; `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`
   overrides everything.
 - CI caches Playwright browsers keyed on the pinned playwright version plus
-  runner image; a miss installs with `--with-deps`, a hit runs only
-  `install-deps` — the apt-get half is never cached and must run either way.
+  runner image; a miss downloads Chromium, a hit installs nothing. Neither
+  runs apt-get: the runner image ships every library Chromium links, and
+  `install-deps` only added fonts no story renders from a mirror that could
+  stall for 10 minutes (#327). A missing library fails loudly, naming it.
 - Plain `bun run test:stories` stays coverage-free; `test:stories:coverage`
   adds v8 render-path coverage over every `packages/*` source the stories
   execute (ljcl/strava-mcp#197's report, gated by the ratchet above).

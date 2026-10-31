@@ -114,17 +114,14 @@ jobs:
           # browsers built for the previous one (ljcl/strava-mcp#274).
           key: ${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright-key.outputs.image }}-playwright-${{ steps.playwright-key.outputs.version }}
 
-      # Split on the cache result (ljcl/strava-mcp#274). The download is what the cache exists
-      # to skip; the apt-get half is not cached and has to run either way, so a
-      # hit still installs system deps — just without re-fetching ~150 MB of
-      # browser.
-      - name: Install Playwright Chromium and system deps
+      # A miss downloads the browser, which the cache exists to skip. No apt-get
+      # on either path (#327): the runner image already ships every library
+      # Chromium links, and install-deps only added CJK/X fonts no story
+      # renders, from an apt mirror that sometimes stalled for 10 minutes. If
+      # an image ever drops a library, Playwright fails naming the package.
+      - name: Install Playwright Chromium
         if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: bunx playwright install chromium --with-deps
-
-      - name: Install Playwright system deps (cached browser)
-        if: steps.playwright-cache.outputs.cache-hit == 'true'
-        run: bunx playwright install-deps chromium
+        run: bunx playwright install chromium
 
       # With coverage: the same story smoke tests, plus a measure of which
       # packages/* source the stories execute in the browser (ljcl/strava-mcp#197). The
