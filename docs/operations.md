@@ -192,10 +192,10 @@ Apps (`io.modelcontextprotocol/ui` with `text/html;profile=mcp-app`).
 sent, when it sent them. The server trims them, strips control and format
 characters, and cuts them to 64 characters, so a client cannot break the line.
 It bounds `tool` the same way, because a client can send an unknown tool name.
-They exist to confirm which hosts advertise MCP Apps before the `view-*` tools
-are hidden from clients that do not. For example,
+They show which hosts advertise MCP Apps, and so which ones render a `view-*`
+call as a chart rather than only its text. For example,
 `grep '"event":"tool_call"' | grep '"client_apps":false'` lists the calls from
-hosts that would lose them.
+hosts that get the text alone.
 
 `trace_id` and `parent_id` appear only when the request's `_meta.traceparent`
 is a valid W3C trace context value. Use them to match a line to the client's
