@@ -141,9 +141,10 @@ The view-heavy packages are intentionally unthresholded per package; their
 component floor is the story render-path report
 (`vitest.stories.config.ts`, own auto-ratchet, 5-point cushion) — same rule:
 commit the rewrite, don't hand-edit. `packages/ui` is hybrid: its coverage
-`include` lists only hooks/stores/helpers no story reaches (`useServerToolData`,
-`useServerToolFetcher`, `keyedFetchStore`, `useModelContextSync`,
-`useMobileMode`, `serverToolResult`), while components stay
+`include` lists only hooks/stores/helpers no story reaches (`hostRoot`, which
+holds `useHostRoot` for `AppRoot`, `useServerToolData`, `useServerToolFetcher`,
+`keyedFetchStore`, `latestPin`, `useModelContextSync`, `useMobileMode`,
+`serverToolResult`, `toolArgs`), while components stay
 with the render-path report. "No story reaches it" is the entry test, not "it
 is logic": `viewTools.ts` is logic and deliberately out, because stories already
 floor it. Listing a module in both reports drags the aggregate — and therefore

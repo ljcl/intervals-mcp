@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyToolInput } from "./AppShell";
+import { classifyToolInput } from "./hostRoot";
 
 interface ActivityArgs {
   activity_id?: string;

@@ -12,7 +12,7 @@ import {
 } from "@modelcontextprotocol/ext-apps";
 import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { useHostRoot } from "./AppShell";
+import { useHostRoot } from "./hostRoot";
 import { renderHook } from "./renderHook";
 
 /** The app the fake `useApp` hands over. Each test installs its own. */
@@ -262,6 +262,42 @@ describe('useHostRoot pins "latest"', () => {
 
     expect(harness.current().toolArgs).toEqual({ id: "i5" });
     expect(harness.current().pendingLatest).toBe(false);
+    await harness.unmount();
+  });
+});
+
+describe("useHostRoot setup inside onAppCreated", () => {
+  it("registers the declared view tools before the app connects", async () => {
+    const host = fakeApp(PHONE);
+    const registerTool = vi.fn();
+    Object.assign(host.app, { registerTool });
+    connection.app = host.app;
+    const viewTools = [
+      { name: "set-range", description: "Zoom the chart.", inputSchema: {} },
+    ];
+
+    const harness = await renderHook(
+      () => useHostRoot({ ...OPTIONS, viewTools }),
+      undefined,
+    );
+
+    expect(registerTool).toHaveBeenCalledOnce();
+    expect(registerTool.mock.calls[0]?.[0]).toBe("set-range");
+    expect(harness.current().viewToolRegistry).not.toBeNull();
+    await harness.unmount();
+  });
+
+  it("reports input without the required id instead of waiting on it", async () => {
+    const { harness, sendInput } = await connectWithIds();
+
+    await sendInput({});
+    expect(harness.current().argsError).toBe("No activity id.");
+    expect(harness.current().toolArgs).toBeNull();
+
+    // A later usable input clears the error.
+    await sendInput({ id: "i5" });
+    expect(harness.current().argsError).toBeNull();
+    expect(harness.current().toolArgs).toEqual({ id: "i5" });
     await harness.unmount();
   });
 });

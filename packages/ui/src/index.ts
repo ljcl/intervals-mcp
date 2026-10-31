@@ -1,5 +1,4 @@
 export {
-  type AppMode,
   AppRoot,
   type AppRootProps,
   AppRootView,
@@ -7,16 +6,19 @@ export {
   AppShell,
   type AppShellProps,
   type ConnectedHostRoot,
-  classifyToolInput,
   type DisplayModeApp,
-  type HostRoot,
-  type ToolInputOutcome,
-  type UseHostRootOptions,
-  useHostRoot,
 } from "./AppShell";
 export { CardHeader, type CardHeaderProps } from "./CardHeader";
 export { EmptyState, type EmptyStateProps } from "./EmptyState";
 export { ErrorState, type ErrorStateProps } from "./ErrorState";
+export {
+  type AppMode,
+  classifyToolInput,
+  type HostRoot,
+  type ToolInputOutcome,
+  type UseHostRootOptions,
+  useHostRoot,
+} from "./hostRoot";
 export {
   type KeyedFetch,
   type KeyedFetchState,
