@@ -488,10 +488,12 @@ failure still propagates.
 the shared intervals.icu stream adapter (`distance`, `altitude`,
 `grade_smooth`, `heartrate`, `velocity_smooth`, `cadence`, plus a derived
 `moving` flag) and share one grade/GAP implementation
-(`gapFactor`/`computeGrades` in `hillAnalysis.ts`): grade prefers
-intervals.icu's `grade_smooth` stream, falling back to an altitude-window
-derivation when it is absent or entirely null, and `grade_source` in the
-response names which was used. An altitude stream with no real samples
+(`gapFactor`/`computeGrades` in `hillAnalysis.ts`): grade is derived from
+altitude over a trailing 30 m window whenever altitude has real samples, so
+detection, GAP and each segment's reported grade and elevation change read
+one source, falling back to intervals.icu's `grade_smooth` stream (which
+follows `fixed_altitude`, not `altitude`) only without altitude, and
+`grade_source` in the response names which was used. An altitude stream with no real samples
 counts as no altitude, not as flat ground. GAP applies the Minetti factor to
 grade averaged over a centred 100 m window (`gapGrades`), clamped to ±30%,
 never to the raw per-sample grade: the curve is convex, so zero-mean grade

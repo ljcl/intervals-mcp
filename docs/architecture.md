@@ -321,8 +321,8 @@ applies those parts only when `droppedSamples` is 0 (#82).
 ## Analysis math: one home per definition
 
 **Grade-adjusted pace has one definition.** `hillAnalysis.ts`'s `gapFactor`
-(Minetti), `computeGrades` (intervals.icu's `grade_smooth`, else an
-altitude window) and `gapGrades` (that grade averaged over a centred 100 m
+(Minetti), `computeGrades` (an altitude window, else intervals.icu's
+`grade_smooth`; the altitude the splits and climbs report, #297) and `gapGrades` (that grade averaged over a centred 100 m
 window, clamped to ±30%, plus a noise measure). `splitAnalysis.ts` imports
 them rather than re-deriving them, along
 with `MAX_SAMPLE_GAP_SECONDS` and `POWER_COVERAGE_MIN`, so a hilly split and a

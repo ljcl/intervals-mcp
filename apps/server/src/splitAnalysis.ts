@@ -450,8 +450,8 @@ export function computeSplitAnalysis(
   }
 
   const warnings: string[] = [];
-  // Grade comes from hillAnalysis (intervals.icu's grade_smooth, else an
-  // altitude window), averaged over distance by gapGrades. With neither
+  // Grade comes from hillAnalysis (an altitude window, else intervals.icu's
+  // grade_smooth), averaged over distance by gapGrades. With neither
   // stream there is no grade at all: every grade-adjusted figure is null, so
   // the verdict is on the clock only rather than an uncorrected one dressed
   // up as corrected.
