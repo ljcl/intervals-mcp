@@ -74,6 +74,14 @@ const inputSchema = z.object({
     .describe(
       "Moving minutes to drop from the start before splitting halves. Defaults to the activity's icu_warmup_time, then the athlete's Run sport-settings warmup_time, then 5 minutes.",
     ),
+  excludeCooldownMinutes: z
+    .number()
+    .min(0)
+    .max(120)
+    .optional()
+    .describe(
+      "Moving minutes to drop from the end before splitting halves. Defaults to the activity's icu_cooldown_time, then the athlete's Run sport-settings cooldown_time, then 5 minutes.",
+    ),
   thresholdPower: z
     .number()
     .positive()
@@ -147,7 +155,8 @@ export interface StreamAerobicResult {
  * Decoupling and efficiency factor computed from the activity's streams on
  * `basis`. The warm-up is excluded as this tool does by default (the
  * activity's `icu_warmup_time`, then the Run sport settings' `warmup_time`,
- * then 5 minutes) unless `excludeWarmupSeconds` is set. The one home of the
+ * then 5 minutes) unless `excludeWarmupSeconds` is set; the cool-down the
+ * same way from `icu_cooldown_time` and `cooldown_time` (#296). The one home of the
  * stream path, shared with get-running-summary, which fills intervals.icu's
  * missing values from it on the gap basis. Throws
  * `IntervalsStreamsUnavailableError` for an activity with no streams and
@@ -161,6 +170,7 @@ export async function streamAerobicAnalysis(
   options: {
     basis: Basis;
     excludeWarmupSeconds?: number;
+    excludeCooldownSeconds?: number;
     thresholdPower?: number | null;
   },
 ): Promise<StreamAerobicResult> {
@@ -205,6 +215,11 @@ export async function streamAerobicAnalysis(
       activity.icu_warmup_time ??
       sportSettings?.warmup_time ??
       300,
+    excludeCooldownSeconds:
+      options.excludeCooldownSeconds ??
+      activity.icu_cooldown_time ??
+      sportSettings?.cooldown_time ??
+      300,
     thresholdPower: options.thresholdPower ?? null,
   });
   return { analysis, basis, warnings };
@@ -222,6 +237,7 @@ export const getAerobicAnalysisTool = {
       id,
       basis: requestedBasis,
       excludeWarmupMinutes,
+      excludeCooldownMinutes,
       thresholdPower,
       includeBreakdown,
     }: GetAerobicAnalysisInput,
@@ -271,6 +287,10 @@ export const getAerobicAnalysisTool = {
               excludeWarmupSeconds:
                 excludeWarmupMinutes != null
                   ? excludeWarmupMinutes * 60
+                  : undefined,
+              excludeCooldownSeconds:
+                excludeCooldownMinutes != null
+                  ? excludeCooldownMinutes * 60
                   : undefined,
               thresholdPower: resolvedThresholdPower,
             },
@@ -363,6 +383,9 @@ export const getAerobicAnalysisTool = {
                 excluded_warmup_minutes: toMinutes(
                   analysis.excludedWarmupSeconds,
                 ),
+                excluded_cooldown_minutes: toMinutes(
+                  analysis.excludedCooldownSeconds,
+                ),
               }
             : null,
         units: {
@@ -417,6 +440,9 @@ export const getAerobicAnalysisTool = {
             : null,
           b.excluded_warmup_minutes > 0
             ? `${b.excluded_warmup_minutes} min warm-up`
+            : null,
+          b.excluded_cooldown_minutes > 0
+            ? `${b.excluded_cooldown_minutes} min cool-down`
             : null,
         ].filter(Boolean);
         lines.push(

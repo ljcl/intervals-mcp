@@ -40,12 +40,19 @@ import streamsHilly from "./__fixtures__/intervals/streams-hilly.json";
 import streamsMultilap from "./__fixtures__/intervals/streams-multilap.json";
 import wellness from "./__fixtures__/intervals/wellness.json";
 
+// The 10 minute fixture streams cannot lose both a warm-up and a cool-down, so
+// the aerobic tools read this run with no cool-down.
+const noCooldown = { icu_cooldown_time: 0 };
 /** Each recorded activity with its intervals and streams, by id. */
 const RECORDED: Record<
   string,
   { activity: object; intervals?: object; streams?: unknown[] }
 > = {
-  [activity.id]: { activity, intervals: activityIntervals, streams },
+  [activity.id]: {
+    activity: { ...activity, ...noCooldown },
+    intervals: activityIntervals,
+    streams,
+  },
   [activityHilly.id]: { activity: activityHilly, streams: streamsHilly },
   [activityMultilap.id]: {
     activity: activityMultilap,

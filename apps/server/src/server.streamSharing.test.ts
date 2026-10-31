@@ -42,18 +42,19 @@ const HILLY_ID = "i189757207";
 const ACTIVITIES: Record<
   string,
   {
-    activity: { name?: string | null };
+    activity: { name?: string | null; icu_cooldown_time?: number };
     intervals: { icu_intervals: unknown[]; icu_groups: unknown[] };
     streams: unknown;
   }
 > = {
   [MULTILAP_ID]: {
-    activity: activityMultilap,
+    // The 10 minute streams cannot lose a warm-up and a cool-down.
+    activity: { ...activityMultilap, icu_cooldown_time: 0 },
     intervals: multilapIntervals,
     streams: streamsMultilap,
   },
   [HILLY_ID]: {
-    activity: activityHilly,
+    activity: { ...activityHilly, icu_cooldown_time: 0 },
     intervals: { icu_intervals: [], icu_groups: [] },
     streams: streamsHilly,
   },

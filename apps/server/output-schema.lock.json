@@ -282,6 +282,7 @@
     "get-aerobic-analysis": [
       "activity_id: number string",
       "basis: =\"gap\" =\"pace\" =\"power\" null string",
+      "breakdown.excluded_cooldown_minutes: number",
       "breakdown.excluded_stopped_minutes: number",
       "breakdown.excluded_warmup_minutes: number",
       "breakdown.first_half.avg_hr: number",

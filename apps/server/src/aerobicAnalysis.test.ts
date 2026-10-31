@@ -182,6 +182,44 @@ describe("computeAerobicAnalysis", () => {
     expect(skipped.movingSeconds).toBe(420);
   });
 
+  // 60 min at 3.0 m/s and 150 bpm (true decoupling 0), then a 3 min walk at
+  // 1.4 m/s with HR easing to 120: the walk read +4.8% with only the warm-up
+  // skipped (#296).
+  it("leaves a trailing walk out of the drift when the cool-down is excluded", () => {
+    const walkStart = 3600;
+    const streams = makeStreams(walkStart + 180, {
+      heartrate: (t) =>
+        t < walkStart ? 150 : 150 - (30 * (t - walkStart)) / 180,
+      velocity: (t) => (t < walkStart ? 3.0 : 1.4),
+    });
+    const kept = computeAerobicAnalysis(streams, { excludeWarmupSeconds: 300 });
+    expect(kept.decouplingPct).toBeGreaterThan(4);
+
+    const trimmed = computeAerobicAnalysis(streams, {
+      excludeWarmupSeconds: 300,
+      excludeCooldownSeconds: 300,
+    });
+    expect(Math.abs(trimmed.decouplingPct)).toBeLessThan(0.5);
+    expect(trimmed.excludedCooldownSeconds).toBe(300);
+    // The first sample carries no seconds, so each trim is 1 s short of exact.
+    expect(trimmed.movingSeconds).toBeCloseTo(walkStart + 180 - 600, -1);
+  });
+
+  it("counts cool-down exclusion in moving time, skipping stopped samples", () => {
+    const streams = makeStreams(1200, {
+      heartrate: () => 150,
+      watts: () => 250,
+      moving: (t) => t < 1000 || t >= 1100,
+    });
+    const analysis = computeAerobicAnalysis(streams, {
+      excludeCooldownSeconds: 150,
+    });
+    expect(analysis.excludedCooldownSeconds).toBe(150);
+    // 100 stopped seconds sit inside the trimmed tail, so 150 moving seconds
+    // reach back past them: 100 moving after the stop plus 50 before it.
+    expect(analysis.movingSeconds).toBeCloseTo(1100 - 150, -1);
+  });
+
   it("throws an actionable error without a heart rate stream", () => {
     const streams = makeStreams(3600, { watts: () => 250 });
     expect(() => computeAerobicAnalysis(streams)).toThrow(AerobicAnalysisError);

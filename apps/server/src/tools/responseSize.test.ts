@@ -106,6 +106,8 @@ function wellnessIn(range: client.DateRange): client.IntervalsWellness[] {
 
 const multilapActivity = {
   ...activityMultilapFixture,
+  // The 10 minute streams cannot lose a warm-up and a cool-down.
+  icu_cooldown_time: 0,
   icu_intervals: activityMultilapIntervalsFixture.icu_intervals,
   icu_groups: activityMultilapIntervalsFixture.icu_groups,
 } as unknown as client.IntervalsActivity;

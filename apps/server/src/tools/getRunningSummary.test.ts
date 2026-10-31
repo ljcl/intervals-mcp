@@ -66,7 +66,11 @@ const GEAR: IntervalsGear[] = [
   { id: "71459", name: "Trainer A", type: "Shoes", athlete_id: "i0" },
 ];
 
-const runActivity = activityFixture as unknown as IntervalsActivity;
+// The 10 minute fixture streams cannot lose both a warm-up and a cool-down.
+const runActivity = {
+  ...activityFixture,
+  icu_cooldown_time: 0,
+} as unknown as IntervalsActivity;
 const sportSettingsRun =
   sportSettingsRunFixture as unknown as IntervalsSportSettings;
 

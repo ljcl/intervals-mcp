@@ -41,7 +41,11 @@ const mockedGetActivity = vi.mocked(getActivity);
 const mockedGetActivityStreams = vi.mocked(getActivityStreams);
 const mockedGetSportSettings = vi.mocked(getSportSettings);
 
-const baseActivity = activityFixture as unknown as IntervalsActivity;
+// The 10 minute fixture streams cannot lose both a warm-up and a cool-down.
+const baseActivity = {
+  ...activityFixture,
+  icu_cooldown_time: 0,
+} as unknown as IntervalsActivity;
 const baseStreams = streamsFixture as unknown as IntervalsStream[];
 const sportSettingsRun =
   sportSettingsRunFixture as unknown as IntervalsSportSettings;
@@ -407,6 +411,70 @@ describe("get-aerobic-analysis", () => {
     ).toBeGreaterThanOrEqual(2);
   });
 
+  describe("cool-down exclusion (#296)", () => {
+    const cooldownMinutes = async (
+      activity: Partial<IntervalsActivity>,
+      settings: Partial<IntervalsSportSettings>,
+      input: { excludeCooldownMinutes?: number } = {},
+    ) => {
+      mockedGetActivity.mockResolvedValue({
+        ...baseActivity,
+        ...activity,
+      } as IntervalsActivity);
+      mockedGetSportSettings.mockResolvedValue({
+        ...sportSettingsRun,
+        ...settings,
+      } as IntervalsSportSettings);
+      mockedGetActivityStreams.mockResolvedValue(powerStreams());
+      const result = await getAerobicAnalysisTool.execute(
+        { id: "i189807578", basis: "power", includeBreakdown: false, ...input },
+        "test-key",
+      );
+      const structured = result.structuredContent as {
+        breakdown: { excluded_cooldown_minutes: number };
+      };
+      return {
+        minutes: structured.breakdown.excluded_cooldown_minutes,
+        text: result.content[0]?.text ?? "",
+      };
+    };
+
+    it("resolves the activity's icu_cooldown_time, then the settings' cooldown_time, then 5 minutes", async () => {
+      const fromActivity = await cooldownMinutes(
+        { icu_cooldown_time: 120 },
+        { cooldown_time: 180 },
+      );
+      expect(fromActivity.minutes).toBe(2);
+      expect(fromActivity.text).toContain("2 min cool-down");
+
+      expect(
+        (
+          await cooldownMinutes(
+            { icu_cooldown_time: null },
+            { cooldown_time: 180 },
+          )
+        ).minutes,
+      ).toBe(3);
+      expect(
+        (
+          await cooldownMinutes(
+            { icu_cooldown_time: null },
+            { cooldown_time: null },
+          )
+        ).minutes,
+      ).toBe(5);
+    });
+
+    it("lets excludeCooldownMinutes override the defaults", async () => {
+      const { minutes } = await cooldownMinutes(
+        { icu_cooldown_time: 120 },
+        { cooldown_time: 180 },
+        { excludeCooldownMinutes: 10 },
+      );
+      expect(minutes).toBe(10);
+    });
+  });
+
   it("errors cleanly for an activity with no recorded streams", async () => {
     mockedGetActivity.mockResolvedValue({
       ...baseActivity,
@@ -457,6 +525,19 @@ describe("get-aerobic-analysis", () => {
       getAerobicAnalysisTool.inputSchema.safeParse({
         id: "i189807578",
         excludeWarmupMinutes,
+      });
+
+    expect(parse(0).success).toBe(true);
+    expect(parse(120).success).toBe(true);
+    expect(parse(-1).success).toBe(false);
+    expect(parse(121).success).toBe(false);
+  });
+
+  it("accepts excludeCooldownMinutes at the 0-120 bounds and rejects outside them", () => {
+    const parse = (excludeCooldownMinutes: number) =>
+      getAerobicAnalysisTool.inputSchema.safeParse({
+        id: "i189807578",
+        excludeCooldownMinutes,
       });
 
     expect(parse(0).success).toBe(true);
