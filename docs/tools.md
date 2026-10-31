@@ -578,7 +578,8 @@ carries both of intervals.icu's own `decoupling` and
 it used (docs/api-notes.md). The default basis is `gap` on a run. GAP is a
 running model, so on any other sport the default is `power` when the
 activity recorded a power stream (`stream_types` has `watts`), else `pace`,
-and a `gap` request runs on `pace` with a warning (#300). In every other case both numbers are
+and a `gap` request runs on `pace` with a warning (#300). Otherwise (a `basis` or `includeBreakdown`
+given, or intervals.icu lacks either value) both numbers are
 `computed`, and intervals.icu's values, when
 the activity has any, are in a separate `intervals_icu` field and a
 separate text line, never labelled with the computed basis. Pace figures
