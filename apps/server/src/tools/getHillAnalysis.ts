@@ -13,9 +13,13 @@ import {
   loadIntervalsStreams,
 } from "../intervalsStreams";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
-import { cadenceSpm, formatPaceSeconds } from "../utils/running";
+import {
+  cadenceSpm,
+  formatPaceSeconds,
+  isPaceActivity,
+} from "../utils/running";
 import { READ_ONLY } from "./_annotations";
-import { noteToolFailure, toolErrorText } from "./_errors";
+import { notARunText, noteToolFailure, toolErrorText } from "./_errors";
 import { intervalsActivityIdInput } from "./_ids";
 import { HillAnalysisOutputSchema, warnOnSchemaDrift } from "./outputs";
 
@@ -43,6 +47,8 @@ Notes:
   pace only).
 - Stopped time is excluded from segment pace.
 - An activity with no recorded streams (a manual entry) returns an error.
+- Runs only (Run, TrailRun, VirtualRun): any other type returns an error
+  pointing at get-activity.
 `;
 
 const inputSchema = z.object({
@@ -116,6 +122,17 @@ export const getHillAnalysisTool = {
       const activity = await getActivity(apiKey, id);
       const type = activity.type ?? "Workout";
       const displayName = activity.name ?? type;
+      if (!isPaceActivity(type)) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: notARunText(name, activity, id, type),
+            },
+          ],
+          isError: true,
+        };
+      }
 
       progress(`Fetching streams for "${displayName}"`);
       let streams: Awaited<ReturnType<typeof loadIntervalsStreams>>;

@@ -887,7 +887,12 @@ const IntervalRepSchema = z.object({
   moving_time_s: z.number().int(),
   moving_time_formatted: z.string(),
   pace_sec_per_km: z.number().nullable(),
-  pace_min_per_km: z.string().nullable(),
+  pace_min_per_km: z
+    .string()
+    .nullable()
+    .describe("Set for Run/TrailRun/VirtualRun only"),
+  pace_min_per_100m: swimPaceField(),
+  speed_kmh: speedKmhField(),
   avg_hr: z.number().nullable(),
   avg_cadence: z
     .number()
@@ -920,7 +925,12 @@ const RepStructureSchema = z.object({
     .int()
     .nullable()
     .describe("Total time over total distance of the typical reps"),
-  pace_min_per_km: z.string().nullable(),
+  pace_min_per_km: z
+    .string()
+    .nullable()
+    .describe("Set for Run/TrailRun/VirtualRun only"),
+  pace_min_per_100m: swimPaceField(),
+  speed_kmh: speedKmhField(),
   avg_hr: z
     .number()
     .int()

@@ -32,7 +32,7 @@ import {
   PACE_ACTIVITY_TYPES,
 } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
-import { toolErrorText } from "./_errors";
+import { notARunText, toolErrorText } from "./_errors";
 import { intervalsActivityIdInput } from "./_ids";
 import { fitListToBudget } from "./_responseBudget";
 import {
@@ -456,7 +456,7 @@ export const getRunningSummaryTool = {
           content: [
             {
               type: "text" as const,
-              text: `❌ Activity "${activity.name ?? id}" [${id}] is a ${type}, not a run. get-running-summary covers Run, TrailRun and VirtualRun only; use get-activity for other activity types.`,
+              text: notARunText(name, activity, id, type),
             },
           ],
           isError: true,

@@ -330,7 +330,7 @@ describe("get-aerobic-analysis", () => {
     expect(structured.basis).toBe("power");
   });
 
-  it("resolves threshold power from Run sport settings ftp for intensity factor", async () => {
+  it("resolves threshold power from the sport settings ftp when the activity has no icu_ftp", async () => {
     mockedGetActivity.mockResolvedValue(baseActivity);
     mockedGetActivityStreams.mockResolvedValue(powerStreams());
     mockedGetSportSettings.mockResolvedValue({
@@ -352,13 +352,13 @@ describe("get-aerobic-analysis", () => {
     expect(structured.intensity_factor).toBeCloseTo(250 / 300, 3);
   });
 
-  it("falls back to the activity's icu_ftp when sport settings have no ftp", async () => {
+  it("prefers the activity's icu_ftp over the sport settings ftp (#300)", async () => {
     mockedGetActivity.mockResolvedValue({
       ...baseActivity,
       icu_ftp: 280,
     } as IntervalsActivity);
     mockedGetActivityStreams.mockResolvedValue(powerStreams());
-    mockedGetSportSettings.mockResolvedValue(sportSettingsRun); // ftp: null
+    mockedGetSportSettings.mockResolvedValue({ ...sportSettingsRun, ftp: 300 });
 
     const result = await getAerobicAnalysisTool.execute(
       { id: "i189807578", basis: "power", includeBreakdown: false },
@@ -370,6 +370,81 @@ describe("get-aerobic-analysis", () => {
       threshold_power_w: number | null;
     };
     expect(structured.threshold_power_w).toBe(280);
+  });
+
+  describe("on a ride (#300)", () => {
+    const ride = {
+      ...baseActivity,
+      type: "Ride",
+      icu_ftp: 250,
+      icu_warmup_time: 0,
+      stream_types: ["time", "heartrate", "watts", "velocity_smooth"],
+    } as IntervalsActivity;
+
+    it("defaults to the power basis with the ride's own FTP and sport settings", async () => {
+      mockedGetActivity.mockResolvedValue(ride);
+      mockedGetActivityStreams.mockResolvedValue(powerStreams());
+      mockedGetSportSettings.mockResolvedValue({
+        ...sportSettingsRun,
+        ftp: 300,
+      });
+
+      const result = await getAerobicAnalysisTool.execute(
+        { id: "i189807578", includeBreakdown: false },
+        "test-key",
+      );
+
+      expect(result.isError).toBeUndefined();
+      expect(mockedGetSportSettings).toHaveBeenCalledWith("test-key", "Ride");
+      const structured = result.structuredContent as {
+        basis: string;
+        threshold_power_w: number | null;
+        intensity_factor: number | null;
+      };
+      expect(structured.basis).toBe("power");
+      expect(structured.threshold_power_w).toBe(250);
+      expect(structured.intensity_factor).toBe(1);
+      expect(result.content[0]?.text).toContain("(threshold 250 W)");
+    });
+
+    it("uses raw pace, never GAP, without a power stream", async () => {
+      mockedGetActivity.mockResolvedValue({
+        ...ride,
+        stream_types: ["time", "heartrate", "velocity_smooth"],
+      } as IntervalsActivity);
+      mockedGetActivityStreams.mockResolvedValue(baseStreams);
+
+      const result = await getAerobicAnalysisTool.execute(
+        { id: "i189807578", includeBreakdown: false },
+        "test-key",
+      );
+
+      expect(result.isError).toBeUndefined();
+      expect((result.structuredContent as { basis: string }).basis).toBe(
+        "pace",
+      );
+      const text = result.content[0]?.text ?? "";
+      expect(text).toContain("Basis: pace:HR (Pa:Hr)");
+      expect(text).not.toContain("grade-adjusted");
+      expect(text).not.toContain("No elevation data");
+    });
+
+    it("answers a gap request on raw pace, and says why", async () => {
+      mockedGetActivity.mockResolvedValue(ride);
+      mockedGetActivityStreams.mockResolvedValue(powerStreams());
+
+      const result = await getAerobicAnalysisTool.execute(
+        { id: "i189807578", basis: "gap", includeBreakdown: false },
+        "test-key",
+      );
+
+      expect((result.structuredContent as { basis: string }).basis).toBe(
+        "pace",
+      );
+      expect(result.content[0]?.text).toContain(
+        "Warning: Grade-adjusted pace is a running model, so this Ride uses raw pace.",
+      );
+    });
   });
 
   it("warns when no threshold power is configured anywhere", async () => {

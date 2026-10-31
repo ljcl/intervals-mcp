@@ -487,7 +487,11 @@ streams." for a host that cannot render the app, whose footer then names
 `get-activity` instead of `get-activity-streams`. A rate limit or any other
 failure still propagates.
 
-`get-hill-analysis` and `get-split-analysis` both read their streams through
+`get-hill-analysis` and `get-split-analysis` are runs only (Run, TrailRun,
+VirtualRun): their pace per km and Minetti GAP are running models, so any
+other type gets an error naming `get-activity` before the streams are read,
+the same refusal as `get-running-summary` (`notARunText` in
+`tools/_errors.ts`, #300). Both read their streams through
 the shared intervals.icu stream adapter (`distance`, `altitude`,
 `grade_smooth`, `heartrate`, `velocity_smooth`, `cadence`, plus a derived
 `moving` flag) and share one grade/GAP implementation
@@ -571,8 +575,12 @@ carries both of intervals.icu's own `decoupling` and
 `icu_efficiency_factor`, the tool reports those without a stream fetch
 (`decoupling_source`/`efficiency_factor_source: "intervals.icu"`), with
 `basis: null` and no efficiency unit: intervals.icu does not say which basis
-it used (docs/api-notes.md). In every other case both numbers are
-`computed` (the default basis is `gap`), and intervals.icu's values, when
+it used (docs/api-notes.md). The default basis is `gap` on a run. GAP is a
+running model, so on any other sport the default is `power` when the
+activity recorded a power stream (`stream_types` has `watts`), else `pace`,
+and a `gap` request runs on `pace` with a warning (#300). Otherwise (a `basis` or `includeBreakdown`
+given, or intervals.icu lacks either value) both numbers are
+`computed`, and intervals.icu's values, when
 the activity has any, are in a separate `intervals_icu` field and a
 separate text line, never labelled with the computed basis. Pace figures
 render as a bare
@@ -580,14 +588,16 @@ render as a bare
 (grade-adjusted on `gap`), never miles. On the power basis a recording
 device name starting
 with `Watch` (an Apple Watch) adds a warning that the power stream is
-Apple's own estimate, not a power meter reading. Warm-up exclusion defaults
-to the activity's `icu_warmup_time`, then the athlete's Run sport-settings
+Apple's own estimate, not a power meter reading. The sport settings are the
+activity's own sport group (`getSportSettings` with the activity's type),
+not always Run's. Warm-up exclusion defaults
+to the activity's `icu_warmup_time`, then those sport settings'
 `warmup_time`, then 5 minutes. Cool-down exclusion (`excludeCooldownMinutes`,
 `breakdown.excluded_cooldown_minutes`) resolves the same way from
 `icu_cooldown_time`, `cooldown_time`, then 5 minutes, and trims moving time
 from the end, so a slow finish or a walk to stop the watch does not read as
 drift (#296); intensity factor's threshold power defaults to
-the athlete's Run sport-settings `ftp`, then the activity's `icu_ftp`.
+the activity's `icu_ftp`, then those sport settings' `ftp`.
 
 `get-interval-analysis` classifies every stopped segment (from the derived
 `moving` stream) before trusting it as interval structure: under 60 s with no
@@ -621,7 +631,11 @@ its laps): a percent of the sport's threshold, heart rate or pace per the
 athlete's settings (docs/api-notes.md).
 Work reps are reconstructed between
 recoveries, merging straight through traffic lights, and reported with
-per-rep pace (`pace_min_per_km`, bare `m:ss`), HR, cadence, and power; fade compares the last rep
+per-rep pace, HR, cadence, and power. Pace is `pace_min_per_km` (bare
+`m:ss`) on a run only; a swim gets `pace_min_per_100m` and any other sport
+`speed_kmh`, from `sportSpeed`, here and in `similar` (#300).
+`pace_sec_per_km` stays on every sport, the basis of the fade and the
+similar-session deltas. Fade compares the last rep
 against the first. An HR-distribution tiebreaker ("was this a workout at
 all") reports the share of moving time at ≥ 88% of the athlete's max HR:
 the activity's `athlete_max_hr`, else the top `icu_hr_zones` bound

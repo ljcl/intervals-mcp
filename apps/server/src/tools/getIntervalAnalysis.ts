@@ -37,7 +37,12 @@ import {
   loadIntervalsStreams,
 } from "../intervalsStreams";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
-import { cadenceSpm, formatPaceSeconds } from "../utils/running";
+import {
+  cadenceSpm,
+  formatPaceSeconds,
+  isPaceActivity,
+  sportSpeed,
+} from "../utils/running";
 import { READ_ONLY } from "./_annotations";
 import { noteToolFailure, toolErrorText, unavailableReason } from "./_errors";
 import { intervalsActivityIdInput } from "./_ids";
@@ -109,6 +114,28 @@ const paceMinPerKm = (secPerKm: number | null) =>
   secPerKm == null ? null : formatPaceSeconds(secPerKm);
 
 /**
+ * A rep's pace fields: `m:ss` per km for a run, else `sportSpeed`'s pace per
+ * 100 m for a swim or km/h for any other sport (#300). 1000 m over the
+ * seconds per km is the rep's own speed, so the fields never disagree.
+ */
+const repPace = (secPerKm: number | null, type: string) => ({
+  pace_sec_per_km: secPerKm,
+  pace_min_per_km: isPaceActivity(type) ? paceMinPerKm(secPerKm) : null,
+  ...sportSpeed(type, 1000, secPerKm),
+});
+
+/** A rep's pace as text, in its sport's unit. */
+function repPaceText(rep: {
+  pace_min_per_km: string | null;
+  pace_min_per_100m: string | null;
+  speed_kmh: number | null;
+}): string | null {
+  if (rep.pace_min_per_km) return `${rep.pace_min_per_km} /km`;
+  if (rep.pace_min_per_100m) return `${rep.pace_min_per_100m} /100m`;
+  return rep.speed_kmh != null ? `${rep.speed_kmh} km/h` : null;
+}
+
+/**
  * Thin adapter from one `icu_intervals` entry to the module's lap input.
  * Deliberately reads raw fields directly (distance, moving_time,
  * average_speed, average_cadence) rather than going through
@@ -150,13 +177,15 @@ const NOT_INTERVALS_REASON =
 const MIXED_REPS_REASON =
   "The reps differ in length (for example a pyramid), so there is no single rep length to search for.";
 
-function toRepStructureOutput(structure: RepStructure): RepStructureOutput {
+function toRepStructureOutput(
+  structure: RepStructure,
+  type: string,
+): RepStructureOutput {
   return {
     rep_count: structure.repCount,
     rep_time_s: structure.repTimeS,
     rep_distance_m: structure.repDistanceM,
-    pace_sec_per_km: structure.paceSecPerKm,
-    pace_min_per_km: paceMinPerKm(structure.paceSecPerKm),
+    ...repPace(structure.paceSecPerKm, type),
     avg_hr: structure.avgHr,
     intensity_pct: structure.intensityPct,
     pace_drift_pct: structure.paceDriftPct,
@@ -227,7 +256,7 @@ async function findSimilarSessions(
   const band = similarSearchBand(typical);
   const searched = {
     ...empty,
-    this_session: toRepStructureOutput(thisSession),
+    this_session: toRepStructureOutput(thisSession, source.type),
     search: toSearchOutput(band),
   };
   const unavailable = (
@@ -317,7 +346,7 @@ async function findSimilarSessions(
       name: activityDisplayName(activity),
       date: activity.start_date_local,
       type: activity.type ?? "Workout",
-      ...toRepStructureOutput(structure),
+      ...toRepStructureOutput(structure, activity.type ?? source.type),
       pace_delta_sec_per_km: difference(
         structure.paceSecPerKm,
         thisSession.paceSecPerKm,
@@ -372,9 +401,7 @@ function similarLines(
   }
 
   const pace = (structure: RepStructureOutput) =>
-    structure.pace_min_per_km != null
-      ? `${structure.pace_min_per_km} /km`
-      : "no pace";
+    repPaceText(structure) ?? "no pace";
   const lines = [
     `Similar earlier sessions (typical rep: ${mine.rep_distance_m} m in ${formatDuration(mine.rep_time_s)}, ${counted(mine.rep_count, "rep", "reps")}):`,
     `  ${joinParts([
@@ -508,8 +535,7 @@ export const getIntervalAnalysisTool = {
           distance_m: rep.distanceM,
           moving_time_s: rep.movingTimeS,
           moving_time_formatted: formatDuration(rep.movingTimeS),
-          pace_sec_per_km: rep.paceSecPerKm,
-          pace_min_per_km: paceMinPerKm(rep.paceSecPerKm),
+          ...repPace(rep.paceSecPerKm, type),
           avg_hr: rep.avgHr,
           avg_cadence: cadenceSpm(rep.avgCadence, type),
           avg_watts: rep.avgWatts,
@@ -567,7 +593,7 @@ export const getIntervalAnalysisTool = {
         for (const rep of structured.reps) {
           const parts = [
             `${rep.distance_m} m in ${rep.moving_time_formatted}`,
-            rep.pace_min_per_km ? `${rep.pace_min_per_km} /km` : null,
+            repPaceText(rep),
             rep.avg_hr != null ? `${rep.avg_hr} bpm` : null,
             rep.avg_cadence != null
               ? `${rep.avg_cadence} ${cadenceUnitLabel}`

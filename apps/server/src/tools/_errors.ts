@@ -122,6 +122,23 @@ export function prefixedErrorText(message: string): string {
 }
 
 /**
+ * A run-only tool's refusal of any other type: its pace per km and running
+ * GAP mean nothing on a ride or a swim, so it points at get-activity (#300).
+ * One wording for get-running-summary, get-split-analysis and
+ * get-hill-analysis.
+ */
+export function notARunText(
+  tool: string,
+  activity: { name?: string | null },
+  id: string,
+  type: string,
+): string {
+  return prefixedErrorText(
+    `Activity "${activity.name ?? id}" [${id}] is a ${type}, not a run. ${tool} covers Run, TrailRun and VirtualRun only; use get-activity for other activity types.`,
+  );
+}
+
+/**
  * Why an optional read failed, as a clause for a warning: "Heart rate
  * curves not read: <reason>." A tool that degrades on a failed secondary
  * read (and keeps its main answer) words the cause here, so two tools never
