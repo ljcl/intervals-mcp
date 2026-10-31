@@ -75,7 +75,7 @@ describe("compareKmSplits", () => {
     expect(result?.rows[1]?.efficiency_delta_pct).toBeNull();
     expect(result?.verdict).toBeNull();
     expect(result?.interpretation).toBe(
-      "No verdict: fewer than 3 full km have heart rate in both runs.",
+      "No verdict: fewer than 3 full km have heart rate in both runs after the warm-up (km 1 to 1 left out).",
     );
   });
 
@@ -83,8 +83,8 @@ describe("compareKmSplits", () => {
     // 10% lower speed (3.0 m/s against 3.33) at 10% lower HR: the same
     // metres per beat.
     const result = compareKmSplits(
-      run([150, 150, 150]),
-      run([135, 135, 135], 1000 / 3),
+      run([150, 150, 150, 150]),
+      run([135, 135, 135, 135], 1000 / 3),
       true,
     );
     expect(result?.rows[0]?.pace_delta_sec_per_km).toBe(33);
@@ -100,7 +100,7 @@ describe("compareKmSplits", () => {
       true,
     );
     expect(drifting?.verdict).toBe("growing drift");
-    expect(drifting?.efficiency_gap_first_km_pct).toBeCloseTo(0, 0);
+    expect(drifting?.efficiency_gap_first_km_pct).toBeLessThan(3);
     expect(drifting?.efficiency_gap_last_km_pct).toBeGreaterThan(7);
     expect(drifting?.interpretation).toContain(
       "Activity 1 lost efficiency as the run went on",
@@ -120,17 +120,74 @@ describe("compareKmSplits", () => {
       run([150, 160, 154, 156, 158, 160]),
       true,
     );
-    // HR gap 0 at km 1, then +2 a km from km 3: about +0 to +10 over km 1-6.
-    expect(result?.hr_gap_first_km_bpm).toBeLessThanOrEqual(1);
-    expect(result?.hr_gap_last_km_bpm).toBeGreaterThanOrEqual(9);
+    // Fit from km 3 (km 1 is warm-up, km 2 has no HR): +4 a km 3, +10 at km 6.
+    expect(result?.hr_gap_first_km_bpm).toBe(4);
+    expect(result?.hr_gap_last_km_bpm).toBe(10);
+  });
+
+  it("leaves a cold first km out of the fit, so a warm-up gap reads as a constant offset (#299)", () => {
+    for (const km of [10, 5]) {
+      const cold = run([135, ...Array(km - 1).fill(150)]);
+      const warm = run([148, ...Array(km - 1).fill(150)]);
+      const result = compareKmSplits(cold, warm, true);
+      expect(result?.verdict).toBe("constant offset");
+      expect(result?.rows).toHaveLength(km);
+      expect(result?.rows[0]?.hr_delta_bpm).toBe(13);
+      expect(result?.interpretation).toContain(
+        "from km 2, the warm-up km 1 to 1 left out",
+      );
+    }
+  });
+
+  it("still reads a drift that starts at km 3 as growing drift", () => {
+    const hrs = [150, 150, 150, 154, 158, 162, 166, 170];
+    const result = compareKmSplits(run(hrs), run(Array(8).fill(150)), true);
+    expect(result?.verdict).toBe("growing drift");
+    expect(result?.interpretation).toContain("from km 2");
+  });
+
+  it("leaves out the km that cover the larger warm-up", () => {
+    // 600 s warm-up at 300 s/km: km 1-2 are warm-up, the fit starts at km 3.
+    const result = compareKmSplits(
+      run([130, 140, 150, 150, 150, 150]),
+      run([148, 148, 150, 150, 150, 150]),
+      true,
+      600,
+    );
+    expect(result?.verdict).toBe("constant offset");
+    expect(result?.interpretation).toContain(
+      "from km 3, the warm-up km 1 to 2 left out",
+    );
+    // A warm-up shorter than km 1 still leaves out km 1.
+    expect(
+      compareKmSplits(
+        run([150, 150, 150, 150]),
+        run([150, 150, 150, 150]),
+        true,
+        60,
+      )?.interpretation,
+    ).toContain("from km 2");
+  });
+
+  it("gives no verdict when the warm-up leaves fewer than 3 km to fit", () => {
+    const result = compareKmSplits(
+      run([150, 150, 150]),
+      run([150, 150, 150]),
+      true,
+    );
+    expect(result?.rows).toHaveLength(3);
+    expect(result?.verdict).toBeNull();
+    expect(result?.interpretation).toBe(
+      "No verdict: fewer than 3 full km have heart rate in both runs after the warm-up (km 1 to 1 left out).",
+    );
   });
 });
 
 describe("formatKmComparison", () => {
   it("prints one row per km and the verdict, with n/a for a missing value", () => {
     const result = compareKmSplits(
-      run([150, null, 150, 150]),
-      run([155, 155, 155, 155]),
+      run([150, null, 150, 150, 150]),
+      run([155, 155, 155, 155, 155]),
       false,
     )!;
     const lines = formatKmComparison(result);
