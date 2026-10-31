@@ -25,6 +25,7 @@ export default defineConfig({
       // The presentational components are covered by the story render-path
       // report, not here; thresholding them twice would just double-count.
       include: [
+        "src/hostRoot.ts",
         "src/useServerToolData.ts",
         "src/useServerToolFetcher.ts",
         "src/useModelContextSync.ts",

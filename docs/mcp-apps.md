@@ -7,7 +7,8 @@ then per-app details. Read this before adding or substantially changing an app.
 ## App shell conventions
 
 Every app's `main.tsx` is the same four-branch state machine, so it lives in
-`packages/ui` (`AppShell.tsx`) rather than in each app.
+`packages/ui` (`AppShell.tsx`, with the host wiring in `hostRoot.ts`) rather
+than in each app.
 
 - **`AppRoot`** connects to the host and renders: connect error → unusable input
   → waiting for input → content. `children` is a render prop, so it only runs

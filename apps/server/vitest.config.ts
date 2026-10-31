@@ -11,7 +11,7 @@ export default defineConfig({
       include: ["src/**/*.ts"],
       exclude: [
         "src/**/*.test.ts",
-        "src/server.ts",
+        "src/mcpTestClient.ts",
         "src/index.ts",
         "**/__fixtures__/**",
       ],
