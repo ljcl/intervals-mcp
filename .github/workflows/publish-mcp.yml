@@ -144,7 +144,7 @@ jobs:
       - name: Log in to GHCR
         # Only so the wait below can see the package as *we* see it. The check
         # that decides success is the anonymous one.
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
