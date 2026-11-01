@@ -130,9 +130,10 @@ race-day form and the taper, `get-race-prediction` for the time, the last 7
 days of `get-wellness`, and `get-training-load` for recent load. (This is the
 `race-readiness` prompt.)
 
-**Injury check.** `get-training-load` warnings, the HRV and resting-HR trend
+**Injury check.** `get-training-load` volume-spike warnings (a sharp rise on
+recent volume, not an injury measure), the HRV and resting-HR trend
 from `get-wellness`, `get-fitness-trend` flags, and shoe mileage from
-`list-gear`. Training-load guidance, not a diagnosis. (This is the
+`list-gear` (the athlete's own reminders first). Training-load guidance, not a diagnosis. (This is the
 `injury-check` prompt.)
 
 **Race prediction.** `get-race-prediction` alone. Pass `raceDistance` for a

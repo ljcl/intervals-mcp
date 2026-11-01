@@ -205,6 +205,7 @@ describe("run-debrief", () => {
     ])
       expect(t).toContain(tool);
     expect(t).toContain("call only that one");
+    expect(t).toContain("get-interval-analysis with findSimilar: true");
     expect(t).toContain("get-wellness with date set to the run's date");
   });
 
@@ -225,7 +226,21 @@ describe("injury-check", () => {
     );
     expect(t).toContain("get-fitness-trend");
     expect(t).toContain("list-gear");
+    expect(t).toContain("percent_used");
     expect(t).toContain("not a diagnosis");
+  });
+});
+
+describe("get-training-load wording", () => {
+  it("asks only for the volume-spike warning the tool gives", () => {
+    for (const name of ["weekly-review", "race-readiness", "injury-check"]) {
+      const t = text(
+        name,
+        name === "race-readiness" ? { raceDate: "2026-10-25" } : {},
+      );
+      expect(t).toContain("volume-spike warnings");
+      expect(t).not.toMatch(/injury-risk|overtraining|week-over-week/);
+    }
   });
 });
 
