@@ -23,13 +23,10 @@ import {
 import { READ_ONLY } from "./_annotations";
 import { toolErrorText } from "./_errors";
 import { intervalsActivityIdInput } from "./_ids";
+import { fitListToBudget } from "./_responseBudget";
 import { RunningDynamicsOutputSchema, warnOnSchemaDrift } from "./outputs";
 
 const name = "get-running-dynamics";
-
-// No other tool returns per-interval dynamics, so the cap is generous rather
-// than a pointer elsewhere; it only bounds a pathological activity.
-const MAX_INTERVAL_LINES = 100;
 
 const description = `
 Returns one activity's running dynamics: ground contact time (GCT), vertical
@@ -49,7 +46,9 @@ Notes:
 - Accepts any activity type. A type without step cadence (not Run, TrailRun,
   VirtualRun, Walk or Hike), or a device that recorded no dynamics, returns
   has_dynamics: false with a message, not an error.
-- The text lists at most 100 intervals; structuredContent.intervals has all.
+- A very long list (about 100+ WORK intervals) keeps the first rows that fit
+  the response size limit; interval_count stays the full count, and the
+  text names the fromLap that lists the rest.
 `;
 
 const inputSchema = z.object({
@@ -58,6 +57,14 @@ const inputSchema = z.object({
     .boolean()
     .default(true)
     .describe("Include per-WORK-interval dynamics rows; default true"),
+  fromLap: z
+    .number()
+    .int()
+    .min(1)
+    .default(1)
+    .describe(
+      "First lap to list WORK rows from (lap_index, 1-based). A cut response names the value that lists the rest. Default 1.",
+    ),
 });
 
 type GetRunningDynamicsInput = z.infer<typeof inputSchema>;
@@ -126,6 +133,8 @@ export interface RunningDynamicsResponse {
     ground_contact_time: DynamicsMetricOutput;
   } | null;
   intervals: RunningDynamicsIntervalRow[];
+  /** Every WORK row the activity has, even when `intervals` keeps fewer. */
+  interval_count: number;
   units: RunningDynamicsUnits;
 }
 
@@ -216,6 +225,7 @@ export function mapRunningDynamics(
       averages: null,
       assessments: null,
       intervals: [],
+      interval_count: 0,
       units: UNITS,
     };
   }
@@ -232,6 +242,7 @@ export function mapRunningDynamics(
       averages: null,
       assessments: null,
       intervals: [],
+      interval_count: 0,
       units: UNITS,
     };
   }
@@ -281,6 +292,7 @@ export function mapRunningDynamics(
       ),
     },
     intervals: workRows,
+    interval_count: workRows.length,
     units: UNITS,
   };
 }
@@ -308,8 +320,15 @@ function formatIntervalRow(row: RunningDynamicsIntervalRow): string {
   return `${row.lap_index}. ${label}: ${parts.join(", ")}`;
 }
 
-/** Builds the tool's text response. Exported for direct testing. */
-export function formatRunningDynamicsText(d: RunningDynamicsResponse): string {
+/**
+ * Builds the tool's text response. `available` is the WORK rows from the
+ * first one listed onwards; `d.intervals` may keep fewer (the response
+ * budget). Exported for direct testing.
+ */
+export function formatRunningDynamicsText(
+  d: RunningDynamicsResponse,
+  available = d.intervals.length,
+): string {
   const lines = [
     `${d.type} running dynamics for "${d.activity_name}" [${d.activity_id}]`,
   ];
@@ -345,11 +364,13 @@ export function formatRunningDynamicsText(d: RunningDynamicsResponse): string {
 
   if (d.intervals.length > 0) {
     lines.push("WORK intervals:");
-    const shown = d.intervals.slice(0, MAX_INTERVAL_LINES);
-    for (const row of shown) lines.push(formatIntervalRow(row));
-    const remaining = d.intervals.length - shown.length;
-    if (remaining > 0)
-      lines.push(`(${remaining} more WORK intervals not listed)`);
+    for (const row of d.intervals) lines.push(formatIntervalRow(row));
+    const first = d.intervals[0]?.lap_index ?? 1;
+    const last = d.intervals.at(-1)?.lap_index ?? 0;
+    if (d.intervals.length < available)
+      lines.push(
+        `Showing ${d.intervals.length} of the ${available} WORK intervals from lap ${first}, to stay under the response size limit. get-running-dynamics with fromLap ${last + 1} lists the rest.`,
+      );
   }
 
   return lines.join("\n");
@@ -363,7 +384,7 @@ export const getRunningDynamicsTool = {
   annotations: READ_ONLY,
   outputSchema: RunningDynamicsOutputSchema,
   execute: async (
-    { id, includeIntervals }: GetRunningDynamicsInput,
+    { id, includeIntervals, fromLap }: GetRunningDynamicsInput,
     apiKey: string,
     progress: ReportProgress = NO_PROGRESS,
   ) => {
@@ -373,14 +394,35 @@ export const getRunningDynamicsTool = {
         intervals: true,
       });
 
+      const lapCount = activity.icu_intervals?.length ?? 0;
+      if (fromLap > 1 && fromLap > lapCount) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `❌ fromLap ${fromLap} is past the last lap: activity ${id} has ${lapCount} laps.`,
+            },
+          ],
+          isError: true,
+        };
+      }
+
       const response = mapRunningDynamics(activity, includeIntervals);
       warnOnSchemaDrift(name, RunningDynamicsOutputSchema, response);
 
+      // An ultra's 1 km auto-laps overflow the budget at about 140 (#312).
+      const rows = response.intervals.filter((r) => r.lap_index >= fromLap);
+      const { text, structured } = fitListToBudget(rows.length, (n) => {
+        const shown = { ...response, intervals: rows.slice(0, n) };
+        return {
+          text: formatRunningDynamicsText(shown, rows.length),
+          structured: shown,
+        };
+      });
+
       return {
-        content: [
-          { type: "text" as const, text: formatRunningDynamicsText(response) },
-        ],
-        structuredContent: response,
+        content: [{ type: "text" as const, text }],
+        structuredContent: structured,
       };
     } catch (error) {
       return {

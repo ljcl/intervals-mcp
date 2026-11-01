@@ -7,7 +7,12 @@ import {
   type IntervalsWellness,
 } from "../intervalsClient";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
-import { dateInputSchema, todayLocal, validateRange } from "../utils/localDate";
+import {
+  addDays,
+  dateInputSchema,
+  todayLocal,
+  validateRange,
+} from "../utils/localDate";
 import {
   WELLNESS_SCORE_NAMES,
   WELLNESS_SCORES,
@@ -16,6 +21,7 @@ import {
 } from "../utils/wellnessWrite";
 import { READ_ONLY } from "./_annotations";
 import { toolErrorText } from "./_errors";
+import { fitListToBudget } from "./_responseBudget";
 import { WellnessOutputSchema, warnOnSchemaDrift } from "./outputs";
 
 const name = "get-wellness";
@@ -33,7 +39,10 @@ reports each day's recorded values only.
 
 Notes:
 - With no date, oldest or newest, it returns today only. A range cannot
-  exceed 90 days.
+  exceed 90 days, and a date after today is refused.
+- A long range with long comments keeps the newest days that fit the
+  response size limit; count stays the full count and the text names the
+  call for the rest.
 - The HRV measure depends on the athlete's device. rMSSD and SDNN are
   different measures, so compare each only with its own norms. hrv_note in
   the response says which ones the days have.
@@ -56,6 +65,9 @@ const inputSchema = z.object({
 type GetWellnessInput = z.infer<typeof inputSchema>;
 
 const MAX_RANGE_DAYS = 90;
+
+/** A range line's comments are cut here, so 90 commented days fit the text. */
+const COMMENT_MAX_CHARS = 80;
 
 export interface WellnessDayEntry {
   date: string;
@@ -163,6 +175,17 @@ function formatScore(score: WellnessScore, value: number): string {
   return label ? `${name} ${value} (${label})` : `${name} ${value}`;
 }
 
+/** Readiness and each logged 1 to 4 score with its label. */
+function formatScores(d: WellnessDayEntry): string[] {
+  const parts: string[] = [];
+  if (d.readiness != null) parts.push(`readiness ${d.readiness}`);
+  for (const score of WELLNESS_SCORE_NAMES) {
+    const value = d[WELLNESS_SCORES[score].output];
+    if (value != null) parts.push(formatScore(score, value));
+  }
+  return parts;
+}
+
 function formatWellnessDayBlock(d: WellnessDayEntry): string {
   const lines = [`Wellness ${d.date}`];
 
@@ -183,12 +206,7 @@ function formatWellnessDayBlock(d: WellnessDayEntry): string {
   if (d.ramp_rate != null) load.push(`ramp ${d.ramp_rate.toFixed(1)}`);
   if (load.length > 0) lines.push(load.join(", "));
 
-  const subjective: string[] = [];
-  if (d.readiness != null) subjective.push(`readiness ${d.readiness}`);
-  for (const score of WELLNESS_SCORE_NAMES) {
-    const value = d[WELLNESS_SCORES[score].output];
-    if (value != null) subjective.push(formatScore(score, value));
-  }
+  const subjective = formatScores(d);
   if (d.spo2 != null) subjective.push(`SpO2 ${d.spo2}%`);
   if (d.respiration != null) subjective.push(`respiration ${d.respiration}`);
   if (d.sleep_score != null) subjective.push(`sleep score ${d.sleep_score}`);
@@ -210,6 +228,13 @@ function formatWellnessLine(d: WellnessDayEntry): string {
   if (d.ctl != null && d.atl != null)
     parts.push(`CTL/ATL ${d.ctl.toFixed(1)}/${d.atl.toFixed(1)}`);
   if (d.tsb != null) parts.push(`TSB ${d.tsb.toFixed(1)}`);
+  parts.push(...formatScores(d));
+  if (d.comments) {
+    const oneLine = d.comments.replace(/\s+/g, " ").trim();
+    parts.push(
+      `comments "${oneLine.length > COMMENT_MAX_CHARS ? `${oneLine.slice(0, COMMENT_MAX_CHARS)}...` : oneLine}"`,
+    );
+  }
   return `${d.date}: ${parts.length > 0 ? parts.join(", ") : "no data"}`;
 }
 
@@ -229,9 +254,16 @@ function formatWellnessAverages(days: WellnessDayEntry[]): string {
   return `Averages: ${parts.length > 0 ? parts.join(", ") : "no data"}`;
 }
 
-/** Builds the tool's text response. Exported for direct testing. */
-export function formatWellnessText(response: WellnessResponse): string {
-  const { oldest, newest, days } = response;
+/**
+ * Builds the tool's text response. `allDays` is every day read, newest
+ * first; `response.days` may hold only the newest of them (the response
+ * budget), and the averages still cover them all. Exported for direct testing.
+ */
+export function formatWellnessText(
+  response: WellnessResponse,
+  allDays: WellnessDayEntry[] = response.days,
+): string {
+  const { oldest, newest, days, count } = response;
 
   if (oldest === newest) {
     const day = days[0];
@@ -242,9 +274,14 @@ export function formatWellnessText(response: WellnessResponse): string {
 
   if (days.length === 0) return `No wellness data ${oldest} to ${newest}.`;
 
-  const lines = [`Wellness ${oldest} to ${newest}: ${days.length} days`];
+  const lines = [`Wellness ${oldest} to ${newest}: ${count} days`];
   for (const d of days) lines.push(formatWellnessLine(d));
-  lines.push(formatWellnessAverages(days));
+  const oldestShown = days.at(-1)?.date;
+  if (days.length < count && oldestShown)
+    lines.push(
+      `Showing the newest ${days.length} of ${count} days, to stay under the response size limit. For the rest, call get-wellness with oldest ${oldest} and newest ${addDays(oldestShown, -1)}.`,
+    );
+  lines.push(formatWellnessAverages(allDays));
   return lines.join("\n");
 }
 
@@ -323,11 +360,15 @@ export const getWellnessTool = {
 
       warnOnSchemaDrift(name, WellnessOutputSchema, response);
 
+      // Days are newest first, so a cut keeps the newest.
+      const { text, structured } = fitListToBudget(days.length, (n) => {
+        const shown = { ...response, days: days.slice(0, n) };
+        return { text: formatWellnessText(shown, days), structured: shown };
+      });
+
       return {
-        content: [
-          { type: "text" as const, text: formatWellnessText(response) },
-        ],
-        structuredContent: response,
+        content: [{ type: "text" as const, text }],
+        structuredContent: structured,
       };
     } catch (error) {
       return {

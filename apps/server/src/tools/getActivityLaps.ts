@@ -40,11 +40,20 @@ Notes:
   strokes per minute for swims, rpm otherwise (units.cadence_label).
 - An activity with no intervals gives a valid payload with lap_count: 0.
 - Very long lap lists (about 80+) keep the first laps that fit the response
-  size limit; lap_count stays the full count and the text says so.
+  size limit; lap_count stays the full count and the text names the fromLap
+  that lists the rest.
 `;
 
 const inputSchema = z.object({
   id: intervalsActivityIdInput("The intervals.icu activity id."),
+  fromLap: z
+    .number()
+    .int()
+    .min(1)
+    .default(1)
+    .describe(
+      "First lap to list (lap_index, 1-based). A cut response names the value that lists the rest. Default 1.",
+    ),
 });
 
 type GetActivityLapsInput = z.infer<typeof inputSchema>;
@@ -105,10 +114,18 @@ export function formatActivityLapsText(response: ActivityLapsResponse): string {
   for (const lap of response.laps)
     lines.push(formatLapLine(lap, response.units.cadence_label));
 
-  if (response.laps.length < response.lap_count)
+  const first = response.laps[0]?.lap_index ?? 1;
+  const last = response.laps.at(-1)?.lap_index ?? 0;
+  const range =
+    first > 1
+      ? `laps ${first} to ${last}`
+      : `the first ${response.laps.length}`;
+  if (last < response.lap_count)
     lines.push(
-      `Showing the first ${response.laps.length} of ${response.lap_count} laps, to stay under the response size limit.`,
+      `Showing ${range} of ${response.lap_count} laps, to stay under the response size limit. get-activity-laps with fromLap ${last + 1} lists the rest.`,
     );
+  else if (first > 1)
+    lines.push(`Showing ${range} of ${response.lap_count} laps.`);
 
   return lines.join("\n");
 }
@@ -121,7 +138,7 @@ export const getActivityLapsTool = {
   annotations: READ_ONLY,
   outputSchema: ActivityLapsOutputSchema,
   execute: async (
-    { id }: GetActivityLapsInput,
+    { id, fromLap }: GetActivityLapsInput,
     apiKey: string,
     progress: ReportProgress = NO_PROGRESS,
   ) => {
@@ -133,13 +150,25 @@ export const getActivityLapsTool = {
 
       const sportType = activity.type ?? "Workout";
       const intervals = activity.icu_intervals ?? [];
-      const laps = mapIntervalsToLaps(activity, intervals);
+      const allLaps = mapIntervalsToLaps(activity, intervals);
+      if (fromLap > 1 && fromLap > allLaps.length) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `❌ fromLap ${fromLap} is past the last lap: activity ${id} has ${allLaps.length} laps.`,
+            },
+          ],
+          isError: true,
+        };
+      }
+      const laps = allLaps.slice(fromLap - 1);
 
       const response: ActivityLapsResponse = {
         activity_id: activity.id,
         activity_name: activity.name ?? sportType,
         sport_type: sportType,
-        lap_count: laps.length,
+        lap_count: allLaps.length,
         lap_source: "intervals.icu intervals",
         device_lap_count: activity.icu_lap_count ?? null,
         intervals_edited: activity.icu_intervals_edited ?? null,

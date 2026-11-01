@@ -76,8 +76,9 @@ Notes:
   it has them.
 - HR zones use the activity's own bounds, else the Run sport settings; the
   zone summary is left out, with a note, when neither matches.
-- The text lists at most 20 laps; get-activity-laps and structuredContent.laps
-  have all of them, up to the response size limit (about 80+ laps).
+- The text lists at most 20 laps; structuredContent.laps has all of them, up
+  to the response size limit (about 80+ laps). get-activity-laps with fromLap
+  lists the rest.
 `;
 
 const inputSchema = z.object({
@@ -415,7 +416,7 @@ export function formatRunningSummaryText(
     const remaining = lapTotal - shown.length;
     if (remaining > 0)
       lines.push(
-        `(${remaining} more: get-activity-laps lists all ${lapTotal})`,
+        `(${remaining} more: get-activity-laps with fromLap ${shown.length + 1} lists the rest)`,
       );
     if (d.laps.length < lapTotal)
       lines.push(

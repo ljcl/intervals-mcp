@@ -449,7 +449,7 @@ async function checkGetActivityLaps(): Promise<void> {
   const name = "get-activity-laps";
   try {
     const result = (await getActivityLapsTool.execute(
-      { id: activityId },
+      { id: activityId, fromLap: 1 },
       apiKey,
       NO_PROGRESS,
     )) as {
@@ -1193,7 +1193,7 @@ async function checkGetRunningDynamics(): Promise<void> {
   const name = "get-running-dynamics";
   try {
     const result = (await getRunningDynamicsTool.execute(
-      { id: activityId, includeIntervals: true },
+      { id: activityId, includeIntervals: true, fromLap: 1 },
       apiKey,
       NO_PROGRESS,
     )) as {
