@@ -3,10 +3,13 @@ import { MobileCardShell } from "@intervals-mcp/ui";
 import { expect, waitFor } from "storybook/test";
 import {
   emptyZonesData,
+  hrAndPaceData,
   hrOnlyData,
   hrZoneMismatchData,
   hrZoneSet,
   mockZonesData,
+  paceOnlyData,
+  paceZoneSet,
 } from "./__fixtures__/zones";
 import { App } from "./App";
 import { buildZonesSubtitle } from "./normalize";
@@ -44,6 +47,60 @@ export const SwitchToPower = meta.story({
     await expect(powerPill).toHaveAttribute("aria-pressed", "true");
     await waitFor(() => expect(barCount()).toBe(6));
   },
+});
+
+/**
+ * A run with heart rate and pace zones: the "Pace" pill swaps the 5-bucket
+ * heart rate chart for the 7-bucket pace chart, and the footer says the time
+ * is grade-adjusted.
+ */
+export const SwitchToPace = meta.story({
+  args: { app: null, data: hrAndPaceData },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const barCount = () =>
+      canvasElement.querySelectorAll(".recharts-bar-rectangle").length;
+    await waitFor(() => expect(barCount()).toBe(5));
+
+    const pacePill = canvas.getByRole("button", { name: "Pace" });
+    await userEvent.click(pacePill);
+
+    await expect(pacePill).toHaveAttribute("aria-pressed", "true");
+    await waitFor(() => expect(barCount()).toBe(7));
+    await expect(
+      canvas.getByText(buildZonesSubtitle(hrAndPaceData, paceZoneSet)),
+    ).toBeVisible();
+    await expect(
+      canvas.getByText("Zones: time by grade-adjusted pace (GAP)"),
+    ).toBeVisible();
+  },
+});
+
+/** A run without heart rate shows the Pace chart, not the empty state. */
+export const PaceOnly = meta.story({
+  args: { app: null, data: paceOnlyData },
+  play: async ({ canvas, canvasElement }) => {
+    await waitFor(() =>
+      expect(
+        canvasElement.querySelectorAll(".recharts-bar-rectangle").length,
+      ).toBe(7),
+    );
+    await expect(canvas.queryByText(/No zone data/)).toBeNull();
+  },
+});
+
+export const PaceOnlyMobile = meta.story({
+  args: { app: null, data: paceOnlyData, mode: "mobile" },
+  globals: {
+    viewport: { value: "claudeIosCard" },
+  },
+  parameters: { layout: "fullscreen" },
+  decorators: [
+    (StoryFn) => (
+      <MobileCardShell>
+        <StoryFn />
+      </MobileCardShell>
+    ),
+  ],
 });
 
 export const HeartRateOnly = meta.story({

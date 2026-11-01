@@ -79,7 +79,7 @@ descriptions.
 | `get-activity-laps` | Laps of an activity, derived from its intervals, with sport-aware pace/speed, GAP, HR, power, cadence |
 | `get-running-summary` | get-activity's detail fields for a run plus cadence, HR zone, and running-dynamics assessments, a lap breakdown, the weather with humidity and dew point from the FIT file, and decoupling and efficiency factor computed from the streams when intervals.icu has none |
 | `get-running-dynamics` | Ground contact time, vertical oscillation/ratio, step length, and cadence for a run, with VO/GCT target assessments and a per-WORK-interval breakdown |
-| `get-activity-zones` | Time spent in each HR zone for an activity, from the activity's own recorded zone bounds |
+| `get-activity-zones` | Time spent in each HR zone and, for a run, each pace zone for an activity, from the activity's own recorded zone bounds |
 | `get-athlete-zones` | The athlete's own LTHR, max HR, HR and pace zones, threshold pace and FTP from sport settings, with a check of LTHR and max HR against recent heart rate bests |
 | `compare-activities` | Compare two activities side-by-side: pace, HR, cadence, load, running dynamics and weather, plus activity2-activity1 differences, an efficiency verdict, and a per-km table with a constant-offset or growing-drift verdict |
 | `get-hill-analysis` | Climb/descent detection with GAP and early-vs-late climb effort drift |
@@ -369,11 +369,22 @@ list keeps the first rows that fit the response budget (#312):
 `get-activity-zones` and the `view-activity-zones`/`get-activity-zones-data`
 MCP App share one mapper (`mapIntervalsZones`): heart rate from the
 activity's own `icu_hr_zones` (upper bounds, zone 1's lower bound is always
-0) and `icu_hr_zone_times`. Power zones are dropped for now (docs/api-notes.md).
-Unlike get-activity's `hr_zones`, there is no
-sport-settings fallback here; pace zones are out of scope (Phase 4). Heart
+0) and `icu_hr_zone_times`, then pace from its own `pace_zones` (percent of its
+`threshold_pace`, 999 the open top). A pace set's bucket `min`/`max` are speeds
+in m/s (`units.pace`), `min` the slow limit and `max` the fast limit, null for
+the open top zone; the text prints them as pace ranges
+(`paceZoneRangeText` in `packages/data`, through `speedDisplay`). Its seconds
+come from `gap_zone_times` when the activity's `use_gap_zone_times` is set (and
+it recorded them), else `pace_zone_times`; `basis` (`gap` or `pace`) and the
+set's heading say which. The activity carries the Run setting's copy
+(`use_gap_zone_times`), so there is no extra sport-settings request and the
+basis matches the zone bounds it was processed with. A run without a heart rate
+sensor still has its pace set. Power zones are dropped for now
+(docs/api-notes.md). Unlike get-activity's `hr_zones`, there is no
+sport-settings fallback here. Heart
 rate is omitted, with a warning in the text, when the activity recorded
-bounds and zone times with different zone counts. The app payload carries
+bounds and zone times with different zone counts; a pace set with mismatched
+counts is omitted without a warning. The app payload carries
 the same warning as `hrZoneWarning`, and the app's empty state shows it. An
 activity with no zone data returns a valid empty payload, not an error.
 
@@ -1128,7 +1139,7 @@ for `newest`.
 | `get-training-load-data` | Per-week volume, trend value, warning flags, weekly load, and current CTL/ATL/TSB for the training-load UI; `runOnly` (default false) switches load and CTL/ATL/TSB between whole-body and run-only, while volume and spike warnings stay run-based (app-only) |
 | `view-compare-activities` | Interactive overlay of two activities' streams on a shared distance/time axis with a delta summary (MCP App) |
 | `get-compare-activities-data` | Aggregate comparison (summaries, activity2−activity1 differences, efficiency) for the compare-activities UI (app-only) |
-| `view-activity-zones` | Time-in-zone bar chart for one activity's HR zones with an easy/moderate/hard split (power zones dropped for now; see docs/api-notes.md) (MCP App) |
+| `view-activity-zones` | Time-in-zone bar chart for one activity's HR zones and, for a run, pace zones (GAP when the activity uses it), with an easy/moderate/hard split (power zones dropped for now; see docs/api-notes.md) (MCP App) |
 | `get-activity-zones-data` | Per-zone time distributions (bucket bounds, seconds, percentages) for the activity-zones UI (app-only) |
 | `view-fitness-trend` | CTL/ATL/TSB over time with shaded fatigue/freshness/ramp bands and a dashed taper plan, calendar plan projection (`calendarPlan`) or rest projection past today; a Whole body/Runs only toggle switches scope, caching each side; `newest` charts a past block with no projection (MCP App) |
 | `get-fitness-trend-data` | Per-day CTL/ATL/TSB, the projection, the solved taper, and the dated warning bands for the fitness-trend UI; `runOnly` switches between whole-body (intervals.icu wellness) and run-only (computed) (app-only) |

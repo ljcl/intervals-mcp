@@ -1,4 +1,4 @@
-import { dominantBucket } from "@intervals-mcp/data";
+import { dominantBucket, paceBasisNote } from "@intervals-mcp/data";
 import { buildZoneRows } from "./normalize";
 import { type ZoneSet } from "./types";
 
@@ -10,9 +10,12 @@ import { type ZoneSet } from "./types";
 export function buildZonesA11y(
   set: ZoneSet,
   activityName: string,
+  activityType: string,
 ): { title: string; desc: string } {
-  const label = set.type === "heartrate" ? "heart rate" : "power";
-  const rows = buildZoneRows(set);
+  const label = { heartrate: "heart rate", power: "power", pace: "pace" }[
+    set.type
+  ];
+  const rows = buildZoneRows(set, activityType);
   const top = dominantBucket(set);
 
   const parts = rows.map(
@@ -21,7 +24,8 @@ export function buildZonesA11y(
   return {
     title: `Time in ${label} zones for ${activityName}`,
     desc:
-      `Bar chart of time spent in each ${label} zone. ` +
+      `Bar chart of time spent in each ${label} zone` +
+      (set.basis ? ` (${paceBasisNote(set.basis)}). ` : ". ") +
       `Most time in Z${top.zone} at ${top.pct}%. ` +
       parts.join(", ") +
       ".",

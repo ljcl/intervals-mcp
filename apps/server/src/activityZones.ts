@@ -6,7 +6,7 @@
  * same fetch as prose; this feed carries per-bucket seconds and percentages
  * so the chart and the text can never disagree on the numbers.
  */
-import { type ZoneSet } from "@intervals-mcp/data";
+import { type PaceBasis, type ZoneSet } from "@intervals-mcp/data";
 import { round } from "./formatters";
 import {
   type IntervalsActivity,
@@ -33,6 +33,9 @@ export interface ZoneRange {
   /** This zone's upper bound, inclusive (docs/api-notes.md). */
   max: number;
 }
+
+/** intervals.icu's open top for pace (and power) zones: 999% of threshold. */
+export const OPEN_TOP_PCT = 999;
 
 /**
  * The one home for turning ascending zone upper bounds into ranges: zone 1
@@ -94,13 +97,46 @@ export function buildZoneSet(
 }
 
 /**
+ * The activity's pace zone time as a zone set, or null. The bounds are the
+ * activity's own `pace_zones` (percent of its `threshold_pace`, docs/api-
+ * notes.md) as speeds in m/s, through {@link buildZoneSet}; the open top
+ * zone (999%) keeps no fast limit. Seconds come from `gap_zone_times` when
+ * the activity's `use_gap_zone_times` is set and it recorded them, else from
+ * `pace_zone_times`, and `basis` says which.
+ */
+function buildPaceZoneSet(activity: IntervalsActivity): ZoneSet | null {
+  const threshold = activity.threshold_pace;
+  const percents = activity.pace_zones;
+  if (!threshold || threshold <= 0 || !percents || percents.length === 0) {
+    return null;
+  }
+  const basis: PaceBasis =
+    activity.use_gap_zone_times && activity.gap_zone_times?.length
+      ? "gap"
+      : "pace";
+  const set = buildZoneSet(
+    "pace",
+    "m/s",
+    percents.map((pct) => round((threshold * pct) / 100, 3)),
+    basis === "gap" ? activity.gap_zone_times : activity.pace_zone_times,
+  );
+  if (!set) return null;
+  return {
+    ...set,
+    basis,
+    buckets: set.buckets.map((bucket, i) =>
+      (percents[i] ?? 0) >= OPEN_TOP_PCT ? { ...bucket, max: null } : bucket,
+    ),
+  };
+}
+
+/**
  * Maps one intervals.icu activity to chart-ready zone sets: heart rate from
- * `icu_hr_zones` + `icu_hr_zone_times` only. Pace zones are out of scope
- * (Phase 4); power zones are dropped for now (see docs/api-notes.md: they
- * are likely percent-of-FTP with an extra SS time entry, unverifiable on
- * this account) rather than shipped unverified. The one mapper both
- * `get-activity-zones` and the activity-zones MCP App data handler read,
- * so they can't disagree.
+ * `icu_hr_zones` + `icu_hr_zone_times`, then pace ({@link buildPaceZoneSet}).
+ * Power zones are dropped for now (see docs/api-notes.md: they are likely
+ * percent-of-FTP with an extra SS time entry, unverifiable on this account)
+ * rather than shipped unverified. The one mapper both `get-activity-zones`
+ * and the activity-zones MCP App data handler read, so they can't disagree.
  */
 export function mapIntervalsZones(activity: IntervalsActivity): ZoneSet[] {
   const sets: ZoneSet[] = [];
@@ -112,6 +148,9 @@ export function mapIntervalsZones(activity: IntervalsActivity): ZoneSet[] {
     activity.icu_hr_zone_times,
   );
   if (hr) sets.push(hr);
+
+  const pace = buildPaceZoneSet(activity);
+  if (pace) sets.push(pace);
 
   return sets;
 }

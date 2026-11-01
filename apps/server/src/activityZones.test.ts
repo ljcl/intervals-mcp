@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import paceActivityFixture from "./__fixtures__/intervals/activity-pace-zones.json";
 import {
   hrZoneMismatchWarning,
   mapIntervalsZones,
@@ -117,6 +118,61 @@ describe("mapIntervalsZones", () => {
 
   it("returns an empty array when the activity has no zone data at all", () => {
     expect(mapIntervalsZones(activity())).toEqual([]);
+  });
+});
+
+describe("mapIntervalsZones pace set", () => {
+  // activity-pace-zones.json: a run with pace_zones, threshold_pace
+  // 3.5714285 m/s, use_gap_zone_times true, and 7 pace and GAP buckets.
+  const run = paceActivityFixture as unknown as IntervalsActivity;
+  const paceOf = (a: IntervalsActivity) =>
+    mapIntervalsZones(a).find((set) => set.type === "pace");
+
+  it("builds the pace set after heart rate, from GAP when the activity's setting says so", () => {
+    const sets = mapIntervalsZones(run);
+    expect(sets.map((s) => s.type)).toEqual(["heartrate", "pace"]);
+    const pace = sets[1]!;
+    expect(pace.basis).toBe("gap");
+    expect(pace.unit).toBe("m/s");
+    expect(pace.buckets.map((b) => b.seconds)).toEqual(run.gap_zone_times);
+    expect(pace.totalSeconds).toBe(1716);
+  });
+
+  it("turns percentages of threshold speed into speeds, open at both ends", () => {
+    const { buckets } = paceOf(run)!;
+    // Zone 1 starts at 0, 77.5% of 3.5714285 m/s ends it; 999% is the open top.
+    expect(buckets[0]).toMatchObject({ min: 0, max: 2.768 });
+    expect(buckets[3]).toMatchObject({ min: 3.368, max: 3.571 });
+    expect(buckets[6]).toMatchObject({ min: 3.982, max: null });
+  });
+
+  it("reads pace_zone_times, labelled pace, when use_gap_zone_times is not set", () => {
+    const pace = paceOf({ ...run, use_gap_zone_times: false })!;
+    expect(pace.basis).toBe("pace");
+    expect(pace.buckets.map((b) => b.seconds)).toEqual(run.pace_zone_times);
+  });
+
+  it("falls back to pace time, labelled pace, when GAP time was not recorded", () => {
+    const pace = paceOf({ ...run, gap_zone_times: null })!;
+    expect(pace.basis).toBe("pace");
+  });
+
+  it("gives a run without heart rate its pace set alone", () => {
+    const sets = mapIntervalsZones({
+      ...run,
+      icu_hr_zones: null,
+      icu_hr_zone_times: null,
+    });
+    expect(sets.map((s) => s.type)).toEqual(["pace"]);
+  });
+
+  it("has no pace set without a threshold pace, bounds, or matching times", () => {
+    expect(paceOf({ ...run, threshold_pace: null })).toBeUndefined();
+    expect(paceOf({ ...run, pace_zones: null })).toBeUndefined();
+    expect(paceOf({ ...run, gap_zone_times: [1, 2] })).toBeUndefined();
+    expect(
+      paceOf({ ...run, gap_zone_times: [0, 0, 0, 0, 0, 0, 0] }),
+    ).toBeUndefined();
   });
 });
 

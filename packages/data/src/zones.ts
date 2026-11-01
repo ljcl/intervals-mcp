@@ -5,24 +5,36 @@
  * agreeing on the same dominant zone for the same activity.
  */
 
+import { type SpeedDisplay } from "./speed";
+
 /** One zone bucket, as returned by get-activity-zones-data. */
 export interface ZoneBucket {
   /** 1-based zone number (Z1 = 1). */
   zone: number;
-  /** Lower bound in the set's unit (bpm or W). */
+  /** Lower bound in the set's unit (bpm, W or m/s). */
   min: number;
-  /** Upper bound; intervals.icu always sends a real number, even for the
-   * top zone, so this is never null in practice today. */
+  /** Upper bound. HR zones always have a real number; a pace set's open
+   * top zone (intervals.icu's 999 percent) is null, the fast end. */
   max: number | null;
   seconds: number;
   /** Share of the set's total time, 0–100 with one decimal. */
   pct: number;
 }
 
-/** One zone distribution (heart rate or power). */
+/**
+ * Which zone times a pace set holds: grade-adjusted (`gap`) or plain
+ * (`pace`). intervals.icu picks one per activity (`use_gap_zone_times`), and
+ * both surfaces say which.
+ */
+export type PaceBasis = "gap" | "pace";
+
+/** One zone distribution (heart rate, power or pace). A pace set's bounds
+ * are speeds in m/s: a zone's slow limit is `min`, its fast limit `max`. */
 export interface ZoneSet {
-  type: "heartrate" | "power";
-  unit: "bpm" | "W";
+  type: "heartrate" | "power" | "pace";
+  unit: "bpm" | "W" | "m/s";
+  /** Pace sets only: whether the seconds are grade-adjusted. */
+  basis?: PaceBasis;
   /** Whether the zones came from a real sensor (null when Strava omits it). */
   sensorBased: boolean | null;
   totalSeconds: number;
@@ -82,4 +94,46 @@ export function intensitySplit(secondsByZone: number[]): IntensitySplit {
   const total = easy + moderate + hard || 1;
   const pct = (v: number) => Math.round((v / total) * 1000) / 10;
   return { easyPct: pct(easy), moderatePct: pct(moderate), hardPct: pct(hard) };
+}
+
+/** A pace set's basis in a word: "GAP" or "pace". */
+export function paceBasisLabel(basis: PaceBasis): string {
+  return basis === "gap" ? "GAP" : "pace";
+}
+
+/** What a pace set's seconds measure, in the words both surfaces print. */
+export function paceBasisNote(basis: PaceBasis): string {
+  return basis === "gap"
+    ? "time by grade-adjusted pace (GAP)"
+    : "time by pace, not grade-adjusted";
+}
+
+/**
+ * The one home for a pace zone's range as text. A pace zone's bounds are
+ * speeds (see {@link ZoneSet}); `display` turns them into pace or speed, so
+ * a pace reads fastest limit first: "4'52\"-5'08\" /km". The slowest zone
+ * has no slow limit ("slower than 5'30\""), and the open top zone no fast
+ * limit ("faster than 3'40\""). A speed sport reads the other way round.
+ * `format` defaults to the app's 5'30" style; the text tools pass m:ss.
+ */
+export function paceZoneRangeText(
+  { min, max }: { min: number; max: number | null },
+  display: SpeedDisplay,
+  format: (value: number) => string = display.format,
+): string {
+  const at = (mps: number) => {
+    const value = display.fromMps(mps);
+    return value === null ? "?" : format(value);
+  };
+  const suffix = ` ${display.unit === "min/km" ? "/km" : display.unit}`;
+  const slow = min > 0 ? at(min) : null;
+  const fast = max === null ? null : at(max);
+  if (display.reversed) {
+    if (slow === null) return `slower than ${fast}${suffix}`;
+    if (fast === null) return `faster than ${slow}${suffix}`;
+    return `${fast}-${slow}${suffix}`;
+  }
+  if (slow === null) return `up to ${fast}${suffix}`;
+  if (fast === null) return `${slow}+${suffix}`;
+  return `${slow}-${fast}${suffix}`;
 }

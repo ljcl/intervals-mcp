@@ -2123,6 +2123,39 @@ describe("activity zones handlers", () => {
     expect(parsed.zoneSets[0].buckets[2].max).toBe(190);
   });
 
+  it("get-activity-zones-data carries a run's pace set with its basis, and the view names it when its twin fails", async () => {
+    const paceRun = intervalsActivity({
+      icu_hr_zones: null,
+      icu_hr_zone_times: null,
+      threshold_pace: 3.5,
+      pace_zones: [77.5, 100, 999],
+      pace_zone_times: [100, 200, 300],
+      gap_zone_times: [150, 250, 200],
+      use_gap_zone_times: true,
+    });
+    mockedIntervalsActivity.mockResolvedValueOnce(paceRun);
+
+    const data = JSON.parse(
+      (await dispatchToolCall("get-activity-zones-data", { id: "123" }))
+        .content[0]?.text ?? "",
+    );
+    expect(data.zoneSets).toHaveLength(1);
+    expect(data.zoneSets[0]).toMatchObject({ type: "pace", basis: "gap" });
+    expect(
+      data.zoneSets[0].buckets.map((b: { seconds: number }) => b.seconds),
+    ).toEqual([150, 250, 200]);
+    expect(data.zoneSets[0].buckets[2].max).toBeNull();
+
+    mockedIntervalsActivity.mockRejectedValueOnce(new Error("twin down"));
+    mockedIntervalsActivity.mockResolvedValueOnce(paceRun);
+    const view = await dispatchToolCall(
+      "view-activity-zones",
+      { id: "123" },
+      { client: { rendersApps: true } },
+    );
+    expect(view.content[0]?.text).toContain("Pace (GAP): mostly Z2");
+  });
+
   it("view-activity-zones summarises the dominant zone for the model when its twin fails", async () => {
     // The twin runs first and its read fails, so the text is the view's own summary.
     mockedIntervalsActivity.mockRejectedValueOnce(new Error("twin down"));

@@ -576,19 +576,28 @@ each activity and its streams once (#71).
 One activity's time-in-zone distribution (ljcl/strava-mcp#34). Calls
 `get-activity-zones-data` on mount.
 
-- The server maps the activity's own `icu_zone_times`/`icu_hr_zones` fields
+- The server maps the activity's own `icu_hr_zones`/`icu_hr_zone_times` and
+  `pace_zones`/`threshold_pace`/`pace_zone_times`/`gap_zone_times` fields
   (same `GET /activity/{id}` fetch behind the `get-activity-zones` text tool)
   to chart-ready sets in `apps/server/src/activityZones.ts`
-  (`mapIntervalsZones`): per-bucket seconds and percentages, the `-1`
-  open-ended top bucket normalised to `null`, sets without buckets or zero
+  (`mapIntervalsZones`): per-bucket seconds and percentages, a pace set's open
+  top zone (999%) as a `null` upper bound, sets without buckets or zero
   time dropped. Power zones are dropped for now (see docs/api-notes.md).
-- One `BarChart` per zone set (HR in `--chart-heartrate`, power in
-  `--chart-power`, opacity ramp Z1→Zn), pct labels on top, shared tooltip; a
-  `PillGroup` switches HR/power when both exist; estimated (non-sensor) power
-  sets carry a footnote.
+- A pace set's bucket bounds are speeds in m/s; the app prints them as pace
+  ranges with `paceZoneRangeText` and `speedDisplay(data.type)`, the same
+  helpers the text tool uses, so the two carry the same ranges (the app writes a pace as 6'01", the text as 6:01). The set's
+  `basis` says whether its seconds are GAP (the activity's
+  `use_gap_zone_times`) or plain pace: the subtitle ("Pace zones (GAP)"), the
+  footnote, the chart narration and the context summary all say so.
+- One `BarChart` per zone set (HR in `--chart-heartrate`, pace in
+  `--chart-pace`, power in `--chart-power`, opacity ramp Z1→Zn), pct labels on
+  top, shared tooltip; a `PillGroup` ("Heart rate" / "Pace") switches sets when
+  more than one exists; estimated (non-sensor) power sets carry a footnote. A
+  run without heart rate opens on the Pace chart, not the `EmptyState`.
 - Pure logic in `src/normalize.ts` (`buildZoneRows`, `buildSummaryStats`).
-  The easy/moderate/hard split (zones 1–2 easy / 3 moderate / 4+ hard) is
-  `intensitySplit` in `packages/data`, shared with `get-training-load`.
+  The easy/moderate/hard split (zones 1-2 easy / 3 moderate / 4+ hard) is
+  `intensitySplit` in `packages/data`, shared with `get-training-load`, and
+  reads pace zones by the same rule.
 - The subtitle date is `start_date_local`, a local date-time with no offset.
   `formatShortDate` reads its leading `YYYY-MM-DD` as written, so the day
   does not move with the viewer's time zone.

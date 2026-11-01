@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { speedDisplayForSport } from "./speed";
 import {
   dominantBucket,
   hrZoneRangeText,
   intensitySplit,
+  paceBasisLabel,
+  paceBasisNote,
+  paceZoneRangeText,
   type ZoneSet,
 } from "./zones";
 
@@ -71,5 +75,45 @@ describe("intensitySplit", () => {
       moderatePct: 0,
       hardPct: 0,
     });
+  });
+});
+
+describe("paceZoneRangeText", () => {
+  const run = speedDisplayForSport("run");
+
+  it("reads fastest limit first, open at the slow end of zone 1 and the fast end of the top zone", () => {
+    expect(paceZoneRangeText({ min: 0, max: 2.768 }, run)).toBe(
+      `slower than 6'01" /km`,
+    );
+    expect(paceZoneRangeText({ min: 3.368, max: 3.571 }, run)).toBe(
+      `4'40"-4'57" /km`,
+    );
+    expect(paceZoneRangeText({ min: 3.982, max: null }, run)).toBe(
+      `faster than 4'11" /km`,
+    );
+  });
+
+  it("takes the caller's formatter for the text tools' m:ss", () => {
+    const mmss = (v: number) => `${Math.floor(v)}:${Math.round((v % 1) * 60)}`;
+    expect(paceZoneRangeText({ min: 3.368, max: 3.571 }, run, mmss)).toBe(
+      "4:40-4:57 /km",
+    );
+  });
+
+  it("reads a speed sport slow to fast", () => {
+    const other = speedDisplayForSport("other");
+    expect(paceZoneRangeText({ min: 0, max: 2.5 }, other)).toBe(
+      "up to 9.0 km/h",
+    );
+    expect(paceZoneRangeText({ min: 2.5, max: null }, other)).toBe("9.0+ km/h");
+  });
+});
+
+describe("pace basis words", () => {
+  it("names GAP and plain pace", () => {
+    expect(paceBasisLabel("gap")).toBe("GAP");
+    expect(paceBasisLabel("pace")).toBe("pace");
+    expect(paceBasisNote("gap")).toContain("grade-adjusted");
+    expect(paceBasisNote("pace")).toContain("not grade-adjusted");
   });
 });

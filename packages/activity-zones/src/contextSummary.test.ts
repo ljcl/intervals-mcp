@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   emptyZonesData,
+  hrAndPaceData,
   hrOnlyData,
   mockZonesData,
 } from "./__fixtures__/zones";
@@ -19,6 +20,11 @@ describe("buildZonesContextSummary", () => {
     const summary = buildZonesContextSummary(hrOnlyData);
     expect(summary).toContain("Heart rate:");
     expect(summary).not.toContain("Power:");
+  });
+
+  it("labels a pace set with its basis", () => {
+    const summary = buildZonesContextSummary(hrAndPaceData);
+    expect(summary).toContain("Pace (GAP): mostly Z2 (41%)");
   });
 
   it("returns null with no zone data", () => {

@@ -476,6 +476,35 @@ HR curves:
   and `message` reads "1h at N bpm" (1 of 1). `get-athlete-zones` uses this
   rule on the 90-day curve (`lthrEstimate` in `athleteZones.ts`). Not
   verified: whether an `LTHR_UP` also changes the settings by itself.
+## Pace zone time on an activity (2026-11-01, #308, live read-only)
+
+Checked on 15 runs from 1 to 31 October 2026, a recent run (`i203735252`,
+saved as `activity-pace-zones.json`, thresholds and heart rate zones
+rewritten the way the other fixtures are) and the Run sport settings:
+
+- A run carries its own `pace_zones` (the settings' percentages of threshold
+  speed, 999 the open top), `threshold_pace` (m/s), `pace_zone_times`,
+  `gap_zone_times` (seven entries each) and `use_gap_zone_times`. All 15 runs
+  had `pace_zones` and `use_gap_zone_times: true`; a Walk, a swim and a
+  strength session had all three null.
+- The activity's `threshold_pace`, `pace_zones` and `use_gap_zone_times`
+  equal the Run settings' for the recent run, so the activity is the same
+  setting as it stood when processed. An older run (`i189807578`, which the
+  2026-09-24 `activity.json` fixture predates a threshold pace for) now
+  carries `pace_zones` too, with a different `threshold_pace` from today's
+  settings. So the zone bounds belong to the activity, not to today's
+  settings, as for heart rate.
+- Both time arrays add up to about the moving time (1,717 s and 1,716 s for
+  1,713 s; heart rate zone times, 1,722 s, count every sample). They are not
+  the same distribution: `pace_zone_times` was `[123, 665, 723, 203, 3, 0,
+  0]` and `gap_zone_times` `[177, 704, 347, 281, 82, 71, 54]`, grade
+  adjustment moving time into the faster zones on a hilly run.
+  `use_gap_zone_times` says which one intervals.icu's own zone view shows.
+- `get-activity-zones` reads `use_gap_zone_times` from the activity, not from
+  a second sport-settings request. A zone's bounds in m/s are
+  `threshold_pace * percent / 100`; pace is its inverse (1000 / m/s seconds
+  per km), so zone 1 is the slowest pace and the 999% zone has no fast limit.
+
 ## Interval search and bulk activity reads (2026-10-08, #84, live read-only)
 
 29 read-only GETs against one account. Its runs are Apple Watch runs with device laps.
