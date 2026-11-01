@@ -90,7 +90,7 @@ descriptions.
 | `get-race-prediction` | Predicted race times from intervals.icu pace-curve points (Riegel) alongside intervals.icu's own critical-speed model, with confidence, source point, and km goal-pace splits |
 | `get-athlete-stats` | Run totals and totals for every sport (count, moving time, distance and whole-body load per activity type) for this week, the last 4 weeks, this month and YTD, aggregated from list-activities data |
 | `get-fitness-trend` | Fitness/fatigue/form (CTL/ATL/TSB), whole-body from intervals.icu wellness or run-only computed locally, with rest, planned-load or intervals.icu calendar projection and a solved taper to a target form on a target date; `newest` reads a past window, with no projection or taper |
-| `get-training-load` | Weekly running volume and volume-spike warnings, weekly intervals.icu training load and the types it covers, plus current CTL/ATL/TSB; `newest` ends the weeks on a past date |
+| `get-training-load` | Weekly running volume and volume-spike warnings, each week's long run, the weekly HR zone split (easy/moderate/hard), weekly intervals.icu training load and the types it covers, plus current CTL/ATL/TSB; `newest` ends the weeks on a past date |
 | `update-activity` | Update an activity's name, description, gear, RPE, or feel, echoing before/after values, with gear names (write tool) |
 | `update-wellness` | Log how the athlete feels on a day (soreness, fatigue, stress, mood, motivation, injury, sleep quality, comments), echoing before/after values (write tool) |
 | `update-gear` | Retire or un-retire a gear item, or add or reset a distance reminder on it, echoing before/after values (write tool) |
@@ -908,6 +908,20 @@ re-interpreted through the server's time zone) via `startOfWeekMonday` in
 `utils/localDate.ts`, the same helper `get-athlete-stats` uses. Time is
 reported both ways: `time_s` (seconds, matching `units.time`) and
 `time_hours` (matching `units.time_hours`), per week and in `totals`.
+
+Each week also carries `hr_zone_s` (run seconds per HR zone, zone 1 first)
+and `intensity` (`easy_pct`, `moderate_pct`, `hard_pct`: zones 1-2, 3, 4+),
+and `totals` carries the same for the window, all from the activity rows the
+tool already reads, so the split costs no extra request. The rule is
+`intensitySplit` in `packages/data`, which the activity-zones app imports
+too. Zone seconds add up by index, so only runs recorded under the newest
+run's zone count are summed; a run with no zone times or another count is
+left out, and `totals.hr_zone_runs_left_out` and the text say how many. A
+week with no run HR data reports `null`, not 0%. `long_run_km`,
+`long_run_id` and `long_run_pct` name the week's longest run by distance and
+its share of the week's run distance (null for a week with no run); the text
+week line prints it with its date. The `weekly-review` prompt reads the long
+runs from here instead of paging `list-activities`.
 
 The window is whole weeks (`trainingLoadWindow` in `trainingLoad.ts`, shared
 with the app feed): `days` rounded up to Monday-to-Sunday weeks in the

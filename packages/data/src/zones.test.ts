@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { dominantBucket, hrZoneRangeText, type ZoneSet } from "./zones";
+import {
+  dominantBucket,
+  hrZoneRangeText,
+  intensitySplit,
+  type ZoneSet,
+} from "./zones";
 
 function hrSet(times: number[]): ZoneSet {
   const total = times.reduce((sum, t) => sum + t, 0);
@@ -39,5 +44,32 @@ describe("hrZoneRangeText", () => {
     // 150 is in zone 1, so zone 2 of [150, 150, 151] holds no heart rate.
     expect(hrZoneRangeText({ min: 150, max: 150 }, " bpm")).toBe("empty");
     expect(hrZoneRangeText({ min: 150, max: 151 }, " bpm")).toBe("151 bpm");
+  });
+});
+
+describe("intensitySplit", () => {
+  it("buckets zones into easy (1-2), moderate (3), hard (4+)", () => {
+    expect(intensitySplit([600, 1800, 900, 500, 200])).toEqual({
+      easyPct: 60,
+      moderatePct: 22.5,
+      hardPct: 17.5,
+    });
+  });
+
+  it("counts every zone above 3 as hard for 6-zone sets", () => {
+    const split = intensitySplit([100, 100, 100, 100, 100, 100]);
+    expect(split.hardPct).toBe(50);
+    expect(split.easyPct + split.moderatePct + split.hardPct).toBeCloseTo(
+      100,
+      1,
+    );
+  });
+
+  it("reads 0 everywhere for no time, not NaN", () => {
+    expect(intensitySplit([0, 0, 0, 0, 0])).toEqual({
+      easyPct: 0,
+      moderatePct: 0,
+      hardPct: 0,
+    });
   });
 });

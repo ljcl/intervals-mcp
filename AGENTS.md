@@ -99,7 +99,10 @@ breaking them has shipped bugs — do not work around them locally.
   `aerobicAnalysis.ts` (shared by `get-aerobic-analysis` and
   `compare-activities`). Training-load weeks, warnings and trend:
   `trainingLoadWindow`/`aggregateWeeks`/`selectRunWeeks` in `trainingLoad.ts`
-  (shared by `get-training-load` and its app feed). Speed to pace/speed, its
+  (shared by `get-training-load` and its app feed); a week's long run and
+  HR zone seconds are summed there too. The easy/moderate/hard split of zone
+  seconds: `intensitySplit` in `packages/data` (`zones.ts`; the activity-zones
+  app and `get-training-load` import it). Speed to pace/speed, its
   label and unit in the MCP Apps: `speedDisplay` in `packages/data/src/speed.ts`;
   in the text tools: `sportSpeed` in `utils/running.ts`, which wraps it.
   Stream wire precision: `STREAM_DECIMALS` in `streamPrecision.ts`.

@@ -5,6 +5,8 @@ import {
   buildTrainingLoadData,
   computeWeekWarnings,
   getWeekStart,
+  hrZoneRunsLeftOut,
+  hrZoneSummary,
   rollingTrend,
   selectRunWeeks,
   type TrainingLoadActivity,
@@ -13,6 +15,7 @@ import {
   volumeTrend,
   type WeekBucket,
   weekDistanceKm,
+  weekLongRun,
 } from "./trainingLoad";
 import { addDays } from "./utils/localDate";
 
@@ -253,6 +256,10 @@ function bucket(
     elevationM: 0,
     load: 0,
     loadByType: {},
+    hrZoneS: null,
+    hrZoneRuns: 0,
+    longestRunM: 0,
+    longestRunId: null,
   };
 }
 
@@ -442,6 +449,102 @@ describe("volumeTrend", () => {
   });
 });
 
+describe("aggregateWeeks long run and HR zones", () => {
+  const zoned = (
+    id: string,
+    date: string,
+    km: number,
+    times: number[] | null,
+    bounds: number[] | null = [142, 154, 163, 171, 190],
+  ): TrainingLoadActivity => ({
+    id,
+    start_date_local: `${date}T08:00:00`,
+    distance: km * 1000,
+    icu_hr_zones: times ? bounds : null,
+    icu_hr_zone_times: times,
+  });
+
+  it("names each week's longest run with its share of the week", () => {
+    const [week] = aggregateWeeks(
+      [
+        zoned("i1", "2026-06-09", 8, null),
+        zoned("i2", "2026-06-12", 16, null),
+        zoned("i3", "2026-06-14", 6, null),
+      ],
+      [],
+      "2026-06-08",
+    );
+    expect(weekLongRun(week!)).toEqual({ km: 16, id: "i2", pct: 53.3 });
+  });
+
+  it("reports no long run for a zero-run week", () => {
+    const weeks = aggregateWeeks(
+      [zoned("i1", "2026-06-01", 10, null)],
+      [],
+      "2026-06-08",
+    );
+    expect(weeks.map((w) => weekLongRun(w))).toEqual([
+      { km: 10, id: "i1", pct: 100 },
+      null,
+    ]);
+  });
+
+  it("sums zone seconds by index and splits them easy, moderate, hard", () => {
+    const weeks = aggregateWeeks(
+      [
+        zoned("i1", "2026-06-09", 5, [100, 100, 200, 300, 300]),
+        zoned("i2", "2026-06-11", 5, [100, 100, 200, 300, 300]),
+      ],
+      [],
+      "2026-06-08",
+    );
+    expect(hrZoneSummary(weeks)).toEqual({
+      seconds: [200, 200, 400, 600, 600],
+      intensity: { easyPct: 20, moderatePct: 20, hardPct: 60 },
+    });
+    expect(hrZoneRunsLeftOut(weeks)).toBe(0);
+  });
+
+  it("leaves out runs with no zone times or another zone count, and counts them", () => {
+    const weeks = aggregateWeeks(
+      [
+        zoned("i1", "2026-06-02", 5, [100, 100, 200, 300, 300]),
+        // Newest run sets the zone count: 5. This older one has 3.
+        zoned("i2", "2026-06-04", 5, [50, 50, 50], [150, 160, 190]),
+        zoned("i3", "2026-06-05", 5, null),
+        zoned("i4", "2026-06-09", 5, [0, 0, 0, 0, 0]),
+        zoned("i5", "2026-06-10", 5, [10, 10, 10, 10, 10]),
+      ],
+      [],
+      "2026-06-08",
+    );
+    expect(hrZoneSummary(weeks)?.seconds).toEqual([110, 110, 210, 310, 310]);
+    expect(hrZoneRunsLeftOut(weeks)).toBe(3);
+  });
+
+  it("keeps the newest run's zone count when it is the odd one out", () => {
+    const weeks = aggregateWeeks(
+      [
+        zoned("i1", "2026-06-02", 5, [100, 100, 200, 300, 300]),
+        zoned("i2", "2026-06-10", 5, [50, 50, 50], [150, 160, 190]),
+      ],
+      [],
+      "2026-06-08",
+    );
+    expect(hrZoneSummary(weeks)?.seconds).toEqual([50, 50, 50]);
+    expect(hrZoneRunsLeftOut(weeks)).toBe(1);
+  });
+
+  it("is null, not 0%, for a week with no run HR data", () => {
+    const [week] = aggregateWeeks(
+      [zoned("i1", "2026-06-09", 5, null)],
+      [],
+      "2026-06-08",
+    );
+    expect(hrZoneSummary([week!])).toBeNull();
+  });
+});
+
 describe("rollingTrend", () => {
   it("averages a centered window", () => {
     expect(rollingTrend([10, 20, 30], 3)).toEqual([15, 20, 25]);
@@ -486,7 +589,16 @@ describe("buildTrainingLoadData", () => {
       runOnly: true,
       current: null,
       source: null,
-      totals: { runs: 0, distanceKm: 0, timeHours: 0, elevationM: 0, load: 0 },
+      totals: {
+        runs: 0,
+        distanceKm: 0,
+        timeHours: 0,
+        elevationM: 0,
+        load: 0,
+        hrZoneS: null,
+        intensity: null,
+        hrZoneRunsLeftOut: 0,
+      },
       weeks: [],
     });
   });
@@ -559,6 +671,9 @@ describe("buildTrainingLoadData", () => {
       timeHours: 1.5,
       elevationM: 150,
       load: 0,
+      hrZoneS: null,
+      intensity: null,
+      hrZoneRunsLeftOut: 2,
     });
   });
 

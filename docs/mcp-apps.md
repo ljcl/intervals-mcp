@@ -466,7 +466,10 @@ CTL/ATL/TSB follow `runOnly`.
   weeks before the window as a baseline only) and the rule
   (`computeWeekWarnings`: a week over 1.5 times the average of the 4 complete
   weeks before it, #60) are shared with the `get-training-load` text tool, so
-  chart and prose cannot drift (#43). The tooltip shows the reason as the
+  chart and prose cannot drift (#43). The feed also carries each week's
+  `hrZoneS`/`intensity` and `longRun`, and the totals' `hrZoneS`/`intensity`
+  and `hrZoneRunsLeftOut`, from the same `aggregateWeeks` buckets; the app
+  does not draw them yet. The tooltip shows the reason as the
   server wrote it; the narration and model context call the weeks volume
   spikes, not injury risk.
 - The current week carries `inProgress: true` and `trendKm: null`: it draws
@@ -583,8 +586,9 @@ One activity's time-in-zone distribution (ljcl/strava-mcp#34). Calls
   `--chart-power`, opacity ramp Z1→Zn), pct labels on top, shared tooltip; a
   `PillGroup` switches HR/power when both exist; estimated (non-sensor) power
   sets carry a footnote.
-- Pure logic in `src/normalize.ts` (`buildZoneRows`, `intensitySplit` — zones
-  1–2 easy / 3 moderate / 4+ hard, `buildSummaryStats`).
+- Pure logic in `src/normalize.ts` (`buildZoneRows`, `buildSummaryStats`).
+  The easy/moderate/hard split (zones 1–2 easy / 3 moderate / 4+ hard) is
+  `intensitySplit` in `packages/data`, shared with `get-training-load`.
 - The subtitle date is `start_date_local`, a local date-time with no offset.
   `formatShortDate` reads its leading `YYYY-MM-DD` as written, so the day
   does not move with the viewer's time zone.

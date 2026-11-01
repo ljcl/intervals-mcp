@@ -5,6 +5,7 @@
  * once, so the chart's per-week flags can never drift from the text tool's
  * prose warnings.
  */
+import { type IntensitySplit, intensitySplit } from "@intervals-mcp/data";
 import { RUN_TYPES } from "./fitnessTrend";
 import { addDays, daysBetween, startOfWeekMonday } from "./utils/localDate";
 
@@ -168,6 +169,7 @@ export function rollingTrend(values: number[], window = 3): number[] {
 
 /** Minimal slice of an intervals.icu activity the aggregation needs. */
 export interface TrainingLoadActivity {
+  id?: string;
   start_date_local: string;
   start_date?: string | null;
   distance?: number | null;
@@ -175,6 +177,10 @@ export interface TrainingLoadActivity {
   total_elevation_gain?: number | null;
   type?: string | null;
   icu_training_load?: number | null;
+  /** Ascending HR zone upper bounds recorded with the run. */
+  icu_hr_zones?: number[] | null;
+  /** Seconds in each HR zone, one per bound. */
+  icu_hr_zone_times?: number[] | null;
 }
 
 /**
@@ -219,6 +225,12 @@ export interface TrainingLoadWeek {
   load: number;
   /** `load` split by activity type. */
   loadByType: Record<string, number>;
+  /** Run seconds per HR zone (zone 1 first); null with no run HR data. */
+  hrZoneS: number[] | null;
+  /** Easy/moderate/hard share of `hrZoneS`; null with no run HR data. */
+  intensity: IntensitySplit | null;
+  /** The week's longest run; null for a week with no run distance. */
+  longRun: LongRun | null;
 }
 
 export interface TrainingLoadAppData {
@@ -238,6 +250,10 @@ export interface TrainingLoadAppData {
     timeHours: number;
     elevationM: number;
     load: number;
+    hrZoneS: number[] | null;
+    intensity: IntensitySplit | null;
+    /** Runs left out of `hrZoneS`: no zone times, or a different zone count. */
+    hrZoneRunsLeftOut: number;
   };
   weeks: TrainingLoadWeek[];
   /** Activity types `load`/`loadByType` are summed over. */
@@ -259,6 +275,13 @@ export interface WeekBucket {
   elevationM: number;
   load: number;
   loadByType: Record<string, number>;
+  /** Run seconds per HR zone; null until a run with usable zone times is added. */
+  hrZoneS: number[] | null;
+  /** Runs summed into `hrZoneS`. */
+  hrZoneRuns: number;
+  /** Distance and id of the week's longest run (null before one with distance). */
+  longestRunM: number;
+  longestRunId: string | null;
 }
 
 const emptyBucket = (weekStarting: string): WeekBucket => ({
@@ -269,7 +292,71 @@ const emptyBucket = (weekStarting: string): WeekBucket => ({
   elevationM: 0,
   load: 0,
   loadByType: {},
+  hrZoneS: null,
+  hrZoneRuns: 0,
+  longestRunM: 0,
+  longestRunId: null,
 });
+
+/**
+ * The run's seconds per HR zone, or null when it has none to use: no zone
+ * times, times that do not pair with the recorded bounds (the settings
+ * changed after the run), or no time in any zone. Same trust rule as
+ * `buildZoneSet` in activityZones.ts.
+ */
+function runZoneSeconds(activity: TrainingLoadActivity): number[] | null {
+  const bounds = activity.icu_hr_zones;
+  const times = activity.icu_hr_zone_times;
+  if (!bounds?.length || !times || times.length !== bounds.length) return null;
+  return times.some((t) => t > 0) ? times : null;
+}
+
+/** The longest run of a week, as the tools report it. */
+export interface LongRun {
+  km: number;
+  id: string;
+  /** Its share of the week's run distance, 0-100 with one decimal. */
+  pct: number;
+}
+
+/** A week's longest run, or null for a week with no run distance. */
+export function weekLongRun(bucket: WeekBucket): LongRun | null {
+  if (bucket.longestRunId === null || bucket.distanceM <= 0) return null;
+  return {
+    km: Math.round(bucket.longestRunM / 10) / 100,
+    id: bucket.longestRunId,
+    pct: Math.round((bucket.longestRunM / bucket.distanceM) * 1000) / 10,
+  };
+}
+
+export interface HrZoneSummary {
+  seconds: number[];
+  intensity: IntensitySplit;
+}
+
+/**
+ * Run HR zone seconds and the easy/moderate/hard split over `buckets`, from
+ * the one rule in packages/data. Null when none of them has run HR data: a
+ * week without it is unknown, not 0% easy.
+ */
+export function hrZoneSummary(buckets: WeekBucket[]): HrZoneSummary | null {
+  const seconds = sumZones(buckets.map((b) => b.hrZoneS));
+  return seconds ? { seconds, intensity: intensitySplit(seconds) } : null;
+}
+
+/** Runs in `buckets` that `hrZoneSummary` leaves out. */
+export function hrZoneRunsLeftOut(buckets: WeekBucket[]): number {
+  return buckets.reduce((sum, b) => sum + b.runs - b.hrZoneRuns, 0);
+}
+
+function sumZones(zones: (number[] | null)[]): number[] | null {
+  let sum: number[] | null = null;
+  for (const z of zones) {
+    if (z === null) continue;
+    sum = sum ? sum.map((s, i) => s + z[i]!) : [...z];
+  }
+  return sum;
+}
 
 /**
  * Builds the weekly timeline both `get-training-load` and
@@ -295,6 +382,18 @@ export function aggregateWeeks(
 ): WeekBucket[] {
   const buckets = new Map<string, WeekBucket>();
 
+  // Zone seconds add up by index only across one zone count: the newest run
+  // with usable zone times sets it, and a run recorded under another count
+  // (the athlete's zones changed) is left out.
+  const newestZoned = runs
+    .filter((a) => runZoneSeconds(a) !== null)
+    .reduce<TrainingLoadActivity | null>(
+      (newest, a) =>
+        !newest || a.start_date_local > newest.start_date_local ? a : newest,
+      null,
+    );
+  const zoneCount = newestZoned?.icu_hr_zones?.length;
+
   for (const activity of runs) {
     const weekKey = getWeekStart(activity.start_date_local);
     const bucket = buckets.get(weekKey) ?? emptyBucket(weekKey);
@@ -302,6 +401,16 @@ export function aggregateWeeks(
     bucket.distanceM += activity.distance || 0;
     bucket.timeS += activity.moving_time || 0;
     bucket.elevationM += activity.total_elevation_gain || 0;
+    const distance = activity.distance || 0;
+    if (distance > bucket.longestRunM && activity.id !== undefined) {
+      bucket.longestRunM = distance;
+      bucket.longestRunId = activity.id;
+    }
+    const zones = runZoneSeconds(activity);
+    if (zones && activity.icu_hr_zones!.length === zoneCount) {
+      bucket.hrZoneS = sumZones([bucket.hrZoneS, zones]);
+      bucket.hrZoneRuns += 1;
+    }
     buckets.set(weekKey, bucket);
   }
 
@@ -564,6 +673,7 @@ export function buildTrainingLoadData(
 
   const weeks: TrainingLoadWeek[] = buckets.map((bucket, i) => {
     const warningReasons = reasonsByWeek.get(bucket.weekStarting) ?? [];
+    const zones = hrZoneSummary([bucket]);
     return {
       weekStarting: bucket.weekStarting,
       runs: bucket.runs,
@@ -581,8 +691,12 @@ export function buildTrainingLoadData(
           Math.round(load),
         ]),
       ),
+      hrZoneS: zones?.seconds.map(Math.round) ?? null,
+      intensity: zones?.intensity ?? null,
+      longRun: weekLongRun(bucket),
     };
   });
+  const zoneTotals = hrZoneSummary(buckets);
 
   return {
     days: lookback.spanDays,
@@ -601,6 +715,9 @@ export function buildTrainingLoadData(
       timeHours:
         Math.round(weeks.reduce((sum, w) => sum + w.timeHours, 0) * 100) / 100,
       elevationM: weeks.reduce((sum, w) => sum + w.elevationM, 0),
+      hrZoneS: zoneTotals?.seconds.map(Math.round) ?? null,
+      intensity: zoneTotals?.intensity ?? null,
+      hrZoneRunsLeftOut: hrZoneRunsLeftOut(buckets),
     },
     weeks,
   };

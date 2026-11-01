@@ -47,6 +47,8 @@ export {
 export {
   dominantBucket,
   hrZoneRangeText,
+  type IntensitySplit,
+  intensitySplit,
   type ZoneBucket,
   type ZoneSet,
 } from "./zones";

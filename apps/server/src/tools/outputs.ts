@@ -72,6 +72,22 @@ const TrainingActivitySchema = z.object({
   date: z.string().describe("ISO date YYYY-MM-DD"),
   distance_km: z.number(),
 });
+const IntensitySchema = z
+  .object({
+    easy_pct: z.number(),
+    moderate_pct: z.number(),
+    hard_pct: z.number(),
+  })
+  .nullable()
+  .describe(
+    "Share of run time in HR zones 1-2 (easy), 3 (moderate) and 4+ (hard), 0-100. Null when no run has HR zone times: unknown, not 0%",
+  );
+const HrZoneSecondsSchema = z
+  .array(z.number())
+  .nullable()
+  .describe(
+    "Run seconds in each HR zone, zone 1 first. Only runs recorded under the newest run's zone count are summed. Null when no run has HR zone times",
+  );
 export const TrainingLoadOutputSchema = z.object({
   period: z.object({
     days: z.number().int(),
@@ -117,6 +133,14 @@ export const TrainingLoadOutputSchema = z.object({
     time_hours: z.number(),
     elevation_m: z.number(),
     load: z.number(),
+    hr_zone_s: HrZoneSecondsSchema,
+    intensity: IntensitySchema,
+    hr_zone_runs_left_out: z
+      .number()
+      .int()
+      .describe(
+        "Runs not counted in hr_zone_s and intensity: no HR zone times, or a different zone count from the newest run's",
+      ),
   }),
   averages: z.object({
     runs_per_week: z.number(),
@@ -137,6 +161,20 @@ export const TrainingLoadOutputSchema = z.object({
         .number()
         .describe("Sum of icu_training_load over the included types this week"),
       load_by_type: z.record(z.string(), z.number()),
+      hr_zone_s: HrZoneSecondsSchema,
+      intensity: IntensitySchema,
+      long_run_km: z
+        .number()
+        .nullable()
+        .describe("Distance of the week's longest run; null with no run"),
+      long_run_id: z
+        .string()
+        .nullable()
+        .describe("Activity id of the week's longest run"),
+      long_run_pct: z
+        .number()
+        .nullable()
+        .describe("The long run's share of the week's run distance, 0-100"),
       activities: z.array(TrainingActivitySchema),
     }),
   ),
