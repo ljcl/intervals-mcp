@@ -12,6 +12,8 @@ interface TrendTooltipProps {
   payload?: TrendTooltipPayloadItem[];
   /** True when the forward half is a solved taper rather than rest. */
   planned?: boolean;
+  /** Names an unplanned forward day: "Rest projection" or "Calendar plan projection". */
+  projection?: string;
 }
 
 /**
@@ -19,7 +21,12 @@ interface TrendTooltipProps {
  * `ctl`, so it reads its values off the `plan*` keys and says which it is —
  * a number that looks recorded but is prescribed would be the worst outcome.
  */
-export function TrendTooltip({ active, payload, planned }: TrendTooltipProps) {
+export function TrendTooltip({
+  active,
+  payload,
+  planned,
+  projection,
+}: TrendTooltipProps) {
   if (!active || !payload?.length) return null;
   const row = payload[0]?.payload;
   if (!row) return null;
@@ -34,7 +41,7 @@ export function TrendTooltip({ active, payload, planned }: TrendTooltipProps) {
     <Tooltip timestamp={row.label ?? ""}>
       {!recorded && (
         <div className={styles.projected}>
-          {planned ? "Planned" : "Projected (rest)"}
+          {planned ? "Planned" : (projection ?? "Rest projection")}
         </div>
       )}
       {ctl != null && (

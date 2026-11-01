@@ -29,6 +29,7 @@ export function buildBaseArgs(
     days: toolArgs.days ?? 90,
     ...(toolArgs.newest ? { newest: toolArgs.newest } : {}),
     projectDays: toolArgs.projectDays ?? 14,
+    ...(toolArgs.calendarPlan ? { calendarPlan: true } : {}),
     ...(toolArgs.targetDate ? { targetDate: toolArgs.targetDate } : {}),
     ...(toolArgs.targetTsb !== undefined
       ? { targetTsb: toolArgs.targetTsb }
@@ -67,6 +68,11 @@ export function planDays(data: FitnessTrendData): TrendDay[] {
   return data.taper && data.taper.days.length > 0
     ? data.taper.days
     : data.projection;
+}
+
+/** What a projection (no taper) is called: rest, or intervals.icu's calendar plan. */
+export function projectionLabel(data: FitnessTrendData): string {
+  return data.projectionSource ? "Calendar plan projection" : "Rest projection";
 }
 
 /** True when the forward half is a solved plan rather than rest. */

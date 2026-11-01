@@ -1200,6 +1200,66 @@ describe("get-fitness-trend calendarPlan (#303)", () => {
     expect(structured.warnings.join(" ")).toMatch(/returned 1 of 3/);
   });
 
+  it("with a targetDate returns the rest-based taper and the calendar projection (race-readiness path)", async () => {
+    const history = () =>
+      wellnessWindow(TODAY, 30, (daysAgo) => ({
+        ctl: daysAgo === 0 ? 50 : 45,
+        atl: daysAgo === 0 ? 70 : 40,
+        atlLoad: daysAgo < 28 ? 80 : 0,
+      }));
+    const targetDate = inDays(21);
+    type Both = Structured & {
+      taper: { target_date: string; days: unknown[]; weeks: unknown[] } | null;
+    };
+
+    // Taper alone, for the comparison.
+    mockedWellness.mockResolvedValueOnce(history());
+    mockedListActivities.mockResolvedValueOnce([]);
+    const taperOnly = (
+      await getFitnessTrendTool.execute(
+        { ...DEFAULT_INPUT, days: 30, targetDate },
+        "test-key",
+      )
+    ).structuredContent as Both;
+
+    // Same history plus 3 planned rows, tsb -20 -> -10 -> 0 -> +10.
+    mockedWellness.mockResolvedValueOnce([
+      ...history(),
+      wellnessRow(inDays(1), { ctl: 50, atl: 60, atlLoad: 30 }),
+      wellnessRow(inDays(2), { ctl: 50, atl: 50, atlLoad: 30 }),
+      wellnessRow(inDays(3), { ctl: 50, atl: 40, atlLoad: 30 }),
+    ]);
+    mockedListActivities.mockResolvedValueOnce([]);
+    const result = await getFitnessTrendTool.execute(
+      {
+        ...DEFAULT_INPUT,
+        days: 30,
+        targetDate,
+        projectDays: 3,
+        calendarPlan: true,
+      },
+      "test-key",
+    );
+
+    expect(result.isError).toBeUndefined();
+    const both = result.structuredContent as Both;
+    // The taper is untouched by the calendar rows.
+    expect(both.taper).toEqual(taperOnly.taper);
+    expect(both.taper!.target_date).toBe(targetDate);
+    // The projection and its positive date come from the planned rows.
+    expect(both.projection_source).toBe("intervals.icu calendar");
+    expect(both.projection.map((d) => [d.date, d.tsb])).toEqual([
+      [inDays(1), -10],
+      [inDays(2), 0],
+      [inDays(3), 10],
+    ]);
+    expect(both.tsb_positive_date).toBe(inDays(2));
+    expect(FitnessTrendOutputSchema.safeParse(both).success).toBe(true);
+    const text = (result.content[0] as { text: string }).text;
+    expect(text).toContain(`Taper plan to ${targetDate}`);
+    expect(text).toContain("intervals.icu calendar");
+  });
+
   it("prefers the calendar over plannedLoads and says so", async () => {
     mockedWellness.mockResolvedValueOnce(planRows());
     mockedListActivities.mockResolvedValueOnce([]);

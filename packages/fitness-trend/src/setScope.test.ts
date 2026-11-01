@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  mockCalendarProjectionData,
   mockFitnessTrendData,
   mockNoLoadData,
   mockRestProjectionData,
@@ -235,6 +236,13 @@ describe("planInfo", () => {
     expect(planInfo(mockRestProjectionData)).toEqual({
       hasPlan: true,
       label: "rest projection",
+    });
+  });
+
+  it("calls the calendar projection the calendar plan projection", () => {
+    expect(planInfo(mockCalendarProjectionData)).toEqual({
+      hasPlan: true,
+      label: "calendar plan projection",
     });
   });
 

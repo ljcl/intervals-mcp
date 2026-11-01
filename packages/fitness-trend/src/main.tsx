@@ -81,6 +81,7 @@ const TOOL_ARG_KEYS = [
   "runOnly",
   "newest",
   "projectDays",
+  "calendarPlan",
   "targetDate",
   "targetTsb",
 ];

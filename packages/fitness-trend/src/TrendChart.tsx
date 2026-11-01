@@ -22,6 +22,7 @@ import {
   handoverDate,
   hasRecordedLoad,
   isPlanned,
+  projectionLabel,
 } from "./normalize";
 import { TrendTooltip } from "./TrendTooltip";
 import { type FitnessTrendData, type TrendBand } from "./types";
@@ -37,7 +38,7 @@ export interface TrendChartProps {
   showAtl: boolean;
   /** Draw the form (TSB) line on the right axis. */
   showTsb: boolean;
-  /** Draw the dashed forward half (taper plan, or rest projection). */
+  /** Draw the dashed forward half (taper plan, calendar plan, or rest projection). */
   showPlan: boolean;
   /**
    * Band kinds to leave unshaded. Kinds rather than a boolean because a window
@@ -208,14 +209,25 @@ export function TrendChart({
               stroke="var(--color-border-primary)"
               strokeDasharray={PLAN_DASHARRAY}
               label={{
-                value: planned ? "plan" : "rest",
+                value: planned
+                  ? "plan"
+                  : data.projectionSource
+                    ? "calendar plan"
+                    : "rest",
                 position: "insideTopRight",
                 style: { fontSize: 10, fill: "var(--color-text-tertiary)" },
               }}
             />
           )}
 
-          <RechartsTooltip content={<TrendTooltip planned={planned} />} />
+          <RechartsTooltip
+            content={
+              <TrendTooltip
+                planned={planned}
+                projection={projectionLabel(data)}
+              />
+            }
+          />
 
           {showCtl && (
             <Area

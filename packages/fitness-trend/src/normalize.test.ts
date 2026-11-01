@@ -45,6 +45,17 @@ describe("buildBaseArgs", () => {
     });
   });
 
+  it("carries calendarPlan only when set, so the app refetches the same plan", () => {
+    expect(buildBaseArgs({ calendarPlan: true })).toEqual({
+      days: 90,
+      projectDays: 14,
+      calendarPlan: true,
+    });
+    expect(buildBaseArgs({ calendarPlan: false })).not.toHaveProperty(
+      "calendarPlan",
+    );
+  });
+
   it("carries newest, so both scopes chart the same past window (#80)", () => {
     expect(buildBaseArgs({ newest: "2026-04-12" })).toEqual({
       days: 90,

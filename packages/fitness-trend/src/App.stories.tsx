@@ -9,6 +9,7 @@ import { useState } from "react";
 import { expect, waitFor } from "storybook/test";
 import {
   mockBaseArgs,
+  mockCalendarProjectionData,
   mockFitnessTrendData,
   mockNoLoadData,
   mockPastFitnessTrendData,
@@ -637,6 +638,27 @@ export const RestProjection = meta.story({
       canvas.getByRole("button", { name: "Toggle Rest projection" }),
     ).toBeVisible();
     await expect(canvas.queryByText(/Plan to/)).toBeNull();
+  },
+});
+
+/** The forward half is intervals.icu's calendar plan, named as such. */
+export const CalendarProjection = meta.story({
+  args: {
+    app: null,
+    data: mockCalendarProjectionData,
+    baseArgs: { ...mockBaseArgs, calendarPlan: true },
+    initialRunOnly: false,
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      canvas.getByRole("button", { name: "Toggle Calendar plan projection" }),
+    ).toBeVisible();
+    await expect(canvas.queryByText("Rest projection")).toBeNull();
+    // The handover line names the calendar plan, not rest.
+    await waitFor(() =>
+      expect(canvas.getByText("calendar plan")).toBeInTheDocument(),
+    );
+    await expect(canvas.queryByText("rest")).toBeNull();
   },
 });
 

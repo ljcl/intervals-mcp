@@ -91,7 +91,7 @@ same numbers as text use the matching read tool (e.g. `get-fitness-trend`,
 | `view-training-load` | `get-training-load-data` | Weekly volume bars with a trend line and volume-spike weeks, a weekly load line, and Fitness/Fatigue/Form tiles; `runOnly` picks the starting scope; toggles whole-body vs runs-only; `newest` for a past block |
 | `view-compare-activities` | `get-compare-activities-data` | Two activities' streams overlaid with a delta summary |
 | `view-activity-zones` | `get-activity-zones-data` | Time-in-zone bar chart for HR |
-| `view-fitness-trend` | `get-fitness-trend-data` | CTL/ATL/TSB over time with fatigue/freshness bands and a taper plan; toggles whole-body vs runs-only; `newest` for a past block, with no projection |
+| `view-fitness-trend` | `get-fitness-trend-data` | CTL/ATL/TSB over time with fatigue/freshness bands and a taper plan or a calendar plan projection (`calendarPlan`); toggles whole-body vs runs-only; `newest` for a past block, with no projection |
 
 Once a chart is open, the model can adjust it with that chart's own tool:
 `set-brush-window` (activity chart: zoom to a stretch), `set-viewport` (route
@@ -126,7 +126,8 @@ was (hilly course, workout, long steady run). (This is also the `run-debrief`
 prompt.)
 
 **Race readiness.** `get-fitness-trend` with `targetDate`/`targetTsb` for
-race-day form and the taper, `get-race-prediction` for the time, the last 7
+race-day form and the taper, plus `calendarPlan` for where form lands if the
+planned workouts on the intervals.icu calendar are followed, `get-race-prediction` for the time, the last 7
 days of `get-wellness`, and `get-training-load` for recent load. (This is the
 `race-readiness` prompt.)
 

@@ -633,9 +633,11 @@ card's subtitle is `lookbackLabel` (`packages/data`): "Last 90 days", or
   draws as separate `plan*` series with `strokeDasharray`; handover day carries
   **both** keys, else the dashed line starts a day adrift of the solid one
   (`buildChartRows`).
-- Forward half = solved taper when the caller named a target date, else rest
-  projection; legend and tooltip say which, because a prescribed number reading
-  as recorded is the worst outcome. `TaperPlanList.tsx` prints weeks under the
+- Forward half = solved taper when the caller named a target date, else
+  intervals.icu's calendar plan projection when `calendarPlan` is set (the
+  payload's `projectionSource`), else rest projection; legend, tooltip and
+  handover label say which (`projectionLabel`), because a prescribed number
+  reading as recorded is the worst outcome. `TaperPlanList.tsx` prints weeks under the
   chart, hides with the plan toggle.
 - One legend toggle **per band kind present** (`countBandKinds`): a window
   routinely carries fatigue and ramp bands at once and reads as one smear
@@ -659,7 +661,7 @@ card's subtitle is `lookbackLabel` (`packages/data`): "Last 90 days", or
   `plan` the landing scope has no rows for (a scope still loading is given the
   benefit of the doubt), naming series by the value the schema accepts. The
   reply and the context summary list what is hidden the same way, noting what
-  the legend calls the plan ("taper plan" or "rest projection"). The reply
+  the legend calls the plan ("taper plan", "calendar plan projection" or "rest projection"). The reply
   claims "Showing" only for a chart that is drawn (`landingFor` reads the
   landing scope's render state): a scope still loading is "Switching to ...;
   it is still loading", a failed fetch is an error carrying what the card

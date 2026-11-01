@@ -534,7 +534,7 @@ export const FitnessTrendOutputSchema = z.object({
   projection: z
     .array(FitnessTrendDaySchema)
     .describe(
-      "Decay projection past end_date (zero load unless planned); empty if none",
+      "Projection past end_date: decay under planned loads (zero by default), or intervals.icu's own calendar plan when projection_source is set; empty if none",
     ),
   projection_source: z
     .string()

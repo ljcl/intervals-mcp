@@ -1,5 +1,11 @@
 import { formatShortDate, formatSignedTsb } from "@intervals-mcp/data";
-import { BAND_LABELS, isPastWindow, isPlanned, planDays } from "./normalize";
+import {
+  BAND_LABELS,
+  isPastWindow,
+  isPlanned,
+  planDays,
+  projectionLabel,
+} from "./normalize";
 import { type FitnessTrendData, type TrendBand } from "./types";
 
 /**
@@ -94,7 +100,7 @@ export function buildTrendA11y(
     parts.push(
       isPlanned(data)
         ? `A dashed ${plan.length}-day taper plan continues the curves to ${fullDate(landing.date)}, landing on form ${formatSignedTsb(landing.tsb)}.`
-        : `A dashed ${plan.length}-day rest projection continues the curves to ${fullDate(landing.date)}, reaching form ${formatSignedTsb(landing.tsb)}.`,
+        : `A dashed ${plan.length}-day ${projectionLabel(data).toLowerCase()} continues the curves to ${fullDate(landing.date)}, reaching form ${formatSignedTsb(landing.tsb)}.`,
     );
   }
 

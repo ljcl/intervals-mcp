@@ -9,7 +9,12 @@ import {
   scopeName,
   settleSetScope,
 } from "@intervals-mcp/ui";
-import { hasRecordedLoad, isPlanned, planDays } from "./normalize";
+import {
+  hasRecordedLoad,
+  isPlanned,
+  planDays,
+  projectionLabel,
+} from "./normalize";
 import { type FitnessTrendData } from "./types";
 
 export type { Landing, Scope };
@@ -30,7 +35,7 @@ export type SetScopeResult = SharedSetScopeResult<SeriesKey>;
  */
 export interface PlanInfo {
   hasPlan: boolean;
-  /** "taper plan" or "rest projection"; absent when there is no plan to name. */
+  /** "taper plan", "rest projection" or "calendar plan projection"; absent when there is no plan to name. */
   label?: string;
 }
 
@@ -48,7 +53,7 @@ export function planInfo(data: FitnessTrendData | null): PlanInfo {
   if (planDays(data).length === 0) return { hasPlan: false };
   return {
     hasPlan: true,
-    label: isPlanned(data) ? "taper plan" : "rest projection",
+    label: isPlanned(data) ? "taper plan" : projectionLabel(data).toLowerCase(),
   };
 }
 

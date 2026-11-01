@@ -28,6 +28,7 @@ import {
   countBandKinds,
   isPlanned,
   planDays,
+  projectionLabel,
 } from "./normalize";
 import {
   describeSetScope,
@@ -283,7 +284,13 @@ export function App({
             {planLength > 0 && (
               <LegendItem
                 color="var(--color-text-tertiary)"
-                label={planned ? "Taper plan" : "Rest projection"}
+                label={
+                  planned
+                    ? "Taper plan"
+                    : data
+                      ? projectionLabel(data)
+                      : "Rest projection"
+                }
                 hidden={!showPlan}
                 onClick={() => setShowPlan((v) => !v)}
               />
