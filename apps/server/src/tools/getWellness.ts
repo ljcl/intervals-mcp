@@ -10,6 +10,8 @@ import { NO_PROGRESS, type ReportProgress } from "../progress";
 import {
   addDays,
   dateInputSchema,
+  daysBetween,
+  startOfWeekMonday,
   todayLocal,
   validateRange,
 } from "../utils/localDate";
@@ -38,9 +40,13 @@ For form trends, a projection or a taper, use get-fitness-trend; this tool
 reports each day's recorded values only.
 
 Notes:
-- With no date, oldest or newest, it returns today only. A range cannot
-  exceed 90 days, and a date after today is refused.
-- A long range with long comments keeps the newest days that fit the
+- With no date, oldest or newest, it returns today only. A date after today
+  is refused. A range can span 366 days. Past 90 days it returns weekly
+  averages (Monday start, with the day count) in weeks instead of daily rows
+  in days. Weeks carry HRV, resting HR, sleep, weight and the scores, but no
+  CTL/ATL/TSB, ramp, sleep score, SpO2, respiration or comments; use
+  get-fitness-trend for load.
+- A daily range with long comments keeps the newest days that fit the
   response size limit; count stays the full count and the text names the
   call for the rest.
 - The HRV measure depends on the athlete's device. rMSSD and SDNN are
@@ -64,7 +70,10 @@ const inputSchema = z.object({
 
 type GetWellnessInput = z.infer<typeof inputSchema>;
 
-const MAX_RANGE_DAYS = 90;
+const MAX_RANGE_DAYS = 366;
+/** A range longer than this returns weekly averages: 90 daily rows already
+ * measure 38,808 of the 40,000 character response budget. */
+const DAILY_MAX_DAYS = 90;
 
 /** A range line's comments are cut here, so 90 commented days fit the text. */
 const COMMENT_MAX_CHARS = 80;
@@ -127,6 +136,24 @@ export function mapWellnessDay(w: IntervalsWellness): WellnessDayEntry {
   };
 }
 
+/** The subjective 1 to 4 scores plus readiness, averaged per week. */
+const WEEKLY_SCORE_FIELDS = [
+  "readiness",
+  ...WELLNESS_SCORE_NAMES.map((score) => WELLNESS_SCORES[score].output),
+] as const;
+
+export type WellnessWeekEntry = {
+  /** Monday of the week; the first and last week of a range may be partial. */
+  week_start: string;
+  /** Days in the week that have a wellness record. */
+  days: number;
+  hrv_sdnn_ms: number | null;
+  hrv_rmssd_ms: number | null;
+  resting_hr: number | null;
+  sleep_hours: number | null;
+  weight_kg: number | null;
+} & Record<(typeof WEEKLY_SCORE_FIELDS)[number], number | null>;
+
 interface WellnessResponse {
   oldest: string;
   newest: string;
@@ -141,6 +168,9 @@ interface WellnessResponse {
   };
   hrv_note: string;
   days: WellnessDayEntry[];
+  /** Set with `weeks` when the range is past 90 days; `days` is then empty. */
+  granularity?: "weekly";
+  weeks?: WellnessWeekEntry[];
 }
 
 function average(values: number[]): number | null {
@@ -150,6 +180,40 @@ function average(values: number[]): number | null {
 
 function numbers(values: (number | null)[]): number[] {
   return values.filter((v): v is number => v != null);
+}
+
+/**
+ * Monday-start weekly means, newest week first. Each field averages only the
+ * days that carry it, so rMSSD and SDNN stay apart and a week with none of a
+ * field reports null.
+ */
+export function aggregateWellnessWeeks(
+  days: WellnessDayEntry[],
+): WellnessWeekEntry[] {
+  const byWeek = new Map<string, WellnessDayEntry[]>();
+  for (const d of days) {
+    const key = startOfWeekMonday(d.date);
+    byWeek.set(key, [...(byWeek.get(key) ?? []), d]);
+  }
+  const mean = (
+    group: WellnessDayEntry[],
+    field: keyof WellnessDayEntry,
+  ): number | null =>
+    average(numbers(group.map((d) => d[field] as number | null)));
+  return [...byWeek.entries()]
+    .sort(([a], [b]) => (a < b ? 1 : -1))
+    .map(([week_start, group]) => ({
+      week_start,
+      days: group.length,
+      hrv_sdnn_ms: mean(group, "hrv_sdnn_ms"),
+      hrv_rmssd_ms: mean(group, "hrv_rmssd_ms"),
+      resting_hr: mean(group, "resting_hr"),
+      sleep_hours: mean(group, "sleep_hours"),
+      weight_kg: mean(group, "weight_kg"),
+      ...(Object.fromEntries(
+        WEEKLY_SCORE_FIELDS.map((f) => [f, mean(group, f)]),
+      ) as Record<(typeof WEEKLY_SCORE_FIELDS)[number], number | null>),
+    }));
 }
 
 /**
@@ -238,6 +302,20 @@ function formatWellnessLine(d: WellnessDayEntry): string {
   return `${d.date}: ${parts.length > 0 ? parts.join(", ") : "no data"}`;
 }
 
+function formatWellnessWeekLine(w: WellnessWeekEntry): string {
+  const parts: string[] = [];
+  if (w.hrv_rmssd_ms != null) parts.push(`HRV rMSSD ${w.hrv_rmssd_ms}`);
+  if (w.hrv_sdnn_ms != null) parts.push(`HRV SDNN ${w.hrv_sdnn_ms}`);
+  if (w.resting_hr != null) parts.push(`RHR ${w.resting_hr}`);
+  if (w.sleep_hours != null) parts.push(`sleep ${w.sleep_hours}h`);
+  if (w.weight_kg != null) parts.push(`wt ${w.weight_kg}kg`);
+  for (const f of WEEKLY_SCORE_FIELDS) {
+    const v = w[f];
+    if (v != null) parts.push(`${f.replace("_", " ")} ${v}`);
+  }
+  return `${w.week_start} (${w.days} d): ${parts.length > 0 ? parts.join(", ") : "no data"}`;
+}
+
 function formatWellnessAverages(days: WellnessDayEntry[]): string {
   // rMSSD and SDNN are different measures, so each gets its own average.
   const rmssd = average(numbers(days.map((d) => d.hrv_rmssd_ms)));
@@ -263,7 +341,15 @@ export function formatWellnessText(
   response: WellnessResponse,
   allDays: WellnessDayEntry[] = response.days,
 ): string {
-  const { oldest, newest, days, count } = response;
+  const { oldest, newest, days, count, weeks } = response;
+
+  if (weeks) {
+    if (weeks.length === 0) return `No wellness data ${oldest} to ${newest}.`;
+    return [
+      `Wellness ${oldest} to ${newest}: ${count} days, weekly averages (Monday start, newest first)`,
+      ...weeks.map(formatWellnessWeekLine),
+    ].join("\n");
+  }
 
   if (oldest === newest) {
     const day = days[0];
@@ -342,6 +428,7 @@ export const getWellnessTool = {
         .map(mapWellnessDay)
         .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
 
+      const weekly = daysBetween(oldest, newest) + 1 > DAILY_MAX_DAYS;
       const response: WellnessResponse = {
         oldest,
         newest,
@@ -355,16 +442,23 @@ export const getWellnessTool = {
           respiration: "breaths/min",
         },
         hrv_note: buildHrvNote(days),
-        days,
+        days: weekly ? [] : days,
+        ...(weekly && {
+          granularity: "weekly" as const,
+          weeks: aggregateWellnessWeeks(days),
+        }),
       };
 
       warnOnSchemaDrift(name, WellnessOutputSchema, response);
 
+      // Weekly rows always fit (a 366-day range is about 17,400 characters).
       // Days are newest first, so a cut keeps the newest.
-      const { text, structured } = fitListToBudget(days.length, (n) => {
-        const shown = { ...response, days: days.slice(0, n) };
-        return { text: formatWellnessText(shown, days), structured: shown };
-      });
+      const { text, structured } = weekly
+        ? { text: formatWellnessText(response), structured: response }
+        : fitListToBudget(days.length, (n) => {
+            const shown = { ...response, days: days.slice(0, n) };
+            return { text: formatWellnessText(shown, days), structured: shown };
+          });
 
       return {
         content: [{ type: "text" as const, text }],
