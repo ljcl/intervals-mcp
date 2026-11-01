@@ -32,7 +32,7 @@ const AllSportsTotalSchema = z
     load: z.number(),
   })
   .describe(
-    "All types together. Each field is the sum of by_type, so load is the whole-body load",
+    "All types together, so load is the whole-body load. Where the period has by_type, each field is the sum of its rows",
   );
 const AllSportsPeriodSchema = z.object({
   total: AllSportsTotalSchema,
