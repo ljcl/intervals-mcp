@@ -62,7 +62,7 @@ rather than (or alongside) text.
 | Tool | Answers | Key params |
 | ---- | ------- | ---------- |
 | `get-athlete-stats` | Run totals, and totals for every sport (strength sessions, swim distance), this week/month/YTD | (none) |
-| `get-fitness-trend` | Am I fresh or fatigued? What if I taper for a race? | `days`, `newest`, `runOnly`, `projectDays`/`plannedLoads`, `targetDate`/`targetTsb` |
+| `get-fitness-trend` | Am I fresh or fatigued? What if I taper for a race? | `days`, `newest`, `runOnly`, `projectDays`/`plannedLoads`/`calendarPlan`, `targetDate`/`targetTsb` |
 | `get-training-load` | Weekly volume, volume-spike flags, weekly load | `days`, `newest`, `runOnly` |
 | `get-best-efforts` | My best 5K/10K/half/marathon times; my fastest 5K inside one run, and where | `distances`, `window`, `topN`, `id` |
 | `get-race-prediction` | What could I run for X? What pace do I need for a goal time? | `raceDistance` (`5km`, `10km`, `15km`, `10 mile`, `half marathon`, `marathon`, `50km`), `goalTime` |
@@ -144,7 +144,8 @@ predicts on the slow side.
 
 **Fitness and taper planning.** `get-fitness-trend` with `targetDate` and
 `targetTsb` to solve a taper (or `projectDays`/`plannedLoads` to project
-forward under an assumed plan), or `view-fitness-trend` for the same thing as
+forward under an assumed plan, or `calendarPlan` to project from the workouts
+planned on the intervals.icu calendar), or `view-fitness-trend` for the same thing as
 a chart with a Whole body / Runs only toggle. `targetDate` must be after today
 and at most 180 days ahead.
 

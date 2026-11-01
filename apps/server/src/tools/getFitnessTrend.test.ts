@@ -1043,3 +1043,180 @@ describe("get-fitness-trend with newest (#80)", () => {
     );
   });
 });
+
+describe("get-fitness-trend calendarPlan (#303)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(`${TODAY}T12:00:00Z`));
+    mockedWellness.mockReset();
+    mockedListActivities.mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  type Structured = {
+    projection: { date: string; ctl: number; atl: number; tsb: number }[];
+    projection_source: string | null;
+    tsb_positive_date: string | null;
+    warnings: string[];
+  };
+
+  /** Today's row plus 7 future rows with separate ctlLoad/atlLoad. */
+  function planRows() {
+    return [
+      wellnessRow(TODAY, { ctl: 50, atl: 60 }),
+      ...Array.from({ length: 7 }, (_, i) =>
+        wellnessRow(inDays(i + 1), {
+          ctl: 50.5 + i,
+          atl: 58 - i * 2,
+          ctlLoad: 40,
+          atlLoad: 20,
+        }),
+      ),
+    ];
+  }
+
+  it("returns the future wellness rows as the projection, labelled", async () => {
+    mockedWellness.mockResolvedValueOnce(planRows());
+    mockedListActivities.mockResolvedValueOnce([]);
+
+    const result = await getFitnessTrendTool.execute(
+      { ...DEFAULT_INPUT, days: 1, projectDays: 7, calendarPlan: true },
+      "test-key",
+    );
+
+    // One read, extended to today plus projectDays.
+    expect(mockedWellness).toHaveBeenCalledTimes(1);
+    expect(mockedWellness.mock.calls[0]![1]).toMatchObject({
+      newest: inDays(7),
+    });
+    const structured = result.structuredContent as Structured;
+    expect(structured.projection).toHaveLength(7);
+    expect(structured.projection[0]).toMatchObject({
+      date: inDays(1),
+      ctl: 50.5,
+      atl: 58,
+      tsb: -7.5,
+    });
+    expect(structured.projection[6]).toMatchObject({
+      date: inDays(7),
+      ctl: 56.5,
+      atl: 46,
+      tsb: 10.5,
+    });
+    expect(structured.projection_source).toBe("intervals.icu calendar");
+    // Today's TSB is -10; the first future row at or above 0 is day 4 (+1.5).
+    expect(structured.tsb_positive_date).toBe(inDays(4));
+    const text = (result.content[0] as { text: string }).text;
+    expect(text).toContain("intervals.icu calendar");
+    expect(text).toContain("projection from the planned workouts");
+    expect(FitnessTrendOutputSchema.safeParse(structured).success).toBe(true);
+  });
+
+  it("decays like rest when the calendar plans nothing", async () => {
+    // ctlLoad/atlLoad 0: intervals.icu's own rows decay, and we show them.
+    mockedWellness.mockResolvedValueOnce([
+      wellnessRow(TODAY, { ctl: 50, atl: 60 }),
+      wellnessRow(inDays(1), { ctl: 49.4, atl: 51.4 }),
+      wellnessRow(inDays(2), { ctl: 48.8, atl: 44.1 }),
+    ]);
+    mockedListActivities.mockResolvedValueOnce([]);
+
+    const result = await getFitnessTrendTool.execute(
+      { ...DEFAULT_INPUT, days: 1, projectDays: 2, calendarPlan: true },
+      "test-key",
+    );
+
+    expect(result.isError).toBeUndefined();
+    const structured = result.structuredContent as Structured;
+    expect(structured.projection.map((d) => d.ctl)).toEqual([49.4, 48.8]);
+    expect(structured.warnings.join(" ")).not.toMatch(/returned \d+ of/);
+  });
+
+  it("ignores calendarPlan with runOnly and warns", async () => {
+    mockedListActivities.mockResolvedValueOnce([run(1)]);
+
+    const result = await getFitnessTrendTool.execute(
+      {
+        ...DEFAULT_INPUT,
+        days: 7,
+        runOnly: true,
+        projectDays: 3,
+        calendarPlan: true,
+      },
+      "test-key",
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(mockedWellness).not.toHaveBeenCalled();
+    const structured = result.structuredContent as Structured;
+    expect(structured.projection_source).toBeNull();
+    expect(structured.projection).toHaveLength(3);
+    expect(structured.warnings.join(" ")).toMatch(/calendarPlan is ignored/);
+  });
+
+  it("ignores calendarPlan for a window ending before today and warns", async () => {
+    mockedWellness.mockResolvedValueOnce(
+      wellnessWindow(inDays(-3), 3, () => ({ ctl: 50, atl: 50 })),
+    );
+    mockedListActivities.mockResolvedValueOnce([]);
+
+    const result = await getFitnessTrendTool.execute(
+      {
+        ...DEFAULT_INPUT,
+        days: 3,
+        newest: inDays(-3),
+        projectDays: 3,
+        calendarPlan: true,
+      },
+      "test-key",
+    );
+
+    const structured = result.structuredContent as Structured;
+    expect(mockedWellness.mock.calls[0]![1]).toMatchObject({
+      newest: inDays(-3),
+    });
+    expect(structured.projection).toEqual([]);
+    expect(structured.projection_source).toBeNull();
+    expect(structured.warnings.join(" ")).toMatch(/calendarPlan is ignored/);
+  });
+
+  it("warns when intervals.icu has fewer projected days than asked", async () => {
+    mockedWellness.mockResolvedValueOnce([
+      wellnessRow(TODAY, { ctl: 50, atl: 60 }),
+      wellnessRow(inDays(1), { ctl: 49.4, atl: 51.4 }),
+    ]);
+    mockedListActivities.mockResolvedValueOnce([]);
+
+    const result = await getFitnessTrendTool.execute(
+      { ...DEFAULT_INPUT, days: 1, projectDays: 3, calendarPlan: true },
+      "test-key",
+    );
+
+    const structured = result.structuredContent as Structured;
+    expect(structured.projection).toHaveLength(1);
+    expect(structured.warnings.join(" ")).toMatch(/returned 1 of 3/);
+  });
+
+  it("prefers the calendar over plannedLoads and says so", async () => {
+    mockedWellness.mockResolvedValueOnce(planRows());
+    mockedListActivities.mockResolvedValueOnce([]);
+
+    const result = await getFitnessTrendTool.execute(
+      {
+        ...DEFAULT_INPUT,
+        days: 1,
+        projectDays: 7,
+        calendarPlan: true,
+        plannedLoads: [{ date: inDays(2), load: 500 }],
+      },
+      "test-key",
+    );
+
+    const structured = result.structuredContent as Structured;
+    expect(structured.projection[1]!.ctl).toBe(51.5);
+    expect(structured.warnings.join(" ")).toMatch(/plannedLoads is ignored/);
+  });
+});

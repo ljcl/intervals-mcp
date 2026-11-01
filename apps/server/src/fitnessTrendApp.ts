@@ -88,6 +88,8 @@ export interface FitnessTrendAppData {
   activityTypesIncluded?: string[];
   /** Notes worth surfacing alongside the chart (gaps, computed-locally disclaimer, etc). */
   warnings?: string[];
+  /** Where `projection` came from; see {@link FitnessTrendAppMeta.projectionSource}. */
+  projectionSource?: string | null;
 }
 
 export interface FitnessTrendAppMeta {
@@ -111,6 +113,8 @@ export interface FitnessTrendAppMeta {
   activityTypesIncluded?: string[];
   /** Notes worth surfacing alongside the chart, carried through onto {@link FitnessTrendAppData.warnings}. */
   warnings?: string[];
+  /** "intervals.icu calendar" when the projection is intervals.icu's own from the plan, else null. */
+  projectionSource?: string | null;
 }
 
 /** Map a computed trend to the app's wire shape. */
@@ -163,5 +167,6 @@ export function mapFitnessTrendApp(
     runOnly: meta.runOnly ?? false,
     activityTypesIncluded: meta.activityTypesIncluded ?? [],
     warnings: meta.warnings ?? [],
+    projectionSource: meta.projectionSource ?? null,
   };
 }

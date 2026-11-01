@@ -115,7 +115,7 @@ describe("race-readiness", () => {
 
     expect(t).toContain("race on 2026-10-25 (half marathon), 20 days away");
     expect(t).toContain(
-      "get-fitness-trend with targetDate=2026-10-25 and targetTsb=12",
+      "get-fitness-trend with targetDate=2026-10-25, targetTsb=12, calendarPlan=true and projectDays=20",
     );
     expect(t).toContain(
       'get-race-prediction with raceDistance="half marathon"',

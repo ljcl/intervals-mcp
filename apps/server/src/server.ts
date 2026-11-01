@@ -272,6 +272,7 @@ const fitnessTrendInput = z.object({
     .describe(
       "Days to project past today assuming rest (default 14; ignored when targetDate is set)",
     ),
+  calendarPlan: getFitnessTrendTool.inputSchema.shape.calendarPlan,
   targetDate: dateInputSchema
     .optional()
     .describe(
@@ -1243,6 +1244,7 @@ async function loadFitnessTrendAppData(
   const targetDate =
     typeof args.targetDate === "string" ? args.targetDate : undefined;
   const targetTsb = args.targetTsb as number;
+  const calendarPlan = args.calendarPlan === true;
 
   // A past window drops projectDays and the taper in the loader, the one
   // home for that rule, so the default fortnight never reaches it.
@@ -1253,6 +1255,7 @@ async function loadFitnessTrendAppData(
       end,
       runOnly,
       projectDays,
+      calendarPlan,
       taper: targetDate ? { targetDate, targetTsb } : undefined,
     },
     progress,
@@ -1273,6 +1276,7 @@ async function loadFitnessTrendAppData(
       endDate: loaded.endDate,
       endsToday: loaded.endsToday,
       ctl7dDelta: loaded.ctl7dDelta,
+      projectionSource: loaded.projectionSource,
       activitiesIncluded: loaded.activitiesIncluded,
       activitiesMissingLoad: loaded.activitiesMissingLoad,
       source: loaded.source,
@@ -1403,7 +1407,7 @@ function fitnessTrendViewLines(data: FitnessTrendAppData): string[] {
     lines.push(`Form is already positive today (${data.tsbPositiveDate})`);
   } else if (data.tsbPositiveDate) {
     lines.push(
-      `Resting from here, form turns positive on ${data.tsbPositiveDate}`,
+      `${data.projectionSource ? `On ${data.projectionSource}'s plan projection` : "Resting from here"}, form turns positive on ${data.tsbPositiveDate}`,
     );
   }
   for (const flag of data.flags) {

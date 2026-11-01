@@ -57,6 +57,13 @@ export interface LoadFitnessTrendOptions {
   projectDays?: number;
   /** Planned future load to project with instead of rest. Ignored for a past window. */
   plannedLoads?: PlannedLoad[];
+  /**
+   * Project from the planned workouts on the intervals.icu calendar: its own
+   * future wellness rows over `projectDays`, instead of rest or
+   * `plannedLoads`. Whole-body, window ending today only; otherwise ignored
+   * with a warning.
+   */
+  calendarPlan?: boolean;
   /** Solve a load taper landing on a target TSB. Ignored for a past window. */
   taper?: { targetDate: string; targetTsb: number };
 }
@@ -74,6 +81,8 @@ export interface FitnessTrendLoadResult {
   current: FitnessTrendDay | null;
   projection: FitnessTrendDay[];
   tsbPositiveDate: string | null;
+  /** Where `projection` came from: "intervals.icu calendar", else null (rest or plannedLoads). */
+  projectionSource: string | null;
   taper: TaperPlan | null;
   /** Date `current` is known for; can trail `endDate` when wellness lags. */
   asOf: string | null;
@@ -106,9 +115,13 @@ export async function loadFitnessTrend(
   // A past window projects and solves nothing: the inputs for them are
   // dropped here, the one home for that rule (#80).
   const projectDays = endsToday ? (options.projectDays ?? 0) : 0;
-  const plannedLoads = endsToday ? options.plannedLoads : undefined;
+  let plannedLoads = endsToday ? options.plannedLoads : undefined;
   const taper = endsToday ? options.taper : undefined;
   const windowStart = addDays(endDate, -(days - 1));
+
+  // Calendar projection is whole-body and forward only; say so when it is not.
+  const calendarPlan = !!options.calendarPlan && !runOnly && endsToday;
+  let projectionSource: string | null = null;
 
   let source: "intervals.icu" | "computed";
   let displaySeries: FitnessTrendDay[];
@@ -126,6 +139,21 @@ export async function loadFitnessTrend(
     : [
         `This window ends on ${endDate}, before today (${today}). It is a past block: CTL/ATL/TSB are as of its last day with data, and there is no projection or taper plan.`,
       ];
+
+  if (options.calendarPlan && !calendarPlan) {
+    warnings.push(
+      `calendarPlan is ignored: ${runOnly ? "run-only CTL/ATL are computed locally, with no intervals.icu projection" : "a window that ends before today has no projection"}.`,
+    );
+  } else if (calendarPlan && projectDays === 0) {
+    warnings.push(
+      "calendarPlan needs projectDays above 0 to read the plan; no projection was made.",
+    );
+  } else if (calendarPlan && plannedLoads?.length) {
+    warnings.push(
+      "plannedLoads is ignored: calendarPlan reads the plan from the intervals.icu calendar instead.",
+    );
+  }
+  if (calendarPlan) plannedLoads = undefined;
 
   if (runOnly) {
     const runwayDays = days + RUN_ONLY_RUNWAY_DAYS;
@@ -191,10 +219,12 @@ export async function loadFitnessTrend(
       asOfDate,
       gapDates,
       lookback: wellnessLookback,
+      planned,
     } = await loadWellnessFitnessSeries(
       apiKey,
       { oldest: windowStart, newest: endDate },
       {
+        futureDays: calendarPlan ? projectDays : 0,
         lookbackDays: taper
           ? Math.max(TREND_LOOKBACK_DAYS, RECENT_LOAD_DAYS)
           : TREND_LOOKBACK_DAYS,
@@ -237,6 +267,22 @@ export async function loadFitnessTrend(
         };
     projection = projected.projection;
     tsbPositiveDate = projected.tsbPositiveDate;
+    if (calendarPlan && projectDays > 0) {
+      // intervals.icu's rows are read as given, never rerun through
+      // projectLoads: its ctlLoad and atlLoad differ, and that feeds one
+      // load into both. Not solved with a taper, which stays rest-based.
+      projectionSource = "intervals.icu calendar";
+      projection = planned;
+      tsbPositiveDate =
+        current?.date === endDate && current.tsb >= 0
+          ? endDate
+          : (planned.find((day) => day.tsb >= 0)?.date ?? null);
+      if (planned.length < projectDays) {
+        warnings.push(
+          `intervals.icu returned ${planned.length} of ${projectDays} projected days; dates it has no row for are left out.`,
+        );
+      }
+    }
     taperPlan = projected.taper;
     warnings.push(...projected.warnings);
     const unsyncedDays = projected.unsyncedDays;
@@ -316,6 +362,7 @@ export async function loadFitnessTrend(
     current,
     projection,
     tsbPositiveDate,
+    projectionSource,
     taper: taperPlan,
     asOf: current?.date ?? null,
     activityTypesIncluded,

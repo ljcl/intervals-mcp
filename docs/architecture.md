@@ -512,6 +512,14 @@ a typo like 2062-10-17 gave a 13,170-day plan of about 950 KB, 9999-12-31
 overflowed the call stack in `Math.max(...shape)` (now a loop), and
 2027-02-30 rolled over into March.
 
+**Calendar projection (#303).** With `calendarPlan`, `loadWellnessFitnessSeries`
+widens its one wellness read to today plus `projectDays` and returns the
+future rows as `planned`; `loadFitnessTrend` uses them as the projection and
+reports `projection_source: "intervals.icu calendar"`. They go through
+`ctlAtlTsb` only, never `projectLoads`, which feeds one load into both CTL and
+ATL while these rows carry separate `ctlLoad` and `atlLoad`. Whole-body and
+window-ends-today only; elsewhere the option is ignored with a warning.
+
 **Past windows (#80).** `get-training-load`, `get-fitness-trend` and their
 app pairs take an optional `newest`, and `days` counts back from it: a
 look-back that ends on a past date, which fits the naming scheme (Input

@@ -504,6 +504,7 @@
       "projection[].date: string",
       "projection[].load: number",
       "projection[].tsb: number",
+      "projection_source: null string",
       "source: =\"computed\" =\"intervals.icu\" string",
       "taper.achieved_tsb: number",
       "taper.days: array",
