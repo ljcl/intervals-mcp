@@ -10,6 +10,15 @@ interface HookHarness<TProps, TResult> {
   unmount: () => Promise<void>;
 }
 
+function Probe<TProps, TResult>(props: {
+  hook: (props: TProps) => TResult;
+  hookProps: TProps;
+  onResult: (result: TResult) => void;
+}) {
+  props.onResult(props.hook(props.hookProps));
+  return null;
+}
+
 /**
  * Minimal render-a-hook harness. The repo has no React testing library and
  * does not need one for this: hooks are the only thing here that cannot be
@@ -30,22 +39,33 @@ export async function renderHook<TProps, TResult>(
   document.body.appendChild(container);
 
   let latest!: TResult;
-  const Probe = (props: { hookProps: TProps }) => {
-    latest = hook(props.hookProps);
-    return null;
+  const onResult = (result: TResult) => {
+    latest = result;
   };
 
   let root!: Root;
   await act(async () => {
     root = createRoot(container);
-    root.render(createElement(Probe, { hookProps: initialProps }));
+    root.render(
+      createElement(Probe<TProps, TResult>, {
+        hook,
+        hookProps: initialProps,
+        onResult,
+      }),
+    );
   });
 
   return {
     current: () => latest,
     rerender: async (props) => {
       await act(async () => {
-        root.render(createElement(Probe, { hookProps: props }));
+        root.render(
+          createElement(Probe<TProps, TResult>, {
+            hook,
+            hookProps: props,
+            onResult,
+          }),
+        );
       });
     },
     unmount: async () => {

@@ -809,7 +809,7 @@ async function checkGetAthleteStats(): Promise<void> {
     // fresh upload that wellness has not caught up with, or a Strava stub,
     // can make it differ.
     const ytd = d.all_sports.ytd;
-    let matchesWellness = "unknown";
+    let matchesWellness: string;
     try {
       const { getTimeZone } = await import("../apps/server/src/config");
       const { getWellness } = await import(

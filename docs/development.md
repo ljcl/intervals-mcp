@@ -61,13 +61,18 @@ directly via root `lint`; turbo dispatches it only through `bun run check` or
 (`bun run lint --reporter=github`, not through turbo) so diagnostics surface as
 inline PR annotations — turbo's task-name prefix breaks that parsing.
 
-`biome.json` sets `linter.rules.nursery.preset: "recommended"`, and **that
-grants no rules** on the pinned Biome (`@biomejs/biome` in `package.json`).
-Nursery coverage is zero, however the key reads. Verified in-repo: `setTimeout("doSomething()", 100)`
-passes `biome check` silently yet `biome lint --only=lint/nursery/noImpliedEval`
-flags it, and the identical preset mechanism on a stable group does fire. The
-key stays because it starts working if Biome later makes presets grant nursery
-rules; a nursery rule is enforced here only if something names it explicitly.
+A nursery preset grants no rules (`biome rage --linter` lists none), so
+`biome.json` names each nursery rule it enforces. The type-aware ones
+(`noFloatingPromises`, `noMisusedPromises`, `useExhaustiveSwitchCases`) roughly
+double lint time, still under a second. Two 2.6 defaults are off on purpose:
+the Markdown formatter (no GFM or frontmatter support yet; it rewrote every doc
+and broke the `SKILL.md` YAML frontmatter) and `useMathMinMax`, whose fix turns
+the `YYYY-MM-DD` string comparisons here into `Math.max` calls that return
+`NaN`.
+
+Biome bumps arrive in their own Dependabot group and are never auto-merged: a
+minor promotes nursery rules into `recommended` and can add formatters, and
+the autofix job commits whatever `lint:fix` rewrites.
 
 ### Package boundaries
 

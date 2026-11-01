@@ -34,7 +34,8 @@
     "rules": {
       "preset": "recommended",
       "suspicious": {
-        "preset": "recommended"
+        "preset": "recommended",
+        "noDuplicateSelectors": "error"
       },
       "correctness": {
         "preset": "recommended",
@@ -55,7 +56,15 @@
         }
       },
       "nursery": {
-        "preset": "recommended"
+        "noFloatingPromises": "error",
+        "noMisusedPromises": "error",
+        "noReturnInFinally": "error",
+        "noUselessAssignment": "error",
+        "useExhaustiveSwitchCases": "error"
+      },
+      "complexity": {
+        "preset": "recommended",
+        "useMathMinMax": "off"
       }
     }
   },
@@ -74,6 +83,11 @@
   "css": {
     "formatter": {
       "enabled": true
+    }
+  },
+  "markdown": {
+    "formatter": {
+      "enabled": false
     }
   },
   "assist": {

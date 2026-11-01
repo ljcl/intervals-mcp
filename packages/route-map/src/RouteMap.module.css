@@ -37,11 +37,8 @@
   display: block;
   width: 100%;
   height: auto;
-}
-
-/* Horizontal touch drags scrub the track (and two-finger pinch zooms);
- * vertical drags keep scrolling the conversation. */
-.svg {
+  /* Horizontal touch drags scrub the track (and two-finger pinch zooms);
+   * vertical drags keep scrolling the conversation. */
   touch-action: pan-y;
 }
 

@@ -47,6 +47,16 @@ updates:
         patterns:
           - "storybook"
           - "@storybook/*"
+      # Biome minors promote nursery rules into the recommended set and add
+      # formatters (2.6 began formatting Markdown), so a bump can fail
+      # `bun run lint` or rewrite files the bump never touched. Alone, it
+      # never holds the other dev bumps back, and dependabot-auto-merge.yml
+      # skips this group so the autofix's reformat gets a human look.
+      biome:
+        applies-to: version-updates
+        dependency-type: development
+        patterns:
+          - "@biomejs/biome"
       production-minor-patch:
         applies-to: version-updates
         dependency-type: production

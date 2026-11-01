@@ -517,7 +517,7 @@ describe("intervalsClient", () => {
       await getAthletePaceCurves("k", curves);
       expect(calls).toHaveLength(1);
 
-      calls = mockJson(activity);
+      mockJson(activity);
       await updateActivity("k", "i189807578", { name: "Renamed" });
 
       calls = mockJson(paceCurvesFixture);
@@ -582,7 +582,7 @@ describe("intervalsClient", () => {
       // The second pair came from the cache.
       expect(calls).toHaveLength(2);
 
-      calls = mockJson(activity);
+      mockJson(activity);
       await updateActivity("k", "i189807578", { name: "x" });
 
       calls = mockJson([]);
