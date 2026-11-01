@@ -318,6 +318,12 @@ export const mockRestProjectionData: FitnessTrendData = {
   tsbPositiveDate: "2026-07-02",
 };
 
+/** The forward half is intervals.icu's projection from the calendar plan. */
+export const mockCalendarProjectionData: FitnessTrendData = {
+  ...mockRestProjectionData,
+  projectionSource: "intervals.icu calendar",
+};
+
 /**
  * The run-only (computed) scope for the same window: derived from the
  * whole-body series by scaling CTL/ATL down (running load is a subset of

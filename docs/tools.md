@@ -89,7 +89,7 @@ descriptions.
 | `get-best-efforts` | Best times at standard running distances: over your history from intervals.icu's pace curves, or inside one run with where each started |
 | `get-race-prediction` | Predicted race times from intervals.icu pace-curve points (Riegel) alongside intervals.icu's own critical-speed model, with confidence, source point, and km goal-pace splits |
 | `get-athlete-stats` | Run totals and totals for every sport (count, moving time, distance and whole-body load per activity type) for this week, the last 4 weeks, this month and YTD, aggregated from list-activities data |
-| `get-fitness-trend` | Fitness/fatigue/form (CTL/ATL/TSB), whole-body from intervals.icu wellness or run-only computed locally, with rest/planned-load projection and a solved taper to a target form on a target date; `newest` reads a past window, with no projection or taper |
+| `get-fitness-trend` | Fitness/fatigue/form (CTL/ATL/TSB), whole-body from intervals.icu wellness or run-only computed locally, with rest, planned-load or intervals.icu calendar projection and a solved taper to a target form on a target date; `newest` reads a past window, with no projection or taper |
 | `get-training-load` | Weekly running volume and volume-spike warnings, weekly intervals.icu training load and the types it covers, plus current CTL/ATL/TSB; `newest` ends the weeks on a past date |
 | `update-activity` | Update an activity's name, description, gear, RPE, or feel, echoing before/after values, with gear names (write tool) |
 | `update-wellness` | Log how the athlete feels on a day (soreness, fatigue, stress, mood, motivation, injury, sleep quality, comments), echoing before/after values (write tool) |
@@ -833,7 +833,18 @@ capped at 60) projects TSB forward assuming rest, or `plannedLoads`
 (`[{ date: YYYY-MM-DD, load }]`, dates after today; two entries on one date
 add up; unlisted dates in the projection count as rest; an entry on or before
 today, or beyond the projection, is ignored and named in a warning) projects
-with a specific plan instead. `tsb_positive_date` (only with a projection) is
+with a specific plan instead. `calendarPlan: true` (whole-body, window
+ending today) projects from the workouts planned on the athlete's intervals.icu
+calendar: one wellness read extended to today plus `projectDays`, and its
+future rows' `ctl`/`atl` are the projection as given, through `ctlAtlTsb`
+and never `projectLoads` (the rows carry separate `ctlLoad` and `atlLoad`).
+`projection_source` is then `"intervals.icu calendar"` (null otherwise), the
+text labels the projection as intervals.icu's, and a calendar with no planned
+load decays like rest. It overrides `plannedLoads` (warning), is ignored with
+a warning under `runOnly` or a past `newest`, needs `projectDays` above 0, and
+leaves a `targetDate` taper rest-based. The app pair takes `calendarPlan` too
+(`projectionSource` in its payload). The `race-readiness` prompt asks for it
+alongside the taper. `tsb_positive_date` (only with a projection) is
 today when TSB is already ≥ 0 today, and the text says "already positive
 today"; otherwise it is
 the first projected date TSB reaches 0, or null. `targetDate`/`targetTsb`
@@ -1085,7 +1096,7 @@ for `newest`.
 | `get-compare-activities-data` | Aggregate comparison (summaries, activity2−activity1 differences, efficiency) for the compare-activities UI (app-only) |
 | `view-activity-zones` | Time-in-zone bar chart for one activity's HR zones with an easy/moderate/hard split (power zones dropped for now; see docs/api-notes.md) (MCP App) |
 | `get-activity-zones-data` | Per-zone time distributions (bucket bounds, seconds, percentages) for the activity-zones UI (app-only) |
-| `view-fitness-trend` | CTL/ATL/TSB over time with shaded fatigue/freshness/ramp bands and a dashed taper plan or rest projection past today; a Whole body/Runs only toggle switches scope, caching each side; `newest` charts a past block with no projection (MCP App) |
+| `view-fitness-trend` | CTL/ATL/TSB over time with shaded fatigue/freshness/ramp bands and a dashed taper plan, calendar plan projection (`calendarPlan`) or rest projection past today; a Whole body/Runs only toggle switches scope, caching each side; `newest` charts a past block with no projection (MCP App) |
 | `get-fitness-trend-data` | Per-day CTL/ATL/TSB, the projection, the solved taper, and the dated warning bands for the fitness-trend UI; `runOnly` switches between whole-body (intervals.icu wellness) and run-only (computed) (app-only) |
 
 Every `view-*` result carries the chart's data, so the model has the numbers
@@ -1172,7 +1183,7 @@ Reusable multi-step workflows a host can offer as slash commands or starters.
 | ------ | --------- | ------------ |
 | `weekly-review` | `weeks` (optional, 1-52, default 4) | Reviews recent training (load trend, key workouts across the whole window, cadence patterns), ending with focus points for next week |
 | `annotate-last-run` | `id` (optional, defaults to the newest Run, TrailRun or VirtualRun; `activity_id` still accepted) | Analyses a run and appends a short coaching note to its activity description. Confirms before writing |
-| `race-readiness` | `raceDate` (required, after today, at most 180 days ahead), `distance` (optional), `targetTsb` (optional, default 10) | Race-day form and the taper that lands on it, predicted time, last 7 days of recovery, recent load; ends with a ready / nearly / not-yet verdict |
+| `race-readiness` | `raceDate` (required, after today, at most 180 days ahead), `distance` (optional), `targetTsb` (optional, default 10) | Race-day form, the taper that lands on it and the form the calendar plan reaches, predicted time, last 7 days of recovery, recent load; ends with a ready / nearly / not-yet verdict |
 | `run-debrief` | `id` (optional, defaults to the newest run) | The run summary, then the one analysis that fits the session (intervals with `findSimilar`, splits, hills or aerobic), plus that day's wellness |
 | `injury-check` | none | Volume-spike warnings, the 4-week HRV and resting-HR trend, form flags and shoe mileage (the athlete's gear reminders first); ends with a risk read and what to change, not a diagnosis |
 

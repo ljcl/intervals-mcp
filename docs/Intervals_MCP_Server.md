@@ -62,7 +62,7 @@ rather than (or alongside) text.
 | Tool | Answers | Key params |
 | ---- | ------- | ---------- |
 | `get-athlete-stats` | Run totals, and totals for every sport (strength sessions, swim distance), this week/month/YTD | (none) |
-| `get-fitness-trend` | Am I fresh or fatigued? What if I taper for a race? | `days`, `newest`, `runOnly`, `projectDays`/`plannedLoads`, `targetDate`/`targetTsb` |
+| `get-fitness-trend` | Am I fresh or fatigued? What if I taper for a race? | `days`, `newest`, `runOnly`, `projectDays`/`plannedLoads`/`calendarPlan`, `targetDate`/`targetTsb` |
 | `get-training-load` | Weekly volume, volume-spike flags, weekly load | `days`, `newest`, `runOnly` |
 | `get-best-efforts` | My best 5K/10K/half/marathon times; my fastest 5K inside one run, and where | `distances`, `window`, `topN`, `id` |
 | `get-race-prediction` | What could I run for X? What pace do I need for a goal time? | `raceDistance` (`5km`, `10km`, `15km`, `10 mile`, `half marathon`, `marathon`, `50km`), `goalTime` |
@@ -91,7 +91,7 @@ same numbers as text use the matching read tool (e.g. `get-fitness-trend`,
 | `view-training-load` | `get-training-load-data` | Weekly volume bars with a trend line and volume-spike weeks, a weekly load line, and Fitness/Fatigue/Form tiles; `runOnly` picks the starting scope; toggles whole-body vs runs-only; `newest` for a past block |
 | `view-compare-activities` | `get-compare-activities-data` | Two activities' streams overlaid with a delta summary |
 | `view-activity-zones` | `get-activity-zones-data` | Time-in-zone bar chart for HR |
-| `view-fitness-trend` | `get-fitness-trend-data` | CTL/ATL/TSB over time with fatigue/freshness bands and a taper plan; toggles whole-body vs runs-only; `newest` for a past block, with no projection |
+| `view-fitness-trend` | `get-fitness-trend-data` | CTL/ATL/TSB over time with fatigue/freshness bands and a taper plan or a calendar plan projection (`calendarPlan`); toggles whole-body vs runs-only; `newest` for a past block, with no projection |
 
 Once a chart is open, the model can adjust it with that chart's own tool:
 `set-brush-window` (activity chart: zoom to a stretch), `set-viewport` (route
@@ -126,7 +126,8 @@ was (hilly course, workout, long steady run). (This is also the `run-debrief`
 prompt.)
 
 **Race readiness.** `get-fitness-trend` with `targetDate`/`targetTsb` for
-race-day form and the taper, `get-race-prediction` for the time, the last 7
+race-day form and the taper, plus `calendarPlan` for where form lands if the
+planned workouts on the intervals.icu calendar are followed, `get-race-prediction` for the time, the last 7
 days of `get-wellness`, and `get-training-load` for recent load. (This is the
 `race-readiness` prompt.)
 
@@ -144,7 +145,8 @@ predicts on the slow side.
 
 **Fitness and taper planning.** `get-fitness-trend` with `targetDate` and
 `targetTsb` to solve a taper (or `projectDays`/`plannedLoads` to project
-forward under an assumed plan), or `view-fitness-trend` for the same thing as
+forward under an assumed plan, or `calendarPlan` to project from the workouts
+planned on the intervals.icu calendar), or `view-fitness-trend` for the same thing as
 a chart with a Whole body / Runs only toggle. `targetDate` must be after today
 and at most 180 days ahead.
 

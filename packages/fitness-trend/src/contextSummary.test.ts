@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  mockCalendarProjectionData,
   mockFitnessTrendData,
   mockPastFitnessTrendData,
   mockRestProjectionData,
@@ -45,6 +46,14 @@ describe("buildFitnessTrendContextSummary", () => {
       `form turns positive on ${mockRestProjectionData.tsbPositiveDate}`,
     );
     expect(summary).not.toContain("Taper plan");
+  });
+
+  it("names the calendar plan when that is the projection's source", () => {
+    const summary = buildFitnessTrendContextSummary(
+      mockCalendarProjectionData,
+    )!;
+    expect(summary).toContain("Calendar plan projection to");
+    expect(summary).not.toContain("Rest projection");
   });
 
   it("says form is already positive today, not that it turns positive", () => {

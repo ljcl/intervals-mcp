@@ -270,12 +270,13 @@ const fitnessTrendInput = z.object({
     .max(60)
     .default(14)
     .describe(
-      "Days to project past today assuming rest (default 14; ignored when targetDate is set)",
+      "Days to project past today, assuming rest or following the intervals.icu calendar plan with calendarPlan (default 14; the chart shows the taper instead when targetDate is set)",
     ),
+  calendarPlan: getFitnessTrendTool.inputSchema.shape.calendarPlan,
   targetDate: dateInputSchema
     .optional()
     .describe(
-      "Race or peak date (YYYY-MM-DD) to chart a solved taper toward. Omit for a rest projection.",
+      "Race or peak date (YYYY-MM-DD) to chart a solved taper toward. Omit for a rest or calendar projection.",
     ),
   targetTsb: z
     .number()
@@ -642,7 +643,7 @@ function buildToolDefs(): ToolDef[] {
     title: "Fitness trend chart",
     description:
       "Open an interactive fitness/fatigue/form chart (the performance-management chart): fitness (CTL) and fatigue (ATL) over the lookback window with form (TSB) on its own axis, deep-fatigue, freshness, and steep-ramp periods shaded, and a dashed continuation past today. " +
-      "Pass targetDate to chart a solved taper landing on targetTsb on that day, week by week; omit it for a rest projection. " +
+      "Pass targetDate to chart a solved taper landing on targetTsb on that day, week by week; omit it for a projection past today: rest, or intervals.icu's planned workouts with calendarPlan: true. " +
       "Pass newest to chart a past block instead; it has no projection or taper. " +
       "Prefer this over the text-only get-fitness-trend when the user wants to see whether they are peaking or digging a hole.",
     inputSchema: toInputSchema(APP_TOOL_INPUT_SCHEMAS["view-fitness-trend"]!),
@@ -1243,6 +1244,7 @@ async function loadFitnessTrendAppData(
   const targetDate =
     typeof args.targetDate === "string" ? args.targetDate : undefined;
   const targetTsb = args.targetTsb as number;
+  const calendarPlan = args.calendarPlan === true;
 
   // A past window drops projectDays and the taper in the loader, the one
   // home for that rule, so the default fortnight never reaches it.
@@ -1253,6 +1255,7 @@ async function loadFitnessTrendAppData(
       end,
       runOnly,
       projectDays,
+      calendarPlan,
       taper: targetDate ? { targetDate, targetTsb } : undefined,
     },
     progress,
@@ -1273,6 +1276,7 @@ async function loadFitnessTrendAppData(
       endDate: loaded.endDate,
       endsToday: loaded.endsToday,
       ctl7dDelta: loaded.ctl7dDelta,
+      projectionSource: loaded.projectionSource,
       activitiesIncluded: loaded.activitiesIncluded,
       activitiesMissingLoad: loaded.activitiesMissingLoad,
       source: loaded.source,
@@ -1403,7 +1407,7 @@ function fitnessTrendViewLines(data: FitnessTrendAppData): string[] {
     lines.push(`Form is already positive today (${data.tsbPositiveDate})`);
   } else if (data.tsbPositiveDate) {
     lines.push(
-      `Resting from here, form turns positive on ${data.tsbPositiveDate}`,
+      `${data.projectionSource ? "Following the intervals.icu calendar plan" : "Resting from here"}, form turns positive on ${data.tsbPositiveDate}`,
     );
   }
   for (const flag of data.flags) {

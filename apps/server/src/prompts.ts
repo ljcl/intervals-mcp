@@ -186,7 +186,7 @@ const PROMPTS: PromptDefinition[] = [
         `Am I ready for my race on ${race}, ${daysOut} days away? Today is ${today}.`,
         "",
         "Work through it in this order:",
-        `1. Call get-fitness-trend with targetDate=${raceDate} and targetTsb=${tsb}: current form, the taper plan that lands on it, and whether rest alone can reach it.`,
+        `1. Call get-fitness-trend with targetDate=${raceDate}, targetTsb=${tsb}, calendarPlan=true and projectDays=${Math.min(daysOut, 60)}: current form, the taper plan that lands on it, whether rest alone can reach it, and where form lands if the planned workouts on the intervals.icu calendar are followed.`,
         distance
           ? `2. Call get-race-prediction with raceDistance="${distance}" for the predicted time and km splits.`
           : "2. Call get-race-prediction with no raceDistance, for predicted times across distances.",

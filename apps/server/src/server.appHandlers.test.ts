@@ -1131,6 +1131,40 @@ describe("fitness trend handlers", () => {
     expect(Array.isArray(parsed.bands)).toBe(true);
   });
 
+  it("get-fitness-trend-data projects from the calendar plan with calendarPlan (#303)", async () => {
+    const rows = [
+      ...wellnessSeries(TODAY, 91, 21, 80),
+      ...Array.from({ length: 3 }, (_, i) => ({
+        id: inDays(i + 1),
+        ctl: 70 + i,
+        atl: 90 - i,
+        ctlLoad: 40,
+        atlLoad: 20,
+      })),
+    ];
+    mockedWellness.mockResolvedValueOnce(rows);
+    mockedIntervalsList.mockResolvedValueOnce([]);
+
+    const result = await dispatchToolCall("get-fitness-trend-data", {
+      calendarPlan: true,
+      projectDays: 3,
+    });
+
+    expect(result.isError).toBeUndefined();
+    const parsed = JSON.parse(result.content[0]?.text ?? "");
+    expect(parsed.projectionSource).toBe("intervals.icu calendar");
+    expect(
+      parsed.projection.map((d: { date: string; ctl: number }) => [
+        d.date,
+        d.ctl,
+      ]),
+    ).toEqual([
+      [inDays(1), 70],
+      [inDays(2), 71],
+      [inDays(3), 72],
+    ]);
+  });
+
   it("get-fitness-trend-data solves a taper in camelCase for the app", async () => {
     mockedWellness.mockResolvedValueOnce(wellnessSeries(TODAY, 91, 21, 80));
     mockedIntervalsList.mockResolvedValueOnce([]);

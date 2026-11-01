@@ -53,6 +53,8 @@ export interface FitnessTrendToolArgs {
   runOnly?: boolean;
   newest?: string;
   projectDays?: number;
+  /** Project from the plan on the intervals.icu calendar instead of rest. */
+  calendarPlan?: boolean;
   targetDate?: string;
   targetTsb?: number;
 }
@@ -66,6 +68,7 @@ export interface FitnessTrendBaseArgs {
   /** The window's last day, for a past block; omitted, the window ends today. */
   newest?: string;
   projectDays: number;
+  calendarPlan?: boolean;
   targetDate?: string;
   targetTsb?: number;
 }
@@ -76,8 +79,13 @@ export interface FitnessTrendData {
   days: number;
   /** Recorded days, oldest first. */
   series: TrendDay[];
-  /** Zero-load decay past the last recorded day. */
+  /** Past the last recorded day: zero-load decay, or the calendar plan (see `projectionSource`). */
   projection: TrendDay[];
+  /**
+   * `"intervals.icu calendar"` when `projection` is intervals.icu's own from
+   * the planned workouts on the calendar; null or absent for a rest projection.
+   */
+  projectionSource?: string | null;
   /** Solved taper, when the caller named a target date. */
   taper: TaperPlan | null;
   current: TrendDay | null;

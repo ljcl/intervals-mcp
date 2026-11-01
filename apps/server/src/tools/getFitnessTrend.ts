@@ -30,9 +30,8 @@ day, and can project them forward or solve a taper. Use it for "am I fresh
 for Saturday?", "when does my form turn positive?", taper planning, or
 whether a block is digging too deep.
 
-get-wellness and get-training-load also report CTL/ATL/TSB, but only as
-recorded values, with no projection or taper. Use view-fitness-trend to show
-this as a chart.
+get-wellness and get-training-load report only recorded CTL/ATL/TSB. Use
+view-fitness-trend to show this as a chart.
 
 Notes:
 - By default CTL/ATL come straight from intervals.icu's daily wellness
@@ -44,14 +43,17 @@ Notes:
 - targetDate returns a week-by-week training-load plan (reduced load, not
   rest) that lands on targetTsb, plus the daily CTL/ATL/TSB it produces. It
   says how much load to spend, not which sessions. If even complete rest
-  cannot reach the target in time, the response says so and gives the form
-  rest would reach instead of inventing a plan.
+  cannot reach the target, the response says so and gives the form rest
+  would reach.
 - Projections assume rest unless plannedLoads is given. plannedLoads entries
   on or before today, or past the projection, are ignored with a warning.
-- as_of is the latest date CTL/ATL is known for; on the default path it can
-  lag today until wellness syncs.
-- newest reviews a past block such as a race build; a warning says the
-  window has no projection or taper.
+- calendarPlan (with projectDays) projects from the athlete's intervals.icu
+  calendar plan, using intervals.icu's own future CTL/ATL: "fresh if I follow
+  my plan?". Whole-body only, overrides plannedLoads; a taper stays rest-based.
+- as_of is the latest date CTL/ATL is known for; it can lag today until
+  wellness syncs.
+- newest reviews a past block such as a race build, with no projection or
+  taper (a warning says so).
 `;
 
 const plannedLoadEntrySchema = z.object({
@@ -101,6 +103,14 @@ const inputSchema = z.object({
       "Planned future training load to project with instead of rest: " +
         "[{ date: YYYY-MM-DD, load }], dates after today. Dates inside the " +
         "projection window that are not listed count as rest (zero).",
+    ),
+  calendarPlan: z
+    .boolean()
+    .optional()
+    .describe(
+      "Project over projectDays from the planned workouts on the " +
+        "intervals.icu calendar (its own future CTL/ATL), not rest or " +
+        "plannedLoads. Whole-body only; ignored with runOnly or a past newest.",
     ),
   targetDate: dateInputSchema
     .optional()
@@ -196,6 +206,7 @@ export const getFitnessTrendTool = {
       newest,
       projectDays,
       plannedLoads,
+      calendarPlan,
       targetDate,
       targetTsb,
     }: GetFitnessTrendInput,
@@ -244,6 +255,7 @@ export const getFitnessTrendTool = {
           runOnly,
           projectDays: resolvedProjectDays,
           plannedLoads: typedPlannedLoads,
+          calendarPlan,
           taper: targetDate ? { targetDate, targetTsb } : undefined,
         },
         progress,
@@ -255,6 +267,7 @@ export const getFitnessTrendTool = {
         current,
         projection,
         tsbPositiveDate,
+        projectionSource,
         taper,
         activityTypesIncluded,
         activitiesIncluded,
@@ -304,6 +317,7 @@ export const getFitnessTrendTool = {
         warnings,
         daily: displaySeries,
         projection,
+        projection_source: projectionSource,
         tsb_positive_date: tsbPositiveDate,
         taper,
         activity_types_included: activityTypesIncluded,
@@ -343,7 +357,7 @@ export const getFitnessTrendTool = {
       }
 
       if (resolvedProjectDays > 0 && projection.length > 0) {
-        output += `**Projection (${resolvedProjectDays} days${typedPlannedLoads ? ", planned load" : ", zero load"})**\n`;
+        output += `**Projection (${resolvedProjectDays} days${projectionSource ? `, ${projectionSource}: intervals.icu's projection from the planned workouts` : typedPlannedLoads ? ", planned load" : ", zero load"})**\n`;
         if (tsbPositiveDate === endDate) {
           output += `  TSB is already positive today (${endDate})\n`;
         } else if (tsbPositiveDate) {

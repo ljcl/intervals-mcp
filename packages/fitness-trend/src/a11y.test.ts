@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  mockCalendarProjectionData,
   mockFitnessTrendData,
   mockPastFitnessTrendData,
   mockRestProjectionData,
@@ -32,6 +33,12 @@ describe("buildTrendA11y", () => {
     const desc = buildTrendA11y(mockRestProjectionData).desc;
     expect(desc).toContain("rest projection");
     expect(desc).not.toContain("taper plan");
+  });
+
+  it("names the calendar plan when that is the projection's source", () => {
+    const desc = buildTrendA11y(mockCalendarProjectionData).desc;
+    expect(desc).toContain("calendar plan projection");
+    expect(desc).not.toContain("rest projection");
   });
 
   it("reports the direction of the last week of fitness", () => {
