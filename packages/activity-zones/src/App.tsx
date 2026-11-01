@@ -1,3 +1,4 @@
+import { paceBasisNote } from "@intervals-mcp/data";
 import {
   CardHeader,
   EmptyState,
@@ -14,6 +15,7 @@ import {
   buildEmptyMessage,
   buildSummaryStats,
   buildZonesSubtitle,
+  ZONE_SET_NAMES,
 } from "./normalize";
 import { type ActivityZonesData } from "./types";
 import { ZoneChart } from "./ZoneChart";
@@ -23,8 +25,6 @@ interface AppProps {
   data: ActivityZonesData;
   mode?: "mobile" | "desktop";
 }
-
-const SET_LABELS = { heartrate: "Heart rate", power: "Power" } as const;
 
 export function App({ app, data, mode = "desktop" }: AppProps) {
   const isMobile = mode === "mobile";
@@ -59,7 +59,12 @@ export function App({ app, data, mode = "desktop" }: AppProps) {
       />
       <SummaryBar compact={isMobile} stats={stats} />
       <div className={styles.viewContainer}>
-        <ZoneChart set={activeSet} activityName={data.name} mode={mode} />
+        <ZoneChart
+          set={activeSet}
+          activityName={data.name}
+          activityType={data.type}
+          mode={mode}
+        />
       </div>
       <div className={styles.footer}>
         {data.zoneSets.length > 1 && (
@@ -70,15 +75,20 @@ export function App({ app, data, mode = "desktop" }: AppProps) {
                 active={set.type === activeSet.type}
                 onClick={() => setActiveType(set.type)}
               >
-                {SET_LABELS[set.type]}
+                {ZONE_SET_NAMES[set.type]}
               </Pill>
             ))}
           </PillGroup>
         )}
         {activeSet.sensorBased === false && (
-          <span className={styles.sensorNote}>
-            Estimated zones (no {SET_LABELS[activeSet.type].toLowerCase()}{" "}
+          <span className={styles.footnote}>
+            Estimated zones (no {ZONE_SET_NAMES[activeSet.type].toLowerCase()}{" "}
             sensor)
+          </span>
+        )}
+        {activeSet.basis && (
+          <span className={styles.footnote}>
+            Zones: {paceBasisNote(activeSet.basis)}
           </span>
         )}
       </div>

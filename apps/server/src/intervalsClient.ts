@@ -191,7 +191,13 @@ const IntervalsActivitySchema = z
     athlete_max_hr: z.number().nullable().optional(),
     icu_power_zones: z.array(z.number()).nullable().optional(),
     icu_zone_times: z.array(IntervalsZoneTimeSchema).nullable().optional(),
+    /** Percentages of `threshold_pace` (a speed in m/s), 999 the open top,
+     * as they stood when the activity was processed (docs/api-notes.md). */
     pace_zones: z.array(z.number()).nullable().optional(),
+    threshold_pace: z.number().nullable().optional(),
+    /** Whether intervals.icu's own zone view shows `gap_zone_times` (true)
+     * or `pace_zone_times`; the activity's copy of the Run setting. */
+    use_gap_zone_times: z.boolean().nullable().optional(),
     race: z.boolean().nullable().optional(),
     tags: z.array(z.string()).nullable().optional(),
     sub_type: z.string().nullable().optional(),

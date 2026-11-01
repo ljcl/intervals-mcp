@@ -237,7 +237,7 @@ breaking them has shipped bugs — do not work around them locally.
 - `packages/training-load/` — React + Recharts MCP App for weekly training volume with trend line and injury-risk warnings
 - `packages/route-map/` — React MCP App for activity GPS maps (MapLibre basemap by default, pure-SVG offline grid fallback; no Recharts)
 - `packages/compare-activities/` — React + Recharts MCP App overlaying two activities' streams with a delta summary
-- `packages/activity-zones/`: React + Recharts MCP App for per-activity HR time-in-zone distribution (power zones dropped for now; see docs/api-notes.md)
+- `packages/activity-zones/`: React + Recharts MCP App for per-activity HR and pace time-in-zone distribution (power zones dropped for now; see docs/api-notes.md)
 - `packages/fitness-trend/` — React + Recharts MCP App charting CTL/ATL/TSB with warning bands and a dashed taper, calendar-plan or rest projection
 - `packages/data/` — Shared pure data utilities (formatting, activity types, smoothing). Formatters live here, once (`formatting.ts`): MCP App packages cannot import each other, so a formatter two apps need has exactly one home; duplicated copies are invisible to knip and Biome. Server-side equivalent: `apps/server/src/formatters.ts`; sport-specific transforms in `utils/running.ts`
 - `packages/ui/` — Shared presentational React components (Pill, Tooltip, Legend, SummaryBar, AppShell, CardHeader, EmptyState, ErrorState, LoadingState, Skeleton) plus the app-shell runtime (`AppRoot`, `useServerToolData`, `useServerToolFetcher`, `useModelContextSync`, `useMobileMode`)

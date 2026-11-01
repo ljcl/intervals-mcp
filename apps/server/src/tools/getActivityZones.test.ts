@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { handledNotFound, handledRateLimit } from "../__fixtures__";
 import activityFixture from "../__fixtures__/intervals/activity.json";
+import paceFixture from "../__fixtures__/intervals/activity-pace-zones.json";
 import { mapIntervalsZones } from "../activityZones";
 import { getActivity, type IntervalsActivity } from "../intervalsClient";
 import { formatActivityZones, getActivityZonesTool } from "./getActivityZones";
@@ -30,7 +31,47 @@ describe("formatActivityZones", () => {
   });
 });
 
+describe("formatActivityZones pace set", () => {
+  const paceRun = paceFixture as unknown as IntervalsActivity;
+
+  it("prints each zone's pace range and time, and says it is GAP", () => {
+    const text = formatActivityZones(mapIntervalsZones(paceRun));
+
+    expect(text).toContain("Pace Zones (time by grade-adjusted pace (GAP))");
+    expect(text).toContain("Z1 (slower than 6:01 /km): 2:57 (10.3%)");
+    expect(text).toContain("Z4 (4:40-4:57 /km): 4:41 (16.4%)");
+    expect(text).toContain("Z7 (faster than 4:11 /km): 0:54 (3.1%)");
+  });
+
+  it("says plain pace when the time is not grade-adjusted", () => {
+    const text = formatActivityZones(
+      mapIntervalsZones({ ...paceRun, use_gap_zone_times: false }),
+    );
+    expect(text).toContain("Pace Zones (time by pace, not grade-adjusted)");
+  });
+});
+
 describe("getActivityZonesTool.execute", () => {
+  it("gives a run without heart rate its pace zones, with the same seconds in the structured copy", async () => {
+    const paceRun = paceFixture as unknown as IntervalsActivity;
+    mockedGetActivity.mockResolvedValue({
+      ...paceRun,
+      icu_hr_zones: null,
+      icu_hr_zone_times: null,
+    });
+
+    const result = await getActivityZonesTool.execute({ id: "i1" }, "key");
+
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0]?.text).toContain("Pace Zones");
+    expect(result.content[0]?.text).not.toContain("No zone data");
+    const [set] = result.structuredContent!.zone_sets;
+    expect(set?.type).toBe("pace");
+    expect(set?.basis).toBe("gap");
+    expect(set?.buckets.map((b) => b.seconds)).toEqual(paceRun.gap_zone_times);
+    expect(result.structuredContent?.units.pace).toBe("m/s");
+  });
+
   beforeEach(() => {
     mockedGetActivity.mockReset();
   });

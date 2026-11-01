@@ -49,6 +49,10 @@ export {
   hrZoneRangeText,
   type IntensitySplit,
   intensitySplit,
+  type PaceBasis,
+  paceBasisLabel,
+  paceBasisNote,
+  paceZoneRangeText,
   type ZoneBucket,
   type ZoneSet,
 } from "./zones";

@@ -27,7 +27,7 @@
   padding: var(--space-1) 0 0;
 }
 
-.sensorNote {
+.footnote {
   align-self: center;
   font-size: var(--font-text-xs-size);
   color: var(--color-text-tertiary);

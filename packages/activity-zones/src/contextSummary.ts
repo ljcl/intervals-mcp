@@ -1,4 +1,5 @@
 import { dominantBucket, intensitySplit } from "@intervals-mcp/data";
+import { zoneSetLabel } from "./normalize";
 import { type ActivityZonesData } from "./types";
 
 /**
@@ -12,7 +13,7 @@ export function buildZonesContextSummary(
 
   const parts = [`Time-in-zone for ${data.name} (${data.type}).`];
   for (const set of data.zoneSets) {
-    const label = set.type === "heartrate" ? "Heart rate" : "Power";
+    const label = zoneSetLabel(set);
     const top = dominantBucket(set);
     const split = intensitySplit(set.buckets.map((b) => b.seconds));
     parts.push(

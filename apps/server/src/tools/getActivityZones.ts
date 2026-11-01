@@ -1,4 +1,9 @@
-import { type ZoneSet } from "@intervals-mcp/data";
+import {
+  paceBasisNote,
+  paceZoneRangeText,
+  speedDisplay,
+  type ZoneSet,
+} from "@intervals-mcp/data";
 import { z } from "zod";
 import {
   hrZoneMismatchWarning,
@@ -7,6 +12,7 @@ import {
 } from "../activityZones";
 import { formatDuration } from "../formatters";
 import { getActivity } from "../intervalsClient";
+import { formatPaceSeconds } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
 import { toolErrorText } from "./_errors";
 import { intervalsActivityIdInput } from "./_ids";
@@ -15,9 +21,9 @@ import { ActivityZonesOutputSchema, warnOnSchemaDrift } from "./outputs";
 const name = "get-activity-zones";
 
 const description = `
-Returns one intervals.icu activity's heart rate time in zone: time and
-percent in each zone, from the activity's own recorded zone bounds (not
-today's sport settings). For today's settings and zone ranges, use
+Returns one intervals.icu activity's time in heart rate zones and, for a
+run, in pace zones: time and percent in each zone, from the activity's own
+recorded zone bounds (not today's sport settings). For today's settings and zone ranges, use
 get-athlete-zones.
 
 get-activity and get-running-summary already include HR zone time. Use this
@@ -25,7 +31,11 @@ tool when zones are all you need, or to compare zone distribution between
 activities; use view-activity-zones to show it as a chart.
 
 Notes:
-- Power and pace zones are not covered.
+- Pace zones are percentages of the activity's threshold pace, shown as pace
+  ranges. Their time is grade-adjusted (GAP) when the athlete's intervals.icu
+  setting says so, else plain pace; the text and the pace set's basis field
+  say which. A run without a heart rate sensor still has pace zones.
+- Power zones are not covered.
 - An activity with no zone data (no HR sensor, no recorded bounds) returns an
   empty zone_sets list and a message, not an error.
 - If the zone bounds and zone times have different zone counts, heart rate is
@@ -38,32 +48,50 @@ const inputSchema = z.object({
 
 type GetActivityZonesInput = z.infer<typeof inputSchema>;
 
-const ZONE_META: Partial<Record<ZoneSet["type"], string>> = {
-  heartrate: "Heart Rate Zones",
-};
+function zoneTitle(set: ZoneSet): string {
+  if (set.type === "pace") {
+    return `Pace Zones (${set.basis ? paceBasisNote(set.basis) : "time by pace"})`;
+  }
+  return set.type === "heartrate" ? "Heart Rate Zones" : set.type;
+}
 
-function formatZoneSet(set: ZoneSet): string {
+function formatZoneSet(set: ZoneSet, activityType: string): string {
+  const display = speedDisplay(activityType);
   const lines = set.buckets.map((bucket) => {
-    const range =
-      set.type === "heartrate" && bucket.max !== null
-        ? hrZoneRangeText({ min: bucket.min, max: bucket.max }, ` ${set.unit}`)
-        : `${bucket.min}-${bucket.max} ${set.unit}`;
+    let range: string;
+    if (set.type === "pace") {
+      range = paceZoneRangeText(bucket, display, (value) =>
+        display.sport === "other"
+          ? display.format(value)
+          : formatPaceSeconds(value * 60),
+      );
+    } else if (set.type === "heartrate" && bucket.max !== null) {
+      range = hrZoneRangeText(
+        { min: bucket.min, max: bucket.max },
+        ` ${set.unit}`,
+      );
+    } else {
+      range = `${bucket.min}-${bucket.max} ${set.unit}`;
+    }
     return `   Z${bucket.zone} (${range}): ${formatDuration(bucket.seconds)} (${bucket.pct}%)`;
   });
-  return `${ZONE_META[set.type] ?? set.type}\n${lines.join("\n")}`;
+  return `${zoneTitle(set)}\n${lines.join("\n")}`;
 }
 
 /**
  * Builds the human-readable per-zone summary for an activity's mapped zone
  * sets. Exported for direct testing.
  */
-export function formatActivityZones(zoneSets: ZoneSet[]): string {
-  return zoneSets.map(formatZoneSet).join("\n\n");
+export function formatActivityZones(
+  zoneSets: ZoneSet[],
+  activityType = "Run",
+): string {
+  return zoneSets.map((set) => formatZoneSet(set, activityType)).join("\n\n");
 }
 
 export const getActivityZonesTool = {
   name,
-  title: "Time in heart-rate zones",
+  title: "Time in heart rate and pace zones",
   description,
   inputSchema,
   annotations: READ_ONLY,
@@ -74,7 +102,7 @@ export const getActivityZonesTool = {
       const zoneSets = mapIntervalsZones(activity);
       const warning = hrZoneMismatchWarning(activity);
 
-      const units = { heartrate: "bpm" as const };
+      const units = { heartrate: "bpm" as const, pace: "m/s" as const };
 
       if (zoneSets.length === 0) {
         const empty = { activity_id: activity.id, zone_sets: [], units };
@@ -94,7 +122,7 @@ export const getActivityZonesTool = {
       const summaryLines = [
         `Activity Zones (ID: ${id}):`,
         "",
-        formatActivityZones(zoneSets),
+        formatActivityZones(zoneSets, activity.type ?? "Run"),
       ];
       if (warning) summaryLines.push("", warning);
 
@@ -105,6 +133,7 @@ export const getActivityZonesTool = {
         activity_id: activity.id,
         zone_sets: zoneSets.map((set) => ({
           type: set.type,
+          ...(set.basis ? { basis: set.basis } : {}),
           sensor_based: set.sensorBased,
           total_seconds: set.totalSeconds,
           buckets: set.buckets,

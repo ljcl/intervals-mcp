@@ -9,7 +9,7 @@ import {
   type PaceZone,
   speedDisplayForSport,
 } from "@intervals-mcp/data";
-import { zoneRanges } from "./activityZones";
+import { OPEN_TOP_PCT, zoneRanges } from "./activityZones";
 import { round } from "./formatters";
 import {
   type IntervalsAthleteHrCurves,
@@ -140,9 +140,6 @@ export function groupTypes(groups: IntervalsSportSettings[]): string[][] {
 }
 
 // ---------- zones and threshold pace ----------
-
-/** intervals.icu's open top for pace (and power) zones: 999% of threshold. */
-const OPEN_TOP_PCT = 999;
 
 export interface AthleteHrZone {
   zone: number;

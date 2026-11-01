@@ -4,6 +4,7 @@ import {
   hrZoneMismatchData,
   hrZoneSet,
   mockZonesData,
+  paceZoneSet,
   powerZoneSet,
 } from "./__fixtures__/zones";
 import {
@@ -16,25 +17,33 @@ import {
 
 describe("formatZoneRange", () => {
   it("reads HR ranges as get-activity-zones does: upper bound inclusive, whole bpm", () => {
-    expect(formatZoneRange(hrZoneSet.buckets[0]!, hrZoneSet)).toBe(
+    expect(formatZoneRange(hrZoneSet.buckets[0]!, hrZoneSet, "Run")).toBe(
       "up to 120 bpm",
     );
-    expect(formatZoneRange(hrZoneSet.buckets[4]!, hrZoneSet)).toBe(
+    expect(formatZoneRange(hrZoneSet.buckets[4]!, hrZoneSet, "Run")).toBe(
       "176-197 bpm",
     );
   });
 
   it("formats an open-ended power range", () => {
     // Power's top bucket still models an open-ended sentinel.
-    expect(formatZoneRange(powerZoneSet.buckets[5]!, powerZoneSet)).toBe(
-      "400+ W",
-    );
+    expect(
+      formatZoneRange(powerZoneSet.buckets[5]!, powerZoneSet, "Ride"),
+    ).toBe("400+ W");
+  });
+
+  it("reads pace ranges fastest limit first, with open ends at both extremes", () => {
+    const range = (i: number) =>
+      formatZoneRange(paceZoneSet.buckets[i]!, paceZoneSet, "Run");
+    expect(range(0)).toBe(`slower than 6'01" /km`);
+    expect(range(3)).toBe(`4'40"-4'57" /km`);
+    expect(range(6)).toBe(`faster than 4'11" /km`);
   });
 });
 
 describe("buildZoneRows", () => {
   it("labels zones and converts seconds to minutes", () => {
-    const rows = buildZoneRows(hrZoneSet);
+    const rows = buildZoneRows(hrZoneSet, "Run");
     expect(rows).toHaveLength(5);
     expect(rows[0]).toEqual({
       label: "Z1",
@@ -44,6 +53,16 @@ describe("buildZoneRows", () => {
       pct: 15,
     });
     expect(rows[1]!.minutes).toBe(30);
+  });
+
+  it("gives a pace set one row per zone with the same seconds and percentages", () => {
+    const rows = buildZoneRows(paceZoneSet, "Run");
+    expect(rows.map((r) => r.seconds)).toEqual([
+      177, 704, 347, 281, 82, 71, 54,
+    ]);
+    expect(rows.map((r) => r.pct)).toEqual([
+      10.3, 41, 20.2, 16.4, 4.8, 4.1, 3.1,
+    ]);
   });
 });
 
@@ -67,6 +86,15 @@ describe("buildZonesSubtitle", () => {
     expect(buildZonesSubtitle(mockZonesData, hrZoneSet)).toBe(
       "Run · 10 Jul · Heart rate zones",
     );
+  });
+
+  it("names the pace set and its basis", () => {
+    expect(buildZonesSubtitle(mockZonesData, paceZoneSet)).toBe(
+      "Run · 10 Jul · Pace zones (GAP)",
+    );
+    expect(
+      buildZonesSubtitle(mockZonesData, { ...paceZoneSet, basis: "pace" }),
+    ).toBe("Run · 10 Jul · Pace zones (pace)");
   });
 
   it("names the power set when power is active", () => {

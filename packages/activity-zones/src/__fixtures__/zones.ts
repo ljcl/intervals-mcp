@@ -32,6 +32,27 @@ export const powerZoneSet: ZoneSet = {
   ],
 };
 
+// A run's grade-adjusted pace zones, as mapIntervalsZones builds them from
+// the activity-pace-zones fixture: bounds are speeds in m/s (percent of a
+// 3.571 m/s threshold), the slowest zone starts at 0 and the open top zone
+// has no fast limit.
+export const paceZoneSet: ZoneSet = {
+  type: "pace",
+  unit: "m/s",
+  basis: "gap",
+  sensorBased: null,
+  totalSeconds: 1716,
+  buckets: [
+    { zone: 1, min: 0, max: 2.768, seconds: 177, pct: 10.3 },
+    { zone: 2, min: 2.768, max: 3.132, seconds: 704, pct: 41 },
+    { zone: 3, min: 3.132, max: 3.368, seconds: 347, pct: 20.2 },
+    { zone: 4, min: 3.368, max: 3.571, seconds: 281, pct: 16.4 },
+    { zone: 5, min: 3.571, max: 3.693, seconds: 82, pct: 4.8 },
+    { zone: 6, min: 3.693, max: 3.982, seconds: 71, pct: 4.1 },
+    { zone: 7, min: 3.982, max: null, seconds: 54, pct: 3.1 },
+  ],
+};
+
 export const mockZonesData: ActivityZonesData = {
   activityId: "1234567890",
   name: "Threshold Intervals",
@@ -46,6 +67,20 @@ export const hrOnlyData: ActivityZonesData = {
   ...mockZonesData,
   name: "Easy Morning Run",
   zoneSets: [hrZoneSet],
+};
+
+/** A run with a heart rate strap and pace zones: HR first, then Pace. */
+export const hrAndPaceData: ActivityZonesData = {
+  ...mockZonesData,
+  name: "Easy Morning Run",
+  zoneSets: [hrZoneSet, paceZoneSet],
+};
+
+/** A run with no heart rate: the Pace chart stands in for the empty state. */
+export const paceOnlyData: ActivityZonesData = {
+  ...mockZonesData,
+  name: "Treadmill Run",
+  zoneSets: [paceZoneSet],
 };
 
 export const emptyZonesData: ActivityZonesData = {

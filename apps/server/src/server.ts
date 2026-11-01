@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import { createRequire } from "node:module";
-import { dominantBucket } from "@intervals-mcp/data";
+import { dominantBucket, paceBasisLabel } from "@intervals-mcp/data";
 import {
   type CallToolResult,
   CLIENT_CAPABILITIES_META_KEY,
@@ -421,7 +421,7 @@ const APP_RESOURCES: AppResource[] = [
   {
     uri: "ui://activity-zones/app.html",
     name: "Activity Zones",
-    title: "Heart-rate zones chart",
+    title: "Time-in-zone chart",
     htmlPath: appHtmlRequire.resolve("@intervals-mcp/activity-zones/app.html"),
   },
   {
@@ -673,9 +673,9 @@ function buildToolDefs(): ToolDef[] {
 
   defs.push({
     name: "view-activity-zones",
-    title: "Heart-rate zones chart",
+    title: "Time-in-zone chart",
     description:
-      "Open an interactive time-in-zone chart for one activity: bars for the time spent in each heart rate zone, with percentages and an easy/moderate/hard split. " +
+      "Open an interactive time-in-zone chart for one activity: bars for the time spent in each heart rate zone and, for a run, each pace zone (grade-adjusted when the athlete's setting says so), with percentages and an easy/moderate/hard split. " +
       "Prefer this over the text-only get-activity-zones when the user wants to see how a workout's effort was distributed. Takes the activity id.",
     inputSchema: toInputSchema(APP_TOOL_INPUT_SCHEMAS["view-activity-zones"]!),
     annotations: READ_ONLY,
@@ -686,9 +686,9 @@ function buildToolDefs(): ToolDef[] {
 
   defs.push({
     name: "get-activity-zones-data",
-    title: "Heart-rate zones chart data",
+    title: "Time-in-zone chart data",
     description:
-      "Internal data feed for the activity-zones UI: returns per-zone time distributions (bucket bounds, seconds, percentages) for the activity's heart rate zones as JSON. " +
+      "Internal data feed for the activity-zones UI: returns per-zone time distributions (bucket bounds, seconds, percentages) for the activity's heart rate and pace zones as JSON. " +
       "The view-activity-zones app calls this; not intended for direct model use.",
     inputSchema: toInputSchema(
       APP_TOOL_INPUT_SCHEMAS["get-activity-zones-data"]!,
@@ -1468,15 +1468,20 @@ function activityZonesViewLines(data: ActivityZonesData): string[] {
   const lines = [`Activity Zones: ${data.name} (${data.date})`];
   if (data.zoneSets.length === 0) {
     lines.push(
-      "No zone data recorded: the activity has no recorded heart rate zone bounds.",
+      "No zone data recorded: the activity has no recorded heart rate or pace zone bounds.",
     );
     if (data.hrZoneWarning) lines.push(data.hrZoneWarning);
   } else {
     for (const set of data.zoneSets) {
       const top = dominantBucket(set);
       // Power zones are dropped for now (see docs/api-notes.md); heart
-      // rate is the only zone type mapIntervalsZones still emits.
-      const label = set.type === "heartrate" ? "Heart rate" : set.type;
+      // rate and pace are the zone types mapIntervalsZones emits.
+      const label =
+        set.type === "heartrate"
+          ? "Heart rate"
+          : set.type === "pace" && set.basis
+            ? `Pace (${paceBasisLabel(set.basis)})`
+            : set.type;
       lines.push(
         `${label}: mostly Z${top.zone} (${top.pct}% of ${Math.round(set.totalSeconds / 60)} min)`,
       );

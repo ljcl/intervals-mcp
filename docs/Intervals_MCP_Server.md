@@ -44,7 +44,7 @@ rather than (or alongside) text.
 | `get-activity-laps` | What were the lap splits? | `id`, `fromLap` |
 | `get-running-summary` | One-shot run readout: metrics, HR zones, cadence, dynamics, laps, weather (with humidity and dew point when the FIT file has them), and decoupling and efficiency factor (computed from the streams when intervals.icu has none) | `id` |
 | `get-running-dynamics` | Ground contact time, vertical oscillation/ratio, step length | `id`, `includeIntervals`, `fromLap` |
-| `get-activity-zones` | Time in each HR zone (power zones are not reported yet) | `id` |
+| `get-activity-zones` | Time in each HR zone and, for a run, each pace zone (GAP when the activity uses it); power zones are not reported yet | `id` |
 | `get-activity-streams` | Raw time-series (HR, pace, cadence, power, altitude...) | `id`, `types`, `maxPoints` |
 
 ### Per-activity analysis
@@ -90,7 +90,7 @@ same numbers as text use the matching read tool (e.g. `get-fitness-trend`,
 | `view-route-map` | `get-route-map-data` | GPS track with start/finish markers and optional waypoints |
 | `view-training-load` | `get-training-load-data` | Weekly volume bars with a trend line and volume-spike weeks, a weekly load line, and Fitness/Fatigue/Form tiles; `runOnly` picks the starting scope; toggles whole-body vs runs-only; `newest` for a past block |
 | `view-compare-activities` | `get-compare-activities-data` | Two activities' streams overlaid with a delta summary |
-| `view-activity-zones` | `get-activity-zones-data` | Time-in-zone bar chart for HR |
+| `view-activity-zones` | `get-activity-zones-data` | Time-in-zone bar chart for HR and, for a run, pace zones |
 | `view-fitness-trend` | `get-fitness-trend-data` | CTL/ATL/TSB over time with fatigue/freshness bands and a taper plan or a calendar plan projection (`calendarPlan`); toggles whole-body vs runs-only; `newest` for a past block, with no projection |
 
 Once a chart is open, the model can adjust it with that chart's own tool:

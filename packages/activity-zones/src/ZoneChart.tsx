@@ -20,6 +20,8 @@ import { ZoneTooltip } from "./ZoneTooltip";
 interface ZoneChartProps {
   set: ZoneSet;
   activityName: string;
+  /** The activity's type: a pace set's bounds read as pace or speed by it. */
+  activityType: string;
   mode?: "mobile" | "desktop";
 }
 
@@ -29,11 +31,13 @@ const ZONE_OPACITIES = [0.35, 0.5, 0.65, 0.8, 1];
 const SET_COLORS: Record<ZoneSet["type"], string> = {
   heartrate: "var(--chart-heartrate)",
   power: "var(--chart-power)",
+  pace: "var(--chart-pace)",
 };
 
 export function ZoneChart({
   set,
   activityName,
+  activityType,
   mode = "desktop",
 }: ZoneChartProps) {
   const isMobile = mode === "mobile";
@@ -46,10 +50,13 @@ export function ZoneChart({
     marginBottom: 24,
   };
 
-  const rows = useMemo(() => buildZoneRows(set), [set]);
+  const rows = useMemo(
+    () => buildZoneRows(set, activityType),
+    [set, activityType],
+  );
   const a11y = useMemo(
-    () => buildZonesA11y(set, activityName),
-    [set, activityName],
+    () => buildZonesA11y(set, activityName, activityType),
+    [set, activityName, activityType],
   );
   const color = SET_COLORS[set.type];
   const opacityFor = (index: number) =>

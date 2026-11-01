@@ -705,7 +705,13 @@ export const ActivityZonesOutputSchema = z.object({
       type: z
         .string()
         .describe(
-          "heartrate (power zones are dropped for now; see docs/api-notes.md)",
+          "heartrate or pace (power zones are dropped for now; see docs/api-notes.md). A pace set's bucket min/max are speeds in m/s, min the slow limit and max the fast limit, null for the open top zone",
+        ),
+      basis: z
+        .enum(["gap", "pace"])
+        .optional()
+        .describe(
+          "pace sets only: gap when the seconds are grade-adjusted pace time, pace when they are plain pace time",
         ),
       sensor_based: z.boolean().nullable(),
       total_seconds: z.number().int(),
@@ -727,6 +733,7 @@ export const ActivityZonesOutputSchema = z.object({
   ),
   units: z.object({
     heartrate: z.literal("bpm"),
+    pace: z.literal("m/s").optional(),
   }),
 });
 
