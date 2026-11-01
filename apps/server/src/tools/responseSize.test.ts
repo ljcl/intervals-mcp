@@ -171,16 +171,19 @@ beforeEach(() => {
   );
 });
 
+interface ToolResult {
+  structuredContent?: unknown;
+  content: Array<{ type: string; text?: string }>;
+  isError?: boolean;
+}
+
 interface SizeCase {
   label: string;
   args: Record<string, unknown>;
   /** Swap a mock before the call, for a case needing different data. */
   setup?: () => void;
   /** Extra assertions on the result, to prove the case reached its largest path. */
-  check?: (result: {
-    structuredContent?: unknown;
-    content: Array<{ type: string; text?: string }>;
-  }) => void;
+  check?: (result: ToolResult) => void | Promise<void>;
 }
 
 const ALL_STREAM_TYPES = [
@@ -209,15 +212,106 @@ const ultraLaps = () =>
     ).flat(),
   }));
 
-/** The response kept fewer laps than the activity has, and says so. */
-const lapsCut = (result: {
-  structuredContent?: unknown;
-  content: Array<{ type: string; text?: string }>;
-}) => {
+/**
+ * The fromLap the text names for `tool`, and the rows (`key`) that call
+ * returns, so a check can prove the pointer really returns the rest.
+ */
+async function followPointer(
+  result: ToolResult,
+  tool: string,
+  key: "laps" | "intervals",
+): Promise<{ fromLap: number; rows: { lap_index: number }[] }> {
+  const text = result.content[0]?.text ?? "";
+  const fromLap = Number(
+    new RegExp(`${tool} with fromLap (\\d+)`).exec(text)?.[1],
+  );
+  expect(fromLap, text).toBeGreaterThan(1);
+  const rest = await dispatchToolCall(tool, { id: ID, fromLap });
+  expect(rest.isError).toBeUndefined();
+  const rows = (
+    rest.structuredContent as Record<string, { lap_index: number }[]>
+  )[key];
+  return { fromLap, rows: rows ?? [] };
+}
+
+/** The response kept fewer laps than the activity has, and names the rest. */
+const lapsCut = async (result: ToolResult) => {
   const kept = (result.structuredContent as { laps: unknown[] }).laps.length;
   expect(kept).toBeLessThan(162);
   expect(result.content[0]?.text).toContain(
     `first ${kept} of 162 laps, to stay under the response size limit.`,
+  );
+  const { fromLap, rows } = await followPointer(
+    result,
+    "get-activity-laps",
+    "laps",
+  );
+  expect(rows[0]?.lap_index).toBe(fromLap);
+};
+
+/** get-activity kept fewer intervals than the activity has, and says so. */
+const activityIntervalsCut = async (result: ToolResult) => {
+  const { intervals, interval_count } = result.structuredContent as {
+    intervals: unknown[];
+    interval_count: number;
+  };
+  expect(interval_count).toBe(162);
+  expect(intervals.length).toBeLessThan(162);
+  expect(result.content[0]?.text).toContain(
+    `structuredContent.intervals keeps the first ${intervals.length} of 162`,
+  );
+  // The text lists 20; the laps after them start at lap 21.
+  const { rows } = await followPointer(result, "get-activity-laps", "laps");
+  expect(rows[0]?.lap_index).toBe(21);
+};
+
+/** get-running-dynamics kept fewer WORK rows than it has, and names the rest. */
+const dynamicsCut = async (result: ToolResult) => {
+  const { intervals, interval_count } = result.structuredContent as {
+    intervals: { lap_index: number }[];
+    interval_count: number;
+  };
+  expect(intervals.length).toBeLessThan(interval_count);
+  const lastShown = intervals.at(-1)?.lap_index ?? 0;
+  const { fromLap, rows } = await followPointer(
+    result,
+    "get-running-dynamics",
+    "intervals",
+  );
+  expect(fromLap).toBe(lastShown + 1);
+  // The next WORK row, which may sit after a recovery lap.
+  expect(rows[0]?.lap_index).toBeGreaterThan(lastShown);
+};
+
+/** Every wellness day carries a 600-character comment and every score. */
+const commentEveryDay = () =>
+  vi.mocked(client.getWellness).mockImplementation(async (_key, range) =>
+    wellnessIn(range).map((w) => ({
+      ...w,
+      readiness: 7,
+      soreness: 3,
+      fatigue: 3,
+      stress: 2,
+      mood: 2,
+      motivation: 2,
+      injury: 3,
+      sleepQuality: 2,
+      comments: "Left calf tight after the long run. ".repeat(17).slice(0, 600),
+    })),
+  );
+
+/** The response kept the newest days, and names the range holding the rest. */
+const wellnessCut = (result: ToolResult) => {
+  const { days, count } = result.structuredContent as {
+    days: { date: string }[];
+    count: number;
+  };
+  expect(count).toBe(90);
+  expect(days.length).toBeLessThan(90);
+  expect(days[0]?.date).toBe("2026-09-28");
+  const restNewest = addDays(days.at(-1)?.date ?? "", -1);
+  expect(result.content[0]?.text).toContain(
+    `newest ${days.length} of 90 days, to stay under the response size limit. For the rest, call get-wellness with oldest 2026-07-01 and newest ${restNewest}.`,
   );
 };
 
@@ -310,12 +404,30 @@ const CASES: Record<string, SizeCase[]> = {
   "get-activity-laps": [
     { label: "multi-lap", args: { id: ID } },
     { label: "162 laps", args: { id: ID }, setup: ultraLaps, check: lapsCut },
+    {
+      label: "162 laps from lap 81",
+      args: { id: ID, fromLap: 81 },
+      setup: ultraLaps,
+      check: (result) =>
+        expect(
+          (result.structuredContent as { laps: { lap_index: number }[] })
+            .laps[0]?.lap_index,
+        ).toBe(81),
+    },
   ],
   "get-running-summary": [
     { label: "multi-lap", args: { id: ID } },
     { label: "162 laps", args: { id: ID }, setup: ultraLaps, check: lapsCut },
   ],
-  "get-running-dynamics": [{ label: "multi-lap", args: { id: ID } }],
+  "get-running-dynamics": [
+    { label: "multi-lap", args: { id: ID } },
+    {
+      label: "162 laps",
+      args: { id: ID },
+      setup: ultraLaps,
+      check: dynamicsCut,
+    },
+  ],
   "get-aerobic-analysis": [
     { label: "with breakdown", args: { id: ID, includeBreakdown: true } },
   ],
@@ -390,7 +502,15 @@ const CASES: Record<string, SizeCase[]> = {
     },
     { label: "search, limit 200", args: { search: "run", limit: 200 } },
   ],
-  "get-activity": [{ label: "multi-lap", args: { id: ID } }],
+  "get-activity": [
+    { label: "multi-lap", args: { id: ID } },
+    {
+      label: "162 laps",
+      args: { id: ID },
+      setup: ultraLaps,
+      check: activityIntervalsCut,
+    },
+  ],
   "get-activity-streams": [
     {
       label: "4 h run, every type, maxPoints 2000",
@@ -423,6 +543,12 @@ const CASES: Record<string, SizeCase[]> = {
     {
       label: "90-day range",
       args: { oldest: "2026-07-01", newest: "2026-09-28" },
+    },
+    {
+      label: "90-day range, 600-char comment every day",
+      args: { oldest: "2026-07-01", newest: "2026-09-28" },
+      setup: commentEveryDay,
+      check: wellnessCut,
     },
   ],
   "view-activity-chart": [{ label: "default", args: { id: ID } }],
@@ -472,7 +598,7 @@ describe("response size budget", () => {
         .join("");
       // A size check on an error message proves nothing.
       expect(result.isError, text).toBeUndefined();
-      check?.(result);
+      await check?.(result);
       expect(responseSize(text, result.structuredContent)).toBeLessThanOrEqual(
         RESPONSE_BUDGET_CHARS,
       );

@@ -658,7 +658,9 @@ describe("formatActivityDetailText", () => {
     const text = formatActivityDetailText(detail);
     expect(text).toContain("20. RECOVERY:");
     expect(text).not.toContain("21.");
-    expect(text).toContain("(3 more: get-activity-laps lists all 23)");
+    expect(text).toContain(
+      "(3 more: get-activity-laps with fromLap 21 lists the rest)",
+    );
   });
 
   it("adds a stub note when the activity is a Strava stub", () => {

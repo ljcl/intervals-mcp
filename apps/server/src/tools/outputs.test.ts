@@ -303,6 +303,7 @@ describe("schemas align with the real tool rawObjects", () => {
       pace_zone_seconds: null,
       running_dynamics: null,
       intervals: null,
+      interval_count: null,
       gear_id: null,
       gear_name: null,
       weather: null,

@@ -58,11 +58,46 @@ describe("getActivityLapsTool.execute", () => {
     mockedGetActivity.mockReset();
   });
 
+  it("lists laps from fromLap on, keeping lap_count and lap_index whole", async () => {
+    mockedGetActivity.mockResolvedValueOnce(runActivityWithIntervals);
+    const total = runActivityWithIntervals.icu_intervals?.length ?? 0;
+
+    const result = await getActivityLapsTool.execute(
+      { id: "i189757183", fromLap: 5 },
+      "test-key",
+    );
+
+    const structured = result.structuredContent as unknown as {
+      lap_count: number;
+      laps: { lap_index: number }[];
+    };
+    expect(structured.lap_count).toBe(total);
+    expect(structured.laps).toHaveLength(total - 4);
+    expect(structured.laps[0]?.lap_index).toBe(5);
+    expect(result.content[0]?.text).toContain(
+      `Showing laps 5 to ${total} of ${total} laps.`,
+    );
+  });
+
+  it("refuses a fromLap past the last lap", async () => {
+    mockedGetActivity.mockResolvedValueOnce(rideActivity);
+
+    const result = await getActivityLapsTool.execute(
+      { id: "i555", fromLap: 2 },
+      "test-key",
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toBe(
+      "❌ fromLap 2 is past the last lap: activity i555 has 1 laps.",
+    );
+  });
+
   it("renders run laps with pace, GAP, and doubled cadence, in order", async () => {
     mockedGetActivity.mockResolvedValueOnce(runActivityWithIntervals);
 
     const result = await getActivityLapsTool.execute(
-      { id: "i189757183" },
+      { id: "i189757183", fromLap: 1 },
       "test-key",
     );
 
@@ -102,7 +137,7 @@ describe("getActivityLapsTool.execute", () => {
     mockedGetActivity.mockResolvedValueOnce(rideActivity);
 
     const result = await getActivityLapsTool.execute(
-      { id: "i555" },
+      { id: "i555", fromLap: 1 },
       "test-key",
     );
 
@@ -135,7 +170,7 @@ describe("getActivityLapsTool.execute", () => {
     } as unknown as IntervalsActivity);
 
     const result = await getActivityLapsTool.execute(
-      { id: "i189757185" },
+      { id: "i189757185", fromLap: 1 },
       "test-key",
     );
 
@@ -164,7 +199,7 @@ describe("getActivityLapsTool.execute", () => {
     } as unknown as IntervalsActivity);
 
     const result = await getActivityLapsTool.execute(
-      { id: "i777" },
+      { id: "i777", fromLap: 1 },
       "test-key",
     );
 
@@ -205,7 +240,7 @@ describe("getActivityLapsTool.execute", () => {
     } as unknown as IntervalsActivity);
 
     const result = await getActivityLapsTool.execute(
-      { id: "i888" },
+      { id: "i888", fromLap: 1 },
       "test-key",
     );
 
@@ -219,7 +254,7 @@ describe("getActivityLapsTool.execute", () => {
     );
 
     const result = await getActivityLapsTool.execute(
-      { id: "i404404" },
+      { id: "i404404", fromLap: 1 },
       "test-key",
     );
 
@@ -233,7 +268,7 @@ describe("getActivityLapsTool.execute", () => {
     );
 
     const result = await getActivityLapsTool.execute(
-      { id: "i123" },
+      { id: "i123", fromLap: 1 },
       "test-key",
     );
 
@@ -250,7 +285,7 @@ describe("getActivityLapsTool.execute", () => {
     mockedGetActivity.mockRejectedValueOnce(new Error("Bad Gateway"));
 
     const result = await getActivityLapsTool.execute(
-      { id: "i123" },
+      { id: "i123", fromLap: 1 },
       "test-key",
     );
 

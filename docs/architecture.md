@@ -951,9 +951,10 @@ over 25,000 tokens: a 61 KB `get-activity-streams` payload and a 150 KB
 - A tool whose input can ask for more than fits measures the built response
   and shrinks it, rather than reject the call or change the schema:
   `get-activity-streams` re-downsamples to fewer points, `list-activities`
-  returns a shorter page with `truncated: true`, `get-activity-laps` and
-  `get-running-summary` keep the first laps that fit (`fitListToBudget`,
-  `lap_count` stays the full count). The text says what was cut
+  returns a shorter page with `truncated: true`, `get-activity-laps`,
+  `get-running-summary`, `get-activity` and `get-running-dynamics` keep the
+  first laps that fit and `get-wellness` the newest days (`fitListToBudget`;
+  `lap_count`, `interval_count` or `count` stays the full count). The text says what was cut
   and how to get the rest. Measuring beats a fixed cell cap because widths
   differ (a `latlng` cell costs about four `heartrate` cells).
 - A response that a closed set bounds, not an input, needs no shrink.
@@ -963,8 +964,9 @@ over 25,000 tokens: a 61 KB `get-activity-streams` payload and a 150 KB
   goes over the budget, add a measured shrink.
 - A text response never points at data the reader cannot reach. Some hosts
   pass only the text, so "(N more)" names the call that returns the rest
-  ("get-activity-laps lists all 34"), or the cap is raised where no tool
-  does.
+  and the exact input for it ("get-activity-laps with fromLap 21 lists the
+  rest"), or the cap is raised where no tool does. `responseSize.test.ts`
+  follows each pointer and checks that call starts where the cut stopped.
 - `responseSize.test.ts` runs every model-visible tool through
   `dispatchToolCall` at its largest inputs against fixtures sized to fill
   them, and fails on a tool with no case, so a new tool cannot skip it.

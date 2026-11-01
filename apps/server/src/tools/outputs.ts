@@ -1341,7 +1341,16 @@ export const ActivityDetailOutputSchema = z.object({
   intervals: z
     .array(ActivityIntervalEntrySchema)
     .nullable()
-    .describe("Null when not requested or the activity has none"),
+    .describe(
+      "Null when not requested or the activity has none. A very long list keeps the first intervals that fit the response size limit",
+    ),
+  interval_count: z
+    .number()
+    .int()
+    .nullable()
+    .describe(
+      "Every interval the activity has, even when intervals keeps fewer; null when intervals is null",
+    ),
   gear_id: z.string().nullable(),
   gear_name: z
     .string()
@@ -1854,6 +1863,7 @@ const AerobicSourceSchema = z
   );
 export const RunningSummaryOutputSchema = ActivityDetailOutputSchema.omit({
   intervals: true,
+  interval_count: true,
 }).extend({
   decoupling_source: AerobicSourceSchema,
   efficiency_factor_source: AerobicSourceSchema,
@@ -1960,7 +1970,15 @@ export const RunningDynamicsOutputSchema = z.object({
     .nullable(),
   intervals: z
     .array(RunningDynamicsIntervalRowSchema)
-    .describe("WORK intervals only; empty when includeIntervals is false"),
+    .describe(
+      "WORK intervals only, from fromLap; empty when includeIntervals is false. A very long list keeps the first rows that fit the response size limit",
+    ),
+  interval_count: z
+    .number()
+    .int()
+    .describe(
+      "Every WORK interval the activity has, even when intervals keeps fewer",
+    ),
   units: z.object({
     stance_time: z.literal("ms"),
     vertical_oscillation: z.literal("mm"),

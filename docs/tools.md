@@ -127,7 +127,10 @@ Strava stub spike note.
 `get-activity` takes the `id` from `list-activities` and returns core
 metrics, training load, HR zone time-in-zone, running dynamics (Run,
 TrailRun, VirtualRun, Walk, Hike, with device support), the WORK/RECOVERY
-interval breakdown (`includeIntervals`, default true), gear id and name,
+interval breakdown (`includeIntervals`, default true; the text lists 20 and
+points at `get-activity-laps` `fromLap` 21 for the rest; a list over the
+response budget keeps the first intervals that fit, and `interval_count`
+stays the full count), gear id and name,
 and description, all with units. `moving_time_source` is `intervals.icu`:
 the paces use the activity's own `moving_time`, which can differ from the
 stream tools' moving time and from a lap's (docs/api-notes.md, "Moving
@@ -237,7 +240,11 @@ fatigue, stress, mood, motivation, `injury`, `sleep_quality`, `spo2` (%),
 `respiration` (breaths/min), comments). The 1 to 4 scores carry the web
 app's label in the text (`soreness 3 (High)`); on every scale 1 is the best
 state (docs/api-notes.md); `units` names all of these, including `spo2` and
-`respiration`. Takes either a single `date` or an `oldest`/`newest` range
+`respiration`. A range prints one line per day with the same scores and
+the comments, cut to 80 characters (#311). A range over the response budget
+(a long range of long comments) keeps the newest days that fit; `count`
+stays the full count, the averages cover every day, and the text names the
+`get-wellness` call for the rest. Takes either a single `date` or an `oldest`/`newest` range
 (max 90 calendar days inclusive); supplying `date` together with a range is
 a validation error. With nothing supplied it defaults to today in the
 server's time zone. A `date` or `newest` after today is refused before any
@@ -275,7 +282,11 @@ one home (#173). The response also carries
 `device_lap_count` (`icu_lap_count`) and `intervals_edited`
 (`icu_intervals_edited`); the text flags it when intervals were edited or
 the interval count differs from the device's lap count. An activity with no
-intervals returns a valid payload with `lap_count: 0`.
+intervals returns a valid payload with `lap_count: 0`. `fromLap` (default 1)
+lists laps from that `lap_index` on; `lap_count` stays the full count, and a
+value past the last lap is an error. A list over the response budget keeps
+the laps that fit and names the `fromLap` for the rest, so a 160-lap ultra
+takes two or three calls (#312).
 
 `get-running-summary` takes the `id` from `list-activities` and is a thin
 wrapper over `get-activity`'s mapper: every field `get-activity` returns
@@ -336,10 +347,13 @@ a two-step stride; it measures the same thing as `step_length_mm`
 `structuredContent` keeps both. Unlike
 `get-running-summary`, a non-step-cadence activity type or one whose device
 recorded no dynamics is not an error: `has_dynamics: false` with an
-explanatory `message` and empty `intervals`. The text response caps the
-interval list at 100 lines (no other tool returns per-interval dynamics, so
-it is generous rather than a pointer); `structuredContent.intervals` always has the
-full list. One `get-activity(..., { intervals: true })` call; no streams.
+explanatory `message` and empty `intervals`. `fromLap` (default 1) starts
+the WORK rows at that `lap_index`; a value past the last lap is an error.
+The text lists the same rows as `structuredContent.intervals`. A very long
+list keeps the first rows that fit the response budget (#312):
+`interval_count` stays the full WORK count, and the text names the
+`get-running-dynamics` `fromLap` that lists the rest. One
+`get-activity(..., { intervals: true })` call; no streams.
 
 `get-activity-zones` and the `view-activity-zones`/`get-activity-zones-data`
 MCP App share one mapper (`mapIntervalsZones`): heart rate from the

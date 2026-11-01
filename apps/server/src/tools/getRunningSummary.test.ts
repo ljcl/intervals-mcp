@@ -255,7 +255,9 @@ describe("formatRunningSummaryText", () => {
     expect(text).toContain(
       "Laps (lap moving times are intervals.icu's own per lap and can differ from the activity's):",
     );
-    expect(text).toContain("(16 more: get-activity-laps lists all 36)");
+    expect(text).toContain(
+      "(16 more: get-activity-laps with fromLap 21 lists the rest)",
+    );
     expect(text).not.toContain("🏃");
     expect(text).not.toContain("Strava");
   });

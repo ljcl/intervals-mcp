@@ -41,9 +41,9 @@ rather than (or alongside) text.
 
 | Tool | Answers | Key params |
 | ---- | ------- | ---------- |
-| `get-activity-laps` | What were the lap splits? | `id` |
+| `get-activity-laps` | What were the lap splits? | `id`, `fromLap` |
 | `get-running-summary` | One-shot run readout: metrics, HR zones, cadence, dynamics, laps, weather (with humidity and dew point when the FIT file has them), and decoupling and efficiency factor (computed from the streams when intervals.icu has none) | `id` |
-| `get-running-dynamics` | Ground contact time, vertical oscillation/ratio, step length | `id`, `includeIntervals` |
+| `get-running-dynamics` | Ground contact time, vertical oscillation/ratio, step length | `id`, `includeIntervals`, `fromLap` |
 | `get-activity-zones` | Time in each HR zone (power zones are not reported yet) | `id` |
 | `get-activity-streams` | Raw time-series (HR, pace, cadence, power, altitude...) | `id`, `types`, `maxPoints` |
 

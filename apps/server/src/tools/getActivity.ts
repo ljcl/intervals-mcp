@@ -41,6 +41,7 @@ import {
 import { READ_ONLY } from "./_annotations";
 import { toolErrorText } from "./_errors";
 import { intervalsActivityIdInput } from "./_ids";
+import { fitListToBudget } from "./_responseBudget";
 import { ActivityDetailOutputSchema, warnOnSchemaDrift } from "./outputs";
 
 const name = "get-activity";
@@ -74,6 +75,7 @@ Notes:
   was no best. For a run PB, use get-best-efforts.
 - The text cuts the description at 200 characters; structuredContent has it
   in full.
+- A very long interval list is cut to fit; the text names the rest.
 - An activity synced from Strava (source STRAVA) is a stub with no detail.
 `;
 
@@ -571,7 +573,10 @@ function formatIntervalLine(entry: ActivityIntervalEntry, i: number): string {
 }
 
 /** Builds the tool's text response. Exported for direct testing. */
-export function formatActivityDetailText(d: ActivityDetail): string {
+export function formatActivityDetailText(
+  d: ActivityDetail,
+  intervalTotal = d.intervals?.length ?? 0,
+): string {
   const lines = [`${d.date} ${d.type} ${d.name} [${d.id}]`];
   if (d.is_strava_stub) lines.push(STRAVA_STUB_NOTE);
 
@@ -610,10 +615,14 @@ export function formatActivityDetailText(d: ActivityDetail): string {
     const shown = d.intervals.slice(0, MAX_INTERVAL_LINES);
     for (const [i, entry] of shown.entries())
       lines.push(formatIntervalLine(entry, i));
-    const remaining = d.intervals.length - shown.length;
+    const remaining = intervalTotal - shown.length;
     if (remaining > 0)
       lines.push(
-        `(${remaining} more: get-activity-laps lists all ${d.intervals.length})`,
+        `(${remaining} more: get-activity-laps with fromLap ${shown.length + 1} lists the rest)`,
+      );
+    if (d.intervals.length < intervalTotal)
+      lines.push(
+        `structuredContent.intervals keeps the first ${d.intervals.length} of ${intervalTotal}, to stay under the response size limit.`,
       );
   }
 
@@ -658,13 +667,28 @@ export const getActivityTool = {
       // call, and the list is cached for 10 minutes.
       const gearName = await resolveActivityGearName(apiKey, activity);
       const detail = mapActivityDetail(activity, sportSettings, gearName);
-      warnOnSchemaDrift(name, ActivityDetailOutputSchema, detail);
+      const intervals = detail.intervals ?? [];
+      const response = {
+        ...detail,
+        interval_count: detail.intervals ? intervals.length : null,
+      };
+      warnOnSchemaDrift(name, ActivityDetailOutputSchema, response);
+
+      // An ultra's 1 km auto-laps overflow the budget at about 130 (#312).
+      const { text, structured } = fitListToBudget(intervals.length, (n) => {
+        const shown = {
+          ...response,
+          intervals: detail.intervals && intervals.slice(0, n),
+        };
+        return {
+          text: formatActivityDetailText(shown, intervals.length),
+          structured: shown,
+        };
+      });
 
       return {
-        content: [
-          { type: "text" as const, text: formatActivityDetailText(detail) },
-        ],
-        structuredContent: detail,
+        content: [{ type: "text" as const, text }],
+        structuredContent: structured,
       };
     } catch (error) {
       return {

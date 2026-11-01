@@ -177,7 +177,7 @@ describe("formatRunningDynamicsText", () => {
     expect(text).not.toContain("WORK intervals:");
   });
 
-  it("caps the interval list at 100 lines with a '(n more)' note", () => {
+  it("lists every row it keeps and names the fromLap for the rest", () => {
     const row = {
       lap_index: 1,
       label: null,
@@ -221,10 +221,11 @@ describe("formatRunningDynamicsText", () => {
           message: "good - within the 200-260 ms target range",
         },
       },
-      intervals: Array.from({ length: 105 }, (_, i) => ({
+      intervals: Array.from({ length: 100 }, (_, i) => ({
         ...row,
         lap_index: i + 1,
       })),
+      interval_count: 105,
       units: {
         stance_time: "ms",
         vertical_oscillation: "mm",
@@ -236,10 +237,12 @@ describe("formatRunningDynamicsText", () => {
       },
     };
 
-    const text = formatRunningDynamicsText(d);
+    const text = formatRunningDynamicsText(d, 105);
     const lines = text.split("\n");
     expect(lines.filter((l) => /^\d+\.\s/.test(l))).toHaveLength(100);
-    expect(text).toContain("(5 more WORK intervals not listed)");
+    expect(text).toContain(
+      "Showing 100 of the 105 WORK intervals from lap 1, to stay under the response size limit. get-running-dynamics with fromLap 101 lists the rest.",
+    );
   });
 });
 
@@ -252,7 +255,7 @@ describe("getRunningDynamicsTool.execute", () => {
     mockedGetActivity.mockResolvedValue(runActivityWithIntervals);
 
     const result = await getRunningDynamicsTool.execute(
-      { id: "i189807578", includeIntervals: true },
+      { id: "i189807578", includeIntervals: true, fromLap: 1 },
       "test-key",
     );
 
@@ -264,13 +267,35 @@ describe("getRunningDynamicsTool.execute", () => {
     expect(result.structuredContent?.intervals).toHaveLength(1);
   });
 
+  it("lists WORK rows from fromLap on, and refuses one past the last lap", async () => {
+    const laps = runActivityWithIntervals.icu_intervals?.length ?? 0;
+    mockedGetActivity.mockResolvedValue(runActivityWithIntervals);
+
+    const from = await getRunningDynamicsTool.execute(
+      { id: "i189807578", includeIntervals: true, fromLap: laps },
+      "test-key",
+    );
+    for (const row of from.structuredContent?.intervals ?? [])
+      expect(row.lap_index).toBeGreaterThanOrEqual(laps);
+    expect(from.structuredContent?.interval_count).toBe(1);
+
+    const past = await getRunningDynamicsTool.execute(
+      { id: "i189807578", includeIntervals: true, fromLap: laps + 1 },
+      "test-key",
+    );
+    expect(past.isError).toBe(true);
+    expect(past.content[0]?.text).toContain(
+      `fromLap ${laps + 1} is past the last lap`,
+    );
+  });
+
   it("returns toolErrorText with notFound on a 404", async () => {
     mockedGetActivity.mockRejectedValue(
       handledNotFound("getActivity for ID i404"),
     );
 
     const result = await getRunningDynamicsTool.execute(
-      { id: "i404", includeIntervals: true },
+      { id: "i404", includeIntervals: true, fromLap: 1 },
       "test-key",
     );
 
@@ -285,7 +310,7 @@ describe("getRunningDynamicsTool.execute", () => {
     );
 
     const result = await getRunningDynamicsTool.execute(
-      { id: "i1", includeIntervals: true },
+      { id: "i1", includeIntervals: true, fromLap: 1 },
       "test-key",
     );
 

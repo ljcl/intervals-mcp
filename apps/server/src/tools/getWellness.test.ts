@@ -217,6 +217,70 @@ describe("formatWellnessText", () => {
   });
 });
 
+describe("formatWellnessText range lines", () => {
+  const units = {
+    hrv: "ms",
+    resting_hr: "bpm",
+    sleep: "hours",
+    weight: "kg",
+    spo2: "%",
+    respiration: "breaths/min",
+  } as const;
+
+  it("shows each logged score with its label and the comments, cut to 80 characters", () => {
+    const day = mapWellnessDay({
+      id: "2026-10-29",
+      hrvSDNN: 60,
+      readiness: 6,
+      soreness: 3,
+      injury: 2,
+      comments: `left calf tight\nafter ${"x".repeat(100)}`,
+    } as IntervalsWellness);
+
+    const text = formatWellnessText({
+      oldest: "2026-10-28",
+      newest: "2026-10-29",
+      count: 1,
+      units,
+      hrv_note: "note",
+      days: [day],
+    });
+
+    const line = text.split("\n")[1] ?? "";
+    expect(line).toContain("readiness 6");
+    expect(line).toContain("soreness 3 (High)");
+    expect(line).toContain("injury 2");
+    expect(line).toContain(
+      `comments "left calf tight after ${"x".repeat(58)}..."`,
+    );
+  });
+
+  it("says how many days it kept and names the call for the rest; averages cover every day", () => {
+    const all = [
+      { id: "2026-10-03", restingHR: 50 },
+      { id: "2026-10-02", restingHR: 52 },
+      { id: "2026-10-01", restingHR: 60 },
+    ].map((w) => mapWellnessDay(w as IntervalsWellness));
+
+    const text = formatWellnessText(
+      {
+        oldest: "2026-09-30",
+        newest: "2026-10-03",
+        count: 3,
+        units,
+        hrv_note: "note",
+        days: all.slice(0, 2),
+      },
+      all,
+    );
+
+    expect(text).toContain(
+      "Showing the newest 2 of 3 days, to stay under the response size limit. For the rest, call get-wellness with oldest 2026-09-30 and newest 2026-10-01.",
+    );
+    expect(text).toContain("resting HR 54.0");
+  });
+});
+
 describe("getWellnessTool.execute", () => {
   beforeEach(() => {
     mockedGetWellness.mockReset();
