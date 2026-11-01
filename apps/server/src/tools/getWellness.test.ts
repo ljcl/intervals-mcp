@@ -384,14 +384,14 @@ describe("getWellnessTool.execute", () => {
     expect(result.content[0]?.text).toContain("after newest");
   });
 
-  it("rejects a range longer than 90 days", async () => {
+  it("rejects a range longer than 366 days", async () => {
     const result = await getWellnessTool.execute(
-      { oldest: "2026-01-01", newest: "2026-09-24" },
+      { oldest: "2025-09-23", newest: "2026-09-24" },
       "key",
     );
 
     expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toContain("max range is 90 days");
+    expect(result.content[0]?.text).toContain("max range is 366 days");
     expect(mockedGetWellness).not.toHaveBeenCalled();
   });
 
@@ -413,18 +413,19 @@ describe("getWellnessTool.execute", () => {
     expect(result.success).toBe(false);
   });
 
-  it("rejects a range one day past 90 calendar days", async () => {
-    // 2026-06-26 to 2026-09-24 is 91 calendar days inclusive; daysBetween
-    // alone (a difference, not a count) would read this as 90 and wrongly
-    // accept it.
-    const result = await getWellnessTool.execute(
-      { oldest: "2026-06-26", newest: "2026-09-24" },
+  it("accepts 366 calendar days and rejects 367", async () => {
+    mockedGetWellness.mockResolvedValueOnce([]);
+    const ok = await getWellnessTool.execute(
+      { oldest: "2025-09-24", newest: "2026-09-24" },
       "key",
     );
+    expect(ok.isError).toBeUndefined();
 
-    expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toContain("max range is 90 days");
-    expect(mockedGetWellness).not.toHaveBeenCalled();
+    const tooLong = await getWellnessTool.execute(
+      { oldest: "2025-09-23", newest: "2026-09-24" },
+      "key",
+    );
+    expect(tooLong.isError).toBe(true);
   });
 
   it("uses date as both oldest and newest for a single-day query", async () => {
@@ -594,5 +595,93 @@ describe("getWellnessTool.execute HRV by measure", () => {
 
     const empty = await run([], "2026-09-24");
     expect(empty.note).toBe("No HRV recorded.");
+  });
+});
+
+describe("getWellnessTool.execute weekly averages past 90 days", () => {
+  beforeEach(() => {
+    mockedGetWellness.mockReset();
+  });
+
+  it("keeps daily rows and adds no weekly keys at exactly 90 days", async () => {
+    mockedGetWellness.mockResolvedValueOnce([byId("2026-09-24")]);
+    const result = await getWellnessTool.execute(
+      { oldest: "2026-06-27", newest: "2026-09-24" },
+      "key",
+    );
+    expect(result.structuredContent?.days).toHaveLength(1);
+    expect(result.structuredContent).not.toHaveProperty("weeks");
+    expect(result.structuredContent).not.toHaveProperty("granularity");
+  });
+
+  it("returns Monday-start weekly means with a day count, newest first", async () => {
+    // 2026-09-21 is a Monday: Sun 09-20 belongs to the week of 09-14.
+    mockedGetWellness.mockResolvedValueOnce([
+      { id: "2026-09-20", restingHR: 50, weight: 70, soreness: 1 },
+      { id: "2026-09-21", restingHR: 52, weight: 70.4, soreness: 2 },
+      { id: "2026-09-23", restingHR: 55, soreness: 3, sleepSecs: 7.5 * 3600 },
+    ] as IntervalsWellness[]);
+
+    const result = await getWellnessTool.execute(
+      { oldest: "2026-01-01", newest: "2026-09-24" },
+      "key",
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(result.structuredContent?.granularity).toBe("weekly");
+    expect(result.structuredContent?.days).toEqual([]);
+    expect(result.structuredContent?.count).toBe(3);
+    expect(result.structuredContent?.weeks).toEqual([
+      expect.objectContaining({
+        week_start: "2026-09-21",
+        days: 2,
+        resting_hr: 53.5,
+        weight_kg: 70.4,
+        sleep_hours: 7.5,
+        soreness: 2.5,
+        fatigue: null,
+      }),
+      expect.objectContaining({
+        week_start: "2026-09-14",
+        days: 1,
+        resting_hr: 50,
+        soreness: 1,
+      }),
+    ]);
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain("weekly averages (Monday start");
+    expect(text).toContain("2026-09-21 (2 d): RHR 53.5");
+  });
+
+  it("averages rMSSD and SDNN separately, never together", async () => {
+    mockedGetWellness.mockResolvedValueOnce([
+      { id: "2026-09-21", hrv: 60, hrvSDNN: 40 },
+      { id: "2026-09-22", hrv: 70 },
+      { id: "2026-09-23", hrvSDNN: 50 },
+    ] as IntervalsWellness[]);
+
+    const result = await getWellnessTool.execute(
+      { oldest: "2026-01-01", newest: "2026-09-24" },
+      "key",
+    );
+
+    expect(result.structuredContent?.weeks?.[0]).toMatchObject({
+      hrv_rmssd_ms: 65,
+      hrv_sdnn_ms: 45,
+    });
+    expect(result.structuredContent?.hrv_note).toContain("both rMSSD");
+    expect(result.content[0]?.text).toContain("HRV rMSSD 65, HRV SDNN 45");
+  });
+
+  it("says so when there is no data", async () => {
+    mockedGetWellness.mockResolvedValueOnce([]);
+    const result = await getWellnessTool.execute(
+      { oldest: "2026-01-01", newest: "2026-09-24" },
+      "key",
+    );
+    expect(result.content[0]?.text).toBe(
+      "No wellness data 2026-01-01 to 2026-09-24.",
+    );
+    expect(result.structuredContent?.weeks).toEqual([]);
   });
 });

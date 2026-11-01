@@ -569,6 +569,20 @@ const CASES: Record<string, SizeCase[]> = {
       setup: commentEveryDay,
       check: wellnessCut,
     },
+    {
+      label: "366-day range, weekly rows",
+      args: { oldest: "2025-09-28", newest: "2026-09-28" },
+      setup: commentEveryDay,
+      check: (result) => {
+        const sc = result.structuredContent as {
+          weeks?: unknown[];
+          days: unknown[];
+        };
+        expect(sc.weeks?.length).toBeGreaterThan(50);
+        // The daily budget cut must not put daily rows back.
+        expect(sc.days).toEqual([]);
+      },
+    },
   ],
   "view-activity-chart": [{ label: "default", args: { id: ID } }],
   "view-cadence-trends": [{ label: "728 days", args: { days: 728 } }],

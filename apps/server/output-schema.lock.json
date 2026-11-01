@@ -1122,7 +1122,22 @@
       "units.sleep: =\"hours\" string",
       "units.spo2: =\"%\" string",
       "units.weight: =\"kg\" string",
-      "units: object"
+      "units: object",
+      "weeks?[].days: integer",
+      "weeks?[].fatigue: null number",
+      "weeks?[].hrv_rmssd_ms: null number",
+      "weeks?[].hrv_sdnn_ms: null number",
+      "weeks?[].injury: null number",
+      "weeks?[].mood: null number",
+      "weeks?[].motivation: null number",
+      "weeks?[].readiness: null number",
+      "weeks?[].resting_hr: null number",
+      "weeks?[].sleep_hours: null number",
+      "weeks?[].sleep_quality: null number",
+      "weeks?[].soreness: null number",
+      "weeks?[].stress: null number",
+      "weeks?[].week_start: string",
+      "weeks?[].weight_kg: null number"
     ],
     "list-activities": [
       "activities: array",

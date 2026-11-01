@@ -35,7 +35,7 @@ rather than (or alongside) text.
 | `list-activities` | What did I do recently? What's this activity's id? When did I last do X? Each entry carries `tags`, `race` and `achievement_types` (a best or threshold rise) | `oldest`/`newest` (YYYY-MM-DD, default last 28 days), `type` (`runs` for Run/TrailRun/VirtualRun, one type, or a comma list; for the most recent run, pass `id: "latest"` to the per-activity tool instead), `nameContains`, `search` (all history: name substring or `#tag`), `limit` |
 | `get-activity` | Full detail on one activity: gear name, swim pace per 100 m, HR recovery, and any best or threshold rise intervals.icu marked (an LTHR_UP is its estimate, not a changed setting; for a run PB, use `get-best-efforts`) | `id` |
 | `list-gear` | What shoes/bikes do I have, their mileage, reminders and auto-assign rules? | `includeRetired` |
-| `get-wellness` | HRV, resting HR, sleep, weight, CTL/ATL/TSB, how I felt, for a day or range | `date`, or `oldest`/`newest` (max 90 days) |
+| `get-wellness` | HRV, resting HR, sleep, weight, CTL/ATL/TSB, how I felt, for a day or range | `date`, or `oldest`/`newest` (up to 366 days; past 90 days returns weekly averages without CTL/ATL/TSB, ramp, sleep score, SpO2, respiration or comments) |
 
 ### Per-activity detail
 

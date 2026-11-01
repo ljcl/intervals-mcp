@@ -75,7 +75,7 @@ descriptions.
 | `get-activity` | One activity in detail: metrics, load, HR zones, running dynamics, intervals, gear name, achievements, HR recovery; use after list-activities |
 | `get-activity-streams` | Time-series streams for one activity, downsampled to a bounded number of points, including running dynamics |
 | `list-gear` | The athlete's gear (shoes) with mileage, purchase date, notes, retirement status, reminders and auto-assign rules |
-| `get-wellness` | Daily wellness (HRV, resting HR, sleep, weight, CTL/ATL/TSB, how the athlete feels) for a date or range |
+| `get-wellness` | Daily wellness (HRV, resting HR, sleep, weight, CTL/ATL/TSB, how the athlete feels) for a date or range; ranges past 90 days (max 366) return weekly averages that leave out CTL/ATL/TSB, ramp, sleep score, SpO2, respiration and comments (use `get-fitness-trend` for load) |
 | `get-activity-laps` | Laps of an activity, derived from its intervals, with sport-aware pace/speed, GAP, HR, power, cadence |
 | `get-running-summary` | get-activity's detail fields for a run plus cadence, HR zone, and running-dynamics assessments, a lap breakdown, the weather with humidity and dew point from the FIT file, and decoupling and efficiency factor computed from the streams when intervals.icu has none |
 | `get-running-dynamics` | Ground contact time, vertical oscillation/ratio, step length, and cadence for a run, with VO/GCT target assessments and a per-WORK-interval breakdown |
@@ -240,12 +240,12 @@ fatigue, stress, mood, motivation, `injury`, `sleep_quality`, `spo2` (%),
 `respiration` (breaths/min), comments). The 1 to 4 scores carry the web
 app's label in the text (`soreness 3 (High)`); on every scale 1 is the best
 state (docs/api-notes.md); `units` names all of these, including `spo2` and
-`respiration`. A range prints one line per day with the same scores and
+`respiration`. A daily range prints one line per day with the same scores and
 the comments, cut to 80 characters (#311). A range over the response budget
 (a long range of long comments) keeps the newest days that fit; `count`
 stays the full count, the averages cover every day, and the text names the
 `get-wellness` call for the rest. Takes either a single `date` or an `oldest`/`newest` range
-(max 90 calendar days inclusive); supplying `date` together with a range is
+(max 366 calendar days inclusive); supplying `date` together with a range is
 a validation error. With nothing supplied it defaults to today in the
 server's time zone. A `date` or `newest` after today is refused before any
 request: intervals.icu's rows past today hold its projection from planned
@@ -256,6 +256,17 @@ averages keep the two measures apart. `hrv_note` comes from the data and
 never names a device. When SDNN is the only measure, it says that the
 values are SDNN, not rMSSD, so rMSSD norms do not apply. Otherwise it names
 the measures present, or says that the days have no HRV.
+
+A range of 90 days or fewer returns daily rows. A longer one (90 daily rows
+already measure 38,808 of the 40,000 character budget) returns weekly means
+instead: `granularity: "weekly"`, `days: []`, and `weeks` newest first, each
+with `week_start` (Monday, via `startOfWeekMonday`; the first and last week
+may be partial), `days` (days with a record), and the 1 dp means of
+`hrv_rmssd_ms`, `hrv_sdnn_ms` (kept apart), `resting_hr`, `sleep_hours`,
+`weight_kg`, `readiness` and the 1 to 4 scores. A field with no value that
+week is null. Weeks leave out CTL/ATL/TSB, `ramp_rate`, `sleep_score`, SpO2,
+respiration and comments; `get-fitness-trend` has the load series. `count` stays the number of daily records. A 366-day range
+measures about 17,400 characters (responseSize.test.ts).
 
 `get-activity-laps` takes the `id` from `list-activities` and returns laps
 (each with `moving_time_source: "lap"`: intervals.icu's own moving time for

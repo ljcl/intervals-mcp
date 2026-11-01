@@ -1568,6 +1568,30 @@ const WellnessDayEntrySchema = z.object({
   respiration: z.number().nullable(),
   comments: z.string().nullable(),
 });
+const WellnessWeekEntrySchema = z.object({
+  week_start: z
+    .string()
+    .describe(
+      "Monday of the week, YYYY-MM-DD; the first and last may be partial",
+    ),
+  days: z.number().int().describe("Days in the week with a wellness record"),
+  hrv_sdnn_ms: z.number().nullable().describe("Mean SDNN, 1 dp"),
+  hrv_rmssd_ms: z
+    .number()
+    .nullable()
+    .describe("Mean rMSSD, 1 dp; never mixed with SDNN"),
+  resting_hr: z.number().nullable().describe("Mean, 1 dp"),
+  sleep_hours: z.number().nullable().describe("Mean, 1 dp"),
+  weight_kg: z.number().nullable().describe("Mean, 1 dp"),
+  readiness: z.number().nullable().describe("Mean, 1 dp"),
+  soreness: z.number().nullable().describe("Mean 1 to 4 score, 1 dp"),
+  fatigue: z.number().nullable().describe("Mean 1 to 4 score, 1 dp"),
+  stress: z.number().nullable().describe("Mean 1 to 4 score, 1 dp"),
+  mood: z.number().nullable().describe("Mean 1 to 4 score, 1 dp"),
+  motivation: z.number().nullable().describe("Mean 1 to 4 score, 1 dp"),
+  injury: z.number().nullable().describe("Mean 1 to 4 score, 1 dp"),
+  sleep_quality: z.number().nullable().describe("Mean 1 to 4 score, 1 dp"),
+});
 export const WellnessOutputSchema = z.object({
   oldest: z.string().describe("ISO date YYYY-MM-DD, inclusive lower bound"),
   newest: z.string().describe("ISO date YYYY-MM-DD, inclusive upper bound"),
@@ -1581,7 +1605,17 @@ export const WellnessOutputSchema = z.object({
     respiration: z.literal("breaths/min"),
   }),
   hrv_note: z.string(),
-  days: z.array(WellnessDayEntrySchema),
+  days: z
+    .array(WellnessDayEntrySchema)
+    .describe("Daily rows; empty when the range is past 90 days (see weeks)"),
+  granularity: z
+    .literal("weekly")
+    .optional()
+    .describe("Present only when the range is past 90 days"),
+  weeks: z
+    .array(WellnessWeekEntrySchema)
+    .optional()
+    .describe("Weekly means, newest first; present only past 90 days"),
 });
 
 // ---------- update-wellness ----------
