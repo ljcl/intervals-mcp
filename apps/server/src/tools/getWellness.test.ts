@@ -276,6 +276,29 @@ describe("getWellnessTool.execute", () => {
     expect(result.structuredContent?.count).toBe(fixture.length);
   });
 
+  it("refuses a date after today, naming get-fitness-trend, without a request", async () => {
+    const result = await getWellnessTool.execute({ date: "2026-09-25" }, "key");
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("date 2026-09-25 is after today");
+    expect(result.content[0]?.text).toContain("get-fitness-trend");
+    expect(mockedGetWellness).not.toHaveBeenCalled();
+  });
+
+  it("refuses a newest after today, naming get-fitness-trend, without a request", async () => {
+    const result = await getWellnessTool.execute(
+      { oldest: "2026-09-20", newest: "2026-09-30" },
+      "key",
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain(
+      "newest 2026-09-30 is after today",
+    );
+    expect(result.content[0]?.text).toContain("get-fitness-trend");
+    expect(mockedGetWellness).not.toHaveBeenCalled();
+  });
+
   it("rejects date combined with oldest/newest", async () => {
     const result = await getWellnessTool.execute(
       { date: "2026-09-24", oldest: "2026-09-01" },

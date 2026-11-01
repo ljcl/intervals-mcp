@@ -272,9 +272,23 @@ export const getWellnessTool = {
       };
     }
 
-    const tz = getTimeZone();
-    const newest = date ?? rawNewest ?? todayLocal(tz);
+    const today = todayLocal(getTimeZone());
+    const newest = date ?? rawNewest ?? today;
     const oldest = date ?? rawOldest ?? newest;
+
+    // intervals.icu's rows past today hold a projection from planned
+    // workouts, not records (docs/api-notes.md).
+    if (newest > today) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `❌ ${date ? "date" : "newest"} ${newest} is after today (${today}). Days after today hold intervals.icu's projection, not recorded wellness. Use today or an earlier date; for projected CTL/ATL/TSB, use get-fitness-trend with projectDays.`,
+          },
+        ],
+        isError: true,
+      };
+    }
 
     const rangeError = validateRange(oldest, newest, MAX_RANGE_DAYS);
     if (rangeError) {
