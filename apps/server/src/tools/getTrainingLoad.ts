@@ -24,7 +24,7 @@ import {
 } from "../utils/localDate";
 import { READ_ONLY } from "./_annotations";
 import { prefixedErrorText, toolErrorText } from "./_errors";
-import { RESPONSE_BUDGET_CHARS } from "./_responseBudget";
+import { RESPONSE_BUDGET_CHARS, responseSize } from "./_responseBudget";
 import { TrainingLoadOutputSchema, warnOnSchemaDrift } from "./outputs";
 
 const name = "get-training-load";
@@ -120,10 +120,6 @@ function zoneFields(buckets: WeekBucket[]) {
     },
   };
 }
-
-/** Room the text needs next to the JSON, used to size the run lists before it is built. */
-const TEXT_BASE_CHARS = 1_500;
-const TEXT_WEEK_CHARS = 200;
 
 const localDay = (isoDateTime: string) => isoDateTime.split("T")[0]!;
 
@@ -362,96 +358,96 @@ export const getTrainingLoadTool = {
         },
       };
 
+      // Format as readable text; a function, so the budget loop below can
+      // render again after it trims.
+      const render = (): string => {
+        const weeksRead = plural(lookback.completeWeeks, "complete week");
+        const lastWeekRead = !pastWindow
+          ? " and this week so far"
+          : lookback.partialWeekStart
+            ? ` and a partial week of ${plural(lookback.lastWeekDays, "day")}`
+            : "";
+        let output = `Training Load Summary\n`;
+        output += `${result.period.start_date} to ${result.period.end_date} (${weeksRead}${lastWeekRead}, CTL/ATL source: ${source})\n\n`;
+
+        output += `Totals\n`;
+        output += `  Runs: ${result.totals.runs}\n`;
+        output += `  Distance: ${result.totals.distance_km} km\n`;
+        // From the seconds total, in the same h:mm:ss form as the weekly lines.
+        // Minutes split out of the rounded hours carried the rounding error
+        // (#76).
+        output += `  Time: ${formatDuration(result.totals.time_s)}\n`;
+        output += `  Elevation: ${result.totals.elevation_m} m\n`;
+        output += `  Load: ${result.totals.load} (${activityTypesIncluded.join(", ") || "none"})\n`;
+        output += `  Run HR zones: ${
+          result.totals.intensity
+            ? intensityText(result.totals.intensity)
+            : "no run has HR zone times"
+        }${leftOutText(result.totals.hr_zone_runs_left_out)}\n\n`;
+
+        if (current) {
+          output += `${pastWindow ? "End of window" : "Current"} (as of ${current.date})\n`;
+          output += `  Fitness (CTL): ${current.ctl}\n`;
+          output += `  Fatigue (ATL): ${current.atl}\n`;
+          output += `  Form (TSB): ${formatSigned(current.tsb)}\n\n`;
+        }
+
+        const averagedOver =
+          runWeeks.complete.length > 0
+            ? plural(runWeeks.complete.length, "complete week")
+            : runWeeks.span.length > 0
+              ? pastWindow
+                ? "the partial week"
+                : "this week so far"
+              : "no runs";
+        output += `Weekly Averages (${averagedOver})\n`;
+        output += `  Runs/week: ${result.averages.runs_per_week}\n`;
+        output += `  Distance/week: ${result.averages.distance_km_per_week} km\n`;
+        output += `  Time/week: ${result.averages.time_hours_per_week} hours\n\n`;
+
+        output += `Trend: ${result.trend}${trendBasis}\n\n`;
+
+        if (result.warnings.length > 0) {
+          output += `Warnings\n`;
+          for (const warning of result.warnings) {
+            output += `  - ${warning}\n`;
+          }
+          output += `\n`;
+        }
+
+        output += `Weekly Breakdown\n`;
+        for (const week of result.weekly_breakdown) {
+          const label =
+            week === partialWeek
+              ? ` (${pastWindow ? "partial" : "in progress"}, ${lookback.lastWeekDays} of 7 days)`
+              : "";
+          const longRunDate = dateById.get(week.long_run_id ?? "");
+          output += `  Week of ${week.week_starting}${label}: ${week.runs} runs, ${week.distance_km} km, ${week.time_formatted}, load ${week.load}`;
+          if (week.intensity) output += `, ${intensityText(week.intensity)}`;
+          if (longRunDate) {
+            output += `, long run ${week.long_run_km} km on ${longRunDate} (${week.long_run_pct}% of the week, ${week.long_run_id})`;
+          }
+          output += `\n`;
+        }
+        return output;
+      };
+
       // A year of weeks outgrows RESPONSE_BUDGET_CHARS with a run list on
-      // every week, so the oldest weeks' lists go first. Their totals and
-      // long run id stay; list-activities has the runs.
-      let excess =
-        JSON.stringify(result).length +
-        TEXT_BASE_CHARS +
-        TEXT_WEEK_CHARS * sortedWeeks.length -
-        RESPONSE_BUDGET_CHARS;
+      // every week. Measure the built response, as fitListToBudget does, and
+      // empty the oldest weeks' lists until it fits, the trim warning
+      // included. Totals and long_run_id stay; list-activities has the runs.
+      let output = render();
       let trimmedWeeks = 0;
-      for (const week of sortedWeeks) {
-        if (excess <= 0) break;
-        if (week.activities.length === 0) continue;
-        excess -= JSON.stringify(week.activities).length - 2;
+      let trimWarning: number | null = null;
+      while (responseSize(output, result) > RESPONSE_BUDGET_CHARS) {
+        const week = sortedWeeks.find((w) => w.activities.length > 0);
+        if (!week) break; // Nothing left to trim: the weekly rows alone are over.
         week.activities = [];
         trimmedWeeks += 1;
-      }
-      if (trimmedWeeks > 0) {
-        warnings.push(
-          `The run lists of the first ${plural(trimmedWeeks, "week")} are left out to keep the response small: their long_run_id still names each longest run. Use list-activities for the runs.`,
-        );
-      }
-
-      // Format as readable text
-      const weeksRead = plural(lookback.completeWeeks, "complete week");
-      const lastWeekRead = !pastWindow
-        ? " and this week so far"
-        : lookback.partialWeekStart
-          ? ` and a partial week of ${plural(lookback.lastWeekDays, "day")}`
-          : "";
-      let output = `Training Load Summary\n`;
-      output += `${result.period.start_date} to ${result.period.end_date} (${weeksRead}${lastWeekRead}, CTL/ATL source: ${source})\n\n`;
-
-      output += `Totals\n`;
-      output += `  Runs: ${result.totals.runs}\n`;
-      output += `  Distance: ${result.totals.distance_km} km\n`;
-      // From the seconds total, in the same h:mm:ss form as the weekly lines.
-      // Minutes split out of the rounded hours carried the rounding error
-      // (#76).
-      output += `  Time: ${formatDuration(result.totals.time_s)}\n`;
-      output += `  Elevation: ${result.totals.elevation_m} m\n`;
-      output += `  Load: ${result.totals.load} (${activityTypesIncluded.join(", ") || "none"})\n`;
-      output += `  Run HR zones: ${
-        result.totals.intensity
-          ? intensityText(result.totals.intensity)
-          : "no run has HR zone times"
-      }${leftOutText(result.totals.hr_zone_runs_left_out)}\n\n`;
-
-      if (current) {
-        output += `${pastWindow ? "End of window" : "Current"} (as of ${current.date})\n`;
-        output += `  Fitness (CTL): ${current.ctl}\n`;
-        output += `  Fatigue (ATL): ${current.atl}\n`;
-        output += `  Form (TSB): ${formatSigned(current.tsb)}\n\n`;
-      }
-
-      const averagedOver =
-        runWeeks.complete.length > 0
-          ? plural(runWeeks.complete.length, "complete week")
-          : runWeeks.span.length > 0
-            ? pastWindow
-              ? "the partial week"
-              : "this week so far"
-            : "no runs";
-      output += `Weekly Averages (${averagedOver})\n`;
-      output += `  Runs/week: ${result.averages.runs_per_week}\n`;
-      output += `  Distance/week: ${result.averages.distance_km_per_week} km\n`;
-      output += `  Time/week: ${result.averages.time_hours_per_week} hours\n\n`;
-
-      output += `Trend: ${result.trend}${trendBasis}\n\n`;
-
-      if (result.warnings.length > 0) {
-        output += `Warnings\n`;
-        for (const warning of result.warnings) {
-          output += `  - ${warning}\n`;
-        }
-        output += `\n`;
-      }
-
-      output += `Weekly Breakdown\n`;
-      for (const week of result.weekly_breakdown) {
-        const label =
-          week === partialWeek
-            ? ` (${pastWindow ? "partial" : "in progress"}, ${lookback.lastWeekDays} of 7 days)`
-            : "";
-        const longRunDate = dateById.get(week.long_run_id ?? "");
-        output += `  Week of ${week.week_starting}${label}: ${week.runs} runs, ${week.distance_km} km, ${week.time_formatted}, load ${week.load}`;
-        if (week.intensity) output += `, ${intensityText(week.intensity)}`;
-        if (longRunDate) {
-          output += `, long run ${week.long_run_km} km on ${longRunDate} (${week.long_run_pct}% of the week, ${week.long_run_id})`;
-        }
-        output += `\n`;
+        const text = `The run lists of the first ${plural(trimmedWeeks, "week")} are left out to keep the response small: their long_run_id still names each longest run. Use list-activities for the runs.`;
+        if (trimWarning === null) trimWarning = warnings.push(text) - 1;
+        else warnings[trimWarning] = text;
+        output = render();
       }
 
       warnOnSchemaDrift(name, TrainingLoadOutputSchema, result);

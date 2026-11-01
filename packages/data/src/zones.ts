@@ -64,8 +64,8 @@ export interface IntensitySplit {
 
 /**
  * The one home for the easy/moderate/hard rule: zones 1-2 are easy, zone 3
- * moderate, zone 4 and above hard. Matches the intensity distribution
- * convention used by the running-summary tool for 5-zone HR and degrades
+ * moderate, zone 4 and above hard. Follows the usual intensity distribution
+ * convention for 5-zone HR and degrades
  * sensibly for the 6+-zone power sets. `secondsByZone` is seconds per zone,
  * zone 1 first; with no time at all every share is 0, so a caller that must
  * tell "no data" apart from 0% checks the total itself.

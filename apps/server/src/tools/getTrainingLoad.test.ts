@@ -542,6 +542,41 @@ describe("get-training-load execute", () => {
     expect(text).toContain("run lists of the first");
   });
 
+  it("measures the built response when the text is long too: a spike in every week stays under the budget", async () => {
+    // Volume grows 30% a week for a year: nearly every week carries a
+    // warning, so the text runs far past any per-week estimate.
+    const weeks = 53;
+    mockedListActivities.mockResolvedValueOnce(
+      Array.from({ length: weeks * 3 }, (_, i) => {
+        const week = Math.floor(i / 3);
+        return run((weeks - 1 - week) * 7 + (i % 3), {
+          name: "A long enough run name to cost characters in every week",
+          distance: 3000 * 1.3 ** week,
+        });
+      }),
+    );
+    mockedWellness.mockResolvedValueOnce([]);
+
+    const result = await getTrainingLoadTool.execute(
+      { days: 365, runOnly: false },
+      "test-token",
+    );
+    const structured = result.structuredContent as {
+      warnings: string[];
+      weekly_breakdown: Array<{ activities: unknown[] }>;
+    };
+    const text = result.content[0]?.text ?? "";
+    expect(text.length).toBeGreaterThan(1_500 + 200 * weeks);
+    expect(structured.warnings.length).toBeGreaterThan(30);
+    expect(text.length + JSON.stringify(structured).length).toBeLessThanOrEqual(
+      RESPONSE_BUDGET_CHARS,
+    );
+    expect(structured.weekly_breakdown[0]!.activities).toEqual([]);
+    expect(
+      structured.warnings.filter((w) => w.startsWith("The run lists")),
+    ).toHaveLength(1);
+  });
+
   it("returns isError when the fetch fails", async () => {
     mockedListActivities.mockRejectedValueOnce(new Error("Rate limited"));
 
