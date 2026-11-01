@@ -61,7 +61,7 @@ rather than (or alongside) text.
 
 | Tool | Answers | Key params |
 | ---- | ------- | ---------- |
-| `get-athlete-stats` | Run totals, and totals for every sport (strength sessions, swim distance), this week/month/YTD | (none) |
+| `get-athlete-stats` | Run totals, and totals for every sport (strength sessions, swim distance), this week/month/YTD, and last year to date | (none) |
 | `get-fitness-trend` | Am I fresh or fatigued? What if I taper for a race? | `days`, `newest`, `runOnly`, `projectDays`/`plannedLoads`/`calendarPlan`, `targetDate`/`targetTsb` |
 | `get-training-load` | Weekly volume, volume-spike flags, long run, HR zone split, weekly load | `days`, `newest`, `runOnly` |
 | `get-best-efforts` | My best 5K/10K/half/marathon times; my fastest 5K inside one run, and where | `distances`, `window`, `topN`, `id` |

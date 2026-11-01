@@ -31,6 +31,7 @@ describe("schemas align with the real tool rawObjects", () => {
       last_4_weeks: runs,
       this_month: runs,
       ytd: runs,
+      last_year_to_date: runs,
       all_sports: {
         this_week: {
           total: { count: 3, moving_time_s: 7627, load: 111 },
@@ -52,6 +53,7 @@ describe("schemas align with the real tool rawObjects", () => {
         last_4_weeks: empty,
         this_month: empty,
         ytd: empty,
+        last_year_to_date: { total: empty.total },
       },
       units: { distance: "km", pace: "min/km", time: "s", elevation: "m" },
     };

@@ -8,6 +8,7 @@ import {
   aggregateSportTotals,
   formatAthleteStatsText,
   getAthleteStatsTool,
+  sameDateLastYear,
   startOfMonth,
   startOfYear,
 } from "./getAthleteStats";
@@ -49,6 +50,20 @@ describe("startOfMonth / startOfYear", () => {
 
   it("returns 1 January of the local calendar year", () => {
     expect(startOfYear("2026-09-24")).toBe("2026-01-01");
+  });
+});
+
+describe("sameDateLastYear", () => {
+  it("keeps the month and day one year earlier", () => {
+    expect(sameDateLastYear("2026-09-24")).toBe("2025-09-24");
+  });
+
+  it("maps 29 February to 28 February", () => {
+    expect(sameDateLastYear("2028-02-29")).toBe("2027-02-28");
+  });
+
+  it("keeps 1 March after a leap day", () => {
+    expect(sameDateLastYear("2025-03-01")).toBe("2024-03-01");
   });
 });
 
@@ -378,11 +393,15 @@ describe("formatAthleteStatsText", () => {
       last_4_weeks: totals,
       this_month: totals,
       ytd: totals,
+      last_year_to_date: aggregateRunTotals([], "2025-01-01", "2025-09-24"),
       all_sports: {
         this_week: sports,
         last_4_weeks: sports,
         this_month: sports,
         ytd: sports,
+        last_year_to_date: {
+          total: aggregateSportTotals([], "2025-01-01", "2025-09-24").total,
+        },
       },
       units: { distance: "km", pace: "min/km", time: "s", elevation: "m" },
     });
@@ -391,6 +410,13 @@ describe("formatAthleteStatsText", () => {
     expect(text).toContain("Last 4 weeks:");
     expect(text).toContain("This month:");
     expect(text).toContain("YTD:");
+    expect(text).toContain("Last year to date:");
+    expect(text).toContain(
+      "YTD change on last year to date: runs +1, distance +5 km, time +25:00, load +40",
+    );
+    expect(text).toContain(
+      "YTD change on last year to date: activities +1, time +25:00, load +40",
+    );
     expect(text).not.toMatch(/Strava/i);
     expect(text).not.toMatch(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u);
   });
@@ -406,7 +432,7 @@ describe("getAthleteStatsTool.execute", () => {
     vi.useRealTimers();
   });
 
-  it("fetches from 1 January through today mid-year", async () => {
+  it("fetches from 1 January last year through today", async () => {
     vi.setSystemTime(new Date("2026-09-24T12:00:00Z"));
     mockedListActivities.mockResolvedValueOnce([]);
 
@@ -414,12 +440,12 @@ describe("getAthleteStatsTool.execute", () => {
 
     expect(mockedListActivities).toHaveBeenCalledWith(
       "key",
-      { oldest: "2026-01-01", newest: "2026-09-24" },
+      { oldest: "2025-01-01", newest: "2026-09-24" },
       expect.any(Function),
     );
   });
 
-  it("extends the fetch window past 1 January in early January for the rolling 28 days", async () => {
+  it("reaches back to 1 January last year, past early January's rolling 28 days", async () => {
     vi.setSystemTime(new Date("2026-01-05T12:00:00Z"));
     mockedListActivities.mockResolvedValueOnce([]);
 
@@ -427,8 +453,38 @@ describe("getAthleteStatsTool.execute", () => {
 
     expect(mockedListActivities).toHaveBeenCalledWith(
       "key",
-      { oldest: "2025-12-09", newest: "2026-01-05" },
+      { oldest: "2025-01-01", newest: "2026-01-05" },
       expect.any(Function),
+    );
+  });
+
+  it("totals last year to date for the same dates, with 29 February as 28 February", async () => {
+    vi.setSystemTime(new Date("2028-02-29T12:00:00Z"));
+    mockedListActivities.mockResolvedValueOnce([
+      run({ id: "a", start_date_local: "2027-01-01T07:00:00" }),
+      run({ id: "b", start_date_local: "2027-02-28T07:00:00" }),
+      run({ id: "c", type: "Ride", start_date_local: "2027-02-28T09:00:00" }),
+      run({ id: "d", start_date_local: "2027-03-01T07:00:00" }),
+      run({ id: "e", start_date_local: "2026-12-31T07:00:00" }),
+      run({ id: "f", start_date_local: "2028-02-29T07:00:00" }),
+    ] as IntervalsActivity[]);
+
+    const result = await getAthleteStatsTool.execute({}, "key");
+
+    expect(mockedListActivities).toHaveBeenCalledWith(
+      "key",
+      { oldest: "2027-01-01", newest: "2028-02-29" },
+      expect.any(Function),
+    );
+    const structured = result.structuredContent;
+    expect(structured?.last_year_to_date.runs).toBe(2);
+    expect(structured?.ytd.runs).toBe(1);
+    expect(structured?.all_sports.last_year_to_date.total.count).toBe(3);
+    expect(structured?.all_sports.last_year_to_date).not.toHaveProperty(
+      "by_type",
+    );
+    expect(result.content[0]?.text).toContain(
+      "YTD change on last year to date: runs -1,",
     );
   });
 
