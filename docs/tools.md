@@ -1173,8 +1173,8 @@ Reusable multi-step workflows a host can offer as slash commands or starters.
 | `weekly-review` | `weeks` (optional, 1-52, default 4) | Reviews recent training (load trend, key workouts across the whole window, cadence patterns), ending with focus points for next week |
 | `annotate-last-run` | `id` (optional, defaults to the newest Run, TrailRun or VirtualRun; `activity_id` still accepted) | Analyses a run and appends a short coaching note to its activity description. Confirms before writing |
 | `race-readiness` | `raceDate` (required, after today, at most 180 days ahead), `distance` (optional), `targetTsb` (optional, default 10) | Race-day form and the taper that lands on it, predicted time, last 7 days of recovery, recent load; ends with a ready / nearly / not-yet verdict |
-| `run-debrief` | `id` (optional, defaults to the newest run) | The run summary, then the one analysis that fits the session (intervals, splits, hills or aerobic), plus that day's wellness |
-| `injury-check` | none | Load spikes and warnings, the 4-week HRV and resting-HR trend, form flags and shoe mileage; ends with a risk read and what to change, not a diagnosis |
+| `run-debrief` | `id` (optional, defaults to the newest run) | The run summary, then the one analysis that fits the session (intervals with `findSimilar`, splits, hills or aerobic), plus that day's wellness |
+| `injury-check` | none | Volume-spike warnings, the 4-week HRV and resting-HR trend, form flags and shoe mileage (the athlete's gear reminders first); ends with a risk read and what to change, not a diagnosis |
 
 In Claude Desktop and Claude Code these appear in the prompt picker once the
 server is connected. `annotate-last-run` uses a write tool (`update-activity`),
