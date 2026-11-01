@@ -84,6 +84,9 @@ describe("schemas align with the real tool rawObjects", () => {
         time_hours: 6.1,
         elevation_m: 420,
         load: 540,
+        hr_zone_s: [1200, 1800, 900, 600, 300],
+        intensity: { easy_pct: 50, moderate_pct: 15, hard_pct: 35 },
+        hr_zone_runs_left_out: 1,
       },
       averages: {
         runs_per_week: 2,
@@ -102,6 +105,11 @@ describe("schemas align with the real tool rawObjects", () => {
           elevation_m: 150,
           load: 210,
           load_by_type: { Run: 180, WeightTraining: 30 },
+          hr_zone_s: [1200, 1800, 900, 600, 300],
+          intensity: { easy_pct: 50, moderate_pct: 15, hard_pct: 35 },
+          long_run_km: 12.4,
+          long_run_id: "123",
+          long_run_pct: 51.5,
           activities: [
             {
               id: "123",

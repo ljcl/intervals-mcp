@@ -296,7 +296,16 @@ describe("dispatchToolCall input validation", () => {
       runOnly: false,
       current: null,
       source: "intervals.icu",
-      totals: { runs: 0, distanceKm: 0, timeHours: 0, elevationM: 0, load: 0 },
+      totals: {
+        runs: 0,
+        distanceKm: 0,
+        timeHours: 0,
+        elevationM: 0,
+        load: 0,
+        hrZoneS: null,
+        intensity: null,
+        hrZoneRunsLeftOut: 0,
+      },
       weeks: [],
     });
     const params = mockedIntervalsList.mock.calls[0]?.[1];

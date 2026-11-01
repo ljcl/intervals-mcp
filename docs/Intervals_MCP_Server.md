@@ -63,7 +63,7 @@ rather than (or alongside) text.
 | ---- | ------- | ---------- |
 | `get-athlete-stats` | Run totals, and totals for every sport (strength sessions, swim distance), this week/month/YTD | (none) |
 | `get-fitness-trend` | Am I fresh or fatigued? What if I taper for a race? | `days`, `newest`, `runOnly`, `projectDays`/`plannedLoads`/`calendarPlan`, `targetDate`/`targetTsb` |
-| `get-training-load` | Weekly volume, volume-spike flags, weekly load | `days`, `newest`, `runOnly` |
+| `get-training-load` | Weekly volume, volume-spike flags, long run, HR zone split, weekly load | `days`, `newest`, `runOnly` |
 | `get-best-efforts` | My best 5K/10K/half/marathon times; my fastest 5K inside one run, and where | `distances`, `window`, `topN`, `id` |
 | `get-race-prediction` | What could I run for X? What pace do I need for a goal time? | `raceDistance` (`5km`, `10km`, `15km`, `10 mile`, `half marathon`, `marathon`, `50km`), `goalTime` |
 | `get-athlete-zones` | What are my HR zones? Is 150 bpm zone 2? What is my threshold pace? Is my LTHR out of date? | `sport` (default Run) |
@@ -113,8 +113,9 @@ it says the chart may not show, because some hosts render the card anyway.
 
 ## Typical workflows
 
-**Weekly review.** `get-training-load` for volume/trend/warnings, then
-`list-activities` to spot standout sessions, `get-running-summary` (and
+**Weekly review.** `get-training-load` for volume/trend/warnings, the weekly
+easy/moderate/hard split and each week's long run, then `list-activities` to
+spot the hardest efforts, `get-running-summary` (and
 `compare-activities` for two comparable runs) on those, then
 `view-cadence-trends` to explore cadence patterns. (This is also the
 `weekly-review` prompt.)

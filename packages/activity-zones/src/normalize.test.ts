@@ -12,7 +12,6 @@ import {
   buildZoneRows,
   buildZonesSubtitle,
   formatZoneRange,
-  intensitySplit,
 } from "./normalize";
 
 describe("formatZoneRange", () => {
@@ -45,24 +44,6 @@ describe("buildZoneRows", () => {
       pct: 15,
     });
     expect(rows[1]!.minutes).toBe(30);
-  });
-});
-
-describe("intensitySplit", () => {
-  it("buckets zones into easy (1-2), moderate (3), hard (4+)", () => {
-    const split = intensitySplit(hrZoneSet);
-    expect(split.easyPct).toBe(60);
-    expect(split.moderatePct).toBe(22.5);
-    expect(split.hardPct).toBe(17.5);
-  });
-
-  it("counts every zone above 3 as hard for 6-zone power sets", () => {
-    const split = intensitySplit(powerZoneSet);
-    expect(split.hardPct).toBe(15);
-    expect(split.easyPct + split.moderatePct + split.hardPct).toBeCloseTo(
-      100,
-      1,
-    );
   });
 });
 

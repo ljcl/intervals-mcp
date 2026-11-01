@@ -8,6 +8,7 @@ import {
 } from "../intervalsClient";
 import { buildTrainingLoadData, trainingLoadWindow } from "../trainingLoad";
 import { addDays, daysBetween, startOfWeekMonday } from "../utils/localDate";
+import { RESPONSE_BUDGET_CHARS } from "./_responseBudget";
 import { getTrainingLoadTool } from "./getTrainingLoad";
 import { TrainingLoadOutputSchema } from "./outputs";
 
@@ -407,6 +408,138 @@ describe("get-training-load execute", () => {
     );
     expect(textLoadByWeek).toEqual(appLoadByWeek);
     expect(structured.totals.load).toBe(appData.totals.load);
+  });
+
+  describe("HR zone split and long run", () => {
+    const BOUNDS = [142, 154, 163, 171, 190];
+    const zones = (times: number[], bounds = BOUNDS) => ({
+      icu_hr_zones: bounds,
+      icu_hr_zone_times: times,
+    });
+    // TODAY is Sunday 2026-06-28: run(2) and run(3) are in this week, run(9)
+    // in the week before.
+    const activities = () => [
+      run(2, { distance: 5000, ...zones([100, 100, 200, 300, 300]) }),
+      run(3, { distance: 15000, ...zones([100, 100, 200, 300, 300]) }),
+      run(9, { distance: 10000 }),
+      run(10, { distance: 4000, ...zones([60, 60, 60], [150, 160, 190]) }),
+    ];
+
+    async function call() {
+      mockedListActivities.mockResolvedValueOnce(activities());
+      mockedWellness.mockResolvedValueOnce([]);
+      return getTrainingLoadTool.execute(DEFAULT_INPUT, "test-token");
+    }
+
+    it("reports each week's split, long run and the window's split in text and structured output", async () => {
+      const result = await call();
+      const structured = result.structuredContent as {
+        totals: {
+          hr_zone_s: number[] | null;
+          intensity: { easy_pct: number } | null;
+          hr_zone_runs_left_out: number;
+        };
+        weekly_breakdown: Array<{
+          week_starting: string;
+          hr_zone_s: number[] | null;
+          intensity: unknown;
+          long_run_km: number | null;
+          long_run_id: string | null;
+          long_run_pct: number | null;
+        }>;
+      };
+      expect(TrainingLoadOutputSchema.safeParse(structured).success).toBe(true);
+
+      const thisWeek = structured.weekly_breakdown.find(
+        (w) => w.week_starting === "2026-06-22",
+      )!;
+      expect(thisWeek).toMatchObject({
+        hr_zone_s: [200, 200, 400, 600, 600],
+        intensity: { easy_pct: 20, moderate_pct: 20, hard_pct: 60 },
+        long_run_km: 15,
+        long_run_id: "run-3",
+        long_run_pct: 75,
+      });
+      // run(9) has no zone times: null, not 0%. run(10) has another count.
+      const lastWeek = structured.weekly_breakdown.find(
+        (w) => w.week_starting === "2026-06-15",
+      )!;
+      expect(lastWeek).toMatchObject({
+        hr_zone_s: null,
+        intensity: null,
+        long_run_km: 10,
+        long_run_id: "run-9",
+        long_run_pct: 71.4,
+      });
+      expect(structured.totals.hr_zone_s).toEqual([200, 200, 400, 600, 600]);
+      expect(structured.totals.intensity?.easy_pct).toBe(20);
+      expect(structured.totals.hr_zone_runs_left_out).toBe(2);
+
+      const text = result.content[0]?.text ?? "";
+      expect(text).toContain(
+        "Run HR zones: easy 20% / moderate 20% / hard 60% (2 runs left out",
+      );
+      expect(text).toContain(
+        "easy 20% / moderate 20% / hard 60%, long run 15 km on 2026-06-25 (75% of the week, run-3)",
+      );
+      expect(text).toContain("long run 10 km on 2026-06-19 (71.4% of the week");
+    });
+
+    it("gives the app feed the same split and long run", async () => {
+      const result = await call();
+      const structured = result.structuredContent as {
+        weekly_breakdown: Array<{
+          week_starting: string;
+          hr_zone_s: number[] | null;
+          long_run_id: string | null;
+        }>;
+        totals: { hr_zone_s: number[] | null };
+      };
+      const all = activities();
+      const appData = buildTrainingLoadData(
+        all,
+        trainingLoadWindow(28, TODAY),
+        {
+          loadActivities: all,
+          runOnly: false,
+        },
+      );
+      expect(appData.weeks.map((w) => [w.weekStarting, w.hrZoneS])).toEqual(
+        structured.weekly_breakdown.map((w) => [w.week_starting, w.hr_zone_s]),
+      );
+      expect(appData.weeks.map((w) => w.longRun?.id ?? null)).toEqual(
+        structured.weekly_breakdown.map((w) => w.long_run_id),
+      );
+      expect(appData.totals.hrZoneS).toEqual(structured.totals.hr_zone_s);
+    });
+  });
+
+  it("drops the oldest weeks' run lists to stay under the response budget, and says so", async () => {
+    // A run a day for a year: the lists alone outgrow the budget.
+    mockedListActivities.mockResolvedValueOnce(
+      Array.from({ length: 365 }, (_, d) =>
+        run(d, { name: "A long enough run name to cost characters" }),
+      ),
+    );
+    mockedWellness.mockResolvedValueOnce([]);
+
+    const result = await getTrainingLoadTool.execute(
+      { days: 365, runOnly: false },
+      "test-token",
+    );
+    const structured = result.structuredContent as {
+      warnings: string[];
+      weekly_breakdown: Array<{ activities: unknown[]; long_run_id: string }>;
+    };
+    const text = result.content[0]?.text ?? "";
+    expect(text.length + JSON.stringify(structured).length).toBeLessThanOrEqual(
+      RESPONSE_BUDGET_CHARS,
+    );
+    const weeks = structured.weekly_breakdown;
+    expect(weeks[0]!.activities).toEqual([]);
+    expect(weeks[0]!.long_run_id).toBeTruthy();
+    expect(weeks[weeks.length - 1]!.activities.length).toBeGreaterThan(0);
+    expect(text).toContain("run lists of the first");
   });
 
   it("returns isError when the fetch fails", async () => {

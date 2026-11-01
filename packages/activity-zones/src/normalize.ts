@@ -3,6 +3,7 @@ import {
   formatDurationShort,
   formatShortDate,
   hrZoneRangeText,
+  intensitySplit,
 } from "@intervals-mcp/data";
 import { type SummaryStat } from "@intervals-mcp/ui";
 import { type ActivityZonesData, type ZoneBucket, type ZoneSet } from "./types";
@@ -38,30 +39,6 @@ export function buildZoneRows(set: ZoneSet): ZoneRow[] {
 }
 
 /**
- * Easy/moderate/hard split percentages: zones 1–2 are easy, zone 3 moderate,
- * zone 4 and above hard. Matches the intensity distribution convention used
- * by the running-summary tool for 5-zone HR and degrades sensibly for the
- * 6+-zone power sets.
- */
-export function intensitySplit(set: ZoneSet): {
-  easyPct: number;
-  moderatePct: number;
-  hardPct: number;
-} {
-  let easy = 0;
-  let moderate = 0;
-  let hard = 0;
-  for (const bucket of set.buckets) {
-    if (bucket.zone <= 2) easy += bucket.seconds;
-    else if (bucket.zone === 3) moderate += bucket.seconds;
-    else hard += bucket.seconds;
-  }
-  const total = set.totalSeconds || 1;
-  const pct = (v: number) => Math.round((v / total) * 1000) / 10;
-  return { easyPct: pct(easy), moderatePct: pct(moderate), hardPct: pct(hard) };
-}
-
-/**
  * "Run · 12 Jul · Heart rate zones" — the header subtitle. Names the set on
  * screen because the pill row only appears when both sets exist, so a
  * heart-rate-only card would otherwise never say what it is charting.
@@ -91,7 +68,7 @@ export function buildEmptyMessage(
 
 /** SummaryBar stats for the active zone set. */
 export function buildSummaryStats(set: ZoneSet): SummaryStat[] {
-  const split = intensitySplit(set);
+  const split = intensitySplit(set.buckets.map((b) => b.seconds));
   return [
     { label: "Time", value: formatDurationShort(set.totalSeconds) },
     { label: "Mostly", value: `Z${dominantBucket(set).zone}` },

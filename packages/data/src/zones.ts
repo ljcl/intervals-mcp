@@ -54,3 +54,32 @@ export function dominantBucket(set: ZoneSet): ZoneBucket {
     bucket.seconds > top.seconds ? bucket : top,
   );
 }
+
+/** Share of time at easy, moderate and hard intensity, 0-100 with one decimal. */
+export interface IntensitySplit {
+  easyPct: number;
+  moderatePct: number;
+  hardPct: number;
+}
+
+/**
+ * The one home for the easy/moderate/hard rule: zones 1-2 are easy, zone 3
+ * moderate, zone 4 and above hard. Matches the intensity distribution
+ * convention used by the running-summary tool for 5-zone HR and degrades
+ * sensibly for the 6+-zone power sets. `secondsByZone` is seconds per zone,
+ * zone 1 first; with no time at all every share is 0, so a caller that must
+ * tell "no data" apart from 0% checks the total itself.
+ */
+export function intensitySplit(secondsByZone: number[]): IntensitySplit {
+  let easy = 0;
+  let moderate = 0;
+  let hard = 0;
+  secondsByZone.forEach((seconds, i) => {
+    if (i < 2) easy += seconds;
+    else if (i === 2) moderate += seconds;
+    else hard += seconds;
+  });
+  const total = easy + moderate + hard || 1;
+  const pct = (v: number) => Math.round((v / total) * 1000) / 10;
+  return { easyPct: pct(easy), moderatePct: pct(moderate), hardPct: pct(hard) };
+}

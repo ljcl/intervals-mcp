@@ -970,6 +970,9 @@ over 25,000 tokens: a 61 KB `get-activity-streams` payload and a 150 KB
   periods, and the spec's type enum lists 60 (`Activity.type` itself is a plain string). Its "every activity type" size
   case puts all 60 in every period (about 32,000 characters). If that case
   goes over the budget, add a measured shrink.
+- `get-training-load` over a year of weeks measures its structured part and
+  empties the per-run `activities` lists of the oldest weeks first, with a
+  warning. Weekly totals, the long run and the text stay.
 - A text response never points at data the reader cannot reach. Some hosts
   pass only the text, so "(N more)" names the call that returns the rest
   and the exact input for it ("get-activity-laps with fromLap 21 lists the
