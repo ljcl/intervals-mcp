@@ -88,7 +88,7 @@ descriptions.
 | `get-interval-analysis` | Interval detection with urban-stop-aware rest classification and rep fade; with findSimilar, earlier sessions with the same reps |
 | `get-best-efforts` | Best times at standard running distances: over your history from intervals.icu's pace curves, or inside one run with where each started |
 | `get-race-prediction` | Predicted race times from intervals.icu pace-curve points (Riegel) alongside intervals.icu's own critical-speed model, with confidence, source point, and km goal-pace splits |
-| `get-athlete-stats` | Run totals and totals for every sport (count, moving time, distance and whole-body load per activity type) for this week, the last 4 weeks, this month and YTD, aggregated from list-activities data |
+| `get-athlete-stats` | Run totals and totals for every sport (count, moving time, distance and whole-body load per activity type) for this week, the last 4 weeks, this month and YTD, plus last year to date (totals only for all sports), aggregated from list-activities data |
 | `get-fitness-trend` | Fitness/fatigue/form (CTL/ATL/TSB), whole-body from intervals.icu wellness or run-only computed locally, with rest, planned-load or intervals.icu calendar projection and a solved taper to a target form on a target date; `newest` reads a past window, with no projection or taper |
 | `get-training-load` | Weekly running volume and volume-spike warnings, each week's long run, the weekly HR zone split (easy/moderate/hard), weekly intervals.icu training load and the types it covers, plus current CTL/ATL/TSB; `newest` ends the weeks on a past date |
 | `update-activity` | Update an activity's name, description, gear, RPE, or feel, echoing before/after values, with gear names (write tool) |
@@ -766,14 +766,21 @@ target, or a split row reports one; `units.distance` is `"m"`, matching the
 
 `get-athlete-stats` takes no inputs. It reports four periods: this week
 (Monday to today), the last 4 weeks (today and the 27 days before it), this
-month and the year to date, all in the server's time zone. It reads every
+month and the year to date, all in the server's time zone, and a fifth,
+`last_year_to_date`: 1 January last year to today's date last year, with 29
+February mapped to 28 February (`sameDateLastYear`). It reads every
 activity in one client read of `/athlete/{id}/activities` (31-day windows,
-no row cap), from 1 January or 27 days back, whichever is earlier. It builds two sets of totals from the same rows. The
-run totals (`this_week`, `last_4_weeks`, `this_month`, `ytd`) count Run,
+no row cap), from 1 January last year: up to 22 windows, each reported as
+progress by `listActivities`. It builds two sets of totals from the same rows. The
+run totals (`this_week`, `last_4_weeks`, `this_month`, `ytd`,
+`last_year_to_date`) count Run,
 TrailRun and VirtualRun only: run count, distance, moving time, elevation
 gain, run-only load and average pace (total distance over total moving
-time). `all_sports` has the same four periods over every activity type.
-Each period has `by_type`, keyed by the intervals.icu type name, with
+time). `all_sports` has the same five periods over every activity type, but
+`last_year_to_date` carries `total` only, with no `by_type`, to keep the
+response inside the budget. The text prints a "YTD change on last year to
+date" line under each set: the change in count, distance (run totals only,
+with a percentage), moving time and load. Each other period has `by_type`, keyed by the intervals.icu type name, with
 `count`, `moving_time_s`, `distance_km` and `load`. It also has a `total`
 with `count`, `moving_time_s` and `load`. Each `total` field is the sum of
 the `by_type` rows, so the type loads add up to the whole-body load. On
@@ -793,8 +800,10 @@ OpenWaterSwim: add their rows for a sport total. Activities synced from Strava
 (`source: "STRAVA"`) are left out of both sets: the API gives no data for
 them (docs/api-notes.md, Strava stub spike). The spec's type enum lists 60 activity
 types (`Activity.type` itself is a plain string), so the response has an
-upper bound: every type in every period is
-about 32,000 characters, under the response size budget.
+upper bound: every type in every `by_type` period is
+about 32,000 characters, under the response size budget. A full `by_type`
+for last year to date as well measured 39,799 of 40,000, which is why that
+period has `total` only.
 
 `get-fitness-trend` computes the classic CTL/ATL/TSB performance-management
 chart two ways. Whole-body (default) reads CTL/ATL straight off

@@ -967,7 +967,7 @@ over 25,000 tokens: a 61 KB `get-activity-streams` payload and a 150 KB
   differ (a `latlng` cell costs about four `heartrate` cells).
 - A response that a closed set bounds, not an input, needs no shrink.
   `get-athlete-stats` lists one row per activity type in each of its four
-  periods, and the spec's type enum lists 60 (`Activity.type` itself is a plain string). Its "every activity type" size
+  `by_type` periods (a fifth, last year to date, has `total` only), and the spec's type enum lists 60 (`Activity.type` itself is a plain string). Its "every activity type" size
   case puts all 60 in every period (about 32,000 characters). If that case
   goes over the budget, add a measured shrink.
 - `get-training-load` over a year of weeks measures its text plus structured part

@@ -19,11 +19,12 @@ import {
 const name = "get-athlete-stats";
 
 const description = `
-Returns training totals for this week, the last 4 weeks, this month and the
-year to date, in two sets. Run totals: run count, distance, moving time,
+Returns training totals for this week, the last 4 weeks, this month, the
+year to date and the same dates last year, in two sets. Run totals: run count, distance, moving time,
 elevation gain, training load and average pace. All-sports totals: count,
 moving time, distance and training load for each activity type, and a
-total for all types together. No inputs. Use it for "how much have I been
+total for all types together. The text prints the change against last year
+to date. No inputs. Use it for "how much have I been
 running?", "how many strength sessions did I do this month?" or "how far
 have I swum this year?" instead of adding up list-activities.
 
@@ -47,6 +48,8 @@ Notes:
   for them through this API.
 - Weeks start on Monday in the server's time zone; the month and year are
   local calendar periods.
+- last_year_to_date is 1 January last year to today's date last year (29
+  February counts as 28 February). Its all-sports set has the total only.
 `;
 
 const GetAthleteStatsInputSchema = z.object({});
@@ -93,6 +96,12 @@ export function startOfMonth(ymd: string): string {
 /** 1 January of the local calendar year containing `ymd`. */
 export function startOfYear(ymd: string): string {
   return `${ymd.slice(0, 4)}-01-01`;
+}
+
+/** The same month and day one year earlier; 29 February becomes 28 February. */
+export function sameDateLastYear(ymd: string): string {
+  const monthDay = ymd.slice(5);
+  return `${Number(ymd.slice(0, 4)) - 1}-${monthDay === "02-29" ? "02-28" : monthDay}`;
 }
 
 /**
@@ -255,20 +264,73 @@ function formatSportLines(label: string, totals: AllSportsTotals): string[] {
   return lines;
 }
 
+function signed(n: number): string {
+  return `${n > 0 ? "+" : n < 0 ? "-" : ""}${Math.abs(n)}`;
+}
+
+/** This year's YTD against last year's: the change in each total. */
+function formatChangeLine(
+  label: string,
+  now: { count: number; distanceKm?: number; timeS: number; load: number },
+  before: { count: number; distanceKm?: number; timeS: number; load: number },
+): string {
+  const parts = [`${label} ${signed(now.count - before.count)}`];
+  if (now.distanceKm != null && before.distanceKm != null) {
+    const km = round(now.distanceKm - before.distanceKm, 2);
+    const pct =
+      before.distanceKm > 0
+        ? ` (${signed(Math.round((km / before.distanceKm) * 100))}%)`
+        : "";
+    parts.push(`distance ${signed(km)} km${pct}`);
+  }
+  const dt = now.timeS - before.timeS;
+  parts.push(
+    `time ${dt < 0 ? "-" : "+"}${formatDuration(Math.abs(dt))}`,
+    `load ${signed(now.load - before.load)}`,
+  );
+  return `YTD change on last year to date: ${parts.join(", ")}`;
+}
+
 /** Builds the tool's text response. Exported for direct testing. */
 export function formatAthleteStatsText(response: AthleteStatsOutput): string {
+  const run = (t: RunTotals) => ({
+    count: t.runs,
+    distanceKm: t.distance_km,
+    timeS: t.moving_time_s,
+    load: t.load,
+  });
+  const sports = (t: AllSportsTotals["total"]) => ({
+    count: t.count,
+    timeS: t.moving_time_s,
+    load: t.load,
+  });
   return [
     "Run totals (run-only load)",
     formatBucketLine("This week", response.this_week),
     formatBucketLine("Last 4 weeks", response.last_4_weeks),
     formatBucketLine("This month", response.this_month),
     formatBucketLine("YTD", response.ytd),
+    formatBucketLine("Last year to date", response.last_year_to_date),
+    formatChangeLine(
+      "runs",
+      run(response.ytd),
+      run(response.last_year_to_date),
+    ),
     "",
     "All sports (whole-body load)",
     ...formatSportLines("This week", response.all_sports.this_week),
     ...formatSportLines("Last 4 weeks", response.all_sports.last_4_weeks),
     ...formatSportLines("This month", response.all_sports.this_month),
     ...formatSportLines("YTD", response.all_sports.ytd),
+    ...formatSportLines("Last year to date", {
+      ...response.all_sports.last_year_to_date,
+      by_type: {},
+    }),
+    formatChangeLine(
+      "activities",
+      sports(response.all_sports.ytd.total),
+      sports(response.all_sports.last_year_to_date.total),
+    ),
   ].join("\n");
 }
 
@@ -290,10 +352,12 @@ export const getAthleteStatsTool = {
     const last4WeeksStart = addDays(today, -27);
     const monthStart = startOfMonth(today);
     const yearStart = startOfYear(today);
-    // The fetch window must cover every bucket. YTD needs 1 January; early
-    // January's rolling 28-day bucket needs further back than that.
-    const fetchOldest =
-      yearStart < last4WeeksStart ? yearStart : last4WeeksStart;
+    const lastYearEnd = sameDateLastYear(today);
+    const lastYearStart = startOfYear(lastYearEnd);
+    // The fetch window must cover every bucket. Last year's 1 January is
+    // earlier than every other bucket's start, including early January's
+    // rolling 28 days.
+    const fetchOldest = lastYearStart;
 
     try {
       progress(`Fetching activities ${fetchOldest} to ${today}`);
@@ -308,6 +372,11 @@ export const getAthleteStatsTool = {
         last_4_weeks: aggregateRunTotals(activities, last4WeeksStart, today),
         this_month: aggregateRunTotals(activities, monthStart, today),
         ytd: aggregateRunTotals(activities, yearStart, today),
+        last_year_to_date: aggregateRunTotals(
+          activities,
+          lastYearStart,
+          lastYearEnd,
+        ),
         all_sports: {
           this_week: aggregateSportTotals(activities, weekStart, today),
           last_4_weeks: aggregateSportTotals(
@@ -317,6 +386,11 @@ export const getAthleteStatsTool = {
           ),
           this_month: aggregateSportTotals(activities, monthStart, today),
           ytd: aggregateSportTotals(activities, yearStart, today),
+          // Total only: a fifth period of by_type rows would crowd the budget.
+          last_year_to_date: {
+            total: aggregateSportTotals(activities, lastYearStart, lastYearEnd)
+              .total,
+          },
         },
         units: { distance: "km", pace: "min/km", time: "s", elevation: "m" },
       };

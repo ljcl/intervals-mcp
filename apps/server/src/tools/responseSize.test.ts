@@ -360,20 +360,23 @@ const INTERVALS_ACTIVITY_TYPES: string[] = (() => {
 
 /**
  * One activity of every type, plus one with no type, on the last day of
- * the range, on top of the default one-a-day list: every get-athlete-stats
- * period then lists every type.
+ * the range and again on its first day (inside last year to date, where
+ * the read now starts), on top of the default one-a-day list: every
+ * get-athlete-stats period then lists every type.
  */
 const everyActivityType = () =>
   vi.mocked(client.listActivities).mockImplementation(async (_key, range) => {
     const base = activitiesFixture as unknown as client.IntervalsActivity[];
     const types: (string | null)[] = [...INTERVALS_ACTIVITY_TYPES, null];
     return [
-      ...types.map((type, i) => ({
-        ...base[0]!,
-        id: `i${400_000_000 + i}`,
-        type,
-        start_date_local: `${range.newest}T06:00:00`,
-      })),
+      ...[range.newest, range.oldest].flatMap((date, d) =>
+        types.map((type, i) => ({
+          ...base[0]!,
+          id: `i${400_000_000 + d * 1000 + i}`,
+          type,
+          start_date_local: `${date}T06:00:00`,
+        })),
+      ),
       ...activitiesIn(range),
     ];
   });
@@ -385,7 +388,23 @@ const everyActivityType = () =>
 const CASES: Record<string, SizeCase[]> = {
   "get-athlete-stats": [
     { label: "default", args: {} },
-    { label: "every activity type", args: {}, setup: everyActivityType },
+    {
+      label: "every activity type",
+      args: {},
+      setup: everyActivityType,
+      check: (result) => {
+        const lastYear = (
+          result.structuredContent as {
+            all_sports: { last_year_to_date: Record<string, unknown> };
+          }
+        ).all_sports.last_year_to_date;
+        // Total only, and the case did reach the last-year window.
+        expect(lastYear).not.toHaveProperty("by_type");
+        expect(
+          (lastYear.total as { count: number }).count,
+        ).toBeGreaterThanOrEqual(INTERVALS_ACTIVITY_TYPES.length + 1);
+      },
+    },
   ],
   "update-activity": [
     {
