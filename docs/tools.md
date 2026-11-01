@@ -240,7 +240,9 @@ state (docs/api-notes.md); `units` names all of these, including `spo2` and
 `respiration`. Takes either a single `date` or an `oldest`/`newest` range
 (max 90 calendar days inclusive); supplying `date` together with a range is
 a validation error. With nothing supplied it defaults to today in the
-server's time zone. The HRV measure depends on the athlete's
+server's time zone. A `date` or `newest` after today is refused before any
+request: intervals.icu's rows past today hold its projection from planned
+workouts, and the error points at `get-fitness-trend` `projectDays`. The HRV measure depends on the athlete's
 device (docs/api-notes.md). The text prints each HRV value that is present
 with its label ("HRV rMSSD", "HRV SDNN", never bare "HRV"). A range's
 averages keep the two measures apart. `hrv_note` comes from the data and
