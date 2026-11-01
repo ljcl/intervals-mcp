@@ -1,5 +1,24 @@
 # Changelog
 
+## [2.10.0](https://github.com/ljcl/intervals-mcp/compare/v2.9.3...v2.10.0) (2026-11-01)
+
+
+### Features
+
+* **activity-zones:** show pace zone time in get-activity-zones and the zones app ([#364](https://github.com/ljcl/intervals-mcp/issues/364)) ([8bf454a](https://github.com/ljcl/intervals-mcp/commit/8bf454a3c46e9e9b9b2064c138dfa8f6f9aeb9b6))
+* **athlete-stats:** compare the year to date with the same dates last year ([#362](https://github.com/ljcl/intervals-mcp/issues/362)) ([bf376b0](https://github.com/ljcl/intervals-mcp/commit/bf376b057a096f7a61c59b6b6d5685586194d5ed))
+* **fitness-trend:** project form from the intervals.icu calendar plan ([#360](https://github.com/ljcl/intervals-mcp/issues/360)) ([b86d6c3](https://github.com/ljcl/intervals-mcp/commit/b86d6c380164abba52f3120074db553f4c06199a))
+* **training-load:** weekly HR zone split and long run per week ([#361](https://github.com/ljcl/intervals-mcp/issues/361)) ([460f85c](https://github.com/ljcl/intervals-mcp/commit/460f85c9dd34fc73be1d7a60baf0e31633fd0f7d))
+* **wellness:** read a long get-wellness range as weekly averages ([#363](https://github.com/ljcl/intervals-mcp/issues/363)) ([56194f9](https://github.com/ljcl/intervals-mcp/commit/56194f998db8571bdceeed6c622014d2719ce824))
+
+
+### Bug Fixes
+
+* **deps:** bump maplibre-gl from 6.15.0 to 6.16.0 in the production-minor-patch group ([#367](https://github.com/ljcl/intervals-mcp/issues/367)) ([ba6a6f0](https://github.com/ljcl/intervals-mcp/commit/ba6a6f074d9bb752801ffcae1bbab2f28532769c))
+* **prompts:** ask get-training-load for the volume-spike warning it gives ([#358](https://github.com/ljcl/intervals-mcp/issues/358)) ([86d5ae6](https://github.com/ljcl/intervals-mcp/commit/86d5ae63653b23abfb4486631cf39d5c9a4c247f))
+* **tools:** keep wellness range text and lap lists inside the response budget ([#357](https://github.com/ljcl/intervals-mcp/issues/357)) ([6527373](https://github.com/ljcl/intervals-mcp/commit/652737378e9c1afd6636a840cc6f13b459e7d991))
+* **wellness:** refuse dates after today in get-wellness ([#356](https://github.com/ljcl/intervals-mcp/issues/356)) ([c336867](https://github.com/ljcl/intervals-mcp/commit/c3368672235b1cba82f4588923aa19f69c39334f))
+
 ## [2.9.3](https://github.com/ljcl/intervals-mcp/compare/v2.9.2...v2.9.3) (2026-10-31)
 
 
