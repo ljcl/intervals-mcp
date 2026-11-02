@@ -148,6 +148,7 @@ describe("recordToolCall", () => {
       "outcome",
       "error_class",
       "http_status",
+      "upstream_requests",
       "rate_limit",
       "client_apps",
       "client_name",
@@ -308,6 +309,24 @@ describe("toolCallStats", () => {
     expect(stats).toMatchObject({ calls: 2, errors: 1, total_ms: 400 });
     expect(stats.mean_ms).toBe(200);
     expect(stats.last_called_at).not.toBe("");
+  });
+
+  it("sums upstream requests per tool, and logs 0 when a call made none (#324)", () => {
+    recordToolCall({
+      tool: "get-training-load",
+      duration_ms: 1,
+      outcome: "ok",
+      upstream_requests: 3,
+    });
+    recordToolCall({
+      tool: "get-training-load",
+      duration_ms: 1,
+      outcome: "ok",
+    });
+
+    const calls = vi.mocked(console.error).mock.calls;
+    expect(JSON.parse(String(calls.at(-1)?.[0])).upstream_requests).toBe(0);
+    expect(toolCallStats()["get-training-load"]?.upstream_requests).toBe(3);
   });
 
   it("counts every non-ok outcome as an error, including a refused call", () => {

@@ -22,6 +22,12 @@ export interface CallScope {
    * last note wins. Read by `dispatchToolCall` for the call's log line.
    */
   failure?: CallFailure;
+  /**
+   * intervals.icu request attempts this call put on the wire, retries
+   * included. A shared read counts for the call that started it, so a call
+   * served from the cache or a joined read counts 0.
+   */
+  upstreamRequests?: number;
 }
 
 /** Why a call failed. The field names match `ToolCallRecord`'s. */
@@ -49,6 +55,12 @@ export function currentCallSignal(): AbortSignal | undefined {
 export function noteCallFailure(failure: CallFailure): void {
   const store = storage.getStore();
   if (store) store.failure = failure;
+}
+
+/** Counts one upstream request attempt for the current call. Does nothing outside a call. */
+export function noteUpstreamAttempt(): void {
+  const store = storage.getStore();
+  if (store) store.upstreamRequests = (store.upstreamRequests ?? 0) + 1;
 }
 
 /** Thrown when work stops because its tool call was cancelled. */

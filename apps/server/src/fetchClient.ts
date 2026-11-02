@@ -2,6 +2,7 @@ import { TtlLruCache } from "./cache";
 import {
   CallCancelledError,
   currentCallSignal,
+  noteUpstreamAttempt,
   throwIfCancelled,
 } from "./callScope";
 
@@ -573,8 +574,9 @@ export class FetchClient {
     }
   }
 
-  /** Records one request attempt that is about to go on the wire. */
+  /** Records one request attempt that is about to go on the wire, for `/health` and the current call's log line. */
   private countAttempt(): void {
+    noteUpstreamAttempt();
     const now = this.wallNow();
     this.pruneAttempts(now);
     this.attemptStarts.push(now);
