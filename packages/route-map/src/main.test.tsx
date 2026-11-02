@@ -34,6 +34,7 @@ vi.mock("@modelcontextprotocol/ext-apps/react", async () => {
 // No MapLibre map or SVG projection: the test is about when the data is
 // fetched, not what it draws.
 vi.mock("./RouteMap", () => ({ RouteMap: () => null }));
+vi.mock("./SuggestionMap", () => ({ SuggestionMap: () => null }));
 
 function fakeHostApp() {
   const calls: ToolCall[] = [];
@@ -137,6 +138,17 @@ describe("route-map main", () => {
     expect(calls[0]).toEqual({
       name: "get-route-map-data",
       arguments: { id: "i5", waypoints },
+    });
+  });
+
+  it("fetches suggestions when opened without an id", async () => {
+    const { calls, sendInput } = await mountApp();
+
+    await sendInput({ start: "Embarcadero, San Francisco", terrain: "flat" });
+
+    expect(calls[0]).toEqual({
+      name: "get-route-suggestions-data",
+      arguments: { start: "Embarcadero, San Francisco", terrain: "flat" },
     });
   });
 });

@@ -1,5 +1,5 @@
-/** The rendered path always comes from an activity. */
-export type RouteMapSource = "activity";
+/** Where the rendered path comes from: a recorded activity or a suggested route. */
+export type RouteMapSource = "activity" | "suggestion";
 
 /**
  * Metric streams aligned index-for-index with `coordinates`. Present only when
@@ -96,3 +96,21 @@ export interface ToolArgs {
   id: string;
   waypoints?: WaypointArg[];
 }
+
+/** Payload of the app-only `get-route-suggestions-data` tool: one planned run's candidates. */
+export interface RouteSuggestionsData {
+  source: "suggestion";
+  date: string;
+  name: string;
+  startLabel: string;
+  candidates: Array<{ label: string; summary: string; map: RouteMapData }>;
+  warnings: string[];
+}
+
+/** Tool input for `view-route-suggestions`: every field optional, passed through for the server to validate. */
+export interface SuggestionArgs {
+  kind: "suggestion";
+  args: Record<string, unknown>;
+}
+
+export type AppArgs = ToolArgs | SuggestionArgs;

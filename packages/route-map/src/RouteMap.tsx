@@ -660,7 +660,10 @@ export function RouteMap({
     ],
   );
 
-  const subtitle = [data.activityType, "Activity"].filter(Boolean).join(" · ");
+  const subtitle =
+    data.source === "suggestion"
+      ? "Suggested route"
+      : [data.activityType, "Activity"].filter(Boolean).join(" · ");
 
   const scrubPoint =
     scrubIndex != null ? (projected?.points[scrubIndex] ?? null) : null;

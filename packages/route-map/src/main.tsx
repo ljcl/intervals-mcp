@@ -13,8 +13,14 @@ import { type useApp } from "@modelcontextprotocol/ext-apps/react";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { RouteMap } from "./RouteMap";
+import { SuggestionMap } from "./SuggestionMap";
 import { parseToolArgs } from "./toolArgs";
-import { type RouteMapData, type ToolArgs } from "./types";
+import {
+  type AppArgs,
+  type RouteMapData,
+  type RouteSuggestionsData,
+  type ToolArgs,
+} from "./types";
 import { VIEW_TOOLS } from "./viewToolDeclarations";
 import "./global.css";
 
@@ -25,21 +31,20 @@ const LoadingSkeleton = () => (
   </LoadingState>
 );
 
-interface AppContentProps {
+interface ContentProps {
   app: ReturnType<typeof useApp>["app"];
-  toolArgs: ToolArgs;
   hostCtx: HostCtx;
   mode: AppMode;
   viewToolRegistry: ViewToolRegistry | null;
 }
 
-function AppContent({
+function ActivityContent({
   app,
   toolArgs,
   hostCtx,
   mode,
   viewToolRegistry,
-}: AppContentProps) {
+}: ContentProps & { toolArgs: ToolArgs }) {
   const { data, loading, error, retry } = useServerToolData<RouteMapData>(
     app,
     "get-route-map-data",
@@ -67,12 +72,55 @@ function AppContent({
   );
 }
 
+function SuggestionContent({
+  app,
+  args,
+  hostCtx,
+  mode,
+  viewToolRegistry,
+}: ContentProps & { args: Record<string, unknown> }) {
+  const { data, loading, error, retry } =
+    useServerToolData<RouteSuggestionsData>(app, "get-route-suggestions-data", {
+      ...args,
+    });
+
+  return (
+    <AppShell hostCtx={hostCtx} mode={mode} app={app}>
+      {loading ? (
+        <LoadingSkeleton />
+      ) : error || !data ? (
+        <ErrorState
+          message={error ?? "No route suggestions available"}
+          onRetry={retry}
+        />
+      ) : (
+        <SuggestionMap
+          data={data}
+          mode={mode}
+          app={app ?? undefined}
+          viewToolRegistry={viewToolRegistry}
+        />
+      )}
+    </AppShell>
+  );
+}
+
+function AppContent({
+  toolArgs,
+  ...rest
+}: ContentProps & { toolArgs: AppArgs }) {
+  return "kind" in toolArgs ? (
+    <SuggestionContent args={toolArgs.args} {...rest} />
+  ) : (
+    <ActivityContent toolArgs={toolArgs} {...rest} />
+  );
+}
+
 function Root() {
   return (
-    <AppRoot<ToolArgs>
+    <AppRoot<AppArgs>
       appInfo={{ name: "Route Map", version: "1.0.0" }}
       parseToolInput={parseToolArgs}
-      missingArgsMessage="No activity id was provided to the map view."
       viewTools={VIEW_TOOLS}
       loading={<LoadingSkeleton />}
     >
