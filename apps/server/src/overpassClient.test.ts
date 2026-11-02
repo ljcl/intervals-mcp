@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { CallCancelledError } from "./callScope";
 import { HttpError, overpassApi } from "./fetchClient";
 import { type RouteTrack } from "./mapAnchors";
 import { crossingsPerKm, loadCrossings, snappedBounds } from "./overpassClient";
@@ -46,6 +47,19 @@ describe("crossingsPerKm", () => {
     ];
     expect(crossingsPerKm(line, nodes)).toBe(2.3);
   });
+  it("counts an edge node east of a high-latitude track", () => {
+    // Track ends on the 60.00 / 10.02 grid corner; node ~10 m east of it
+    // (0.00018 deg lng is ~10 m at 60 N), outside the old latitude-only pad.
+    const north: RouteTrack = {
+      coordinates: [
+        [60, 10.01],
+        [60, 10.02],
+      ],
+      distance: [0, 555],
+      altitude: [0, 0],
+    };
+    expect(crossingsPerKm(north, [[60, 10.02018]])).toBe(1.8);
+  });
   it("is 0 for a track with no length", () => {
     expect(
       crossingsPerKm({ coordinates: [[1, 2]], distance: [0], altitude: [0] }, [
@@ -91,5 +105,12 @@ describe("loadCrossings", () => {
       new DOMException("The operation was aborted.", "AbortError"),
     );
     await expect(loadCrossings([line])).rejects.toThrow(/aborted/);
+  });
+
+  it("rethrows a cancelled call", async () => {
+    get.mockRejectedValue(new CallCancelledError("Overpass"));
+    await expect(loadCrossings([line])).rejects.toBeInstanceOf(
+      CallCancelledError,
+    );
   });
 });

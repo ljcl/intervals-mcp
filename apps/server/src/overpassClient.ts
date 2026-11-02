@@ -5,6 +5,7 @@
  * (docs/api-notes.md), so any failure is null and the caller ranks by path
  * share instead.
  */
+import { CallCancelledError } from "./callScope";
 import { isAbortError, overpassApi } from "./fetchClient";
 import { type LatLng, type RouteTrack } from "./mapAnchors";
 import { SERVER_VERSION } from "./version";
@@ -70,7 +71,7 @@ export async function loadCrossings(
         : [],
     );
   } catch (error) {
-    if (isAbortError(error)) throw error;
+    if (isAbortError(error) || error instanceof CallCancelledError) throw error;
     return null;
   }
 }
@@ -96,12 +97,15 @@ export function crossingsPerKm(track: RouteTrack, nodes: LatLng[]): number {
   if (km <= 0 || track.coordinates.length < 2) return 0;
   const bounds = snappedBounds([track])!;
   const pad = CROSSING_RADIUS_M / METERS_PER_DEG_LAT;
+  // A degree of longitude shrinks with latitude, so its padding grows.
+  const lngPad =
+    pad / Math.cos((((bounds[0] + bounds[2]) / 2) * Math.PI) / 180);
   const nearby = nodes.filter(
     ([lat, lng]) =>
       lat >= bounds[0] - pad &&
       lat <= bounds[2] + pad &&
-      lng >= bounds[1] - pad &&
-      lng <= bounds[3] + pad,
+      lng >= bounds[1] - lngPad &&
+      lng <= bounds[3] + lngPad,
   );
   let count = 0;
   for (const node of nearby) {
