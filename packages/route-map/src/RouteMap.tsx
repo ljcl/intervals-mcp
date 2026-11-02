@@ -17,6 +17,7 @@ import {
 import {
   type KeyboardEvent,
   type PointerEvent,
+  type ReactNode,
   useEffect,
   useId,
   useMemo,
@@ -79,6 +80,8 @@ interface RouteMapProps {
   /** Set false to force the offline grid view (stories — the basemap renders
    * live tiles, which need the network and can't render deterministically). */
   basemapEnabled?: boolean;
+  /** Rendered right after the card header, before the map (suggestion picker). */
+  beforeMap?: ReactNode;
 }
 
 /** Frame geometry per layout. All values are SVG viewBox units. */
@@ -158,6 +161,7 @@ export function RouteMap({
   app,
   viewToolRegistry = null,
   basemapEnabled = true,
+  beforeMap,
 }: RouteMapProps) {
   const isMobile = mode === "mobile";
   const dims = isMobile ? DIMS.mobile : DIMS.desktop;
@@ -723,6 +727,8 @@ export function RouteMap({
         subtitle={subtitle || undefined}
         compact={isMobile}
       />
+
+      {beforeMap}
 
       {projected && showBasemap && (
         <div className={styles.mapArea}>

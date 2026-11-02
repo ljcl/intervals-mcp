@@ -9,6 +9,12 @@ const meta = preview.meta({ component: SuggestionMap });
 export const AwayCandidates = meta.story({
   args: { data: awaySuggestions, basemapEnabled: false },
   play: async ({ canvas, userEvent }) => {
+    // The card header comes before the picker.
+    const title = canvas.getByText("SF: New loop");
+    const pill = canvas.getByRole("button", { name: "New loop" });
+    await expect(
+      title.compareDocumentPosition(pill) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     await userEvent.click(canvas.getByRole("button", { name: "New loop 2" }));
     await expect(canvas.getByText("via Bay Trail, Crissy Field")).toBeVisible();
   },

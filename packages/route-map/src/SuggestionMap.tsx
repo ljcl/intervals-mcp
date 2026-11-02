@@ -28,7 +28,8 @@ export function SuggestionMap({
   basemapEnabled = true,
 }: SuggestionMapProps) {
   const [selected, setSelected] = useState(0);
-  const candidate = data.candidates[selected] ?? data.candidates[0];
+  const candidates = data.candidates ?? [];
+  const candidate = candidates[selected] ?? candidates[0];
   if (!candidate) {
     return (
       <EmptyState>
@@ -36,13 +37,13 @@ export function SuggestionMap({
       </EmptyState>
     );
   }
-  return (
+  const picker = (
     <div className={styles.suggestions}>
       <p className={styles.context}>
         {data.date} · {data.name} · from {data.startLabel}
       </p>
       <PillGroup>
-        {data.candidates.map((c, i) => (
+        {candidates.map((c, i) => (
           <Pill
             key={c.map.id}
             active={c === candidate}
@@ -53,19 +54,22 @@ export function SuggestionMap({
         ))}
       </PillGroup>
       <p className={styles.summary}>{candidate.summary}</p>
-      {data.warnings.map((warning) => (
+      {(data.warnings ?? []).map((warning) => (
         <p key={warning} className={styles.warning}>
           {warning}
         </p>
       ))}
-      <RouteMap
-        key={candidate.map.id}
-        data={candidate.map}
-        mode={mode}
-        app={app}
-        viewToolRegistry={viewToolRegistry}
-        basemapEnabled={basemapEnabled}
-      />
     </div>
+  );
+  return (
+    <RouteMap
+      key={candidate.map.id}
+      data={candidate.map}
+      mode={mode}
+      app={app}
+      viewToolRegistry={viewToolRegistry}
+      basemapEnabled={basemapEnabled}
+      beforeMap={picker}
+    />
   );
 }

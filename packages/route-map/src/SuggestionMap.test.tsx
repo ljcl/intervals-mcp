@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act } from "react";
+import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { awaySuggestions } from "./__fixtures__/suggestions";
@@ -8,8 +8,17 @@ import { type RouteSuggestionsData } from "./types";
 
 // The picker is under test, not the map: a probe records which route it got.
 vi.mock("./RouteMap", () => ({
-  RouteMap: ({ data }: { data: { name: string } }) => (
-    <div data-testid="map">{data.name}</div>
+  RouteMap: ({
+    data,
+    beforeMap,
+  }: {
+    data: { name: string };
+    beforeMap?: ReactNode;
+  }) => (
+    <div>
+      {beforeMap}
+      <div data-testid="map">{data.name}</div>
+    </div>
   ),
 }));
 
@@ -66,5 +75,20 @@ describe("SuggestionMap", () => {
     await mount({ ...awaySuggestions, candidates: [] });
     expect(container.textContent).toMatch(/No route to suggest/);
     expect(container.querySelector("[data-testid=map]")).toBeNull();
+  });
+
+  it("shows an empty state for a payload without candidates", async () => {
+    await mount({
+      source: "suggestion",
+      date: "2026-10-20",
+      name: "Run",
+    } as RouteSuggestionsData);
+    expect(container.textContent).toMatch(/No route to suggest/);
+  });
+
+  it("renders without warnings", async () => {
+    const { warnings: _w, ...rest } = awaySuggestions;
+    await mount(rest as RouteSuggestionsData);
+    expect(container.querySelectorAll("button")).toHaveLength(2);
   });
 });
