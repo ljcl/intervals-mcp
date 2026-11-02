@@ -23,6 +23,7 @@ import {
   type IntervalsSportSettings,
   type IntervalsWellness,
   listActivities as listActivitiesFn,
+  splitDateRangeIntoWindows,
 } from "./intervalsClient";
 import { addDays } from "./utils/localDate";
 
@@ -318,6 +319,36 @@ describe("get-activity-streams-raw", () => {
 });
 
 describe("cadence trends handlers", () => {
+  it.each(["view-cadence-trends", "get-cadence-trend-data"])(
+    "%s reports one progress message per listing window (#323)",
+    async (tool) => {
+      // Stands in for listActivities' own per-window message, so this pins
+      // that the handler passes its reporter through to the listing.
+      mockedIntervalsList.mockImplementationOnce(
+        async (_key, { oldest, newest }, progress) => {
+          for (const window of splitDateRangeIntoWindows(oldest, newest))
+            progress?.(`window ${window.oldest}`);
+          return [];
+        },
+      );
+      const messages: string[] = [];
+
+      const result = await dispatchToolCall(
+        tool,
+        { days: 728 },
+        { progress: (message) => messages.push(message) },
+      );
+
+      expect(result.isError).toBeUndefined();
+      const [, range] = mockedIntervalsList.mock.calls[0]!;
+      const windows = splitDateRangeIntoWindows(range.oldest, range.newest);
+      expect(windows.length).toBeGreaterThan(1);
+      expect(messages.filter((m) => m.startsWith("window "))).toHaveLength(
+        windows.length,
+      );
+    },
+  );
+
   it("view-cadence-trends reports run count and doubled cadence", async () => {
     mockedIntervalsList.mockResolvedValueOnce([
       intervalsActivity({ average_cadence: 42.5, average_speed: 3.33 }),
