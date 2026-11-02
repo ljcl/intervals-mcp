@@ -1,5 +1,29 @@
 # Changelog
 
+## [2.11.0](https://github.com/ljcl/intervals-mcp/compare/v2.10.0...v2.11.0) (2026-11-02)
+
+
+### Features
+
+* follow the host's dark theme on the route-map basemap ([#380](https://github.com/ljcl/intervals-mcp/issues/380)) ([3624c08](https://github.com/ljcl/intervals-mcp/commit/3624c080bba076df5f078773db2105ab6b093cf6))
+* log how many intervals.icu requests each tool call made ([#372](https://github.com/ljcl/intervals-mcp/issues/372)) ([d94f04a](https://github.com/ljcl/intervals-mcp/commit/d94f04a6719e2ea9208c9f214b76d4738f5c9ec8))
+
+
+### Bug Fixes
+
+* announce the error retry as a plain button ([#377](https://github.com/ljcl/intervals-mcp/issues/377)) ([ec9af19](https://github.com/ljcl/intervals-mcp/commit/ec9af19e3b51389d1b2f3cc9f2351ba6b8a1870f))
+* bring the cadence, altitude and overlay chart colours to 3:1 contrast ([#378](https://github.com/ljcl/intervals-mcp/issues/378)) ([38eb303](https://github.com/ljcl/intervals-mcp/commit/38eb3039a617c4ff5f0e1e07de73580e24229366))
+* log oversized bodies as 413 and stop flagging the app loader's GET ([#373](https://github.com/ljcl/intervals-mcp/issues/373)) ([897c8d8](https://github.com/ljcl/intervals-mcp/commit/897c8d8b0a5ada77a748130ee14b5e3a74b5fc99))
+* report cadence-trends listing progress ([#371](https://github.com/ljcl/intervals-mcp/issues/371)) ([2bf5fac](https://github.com/ljcl/intervals-mcp/commit/2bf5facb6df8793ead6dcc0a798e6b7d26a2c435))
+* say when cadence-trends could not read the Run sport settings ([#379](https://github.com/ljcl/intervals-mcp/issues/379)) ([3e3462d](https://github.com/ljcl/intervals-mcp/commit/3e3462d4e5f611470bdb8ee929d3aeedf14c9437))
+* show speed, swim pace and the weather note on the compare card ([#376](https://github.com/ljcl/intervals-mcp/issues/376)) ([56d229d](https://github.com/ljcl/intervals-mcp/commit/56d229d79988f8a7025f05cd82d289751e0ce92e))
+
+
+### Performance Improvements
+
+* list activity windows of up to 366 days in one request ([#369](https://github.com/ljcl/intervals-mcp/issues/369)) ([eb7d569](https://github.com/ljcl/intervals-mcp/commit/eb7d56918614e1631a77f98d9cae2222e760e061))
+* read each activity record once, always with its intervals ([#370](https://github.com/ljcl/intervals-mcp/issues/370)) ([8ddfceb](https://github.com/ljcl/intervals-mcp/commit/8ddfceb3ba42eb5a8a5342f353641f8cc120a1b7))
+
 ## [2.10.0](https://github.com/ljcl/intervals-mcp/compare/v2.9.3...v2.10.0) (2026-11-01)
 
 
