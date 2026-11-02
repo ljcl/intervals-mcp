@@ -10,11 +10,15 @@
  * index.ts runs it first, so a bad value stops startup with a message that
  * names the variable, rather than failing later inside a tool call.
  *
+ * getOrsApiKey() and getHomeStart() are the homes for the route suggestion
+ * settings (ORS_API_KEY, HOME_START); HOME_START is validated by checkConfig().
+ *
  * getTimeZone() is the one home for the zone every local date uses. It also
  * holds the athlete's zone that athleteTimeZone.ts reads from intervals.icu
  * at startup. The state lives here, so no caller changes and config.ts never
  * imports the client.
  */
+import { type LatLng, parseLatLng } from "./mapAnchors";
 import { isValidTimeZone } from "./utils/localDate";
 
 export const DEFAULT_PORT = 3000;
@@ -41,6 +45,20 @@ export function getIntervalsApiKey(): string {
 
 export function apiKeyConfigured(): boolean {
   return Boolean(process.env.INTERVALS_API_KEY?.trim());
+}
+
+/**
+ * The OpenRouteService key for generated routes, or null when unset: route
+ * suggestions then offer past runs only.
+ */
+export function getOrsApiKey(): string | null {
+  return process.env.ORS_API_KEY?.trim() || null;
+}
+
+/** The usual run start from HOME_START ("lat,lng"), or null when unset or invalid. */
+export function getHomeStart(): LatLng | null {
+  const raw = process.env.HOME_START?.trim();
+  return raw ? parseLatLng(raw) : null;
 }
 
 export function getIntervalsAthleteId(): string {
@@ -191,6 +209,13 @@ export function checkConfig(): ConfigCheck {
 
   if (parsePort(process.env.PORT) === null) {
     errors.push(portMessage(process.env.PORT ?? ""));
+  }
+
+  const homeStart = process.env.HOME_START?.trim();
+  if (homeStart && !parseLatLng(homeStart)) {
+    errors.push(
+      `HOME_START is ${quoteValue(homeStart)}. It must be "lat,lng" in decimal degrees, for example 37.79,-122.39; leave it unset to infer the usual start from recent runs.`,
+    );
   }
 
   const athleteId = process.env.INTERVALS_ATHLETE_ID?.trim();

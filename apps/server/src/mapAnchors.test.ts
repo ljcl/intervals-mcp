@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   cumulativeDistances,
   indexAtDistance,
+  parseLatLng,
   resolveWaypoints,
   type WaypointInput,
 } from "./mapAnchors";
@@ -114,4 +115,17 @@ describe("resolveWaypoints", () => {
     expect(resolved).toEqual([]);
     expect(dropped).toHaveLength(1);
   });
+});
+
+describe("parseLatLng", () => {
+  it("reads a decimal pair with optional spaces", () => {
+    expect(parseLatLng("-33.87, 151.21")).toEqual([-33.87, 151.21]);
+    expect(parseLatLng("37.7955,-122.3937")).toEqual([37.7955, -122.3937]);
+  });
+  it.each(["", "Embarcadero", "91,0", "0,181", "1,2,3", "1;2"])(
+    "is null for %j",
+    (text) => {
+      expect(parseLatLng(text)).toBeNull();
+    },
+  );
 });

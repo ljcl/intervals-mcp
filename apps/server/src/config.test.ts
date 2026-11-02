@@ -2,8 +2,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   basicAuthHeader,
   checkConfig,
+  getHomeStart,
   getIntervalsApiKey,
   getIntervalsAthleteId,
+  getOrsApiKey,
   getPort,
   getTimeZone,
   MissingApiKeyError,
@@ -66,6 +68,22 @@ describe("getIntervalsAthleteId", () => {
   it("uses the configured id", () => {
     process.env.INTERVALS_ATHLETE_ID = "i12345";
     expect(getIntervalsAthleteId()).toBe("i12345");
+  });
+});
+
+describe("route suggestion settings", () => {
+  it("reads ORS_API_KEY trimmed, null when blank", () => {
+    process.env.ORS_API_KEY = "  ors-key ";
+    expect(getOrsApiKey()).toBe("ors-key");
+    process.env.ORS_API_KEY = " ";
+    expect(getOrsApiKey()).toBeNull();
+  });
+
+  it("reads HOME_START as lat,lng, null when unset", () => {
+    process.env.HOME_START = "37.79,-122.39";
+    expect(getHomeStart()).toEqual([37.79, -122.39]);
+    delete process.env.HOME_START;
+    expect(getHomeStart()).toBeNull();
   });
 });
 
@@ -292,6 +310,14 @@ describe("checkConfig", () => {
     expect(errors[0]).toMatch(/^TZ /);
     expect(errors[1]).toMatch(/^PORT /);
     expect(errors[2]).toMatch(/^INTERVALS_ATHLETE_ID /);
+  });
+
+  it("reports a HOME_START that is not lat,lng", () => {
+    setValidEnv();
+    process.env.HOME_START = "my place";
+    const { errors } = checkConfig();
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatch(/HOME_START/);
   });
 
   it("cuts a long value to 64 characters in the message", () => {
