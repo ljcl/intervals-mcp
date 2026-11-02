@@ -1059,6 +1059,7 @@ async function handleGetActivityStreamsRaw(
 async function loadCadenceTrendData(
   apiKey: string,
   args: Record<string, unknown>,
+  progress: ReportProgress,
 ): Promise<CadenceTrendData> {
   const days = args.days as number;
   const tz = getTimeZone();
@@ -1068,7 +1069,7 @@ async function loadCadenceTrendData(
   // The pace zones come from the Run sport settings; a failed read falls
   // back to the fixed zones, which the text and the app both name.
   const [activities, runSettings] = await Promise.all([
-    listActivitiesFn(apiKey, { oldest, newest }),
+    listActivitiesFn(apiKey, { oldest, newest }, progress),
     getSportSettings(apiKey, "Run").catch(() => null),
   ]);
 
@@ -1081,8 +1082,9 @@ async function loadCadenceTrendData(
 async function handleGetCadenceTrendData(
   args: Record<string, unknown>,
   token: string,
+  progress: ReportProgress,
 ): Promise<ToolCallResult> {
-  const result = await loadCadenceTrendData(token, args);
+  const result = await loadCadenceTrendData(token, args, progress);
   return { content: [{ type: "text", text: JSON.stringify(result) }] };
 }
 
@@ -1092,7 +1094,7 @@ async function handleViewCadenceTrends(
   progress: ReportProgress,
   context: ToolCallContext,
 ): Promise<ToolCallResult> {
-  const data = await loadCadenceTrendData(token, args);
+  const data = await loadCadenceTrendData(token, args, progress);
   // The lines carry every number the chart draws: no twin, no footer.
   const lines = cadenceTrendLines(data);
   return viewResult(
