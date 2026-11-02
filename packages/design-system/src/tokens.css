@@ -76,13 +76,21 @@
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.04);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
 
-  /* Chart colors (Strava activity metrics) */
+  /* Chart colors (Strava activity metrics). Every --chart-* color clears
+   * 3:1 against each host card background (chart-contrast.test.ts);
+   * altitude and cadence are darkened in lightness only, keeping the hue. */
   --chart-heartrate: #ef4444;
   --chart-power: #8b5cf6;
   --chart-pace: #3b82f6;
-  --chart-altitude: #b8a48c;
-  --chart-cadence: #f97316;
+  --chart-altitude: #a18767;
+  --chart-cadence: #e86306;
   --chart-grade: #6b7280;
+
+  /* Chart colors (cadence-trends overlay runs, in selection order) */
+  --chart-overlay-1: #e11d48;
+  --chart-overlay-2: #2563eb;
+  --chart-overlay-3: #16a34a;
+  --chart-overlay-4: #d97706;
 
   /* Chart colors (running dynamics). Hues (100/160/293/325 deg) are each at
    * least 30 degrees from every other chart series color and from each
@@ -132,6 +140,11 @@
   --chart-altitude: #8c7a66;
   --chart-cadence: #fb923c;
   --chart-grade: #9ca3af;
+
+  --chart-overlay-1: #fb7185;
+  --chart-overlay-2: #60a5fa;
+  --chart-overlay-3: #4ade80;
+  --chart-overlay-4: #fbbf24;
 
   /* Chart colors (running dynamics), brighter for dark backgrounds; same
    * hues as the light variants above, so both themes keep the same

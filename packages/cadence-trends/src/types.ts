@@ -112,8 +112,8 @@ export const MAX_COMPARE_RUNS = 4;
 
 /** Palette for overlay comparison lines — distinct from metric colors */
 export const COMPARISON_COLORS = [
-  "#e11d48", // rose
-  "#2563eb", // blue
-  "#16a34a", // green
-  "#d97706", // amber
+  "var(--chart-overlay-1)", // rose
+  "var(--chart-overlay-2)", // blue
+  "var(--chart-overlay-3)", // green
+  "var(--chart-overlay-4)", // amber
 ];
