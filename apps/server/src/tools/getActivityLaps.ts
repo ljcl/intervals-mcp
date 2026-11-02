@@ -144,9 +144,7 @@ export const getActivityLapsTool = {
   ) => {
     try {
       progress(`Fetching laps for activity ${id}`);
-      const activity = await getActivityClient(apiKey, id, {
-        intervals: true,
-      });
+      const activity = await getActivityClient(apiKey, id);
 
       const sportType = activity.type ?? "Workout";
       const intervals = activity.icu_intervals ?? [];

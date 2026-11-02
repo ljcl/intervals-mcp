@@ -969,13 +969,7 @@ async function handleViewActivityChart(
   context: ToolCallContext,
 ): Promise<ToolCallResult> {
   const activityId = String(args.id);
-  // Same fetch options as `get-activity-streams-raw` (`intervals: true`): the
-  // cache key is the full request URL, so matching options here means a
-  // second read of the same activity is a cache hit rather than a fresh
-  // upstream call.
-  const activity = await getIntervalsActivity(token, activityId, {
-    intervals: true,
-  });
+  const activity = await getIntervalsActivity(token, activityId);
   const lines = [
     `Activity: ${activityDisplayName(activity)}`,
     `Type: ${activity.type ?? "Workout"}`,
@@ -1023,9 +1017,7 @@ async function handleGetActivityStreamsRaw(
   token: string,
 ): Promise<ToolCallResult> {
   const activityId = String(args.id);
-  const activity = await getIntervalsActivity(token, activityId, {
-    intervals: true,
-  });
+  const activity = await getIntervalsActivity(token, activityId);
 
   let streams: Awaited<ReturnType<typeof loadIntervalsStreams>>;
   try {
@@ -1515,9 +1507,7 @@ async function loadRouteMapData(
 ): Promise<RouteMapData> {
   const activityId = String(args.id);
 
-  const activity = await getIntervalsActivity(token, activityId, {
-    intervals: true,
-  });
+  const activity = await getIntervalsActivity(token, activityId);
 
   let streams: Awaited<ReturnType<typeof loadIntervalsStreams>> | null = null;
   try {
@@ -1601,9 +1591,8 @@ async function handleViewRouteMap(
 
 /**
  * Fetch both intervals.icu activities and run the same aggregate comparison
- * the compare-activities text tool uses. Same fetch options as
- * `get-activity-streams-raw` (`intervals: true`): the cache key is the full
- * request URL, so opening the compare app reads each activity once, for the
+ * the compare-activities text tool uses. `getActivity` reads one URL per
+ * activity, so opening the compare app reads each activity once, for the
  * view, the data tool and the app's two streams calls together.
  */
 async function handleGetCompareActivitiesData(

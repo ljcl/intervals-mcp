@@ -226,7 +226,7 @@ const IntervalsActivitySchema = z
     /** Heart-rate recovery; null when intervals.icu found none. Same
      * `.catch(null)` as `icu_achievements`. */
     icu_hrr: IntervalsHrrSchema.nullable().optional().catch(null),
-    /** Only present when fetched via `getActivity(..., { intervals: true })`. */
+    /** Present from `getActivity`, and from `getActivitiesByIds` with `intervals: true`. */
     icu_intervals: z.array(IntervalsIntervalSchema).optional(),
   })
   .passthrough();
@@ -861,27 +861,26 @@ export async function getActivitiesByIds(
 }
 
 /**
- * Fetches a single activity. `options.intervals: true` adds
- * `?intervals=true`, which populates the activity's `icu_intervals` field
- * (empty otherwise; see docs/api-notes.md). `options.skipCache: true` bypasses
+ * Fetches a single activity, always with `?intervals=true`, which populates
+ * its `icu_intervals` field (empty otherwise; see docs/api-notes.md). One URL
+ * per activity, so every tool shares one cached read (#322), as the streams
+ * superset does for streams (#71). `options.skipCache: true` bypasses
  * the response cache entirely (neither reads nor stores), for a caller that
  * needs a guaranteed-fresh read, e.g. immediately after `updateActivity`.
  */
 export async function getActivity(
   apiKey: string,
   id: string,
-  options: { intervals?: boolean; skipCache?: boolean } = {},
+  options: { skipCache?: boolean } = {},
 ): Promise<IntervalsActivity> {
   requireApiKey(apiKey);
   const context = `getActivity for ID ${id}`;
-  const params: Record<string, string | number | boolean> = {};
-  if (options.intervals) params.intervals = true;
 
   let data: unknown;
   try {
     const response = await intervalsApi.get<unknown>(`/activity/${id}`, {
       headers: authHeaders(apiKey),
-      params,
+      params: { intervals: true },
       skipCache: options.skipCache,
     });
     data = response.data;

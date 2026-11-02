@@ -652,7 +652,7 @@ export const getActivityTool = {
       // []` rather than failing the call; only a genuine failure fetching
       // the activity itself does that.
       const [activity, sportSettingsResult] = await Promise.all([
-        getActivityClient(apiKey, id, { intervals: includeIntervals }),
+        getActivityClient(apiKey, id),
         getSportSettings(apiKey, "Run").catch(
           (): IntervalsSportSettings | null => null,
         ),
@@ -666,7 +666,13 @@ export const getActivityTool = {
       // read would cost a request on nearly every call. It never fails the
       // call, and the list is cached for 10 minutes.
       const gearName = await resolveActivityGearName(apiKey, activity);
-      const detail = mapActivityDetail(activity, sportSettings, gearName);
+      // The read always carries the intervals; includeIntervals decides
+      // whether they are shown.
+      const detail = mapActivityDetail(
+        includeIntervals ? activity : { ...activity, icu_intervals: undefined },
+        sportSettings,
+        gearName,
+      );
       const intervals = detail.intervals ?? [];
       const response = {
         ...detail,

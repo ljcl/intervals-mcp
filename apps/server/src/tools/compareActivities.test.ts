@@ -552,12 +552,8 @@ describe("compare-activities execute", () => {
     expect(result.isError).toBeUndefined();
     // The compare app's URL (`?intervals=true`), so a chat using both reads
     // each activity once.
-    expect(mockedGetActivity).toHaveBeenCalledWith("test-token", "i100", {
-      intervals: true,
-    });
-    expect(mockedGetActivity).toHaveBeenCalledWith("test-token", "i200", {
-      intervals: true,
-    });
+    expect(mockedGetActivity).toHaveBeenCalledWith("test-token", "i100");
+    expect(mockedGetActivity).toHaveBeenCalledWith("test-token", "i200");
     const text = result.content[0]?.text ?? "";
     expect(text).toContain("Activity 1: Morning Run");
     expect(text).toContain("Activity 2: Race Day");

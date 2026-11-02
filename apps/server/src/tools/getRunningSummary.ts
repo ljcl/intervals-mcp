@@ -444,7 +444,7 @@ export const getRunningSummaryTool = {
       // Same independent-fetch shape as get-activity: sport settings degrade
       // to null on failure rather than failing the call.
       const [activity, sportSettingsResult] = await Promise.all([
-        getActivityClient(apiKey, id, { intervals: true }),
+        getActivityClient(apiKey, id),
         getSportSettings(apiKey, "Run").catch(
           (): IntervalsSportSettings | null => null,
         ),

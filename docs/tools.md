@@ -272,7 +272,7 @@ measures about 17,400 characters (responseSize.test.ts).
 (each with `moving_time_source: "lap"`: intervals.icu's own moving time for
 the lap, which the second header line says can differ from the activity's)
 derived from the activity's intervals (`icu_intervals`, fetched via
-`getActivity(..., { intervals: true })`): intervals.icu has no separate lap
+`getActivity`, which always sends `?intervals=true`): intervals.icu has no separate lap
 list, and `icu_intervals` usually mirrors the device's own laps (typically
 one WORK interval per lap, sometimes with a short RECOVERY inserted between
 them), for any sport. Runs report `pace_min_per_km` and grade-adjusted
@@ -364,7 +364,7 @@ The text lists the same rows as `structuredContent.intervals`. A very long
 list keeps the first rows that fit the response budget (#312):
 `interval_count` stays the full WORK count, and the text names the
 `get-running-dynamics` `fromLap` that lists the rest. One
-`get-activity(..., { intervals: true })` call; no streams.
+`getActivity` call; no streams.
 
 `get-activity-zones` and the `view-activity-zones`/`get-activity-zones-data`
 MCP App share one mapper (`mapIntervalsZones`): heart rate from the
@@ -465,8 +465,7 @@ failing the call. The app's stream
 overlay (`get-activity-streams-raw`) is intervals.icu-backed (see the
 activity-chart entry below). Both compare paths go through one loader,
 `loadComparison` (`compareActivities.ts`): it reads each activity with
-`getActivity(apiKey, id, { intervals: true })`, the same URL as the
-overlay's reads, and each one's streams and FIT file, so a chat that uses
+`getActivity`, the one `?intervals=true` URL every tool reads, and each one's streams and FIT file, so a chat that uses
 them together reads each once (server.streamSharing.test.ts counts it).
 Each side has `moving_time_source: "intervals.icu"`.
 
@@ -498,7 +497,7 @@ side that is not a run or has no streams gives `km_comparison: null` and
 pair about 46 km, inside the response budget (responseSize.test.ts).
 
 `view-activity-chart`/`get-activity-streams-raw` (activity-chart MCP App)
-fetch the activity via `getActivity(apiKey, id, { intervals: true })` and its
+fetch the activity via `getActivity` and its
 streams via `loadIntervalsStreams`, then share one pure mapper
 (`buildActivityChartData` in `activityChartData.ts`) with the streams-raw
 handler. Streams are jointly downsampled to at most 1,000 points
