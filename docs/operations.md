@@ -13,6 +13,8 @@ rate limits, and endpoint security. For the code behind these see
 | `TZ` | No | IANA zone for today and default date ranges, e.g. `Australia/Sydney`. Unset, blank or exactly `UTC` (compose's default) means the athlete's intervals.icu time zone ([Time zone](#time-zone)); `Etc/UTC` pins UTC; an unknown zone stops startup |
 | `MCP_AUTH_TOKEN` | No | Shared secret; when set, `/mcp` and the detailed half of `/health` require `Authorization: Bearer <token>` (or `?token=` for `/health`). Use at least 32 characters; a shorter one logs a startup `WARNING`, and surrounding whitespace stops startup |
 | `PORT` | No | Server port, 1-65535; blank or unset means `3000`. The image's `HEALTHCHECK` reads it |
+| `ORS_API_KEY` | No | OpenRouteService key (free Standard plan, 200 routes a day) for generated routes in `suggest-run-route`. Unset, it offers past runs only and place names cannot be looked up |
+| `HOME_START` | No | Usual run start as `lat,lng`, e.g. `37.79,-122.39`. Unset, the start is inferred from recent GPS runs; a malformed value stops startup |
 | `PUBLIC_URL` | No | Public URL. Warns at startup when `/mcp` is exposed without `MCP_AUTH_TOKEN`, and its host is allowed as a browser `Origin` on `/mcp` besides localhost |
 
 ### Startup checks
@@ -362,6 +364,24 @@ The HTTP layer handles rate limits centrally: passive, nothing to configure
 Read `upstream_requests` from [`/health`](#health-check) to see where you
 stand. `rate_limit` reports the most recent `Retry-After` intervals.icu sent.
 It is `null` today, since intervals.icu sends none.
+
+## Route suggestions and third parties
+
+`suggest-run-route` and `view-route-suggestions` are the only tools that talk
+to anything but intervals.icu, and only for generated routes:
+
+- With `ORS_API_KEY` set, the start, end and via points are sent to
+  OpenRouteService, and so is the usual start when a place name is
+  geocoded (as the search focus). Leave the key unset to keep every
+  coordinate on the server; past runs are still offered.
+- The bounding box of the candidate routes, snapped to a 0.02 degree grid,
+  is sent to OpenStreetMap Overpass to count road crossings. It needs no
+  key, can be slow, and is capped at 12 s per query. Results are cached for
+  7 days, and a failure only drops the ranking to path share with a warning.
+- OpenRouteService allows 200 routes a day and 40 a minute, so
+  requests start 1.5 s apart, one tool call makes at most 12, and a week of
+  runs shares them. Both services' responses stay in the in-memory cache,
+  not on disk.
 
 ## Docker notes
 

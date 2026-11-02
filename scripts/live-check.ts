@@ -93,6 +93,9 @@ const { getTrainingLoadTool } = await import(
 const { getRunningDynamicsTool } = await import(
   "../apps/server/src/tools/getRunningDynamics"
 );
+const { suggestRunRouteTool } = await import(
+  "../apps/server/src/tools/suggestRunRoute"
+);
 const { NO_PROGRESS } = await import("../apps/server/src/progress");
 const { dispatchToolCall: dispatchUnmeasured } = await import(
   "../apps/server/src/server"
@@ -549,6 +552,37 @@ async function checkCompareActivities(): Promise<void> {
     ok(
       name,
       `distance_km_diff=${d.differences.distance_km} efficiency=${d.efficiency ? "present" : "null"}`,
+    );
+  } catch (error) {
+    fail(name, throwSummary(error));
+  }
+}
+
+async function checkSuggestRunRoute(): Promise<void> {
+  const name = "suggest-run-route";
+  try {
+    const result = (await suggestRunRouteTool.execute(
+      suggestRunRouteTool.inputSchema.parse({ distanceKm: 5 }),
+      apiKey,
+      NO_PROGRESS,
+    )) as {
+      structuredContent?: Record<string, unknown>;
+      isError?: boolean;
+      content?: Array<{ text?: unknown }>;
+    };
+    if (result.isError || !result.structuredContent) {
+      fail(name, errorSummary(result));
+      return;
+    }
+    const d = result.structuredContent as {
+      count: number;
+      generation_available: boolean;
+      runs: Array<{ candidates: Array<{ kind: string }> }>;
+    };
+    // Never print the start: it is the athlete's home.
+    ok(
+      name,
+      `runs=${d.count} generation=${d.generation_available} kinds=${d.runs[0]?.candidates.map((c) => c.kind).join(",") ?? "none"}`,
     );
   } catch (error) {
     fail(name, throwSummary(error));
@@ -1412,6 +1446,7 @@ await checkGetRunningSummary();
 await checkGetActivityZones();
 await checkCompareActivities();
 await checkGetHillAnalysis();
+await checkSuggestRunRoute();
 await checkGetSplitAnalysis();
 await checkGetAerobicAnalysis();
 await checkGetIntervalAnalysis();

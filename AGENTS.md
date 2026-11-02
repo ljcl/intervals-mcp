@@ -55,7 +55,9 @@ breaking them has shipped bugs — do not work around them locally.
   callers' `instanceof`/status checks; degrade only on a type or status that
   is still there.
 - **Caching policy lives in `intervalsCacheTtl`** (`fetchClient.ts`;
-  path-keyed TTLs; key is full URL, TTL matches query-stripped path). Writes
+  path-keyed TTLs; key is full URL, TTL matches query-stripped path; a
+  `readOnly` POST, as ORS routing and Overpass are, is retried and cached
+  like a GET with its body in the key). Writes
   invalidate descendants AND ancestors; `skipCache: true` guards append
   reads. intervals.icu sends no rate-limit headers, so its client
   (`intervalsApi`) paces itself instead: `minIntervalMs` enforces a minimum
@@ -107,6 +109,10 @@ breaking them has shipped bugs — do not work around them locally.
   label and unit in the MCP Apps: `speedDisplay` in `packages/data/src/speed.ts`;
   in the text tools: `sportSpeed` in `utils/running.ts`, which wraps it.
   Stream wire precision: `STREAM_DECIMALS` in `streamPrecision.ts`.
+  Hill for repeats: `bestRepeatHill` in `hillAnalysis.ts`. Start clusters:
+  `startClusters.ts`. Route candidate rules (past-run matching, ranking,
+  terrain bands, generated climb): `routeCandidates.ts`. Road crossings per
+  km: `crossingsPerKm` in `overpassClient.ts`.
   Weather, dew point and the weather note: `activityWeather.ts` (FIT
   humidity read by `fitWeather.ts`). Two runs' per-km difference and its
   drift verdict: `compareKmSplits` in `kmComparison.ts`, on the splits of
@@ -139,8 +145,10 @@ breaking them has shipped bugs — do not work around them locally.
 - **The time zone has one home: `getTimeZone()` (`config.ts`).** Never read
   `process.env.TZ` or Intl's default zone elsewhere; `checkConfig()` is the
   startup gate (docs/architecture.md#configuration-and-time-zone).
-- **All reads and writes go through `intervalsClient.ts`.** The retired
-  Strava client has been deleted; do not add a new provider-specific client.
+- **intervals.icu data goes through `intervalsClient.ts`; routing and
+  geocoding go through `orsClient.ts`; road crossings through
+  `overpassClient.ts`.** The retired Strava client has been deleted; do not
+  add another client for data intervals.icu already holds.
 - **Ids go through `intervalsActivityIdInput`** (accepts an optional `i`
   prefix, e.g. `i189807578`), in `tools/_ids.ts`. Advertised schema is
   string-only (`idJsonSchemaOverride`) because ids above 2^53 are rounded by

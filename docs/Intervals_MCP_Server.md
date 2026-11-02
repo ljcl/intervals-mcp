@@ -47,6 +47,12 @@ rather than (or alongside) text.
 | `get-activity-zones` | Time in each HR zone and, for a run, each pace zone (GAP when the activity uses it); power zones are not reported yet | `id` |
 | `get-activity-streams` | Raw time-series (HR, pace, cadence, power, altitude...) | `id`, `types`, `maxPoints` |
 
+### Route planning
+
+| Tool | Answers | Key params |
+| ---- | ------- | ---------- |
+| `suggest-run-route` | Where should I run my planned run? Past runs from that start that fit the distance and terrain, plus a newly generated route (needs `ORS_API_KEY`; without it, past runs only) | `date`, `days`, `distanceKm`, `start`, `end`, `via`, `terrain` |
+
 ### Per-activity analysis
 
 | Tool | Answers | Key params |
@@ -88,6 +94,7 @@ same numbers as text use the matching read tool (e.g. `get-fitness-trend`,
 | `view-activity-chart` | `get-activity-streams-raw` | HR, power, pace, altitude, cadence, grade, and dynamics overlays with interval bands |
 | `view-cadence-trends` | `get-cadence-trend-data` | Cadence over time: timeline, scatter, zones, overlay views |
 | `view-route-map` | `get-route-map-data` | GPS track with start/finish markers and optional waypoints |
+| `view-route-suggestions` | `get-route-suggestions-data` | Past and new routes for a planned run, with a picker, elevation strip and any hill for repeats |
 | `view-training-load` | `get-training-load-data` | Weekly volume bars with a trend line and volume-spike weeks, a weekly load line, and Fitness/Fatigue/Form tiles; `runOnly` picks the starting scope; toggles whole-body vs runs-only; `newest` for a past block |
 | `view-compare-activities` | `get-compare-activities-data` | Two activities' streams overlaid with a delta summary |
 | `view-activity-zones` | `get-activity-zones-data` | Time-in-zone bar chart for HR and, for a run, pace zones |
