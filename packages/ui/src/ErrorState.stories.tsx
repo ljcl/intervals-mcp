@@ -1,4 +1,5 @@
 import preview, { darkGlobals } from "@intervals-mcp/design-system/preview";
+import { expect } from "storybook/test";
 import { ErrorState } from "./ErrorState";
 
 const noop = () => {};
@@ -13,6 +14,12 @@ export const Default = meta.story({
 
 export const WithRetry = meta.story({
   args: { message: "No activity data available", onRetry: noop },
+  play: async ({ canvas }) => {
+    // A one-shot action: a plain button, not a toggle in a group (#316).
+    const retry = canvas.getByRole("button", { name: "Try again" });
+    await expect(retry).not.toHaveAttribute("aria-pressed");
+    await expect(retry.closest('[role="group"]')).toBeNull();
+  },
 });
 
 export const LongMessage = meta.story({
