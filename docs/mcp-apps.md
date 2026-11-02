@@ -414,8 +414,11 @@ grid fallback (no Recharts). Calls `get-route-map-data` (app-only) with
 } } }
 ```
 
-Tile origin is OpenFreeMap's public Liberty instance: $0, no key, no infra, one
-CSP origin for style + tiles + glyphs + sprites, stock MapLibre style URL. Its
+Tile origin is OpenFreeMap's public instance: $0, no key, no infra, one
+CSP origin for style + tiles + glyphs + sprites, stock MapLibre style URL. The
+style follows the host theme (`useDocumentTheme`): Liberty for light, `dark`
+for dark; a theme change calls `setStyle` on the live map and re-adds the
+overlays on `style.load`, keeping the camera. Its
 risk (donation-funded, no SLA) is covered by the offline-grid fallback, with
 self-hosting OpenFreeMap or a Protomaps PMTiles extract on R2 as the escape
 hatch — those add cost and either another origin or the `pmtiles` protocol
