@@ -262,6 +262,16 @@ describe("loadRouteSuggestions", () => {
       new OrsApiError("x", { status: 404, statusText: "", data: "" }),
       /no walkable path/,
     ],
+    [
+      "a timeout",
+      new RequestTimeoutError("https://ors/v2/directions", 10_000),
+      /request to OpenRouteService failed/,
+    ],
+    [
+      "a malformed response",
+      new Error("invalid OpenRouteService response"),
+      /request to OpenRouteService failed/,
+    ],
   ])("keeps past runs and warns on %s", async (_label, error, warning) => {
     vi.mocked(orsRoute).mockRejectedValue(error);
     const run = (await loadRouteSuggestions("k", {}, ENV)).runs[0]!;
@@ -302,10 +312,11 @@ describe("loadRouteSuggestions", () => {
     expect(seeds.size).toBe(4);
   });
 
-  it("takes every run in a days window and skips other sports", async () => {
+  it("takes every outdoor run in a days window, skipping treadmill and other sports", async () => {
     vi.mocked(listPlannedWorkouts).mockResolvedValue([
       event(10, "2026-11-04", 5000),
       { ...event(11, "2026-11-04", 30000), type: "Ride" },
+      { ...event(13, "2026-11-04", 5000), type: "VirtualRun" },
       event(12, "2026-11-05", 5000),
     ]);
     const result = await loadRouteSuggestions(
@@ -349,7 +360,7 @@ describe("loadRouteSuggestions", () => {
         "https://ors/geocode?focus.point.lat=37.8",
         10_000,
       ),
-      /did not answer in time/,
+      /request to OpenRouteService failed/,
     ],
   ])(
     "words a geocode failure on %s without its coordinates",
@@ -381,9 +392,13 @@ describe("loadRouteSuggestions", () => {
 
   it("stops generating when the call's ORS budget is spent", async () => {
     vi.mocked(listPlannedWorkouts).mockResolvedValue(
-      ["2026-11-04", "2026-11-05", "2026-11-06", "2026-11-07"].map((d, i) =>
-        event(20 + i, d, homeLoop.distance.at(-1)!),
-      ),
+      [
+        "2026-11-04",
+        "2026-11-05",
+        "2026-11-06",
+        "2026-11-07",
+        "2026-11-08",
+      ].map((d, i) => event(20 + i, d, homeLoop.distance.at(-1)!)),
     );
     // Away from home: 4 seeds a run, so three runs spend the 12 calls.
     const result = await loadRouteSuggestions(
@@ -393,7 +408,12 @@ describe("loadRouteSuggestions", () => {
     );
     expect(vi.mocked(orsRoute)).toHaveBeenCalledTimes(12);
     expect(result.runs[2]!.warnings.join(" ")).toMatch(/budget is spent/);
-    expect(result.runs[3]!.candidates).toEqual([]);
+    const unrouted = result.runs.filter(
+      (r) => !r.candidates.some((c) => c.kind === "generated"),
+    );
+    expect(unrouted.map((r) => r.event_id)).toEqual([23, 24]);
+    for (const r of unrouted)
+      expect(r.warnings.join(" ")).toMatch(/budget is spent/);
   });
 
   it("lets a cancellation through", async () => {

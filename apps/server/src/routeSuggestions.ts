@@ -5,7 +5,12 @@
  * and road crossings (OpenStreetMap). One home for the rules; the tools
  * format, the app draws.
  */
-import { RateLimitError, RequestTimeoutError } from "./fetchClient";
+import { CallCancelledError } from "./callScope";
+import {
+  isAbortError,
+  RateLimitError,
+  RequestTimeoutError,
+} from "./fetchClient";
 import {
   bestRepeatHill,
   REPEAT_HILL_MAX_GRADE_PCT,
@@ -43,10 +48,10 @@ import {
   clusterStarts,
   loadRunStarts,
   nearestCluster,
+  OUTDOOR_RUN_TYPES,
   type StartCluster,
 } from "./startClusters";
 import { addDays } from "./utils/localDate";
-import { isPaceActivity } from "./utils/running";
 
 export const GENERATED_AT_HOME = 1;
 export const GENERATED_AWAY = 3;
@@ -134,8 +139,6 @@ function orsProblem(error: unknown): string {
       return "OpenRouteService found no walkable path near that point";
     return `OpenRouteService answered HTTP ${status}`;
   }
-  if (error instanceof RequestTimeoutError)
-    return "OpenRouteService did not answer in time";
   return "the request to OpenRouteService failed";
 }
 
@@ -150,7 +153,7 @@ async function plannedRuns(
     (days > 1 ? days : PLANNED_RUN_LOOKAHEAD_DAYS) - 1,
   );
   const events = (await listPlannedWorkouts(apiKey, { oldest, newest })).filter(
-    (e) => isPaceActivity(e.type ?? ""),
+    (e) => OUTDOOR_RUN_TYPES.has(e.type ?? ""),
   );
   const chosen = days > 1 ? events : events.slice(0, 1);
   if (chosen.length === 0) {
@@ -437,13 +440,16 @@ export async function loadRouteSuggestions(
             progress,
           );
         } catch (error) {
-          if (
-            !(error instanceof RateLimitError || error instanceof OrsApiError)
-          )
+          // A cancelled call stops; any other failure keeps the past runs.
+          if (error instanceof CallCancelledError || isAbortError(error))
             throw error;
           runWarnings.push(`No new route was generated: ${orsProblem(error)}.`);
         }
-        if (budget.calls <= 0 && before > 0 && index < planned.length - 1) {
+        if (before <= 0) {
+          runWarnings.push(
+            "No new route was generated: this call's routing budget is spent; ask for this run on its own for new routes.",
+          );
+        } else if (budget.calls <= 0 && index < planned.length - 1) {
           runWarnings.push(
             "This call's routing budget is spent; ask for later runs on their own for new routes.",
           );

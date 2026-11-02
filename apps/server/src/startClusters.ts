@@ -21,8 +21,8 @@ export const RECENCY_HALF_LIFE_DAYS = 60;
 export const HISTORY_DAYS = 180;
 export const MAX_HISTORY_RUNS = 40;
 
-/** Outdoor run types with a start worth clustering (no VirtualRun). */
-const OUTDOOR_RUN_TYPES = new Set(["Run", "TrailRun"]);
+/** Outdoor run types with a start worth clustering (no VirtualRun); also the planned runs that get routes. */
+export const OUTDOOR_RUN_TYPES = new Set(["Run", "TrailRun"]);
 
 export interface RunStart {
   id: string;
