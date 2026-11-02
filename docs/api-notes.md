@@ -839,3 +839,48 @@ not wanted.
 - Not verified live: that a reset moves `starting_distance` to the item's
   current distance (no run was logged between the add and the reset), and
   what `snoozed_until` holds.
+
+## OpenRouteService (route suggestions, verified 2026-11-03)
+
+Base `https://api.openrouteservice.org`, key in `Authorization: <key>` (no
+`Bearer`), on both endpoints.
+
+- Quota: `x-ratelimit-limit: 200` on directions, with `x-ratelimit-reset` as a
+  Unix time about 24 h ahead, so this key allows 200 routes a day (and 40 a
+  minute). Every rescale call counts. FetchClient reads only `Retry-After`; the
+  daily limit shows up as a 429.
+- `POST /v2/directions/foot-walking/geojson` answers
+  `application/geo+json;charset=UTF-8` (FetchClient leaves it as text).
+  Coordinates are `[lng, lat, elevation]` with `elevation: true`.
+  `properties.summary.distance` (m), `properties.ascent`/`descent` (m, the
+  raw sum of rises), `properties.segments[].steps[]` with `distance` and
+  `name` (`-` when unnamed), `properties.extras.waytype.summary[]` with
+  `value`, `distance`, `amount` (%).
+- Waytype values seen around Sydney and San Francisco: 7 Footway
+  (56-83% of most loops: OSM tags sidewalks as footways), 3 Street,
+  6 Cycleway, 2 Road, 0 Unknown, 8 Steps, 4 Path. Path share is therefore a
+  weak "off the road" signal; crossings come from Overpass instead.
+- `round_trip.length` error, `points: 4`, seeds 1-3: 4 km +13 to +17%,
+  6 km -6 to +1%, 10 km -6 to +2%, 14 km -8 to 0%. One rescale
+  (length times target over actual) lands within 5%.
+- `options.profile_params.weightings` `green`/`quiet` are accepted but gave
+  the identical route in Sydney (green/quiet data covers Germany): not sent.
+- Climb: ORS ascent ran about 25% above the athlete's watch at home
+  (14.5 vs a median 11.5 m/km); a 3 m hysteresis on the elevation column
+  gives 12.3, so generated climb uses `trackClimb` with that hysteresis.
+- No routable point: HTTP 404, `{"error":{"code":2010,"message":"Cannot find
+  point 0: <lat>,<lng>"}}`. The message carries coordinates, so it is never
+  logged or shown (route suggestions branch on the status).
+- `GET /geocode/search?text=&size=1&focus.point.lat=&focus.point.lon=`
+  answers `application/json; charset=utf-8`; "Embarcadero, San Francisco" gave
+  "The Embarcadero, San Francisco, CA, USA" (layer street).
+
+## OpenStreetMap Overpass (route suggestions, verified 2026-11-03)
+
+`GET https://overpass-api.de/api/interpreter?data=<query>` with
+`node[highway~"^(crossing|traffic_signals)$"](s,w,n,e);out skel qt;`. A 6 km
+loop's area held about 1,500 such nodes; loops at home had 26-33 within 12 m
+per km, enough to rank them. The public instances were slow: 20-42 s for a
+first query, two of three timed out at 30 s, one answered "at capacity"
+(502). Hence one query per area snapped to a 0.02 degree grid, cached 7
+days, capped at 12 s, with path share as the fallback ranking.
