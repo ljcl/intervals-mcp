@@ -196,10 +196,10 @@ one PR:
 4. Check the binary's shared libraries. The builder copies only
    `/usr/local/bin/node` into the `oven/bun` stage, so any library the new
    Node links that the base lacks must come too. Node 26 needs
-   `libatomic.so.1`, which `oven/bun` does not ship (the first Node 26 PR
-   failed on exactly this). List them with
-   `docker run --rm node:<tag> ldd /usr/local/bin/node`, then copy the
-   missing `.so` files from the `node` stage or install them in the builder.
+   `libatomic.so.1`, which `oven/bun` does not ship, so the builder copies it
+   from the `node` stage. List them with
+   `docker run --rm node:<tag> ldd /usr/local/bin/node`, then copy any other
+   missing `.so` files the same way.
 5. Run `bun run check`, `bun run test:stories` and `docker compose build`,
    then confirm the PR's docker.yml build passes on both arches.
 
