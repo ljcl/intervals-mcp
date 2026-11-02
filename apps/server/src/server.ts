@@ -118,6 +118,7 @@ import { getTrainingLoadTool } from "./tools/getTrainingLoad";
 import { getWellnessTool } from "./tools/getWellness";
 import { listActivitiesTool } from "./tools/listActivities";
 import { listGearTool } from "./tools/listGear";
+import { suggestRunRouteTool } from "./tools/suggestRunRoute";
 import { updateActivityTool } from "./tools/updateActivity";
 import { updateGearTool } from "./tools/updateGear";
 import { updateWellnessTool } from "./tools/updateWellness";
@@ -479,6 +480,7 @@ const TOOLS = [
   compareActivitiesTool,
   getBestEffortsTool,
   getRacePredictionTool,
+  suggestRunRouteTool,
   listActivitiesTool,
   getActivityTool,
   getActivityStreamsTool,

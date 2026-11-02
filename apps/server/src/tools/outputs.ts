@@ -1640,6 +1640,87 @@ export const WellnessWriteOutputSchema = z.object({
   warnings: z.array(z.string()),
 });
 
+const RoutePlaceSchema = z.object({
+  label: z.string(),
+  lat: z.number(),
+  lng: z.number(),
+});
+
+const RouteCandidateSchema = z.object({
+  kind: z.enum(["past", "generated"]),
+  activity_id: z
+    .string()
+    .nullable()
+    .describe("The past run's intervals.icu id; null for a generated route"),
+  name: z.string(),
+  date: z
+    .string()
+    .nullable()
+    .describe("The past run's date, YYYY-MM-DD; null for a generated route"),
+  shape: z.enum(["loop", "out-and-back", "point-to-point"]),
+  distance_m: z.number(),
+  distance_diff_m: z.number().describe("distance_m minus the planned distance"),
+  climb_m: z.number(),
+  climb_per_km: z.number(),
+  path_share: z
+    .number()
+    .nullable()
+    .describe(
+      "Share (0-1) of a generated route on paths, footways, tracks or cycleways; null for a past run",
+    ),
+  crossings_per_km: z
+    .number()
+    .nullable()
+    .describe(
+      "Pedestrian crossings and traffic signals per km from OpenStreetMap; null when they could not be counted",
+    ),
+  hill: z
+    .object({
+      start_m: z.number(),
+      length_m: z.number(),
+      grade_pct: z.number(),
+    })
+    .nullable()
+    .describe(
+      "A 60-200 m stretch at 5-12% for hill repeats; only looked for with terrain hill-repeats",
+    ),
+  summary: z.string(),
+});
+
+export const RouteSuggestionsOutputSchema = z.object({
+  count: z.number().int().describe("Planned runs in the result"),
+  generation_available: z
+    .boolean()
+    .describe("False when ORS_API_KEY is unset: only past runs are offered"),
+  runs: z.array(
+    z.object({
+      event_id: z.number().nullable(),
+      date: z.string(),
+      name: z.string(),
+      description: z
+        .string()
+        .nullable()
+        .describe("The planned run's description from the calendar"),
+      distance_m: z.number(),
+      distance_source: z.enum(["argument", "event"]),
+      start: RoutePlaceSchema.extend({
+        source: z.enum(["argument", "env", "inferred"]),
+        history_runs: z
+          .number()
+          .int()
+          .describe("Recent runs that started near this start"),
+      }),
+      end: RoutePlaceSchema.nullable(),
+      via: RoutePlaceSchema.nullable(),
+      shape: z.enum(["loop", "out-and-back", "point-to-point"]),
+      terrain: z.enum(["any", "flat", "rolling", "hilly", "hill-repeats"]),
+      candidates: z.array(RouteCandidateSchema),
+      warnings: z.array(z.string()),
+    }),
+  ),
+  warnings: z.array(z.string()),
+});
+
 // ---------- dev-only schema drift guard ----------
 export function warnOnSchemaDrift<T>(
   toolName: string,

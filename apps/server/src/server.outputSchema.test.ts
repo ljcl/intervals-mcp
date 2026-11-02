@@ -39,6 +39,7 @@ import streams from "./__fixtures__/intervals/streams.json";
 import streamsHilly from "./__fixtures__/intervals/streams-hilly.json";
 import streamsMultilap from "./__fixtures__/intervals/streams-multilap.json";
 import wellness from "./__fixtures__/intervals/wellness.json";
+import { routeSuggestionsFixture } from "./__fixtures__/routeSuggestions";
 
 // The 10 minute fixture streams cannot lose both a warm-up and a cool-down, so
 // the aerobic tools read this run with no cool-down.
@@ -135,6 +136,11 @@ vi.mock("./intervalsClient", async (importOriginal) => {
   };
 });
 
+vi.mock("./routeSuggestions", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./routeSuggestions")>()),
+  loadRouteSuggestions: vi.fn(async () => routeSuggestionsFixture(2)),
+}));
+
 vi.mock("./config", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./config")>();
   return { ...actual, getIntervalsApiKey: vi.fn(() => "test-token") };
@@ -170,6 +176,7 @@ const CALLS: Array<[tool: string, args: Record<string, unknown>]> = [
   ["get-best-efforts", {}],
   ["get-best-efforts", { id: activity.id }],
   ["get-race-prediction", { raceDistance: "10k" }],
+  ["suggest-run-route", { days: 2 }],
   ["list-activities", {}],
   ["get-activity", { id: activity.id, includeIntervals: true }],
   ["get-activity", { id: activitySwim.id, includeIntervals: true }],
