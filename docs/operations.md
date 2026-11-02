@@ -107,6 +107,7 @@ rate-limit state:
       "errors": 0,
       "cancelled": 0,
       "total_ms": 1260,
+      "upstream_requests": 2,
       "last_called_at": "2026-10-05T01:02:03.000Z",
       "mean_ms": 420
     }
@@ -132,6 +133,8 @@ wall clock, and both reset when the process restarts. Compare them with the
 draft per-key limits (2,500 per 15 minutes, 5,000 per day). Other servers that
 share the key are not counted.
 `tools` holds per-tool counters since the process started, busiest first.
+Each tool's `upstream_requests` sums its calls' log-line field of that name,
+so it shows which tools spend the quota.
 Wiring monitoring: point an uptime check at the unauthenticated shape; send
 the secret only when you want the config and quota detail.
 
@@ -147,6 +150,7 @@ shown wrapped here:
   "tool": "view-training-load",
   "duration_ms": 420,
   "outcome": "ok",
+  "upstream_requests": 2,
   "rate_limit": null,
   "client_apps": true,
   "client_name": "claude-ai",
@@ -165,6 +169,7 @@ A failed call adds the failure and, when the client sent a trace, its ids:
   "outcome": "error",
   "error_class": "IntervalsApiError",
   "http_status": 404,
+  "upstream_requests": 1,
   "rate_limit": null,
   "client_apps": false,
   "client_name": "claude-ai",
@@ -178,6 +183,12 @@ A failed call adds the failure and, when the client sent a trace, its ids:
 `outcome` is `ok`, `error`, `not_connected`, `invalid_args` or `cancelled`.
 `cancelled` means the client cancelled or disconnected before the answer.
 `/health` counts it in `cancelled`, not in `errors`.
+
+`upstream_requests` is how many requests the call sent to intervals.icu,
+retries included. A call served from the cache logs 0, and so does one that
+joined a read another call had already started: that read counts for the
+call that started it. A 365-day run-only scan is a handful; a cache hit is
+nothing.
 
 `error_class` is the class of the error behind a failed call, for example
 `IntervalsStreamsUnavailableError` for an activity with no streams. It is

@@ -45,7 +45,8 @@ breaking them has shipped bugs — do not work around them locally.
   A cancelled call starts no new attempt, retry or wait; a started write is
   never interrupted (docs/architecture.md#cancellation). The snapshot is
   stored only when a response carries `Retry-After`; `FetchClient`
-  counts upstream attempts for `/health`.
+  counts upstream attempts for `/health` and, through `noteUpstreamAttempt`
+  (`callScope.ts`), for the call's `upstream_requests`.
 - **Error types survive translation.** `handleApiError` rethrows
   `RateLimitError` unmodified (its `detail` is the bare window description a
   tool can quote) and wraps everything else in `IntervalsApiError extends HttpError`

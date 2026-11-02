@@ -110,6 +110,12 @@ export interface ToolCallRecord {
   error_class?: string;
   /** The intervals.icu status behind the failure, when it was an HTTP error. */
   http_status?: number;
+  /**
+   * intervals.icu request attempts the call made, retries included. 0 for a
+   * call served from the cache or from another call's in-flight read.
+   * Always on the line; 0 when the caller leaves it out.
+   */
+  upstream_requests?: number;
   /** intervals.icu quota as of the most recent response that carried it.
    * Null until intervals.icu sends rate-limit headers (it sends none). */
   rate_limit?: RateLimitSnapshot | null;
@@ -158,6 +164,8 @@ export interface ToolCounters {
   cancelled: number;
   /** Total duration across calls, for a mean without keeping samples. */
   total_ms: number;
+  /** intervals.icu request attempts across calls: which tool spends the quota. */
+  upstream_requests: number;
   last_called_at: string;
 }
 
@@ -199,6 +207,7 @@ function buildLine(
     ...(record.http_status !== undefined
       ? { http_status: record.http_status }
       : {}),
+    upstream_requests: record.upstream_requests ?? 0,
     rate_limit: record.rate_limit ?? rateLimitSnapshot(),
     ...(record.client_apps !== undefined
       ? { client_apps: record.client_apps }
@@ -237,6 +246,7 @@ export function recordToolCall(
     errors: 0,
     cancelled: 0,
     total_ms: 0,
+    upstream_requests: 0,
     last_called_at: "",
   };
   counters.set(key, {
@@ -246,6 +256,8 @@ export function recordToolCall(
       (record.outcome === "ok" || record.outcome === "cancelled" ? 0 : 1),
     cancelled: existing.cancelled + (record.outcome === "cancelled" ? 1 : 0),
     total_ms: existing.total_ms + record.duration_ms,
+    upstream_requests:
+      existing.upstream_requests + (record.upstream_requests ?? 0),
     last_called_at: ts,
   });
 

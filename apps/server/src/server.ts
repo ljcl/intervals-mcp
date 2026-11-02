@@ -1779,6 +1779,7 @@ async function runToolCall(
         outcome: scope.signal?.aborted ? "cancelled" : outcome,
         error_class: failure?.error_class,
         http_status: failure?.http_status,
+        upstream_requests: scope.upstreamRequests ?? 0,
         client_apps: context.clientRendersApps,
         // recordToolCall bounds both before they reach the log.
         client_name: client?.name,

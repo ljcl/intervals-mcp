@@ -242,6 +242,49 @@ describe("one detail read per activity (#322)", () => {
   });
 });
 
+/** The `tool_call` log lines written so far, oldest first. */
+const toolCallLines = () =>
+  vi
+    .mocked(console.error)
+    .mock.calls.map(([line]) => String(line))
+    .filter((line) => line.includes('"event":"tool_call"'))
+    .map((line) => JSON.parse(line) as { upstream_requests: number });
+
+describe("upstream_requests on the tool_call line (#324)", () => {
+  it("counts a cold call's requests and 0 for a call the cache serves", async () => {
+    await dispatchInSequence([["get-activity", { id: MULTILAP_ID }]]);
+    const cold = wire.length;
+    await dispatchInSequence([["get-activity", { id: MULTILAP_ID }]]);
+
+    expect(cold).toBeGreaterThan(0);
+    expect(wire).toHaveLength(cold);
+    expect(toolCallLines().map((line) => line.upstream_requests)).toEqual([
+      cold,
+      0,
+    ]);
+  });
+
+  it("counts each retry attempt", async () => {
+    let failed = false;
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      if (
+        !failed &&
+        String(input).endsWith(`/activity/${MULTILAP_ID}?intervals=true`)
+      ) {
+        failed = true;
+        wire.push({ method: "GET", url: new URL(String(input)) });
+        return json({ status: 503 }, 503);
+      }
+      return router(input, init);
+    });
+
+    await dispatchInSequence([["get-activity", { id: MULTILAP_ID }]]);
+
+    expect(detailReads(MULTILAP_ID)).toHaveLength(2);
+    expect(toolCallLines()[0]?.upstream_requests).toBe(wire.length);
+  });
+});
+
 describe("opening compare-activities (#71)", () => {
   it("reads each activity and its streams once", async () => {
     const compareArgs = { activityId1: MULTILAP_ID, activityId2: HILLY_ID };
