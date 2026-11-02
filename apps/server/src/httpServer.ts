@@ -9,7 +9,7 @@ import { type McpEndpoint } from "./mcpEndpoint";
  * stream, and its keep-alive comment comes only every 15 s
  * (`SSE_KEEP_ALIVE_MS`, `mcpEndpoint.ts`), so a call that sent one progress
  * message and then waited more than 10 s on intervals.icu (a run-only
- * lookback is 17 requests in a row; one retried request can take longer) was
+ * lookback was 17 requests in a row; one retried request can take longer) was
  * cut with a connection reset (#51). The value must stay above that
  * keep-alive interval; Bun's maximum is 255. A plain JSON reply that is slow
  * to start is not cut either way (verified on Bun 1.4.2), so this only

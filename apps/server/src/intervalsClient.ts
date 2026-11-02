@@ -640,9 +640,10 @@ function athletePath(suffix: string): string {
   return `/athlete/${getIntervalsAthleteId()}${suffix}`;
 }
 
-/** intervals.icu list endpoints paginate by date, not by page; cap a single
- * request's window so a multi-month scan doesn't send one unbounded query. */
-const MAX_WINDOW_DAYS = 31;
+/** intervals.icu list endpoints paginate by date, not by page, and serve a
+ * year or more in one request (docs/api-notes.md). Capped at list-activities'
+ * own maximum range, so only a longer run-only runway takes a second request. */
+const MAX_WINDOW_DAYS = 366;
 
 export interface DateRange {
   /** Inclusive lower bound, `YYYY-MM-DD`. */
@@ -675,15 +676,14 @@ export function splitDateRangeIntoWindows(
 }
 
 /**
- * Lists activities across `range`, splitting anything longer than 31 days
- * into consecutive 31-day windows fetched sequentially (never in parallel,
- * so the shared client's request spacing and any future rate-limit backoff
- * apply per request as intended). Results are concatenated, de-duplicated by
+ * Lists activities across `range`, splitting anything longer than
+ * {@link MAX_WINDOW_DAYS} days into consecutive windows fetched sequentially
+ * (never in parallel, so the shared client's request spacing and any future
+ * rate-limit backoff apply per request as intended). Results are concatenated, de-duplicated by
  * `id`, and sorted by `start_date_local` descending.
  *
- * A multi-window scan reports progress once per window. A 515-day run-only
- * lookback is 17 requests in a row, and without a message between them a
- * streamed call showed nothing for that long (#51).
+ * A multi-window scan reports progress once per window, so a streamed call
+ * shows something between its requests (#51).
  */
 export async function listActivities(
   apiKey: string,

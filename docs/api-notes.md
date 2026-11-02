@@ -686,8 +686,8 @@ activities came back in 86 KB.
   look-back window must end today or earlier: `resolveWindowEnd`
   (`utils/localDate.ts`) refuses a `newest` after today.
 - A past window behaves like a window that ends today. A run-only runway
-  counted back from a past `newest` (234 days, 8 listing requests of at most
-  31 days) and a whole-body wellness read to a past `newest` returned complete
+  counted back from a past `newest` (234 days, then 8 listing requests of at most
+  31 days; one request since #321) and a whole-body wellness read to a past `newest` returned complete
   data, with no gaps. The cache needs no new rule: `intervalsCacheTtl` keys on
   the full URL, and a past window builds the same URL shape.
 

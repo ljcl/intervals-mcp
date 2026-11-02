@@ -791,8 +791,8 @@ target, or a split row reports one; `units.distance` is `"m"`, matching the
 month and the year to date, all in the server's time zone, and a fifth,
 `last_year_to_date`: 1 January last year to today's date last year, with 29
 February mapped to 28 February (`sameDateLastYear`). It reads every
-activity in one client read of `/athlete/{id}/activities` (31-day windows,
-no row cap), from 1 January last year: up to 22 windows, each reported as
+activity in one client read of `/athlete/{id}/activities` (366-day windows,
+no row cap), from 1 January last year: up to 2 windows, each reported as
 progress by `listActivities`. It builds two sets of totals from the same rows. The
 run totals (`this_week`, `last_4_weeks`, `this_month`, `ytd`,
 `last_year_to_date`) count Run,
