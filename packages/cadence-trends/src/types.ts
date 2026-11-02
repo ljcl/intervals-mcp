@@ -38,7 +38,9 @@ export interface CadenceTrendData {
    * (slowest first), else the fixed `PACE_ZONES`. Absent from an older
    * feed, which means the fixed zones. */
   paceZones?: PaceZone[];
-  paceZoneSource?: "athlete" | "default";
+  /** athlete: the Run sport settings' zones; default: fixed, the settings
+   * have no threshold pace; unavailable: fixed, the settings read failed. */
+  paceZoneSource?: "athlete" | "default" | "unavailable";
 }
 
 /** Stream data for a single run used in overlay view (reuses activity-chart shape) */

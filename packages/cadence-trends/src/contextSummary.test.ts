@@ -203,7 +203,7 @@ describe("buildCadenceContextSummary", () => {
   it("names whose pace zones the zone view uses, on that view only", () => {
     const summary = (
       activeView: "zones" | "trend",
-      paceZoneSource: "athlete" | "default",
+      paceZoneSource: "athlete" | "default" | "unavailable",
     ) =>
       buildCadenceContextSummary({
         days: 42,
@@ -216,6 +216,9 @@ describe("buildCadenceContextSummary", () => {
     );
     expect(summary("zones", "default")).toContain(
       "Pace zones: fixed (the Run sport settings have no threshold pace).",
+    );
+    expect(summary("zones", "unavailable")).toContain(
+      "Pace zones: fixed (the Run sport settings could not be read).",
     );
     expect(summary("trend", "athlete")).not.toContain("Pace zones");
   });

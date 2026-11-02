@@ -1,6 +1,7 @@
 import { windowLabel } from "@intervals-mcp/data";
 import { overlayRunLabel } from "./normalize";
 import {
+  type CadenceTrendData,
   type OverlayRunStatus,
   type OverlayXMode,
   type RunSummary,
@@ -44,8 +45,14 @@ export interface CadenceContextInput {
    * views (pace zones, scatter) only. */
   noPaceCount?: number;
   /** Whose pace zones the zone view uses; absent from an older feed. */
-  paceZoneSource?: "athlete" | "default";
+  paceZoneSource?: CadenceTrendData["paceZoneSource"];
 }
+
+const PACE_ZONE_TEXT = {
+  athlete: "Pace zones: the athlete's Run sport settings.",
+  default: "Pace zones: fixed (the Run sport settings have no threshold pace).",
+  unavailable: "Pace zones: fixed (the Run sport settings could not be read).",
+} as const;
 
 export function buildCadenceContextSummary(
   input: CadenceContextInput,
@@ -110,11 +117,7 @@ export function buildCadenceContextSummary(
     );
   }
   if (activeView === "zones" && paceZoneSource) {
-    parts.push(
-      paceZoneSource === "athlete"
-        ? "Pace zones: the athlete's Run sport settings."
-        : "Pace zones: fixed (the Run sport settings have no threshold pace).",
-    );
+    parts.push(PACE_ZONE_TEXT[paceZoneSource]);
   }
   if (noPaceCount) {
     parts.push(

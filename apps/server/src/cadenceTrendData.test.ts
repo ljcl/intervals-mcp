@@ -189,6 +189,14 @@ describe("buildCadenceTrendData", () => {
       expect(fixed.paceZones).toBe(PACE_ZONES);
       expect(fixed.paceZoneSource).toBe("default");
     }
+
+    const unavailable = buildCadenceTrendData([activity()], {
+      days: 28,
+      paceZones: null,
+      settingsUnavailable: true,
+    });
+    expect(unavailable.paceZones).toBe(PACE_ZONES);
+    expect(unavailable.paceZoneSource).toBe("unavailable");
   });
 
   it("converts distance to km rounded to 2dp", () => {
@@ -246,6 +254,17 @@ describe("cadenceTrendLines", () => {
       "",
       "Cadence against pace: slope -9.2 spm per min/km over 3 runs: cadence rises 9.2 spm for each 1:00 /km faster.",
     ]);
+  });
+
+  it("names a failed settings read, not missing settings, over the fixed zones", () => {
+    const lines = cadenceTrendLines({
+      ...runs([[5, 170]]),
+      paceZoneSource: "unavailable",
+    });
+    expect(lines).toContain(
+      "Cadence by pace zone (fixed zones: the Run sport settings could not be read):",
+    );
+    expect(lines.join("\n")).not.toContain("no threshold pace");
   });
 
   it("buckets by the athlete's pace zones and names the runs under 1 km it left out", () => {

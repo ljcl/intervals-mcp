@@ -1066,16 +1066,25 @@ async function loadCadenceTrendData(
   const newest = todayLocal(tz);
   const oldest = addDays(newest, -(days - 1));
 
-  // The pace zones come from the Run sport settings; a failed read falls
-  // back to the fixed zones, which the text and the app both name.
+  // The pace zones come from the Run sport settings; a failed read is logged
+  // and falls back to the fixed zones, which the text and the app both name
+  // as a failed read rather than as settings with no threshold pace.
+  let settingsUnavailable = false;
   const [activities, runSettings] = await Promise.all([
     listActivitiesFn(apiKey, { oldest, newest }, progress),
-    getSportSettings(apiKey, "Run").catch(() => null),
+    getSportSettings(apiKey, "Run").catch((error) => {
+      settingsUnavailable = true;
+      console.error(
+        `Run sport settings for cadence trends not read: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return null;
+    }),
   ]);
 
   return buildCadenceTrendData(activities, {
     days,
     paceZones: runSettings ? cadencePaceZones(runSettings) : null,
+    settingsUnavailable,
   });
 }
 

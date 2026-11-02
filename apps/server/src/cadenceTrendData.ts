@@ -63,9 +63,10 @@ export interface CadenceTrendData {
    * for the athlete's own, fastest first for the fixed fallback. */
   paceZones: PaceZone[];
   /** athlete: the Run sport settings' threshold pace and pace zones;
-   * default: the fixed `PACE_ZONES`, because the settings have none or
-   * could not be read. */
-  paceZoneSource: "athlete" | "default";
+   * default: the fixed `PACE_ZONES`, because the settings have none;
+   * unavailable: the fixed `PACE_ZONES`, because the settings could not be
+   * read. */
+  paceZoneSource: "athlete" | "default" | "unavailable";
   /** Runs included in `activities` (they have cadence) but with no recorded
    * speed, so `averagePace` is `null` there: counted here the same way
    * `excludedNoCadence` counts the cadence-less runs, so pace-based views
@@ -90,11 +91,16 @@ export interface CadenceTrendData {
  * distance under {@link MIN_CADENCE_RUN_DISTANCE_M} is left out too
  * (`excludedShort`); a run with no distance at all (an indoor run with no
  * foot pod) stays, as a cadence-only run. `paceZones` are the athlete's
- * (`cadencePaceZones`), else the fixed `PACE_ZONES`.
+ * (`cadencePaceZones`), else the fixed `PACE_ZONES`; `settingsUnavailable`
+ * says the settings read failed, so the source is `unavailable`.
  */
 export function buildCadenceTrendData(
   activities: IntervalsActivity[],
-  options: { days: number; paceZones?: PaceZone[] | null },
+  options: {
+    days: number;
+    paceZones?: PaceZone[] | null;
+    settingsUnavailable?: boolean;
+  },
 ): CadenceTrendData {
   const runs = activities.filter((a) => a.type && isPaceActivity(a.type));
 
@@ -148,9 +154,21 @@ export function buildCadenceTrendData(
     excludedShort,
     noPaceCount,
     paceZones: athleteZones ?? PACE_ZONES,
-    paceZoneSource: athleteZones ? "athlete" : "default",
+    paceZoneSource: athleteZones
+      ? "athlete"
+      : options.settingsUnavailable
+        ? "unavailable"
+        : "default",
   };
 }
+
+const PACE_ZONE_HEADINGS = {
+  athlete: "Cadence by pace zone (the Run sport settings' pace zones):",
+  default:
+    "Cadence by pace zone (fixed zones: the Run sport settings have no threshold pace or pace zones):",
+  unavailable:
+    "Cadence by pace zone (fixed zones: the Run sport settings could not be read):",
+} as const;
 
 /** Runs the view-cadence-trends text lists one by one; a longer window
  * names how many more there are. */
@@ -215,12 +233,7 @@ export function cadenceTrendLines(data: CadenceTrendData): string[] {
   if (more > 0)
     lines.push(`  (${runsText(more)} more; a shorter days window lists them)`);
 
-  lines.push(
-    "",
-    data.paceZoneSource === "athlete"
-      ? "Cadence by pace zone (the Run sport settings' pace zones):"
-      : "Cadence by pace zone (fixed zones: the Run sport settings have no threshold pace or pace zones):",
-  );
+  lines.push("", PACE_ZONE_HEADINGS[data.paceZoneSource]);
   for (const stat of computeZoneStats(runs, data.paceZones)) {
     const label = `  ${stat.zone.label} (${zoneRangeText(stat.zone)})`;
     lines.push(
