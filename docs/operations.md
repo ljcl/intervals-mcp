@@ -368,20 +368,23 @@ It is `null` today, since intervals.icu sends none.
 ## Route suggestions and third parties
 
 `suggest-run-route` and `view-route-suggestions` are the only tools that talk
-to anything but intervals.icu, and only for generated routes:
+to anything but intervals.icu. What leaves the server:
 
-- With `ORS_API_KEY` set, the start, end and via points are sent to
-  OpenRouteService, and so is the usual start when a place name is
-  geocoded (as the search focus). Leave the key unset to keep every
-  coordinate on the server; past runs are still offered.
-- The bounding box of the candidate routes, snapped to a 0.02 degree grid,
-  is sent to OpenStreetMap Overpass to count road crossings. It needs no
-  key, can be slow, and is capped at 12 s per query. Results are cached for
-  7 days, and a failure only drops the ranking to path share with a warning.
-- OpenRouteService allows 200 routes a day and 40 a minute, so
-  requests start 1.5 s apart, one tool call makes at most 12, and a week of
-  runs shares them. Both services' responses stay in the in-memory cache,
-  not on disk.
+- OpenRouteService receives the start, end and via points, and the usual
+  start as the geocoding focus when a place name is looked up. This happens
+  only with `ORS_API_KEY` set; unset, nothing goes to OpenRouteService and
+  only past runs are offered.
+- OpenStreetMap Overpass receives the bounding box around every candidate
+  route, past runs included, snapped to a 0.02 degree grid (about 2 km), to
+  count road crossings. It needs no key, so this happens whenever route
+  suggestions run, with or without `ORS_API_KEY`, and the box covers the
+  usual start. It can be slow and is capped at 12 s per query. Results are
+  cached for 7 days, and a failure only drops the ranking to path share with
+  a warning.
+- OpenRouteService allows 200 routes a day and 40 a minute, so requests
+  start 1.5 s apart, one tool call makes at most 12, and the 12 calls are
+  shared across the runs of a week request. Both services' responses stay in
+  the in-memory cache, not on disk.
 
 ## Docker notes
 
