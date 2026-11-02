@@ -951,23 +951,23 @@ describe("intervalsClient", () => {
     expect(result[0]?.comments).toBe("Felt good");
   });
 
-  it("splits ranges longer than 31 days into sequential windows", async () => {
+  it("splits ranges longer than 366 days into sequential windows", async () => {
     const calls = mockJson([]);
-    await listActivities("k", { oldest: "2026-01-01", newest: "2026-03-11" });
+    await listActivities("k", { oldest: "2024-01-01", newest: "2026-03-11" });
     const windows = calls.map((c) => {
       const u = new URL(c.url);
       return [u.searchParams.get("oldest"), u.searchParams.get("newest")];
     });
     expect(windows).toEqual([
-      ["2026-01-01", "2026-01-31"],
-      ["2026-02-01", "2026-03-03"],
-      ["2026-03-04", "2026-03-11"],
+      ["2024-01-01", "2024-12-31"],
+      ["2025-01-01", "2026-01-01"],
+      ["2026-01-02", "2026-03-11"],
     ]);
   });
 
-  it("does not split a range of 31 days or fewer", async () => {
+  it("does not split a range of 366 days or fewer", async () => {
     const calls = mockJson([]);
-    await listActivities("k", { oldest: "2026-09-01", newest: "2026-09-24" });
+    await listActivities("k", { oldest: "2025-09-01", newest: "2026-09-01" });
     expect(calls).toHaveLength(1);
   });
 
@@ -976,13 +976,13 @@ describe("intervalsClient", () => {
     const progress = vi.fn();
     await listActivities(
       "k",
-      { oldest: "2026-01-01", newest: "2026-03-11" },
+      { oldest: "2024-01-01", newest: "2026-03-11" },
       progress,
     );
     expect(progress.mock.calls.map(([message]) => message)).toEqual([
-      "Listing activities 2026-01-01 to 2026-01-31 (window 1 of 3)…",
-      "Listing activities 2026-02-01 to 2026-03-03 (window 2 of 3)…",
-      "Listing activities 2026-03-04 to 2026-03-11 (window 3 of 3)…",
+      "Listing activities 2024-01-01 to 2024-12-31 (window 1 of 3)…",
+      "Listing activities 2025-01-01 to 2026-01-01 (window 2 of 3)…",
+      "Listing activities 2026-01-02 to 2026-03-11 (window 3 of 3)…",
     ]);
   });
 

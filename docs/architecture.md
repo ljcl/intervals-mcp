@@ -739,9 +739,9 @@ for.
   `important: true` bypasses it for phase changes and rate-limit aborts.
 - Counts from a bounded pool are completion-ordered, not index-ordered.
 - `listActivities` (`intervalsClient.ts`) takes the reporter as an optional
-  third argument and reports each 31-day window of a longer scan ("window 3
-  of 17"); callers pass theirs through. A run-only lookback of 515 days is 17
-  requests in a row, and before #51 it sent nothing between them.
+  third argument and reports each window of a scan longer than its 366-day
+  cap ("window 2 of 2"); callers pass theirs through. A run-only lookback of
+  515 days is 2 requests (#321), and before #51 it sent nothing between them.
 - Sends are fire-and-forget; every failure is swallowed.
 - Client side, `useServerToolData` and `useServerToolFetcher` (per key) share
   `progressCallOptions`. It sets `resetTimeoutOnProgress` (so a live sweep is
