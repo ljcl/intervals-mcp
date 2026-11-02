@@ -47,12 +47,13 @@ function square(
   lng0: number,
   side: number,
   rise = 0,
+  lngSide = side,
 ): RouteTrack {
   const corners: LatLng[] = [
     [lat0, lng0],
     [lat0 + side, lng0],
-    [lat0 + side, lng0 + side],
-    [lat0, lng0 + side],
+    [lat0 + side, lng0 + lngSide],
+    [lat0, lng0 + lngSide],
     [lat0, lng0],
   ];
   const coordinates: LatLng[] = [];
@@ -277,6 +278,122 @@ describe("loadRouteSuggestions", () => {
     const run = (await loadRouteSuggestions("k", {}, ENV)).runs[0]!;
     expect(run.candidates.map((c) => c.kind)).toEqual(["past"]);
     expect(run.warnings.join(" ")).toMatch(warning);
+    // The first failure stops generation: the second seed is never tried.
+    expect(vi.mocked(orsRoute)).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a route made before ORS failed, and warns once for the call", async () => {
+    vi.mocked(orsRoute)
+      .mockResolvedValueOnce(route(generatedLoop(1)))
+      .mockRejectedValue(handledRateLimit("orsRoute"));
+    const result = await loadRouteSuggestions("k", {}, ENV);
+    expect(result.runs[0]!.candidates.map((c) => c.kind)).toEqual([
+      "past",
+      "generated",
+    ]);
+    expect(result.runs[0]!.warnings.join(" ")).not.toMatch(/rate limit/);
+    expect(result.warnings.join(" ")).toMatch(
+      /Route generation stopped: .*rate limit/,
+    );
+  });
+
+  it("stops calling a failing ORS for later runs", async () => {
+    vi.mocked(listPlannedWorkouts).mockResolvedValue([
+      event(10, "2026-11-04", homeLoop.distance.at(-1)!),
+      event(11, "2026-11-06", homeLoop.distance.at(-1)!),
+    ]);
+    vi.mocked(orsRoute).mockRejectedValue(
+      new OrsApiError("x", { status: 403, statusText: "", data: "" }),
+    );
+    const result = await loadRouteSuggestions("k", { days: 7 }, ENV);
+    expect(vi.mocked(orsRoute)).toHaveBeenCalledTimes(1);
+    expect(result.warnings.filter((w) => /rejected/.test(w))).toHaveLength(1);
+    expect(result.runs[1]!.warnings).toEqual([]);
+  });
+
+  it("offers one recording of a loop across a week, not the next one too", async () => {
+    vi.mocked(listPlannedWorkouts).mockResolvedValue([
+      event(10, "2026-11-04", homeLoop.distance.at(-1)!),
+      event(11, "2026-11-06", homeLoop.distance.at(-1)!),
+    ]);
+    // The same loop recorded twice, its GPS about 10 m apart.
+    const again = square(SF[0] + 0.0001, SF[1], 0.0135);
+    vi.mocked(loadRunStarts).mockResolvedValue({
+      runs: [
+        ...history,
+        { ...history[0]!, id: "i2", date: "2026-10-08", track: again },
+      ],
+      skipped: 0,
+    });
+    const result = await loadRouteSuggestions("k", { days: 7 }, ENV);
+    const past = result.runs.map((r) =>
+      r.candidates.filter((c) => c.kind === "past").map((c) => c.activity_id),
+    );
+    expect(past[0]).toHaveLength(1);
+    expect(past[1]).toEqual([]);
+  });
+
+  it("picks a past run with a hill for hill repeats over better-ranked flat ones", async () => {
+    const run = (id: string, date: string, track: RouteTrack): RunStart => ({
+      id,
+      date,
+      name: id,
+      distance_m: track.distance.at(-1)!,
+      climb_m: 0,
+      track,
+    });
+    vi.mocked(loadRunStarts).mockResolvedValue({
+      runs: [
+        // Run 3 days ago, so it ranks last on recency.
+        run("hilly", "2026-10-31", square(SF[0], SF[1], 0.0135, 9, -0.0135)),
+        run("flat-ne", "2026-10-01", homeLoop),
+        run("flat-sw", "2026-10-02", square(SF[0], SF[1], -0.0135)),
+      ],
+      skipped: 0,
+    });
+    const result = await loadRouteSuggestions(
+      "k",
+      { terrain: "hill-repeats" },
+      ENV,
+    );
+    const past = result.runs[0]!.candidates.filter((c) => c.kind === "past");
+    expect(past.map((c) => c.activity_id)).toContain("hilly");
+  });
+
+  it("asks Overpass once after it fails", async () => {
+    vi.mocked(listPlannedWorkouts).mockResolvedValue([
+      event(10, "2026-11-04", homeLoop.distance.at(-1)!),
+      event(11, "2026-11-06", homeLoop.distance.at(-1)!),
+    ]);
+    vi.mocked(loadCrossings).mockResolvedValue(null);
+    const result = await loadRouteSuggestions("k", { days: 7 }, ENV);
+    expect(vi.mocked(loadCrossings)).toHaveBeenCalledTimes(1);
+    expect(
+      result.warnings.filter((w) => /crossings could not be counted/.test(w)),
+    ).toHaveLength(1);
+  });
+
+  it.each([
+    ["a place name start", { start: "Embarcadero" }],
+    ["a place name via", { via: "Ferry Building" }],
+    ["a place name end", { end: "Ferry Building" }],
+  ])(
+    "refuses %s without an ORS key before reading history",
+    async (_label, args) => {
+      vi.mocked(loadRunStarts).mockClear();
+      await expect(
+        loadRouteSuggestions("k", args, { ...ENV, orsKey: null }),
+      ).rejects.toThrow(/needs ORS_API_KEY/);
+      expect(vi.mocked(loadRunStarts)).not.toHaveBeenCalled();
+    },
+  );
+
+  it("refuses point-to-point without an end before reading history", async () => {
+    vi.mocked(loadRunStarts).mockClear();
+    await expect(
+      loadRouteSuggestions("k", { shape: "point-to-point" }, ENV),
+    ).rejects.toBeInstanceOf(RouteSuggestionError);
+    expect(vi.mocked(loadRunStarts)).not.toHaveBeenCalled();
   });
 
   it("finds hills for hill repeats and warns when there are none", async () => {

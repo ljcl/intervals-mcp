@@ -24,6 +24,7 @@ import {
   geocode,
   OrsApiError,
   type OrsRoute,
+  type OrsRouteRequest,
   orsRoute,
   type Place,
 } from "./orsClient";
@@ -39,6 +40,7 @@ import {
   type RouteShape,
   rankGenerated,
   rankPast,
+  sameRoute,
   type Terrain,
   type TerrainBands,
   terrainBands,
@@ -123,8 +125,29 @@ interface PlannedRun {
   distance_source: "argument" | "event";
 }
 
+/** ORS calls left in this tool call; `failure` is set once ORS fails, and no call is made after it. */
 interface Budget {
   calls: number;
+  failure: string | null;
+}
+
+const canCall = (budget: Budget) => budget.calls > 0 && budget.failure === null;
+
+/** One ORS call charged to the budget; null when it fails, which stops generation for the rest of the tool call. */
+async function orsCall(
+  key: string,
+  request: OrsRouteRequest,
+  budget: Budget,
+): Promise<OrsRoute | null> {
+  budget.calls -= 1;
+  try {
+    return await orsRoute(key, request);
+  } catch (error) {
+    // A cancelled call stops; any other failure keeps what was generated so far.
+    if (error instanceof CallCancelledError || isAbortError(error)) throw error;
+    budget.failure = orsProblem(error);
+    return null;
+  }
 }
 
 /** Why ORS did not answer, as a clause; branches on type and status only (its messages carry coordinates). */
@@ -184,6 +207,14 @@ async function plannedRuns(
   }));
 }
 
+/** The ORS key a place name needs to be looked up. */
+function requireGeocoder(text: string, env: SuggestionEnv): string {
+  if (env.orsKey) return env.orsKey;
+  throw new RouteSuggestionError(
+    `"${text}" is a place name, and looking up place names needs ORS_API_KEY. Pass it as lat,lng instead.`,
+  );
+}
+
 async function resolvePlace(
   text: string,
   env: SuggestionEnv,
@@ -191,14 +222,10 @@ async function resolvePlace(
 ): Promise<Place> {
   const point = parseLatLng(text);
   if (point) return { label: text.trim(), point };
-  if (!env.orsKey) {
-    throw new RouteSuggestionError(
-      `"${text}" is a place name, and looking up place names needs ORS_API_KEY. Pass it as lat,lng instead.`,
-    );
-  }
+  const key = requireGeocoder(text, env);
   let hit: Place | null;
   try {
-    hit = await geocode(env.orsKey, text, focus);
+    hit = await geocode(key, text, focus);
   } catch (error) {
     // A timeout too: its message is the geocode URL, which carries the text and focus point.
     if (
@@ -247,7 +274,7 @@ async function resolveStart(
   };
 }
 
-/** A loop from `start` near `target_m`: one request, one rescale if it misses by over 5%; null when the budget is spent. */
+/** A loop from `start` near `target_m`: one request, one rescale if it misses by over 5%; null when no call could be made or the first failed. */
 async function fitLoop(
   key: string,
   start: LatLng,
@@ -258,13 +285,14 @@ async function fitLoop(
 ): Promise<OrsRoute | null> {
   let length = target_m;
   let best: OrsRoute | null = null;
-  for (let call = 0; call < MAX_FIT_CALLS && budget.calls > 0; call++) {
-    budget.calls -= 1;
+  for (let call = 0; call < MAX_FIT_CALLS && canCall(budget); call++) {
     progress(`Generating a route (try ${call + 1})`);
-    const route = await orsRoute(key, {
-      waypoints: [start],
-      roundTrip: { length_m: length, seed },
-    });
+    const route = await orsCall(
+      key,
+      { waypoints: [start], roundTrip: { length_m: length, seed } },
+      budget,
+    );
+    if (!route) break;
     if (
       !best ||
       Math.abs(route.distance_m - target_m) <
@@ -327,14 +355,14 @@ async function generate(
   progress: ReportProgress,
 ): Promise<RouteCandidate[]> {
   if (plan.shape === "point-to-point" || plan.via) {
-    if (budget.calls <= 0) return [];
-    budget.calls -= 1;
+    if (!canCall(budget)) return [];
     const waypoints = [
       plan.start,
       ...(plan.via ? [plan.via] : []),
       plan.end ?? plan.start,
     ];
-    const route = await orsRoute(key, { waypoints });
+    const route = await orsCall(key, { waypoints }, budget);
+    if (!route) return [];
     return [
       generatedCandidate(
         route,
@@ -368,6 +396,14 @@ export async function loadRouteSuggestions(
   const shape: RouteShape =
     args.shape ?? (args.end ? "point-to-point" : "loop");
   const terrain: Terrain = args.terrain ?? "any";
+  // Argument mistakes are reported before any history is read.
+  if (shape === "point-to-point" && !args.end)
+    throw new RouteSuggestionError(
+      "A point-to-point route needs an end place.",
+    );
+  for (const text of [args.start, args.end, args.via]) {
+    if (text && !parseLatLng(text)) requireGeocoder(text, env);
+  }
   const planned = await plannedRuns(
     apiKey,
     args.date ?? env.today,
@@ -392,14 +428,10 @@ export async function loadRouteSuggestions(
   const start = await resolveStart(args.start, env, clusters);
   const end = args.end ? await resolvePlace(args.end, env, start.point) : null;
   const via = args.via ? await resolvePlace(args.via, env, start.point) : null;
-  if (shape === "point-to-point" && !end)
-    throw new RouteSuggestionError(
-      "A point-to-point route needs an end place.",
-    );
 
   const cluster = nearestCluster(clusters, start.point);
   const want = cluster ? GENERATED_AT_HOME : GENERATED_AWAY;
-  const budget: Budget = { calls: ORS_CALL_BUDGET };
+  const budget: Budget = { calls: ORS_CALL_BUDGET, failure: null };
   const usedPast = new Set<string>();
   let crossingsMissing = false;
   const runs: RunSuggestion[] = [];
@@ -422,30 +454,27 @@ export async function loadRouteSuggestions(
             }).slice(0, PAST_POOL)
           : [];
       let tried: RouteCandidate[] = [];
-      if (env.orsKey) {
+      // After an ORS failure, later runs skip generation; the call-level warning says why.
+      if (env.orsKey && budget.failure === null) {
         const before = budget.calls;
-        try {
-          tried = await generate(
-            env.orsKey,
-            {
-              start: start.point,
-              end: end?.point ?? null,
-              via: via?.point ?? null,
-              shape,
-              target_m: run.distance_m,
-            },
-            want,
-            index * 10 + 1,
-            budget,
-            progress,
-          );
-        } catch (error) {
-          // A cancelled call stops; any other failure keeps the past runs.
-          if (error instanceof CallCancelledError || isAbortError(error))
-            throw error;
-          runWarnings.push(`No new route was generated: ${orsProblem(error)}.`);
-        }
-        if (before <= 0) {
+        tried = await generate(
+          env.orsKey,
+          {
+            start: start.point,
+            end: end?.point ?? null,
+            via: via?.point ?? null,
+            shape,
+            target_m: run.distance_m,
+          },
+          want,
+          index * 10 + 1,
+          budget,
+          progress,
+        );
+        if (budget.failure) {
+          if (tried.length === 0)
+            runWarnings.push(`No new route was generated: ${budget.failure}.`);
+        } else if (before <= 0) {
           runWarnings.push(
             "No new route was generated: this call's routing budget is spent; ask for this run on its own for new routes.",
           );
@@ -461,7 +490,7 @@ export async function loadRouteSuggestions(
         for (const c of all)
           c.hill = bestRepeatHill(c.track.distance, c.track.altitude);
       }
-      if (all.length > 0) {
+      if (all.length > 0 && !crossingsMissing) {
         progress("Counting road crossings", { important: true });
         const nodes = await loadCrossings(all.map((c) => c.track));
         if (nodes === null) crossingsMissing = true;
@@ -470,11 +499,15 @@ export async function loadRouteSuggestions(
             c.crossings_per_km = crossingsPerKm(c.track, nodes);
       }
 
-      const past = rankPast(pool, run.distance_m, env.today).slice(
-        0,
-        MAX_PAST_CANDIDATES,
-      );
-      for (const c of past) usedPast.add(c.activity_id!);
+      const ranked = rankPast(pool, run.distance_m, env.today);
+      if (terrain === "hill-repeats")
+        ranked.sort((a, b) => Number(!a.hill) - Number(!b.hill));
+      const past = ranked.slice(0, MAX_PAST_CANDIDATES);
+      // Another recording of a picked loop is the same route, so it is used too.
+      for (const c of past) {
+        for (const r of cluster?.runs ?? [])
+          if (sameRoute(r.track, c.track)) usedPast.add(r.id);
+      }
       // Duplicates of a past run go before the cut, so the next generated route fills the slot.
       candidates = dedupeRoutes([
         ...past,
@@ -501,9 +534,12 @@ export async function loadRouteSuggestions(
       warnings: runWarnings,
     });
   }
+  if (budget.failure) {
+    warnings.push(`Route generation stopped: ${budget.failure}.`);
+  }
   if (crossingsMissing) {
     warnings.push(
-      "Road crossings could not be counted (OpenStreetMap Overpass did not answer in time), so routes were ranked by their share on paths.",
+      "Road crossings could not be counted (OpenStreetMap Overpass did not answer), so routes were ranked by their share on paths.",
     );
   }
   return { runs, generation_available: env.orsKey !== null, warnings };
