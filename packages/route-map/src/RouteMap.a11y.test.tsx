@@ -2,7 +2,8 @@
  * Static-markup assertions on the ARIA wiring (ljcl/strava-mcp#62): the SVG grid's
  * title/desc pair and the basemap view's visually-hidden narration. SSR
  * render — effects never run, so no MapLibre map is created — but the
- * module-level worker setup still needs the maplibre imports mocked.
+ * module-level worker setup still needs the maplibre imports mocked, and
+ * the theme hook (which reads `document`) a fixed theme.
  */
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -14,6 +15,10 @@ vi.mock("maplibre-gl", () => ({
 }));
 vi.mock("maplibre-gl/dist/maplibre-gl-worker.mjs?bundled-raw", () => ({
   default: "",
+}));
+vi.mock("@modelcontextprotocol/ext-apps/react", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  useDocumentTheme: () => "light",
 }));
 
 describe("RouteMap accessibility wiring", () => {

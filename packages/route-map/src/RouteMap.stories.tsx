@@ -18,7 +18,7 @@ const meta = preview.meta({ component: RouteMap });
 /* The basemap is the app's default view, but it renders live OpenFreeMap
  * tiles that need the network and can't render deterministically. The grid
  * stories pin `basemapEnabled: false` (exactly the app's tiles-unavailable
- * fallback) so the browser-mode story tests stay hermetic; the two Basemap
+ * fallback) so the browser-mode story tests stay hermetic; the Basemap
  * stories still exercise the real default view. */
 
 export const ActivityLoop = meta.story({
@@ -195,6 +195,11 @@ export const ToggleWaypoints = meta.story({
 });
 
 export const Basemap = meta.story({
+  args: { data: annotatedActivity },
+});
+
+export const DarkBasemap = meta.story({
+  globals: darkGlobals,
   args: { data: annotatedActivity },
 });
 

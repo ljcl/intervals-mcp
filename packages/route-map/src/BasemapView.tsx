@@ -1,7 +1,7 @@
 /**
- * MapLibre basemap renderer: OpenFreeMap's Liberty style behind the
- * track, the default view when tiles are reachable (the offline SVG grid is
- * the silent fallback). Owns its own camera — MapLibre's native zoom/pan with
+ * MapLibre basemap renderer: OpenFreeMap's Liberty style (its dark style in a
+ * dark host theme) behind the track, the default view when tiles are
+ * reachable (the offline SVG grid is the silent fallback). Owns its own camera — MapLibre's native zoom/pan with
  * cooperative gestures so the conversation keeps scrolling — which the caller
  * can also frame (`set-viewport`) and which reports every move back, so the
  * caller describes the camera the user actually sees. Renders the full
@@ -10,6 +10,7 @@
  * shared with the elevation strip through the scrub index.
  */
 
+import { useDocumentTheme } from "@modelcontextprotocol/ext-apps/react";
 import * as maplibregl from "maplibre-gl";
 import workerCode from "maplibre-gl/dist/maplibre-gl-worker.mjs?bundled-raw";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
@@ -53,7 +54,12 @@ maplibregl.setWorkerUrl(
   ),
 );
 
-const STYLE_URL = "https://tiles.openfreemap.org/styles/liberty";
+/** OpenFreeMap style per host theme; both stay on the origin `ROUTE_MAP_CSP`
+ * allows (their tiles, sprites and glyphs too). */
+export const STYLE_URLS = {
+  light: "https://tiles.openfreemap.org/styles/liberty",
+  dark: "https://tiles.openfreemap.org/styles/dark",
+} as const;
 /** If the style hasn't loaded by then, treat tiles as unavailable. */
 const LOAD_TIMEOUT_MS = 12000;
 
@@ -131,6 +137,11 @@ export function BasemapView({
   onCamera,
 }: BasemapViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  // useHostStyles puts the host theme on the document; this follows it.
+  const styleUrl = STYLE_URLS[useDocumentTheme()];
+  const styleUrlRef = useRef(styleUrl);
+  /** Swaps the style in place, keeping the camera; set by the map effect. */
+  const restyleRef = useRef<((url: string) => void) | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const cameraRef = useRef<ReturnType<typeof createBasemapCamera> | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -169,7 +180,7 @@ export function BasemapView({
 
     const map = new maplibregl.Map({
       container,
-      style: STYLE_URL,
+      style: styleUrlRef.current,
       bounds,
       fitBoundsOptions: { padding: BASEMAP_PADDING },
       // Two-finger pan on touch, ctrl/cmd+wheel zoom on desktop: the map sits
@@ -184,9 +195,14 @@ export function BasemapView({
       onCameraRef.current?.(camera),
     );
 
-    const failTimer = setTimeout(() => {
-      if (!loadedRef.current) onFailRef.current();
-    }, LOAD_TIMEOUT_MS);
+    let failTimer: ReturnType<typeof setTimeout> | undefined;
+    const watchStyleLoad = () => {
+      clearTimeout(failTimer);
+      failTimer = setTimeout(() => {
+        if (!loadedRef.current) onFailRef.current();
+      }, LOAD_TIMEOUT_MS);
+    };
+    watchStyleLoad();
 
     map.on("error", (e) => {
       // An error before the style itself loads means no usable basemap
@@ -207,7 +223,8 @@ export function BasemapView({
       offset: 10,
     });
 
-    map.on("load", () => {
+    // A new style starts empty, so the overlays go on again with each one.
+    const addOverlays = () => {
       loadedRef.current = true;
       clearTimeout(failTimer);
 
@@ -354,23 +371,6 @@ export function BasemapView({
         },
       });
 
-      // Hover popups for the point markers ("Lap 2"). Bound only to layers
-      // that actually got added: delegated listeners on a missing layer make
-      // maplibre error on every pointer move.
-      for (const layerId of [SPLITS_LAYER, WAYPOINTS_LAYER]) {
-        if (!map.getLayer(layerId)) continue;
-        map.on("mousemove", layerId, (e) => {
-          const title = e.features?.[0]?.properties?.title;
-          if (typeof title !== "string" || title.length === 0) return;
-          map.getCanvas().style.cursor = "pointer";
-          popup.setLngLat(e.lngLat).setText(title).addTo(map);
-        });
-        map.on("mouseleave", layerId, () => {
-          map.getCanvas().style.cursor = "";
-          popup.remove();
-        });
-      }
-
       // One summary line for bug reports: which overlay layers are live.
       const missing = [
         "track-line",
@@ -387,7 +387,41 @@ export function BasemapView({
       }
 
       setLoaded(true);
+    };
+
+    map.on("load", () => {
+      addOverlays();
+
+      // Hover popups for the point markers ("Lap 2"). Bound only to layers
+      // that actually got added: delegated listeners on a missing layer make
+      // maplibre error on every pointer move.
+      for (const layerId of [SPLITS_LAYER, WAYPOINTS_LAYER]) {
+        if (!map.getLayer(layerId)) continue;
+        map.on("mousemove", layerId, (e) => {
+          const title = e.features?.[0]?.properties?.title;
+          if (typeof title !== "string" || title.length === 0) return;
+          map.getCanvas().style.cursor = "pointer";
+          popup.setLngLat(e.lngLat).setText(title).addTo(map);
+        });
+        map.on("mouseleave", layerId, () => {
+          map.getCanvas().style.cursor = "";
+          popup.remove();
+        });
+      }
     });
+
+    // Delegated hover listeners survive a style swap (MapLibre skips layers
+    // that are missing meanwhile); the overlays themselves must be re-added.
+    // Until the new style loads, an error falls back to the grid as at mount.
+    restyleRef.current = (url) => {
+      const overlaysLive = loadedRef.current;
+      loadedRef.current = false;
+      setLoaded(false);
+      watchStyleLoad();
+      map.setStyle(url, { diff: false });
+      // Before the first load, `load` itself adds them to the new style.
+      if (overlaysLive) map.once("style.load", addOverlays);
+    };
 
     const scrubAt = (lngLat: maplibregl.LngLat) => {
       if (!loadedRef.current) return;
@@ -412,12 +446,20 @@ export function BasemapView({
       clearTimeout(failTimer);
       mapRef.current = null;
       cameraRef.current = null;
+      restyleRef.current = null;
       loadedRef.current = false;
       popup.remove();
       map.remove();
     };
     // The map is created once per mount; data changes remount via key.
   }, []);
+
+  // Host theme changes swap the style on the live map, camera untouched.
+  useEffect(() => {
+    if (styleUrl === styleUrlRef.current) return;
+    styleUrlRef.current = styleUrl;
+    restyleRef.current?.(styleUrl);
+  }, [styleUrl]);
 
   // Declared after the map-creation effect so the camera exists on mount; a
   // frame that arrives before the style loads is held until it does.

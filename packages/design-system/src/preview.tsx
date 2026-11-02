@@ -75,6 +75,8 @@ export default definePreview({
       // Apply host variables to :root (mirrors what useHostStyles does in production)
       // This lets the Storybook canvas body pick up --color-background-primary
       const root = document.documentElement;
+      // ...and the theme too, which ext-apps' useDocumentTheme reads there.
+      root.setAttribute("data-theme", dataTheme);
       // Clear previous theme variables first
       for (const key of ALL_HOST_KEYS) {
         root.style.removeProperty(key);
