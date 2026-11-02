@@ -126,6 +126,8 @@ export const compareData: CompareData = {
     moving_time: "52:30",
     moving_time_s: 3150,
     pace_min_per_km: "5:16",
+    pace_min_per_100m: null,
+    speed_kmh: null,
     gap_min_per_km: "5:14",
     average_hr: 156,
     max_hr: 172,
@@ -151,6 +153,8 @@ export const compareData: CompareData = {
     moving_time: "50:00",
     moving_time_s: 3000,
     pace_min_per_km: "5:00",
+    pace_min_per_100m: null,
+    speed_kmh: null,
     gap_min_per_km: "4:58",
     average_hr: 164,
     max_hr: 181,
@@ -186,6 +190,7 @@ export const compareData: CompareData = {
     interpretation: "unchanged",
     note: "Efficiency factor in metres per minute per heartbeat, from grade-adjusted pace (intervals.icu gap) on both runs. Higher is better. Same unit as the pace-basis efficiency factor of get-aerobic-analysis.",
   },
+  weather_note: null,
 };
 
 /** HR-only pair (e.g. treadmill without footpod): time axis, single metric. */
@@ -310,4 +315,93 @@ export const compareDataManualSide: CompareData = {
     elevation_gain_m: -84,
   },
   efficiency: null,
+};
+
+/** A synthetic run refiled as a walk: no power, so speed, HR and cadence. */
+function synthWalk(options: SynthRunOptions): ActivityStreamData {
+  const run = synthRun(options);
+  const { watts: _noPower, ...streams } = run.streams;
+  return { ...run, activityType: "Walk", streams };
+}
+
+/** Two walks: the server sends km/h and a weather note, no run pace (#315). */
+export const walkPair: [ActivityStreamData, ActivityStreamData] = [
+  synthWalk({
+    activityId: "601",
+    name: "Harbour Walk • Cool",
+    seconds: 3600,
+    mps: 1.45,
+    hrBase: 104,
+    cadenceBase: 56,
+    wattsBase: 0,
+  }),
+  synthWalk({
+    activityId: "602",
+    name: "Harbour Walk • Humid",
+    seconds: 3600,
+    mps: 1.4,
+    hrBase: 115,
+    cadenceBase: 55,
+    wattsBase: 0,
+  }),
+];
+
+export const compareDataWalks: CompareData = {
+  ...compareData,
+  activity_1: {
+    ...compareData.activity_1,
+    id: "601",
+    name: "Harbour Walk • Cool",
+    type: "Walk",
+    distance_km: 5.22,
+    moving_time: "1:00:00",
+    moving_time_s: 3600,
+    pace_min_per_km: null,
+    speed_kmh: 5.2,
+    gap_min_per_km: null,
+    average_hr: 104,
+    max_hr: 118,
+    cadence_spm: 112,
+    elevation_gain_m: 31,
+    load: 18,
+    decoupling_pct: null,
+    efficiency_factor: null,
+    running_dynamics: null,
+  },
+  activity_2: {
+    ...compareData.activity_2,
+    id: "602",
+    name: "Harbour Walk • Humid",
+    type: "Walk",
+    distance_km: 5.04,
+    moving_time: "1:00:00",
+    moving_time_s: 3600,
+    pace_min_per_km: null,
+    speed_kmh: 5,
+    gap_min_per_km: null,
+    average_hr: 115,
+    max_hr: 131,
+    cadence_spm: 110,
+    elevation_gain_m: 29,
+    load: 22,
+    decoupling_pct: null,
+    efficiency_factor: null,
+    running_dynamics: null,
+  },
+  differences: {
+    distance_km: -0.18,
+    pace_delta_sec_per_km: null,
+    pace_delta_min_per_km: null,
+    pace_delta_interpretation: null,
+    avg_hr: 11,
+    cadence_spm: -2,
+    elevation_gain_m: -2,
+  },
+  efficiency: null,
+  weather_note:
+    "The dew point differs by +9.4 °C (activity 2 minus activity 1): warmer, more humid air raises heart rate at the same pace (often by 5 to 10 bpm), so part of the HR and efficiency difference can be the weather, not fitness.",
+  warnings: [
+    "Activity 1 (Harbour Walk • Cool) is not a running activity (Walk)",
+    "Activity 2 (Harbour Walk • Humid) is not a running activity (Walk)",
+  ],
 };

@@ -61,7 +61,9 @@ function AppContent({
     },
   );
 
-  const loading = streamsA.loading || streamsB.loading || compare.loading;
+  // The compare fetch reads FIT files for weather and can be slow: the
+  // overlay does not wait for it, the delta bar shows its own skeleton.
+  const loading = streamsA.loading || streamsB.loading;
   const streamError = streamsA.error ?? streamsB.error;
   const retryStreams = () => {
     if (streamsA.error || !streamsA.data) streamsA.retry();
@@ -82,6 +84,7 @@ function AppContent({
           a={streamsA.data}
           b={streamsB.data}
           compare={compare.data}
+          compareLoading={compare.loading}
           mode={mode}
           app={app ?? undefined}
           viewToolRegistry={viewToolRegistry}

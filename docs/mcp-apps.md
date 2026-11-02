@@ -557,7 +557,11 @@ each activity and its streams once (#71).
 - One metric at a time (intersection of what both recorded), distance/time
   axis toggle, legend toggles per activity line (blue/orange).
 - Delta summary header degrades away if that fetch fails while the overlay
-  still renders.
+  still renders. The overlay does not wait for it either: a bar skeleton
+  holds the delta bar's place while it loads (#315).
+- A pair with no run pace gets a Speed (km/h) or `/100m` Pace tile per side,
+  and the payload's `weather_note` shows under the delta bar and in the model
+  context, as in the text tool.
 - A stream-less side (`noStreams: true`, #65) is data, not an error: it keeps
   the delta tiles and shows the overlay EmptyState, with no retry.
 - `set-metric` (`metric`, `axis`) lets the model choose the overlay. A metric

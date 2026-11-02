@@ -48,6 +48,7 @@ export function buildCompareContextSummary(
     );
   }
   if (deltas.length) parts.push(`Deltas (2 vs 1): ${deltas.join(", ")}.`);
+  if (compare.weather_note) parts.push(compare.weather_note);
 
   return parts.join(" ");
 }

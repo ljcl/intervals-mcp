@@ -45,6 +45,10 @@ export interface CompareSide {
   /** Moving time in seconds. */
   moving_time_s: number;
   pace_min_per_km: string | null;
+  /** `m:ss` per 100 m: swims only. */
+  pace_min_per_100m: string | null;
+  /** Every type that is neither a run nor a swim. */
+  speed_kmh: number | null;
   gap_min_per_km: string | null;
   average_hr: number | null;
   max_hr: number | null;
@@ -85,6 +89,8 @@ export interface CompareData {
     interpretation: string;
     note: string;
   } | null;
+  /** Why an HR difference may be the weather, when the dew point or temperature differs enough. */
+  weather_note: string | null;
   warnings?: string[];
 }
 
