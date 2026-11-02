@@ -1,7 +1,7 @@
 /**
  * Maps intervals.icu `icu_intervals` to lap entries, the one home for this
  * transform. intervals.icu has no lap list of its own: `icu_intervals`
- * (fetched via `getActivity(apiKey, id, { intervals: true })`) is what
+ * (always fetched by `getActivity`) is what
  * mirrors the device's laps, usually one WORK interval per recorded lap plus
  * any auto-inserted RECOVERY between them (a 12-lap run can come back as 18
  * intervals; see docs/api-notes.md). `get-activity-laps` is the first

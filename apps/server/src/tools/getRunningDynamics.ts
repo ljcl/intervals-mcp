@@ -390,9 +390,7 @@ export const getRunningDynamicsTool = {
   ) => {
     try {
       progress(`Fetching activity ${id}`);
-      const activity = await getActivityClient(apiKey, id, {
-        intervals: true,
-      });
+      const activity = await getActivityClient(apiKey, id);
 
       const lapCount = activity.icu_intervals?.length ?? 0;
       if (fromLap > 1 && fromLap > lapCount) {

@@ -526,9 +526,7 @@ describe("getRunningSummaryTool.execute", () => {
       "key",
     );
 
-    expect(mockedGetActivity).toHaveBeenCalledWith("key", "i189807578", {
-      intervals: true,
-    });
+    expect(mockedGetActivity).toHaveBeenCalledWith("key", "i189807578");
     expect(mockedGetSportSettings).toHaveBeenCalledWith("key", "Run");
     expect(result.isError).toBeUndefined();
     expect(result.structuredContent?.id).toBe("i189807578");

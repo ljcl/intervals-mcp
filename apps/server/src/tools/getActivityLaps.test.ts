@@ -101,9 +101,7 @@ describe("getActivityLapsTool.execute", () => {
       "test-key",
     );
 
-    expect(mockedGetActivity).toHaveBeenCalledWith("test-key", "i189757183", {
-      intervals: true,
-    });
+    expect(mockedGetActivity).toHaveBeenCalledWith("test-key", "i189757183");
 
     const structured = result.structuredContent as unknown as Record<
       string,

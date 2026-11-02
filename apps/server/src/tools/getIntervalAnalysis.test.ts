@@ -266,9 +266,7 @@ describe("get-interval-analysis", () => {
       "test-key",
     );
 
-    expect(mockedGetActivity).toHaveBeenCalledWith("test-key", "i189757183", {
-      intervals: true,
-    });
+    expect(mockedGetActivity).toHaveBeenCalledWith("test-key", "i189757183");
     const requestedTypes = mockedGetActivityStreams.mock.calls[0]![2];
     for (const type of [
       "time",

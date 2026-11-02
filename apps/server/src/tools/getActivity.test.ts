@@ -886,9 +886,7 @@ describe("getActivityTool.execute", () => {
       "key",
     );
 
-    expect(mockedGetActivity).toHaveBeenCalledWith("key", "i189807578", {
-      intervals: true,
-    });
+    expect(mockedGetActivity).toHaveBeenCalledWith("key", "i189807578");
     expect(mockedGetSportSettings).toHaveBeenCalledWith("key", "Run");
     expect(result.isError).toBeUndefined();
     expect(result.structuredContent?.id).toBe("i189807578");
@@ -896,18 +894,19 @@ describe("getActivityTool.execute", () => {
     expect(result.structuredContent?.intervals).toHaveLength(2);
   });
 
-  it("passes includeIntervals through to the client", async () => {
-    mockedGetActivity.mockResolvedValueOnce(runActivity);
+  it("leaves the intervals out when includeIntervals is false (#322)", async () => {
+    // The read always carries them; includeIntervals only decides the output.
+    mockedGetActivity.mockResolvedValueOnce(runActivityWithIntervals);
     mockedGetSportSettings.mockResolvedValueOnce(sportSettingsRun);
 
-    await getActivityTool.execute(
+    const result = await getActivityTool.execute(
       { id: "i189807578", includeIntervals: false },
       "key",
     );
 
-    expect(mockedGetActivity).toHaveBeenCalledWith("key", "i189807578", {
-      intervals: false,
-    });
+    expect(mockedGetActivity).toHaveBeenCalledWith("key", "i189807578");
+    expect(result.structuredContent?.intervals).toBeNull();
+    expect(result.structuredContent?.interval_count).toBeNull();
   });
 
   it("still builds hr_zones from the activity's own zones when sport settings fail", async () => {

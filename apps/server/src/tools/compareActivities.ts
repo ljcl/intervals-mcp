@@ -254,10 +254,9 @@ async function loadSideSplits(
 /**
  * Reads both activities, their weather and their splits, and builds the
  * comparison. The one loader for compare-activities and the compare app's
- * data tool, so the two can never disagree. Each activity is read with
- * `intervals: true`, the same URL as the app's stream overlay reads, and the
- * streams through the shared adapter, so a chat that uses them together
- * reads each once.
+ * data tool, so the two can never disagree. Each activity is read through
+ * `getActivity`'s one URL and the streams through the shared adapter, so a
+ * chat that uses them together reads each once.
  */
 export async function loadComparison(
   apiKey: string,
@@ -266,8 +265,8 @@ export async function loadComparison(
   progress: ReportProgress = NO_PROGRESS,
 ): Promise<ComparisonResult> {
   const [activity1, activity2] = await Promise.all([
-    getActivity(apiKey, id1, { intervals: true }),
-    getActivity(apiKey, id2, { intervals: true }),
+    getActivity(apiKey, id1),
+    getActivity(apiKey, id2),
   ]);
   progress("Reading weather and streams for both activities");
   // The per-km table needs two runs: with a non-run on either side, neither

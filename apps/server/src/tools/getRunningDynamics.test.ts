@@ -259,9 +259,7 @@ describe("getRunningDynamicsTool.execute", () => {
       "test-key",
     );
 
-    expect(mockedGetActivity).toHaveBeenCalledWith("test-key", "i189807578", {
-      intervals: true,
-    });
+    expect(mockedGetActivity).toHaveBeenCalledWith("test-key", "i189807578");
     expect(result.isError).toBeUndefined();
     expect(result.structuredContent?.has_dynamics).toBe(true);
     expect(result.structuredContent?.intervals).toHaveLength(1);

@@ -466,7 +466,7 @@ export const getIntervalAnalysisTool = {
   ) => {
     try {
       progress(`Fetching activity ${id}`);
-      const activity = await getActivity(apiKey, id, { intervals: true });
+      const activity = await getActivity(apiKey, id);
       const type = activity.type ?? "Workout";
       const displayName = activity.name ?? type;
 

@@ -122,9 +122,7 @@ describe("app handlers with no key configured", () => {
     await dispatchToolCall("view-activity-chart", { id: "i123" });
 
     expect(mockedToken).toHaveBeenCalledTimes(1);
-    expect(mockedIntervalsActivity).toHaveBeenCalledWith("test-token", "i123", {
-      intervals: true,
-    });
+    expect(mockedIntervalsActivity).toHaveBeenCalledWith("test-token", "i123");
   });
 
   it("does not run the handler when the key cannot be resolved", async () => {
@@ -154,11 +152,7 @@ describe("view-activity-chart", () => {
     expect(text).toContain("Activity: Morning Run");
     expect(text).toContain("Distance: 10.00 km");
     expect(text).not.toContain("No recorded streams");
-    // Same fetch options as get-activity-streams-raw (intervals: true), so
-    // the two share one cache entry.
-    expect(mockedIntervalsActivity).toHaveBeenCalledWith("test-token", "i123", {
-      intervals: true,
-    });
+    expect(mockedIntervalsActivity).toHaveBeenCalledWith("test-token", "i123");
   });
 
   it("surfaces an intervals.icu failure as a structured tool error", async () => {
@@ -283,9 +277,7 @@ describe("get-activity-streams-raw", () => {
         lapIndex: 1,
       },
     ]);
-    expect(mockedIntervalsActivity).toHaveBeenCalledWith("test-token", "i123", {
-      intervals: true,
-    });
+    expect(mockedIntervalsActivity).toHaveBeenCalledWith("test-token", "i123");
   });
 
   it("returns a valid empty payload for an activity with no streams", async () => {
@@ -2039,7 +2031,7 @@ describe("compare activities handlers", () => {
   });
 
   it.each(["view-compare-activities", "get-compare-activities-data"])(
-    "%s reads each activity with the app's streams URL (intervals: true)",
+    "%s reads each activity once",
     async (tool) => {
       // The view's twin answers, so the view never loads its own copy.
       mockedIntervalsActivity
@@ -2052,20 +2044,13 @@ describe("compare activities handlers", () => {
         { client: { rendersApps: true } },
       );
 
-      // Same options as get-activity-streams-raw, so opening the app reads
-      // each activity once (#71); server.streamSharing.test.ts counts that
-      // at the wire. Here the mocked client has no cache, so this counts
-      // the reads the call itself makes: one per activity.
+      // server.streamSharing.test.ts counts the shared reads at the wire
+      // (#71). Here the mocked client has no cache, so this counts the reads
+      // the call itself makes: one per activity.
       expect(result.isError).toBeUndefined();
       expect(mockedIntervalsActivity).toHaveBeenCalledTimes(2);
-      for (const call of mockedIntervalsActivity.mock.calls)
-        expect(call[2]).toEqual({ intervals: true });
-      expect(mockedIntervalsActivity).toHaveBeenCalledWith("test-token", "i1", {
-        intervals: true,
-      });
-      expect(mockedIntervalsActivity).toHaveBeenCalledWith("test-token", "i2", {
-        intervals: true,
-      });
+      expect(mockedIntervalsActivity).toHaveBeenCalledWith("test-token", "i1");
+      expect(mockedIntervalsActivity).toHaveBeenCalledWith("test-token", "i2");
     },
   );
 

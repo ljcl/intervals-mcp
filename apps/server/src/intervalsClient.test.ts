@@ -121,9 +121,7 @@ describe("intervalsClient", () => {
       ).length,
     ).toBe(activities.length);
     mockJson(activity);
-    expect((await getActivity("k", "i189807578", { intervals: true })).id).toBe(
-      activity.id,
-    );
+    expect((await getActivity("k", "i189807578")).id).toBe(activity.id);
     mockJson(intervals);
     const parsedIntervals = (await getActivityIntervals("k", "i189807578"))
       .icu_intervals;

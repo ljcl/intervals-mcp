@@ -197,9 +197,10 @@ Everything else is left uncached.
   entry for free. An epoch-based bound would key every call uniquely and the
   TTL would never hit; a calendar-day string already has coarse enough
   granularity that it doesn't.
-- Cache key is the full URL (query included, so date windows and detail
-  options such as `?intervals=true` stay separate); TTL and invalidation match
-  the query-stripped path.
+- Cache key is the full URL (query included, so date windows stay
+  separate); TTL and invalidation match the query-stripped path. So one
+  resource is read through one URL: `getActivity` always asks for
+  `?intervals=true` (#322) and `loadIntervalsStreams` for one superset (#71).
 - A successful write invalidates every cached read on the same branch —
   descendants (so `update-activity` drops the activity's cached
   detail/streams/zones/laps) **and** ancestors, since a write to a

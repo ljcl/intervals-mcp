@@ -1,9 +1,10 @@
 /**
- * One streams read per activity across tools and apps (#71), counted at the
- * wire. The real FetchClient runs with its cache and in-flight map, so these
- * tests pin what a chat really costs intervals.icu: every stream read asks
- * for the one superset URL (`loadIntervalsStreams`), and compare reads each
- * activity with the same `?intervals=true` URL as the app's streams calls.
+ * One streams read (#71) and one detail read (#322) per activity across
+ * tools and apps, counted at the wire. The real FetchClient runs with its
+ * cache and in-flight map, so these tests pin what a chat really costs
+ * intervals.icu: every stream read asks for the one superset URL
+ * (`loadIntervalsStreams`), and every detail read for the one
+ * `?intervals=true` URL (`getActivity`).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildFitFile } from "./__fixtures__/fitFile";
@@ -220,6 +221,24 @@ describe("one streams read per activity (#71)", () => {
     await dispatchInSequence([["get-hill-analysis", { id: MULTILAP_ID }]]);
 
     expect(streamReads()).toHaveLength(2);
+  });
+});
+
+describe("one detail read per activity (#322)", () => {
+  it("serves every one-activity tool and app from one read", async () => {
+    await dispatchInSequence([
+      ...ONE_ACTIVITY_CALLS,
+      ["get-running-summary", { id: MULTILAP_ID }],
+      ["view-route-map", { id: MULTILAP_ID }],
+    ]);
+
+    expect(detailReads(MULTILAP_ID)).toHaveLength(1);
+  });
+
+  it("reads the activity once for a cold view-activity-chart", async () => {
+    await dispatchInSequence([["view-activity-chart", { id: MULTILAP_ID }]]);
+
+    expect(detailReads(MULTILAP_ID)).toHaveLength(1);
   });
 });
 
