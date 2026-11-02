@@ -53,3 +53,25 @@ export function Pill({ active, onClick, children, value }: PillProps) {
     </Toggle>
   );
 }
+
+interface PillButtonProps {
+  onClick: () => void;
+  children: ReactNode;
+}
+
+/**
+ * A one-shot action with the pill look. A plain button, not a Toggle: a
+ * Toggle announces a pressed state the action never has.
+ */
+export function PillButton({ onClick, children }: PillButtonProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={styles.pill}
+      data-action=""
+    >
+      {children}
+    </button>
+  );
+}

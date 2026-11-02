@@ -1,5 +1,5 @@
 import styles from "./ErrorState.module.css";
-import { Pill, PillGroup } from "./Pill";
+import { PillButton } from "./Pill";
 
 export interface ErrorStateProps {
   message: string;
@@ -16,11 +16,7 @@ export function ErrorState({ message, onRetry }: ErrorStateProps) {
   return (
     <div className={styles.errorState} role="alert">
       <div className={styles.message}>{message}</div>
-      {onRetry && (
-        <PillGroup>
-          <Pill onClick={onRetry}>Try again</Pill>
-        </PillGroup>
-      )}
+      {onRetry && <PillButton onClick={onRetry}>Try again</PillButton>}
     </div>
   );
 }
