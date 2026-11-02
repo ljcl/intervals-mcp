@@ -596,6 +596,7 @@ const CASES: Record<string, SizeCase[]> = {
   "view-activity-chart": [{ label: "default", args: { id: ID } }],
   "view-cadence-trends": [{ label: "728 days", args: { days: 728 } }],
   "view-route-map": [{ label: "default", args: { id: ID } }],
+  "view-route-suggestions": [{ label: "default", args: {} }],
   "view-training-load": [{ label: "365 days", args: { days: 365 } }],
   "view-fitness-trend": [{ label: "365 days", args: { days: 365 } }],
   "view-activity-zones": [{ label: "default", args: { id: ID } }],

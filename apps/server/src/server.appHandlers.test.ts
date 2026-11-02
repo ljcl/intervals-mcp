@@ -7,6 +7,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import sportSettingsFixture from "./__fixtures__/intervals/sport-settings.json";
+import { routeSuggestionsFixture } from "./__fixtures__/routeSuggestions";
 import { viewHeader } from "./clientCapabilities";
 import { RateLimitError } from "./fetchClient";
 import {
@@ -26,6 +27,11 @@ import {
   splitDateRangeIntoWindows,
 } from "./intervalsClient";
 import { addDays } from "./utils/localDate";
+
+vi.mock("./routeSuggestions", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./routeSuggestions")>()),
+  loadRouteSuggestions: vi.fn(),
+}));
 
 vi.mock("./intervalsClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./intervalsClient")>();
@@ -58,6 +64,8 @@ vi.mock("./config", async (importOriginal) => {
 
 // Import after the mocks so server.ts's modules see the mocked client.
 const { dispatchToolCall } = await import("./server");
+const { loadRouteSuggestions } = await import("./routeSuggestions");
+const mockedRouteSuggestions = vi.mocked(loadRouteSuggestions);
 const { getIntervalsApiKey, MissingApiKeyError } = await import("./config");
 const mockedToken = vi.mocked(getIntervalsApiKey);
 
@@ -93,6 +101,8 @@ const APP_TOOL_CALLS: Array<[string, Record<string, unknown>]> = [
   ["get-cadence-trend-data", {}],
   ["view-route-map", { id: "123" }],
   ["get-route-map-data", { id: "123" }],
+  ["view-route-suggestions", {}],
+  ["get-route-suggestions-data", {}],
   ["view-training-load", {}],
   ["get-training-load-data", {}],
   ["view-activity-zones", { id: "123" }],
@@ -1850,6 +1860,72 @@ describe("route map handlers", () => {
     expect(text).not.toContain("map will be empty");
   });
 
+  it("get-route-suggestions-data maps the first run with days 1", async () => {
+    const coordinates: Array<[number, number]> = [
+      [37.79, -122.39],
+      [37.8, -122.39],
+      [37.79, -122.39],
+    ];
+    mockedRouteSuggestions.mockResolvedValueOnce({
+      generation_available: true,
+      warnings: [],
+      runs: [
+        {
+          event_id: 1,
+          date: "2026-11-05",
+          name: "Easy",
+          description: null,
+          distance_m: 2200,
+          distance_source: "event",
+          start: {
+            label: "Start",
+            point: [37.79, -122.39],
+            source: "inferred",
+            history_runs: 3,
+          },
+          end: null,
+          via: null,
+          shape: "loop",
+          terrain: "flat",
+          candidates: [
+            {
+              kind: "generated",
+              activity_id: null,
+              name: "New loop",
+              date: null,
+              shape: "loop",
+              distance_m: 2200,
+              climb_m: 5,
+              path_share: 0.6,
+              crossings_per_km: null,
+              hill: null,
+              summary: "via A",
+              track: {
+                coordinates,
+                distance: [0, 1100, 2200],
+                altitude: [5, 10, 5],
+              },
+            },
+          ],
+          warnings: [],
+        },
+      ],
+    });
+
+    const result = await dispatchToolCall("get-route-suggestions-data", {
+      terrain: "flat",
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect(mockedRouteSuggestions.mock.calls[0]![1]).toMatchObject({
+      terrain: "flat",
+      days: 1,
+    });
+    const parsed = JSON.parse(result.content[0]?.text ?? "");
+    expect(parsed.source).toBe("suggestion");
+    expect(parsed.candidates[0].map.coordinates).toHaveLength(3);
+  });
+
   it("get-route-map-data returns coordinates from the latlng stream with aligned metrics", async () => {
     mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
     mockedIntervalsStreams.mockResolvedValueOnce(routeMapStreamsFixture());
@@ -2437,6 +2513,16 @@ describe("view tools and hosts that cannot render MCP Apps (#77)", () => {
       footer: "get-activity",
       twin: { name: "get-hill-analysis", args: { id: "123" } },
       keepLines: true,
+    },
+    {
+      name: "view-route-suggestions",
+      args: {},
+      arrange: () => {
+        mockedRouteSuggestions.mockResolvedValue(routeSuggestionsFixture(1));
+      },
+      kind: "route suggestions map",
+      footer: "suggest-run-route",
+      twin: { name: "suggest-run-route", args: {} },
     },
     {
       name: "view-compare-activities",

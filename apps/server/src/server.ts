@@ -75,7 +75,16 @@ import {
   type ReportProgress,
 } from "./progress";
 import { completePromptArgument, getPrompt, listPrompts } from "./prompts";
-import { buildRouteMapData, type RouteMapData } from "./routeMapData";
+import {
+  buildRouteMapData,
+  buildSuggestionsMapData,
+  type RouteMapData,
+} from "./routeMapData";
+import {
+  loadRouteSuggestions,
+  type RouteSuggestionArgs,
+  RouteSuggestionError,
+} from "./routeSuggestions";
 import {
   ERROR_RESULT_CLASS,
   parseTraceparent,
@@ -118,7 +127,10 @@ import { getTrainingLoadTool } from "./tools/getTrainingLoad";
 import { getWellnessTool } from "./tools/getWellness";
 import { listActivitiesTool } from "./tools/listActivities";
 import { listGearTool } from "./tools/listGear";
-import { suggestRunRouteTool } from "./tools/suggestRunRoute";
+import {
+  routeSuggestionEnv,
+  suggestRunRouteTool,
+} from "./tools/suggestRunRoute";
 import { updateActivityTool } from "./tools/updateActivity";
 import { updateGearTool } from "./tools/updateGear";
 import { updateWellnessTool } from "./tools/updateWellness";
@@ -323,6 +335,12 @@ const APP_TOOL_INPUT_SCHEMAS: Record<string, z.ZodType> = {
   "get-route-map-data": z.object({
     id: intervalsActivityIdInput("The intervals.icu activity id."),
     waypoints: waypointsInput,
+  }),
+  "view-route-suggestions": suggestRunRouteTool.inputSchema.omit({
+    days: true,
+  }),
+  "get-route-suggestions-data": suggestRunRouteTool.inputSchema.omit({
+    days: true,
   }),
   "view-training-load": trainingLoadInput,
   "get-training-load-data": trainingLoadInput,
@@ -606,6 +624,34 @@ function buildToolDefs(): ToolDef[] {
         resourceUri: "ui://route-map/app.html",
         visibility: ["app"],
       },
+    },
+  });
+
+  defs.push({
+    name: "view-route-suggestions",
+    title: "Route suggestions map",
+    description:
+      "Open a map of where to run a planned run: the athlete's own past runs from that start and new routes, with a picker, an elevation strip and any hill for repeats marked. " +
+      "Takes the same arguments as suggest-run-route (one run), and its result carries that tool's text, so no second call is needed.",
+    inputSchema: toInputSchema(
+      APP_TOOL_INPUT_SCHEMAS["view-route-suggestions"]!,
+    ),
+    annotations: READ_ONLY,
+    _meta: { ui: { resourceUri: "ui://route-map/app.html" } },
+  });
+
+  defs.push({
+    name: "get-route-suggestions-data",
+    title: "Route suggestions map data",
+    description:
+      "Internal data feed for the route-map UI's suggestion mode: one planned run's candidate routes as route-map payloads (coordinates, distance and altitude streams, hill and via markers) as JSON. " +
+      "The view-route-suggestions app calls this; not intended for direct model use.",
+    inputSchema: toInputSchema(
+      APP_TOOL_INPUT_SCHEMAS["get-route-suggestions-data"]!,
+    ),
+    annotations: READ_ONLY,
+    _meta: {
+      ui: { resourceUri: "ui://route-map/app.html", visibility: ["app"] },
     },
   });
 
@@ -1549,6 +1595,43 @@ async function handleGetRouteMapData(
   return { content: [{ type: "text", text: JSON.stringify(data) }] };
 }
 
+async function handleGetRouteSuggestionsData(
+  args: Record<string, unknown>,
+  token: string,
+  progress: ReportProgress,
+): Promise<ToolCallResult> {
+  const suggestions = await loadRouteSuggestions(
+    token,
+    { ...(args as RouteSuggestionArgs), days: 1 },
+    routeSuggestionEnv(),
+    progress,
+  );
+  const run = suggestions.runs[0];
+  if (!run) throw new RouteSuggestionError("No planned run to map.");
+  const data = buildSuggestionsMapData(run, suggestions.warnings);
+  return { content: [{ type: "text", text: JSON.stringify(data) }] };
+}
+
+async function handleViewRouteSuggestions(
+  args: Record<string, unknown>,
+  token: string,
+  progress: ReportProgress,
+  context: ToolCallContext,
+): Promise<ToolCallResult> {
+  return viewResult(
+    async () => ["No route suggestions could be made for these arguments."],
+    {
+      kind: "route suggestions map",
+      footer: suggestRunRouteTool.name,
+      twin: suggestRunRouteTool.name,
+    },
+    args,
+    token,
+    progress,
+    context,
+  );
+}
+
 async function handleViewRouteMap(
   args: Record<string, unknown>,
   token: string,
@@ -1690,6 +1773,8 @@ const APP_TOOL_HANDLERS: Record<
   "get-cadence-trend-data": handleGetCadenceTrendData,
   "view-route-map": handleViewRouteMap,
   "get-route-map-data": handleGetRouteMapData,
+  "view-route-suggestions": handleViewRouteSuggestions,
+  "get-route-suggestions-data": handleGetRouteSuggestionsData,
   "view-training-load": handleViewTrainingLoad,
   "get-training-load-data": handleGetTrainingLoadData,
   "view-fitness-trend": handleViewFitnessTrend,
