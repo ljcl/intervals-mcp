@@ -1,6 +1,6 @@
 import { handleHealth } from "./health";
 import { foreignOriginResponse, unauthorizedMcpResponse } from "./mcpAuth";
-import { type McpEndpoint } from "./mcpEndpoint";
+import { MAX_REQUEST_BODY_BYTES, type McpEndpoint } from "./mcpEndpoint";
 
 /**
  * Seconds a connection may send nothing before `Bun.serve` closes it.
@@ -26,12 +26,12 @@ export const IDLE_TIMEOUT_SECONDS = 120;
 export const SHUTDOWN_GRACE_MS = 8_000;
 
 /**
- * Largest request body `Bun.serve` reads; a larger one gets 413 before it is
- * read. The endpoint parses every body itself and hands the SDK `parsedBody`,
- * which skips the SDK's own 4 MiB limit, so without this Bun's 128 MiB
- * default applied. A tool call's arguments are a few hundred bytes.
+ * Bun's own body limit, a backstop above the endpoint's
+ * `MAX_REQUEST_BODY_BYTES`, which answers anything over that with a JSON-RPC
+ * 413 and a log line. Bun refuses a sized body over this one before `fetch`
+ * runs, with an empty 413 and no line, and cuts a chunked one short.
  */
-export const MAX_REQUEST_BODY_BYTES = 4 * 1024 * 1024;
+export const BUN_MAX_REQUEST_BODY_BYTES = 4 * MAX_REQUEST_BODY_BYTES;
 
 /** Routes one request: `/mcp` behind the optional bearer secret, `/health`, else 404. */
 export function routeRequest(
@@ -61,7 +61,7 @@ export function serveOptions(
   return {
     ...listen,
     idleTimeout: IDLE_TIMEOUT_SECONDS,
-    maxRequestBodySize: MAX_REQUEST_BODY_BYTES,
+    maxRequestBodySize: BUN_MAX_REQUEST_BODY_BYTES,
     fetch: (req: Request) => routeRequest(mcp, req),
   };
 }

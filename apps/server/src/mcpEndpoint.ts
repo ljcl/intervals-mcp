@@ -4,6 +4,7 @@ import {
   createMcpHandler,
   type McpRequestContext,
   PROTOCOL_VERSION_META_KEY,
+  readRequestBody,
   type Server,
   TRACEPARENT_META_KEY,
 } from "@modelcontextprotocol/server";
@@ -16,6 +17,16 @@ import {
 
 /** JSON-RPC error code used by the raw HTTP layer (before the SDK sees the body). */
 const PARSE_ERROR = -32700;
+
+/** The SDK's code for a body over the limit, which its own reader would answer. */
+const BODY_TOO_LARGE = -32000;
+
+/**
+ * Largest request body the endpoint reads; a larger one gets a JSON-RPC 413.
+ * The endpoint parses every body itself and hands the SDK `parsedBody`, which
+ * skips the SDK's own limit. A tool call's arguments are a few hundred bytes.
+ */
+export const MAX_REQUEST_BODY_BYTES = 4 * 1024 * 1024;
 
 /**
  * Interval of the SSE keep-alive comment on a streamed response (a tool call
@@ -76,8 +87,10 @@ export interface McpEndpoint {
  * see it. When the exact digits do reach us they survive as a string, which
  * the id schemas accept losslessly.
  *
- * Every answer of HTTP 400 or above, except a client-closed 499, writes one
- * `mcp_rejected` line (#69). Errors the SDK reports while it builds the answer
+ * Every answer of HTTP 400 or above writes one `mcp_rejected` line (#69),
+ * except a client-closed 499 and the 405 to a GET or DELETE: that is the
+ * spec's "no standalone stream" answer, and claude.ai's 2025-era app loader
+ * sends one per chart card (#325). Errors the SDK reports while it builds the answer
  * go into that line, not into a second one. The `Authorization` header is
  * never read here.
  */
@@ -111,21 +124,40 @@ export function createMcpEndpoint(
             handler.fetch(req),
           );
         } else {
-          // A malformed body must surface as a JSON-RPC parse error. Letting
-          // req.json() reject unhandled instead answers a bare 500, which tells
-          // the client nothing about what it got wrong.
-          let parsed = false;
+          // A sized body over the limit is refused unread, a chunked one as
+          // soon as it passes it. A failed read is Bun's own body limit
+          // (httpServer.ts) cutting a chunked body short.
+          let text: string | undefined;
           try {
-            body = parseJsonWithLargeInts(await req.text());
-            parsed = true;
+            const read = await readRequestBody(req, MAX_REQUEST_BODY_BYTES);
+            text = read.tooLarge ? undefined : read.text;
           } catch {
             // Answered below.
           }
-          response = parsed
-            ? await exchangeReports.run(report, () =>
-                handler.fetch(req, { parsedBody: body }),
-              )
-            : jsonRpcError(PARSE_ERROR, "Parse error: invalid JSON", 400);
+          // A malformed body must surface as a JSON-RPC parse error. Letting
+          // the parse reject unhandled instead answers a bare 500, which tells
+          // the client nothing about what it got wrong.
+          let parsed = false;
+          if (text !== undefined) {
+            try {
+              body = parseJsonWithLargeInts(text);
+              parsed = true;
+            } catch {
+              // Answered below.
+            }
+          }
+          response =
+            text === undefined
+              ? jsonRpcError(
+                  BODY_TOO_LARGE,
+                  `Payload Too Large: Request body must not exceed ${MAX_REQUEST_BODY_BYTES} bytes`,
+                  413,
+                )
+              : parsed
+                ? await exchangeReports.run(report, () =>
+                    handler.fetch(req, { parsedBody: body }),
+                  )
+                : jsonRpcError(PARSE_ERROR, "Parse error: invalid JSON", 400);
         }
       } finally {
         report.answered = true;
@@ -142,7 +174,7 @@ export function createMcpEndpoint(
  * line, with the first reported error as its reason and, for a 5xx, its
  * stack. Any other exchange prints the SDK's reports as before. A 499 is the
  * client leaving: the `tool_call` line says "cancelled" and the SDK does not
- * report it. Never throws.
+ * report it. A 405 to GET or DELETE is a served answer. Never throws.
  */
 async function reportExchange(
   req: Request,
@@ -151,7 +183,12 @@ async function reportExchange(
   errors: Error[],
 ): Promise<void> {
   try {
-    if (response.status < 400 || response.status === 499) {
+    if (
+      response.status < 400 ||
+      response.status === 499 ||
+      (response.status === 405 &&
+        (req.method === "GET" || req.method === "DELETE"))
+    ) {
       for (const error of errors) console.error("MCP handler error:", error);
       return;
     }

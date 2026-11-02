@@ -56,10 +56,14 @@ Related docs: [mcp-apps.md](mcp-apps.md) for the UI packages,
   `httpServer.test.ts` checks that. A plain JSON reply that is slow to start
   is not cut (verified on Bun 1.4.2). The protocol tests call
   `handleRequest` directly, so they cannot see this.
-- `maxRequestBodySize` (4 MiB, `MAX_REQUEST_BODY_BYTES`) makes Bun answer
-  413 before reading an oversized body. The endpoint parses every body
-  itself and passes the SDK `parsedBody`, which skips the SDK's own limit,
-  so without it Bun's 128 MiB default applied (#265).
+- The endpoint parses every body itself and passes the SDK `parsedBody`,
+  which skips the SDK's own limit, so it reads with the SDK's
+  `readRequestBody` capped at `MAX_REQUEST_BODY_BYTES` (4 MiB,
+  `mcpEndpoint.ts`): a declared size over it is refused unread, a chunked
+  body as soon as it passes it, both as a JSON-RPC 413 with an
+  `mcp_rejected` line (#265, #325). `maxRequestBodySize`
+  (`BUN_MAX_REQUEST_BODY_BYTES`, 16 MiB) is Bun's backstop above it; a body
+  declaring more is refused before `fetch` runs, with no line.
 - Shutdown drains (`createShutdown`, `httpServer.ts`). On SIGTERM or SIGINT,
   `server.stop()` refuses new connections at once and resolves when the
   requests in flight finish. Shutdown waits for that for up to
@@ -705,7 +709,9 @@ no `notifications/message`.
 ### Rejected requests
 
 `mcpEndpoint.ts` writes one `mcp_rejected` line for each answer of HTTP 400 or
-above, except a client-closed 499 (#69). The SDK reports a handler failure
+above, except a client-closed 499 (#69) and the 405 to a GET or DELETE, the
+spec's "no standalone stream" answer that claude.ai's 2025-era app loader
+gets once per chart card (#325). The SDK reports a handler failure
 through `onerror` while it builds the response. A private, exchange-scoped
 `AsyncLocalStorage` (unrelated to `callScope.ts`) collects those reports for
 the exchange that caused them. `handleRequest` reads them once the response

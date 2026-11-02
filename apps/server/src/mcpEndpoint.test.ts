@@ -8,7 +8,11 @@
  */
 import { Server } from "@modelcontextprotocol/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createMcpEndpoint, type McpEndpoint } from "./mcpEndpoint";
+import {
+  createMcpEndpoint,
+  MAX_REQUEST_BODY_BYTES,
+  type McpEndpoint,
+} from "./mcpEndpoint";
 import { parseResponse } from "./mcpTestClient";
 
 const MCP_URL = "http://localhost/mcp";
@@ -403,13 +407,95 @@ describe("rejected requests (#69)", () => {
     ]);
   });
 
-  it("logs a GET as 405", async () => {
-    await makeEndpoint().handleRequest(new Request(MCP_URL, { method: "GET" }));
+  it("writes no line for the 405 to a GET or DELETE (#325)", async () => {
+    // claude.ai's 2025-era app loader sends one GET per chart card.
+    for (const method of ["GET", "DELETE"]) {
+      const response = await makeEndpoint().handleRequest(
+        new Request(MCP_URL, { method }),
+      );
+      expect(response.status, method).toBe(405);
+    }
 
-    expect(console.error).toHaveBeenCalledTimes(1);
+    expect(console.error).not.toHaveBeenCalled();
+  });
+
+  it("still logs a 405 to another method", async () => {
+    await makeEndpoint().handleRequest(new Request(MCP_URL, { method: "PUT" }));
+
     expect(rejected()).toEqual([
-      expect.objectContaining({ status: 405, http_method: "GET" }),
+      expect.objectContaining({ status: 405, http_method: "PUT" }),
     ]);
+  });
+
+  describe("an oversized body (#325)", () => {
+    const oversized = "x".repeat(MAX_REQUEST_BODY_BYTES + 1);
+
+    /** A body with no Content-Length, sent in 64 KiB chunks. */
+    function chunked(text: string): ReadableStream<Uint8Array> {
+      const bytes = new TextEncoder().encode(text);
+      let offset = 0;
+      return new ReadableStream({
+        pull(controller) {
+          if (offset >= bytes.length) return controller.close();
+          controller.enqueue(bytes.subarray(offset, offset + 65_536));
+          offset += 65_536;
+        },
+      });
+    }
+
+    async function expectTooLarge(request: Request): Promise<void> {
+      const response = await makeEndpoint().handleRequest(request);
+
+      expect(response.status).toBe(413);
+      expect((await response.json()).error.code).toBe(-32000);
+      expect(console.error).toHaveBeenCalledTimes(1);
+      expect(rejected()).toEqual([
+        expect.objectContaining({
+          status: 413,
+          code: -32000,
+          http_method: "POST",
+          reason: expect.stringContaining("Payload Too Large"),
+        }),
+      ]);
+    }
+
+    it("answers a sized body 413 before reading it", async () => {
+      const pull = vi.fn();
+      await expectTooLarge(
+        new Request(MCP_URL, {
+          method: "POST",
+          headers: { "content-length": String(oversized.length) },
+          // highWaterMark 0: the stream pulls only when something reads it.
+          body: new ReadableStream({ pull }, { highWaterMark: 0 }),
+          duplex: "half",
+        } as RequestInit),
+      );
+      expect(pull).not.toHaveBeenCalled();
+    });
+
+    it("answers a chunked body 413 once it passes the limit", async () => {
+      await expectTooLarge(
+        new Request(MCP_URL, {
+          method: "POST",
+          body: chunked(oversized),
+          duplex: "half",
+        } as RequestInit),
+      );
+    });
+
+    it("answers 413 when the body stream fails (Bun's own limit)", async () => {
+      await expectTooLarge(
+        new Request(MCP_URL, {
+          method: "POST",
+          body: new ReadableStream({
+            pull(controller) {
+              controller.error(new Error("body too large"));
+            },
+          }),
+          duplex: "half",
+        } as RequestInit),
+      );
+    });
   });
 
   it("logs an Mcp-Name mismatch with the envelope's client", async () => {

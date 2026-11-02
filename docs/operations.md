@@ -234,10 +234,17 @@ wrapped here:
 ```
 
 The server writes the line for every answer of HTTP 400 or above, and for
-every 401. It writes exactly one line per request. The one exception is 499,
-which means the client closed the request. The `tool_call` line records that
-as `cancelled`. A JSON-RPC error inside an HTTP 200 answer is not a rejected
-request, so it gets no line.
+every 401. It writes exactly one line per request. There are two exceptions.
+A 499 means the client closed the request; the `tool_call` line records that
+as `cancelled`. A 405 to a GET or DELETE is the normal answer to a 2025-era
+client opening a stream or ending a session the stateless server does not
+keep; claude.ai's MCP Apps loader sends one GET per chart card. A JSON-RPC
+error inside an HTTP 200 answer is not a rejected request, so it gets no line.
+
+A body over 4 MiB gets a JSON-RPC 413 (code `-32000`, reason
+`Payload Too Large: ...`) and a line with status 413, whether it declared its
+size or arrived chunked. A body that declares more than 16 MiB is refused by
+Bun before the server sees it, with an empty 413 and no line.
 
 `status` is the HTTP status. `code` is the JSON-RPC error code in the answer.
 `reason` is the SDK's error message when it reported one, or else the message
@@ -266,7 +273,7 @@ docker compose logs | grep mcp_rejected | grep '"code":-32022'
 ```
 
 A 2025-era request (no envelope, for example claude.ai's MCP Apps loader) is
-served, so it writes no `mcp_rejected` line. Its `tool_call` line has no
+served, so it writes no `mcp_rejected` line, and neither does the loader's GET. Its `tool_call` line has no
 `client_name`, because only the envelope carries one. To list those calls:
 
 ```bash
