@@ -11,12 +11,14 @@ import {
   baselineRun,
   compareData,
   compareDataManualSide,
+  compareDataWalks,
   gappyPair,
   hrOnlyPair,
   manualRun,
   noPowerRide,
   noPowerRun,
   raceRun,
+  walkPair,
 } from "./__fixtures__/runs";
 import { CompareActivities } from "./CompareActivities";
 import { type ActivityStreamData, type CompareData } from "./types";
@@ -85,6 +87,56 @@ export const WithoutSummary = meta.story({
     b: raceRun,
     compare: null,
   },
+});
+
+/**
+ * The summary fetch is slower than the streams (it reads FIT files for the
+ * weather): the overlay draws while a skeleton holds the delta bar (#315).
+ */
+export const SummaryLoading = meta.story({
+  args: {
+    a: baselineRun,
+    b: raceRun,
+    compare: null,
+    compareLoading: true,
+  },
+});
+
+/**
+ * #315: two walks have no run pace, so the card shows each side's km/h, the
+ * same figure the text tool prints, and the weather note beside the HR rise.
+ */
+export const WalkPair = meta.story({
+  args: {
+    a: walkPair[0],
+    b: walkPair[1],
+    compare: compareDataWalks,
+  },
+  play: async ({ canvas }) => {
+    await expect(canvas.getByText("5.2km/h")).toBeVisible();
+    await expect(canvas.getByText("5.0km/h")).toBeVisible();
+    await expect(canvas.getByText(/The dew point differs/)).toBeVisible();
+  },
+});
+
+export const MobileWalkPair = meta.story({
+  args: {
+    a: walkPair[0],
+    b: walkPair[1],
+    compare: compareDataWalks,
+    mode: "mobile",
+  },
+  globals: {
+    viewport: { value: "claudeIosCard" },
+  },
+  parameters: { layout: "fullscreen" },
+  decorators: [
+    (StoryFn) => (
+      <MobileCardShell>
+        <StoryFn />
+      </MobileCardShell>
+    ),
+  ],
 });
 
 /** Treadmill pair: heart rate only, time axis, no axis/metric toggles. */

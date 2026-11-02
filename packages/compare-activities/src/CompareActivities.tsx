@@ -14,6 +14,7 @@ import {
   type ModelContextApp,
   Pill,
   PillGroup,
+  Skeleton,
   TooltipEntry,
   Tooltip as UiTooltip,
   useModelContextSync,
@@ -53,6 +54,7 @@ import {
   type ActivityStreamData,
   type AxisKey,
   type CompareData,
+  type CompareSide,
   type MetricKey,
 } from "./types";
 
@@ -216,6 +218,26 @@ function signed(value: number, digits = 0): string {
   return `${value > 0 ? "+" : ""}${rounded}`;
 }
 
+/**
+ * One side's speed in the pair's unit: the server's own `/100m` pace or km/h
+ * when it sent one, else km/h from distance over moving time, which a mixed
+ * pair's run or swim side needs (the overlay draws that pair in km/h too).
+ */
+function sideSpeed(side: CompareSide, sport: SpeedSport): string | null {
+  if (sport === "swim") {
+    return side.pace_min_per_100m && `${side.pace_min_per_100m}/100m`;
+  }
+  const display = speedDisplayForSport("other");
+  const kmh =
+    side.speed_kmh ??
+    display.fromMps(
+      side.moving_time_s > 0
+        ? (side.distance_km * 1000) / side.moving_time_s
+        : null,
+    );
+  return kmh == null ? null : `${display.format(kmh)}km/h`;
+}
+
 export function buildDeltaTiles(compare: CompareData): DeltaTile[] {
   const { activity_1: a1, activity_2: a2, differences, efficiency } = compare;
   const tiles: DeltaTile[] = [
@@ -253,6 +275,19 @@ export function buildDeltaTiles(compare: CompareData): DeltaTile[] {
             ? "worse"
             : undefined,
     });
+  } else {
+    const sport = paceCategory(a1.type, a2.type);
+    const speedA = sport === "run" ? null : sideSpeed(a1, sport);
+    const speedB = sport === "run" ? null : sideSpeed(a2, sport);
+    if (speedA && speedB) {
+      tiles.push({
+        key: "speed",
+        label: speedDisplayForSport(sport).label,
+        a: speedA,
+        b: speedB,
+        delta: "",
+      });
+    }
   }
   if (
     a1.average_hr != null &&
@@ -312,6 +347,8 @@ interface CompareActivitiesProps {
   b: ActivityStreamData;
   /** Aggregate summary; the overlay still renders without it. */
   compare: CompareData | null;
+  /** The summary is still loading: a skeleton holds the delta bar's place. */
+  compareLoading?: boolean;
   mode?: "mobile" | "desktop";
   app?: ModelContextApp;
   viewToolRegistry?: ViewToolRegistry | null;
@@ -321,6 +358,7 @@ export function CompareActivities({
   a,
   b,
   compare,
+  compareLoading = false,
   mode = "desktop",
   app,
   viewToolRegistry = null,
@@ -563,6 +601,8 @@ export function CompareActivities({
         compact={isCompact}
       />
 
+      {compareLoading && <Skeleton variant="bar" />}
+
       {tiles.length > 0 && (
         <div className={styles.deltaBar}>
           {tiles.map((tile) => (
@@ -581,6 +621,10 @@ export function CompareActivities({
             </div>
           ))}
         </div>
+      )}
+
+      {compare?.weather_note && (
+        <div className={styles.note}>{compare.weather_note}</div>
       )}
 
       {compare?.warnings?.length ? (

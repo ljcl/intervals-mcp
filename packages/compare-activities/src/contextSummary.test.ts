@@ -20,6 +20,8 @@ const compare: CompareData = {
     moving_time: "50:00",
     moving_time_s: 3000,
     pace_min_per_km: "5:00",
+    pace_min_per_100m: null,
+    speed_kmh: null,
     gap_min_per_km: "4:58",
     average_hr: 150,
     max_hr: 175,
@@ -39,6 +41,8 @@ const compare: CompareData = {
     moving_time: "48:00",
     moving_time_s: 2880,
     pace_min_per_km: "4:48",
+    pace_min_per_100m: null,
+    speed_kmh: null,
     gap_min_per_km: "4:46",
     average_hr: 158,
     max_hr: 182,
@@ -59,6 +63,7 @@ const compare: CompareData = {
     elevation_gain_m: -2,
   },
   efficiency: null,
+  weather_note: null,
 };
 
 describe("buildCompareContextSummary", () => {
@@ -83,6 +88,24 @@ describe("buildCompareContextSummary", () => {
       paceLabel: "speed",
     });
     expect(text).toContain("Overlay: speed vs time.");
+  });
+
+  it("carries the weather note so an HR rise is not read as lost fitness", () => {
+    const note =
+      "The dew point differs by +9.4 °C (activity 2 minus activity 1).";
+    const text = buildCompareContextSummary({
+      compare: { ...compare, weather_note: note },
+      metric: "heartrate",
+      axis: "time",
+    });
+    expect(text).toContain(note);
+    expect(
+      buildCompareContextSummary({
+        compare,
+        metric: "heartrate",
+        axis: "time",
+      }),
+    ).not.toContain("dew point");
   });
 
   it("returns null before data arrives", () => {

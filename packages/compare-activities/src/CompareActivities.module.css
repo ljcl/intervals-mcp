@@ -58,6 +58,13 @@
   color: var(--color-text-danger);
 }
 
+.note {
+  padding: 0 var(--space-2);
+  margin-bottom: var(--space-2);
+  font-size: var(--font-text-xs-size);
+  color: var(--color-text-secondary);
+}
+
 .warning {
   padding: 0 var(--space-2);
   margin-bottom: var(--space-2);
