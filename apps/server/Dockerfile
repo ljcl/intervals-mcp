@@ -17,7 +17,7 @@ WORKDIR /app
 # dockerRuntime.test.ts pins the tag to it. Only the binary is copied, so a
 # Node major can need extra shared libraries here (docs/development.md,
 # "Upgrading Node").
-FROM node:24.22.0-trixie-slim@sha256:a6155384446670e9719bdc4fd0ebe4d4b29fb32a8d6aa523da3547a6cfbcf22c AS node
+FROM node:26.13.0-trixie-slim@sha256:e4db4c914bf8ad241bd24804fc25d272d89bad97e68cdc8a1414862790a02c39 AS node
 
 # turbo isolated here so it never reaches the runner; the version is derived
 # from the root package.json devDependency so a Dependabot turbo bump can
@@ -43,6 +43,8 @@ RUN turbo prune @intervals-mcp/server --docker
 #    which the server runs.
 FROM toolchain AS builder
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
+# The one library Node links that oven/bun lacks (`ldd`); the glob covers both arches.
+COPY --from=node /usr/lib/*-linux-gnu/libatomic.so.1 /usr/lib/
 COPY --from=pruner /app/out/json/ ./
 COPY --from=pruner /app/out/bun.lock ./bun.lock
 RUN --mount=type=cache,target=/root/.bun/install/cache bun install --frozen-lockfile
