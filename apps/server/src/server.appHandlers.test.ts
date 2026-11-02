@@ -394,6 +394,35 @@ describe("cadence trends handlers", () => {
     expect(text).toContain("  Zone 5c (faster than 4:11 /km): no runs");
   });
 
+  it("cadence trends name a failed Run settings read and use the fixed zones", async () => {
+    vi.mocked(getSportSettingsFn).mockRejectedValueOnce(new Error("boom"));
+    vi.mocked(getSportSettingsFn).mockRejectedValueOnce(new Error("boom"));
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    mockedIntervalsList.mockResolvedValue([
+      intervalsActivity({ average_cadence: 85, average_speed: 3.33 }),
+    ]);
+
+    const data = JSON.parse(
+      (await dispatchToolCall("get-cadence-trend-data", {})).content[0]?.text ??
+        "",
+    );
+    const text =
+      (await dispatchToolCall("view-cadence-trends", {})).content[0]?.text ??
+      "";
+
+    expect(data.paceZoneSource).toBe("unavailable");
+    expect(data.paceZones).toHaveLength(4);
+    expect(text).toContain(
+      "Cadence by pace zone (fixed zones: the Run sport settings could not be read):",
+    );
+    expect(consoleError).toHaveBeenCalledWith(
+      "Run sport settings for cadence trends not read: boom",
+    );
+    consoleError.mockRestore();
+  });
+
   it("view-cadence-trends names a window that is not whole weeks in days", async () => {
     mockedIntervalsList.mockResolvedValueOnce([]);
 
