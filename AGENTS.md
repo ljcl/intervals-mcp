@@ -122,8 +122,8 @@ breaking them has shipped bugs — do not work around them locally.
   `client_apps` and `client_name` from the request envelope; each line also
   records `ts`, bounded client strings and tool name, W3C trace ids and
   `error_class`/`http_status` noted in the call scope; every refused /mcp
-  request (HTTP 400+ except 499, and 401) writes one `mcp_rejected` line,
-  never with `Authorization`.
+  request (HTTP 400+ except 499 and a GET/DELETE 405, and 401) writes one
+  `mcp_rejected` line, never with `Authorization`.
 - **Progress:** every handler gets a `ReportProgress` closure (third arg,
   always present). Tick counter without `total` (spec demands monotonic
   increase; multi-phase calls can't carry two denominators); time-based

@@ -1,14 +1,14 @@
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  BUN_MAX_REQUEST_BODY_BYTES,
   createShutdown,
   IDLE_TIMEOUT_SECONDS,
-  MAX_REQUEST_BODY_BYTES,
   routeRequest,
   SHUTDOWN_GRACE_MS,
   serveOptions,
 } from "./httpServer";
-import { SSE_KEEP_ALIVE_MS } from "./mcpEndpoint";
+import { MAX_REQUEST_BODY_BYTES, SSE_KEEP_ALIVE_MS } from "./mcpEndpoint";
 
 const COMPOSE_URL = new URL("../../../docker-compose.yml", import.meta.url);
 
@@ -30,12 +30,13 @@ describe("serveOptions", () => {
     expect(options.hostname).toBe("0.0.0.0");
   });
 
-  it("caps the request body, since the SDK's limit does not apply to a parsed body", () => {
+  it("keeps Bun's body limit as a backstop above the endpoint's", () => {
     const options = serveOptions(fakeMcp(), {
       port: 3000,
       hostname: "0.0.0.0",
     });
-    expect(options.maxRequestBodySize).toBe(MAX_REQUEST_BODY_BYTES);
+    expect(options.maxRequestBodySize).toBe(BUN_MAX_REQUEST_BODY_BYTES);
+    expect(BUN_MAX_REQUEST_BODY_BYTES).toBeGreaterThan(MAX_REQUEST_BODY_BYTES);
     expect(MAX_REQUEST_BODY_BYTES).toBe(4 * 1024 * 1024);
   });
 
