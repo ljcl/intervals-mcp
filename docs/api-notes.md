@@ -11,7 +11,7 @@ Contract: `docs/intervals-openapi.json`, from `https://intervals.icu/api/v1/docs
 - Base: `https://intervals.icu/api/v1`.
 - Activity ids are strings such as `i12345678`. Pass through unchanged.
 - `/activity/{id}` is global, not athlete-scoped. Resolve gear against the activity's own `athlete_id`.
-- The singular `/event/` route 404s; events use `/athlete/{id}/events/{eventId}` (not used: RunFun owns the plan).
+- The singular `/event/` route 404s; events use `/athlete/{id}/events/{eventId}` (not used). `GET /athlete/{id}/events?oldest&newest&category=WORKOUT` is read by route suggestions (verified 2026-11-03: `id`, `start_date_local`, `type`, `name`, `description`, `distance` m, `moving_time` s; `distance` can disagree with the name). Never written: RunFun owns the plan.
 
 ## Endpoints (verified against spec)
 Paths below are relative to the base URL above (spec lists them as `/api/v1/...`; verified 2026-09-24 against `docs/intervals-openapi.json`, `jq -r '.paths|keys[]'`).
@@ -34,6 +34,7 @@ Paths below are relative to the base URL above (spec lists them as `/api/v1/...`
 | Gear | `GET /athlete/{id}/gear{ext}` (list; `.csv` for CSV), `POST /athlete/{id}/gear` (create); per-item `PUT`/`DELETE /athlete/{id}/gear/{gearId}` |
 | Gear reminders | `POST /athlete/{id}/gear/{gearId}/reminder`; `PUT` (`reset`, `snoozeDays` query) and `DELETE /athlete/{id}/gear/{gearId}/reminder/{reminderId}` |
 | Interval search | `GET /athlete/{id}/activities/interval-search` |
+| Planned workouts | `GET /athlete/{id}/events` |
 | Activities by id | `GET /athlete/{athleteId}/activities/{ids}` (comma-separated) |
 
 ## Writes
