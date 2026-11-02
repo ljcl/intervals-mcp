@@ -212,6 +212,12 @@ interface FetchConfig {
    * a stale cached copy.
    */
   skipCache?: boolean;
+  /**
+   * A POST that reads and changes nothing upstream (a routing query): cached
+   * and coalesced like a GET, keyed by URL plus body, retried like a GET,
+   * interruptible like a GET, and never invalidating cached reads.
+   */
+  readOnly?: boolean;
 }
 
 /**
@@ -682,18 +688,24 @@ export class FetchClient {
       fetchOptions.body = JSON.stringify(requestConfig.data);
     }
 
-    // Only idempotent reads are retried. Writes (POST/PUT/DELETE) are never
-    // blindly retried, since a transient failure may still have mutated state.
+    // Only idempotent reads are retried (a `readOnly` POST is one). Writes
+    // (POST/PUT/DELETE) are never blindly retried, since a transient failure
+    // may still have mutated state.
     const method = (fetchOptions.method ?? "GET").toUpperCase();
-    const isRetriable = method === "GET" || method === "HEAD";
+    const isRetriable =
+      method === "GET" || method === "HEAD" || requestConfig.readOnly === true;
     const signal = currentCallSignal();
     const what = `Request to ${requestConfig.url}`;
 
-    // Response cache: serve immutable-ish GETs from memory, and invalidate a
+    // Response cache: serve immutable-ish reads (GETs and readOnly POSTs) from memory, and invalidate a
     // resource's cached reads after it is written. The key is the full URL
     // (query included, so different stream resolutions stay distinct); TTL and
     // write invalidation match on the query-stripped path.
-    const cacheKey = requestConfig.url;
+    // A readOnly POST adds its body to the key.
+    const cacheKey =
+      typeof fetchOptions.body === "string"
+        ? `${requestConfig.url}\n${fetchOptions.body}`
+        : requestConfig.url;
     const cache = this.responseCache;
     let cacheTtl: number | null = null;
     if (cache && this.ttlForPath && isRetriable && !requestConfig.skipCache) {
@@ -1086,6 +1098,9 @@ export function intervalsCacheTtl(path: string): number | null {
   // sub-path (`/wellness/2026-09-24`) or an extension (`wellness.json`)
   // both count; these update through the day.
   if (/^\/athlete\/[^/]+\/wellness/.test(path)) return 5 * MINUTE_MS;
+  // Planned calendar events (route suggestions): same freshness as the
+  // activity listing, so an edit to the plan shows up quickly.
+  if (/^\/athlete\/[^/]+\/events$/.test(path)) return MINUTE_MS;
   // Athlete pace curves: recomputed from an athlete's history, which
   // changes at most a few times a day.
   if (/^\/athlete\/[^/]+\/pace-curves\.json$/.test(path)) return 10 * MINUTE_MS;
@@ -1111,4 +1126,45 @@ const RESPONSE_CACHE_MAX_BYTES = 32 * 1024 * 1024;
 export const intervalsApi = new FetchClient("https://intervals.icu/api/v1", {
   minIntervalMs: 200,
   cache: { ttlForPath: intervalsCacheTtl, maxBytes: RESPONSE_CACHE_MAX_BYTES },
+});
+
+/**
+ * Cache TTL policy for OpenRouteService (route suggestions). Geocoding a
+ * place name rarely changes; a routing query is deterministic for its body
+ * (start, length, seed), and caching it lets a view tool and its app's data
+ * tool share one upstream call.
+ */
+export function orsCacheTtl(path: string): number | null {
+  if (path === "/geocode/search") return DAY_MS;
+  if (/^\/v2\/directions\/[^/]+\/geojson$/.test(path)) return 30 * MINUTE_MS;
+  return null;
+}
+
+/**
+ * OpenRouteService client (orsClient.ts is its only caller). 40 directions
+ * a minute, so attempts start 1.5 s apart; 200 a day (docs/api-notes.md).
+ */
+export const orsApi = new FetchClient("https://api.openrouteservice.org", {
+  minIntervalMs: 1500,
+  cache: { ttlForPath: orsCacheTtl, maxEntries: 200 },
+});
+
+/** Crossings in an area change rarely: one query serves a week of calls. */
+export function overpassCacheTtl(path: string): number | null {
+  return path === "/interpreter" ? 7 * DAY_MS : null;
+}
+
+/**
+ * OpenStreetMap Overpass (overpassClient.ts is its only caller). Public
+ * instances can take 20-40 s, so one attempt is capped at 12 s and never
+ * retried: a slow instance costs a ranking signal, not the call.
+ */
+export const overpassApi = new FetchClient("https://overpass-api.de/api", {
+  timeoutMs: 12_000,
+  maxRetries: 0,
+  cache: {
+    ttlForPath: overpassCacheTtl,
+    maxEntries: 50,
+    maxBytes: 8 * 1024 * 1024,
+  },
 });
