@@ -920,6 +920,11 @@ interface ViewText {
    * not (the route map's waypoints, ahead of get-hill-analysis' climbs).
    */
   keepLines?: boolean;
+  /**
+   * The view has no data of its own (route suggestions), so a failed twin's
+   * error result is the view's result, with its reason.
+   */
+  failsWithTwin?: boolean;
 }
 
 /**
@@ -943,14 +948,10 @@ async function viewResult(
   const header = (then: string) =>
     viewHeader(view.kind, context.clientRendersApps, then);
   if (view.twin) {
-    const twinText = await viewTwinCall(
-      view.twin,
-      args,
-      token,
-      progress,
-      context,
-    );
-    if (twinText !== null) {
+    const twin = await viewTwinCall(view.twin, args, token, progress, context);
+    if (twin?.isError && view.failsWithTwin) return twin;
+    if (twin && !twin.isError) {
+      const twinText = twin.content.map((block) => block.text).join("\n");
       const text = view.keepLines
         ? [
             header(`Its data follows, then the text of ${view.twin}.`),
@@ -969,10 +970,11 @@ async function viewResult(
 }
 
 /**
- * The text of tool `name`, run through its own input schema, or null when it
- * returns `isError`. Its failure is not the view's: the view already has its
- * data and falls back to naming the tool. The dispatcher reads a noted
- * failure only for an `isError` result, so the log line stays `ok`.
+ * The result of tool `name`, run through its own input schema, or null when
+ * its arguments do not parse. Its `isError` is not the view's unless
+ * `failsWithTwin`: the view already has its data and falls back to naming
+ * the tool. The dispatcher reads a noted failure only for an `isError`
+ * result, so the log line stays `ok`.
  */
 async function viewTwinCall(
   name: string,
@@ -980,18 +982,16 @@ async function viewTwinCall(
   token: string,
   progress: ReportProgress,
   context: ToolCallContext,
-): Promise<string | null> {
+): Promise<ToolCallResult | null> {
   const execute = TOOL_EXECUTORS.get(name);
   const parsed = TOOL_INPUT_SCHEMAS.get(name)?.safeParse(args);
   if (!execute || !parsed?.success) return null;
-  const result = await execute(
+  return execute(
     parsed.data as Record<string, unknown>,
     token,
     progress,
     context,
   );
-  if (result.isError) return null;
-  return result.content.map((block) => block.text).join("\n");
 }
 
 /** Stream types the activity-chart app can plot, including running dynamics. */
@@ -1624,6 +1624,7 @@ async function handleViewRouteSuggestions(
       kind: "route suggestions map",
       footer: suggestRunRouteTool.name,
       twin: suggestRunRouteTool.name,
+      failsWithTwin: true,
     },
     args,
     token,

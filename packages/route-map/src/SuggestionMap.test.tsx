@@ -77,6 +77,20 @@ describe("SuggestionMap", () => {
     expect(container.querySelector("[data-testid=map]")).toBeNull();
   });
 
+  it("keeps the card header, context and warnings above the empty state", async () => {
+    const warning = "No new loop close to 6.0 km was found from this start.";
+    await mount({ ...awaySuggestions, candidates: [], warnings: [warning] });
+    const heading = container.querySelector("h2");
+    expect(heading?.textContent).toBe(awaySuggestions.name);
+    expect(container.textContent).toContain("Suggested route");
+    expect(container.textContent).toContain(awaySuggestions.startLabel);
+    const text = container.textContent ?? "";
+    expect(text.indexOf(warning)).toBeGreaterThan(-1);
+    expect(text.indexOf(warning)).toBeLessThan(
+      text.indexOf("No route to suggest"),
+    );
+  });
+
   it("shows an empty state for a payload without candidates", async () => {
     await mount({
       source: "suggestion",

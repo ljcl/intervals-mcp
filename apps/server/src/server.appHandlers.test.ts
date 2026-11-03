@@ -64,7 +64,9 @@ vi.mock("./config", async (importOriginal) => {
 
 // Import after the mocks so server.ts's modules see the mocked client.
 const { dispatchToolCall } = await import("./server");
-const { loadRouteSuggestions } = await import("./routeSuggestions");
+const { loadRouteSuggestions, RouteSuggestionError } = await import(
+  "./routeSuggestions"
+);
 const mockedRouteSuggestions = vi.mocked(loadRouteSuggestions);
 const { getIntervalsApiKey, MissingApiKeyError } = await import("./config");
 const mockedToken = vi.mocked(getIntervalsApiKey);
@@ -2661,6 +2663,22 @@ describe("view tools and hosts that cannot render MCP Apps (#77)", () => {
     ).toBe(true);
     expect(text.endsWith("For detail, call get-activity-zones.")).toBe(true);
     expect(mockedIntervalsActivity).toHaveBeenCalledTimes(2);
+  });
+
+  it("gives view-route-suggestions its twin's error, with the reason", async () => {
+    // The view has no data of its own, so its twin's failure is its result.
+    mockedRouteSuggestions.mockRejectedValueOnce(
+      new RouteSuggestionError('No place matched "Nowhere Park".'),
+    );
+
+    const result = await dispatchToolCall(
+      "view-route-suggestions",
+      { start: "Nowhere Park" },
+      { client: { rendersApps: true } },
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toBe('❌ No place matched "Nowhere Park".');
   });
 
   it("passes runOnly to get-training-load, so the text never mixes scopes", async () => {

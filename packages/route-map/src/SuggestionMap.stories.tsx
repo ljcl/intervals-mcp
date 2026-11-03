@@ -38,5 +38,18 @@ export const HomeCandidates = meta.story({
 });
 
 export const NoCandidates = meta.story({
-  args: { data: { ...awaySuggestions, candidates: [] }, basemapEnabled: false },
+  args: {
+    data: {
+      ...awaySuggestions,
+      candidates: [],
+      warnings: ["No new loop close to 6.0 km was found from this start."],
+    },
+    basemapEnabled: false,
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      canvas.getByRole("heading", { name: awaySuggestions.name }),
+    ).toBeVisible();
+    await expect(canvas.getByText(/No new loop close/)).toBeVisible();
+  },
 });

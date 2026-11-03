@@ -1,4 +1,5 @@
 import {
+  CardHeader,
   EmptyState,
   type ModelContextApp,
   Pill,
@@ -30,18 +31,36 @@ export function SuggestionMap({
   const [selected, setSelected] = useState(0);
   const candidates = data.candidates ?? [];
   const candidate = candidates[selected] ?? candidates[0];
+  const context = (
+    <p className={styles.context}>
+      {data.date} · {data.name} · from {data.startLabel}
+    </p>
+  );
+  const warnings = (data.warnings ?? []).map((warning) => (
+    <p key={warning} className={styles.warning}>
+      {warning}
+    </p>
+  ));
   if (!candidate) {
+    // The warnings say why there is no route, so they stay.
     return (
-      <EmptyState>
-        No route to suggest for {data.name} on {data.date}.
-      </EmptyState>
+      <div className={styles.suggestions}>
+        <CardHeader
+          title={data.name}
+          subtitle="Suggested route"
+          compact={mode === "mobile"}
+        />
+        {context}
+        {warnings}
+        <EmptyState>
+          No route to suggest for {data.name} on {data.date}.
+        </EmptyState>
+      </div>
     );
   }
   const picker = (
     <div className={styles.suggestions}>
-      <p className={styles.context}>
-        {data.date} · {data.name} · from {data.startLabel}
-      </p>
+      {context}
       <PillGroup>
         {candidates.map((c, i) => (
           <Pill
@@ -54,11 +73,7 @@ export function SuggestionMap({
         ))}
       </PillGroup>
       <p className={styles.summary}>{candidate.summary}</p>
-      {(data.warnings ?? []).map((warning) => (
-        <p key={warning} className={styles.warning}>
-          {warning}
-        </p>
-      ))}
+      {warnings}
     </div>
   );
   return (
