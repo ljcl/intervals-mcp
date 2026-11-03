@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.12.0](https://github.com/ljcl/intervals-mcp/compare/v2.11.0...v2.12.0) (2026-11-03)
+
+
+### Features
+
+* suggest where to run planned runs ([#383](https://github.com/ljcl/intervals-mcp/issues/383)) ([bdb41b5](https://github.com/ljcl/intervals-mcp/commit/bdb41b538c20efd305e1218db8169eea096fb20e))
+
+
+### Bug Fixes
+
+* skip the total-only period in the get-athlete-stats live check ([#384](https://github.com/ljcl/intervals-mcp/issues/384)) ([a29646f](https://github.com/ljcl/intervals-mcp/commit/a29646fd37824e4c3bfbb251ad02143ea7adc5c1))
+
 ## [2.11.0](https://github.com/ljcl/intervals-mcp/compare/v2.10.0...v2.11.0) (2026-11-02)
 
 
