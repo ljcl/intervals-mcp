@@ -378,12 +378,15 @@ to anything but intervals.icu. What leaves the server:
   route, past runs included, snapped to a 0.02 degree grid (about 2 km), to
   count road crossings. It needs no key, so this happens whenever route
   suggestions run, with or without `ORS_API_KEY`, and the box covers the
-  usual start. It can be slow and is capped at 12 s per query. Results are
-  cached for 7 days, and a failure only drops the ranking to path share with
-  a warning.
+  usual start. Crossings are counted only when the public Overpass service
+  answers, which it often does not: it can be slow, every public instance
+  was down on 2026-11-03, and a query is capped at 12 s. Results are cached
+  for 7 days. A failure only drops the ranking to path share with a warning,
+  and the process then skips Overpass for 10 minutes.
 - OpenRouteService allows 200 routes a day and 40 a minute, so requests
   start 1.5 s apart, one tool call makes at most 12, and the 12 calls are
-  shared across the runs of a week request. Both services' responses stay in
+  shared across the runs of a week request. An ORS attempt is capped at
+  10 s with one retry. Both services' responses stay in
   the in-memory cache, not on disk.
 
 ## Docker notes

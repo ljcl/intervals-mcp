@@ -859,11 +859,20 @@ Base `https://api.openrouteservice.org`, key in `Authorization: <key>` (no
   `value`, `distance`, `amount` (%).
 - Waytype values seen around Sydney and San Francisco: 7 Footway
   (56-83% of most loops: OSM tags sidewalks as footways), 3 Street,
-  6 Cycleway, 2 Road, 0 Unknown, 8 Steps, 4 Path. Path share is therefore a
-  weak "off the road" signal; crossings come from Overpass instead.
+  6 Cycleway, 2 Road, 0 Unknown, 8 Steps, 4 Path, 9 Ferry. Path share is
+  therefore a weak "off the road" signal; crossings come from Overpass
+  instead.
+- Ferries: without `options.avoid_features: ["ferries"]`, a "6 km" round
+  trip from The Embarcadero came back with 24 km on waytype 9 (Ferry).
+  Every request now sends it, and a route with any Ferry distance is
+  dropped as a backstop.
 - `round_trip.length` error, `points: 4`, seeds 1-3: 4 km +13 to +17%,
   6 km -6 to +1%, 10 km -6 to +2%, 14 km -8 to 0%. One rescale
-  (length times target over actual) lands within 5%.
+  (length times target over actual) lands within 5%. The error is not
+  always small: one first answer was 39 km for 6 km, and rescaling from it
+  asked for 921 m and got a 1 km loop. So a first answer more than twice or
+  less than half the target is not rescaled, a rescale moves the length by
+  at most 0.75 to 1.33 times, and a loop more than 25% off is dropped.
 - `options.profile_params.weightings` `green`/`quiet` are accepted but gave
   the identical route in Sydney (green/quiet data covers Germany): not sent.
 - Climb: ORS ascent ran about 25% above the athlete's watch at home
@@ -885,3 +894,12 @@ per km, enough to rank them. The public instances were slow: 20-42 s for a
 first query, two of three timed out at 30 s, one answered "at capacity"
 (502). Hence one query per area snapped to a 0.02 degree grid, cached 7
 days, capped at 12 s, with path share as the fallback ranking.
+
+Later on 2026-11-03 every public instance was down: overpass-api.de
+answered 502, and kumi.systems, openstreetmap.fr, mail.ru and
+private.coffee timed out. Failures are not cached, so after one the
+process stops asking for 10 minutes rather than paying the 12 s cap on
+every call. The query's `[timeout:10]` can also end server side as HTTP 200
+with `elements: []` and a `remark` starting "runtime error"; that body is
+treated as a failure and evicted from the cache, never stored as zero
+crossings.

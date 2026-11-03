@@ -51,7 +51,7 @@ rather than (or alongside) text.
 
 | Tool | Answers | Key params |
 | ---- | ------- | ---------- |
-| `suggest-run-route` | Where should I run my planned run? Past runs from that start that fit the distance and terrain, plus a newly generated route (needs `ORS_API_KEY`; without it, past runs only) | `date`, `days`, `distanceKm`, `start`, `end`, `via`, `terrain` |
+| `suggest-run-route` | Where should I run my planned run? Past runs from that start that fit the distance and terrain, plus a newly generated route (needs `ORS_API_KEY`; without it, past runs only). Routes with fewer road crossings rank first when the public Overpass service answers, which it often does not | `date`, `days`, `distanceKm`, `start`, `end`, `via`, `terrain` |
 
 ### Per-activity analysis
 

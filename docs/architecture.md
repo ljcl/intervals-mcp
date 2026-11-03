@@ -106,9 +106,11 @@ never per-tool.
   "Cancellation".
 - Three clients share the class: `intervalsApi` (intervals.icu, all athlete
   data, through `intervalsClient.ts`), `orsApi` (OpenRouteService routing and
-  geocoding, `orsClient.ts`, paced 1.5 s apart for its 40 a minute) and
-  `overpassApi` (OpenStreetMap road crossings, `overpassClient.ts`, 12 s
-  cap, no retries). Do not add a client for data intervals.icu holds.
+  geocoding, `orsClient.ts`, paced 1.5 s apart for its 40 a minute, 10 s
+  cap, one retry) and `overpassApi` (OpenStreetMap road crossings,
+  `overpassClient.ts`, 12 s cap, no retries; a failure skips it for 10
+  minutes, and a 200 whose body reports a failure is dropped from the cache
+  with `evictCached`). Do not add a client for data intervals.icu holds.
 - A request with `readOnly: true` is a POST that changes nothing (ORS
   routing and Overpass queries, which take a body): it retries and caches
   like a GET, and its body is part of the cache key. Without the flag a POST

@@ -109,15 +109,23 @@ load.
   geocoded with the usual start as focus. A start with no history within
   range is treated as travel.
 - Past runs: up to 6 near the start and within 10% of the distance are
-  considered and 2 kept. Runs not repeated in the last 7 days come first,
-  then fewer crossings, then closer distance; every recording of a route
-  already offered is excluded later in the same week. For `hill-repeats`,
-  past runs with a hill come first.
+  considered and 2 kept. Routes not run in the last 7 days come first
+  (judged on each route's latest recording, either way round), then fewer
+  crossings, then closer distance; every recording of a route already
+  offered is excluded later in the same week. For `hill-repeats`, hills are
+  found on every match before the 6 are chosen, and past runs with a hill
+  come first.
 - Generation: one new route at the athlete's usual start, three where the
   start has no run history within 300 m, from `wanted + 1` seeds so ranking
-  has a choice. A seed takes at most 2 ORS calls (one rescale), and a tool call at most 12. A loop lands within
-  5% of the distance; point-to-point and via routes are as long as the
-  streets make them, and `distance_diff_m` shows the difference.
+  has a choice. Seeds come from the run's date, so a week request and a
+  one-run request for the same day get the same loops. A seed takes at
+  most 2 ORS calls (one rescale, by at most 0.75 to 1.33 times, and none
+  when the first answer is more than twice or under half the distance), and
+  a tool call at most 12. A loop usually lands within 5% of the distance; a
+  loop or out-and-back more than 25% off is dropped, with a warning when
+  none is left. Ferries are avoided, and a route with a ferry is dropped.
+  Point-to-point and via routes are as long as the streets make them, and
+  `distance_diff_m` shows the difference.
   `distance_source` says whether a run's distance came from the event or
   from `distanceKm`. The first ORS failure other than a cancellation stops
   generation for the rest of the call with one warning, keeping the routes
@@ -125,9 +133,12 @@ load.
   and the 12 calls are shared across the runs of a week request.
 - Crossings: counted from OpenStreetMap through Overpass for every
   candidate, past runs included (so it is queried even without
-  `ORS_API_KEY`), one query per snapped 0.02 degree area, cached 7 days, capped at 12 s, never retried.
-  After one failure the call stops asking and ranks by path share with one
-  warning.
+  `ORS_API_KEY`), one query per snapped 0.02 degree area, cached 7 days,
+  capped at 12 s, never retried. Crossings are counted only when the public
+  Overpass service answers, which it often does not (every public instance
+  was down on 2026-11-03). After a failure the process stops asking for 10
+  minutes, and new routes rank by path share and past runs by recency and
+  distance, with one warning.
 - Terrain: flat, rolling and hilly are the athlete's own thirds of climb per
   km over their recent runs (8 and 20 m/km under 10 runs). On 2026-11-03
   the live bands were 11.2 and 13.3 m/km. A generated route's climb uses a
