@@ -819,11 +819,13 @@ async function checkGetAthleteStats(): Promise<void> {
       ytd: { runs: number; distance_km: number };
       all_sports: Record<
         string,
-        { total: Totals; by_type: Record<string, Totals> }
+        { total: Totals; by_type?: Record<string, Totals> }
       >;
     };
-    // Each all-sports total must be the sum of its type rows.
+    // Each all-sports total must be the sum of its type rows. A period with
+    // no by_type (last year to date) is total-only by design.
     for (const [period, totals] of Object.entries(d.all_sports)) {
+      if (!totals.by_type) continue;
       for (const key of ["count", "moving_time_s", "load"] as const) {
         const sum = Object.values(totals.by_type).reduce(
           (acc, row) => acc + row[key],
