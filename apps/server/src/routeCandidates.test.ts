@@ -49,7 +49,7 @@ function run(
   id: string,
   date: string,
   track: RouteTrack,
-  climb_m = 20,
+  climb_m: number | null = 20,
 ): RunStart {
   return {
     id,
@@ -93,6 +93,15 @@ describe("terrainBands", () => {
     expect(terrainBands(runs)).toEqual({ flatBelow: 4, hillyAbove: 8 });
     expect(terrainBands(runs.slice(0, 9))).toEqual(DEFAULT_TERRAIN_BANDS);
   });
+
+  it("leaves runs with no recorded climb out", () => {
+    const runs = Array.from({ length: 12 }, (_, i) => ({
+      ...run(`r${i}`, "2026-10-01", loopA, i < 3 ? null : i + 1),
+      distance_m: 1000,
+    }));
+    // Nine runs with a climb are too few to calibrate from.
+    expect(terrainBands(runs)).toEqual(DEFAULT_TERRAIN_BANDS);
+  });
 });
 
 describe("terrainFits", () => {
@@ -103,6 +112,11 @@ describe("terrainFits", () => {
     expect(terrainFits("hilly", 9, 1000, BANDS)).toBe(true);
     expect(terrainFits("any", 99, 1000, BANDS)).toBe(true);
     expect(terrainFits("hill-repeats", 0, 1000, BANDS)).toBe(true);
+  });
+
+  it("still admits a dead-flat route when the flat band is 0", () => {
+    const zero = { flatBelow: 0, hillyAbove: 5 };
+    expect(terrainFits("flat", 0, 1000, zero)).toBe(true);
   });
 });
 
@@ -123,18 +137,19 @@ describe("matchPastRuns", () => {
     bands: BANDS,
   };
 
-  it("prefers runs not repeated this week, without duplicate routes", () => {
+  it("judges a repeat this week per route, keeping each route's latest recording", () => {
+    // Loop A was run 2 days ago, so it ranks last even though it has a month-old recording too.
     const runs = [
       run("recent", "2026-11-01", loopA),
       run("old-a", "2026-10-01", loopA),
       run("old-b", "2026-09-01", loopB),
     ];
     const picked = matchPastRuns(runs, options);
-    expect(picked.map((c) => c.activity_id)).toEqual(["old-a", "old-b"]);
+    expect(picked.map((c) => c.activity_id)).toEqual(["old-b", "recent"]);
     expect(picked[0]).toMatchObject({
       kind: "past",
       shape: "loop",
-      date: "2026-10-01",
+      date: "2026-09-01",
       crossings_per_km: null,
     });
   });
@@ -228,6 +243,24 @@ describe("rankGenerated", () => {
     ).toEqual(["quiet", "busy", "steep"]);
   });
 
+  it("puts a route within 10% of the distance ahead of one far off with more path share", () => {
+    const onTarget = candidate({
+      name: "5.9 km",
+      distance_m: 5900,
+      path_share: 0.3,
+      crossings_per_km: 20,
+    });
+    const short = candidate({
+      name: "1.2 km",
+      distance_m: 1200,
+      path_share: 0.9,
+      crossings_per_km: 1,
+    });
+    expect(
+      rankGenerated([short, onTarget], "any", 6000, BANDS).map((c) => c.name),
+    ).toEqual(["5.9 km", "1.2 km"]);
+  });
+
   it("falls back to path share when crossings are unknown", () => {
     const roads = candidate({ name: "roads", path_share: 0.2 });
     const paths = candidate({ name: "paths", path_share: 0.8 });
@@ -253,5 +286,15 @@ describe("sameRoute", () => {
     expect(sameRoute(loopA, square(37.79, -122.39, 0.0135))).toBe(true);
     expect(sameRoute(loopA, loopB)).toBe(false);
     expect(sameRoute(loopA, square(37.79, -122.39, 0.015))).toBe(false);
+  });
+
+  it("matches a loop run the other way round", () => {
+    const reversed: RouteTrack = {
+      coordinates: [...loopA.coordinates].reverse(),
+      distance: cumulativeDistances([...loopA.coordinates].reverse()),
+      altitude: [...loopA.altitude].reverse(),
+    };
+    expect(sameRoute(loopA, reversed)).toBe(true);
+    expect(sameRoute(reversed, loopB)).toBe(false);
   });
 });

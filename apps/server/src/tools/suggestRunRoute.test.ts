@@ -111,6 +111,7 @@ describe("suggest-run-route", () => {
     const parsed = RouteSuggestionsOutputSchema.parse(result.structuredContent);
     expect(parsed.count).toBe(1);
     expect(JSON.stringify(parsed)).not.toContain("coordinates");
+    expect(parsed.runs[0]!.start).toMatchObject({ lat: 37.795, lng: -122.394 });
   });
 
   it("returns a RouteSuggestionError as its own message", async () => {

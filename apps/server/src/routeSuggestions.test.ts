@@ -102,6 +102,7 @@ function route(
     distance_m,
     ascent_m: 10,
     path_share: 0.7,
+    ferry_m: 0,
     way_names: ["Foreshore Walk", "Park Road"],
   };
 }
@@ -212,7 +213,9 @@ describe("loadRouteSuggestions", () => {
   it("warns once and still answers when crossings cannot be counted", async () => {
     vi.mocked(loadCrossings).mockResolvedValue(null);
     const result = await loadRouteSuggestions("k", {}, ENV);
-    expect(result.warnings.join(" ")).toMatch(/crossings could not be counted/);
+    expect(result.warnings).toContain(
+      "Road crossings could not be counted (OpenStreetMap Overpass did not answer), so new routes were ranked by their share on paths and past runs by recency and distance.",
+    );
     expect(result.runs[0]!.candidates.map((c) => c.crossings_per_km)).toEqual([
       null,
       null,
@@ -236,7 +239,7 @@ describe("loadRouteSuggestions", () => {
     ).rejects.toBeInstanceOf(RouteSuggestionError);
   });
 
-  it("rescales a loop that misses the distance once", async () => {
+  it("rescales a loop that misses the distance once, by at most a quarter", async () => {
     const target = homeLoop.distance.at(-1)!;
     // Always twice the target: never fits, so every seed makes both calls.
     vi.mocked(orsRoute).mockImplementation(async () =>
@@ -248,7 +251,66 @@ describe("loadRouteSuggestions", () => {
       .mocked(orsRoute)
       .mock.calls.filter((c) => c[1].roundTrip?.seed === firstSeed)
       .map((c) => Math.round(c[1].roundTrip!.length_m));
-    expect(lengths).toEqual([Math.round(target), Math.round(target / 2)]);
+    expect(lengths).toEqual([Math.round(target), Math.round(target * 0.75)]);
+  });
+
+  it("does not rescale a loop far off the distance, and drops it with a warning", async () => {
+    const target = homeLoop.distance.at(-1)!;
+    // About 35 km for a 5.4 km run, as ORS once gave 39 km for 6 km.
+    const huge = square(SF[0] - 0.02, SF[1], 0.0135 * 6.5);
+    vi.mocked(orsRoute).mockImplementation(async () => route(huge));
+    const run = (await loadRouteSuggestions("k", {}, ENV)).runs[0]!;
+    // One call per seed, each at the target: no rescale toward a 1 km loop.
+    expect(
+      vi
+        .mocked(orsRoute)
+        .mock.calls.map((c) => Math.round(c[1].roundTrip!.length_m)),
+    ).toEqual([Math.round(target), Math.round(target)]);
+    expect(run.candidates.map((c) => c.kind)).toEqual(["past"]);
+    expect(run.warnings).toContain(
+      "No new loop close to 5.4 km was found from this start.",
+    );
+  });
+
+  it("drops a generated loop more than 25% off the distance", async () => {
+    // 30% long after both tries: within the rescale window, still too far.
+    vi.mocked(orsRoute).mockImplementation(async () =>
+      route(square(SF[0] - 0.02, SF[1], 0.0135 * 1.3)),
+    );
+    const run = (await loadRouteSuggestions("k", {}, ENV)).runs[0]!;
+    expect(run.candidates.every((c) => c.kind === "past")).toBe(true);
+    expect(run.warnings.join(" ")).toMatch(/No new loop close to/);
+    // Each seed still tried its one rescale.
+    expect(vi.mocked(orsRoute)).toHaveBeenCalledTimes(4);
+  });
+
+  it("drops a route that goes by ferry and tries the next seed", async () => {
+    let n = 0;
+    vi.mocked(orsRoute).mockImplementation(async () => {
+      n += 1;
+      return { ...route(generatedLoop(n)), ferry_m: n === 1 ? 2400 : 0 };
+    });
+    const run = (await loadRouteSuggestions("k", {}, ENV)).runs[0]!;
+    const generated = run.candidates.filter((c) => c.kind === "generated");
+    expect(generated.map((c) => c.track.coordinates[0])).toEqual([
+      generatedLoop(2).coordinates[0],
+    ]);
+    expect(vi.mocked(orsRoute)).toHaveBeenCalledTimes(2);
+  });
+
+  it("drops a point-to-point route that goes by ferry", async () => {
+    vi.mocked(orsRoute).mockResolvedValue({
+      ...route(generatedLoop(1)),
+      ferry_m: 900,
+    });
+    const run = (
+      await loadRouteSuggestions(
+        "k",
+        { start: "37.8,-122.3", end: "37.82,-122.36" },
+        ENV,
+      )
+    ).runs[0]!;
+    expect(run.candidates).toEqual([]);
   });
 
   it.each([
@@ -358,6 +420,90 @@ describe("loadRouteSuggestions", () => {
     );
     const past = result.runs[0]!.candidates.filter((c) => c.kind === "past");
     expect(past.map((c) => c.activity_id)).toContain("hilly");
+  });
+
+  it("finds a hill on the 7th matching loop for hill repeats", async () => {
+    const run = (id: string, date: string, track: RouteTrack): RunStart => ({
+      id,
+      date,
+      name: id,
+      distance_m: track.distance.at(-1)!,
+      climb_m: 0,
+      track,
+    });
+    // Six flat loops of about the same length, all different routes.
+    const flat: Array<[number, number]> = [
+      [0.0135, 0.0135],
+      [0.0135, -0.0135],
+      [-0.0135, 0.0135],
+      [-0.0135, -0.0135],
+      [0.009, 0.0192],
+      [0.018, -0.0078],
+    ];
+    vi.mocked(loadRunStarts).mockResolvedValue({
+      runs: [
+        // Run 2 days ago, so it ranks 7th of 7 on recency.
+        run("hilly", "2026-11-01", square(SF[0], SF[1], -0.009, 9, -0.0192)),
+        ...flat.map(([lat, lng], i) =>
+          run(
+            `flat-${i}`,
+            `2026-10-0${i + 1}`,
+            square(SF[0], SF[1], lat, 0, lng),
+          ),
+        ),
+      ],
+      skipped: 0,
+    });
+    const result = await loadRouteSuggestions(
+      "k",
+      { terrain: "hill-repeats" },
+      ENV,
+    );
+    const past = result.runs[0]!.candidates.filter((c) => c.kind === "past");
+    expect(past[0]!.activity_id).toBe("hilly");
+    expect(past[0]!.hill).not.toBeNull();
+  });
+
+  it("derives seeds from the run's date, alone or in a week", async () => {
+    const seeds = () =>
+      vi.mocked(orsRoute).mock.calls.map((c) => c[1].roundTrip!.seed);
+    vi.mocked(listPlannedWorkouts).mockResolvedValue([
+      event(11, "2026-11-06", homeLoop.distance.at(-1)!),
+    ]);
+    await loadRouteSuggestions("k", { date: "2026-11-06" }, ENV);
+    const alone = seeds();
+
+    vi.mocked(orsRoute).mockClear();
+    vi.mocked(listPlannedWorkouts).mockResolvedValue([
+      event(10, "2026-11-04", homeLoop.distance.at(-1)!),
+      event(11, "2026-11-06", homeLoop.distance.at(-1)!),
+    ]);
+    await loadRouteSuggestions("k", { days: 7 }, ENV);
+    const week = seeds();
+
+    expect(alone).toHaveLength(2);
+    expect(week.slice(2)).toEqual(alone);
+    expect(week.slice(0, 2)).not.toEqual(alone);
+  });
+
+  it("gives a second run on the same day its own seeds", async () => {
+    vi.mocked(listPlannedWorkouts).mockResolvedValue([
+      event(10, "2026-11-04", homeLoop.distance.at(-1)!),
+      event(11, "2026-11-04", homeLoop.distance.at(-1)!),
+    ]);
+    await loadRouteSuggestions("k", { days: 2 }, ENV);
+    const seeds = vi
+      .mocked(orsRoute)
+      .mock.calls.map((c) => c[1].roundTrip!.seed);
+    expect(new Set(seeds).size).toBe(seeds.length);
+  });
+
+  it("says why recent runs were left out of the start history", async () => {
+    vi.mocked(loadRunStarts).mockResolvedValue({ runs: history, skipped: 2 });
+    const result = await loadRouteSuggestions("k", {}, ENV);
+    expect(result.warnings).toContain(
+      "2 recent runs had no GPS track or could not be read and were left out of the start history.",
+    );
   });
 
   it("asks Overpass once after it fails", async () => {

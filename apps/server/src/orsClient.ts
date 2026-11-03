@@ -7,6 +7,7 @@
  * [lat, lng].
  */
 import { z } from "zod";
+import { CallCancelledError } from "./callScope";
 import {
   HttpError,
   type HttpErrorResponse,
@@ -26,6 +27,8 @@ export const ROUND_TRIP_POINTS = 4;
 
 /** ORS waytype values that keep a runner off roads: Path, Track, Cycleway, Footway (docs/api-notes.md). */
 export const PATH_WAYTYPES = new Set([4, 5, 6, 7]);
+/** ORS waytype Ferry: a route on one is not a run. */
+const FERRY_WAYTYPE = 9;
 
 /** How many named ways a route summary lists, longest first. */
 const WAY_NAME_COUNT = 4;
@@ -49,6 +52,8 @@ export interface OrsRoute {
   ascent_m: number;
   /** Share (0-1) of the route on {@link PATH_WAYTYPES}. */
   path_share: number;
+  /** Metres on a ferry ({@link FERRY_WAYTYPE}); the engine drops a route with any. */
+  ferry_m: number;
   /** The longest named ways, longest first. */
   way_names: string[];
 }
@@ -136,11 +141,6 @@ function headers(key: string): Record<string, string> {
   };
 }
 
-/** ORS answers `application/geo+json`, which FetchClient leaves as text. */
-function asJson(data: unknown): unknown {
-  return typeof data === "string" ? JSON.parse(data) : data;
-}
-
 function orsDetail(response: HttpErrorResponse): string {
   try {
     const { error } = JSON.parse(response.data) as { error?: unknown };
@@ -158,8 +158,14 @@ function orsDetail(response: HttpErrorResponse): string {
   );
 }
 
-/** Same contract as intervalsClient's handleApiError: rate limits intact, HTTP failures typed. */
-function handleOrsError(error: unknown, context: string): never {
+/**
+ * Same contract as intervalsClient's handleApiError: rate limits intact, HTTP
+ * failures typed. A cancellation is rethrown as `what` stopping, since its
+ * message is the request URL, which carries coordinates.
+ */
+function handleOrsError(error: unknown, context: string, what: string): never {
+  if (error instanceof CallCancelledError)
+    throw new CallCancelledError(what, { cause: error.cause });
   if (error instanceof RateLimitError) throw error;
   if (error instanceof HttpError) {
     throw new OrsApiError(
@@ -175,7 +181,14 @@ function parseOrThrow<T>(
   data: unknown,
   context: string,
 ): T {
-  const result = schema.safeParse(asJson(data));
+  // ORS answers `application/geo+json`, which FetchClient leaves as text.
+  let json: unknown = data;
+  try {
+    if (typeof data === "string") json = JSON.parse(data);
+  } catch {
+    json = undefined;
+  }
+  const result = schema.safeParse(json);
   if (!result.success) {
     throw new Error(`${context}: invalid OpenRouteService response`);
   }
@@ -204,7 +217,7 @@ export async function geocode(
       })
     ).data;
   } catch (error) {
-    handleOrsError(error, context);
+    handleOrsError(error, context, "Looking up a place");
   }
   const hit = parseOrThrow(GeocodeSchema, data, context).features[0];
   if (!hit) return null;
@@ -239,6 +252,9 @@ export function parseOrsRoute(data: unknown): OrsRoute {
   const onPaths = waytypes
     .filter((w) => PATH_WAYTYPES.has(w.value))
     .reduce((sum, w) => sum + w.distance, 0);
+  const ferry_m = waytypes
+    .filter((w) => w.value === FERRY_WAYTYPE)
+    .reduce((sum, w) => sum + w.distance, 0);
 
   return {
     track: {
@@ -249,6 +265,7 @@ export function parseOrsRoute(data: unknown): OrsRoute {
     distance_m: props.summary.distance,
     ascent_m: props.ascent ?? 0,
     path_share: total > 0 ? onPaths / total : 0,
+    ferry_m,
     way_names,
   };
 }
@@ -261,21 +278,22 @@ export async function orsRoute(
   const context = request.roundTrip
     ? "generate a loop"
     : "route between places";
-  const body: Record<string, unknown> = {
+  // Ferries on every request: ORS routed 24 km of a 6 km loop by ferry (docs/api-notes.md).
+  const options: Record<string, unknown> = { avoid_features: ["ferries"] };
+  if (request.roundTrip) {
+    options.round_trip = {
+      length: Math.round(request.roundTrip.length_m),
+      points: ROUND_TRIP_POINTS,
+      seed: request.roundTrip.seed,
+    };
+  }
+  const body = {
     coordinates: request.waypoints.map(([lat, lng]) => [lng, lat]),
     elevation: true,
     instructions: true,
     extra_info: ["waytype"],
+    options,
   };
-  if (request.roundTrip) {
-    body.options = {
-      round_trip: {
-        length: Math.round(request.roundTrip.length_m),
-        points: ROUND_TRIP_POINTS,
-        seed: request.roundTrip.seed,
-      },
-    };
-  }
   let data: unknown;
   try {
     data = (
@@ -286,7 +304,7 @@ export async function orsRoute(
       })
     ).data;
   } catch (error) {
-    handleOrsError(error, context);
+    handleOrsError(error, context, "Routing");
   }
   return parseOrsRoute(data);
 }

@@ -312,12 +312,14 @@ describe("checkConfig", () => {
     expect(errors[2]).toMatch(/^INTERVALS_ATHLETE_ID /);
   });
 
-  it("reports a HOME_START that is not lat,lng", () => {
+  it("reports a HOME_START that is not lat,lng without quoting it", () => {
     setValidEnv();
-    process.env.HOME_START = "my place";
+    // A near-miss home coordinate: one comma short.
+    process.env.HOME_START = "37.7912 -122.3934";
     const { errors } = checkConfig();
     expect(errors).toHaveLength(1);
-    expect(errors[0]).toMatch(/HOME_START/);
+    expect(errors[0]).toMatch(/^HOME_START /);
+    expect(errors[0]).not.toContain("37.7912");
   });
 
   it("cuts a long value to 64 characters in the message", () => {

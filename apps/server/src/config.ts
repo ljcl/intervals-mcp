@@ -214,7 +214,8 @@ export function checkConfig(): ConfigCheck {
   const homeStart = process.env.HOME_START?.trim();
   if (homeStart && !parseLatLng(homeStart)) {
     errors.push(
-      `HOME_START is ${quoteValue(homeStart)}. It must be "lat,lng" in decimal degrees, for example 37.79,-122.39; leave it unset to infer the usual start from recent runs.`,
+      // The value is not quoted: a near-miss is still the athlete's home.
+      `HOME_START is not "lat,lng" in decimal degrees, for example 37.79,-122.39; leave it unset to infer the usual start from recent runs.`,
     );
   }
 

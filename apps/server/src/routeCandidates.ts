@@ -47,6 +47,7 @@ export const CLIMB_HYSTERESIS_M = 3;
 
 /** Climb per km (m) cut points between flat, rolling and hilly. */
 export interface TerrainBands {
+  /** Flat at or below this. */
   flatBelow: number;
   hillyAbove: number;
 }
@@ -68,14 +69,17 @@ export function climbPerKm(climb_m: number, distance_m: number): number {
 
 /**
  * The athlete's own terrain thirds by climb per km: flat is their flattest
- * third of recent runs, hilly their hilliest. Fixed defaults with fewer
- * than {@link MIN_RUNS_FOR_BANDS} runs.
+ * third of recent runs, hilly their hilliest. Runs with no recorded climb
+ * are left out. Fixed defaults with fewer than {@link MIN_RUNS_FOR_BANDS}
+ * runs.
  */
 export function terrainBands(runs: RunStart[]): TerrainBands {
-  if (runs.length < MIN_RUNS_FOR_BANDS) return DEFAULT_TERRAIN_BANDS;
   const perKm = runs
-    .map((r) => climbPerKm(r.climb_m, r.distance_m))
+    .flatMap((r) =>
+      r.climb_m === null ? [] : [climbPerKm(r.climb_m, r.distance_m)],
+    )
     .sort((a, b) => a - b);
+  if (perKm.length < MIN_RUNS_FOR_BANDS) return DEFAULT_TERRAIN_BANDS;
   const at = (q: number) => perKm[Math.floor(q * (perKm.length - 1))]!;
   return { flatBelow: at(1 / 3), hillyAbove: at(2 / 3) };
 }
@@ -88,7 +92,7 @@ export function terrainFits(
 ): boolean {
   if (terrain === "any" || terrain === "hill-repeats") return true;
   const perKm = climbPerKm(climb_m, distance_m);
-  if (terrain === "flat") return perKm < bands.flatBelow;
+  if (terrain === "flat") return perKm <= bands.flatBelow;
   if (terrain === "hilly") return perKm > bands.hillyAbove;
   return perKm >= bands.flatBelow && perKm <= bands.hillyAbove;
 }
@@ -123,6 +127,7 @@ function pointAt(track: RouteTrack, fraction: number): LatLng {
   return track.coordinates[Math.max(0, index)]!;
 }
 
+/** The same route, either way round (a loop run in reverse is the same loop). */
 export function sameRoute(a: RouteTrack, b: RouteTrack): boolean {
   const lengthA = a.distance.at(-1) ?? 0;
   const lengthB = b.distance.at(-1) ?? 0;
@@ -131,9 +136,13 @@ export function sameRoute(a: RouteTrack, b: RouteTrack): boolean {
     Math.max(lengthA, lengthB) * SAME_ROUTE_LENGTH
   )
     return false;
-  return [0.25, 0.5, 0.75].every(
-    (f) => haversineMeters(pointAt(a, f), pointAt(b, f)) <= SAME_ROUTE_M,
-  );
+  const along = (reversed: boolean) =>
+    [0.25, 0.5, 0.75].every(
+      (f) =>
+        haversineMeters(pointAt(a, f), pointAt(b, reversed ? 1 - f : f)) <=
+        SAME_ROUTE_M,
+    );
+  return along(false) || along(true);
 }
 
 /** Candidates with later duplicates of an earlier route removed. */
@@ -171,7 +180,9 @@ export function rankPast(
 /**
  * Past runs from one start that could fit a planned run: loops (they end
  * where they start) within 10% of the distance that fit the terrain, not
- * already used, ranked by {@link rankPast}, duplicates removed. The engine
+ * already used, duplicates removed (runs come newest first, so each route
+ * keeps its latest recording and "not repeated in 7 days" is judged per
+ * route), ranked by {@link rankPast}. The engine
  * keeps {@link PAST_POOL}, counts their crossings, ranks again and keeps
  * {@link MAX_PAST_CANDIDATES}. Point-to-point plans get none.
  */
@@ -195,7 +206,7 @@ export function matchPastRuns(
         isLoop(run.track) &&
         Math.abs(run.distance_m - target_m) <=
           target_m * PAST_DISTANCE_TOLERANCE &&
-        terrainFits(terrain, run.climb_m, run.distance_m, bands),
+        terrainFits(terrain, run.climb_m ?? 0, run.distance_m, bands),
     )
     .map(
       (run): RouteCandidate => ({
@@ -205,7 +216,7 @@ export function matchPastRuns(
         date: run.date,
         shape: "loop",
         distance_m: run.distance_m,
-        climb_m: run.climb_m,
+        climb_m: run.climb_m ?? 0,
         path_share: null,
         crossings_per_km: null,
         hill: null,
@@ -213,7 +224,7 @@ export function matchPastRuns(
         track: run.track,
       }),
     );
-  return dedupeRoutes(rankPast(matching, target_m, today));
+  return rankPast(dedupeRoutes(matching), target_m, today);
 }
 
 /** The first half of a track, then back the same way: an out-and-back as long as the track. */
@@ -239,9 +250,10 @@ export function outAndBack(track: RouteTrack): RouteTrack {
 }
 
 /**
- * Generated candidates best first: terrain fit, then (hill repeats) a hill
- * found, then fewer crossings, then the share on paths, then climb in the
- * asked direction (least for flat, most for hilly), then distance.
+ * Generated candidates best first: within {@link PAST_DISTANCE_TOLERANCE}
+ * of the distance, then terrain fit, then (hill repeats) a hill found, then
+ * fewer crossings, then the share on paths, then climb in the asked
+ * direction (least for flat, most for hilly), then distance.
  */
 export function rankGenerated(
   candidates: RouteCandidate[],
@@ -251,9 +263,14 @@ export function rankGenerated(
 ): RouteCandidate[] {
   const misfit = (c: RouteCandidate) =>
     terrainFits(terrain, c.climb_m, c.distance_m, bands) ? 0 : 1;
+  const offTarget = (c: RouteCandidate) =>
+    Math.abs(c.distance_m - target_m) <= target_m * PAST_DISTANCE_TOLERANCE
+      ? 0
+      : 1;
   const perKm = (c: RouteCandidate) => climbPerKm(c.climb_m, c.distance_m);
   return [...candidates].sort(
     (a, b) =>
+      offTarget(a) - offTarget(b) ||
       misfit(a) - misfit(b) ||
       (terrain === "hill-repeats" ? Number(!a.hill) - Number(!b.hill) : 0) ||
       compareNullable(a.crossings_per_km, b.crossings_per_km) ||

@@ -48,6 +48,7 @@
           "name": "HOME_START",
           "description": "Usual run start as lat,lng (e.g. 37.79,-122.39); unset infers it from recent GPS runs",
           "isRequired": false,
+          "isSecret": true,
           "format": "string"
         },
         {

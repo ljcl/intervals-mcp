@@ -3,6 +3,7 @@ import { handledRateLimit } from "./__fixtures__";
 import noRouteFixture from "./__fixtures__/ors/error-no-route.json";
 import geocodeFixture from "./__fixtures__/ors/geocode-sf.json";
 import roundTripFixture from "./__fixtures__/ors/round-trip-sf.json";
+import { CallCancelledError } from "./callScope";
 import { HttpError, orsApi } from "./fetchClient";
 import {
   geocode,
@@ -45,6 +46,23 @@ describe("parseOrsRoute", () => {
     expect(route.way_names.length).toBeLessThanOrEqual(4);
     expect(route.way_names).not.toContain("-");
     expect(route.way_names).not.toContain("");
+    expect(route.ferry_m).toBe(0);
+  });
+
+  it("reports the metres on a ferry (waytype 9)", () => {
+    const ferry = structuredClone(roundTripFixture);
+    ferry.features[0]!.properties.extras.waytype.summary.push({
+      value: 9,
+      distance: 2400.5,
+      amount: 25,
+    });
+    expect(parseOrsRoute(JSON.stringify(ferry)).ferry_m).toBe(2400.5);
+  });
+
+  it("throws the invalid-response error for a body that is not JSON", () => {
+    expect(() => parseOrsRoute("<html>busy</html>")).toThrow(
+      "read a route: invalid OpenRouteService response",
+    );
   });
 });
 
@@ -63,6 +81,7 @@ describe("orsRoute", () => {
       instructions: true,
       extra_info: ["waytype"],
       options: {
+        avoid_features: ["ferries"],
         round_trip: { length: 6000, points: ROUND_TRIP_POINTS, seed: 7 },
       },
     });
@@ -71,6 +90,36 @@ describe("orsRoute", () => {
       responseType: "text",
       headers: { Authorization: "key" },
     });
+  });
+
+  it("avoids ferries between places too", async () => {
+    post.mockResolvedValue({ data: JSON.stringify(roundTripFixture) });
+    await orsRoute("key", {
+      waypoints: [
+        [37.7955, -122.3937],
+        [37.8, -122.4],
+      ],
+    });
+    expect(post.mock.calls[0]![1]).toMatchObject({
+      options: { avoid_features: ["ferries"] },
+    });
+    expect(post.mock.calls[0]![1]).not.toHaveProperty("options.round_trip");
+  });
+
+  it("rethrows a cancellation without the request URL", async () => {
+    post.mockRejectedValue(
+      new CallCancelledError(
+        "Request to https://api.openrouteservice.org/v2/directions?x=37.7955,-122.3937",
+      ),
+    );
+    const error = await orsRoute("key", { waypoints: [[37.7955, -122.3937]] })
+      .then(() => null)
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(CallCancelledError);
+    expect((error as Error).message).toBe(
+      "Routing stopped: the tool call was cancelled.",
+    );
+    expect((error as Error).message).not.toMatch(/\d+\.\d+/);
   });
 
   it("wraps an HTTP failure with its status and the ORS message", async () => {
@@ -117,6 +166,22 @@ describe("geocode", () => {
         "focus.point.lon": -122.4,
       },
     });
+  });
+
+  it("rethrows a cancellation without the focus point", async () => {
+    get.mockRejectedValue(
+      new CallCancelledError(
+        "Request to https://api.openrouteservice.org/geocode/search?focus.point.lat=37.79",
+      ),
+    );
+    const error = await geocode("key", "Embarcadero", [37.79, -122.4])
+      .then(() => null)
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(CallCancelledError);
+    expect((error as Error).message).toBe(
+      "Looking up a place stopped: the tool call was cancelled.",
+    );
+    expect((error as Error).message).not.toMatch(/\d+\.\d+/);
   });
 
   it("is null when nothing matches", async () => {

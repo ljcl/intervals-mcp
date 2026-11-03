@@ -30,7 +30,8 @@ export interface RunStart {
   date: string;
   name: string;
   distance_m: number;
-  climb_m: number;
+  /** Null when the activity has no recorded climb. */
+  climb_m: number | null;
   track: RouteTrack;
 }
 
@@ -129,7 +130,7 @@ export async function loadRunStarts(
       date: activity.start_date_local.slice(0, 10),
       name: activity.name ?? "Run",
       distance_m: activity.distance ?? 0,
-      climb_m: activity.total_elevation_gain ?? 0,
+      climb_m: activity.total_elevation_gain ?? null,
       track,
     });
   }

@@ -37,11 +37,12 @@ Notes:
   looked up (pass lat,lng).
 - Start, end and via points are sent to OpenRouteService, and the area's
   bounding box to OpenStreetMap Overpass, which counts road crossings.
-- Routes with fewer crossings rank first; when Overpass is slow they rank
-  by their share on paths instead.
-- A generated loop lands within about 5% of the distance; point-to-point and
-  via routes are as long as the streets make them, and the difference is
-  shown.
+- Routes with fewer crossings rank first when the public Overpass service
+  answers, which it often does not; then new routes rank by their share on
+  paths and past runs by recency and distance.
+- A generated loop usually lands within about 5% of the distance, and one
+  more than 25% off is dropped; point-to-point and via routes are as long as
+  the streets make them, and the difference is shown.
 - A week of runs shares one budget of routing calls; later runs may get
   past runs only, with a warning.
 `;
@@ -107,7 +108,8 @@ function signedKm(meters: number): string {
   return `${meters >= 0 ? "+" : "-"}${km(Math.abs(meters))}`;
 }
 
-const round5 = (value: number) => Math.round(value * 1e5) / 1e5;
+/** About 100 m: enough to place a start, not a front door. */
+const round3 = (value: number) => Math.round(value * 1e3) / 1e3;
 
 /** The tool's structured result: no geometry (the app gets that). */
 export function toStructured(s: RouteSuggestions) {
@@ -123,23 +125,23 @@ export function toStructured(s: RouteSuggestions) {
       distance_source: run.distance_source,
       start: {
         label: run.start.label,
-        lat: round5(run.start.point[0]),
-        lng: round5(run.start.point[1]),
+        lat: round3(run.start.point[0]),
+        lng: round3(run.start.point[1]),
         source: run.start.source,
         history_runs: run.start.history_runs,
       },
       end: run.end
         ? {
             label: run.end.label,
-            lat: round5(run.end.point[0]),
-            lng: round5(run.end.point[1]),
+            lat: round3(run.end.point[0]),
+            lng: round3(run.end.point[1]),
           }
         : null,
       via: run.via
         ? {
             label: run.via.label,
-            lat: round5(run.via.point[0]),
-            lng: round5(run.via.point[1]),
+            lat: round3(run.via.point[0]),
+            lng: round3(run.via.point[1]),
           }
         : null,
       shape: run.shape,

@@ -53,15 +53,21 @@ import {
   OUTDOOR_RUN_TYPES,
   type StartCluster,
 } from "./startClusters";
-import { addDays } from "./utils/localDate";
+import { addDays, daysBetween } from "./utils/localDate";
 
 export const GENERATED_AT_HOME = 1;
 export const GENERATED_AWAY = 3;
 /** Seeds tried beyond those wanted, so ranking has a choice. */
 export const EXTRA_SEEDS = 1;
 export const GENERATED_DISTANCE_TOLERANCE = 0.05;
+/** A generated loop or out-and-back further off the distance than this is dropped. */
+export const GENERATED_MAX_MISS = 0.25;
 /** One request plus one rescale lands within 5% (docs/api-notes.md). */
 export const MAX_FIT_CALLS = 2;
+/** A first loop off by more than this factor is not rescaled: ORS gave 39 km for 6 km, and the rescale 1 km. */
+const MAX_RESCALE_RATIO = 2;
+/** A rescale moves the asked length by at most this factor either way. */
+const RESCALE_CLAMP: [number, number] = [0.75, 1.33];
 /** ORS calls one tool call may make: the key allows 200 a day. */
 export const ORS_CALL_BUDGET = 12;
 export const PLANNED_RUN_LOOKAHEAD_DAYS = 14;
@@ -274,7 +280,12 @@ async function resolveStart(
   };
 }
 
-/** A loop from `start` near `target_m`: one request, one rescale if it misses by over 5%; null when no call could be made or the first failed. */
+/**
+ * A loop from `start` near `target_m`: one request, and one rescale (by at
+ * most {@link RESCALE_CLAMP}) if it misses by over 5% but by less than
+ * {@link MAX_RESCALE_RATIO} times; null when no call could be made, the
+ * first failed, or it went by ferry.
+ */
 async function fitLoop(
   key: string,
   start: LatLng,
@@ -292,7 +303,8 @@ async function fitLoop(
       { waypoints: [start], roundTrip: { length_m: length, seed } },
       budget,
     );
-    if (!route) break;
+    // A ferry is never a run; avoid_features should keep ORS off one, so this is a backstop.
+    if (!route || route.ferry_m > 0) break;
     if (
       !best ||
       Math.abs(route.distance_m - target_m) <
@@ -304,7 +316,9 @@ async function fitLoop(
       target_m * GENERATED_DISTANCE_TOLERANCE
     )
       break;
-    length *= target_m / route.distance_m;
+    const ratio = target_m / route.distance_m;
+    if (ratio < 1 / MAX_RESCALE_RATIO || ratio > MAX_RESCALE_RATIO) break;
+    length *= Math.min(RESCALE_CLAMP[1], Math.max(RESCALE_CLAMP[0], ratio));
   }
   return best;
 }
@@ -362,7 +376,7 @@ async function generate(
       plan.end ?? plan.start,
     ];
     const route = await orsCall(key, { waypoints }, budget);
-    if (!route) return [];
+    if (!route || route.ferry_m > 0) return [];
     return [
       generatedCandidate(
         route,
@@ -380,10 +394,23 @@ async function generate(
       budget,
       progress,
     );
-    if (!route) break;
-    tried.push(generatedCandidate(route, plan.shape));
+    // Null with budget left (a ferry) moves to the next seed; a spent or failed budget makes no more calls.
+    if (route) tried.push(generatedCandidate(route, plan.shape));
   }
   return dedupeRoutes(tried);
+}
+
+/**
+ * The first ORS seed for a run: from its date (and its place among earlier
+ * runs that day), so a week call and a one-run call for the same day ask
+ * ORS for the same loops. shortcut: a third run in one day can share seeds
+ * with the next day's; fine while two runs a day is the most planned.
+ */
+function seedBase(date: string, earlier: PlannedRun[], want: number): number {
+  const sameDay = earlier.filter((r) => r.date === date).length;
+  return (
+    daysBetween("2000-01-01", date) * 10 + 1 + sameDay * (want + EXTRA_SEEDS)
+  );
 }
 
 /** Suggestions for every planned run in the window; see the module comment. */
@@ -421,7 +448,7 @@ export async function loadRouteSuggestions(
   const warnings: string[] = [];
   if (skipped > 0) {
     warnings.push(
-      `${skipped} recent run${skipped === 1 ? "" : "s"} could not be read and ${skipped === 1 ? "was" : "were"} left out of the start history.`,
+      `${skipped} recent run${skipped === 1 ? "" : "s"} had no GPS track or could not be read and ${skipped === 1 ? "was" : "were"} left out of the start history.`,
     );
   }
 
@@ -442,7 +469,7 @@ export async function loadRouteSuggestions(
     if (run.distance_m <= 0) {
       runWarnings.push("This planned run has no distance; pass distanceKm.");
     } else {
-      const pool =
+      const matched =
         cluster && !via
           ? matchPastRuns(cluster.runs, {
               target_m: run.distance_m,
@@ -451,8 +478,15 @@ export async function loadRouteSuggestions(
               today: env.today,
               exclude: usedPast,
               bands,
-            }).slice(0, PAST_POOL)
+            })
           : [];
+      if (terrain === "hill-repeats") {
+        // Hills are found on every match before the cut, so a hilly loop ranked 7th still makes the pool.
+        for (const c of matched)
+          c.hill = bestRepeatHill(c.track.distance, c.track.altitude);
+        matched.sort((a, b) => Number(!a.hill) - Number(!b.hill));
+      }
+      const pool = matched.slice(0, PAST_POOL);
       let tried: RouteCandidate[] = [];
       // After an ORS failure, later runs skip generation; the call-level warning says why.
       if (env.orsKey && budget.failure === null) {
@@ -467,7 +501,7 @@ export async function loadRouteSuggestions(
             target_m: run.distance_m,
           },
           want,
-          index * 10 + 1,
+          seedBase(run.date, planned.slice(0, index), want),
           budget,
           progress,
         );
@@ -483,13 +517,24 @@ export async function loadRouteSuggestions(
             "This call's routing budget is spent; ask for later runs on their own for new routes.",
           );
         }
+        if (shape !== "point-to-point" && !via && tried.length > 0) {
+          tried = tried.filter(
+            (c) =>
+              Math.abs(c.distance_m - run.distance_m) <=
+              run.distance_m * GENERATED_MAX_MISS,
+          );
+          if (tried.length === 0)
+            runWarnings.push(
+              `No new loop close to ${(run.distance_m / 1000).toFixed(1)} km was found from this start.`,
+            );
+        }
       }
 
-      const all = [...pool, ...tried];
       if (terrain === "hill-repeats") {
-        for (const c of all)
+        for (const c of tried)
           c.hill = bestRepeatHill(c.track.distance, c.track.altitude);
       }
+      const all = [...pool, ...tried];
       if (all.length > 0 && !crossingsMissing) {
         progress("Counting road crossings", { important: true });
         const nodes = await loadCrossings(all.map((c) => c.track));
@@ -539,7 +584,7 @@ export async function loadRouteSuggestions(
   }
   if (crossingsMissing) {
     warnings.push(
-      "Road crossings could not be counted (OpenStreetMap Overpass did not answer), so routes were ranked by their share on paths.",
+      "Road crossings could not be counted (OpenStreetMap Overpass did not answer), so new routes were ranked by their share on paths and past runs by recency and distance.",
     );
   }
   return { runs, generation_available: env.orsKey !== null, warnings };

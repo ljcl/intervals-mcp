@@ -142,6 +142,12 @@ describe("loadRunStarts", () => {
     });
   });
 
+  it("carries a missing climb as null, not 0", async () => {
+    vi.mocked(loadIntervalsStreams).mockResolvedValue(streams);
+    const { runs } = await loadRunStarts("k", "2026-11-03");
+    expect(runs.find((r) => r.id === "i0")?.climb_m).toBeNull();
+  });
+
   it("rethrows a cancelled call instead of counting it skipped", async () => {
     vi.mocked(loadIntervalsStreams).mockRejectedValue(
       new CallCancelledError("Reading runs"),
