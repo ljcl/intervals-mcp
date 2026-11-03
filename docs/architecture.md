@@ -104,6 +104,17 @@ never per-tool.
   message. A text read would replace the bytes that are not valid UTF-8.
 - `FetchClient` stops the upstream work of a cancelled call scope; see
   "Cancellation".
+- Three clients share the class: `intervalsApi` (intervals.icu, all athlete
+  data, through `intervalsClient.ts`), `orsApi` (OpenRouteService routing and
+  geocoding, `orsClient.ts`, paced 1.5 s apart for its 40 a minute, 10 s
+  cap, one retry) and `overpassApi` (OpenStreetMap road crossings,
+  `overpassClient.ts`, 12 s cap, no retries; a failure skips it for 10
+  minutes, and a 200 whose body reports a failure is dropped from the cache
+  with `evictCached`). Do not add a client for data intervals.icu holds.
+- A request with `readOnly: true` is a POST that changes nothing (ORS
+  routing and Overpass queries, which take a body): it retries and caches
+  like a GET, and its body is part of the cache key. Without the flag a POST
+  is a write and is never retried.
 - An error body goes into `HttpError.message` only as a one-line summary
   (`summarizeErrorBody`): an HTML page becomes its `<title>`, anything else
   is cut to 200 characters. `handleApiError` uses the same summary. The raw
@@ -462,6 +473,20 @@ holds the LTHR and max HR checks against intervals.icu's HR curves, used by
 `get-athlete-zones`. The LTHR estimate follows intervals.icu's own rule
 (`lthrEstimate`): the higher of the best 60-minute heart rate and 98% of the
 best 20-minute heart rate, both of the last 90 days.
+
+**Route suggestion rules have one home each.** `bestRepeatHill`
+(`hillAnalysis.ts`) finds the 60-200 m stretch at 5-12% for hill repeats,
+reusing the GAP grades. `startClusters.ts` groups recent run starts (300 m,
+recency weighted) into the athlete's usual start. `routeCandidates.ts` holds
+the candidate rules: past-run matching and ranking, the terrain bands (the
+athlete's own thirds of climb per km, 8 and 20 m/km under 10 runs) and the
+3 m climb hysteresis for generated routes. `crossingsPerKm`
+(`overpassClient.ts`) counts road crossings within 12 m of a route per km.
+`routeSuggestions.ts` composes them for `suggest-run-route` and the
+`route-map` suggestion mode (`buildSuggestionsMapData`), so the text and the
+map offer the same routes. Its ORS budget is per call (12 calls, at most 2
+per seed), and the first non-cancellation ORS failure stops generation for
+the rest of that call, keeping the routes already made.
 
 **Run types have one home.** `PACE_ACTIVITY_TYPES` in `packages/data`
 (`activity-types.ts`: Run, TrailRun, VirtualRun), because `speedSport` there

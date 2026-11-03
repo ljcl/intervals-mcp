@@ -5,6 +5,8 @@ import {
   FetchClient,
   HttpError,
   intervalsCacheTtl,
+  orsCacheTtl,
+  overpassCacheTtl,
   parseJsonWithLargeInts,
   parseRateLimitHeaders,
   RateLimitError,
@@ -836,6 +838,26 @@ describe("FetchClient response cache", () => {
     expect(a.data.name).toBe("first");
     expect(b.data.name).toBe("first");
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("evicts one cached GET by its url and params, and leaves the others", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(async () => makeResponse('{"ok":true}'));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = newCachingClient();
+    await client.get("/activities/1", { params: { q: "a b" } });
+    await client.get("/activities/2");
+    client.evictCached("/activities/1", { q: "a b" });
+    await client.get("/activities/1", { params: { q: "a b" } });
+    await client.get("/activities/2");
+
+    expect(fetchMock.mock.calls.map((c) => String(c[0]))).toEqual([
+      "https://example.test/activities/1?q=a+b",
+      "https://example.test/activities/2",
+      "https://example.test/activities/1?q=a+b",
+    ]);
   });
 
   it("does not cache paths the policy declines (miss every time)", async () => {
@@ -2316,6 +2338,7 @@ describe("intervalsCacheTtl", () => {
     ["/athlete/0/activities/i1,i22,i333", 600_000],
     ["/athlete/0/activities/search", null],
     ["/athlete/0/activities/1,2", null],
+    ["/athlete/0/events", 60_000],
     ["/athlete/0/wellness", 300_000],
     ["/athlete/0/wellness/2026-09-24", 300_000],
     ["/athlete/0/wellness.json", 300_000],
@@ -2323,5 +2346,82 @@ describe("intervalsCacheTtl", () => {
     ["/athlete/0", null],
   ])("%s", (p, ttl) => {
     expect(intervalsCacheTtl(p)).toBe(ttl);
+  });
+});
+
+describe("FetchClient readOnly POST", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  const newClient = () =>
+    new FetchClient("https://example.test", {
+      sleep: async () => {},
+      cache: { ttlForPath: (path) => (path === "/route" ? 60_000 : null) },
+    });
+
+  it("caches and coalesces identical bodies, keys by body", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(async () => makeResponse('{"ok":true}'));
+    vi.stubGlobal("fetch", fetchMock);
+    const api = newClient();
+    await Promise.all([
+      api.post("/route", { a: 1 }, { readOnly: true }),
+      api.post("/route", { a: 1 }, { readOnly: true }),
+    ]);
+    await api.post("/route", { a: 1 }, { readOnly: true });
+    await api.post("/route", { a: 2 }, { readOnly: true });
+    expect(fetchMock.mock.calls.map((c) => c[1].body)).toEqual([
+      '{"a":1}',
+      '{"a":2}',
+    ]);
+  });
+
+  it("retries a readOnly POST on 503, never a plain POST", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(makeResponse("{}", { status: 503 }))
+      .mockResolvedValueOnce(makeResponse('{"ok":true}'));
+    vi.stubGlobal("fetch", fetchMock);
+    await newClient().post("/route", { a: 1 }, { readOnly: true });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    const plain = vi
+      .fn()
+      .mockResolvedValue(makeResponse("{}", { status: 503 }));
+    vi.stubGlobal("fetch", plain);
+    await expect(newClient().post("/other", { a: 1 })).rejects.toThrow();
+    expect(plain).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not invalidate cached reads", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(async () => makeResponse('{"ok":true}'));
+    vi.stubGlobal("fetch", fetchMock);
+    const api = new FetchClient("https://example.test", {
+      sleep: async () => {},
+      cache: { ttlForPath: (path) => (path.startsWith("/r") ? 60_000 : null) },
+    });
+    await api.get("/r");
+    await api.post("/r/x", { a: 1 }, { readOnly: true });
+    await api.get("/r");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("route client cache TTL policies", () => {
+  it("caches geocoding a day and directions 30 minutes", () => {
+    expect(orsCacheTtl("/geocode/search")).toBe(24 * 60 * 60_000);
+    expect(orsCacheTtl("/v2/directions/foot-walking/geojson")).toBe(
+      30 * 60_000,
+    );
+    expect(orsCacheTtl("/v2/isochrones/foot-walking")).toBeNull();
+  });
+  it("caches an Overpass area a week", () => {
+    expect(overpassCacheTtl("/interpreter")).toBe(7 * 24 * 60 * 60_000);
+    expect(overpassCacheTtl("/status")).toBeNull();
   });
 });

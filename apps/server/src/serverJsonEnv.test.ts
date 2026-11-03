@@ -106,3 +106,17 @@ describe("server.json environmentVariables", () => {
     }
   });
 });
+
+describe("server.json secrets", () => {
+  it("marks HOME_START secret: it is the athlete's home", () => {
+    const manifest = JSON.parse(readFileSync(SERVER_JSON_URL, "utf8")) as {
+      packages: Array<{
+        environmentVariables?: Array<{ name: string; isSecret?: boolean }>;
+      }>;
+    };
+    const homeStart = manifest.packages
+      .flatMap((pkg) => pkg.environmentVariables ?? [])
+      .find((variable) => variable.name === "HOME_START");
+    expect(homeStart?.isSecret).toBe(true);
+  });
+});

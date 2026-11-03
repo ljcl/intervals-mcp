@@ -6,7 +6,13 @@ import {
   type IntervalsInterval,
 } from "./intervalsClient";
 import { type IntervalsStreams } from "./intervalsStreams";
-import { buildRouteMapData, MAX_ROUTE_MAP_POINTS } from "./routeMapData";
+import { cumulativeDistances } from "./mapAnchors";
+import {
+  buildRouteMapData,
+  buildSuggestionsMapData,
+  buildTrackMapData,
+  MAX_ROUTE_MAP_POINTS,
+} from "./routeMapData";
 import { rawUnitDecimals } from "./streamPrecision";
 
 const activity = (
@@ -417,5 +423,75 @@ describe("buildRouteMapData wire precision", () => {
       start: null,
       end: null,
     });
+  });
+});
+
+describe("suggestion payloads", () => {
+  const coordinates = Array.from({ length: 2500 }, (_, i): [number, number] => [
+    37.79 + i * 1e-5,
+    -122.39,
+  ]);
+  const track = {
+    coordinates,
+    distance: cumulativeDistances(coordinates),
+    altitude: coordinates.map((_, i) => 10 + i * 0.01),
+  };
+
+  it("downsamples a track into a suggestion payload", () => {
+    const data = buildTrackMapData(
+      "2026-11-05-1",
+      "Easy run: New loop",
+      track,
+      25,
+      [],
+    );
+    expect(data.source).toBe("suggestion");
+    expect(data.coordinates.length).toBeLessThanOrEqual(MAX_ROUTE_MAP_POINTS);
+    expect(data.streams?.altitude?.length).toBe(data.coordinates.length);
+    expect(data.elevationGain).toBe(25);
+  });
+
+  it("marks the hill and via point on each candidate", () => {
+    const run = {
+      event_id: 1,
+      date: "2026-11-05",
+      name: "Hill sprints",
+      description: null,
+      distance_m: 2700,
+      distance_source: "event" as const,
+      start: {
+        label: "Start",
+        point: coordinates[0]!,
+        source: "argument" as const,
+        history_runs: 0,
+      },
+      end: null,
+      via: { label: "The hill", point: coordinates[1200]! },
+      shape: "loop" as const,
+      terrain: "hill-repeats" as const,
+      candidates: [
+        {
+          kind: "generated" as const,
+          activity_id: null,
+          name: "New loop",
+          date: null,
+          shape: "loop" as const,
+          distance_m: 2700,
+          climb_m: 25,
+          path_share: 0.5,
+          crossings_per_km: null,
+          hill: { start_m: 500, length_m: 120, grade_pct: 6 },
+          summary: "via A",
+          track,
+        },
+      ],
+      warnings: [],
+    };
+    const data = buildSuggestionsMapData(run, []);
+    expect(data.candidates[0]!.label).toBe("New loop");
+    const kinds = data.candidates[0]!.map.annotations?.waypoints?.map(
+      (w) => w.kind,
+    );
+    expect(kinds).toEqual(expect.arrayContaining(["climb", "custom"]));
   });
 });

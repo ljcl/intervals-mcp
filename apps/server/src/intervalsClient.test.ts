@@ -34,6 +34,7 @@ import {
   type IntervalsInterval,
   listActivities,
   listGear,
+  listPlannedWorkouts,
   listSportSettings,
   resetGearReminder,
   searchActivities,
@@ -1197,5 +1198,50 @@ describe("intervalsClient", () => {
     const calls = mockJson(activity);
     await expect(getActivity("", "i1")).rejects.toThrow(/API key/);
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe("listPlannedWorkouts", () => {
+  it("reads WORKOUT events in the range, oldest first", async () => {
+    const calls = mockJson([
+      {
+        id: 2,
+        start_date_local: "2026-11-05T00:00:00",
+        category: "WORKOUT",
+        type: "Run",
+        name: "Easy 6.5 km",
+        description: "Iron Cove (flat)",
+        distance: 3126,
+        moving_time: 2022,
+      },
+      {
+        id: 1,
+        start_date_local: "2026-11-03T00:00:00",
+        category: "WORKOUT",
+        type: "Run",
+        name: "Easy 6 km",
+        description: null,
+        distance: 6000,
+        moving_time: 2707,
+      },
+    ]);
+    const events = await listPlannedWorkouts("k", {
+      oldest: "2026-11-03",
+      newest: "2026-11-09",
+    });
+    expect(events.map((e) => e.id)).toEqual([1, 2]);
+    expect(events[1]?.description).toBe("Iron Cove (flat)");
+    const url = new URL(calls[0]!.url);
+    expect(url.pathname).toBe("/api/v1/athlete/0/events");
+    expect(url.searchParams.get("category")).toBe("WORKOUT");
+    expect(url.searchParams.get("oldest")).toBe("2026-11-03");
+    expect(url.searchParams.get("newest")).toBe("2026-11-09");
+  });
+
+  it("keeps the status on failure", async () => {
+    mockJson({ message: "boom" }, 500);
+    await expect(
+      listPlannedWorkouts("k", { oldest: "2026-11-03", newest: "2026-11-03" }),
+    ).rejects.toBeInstanceOf(IntervalsApiError);
   });
 });

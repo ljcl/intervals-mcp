@@ -29,6 +29,7 @@ import sportSettingsListFixture from "../__fixtures__/intervals/sport-settings.j
 import sportSettingsRunFixture from "../__fixtures__/intervals/sport-settings-run.json";
 import streamsMultilapFixture from "../__fixtures__/intervals/streams-multilap.json";
 import wellnessFixture from "../__fixtures__/intervals/wellness.json";
+import { routeSuggestionsFixture } from "../__fixtures__/routeSuggestions";
 import * as client from "../intervalsClient";
 import { addDays, daysBetween } from "../utils/localDate";
 import { RESPONSE_BUDGET_CHARS, responseSize } from "./_responseBudget";
@@ -59,6 +60,11 @@ vi.mock("../intervalsClient", async (importOriginal) => {
     getAthletePaceCurves: vi.fn(),
   };
 });
+
+vi.mock("../routeSuggestions", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../routeSuggestions")>()),
+  loadRouteSuggestions: vi.fn(async () => routeSuggestionsFixture(7)),
+}));
 
 vi.mock("../config", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../config")>();
@@ -514,6 +520,9 @@ const CASES: Record<string, SizeCase[]> = {
   "get-race-prediction": [
     { label: "marathon", args: { raceDistance: "marathon" } },
   ],
+  "suggest-run-route": [
+    { label: "7 runs, 4 candidates each", args: { days: 7 } },
+  ],
   "list-activities": [
     {
       label: "366 days, limit 200",
@@ -587,6 +596,7 @@ const CASES: Record<string, SizeCase[]> = {
   "view-activity-chart": [{ label: "default", args: { id: ID } }],
   "view-cadence-trends": [{ label: "728 days", args: { days: 728 } }],
   "view-route-map": [{ label: "default", args: { id: ID } }],
+  "view-route-suggestions": [{ label: "default", args: {} }],
   "view-training-load": [{ label: "365 days", args: { days: 365 } }],
   "view-fitness-trend": [{ label: "365 days", args: { days: 365 } }],
   "view-activity-zones": [{ label: "default", args: { id: ID } }],

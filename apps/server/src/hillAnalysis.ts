@@ -608,6 +608,66 @@ export function computeDrift(
   };
 }
 
+/** A stretch for hill repeats (route suggestions): 60-200 m averaging 5-12%. */
+export const REPEAT_HILL_MIN_M = 60;
+export const REPEAT_HILL_MAX_M = 200;
+export const REPEAT_HILL_MIN_GRADE_PCT = 5;
+export const REPEAT_HILL_MAX_GRADE_PCT = 12;
+
+export interface RepeatHill {
+  start_m: number;
+  length_m: number;
+  grade_pct: number;
+}
+
+/**
+ * The best stretch for hill repeats on a route: 60-200 m of sustained climb
+ * (every sample at least {@link CLIMB_MIN_GRADE_PCT} on the same 30 m grade
+ * {@link computeGrades} gives hill analysis) whose average grade, rise over
+ * run between its ends, is 5-12%. Uphill in the direction of travel. Best is
+ * the most rise; ties go to the shorter, then the earlier, stretch. Null
+ * when none qualifies or there is no altitude.
+ */
+export function bestRepeatHill(
+  distance: number[],
+  altitude: (number | null)[],
+): RepeatHill | null {
+  if (altitude.length !== distance.length || !hasRealSample(altitude))
+    return null;
+  const alt = interpolateNulls(altitude);
+  const { grades } = computeGrades({ distance, altitude: alt });
+  let best: { i: number; run: number; rise: number } | null = null;
+  for (let i = 0; i < distance.length; i++) {
+    for (let j = i + 1; j < distance.length; j++) {
+      // Sample j's grade covers the step into it; a flat or falling one ends every stretch from i.
+      if (grades[j]! < CLIMB_MIN_GRADE_PCT) break;
+      const run = distance[j]! - distance[i]!;
+      if (run > REPEAT_HILL_MAX_M) break;
+      if (run < REPEAT_HILL_MIN_M) continue;
+      const rise = alt[j]! - alt[i]!;
+      const grade = (rise / run) * 100;
+      if (
+        grade < REPEAT_HILL_MIN_GRADE_PCT ||
+        grade > REPEAT_HILL_MAX_GRADE_PCT
+      )
+        continue;
+      if (
+        !best ||
+        rise > best.rise + 1e-9 ||
+        (Math.abs(rise - best.rise) <= 1e-9 && run < best.run)
+      ) {
+        best = { i, run, rise };
+      }
+    }
+  }
+  if (!best) return null;
+  return {
+    start_m: Math.round(distance[best.i]!),
+    length_m: Math.round(best.run),
+    grade_pct: Math.round((best.rise / best.run) * 1000) / 10,
+  };
+}
+
 export function computeHillAnalysis(streams: HillStreams): HillAnalysis {
   if (
     !streams.distance ||

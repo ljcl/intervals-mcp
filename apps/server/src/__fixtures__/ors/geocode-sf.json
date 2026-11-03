@@ -1,0 +1,87 @@
+{
+  "geocoding": {
+    "version": "0.2",
+    "attribution": "https://openrouteservice.org/terms-of-service/#attribution-geocode",
+    "query": {
+      "text": "Embarcadero, San Francisco",
+      "size": 1,
+      "layers": [
+        "venue",
+        "street",
+        "country",
+        "macroregion",
+        "region",
+        "county",
+        "localadmin",
+        "locality",
+        "borough",
+        "neighbourhood",
+        "continent",
+        "empire",
+        "dependency",
+        "macrocounty",
+        "macrohood",
+        "microhood",
+        "disputed",
+        "postalcode",
+        "ocean",
+        "marinearea"
+      ],
+      "private": false,
+      "focus.point.lat": 37.79,
+      "focus.point.lon": -122.4,
+      "lang": {
+        "name": "English",
+        "iso6391": "en",
+        "iso6393": "eng",
+        "via": "default",
+        "defaulted": true
+      },
+      "querySize": 20,
+      "parser": "libpostal",
+      "parsed_text": { "street": "embarcadero", "city": "san francisco" }
+    },
+    "warnings": ["performance optimization: excluding 'address' layer"],
+    "engine": { "name": "Pelias", "author": "Mapzen", "version": "1.0" },
+    "timestamp": 1793660499081
+  },
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [-122.396294, 37.79751] },
+      "properties": {
+        "id": "polyline:31417636",
+        "gid": "openstreetmap:street:polyline:31417636",
+        "layer": "street",
+        "source": "openstreetmap",
+        "source_id": "polyline:31417636",
+        "name": "The Embarcadero",
+        "street": "The Embarcadero",
+        "confidence": 1,
+        "match_type": "exact",
+        "distance": 0.897,
+        "accuracy": "centroid",
+        "country": "United States",
+        "country_gid": "whosonfirst:country:85633793",
+        "country_a": "USA",
+        "region": "California",
+        "region_gid": "whosonfirst:region:85688637",
+        "region_a": "CA",
+        "county": "San Francisco County",
+        "county_gid": "whosonfirst:county:102087579",
+        "county_a": "SF",
+        "locality": "San Francisco",
+        "locality_gid": "whosonfirst:locality:85922583",
+        "locality_a": "SF",
+        "neighbourhood": "North Waterfront",
+        "neighbourhood_gid": "whosonfirst:neighbourhood:85865893",
+        "continent": "North America",
+        "continent_gid": "whosonfirst:continent:102191575",
+        "label": "The Embarcadero, San Francisco, CA, USA"
+      },
+      "bbox": [-122.399261, 37.794259, -122.393271, 37.800848]
+    }
+  ],
+  "bbox": [-122.399261, 37.794259, -122.393271, 37.800848]
+}

@@ -75,7 +75,16 @@ import {
   type ReportProgress,
 } from "./progress";
 import { completePromptArgument, getPrompt, listPrompts } from "./prompts";
-import { buildRouteMapData, type RouteMapData } from "./routeMapData";
+import {
+  buildRouteMapData,
+  buildSuggestionsMapData,
+  type RouteMapData,
+} from "./routeMapData";
+import {
+  loadRouteSuggestions,
+  type RouteSuggestionArgs,
+  RouteSuggestionError,
+} from "./routeSuggestions";
 import {
   ERROR_RESULT_CLASS,
   parseTraceparent,
@@ -118,6 +127,10 @@ import { getTrainingLoadTool } from "./tools/getTrainingLoad";
 import { getWellnessTool } from "./tools/getWellness";
 import { listActivitiesTool } from "./tools/listActivities";
 import { listGearTool } from "./tools/listGear";
+import {
+  routeSuggestionEnv,
+  suggestRunRouteTool,
+} from "./tools/suggestRunRoute";
 import { updateActivityTool } from "./tools/updateActivity";
 import { updateGearTool } from "./tools/updateGear";
 import { updateWellnessTool } from "./tools/updateWellness";
@@ -323,6 +336,12 @@ const APP_TOOL_INPUT_SCHEMAS: Record<string, z.ZodType> = {
     id: intervalsActivityIdInput("The intervals.icu activity id."),
     waypoints: waypointsInput,
   }),
+  "view-route-suggestions": suggestRunRouteTool.inputSchema.omit({
+    days: true,
+  }),
+  "get-route-suggestions-data": suggestRunRouteTool.inputSchema.omit({
+    days: true,
+  }),
   "view-training-load": trainingLoadInput,
   "get-training-load-data": trainingLoadInput,
   "view-fitness-trend": fitnessTrendInput,
@@ -479,6 +498,7 @@ const TOOLS = [
   compareActivitiesTool,
   getBestEffortsTool,
   getRacePredictionTool,
+  suggestRunRouteTool,
   listActivitiesTool,
   getActivityTool,
   getActivityStreamsTool,
@@ -604,6 +624,34 @@ function buildToolDefs(): ToolDef[] {
         resourceUri: "ui://route-map/app.html",
         visibility: ["app"],
       },
+    },
+  });
+
+  defs.push({
+    name: "view-route-suggestions",
+    title: "Route suggestions map",
+    description:
+      "Open a map of where to run a planned run: the athlete's own past runs from that start and new routes, with a picker, an elevation strip and any hill for repeats marked. " +
+      "Takes the same arguments as suggest-run-route (one run), and its result carries that tool's text, so no second call is needed.",
+    inputSchema: toInputSchema(
+      APP_TOOL_INPUT_SCHEMAS["view-route-suggestions"]!,
+    ),
+    annotations: READ_ONLY,
+    _meta: { ui: { resourceUri: "ui://route-map/app.html" } },
+  });
+
+  defs.push({
+    name: "get-route-suggestions-data",
+    title: "Route suggestions map data",
+    description:
+      "Internal data feed for the route-map UI's suggestion mode: one planned run's candidate routes as route-map payloads (coordinates, distance and altitude streams, hill and via markers) as JSON. " +
+      "The view-route-suggestions app calls this; not intended for direct model use.",
+    inputSchema: toInputSchema(
+      APP_TOOL_INPUT_SCHEMAS["get-route-suggestions-data"]!,
+    ),
+    annotations: READ_ONLY,
+    _meta: {
+      ui: { resourceUri: "ui://route-map/app.html", visibility: ["app"] },
     },
   });
 
@@ -872,6 +920,11 @@ interface ViewText {
    * not (the route map's waypoints, ahead of get-hill-analysis' climbs).
    */
   keepLines?: boolean;
+  /**
+   * The view has no data of its own (route suggestions), so a failed twin's
+   * error result is the view's result, with its reason.
+   */
+  failsWithTwin?: boolean;
 }
 
 /**
@@ -895,14 +948,10 @@ async function viewResult(
   const header = (then: string) =>
     viewHeader(view.kind, context.clientRendersApps, then);
   if (view.twin) {
-    const twinText = await viewTwinCall(
-      view.twin,
-      args,
-      token,
-      progress,
-      context,
-    );
-    if (twinText !== null) {
+    const twin = await viewTwinCall(view.twin, args, token, progress, context);
+    if (twin?.isError && view.failsWithTwin) return twin;
+    if (twin && !twin.isError) {
+      const twinText = twin.content.map((block) => block.text).join("\n");
       const text = view.keepLines
         ? [
             header(`Its data follows, then the text of ${view.twin}.`),
@@ -921,10 +970,11 @@ async function viewResult(
 }
 
 /**
- * The text of tool `name`, run through its own input schema, or null when it
- * returns `isError`. Its failure is not the view's: the view already has its
- * data and falls back to naming the tool. The dispatcher reads a noted
- * failure only for an `isError` result, so the log line stays `ok`.
+ * The result of tool `name`, run through its own input schema, or null when
+ * its arguments do not parse. Its `isError` is not the view's unless
+ * `failsWithTwin`: the view already has its data and falls back to naming
+ * the tool. The dispatcher reads a noted failure only for an `isError`
+ * result, so the log line stays `ok`.
  */
 async function viewTwinCall(
   name: string,
@@ -932,18 +982,16 @@ async function viewTwinCall(
   token: string,
   progress: ReportProgress,
   context: ToolCallContext,
-): Promise<string | null> {
+): Promise<ToolCallResult | null> {
   const execute = TOOL_EXECUTORS.get(name);
   const parsed = TOOL_INPUT_SCHEMAS.get(name)?.safeParse(args);
   if (!execute || !parsed?.success) return null;
-  const result = await execute(
+  return execute(
     parsed.data as Record<string, unknown>,
     token,
     progress,
     context,
   );
-  if (result.isError) return null;
-  return result.content.map((block) => block.text).join("\n");
 }
 
 /** Stream types the activity-chart app can plot, including running dynamics. */
@@ -1547,6 +1595,44 @@ async function handleGetRouteMapData(
   return { content: [{ type: "text", text: JSON.stringify(data) }] };
 }
 
+async function handleGetRouteSuggestionsData(
+  args: Record<string, unknown>,
+  token: string,
+  progress: ReportProgress,
+): Promise<ToolCallResult> {
+  const suggestions = await loadRouteSuggestions(
+    token,
+    { ...(args as RouteSuggestionArgs), days: 1 },
+    routeSuggestionEnv(),
+    progress,
+  );
+  const run = suggestions.runs[0];
+  if (!run) throw new RouteSuggestionError("No planned run to map.");
+  const data = buildSuggestionsMapData(run, suggestions.warnings);
+  return { content: [{ type: "text", text: JSON.stringify(data) }] };
+}
+
+async function handleViewRouteSuggestions(
+  args: Record<string, unknown>,
+  token: string,
+  progress: ReportProgress,
+  context: ToolCallContext,
+): Promise<ToolCallResult> {
+  return viewResult(
+    async () => ["No route suggestions could be made for these arguments."],
+    {
+      kind: "route suggestions map",
+      footer: suggestRunRouteTool.name,
+      twin: suggestRunRouteTool.name,
+      failsWithTwin: true,
+    },
+    args,
+    token,
+    progress,
+    context,
+  );
+}
+
 async function handleViewRouteMap(
   args: Record<string, unknown>,
   token: string,
@@ -1688,6 +1774,8 @@ const APP_TOOL_HANDLERS: Record<
   "get-cadence-trend-data": handleGetCadenceTrendData,
   "view-route-map": handleViewRouteMap,
   "get-route-map-data": handleGetRouteMapData,
+  "view-route-suggestions": handleViewRouteSuggestions,
+  "get-route-suggestions-data": handleGetRouteSuggestionsData,
   "view-training-load": handleViewTrainingLoad,
   "get-training-load-data": handleGetTrainingLoadData,
   "view-fitness-trend": handleViewFitnessTrend,

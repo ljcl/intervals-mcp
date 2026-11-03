@@ -337,6 +337,16 @@ The most complex app; defaults to a MapLibre basemap with a pure-SVG offline
 grid fallback (no Recharts). Calls `get-route-map-data` (app-only) with
 `id`.
 
+- Suggestion mode: with no `id` the app is `view-route-suggestions` and
+  calls `get-route-suggestions-data` (app-only) with the tool's arguments;
+  `SuggestionMap` wraps `RouteMap` and passes its picker (one entry per
+  past or generated candidate) in the `beforeMap` slot, which renders under
+  the card header and above the map. Each candidate is a route-map payload
+  built by `buildTrackMapData` (the same builder as an activity's), so the
+  elevation strip and metric colouring work unchanged. A hill for repeats and
+  the via point are waypoints (`climb` and `custom` kinds,
+  `buildSuggestionsMapData` in `routeMapData.ts`).
+  The feed reads one planned run and reports the call's warnings.
 - Geometry always comes from the `latlng` stream: intervals.icu has no
   encoded-polyline endpoint (`GET /activity/{id}/map` returns the same
   latlng stream at the same resolution, nothing more; see docs/api-notes.md).

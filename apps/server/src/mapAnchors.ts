@@ -8,6 +8,32 @@
  * `mapAnchors.test.ts`.
  */
 
+/** A `[lat, lng]` pair in decimal degrees: this server's coordinate order. */
+export type LatLng = [number, number];
+
+/**
+ * A route as aligned columns: points, cumulative metres along them, and
+ * altitude in metres (null where unknown). Past runs and generated routes
+ * share it (route suggestions).
+ */
+export interface RouteTrack {
+  coordinates: LatLng[];
+  distance: number[];
+  altitude: (number | null)[];
+}
+
+const LAT_LNG_RE = /^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/;
+
+/** A "lat,lng" pair from text, or null when the text is not one or is out of range. */
+export function parseLatLng(text: string): LatLng | null {
+  const match = LAT_LNG_RE.exec(text);
+  if (!match) return null;
+  const lat = Number(match[1]);
+  const lng = Number(match[2]);
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  return [lat, lng];
+}
+
 const DEG_TO_RAD = Math.PI / 180;
 
 /**

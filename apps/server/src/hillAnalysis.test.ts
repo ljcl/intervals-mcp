@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  bestRepeatHill,
   computeGrades,
   computeHillAnalysis,
   GAP_MAX_GRADE_PCT,
@@ -566,5 +567,51 @@ describe("computeHillAnalysis", () => {
       const analysis = computeHillAnalysis(streams);
       expect(analysis.climbs[0]!.avgWatts).toBeNull();
     });
+  });
+});
+
+describe("bestRepeatHill", () => {
+  /** 0-1000 m every 10 m; altitude rises `rise` m between `from` and `to`. */
+  function track(from: number, to: number, rise: number) {
+    const distance = Array.from({ length: 101 }, (_, i) => i * 10);
+    const altitude = distance.map((d) =>
+      d <= from
+        ? 10
+        : d >= to
+          ? 10 + rise
+          : 10 + (rise * (d - from)) / (to - from),
+    );
+    return { distance, altitude };
+  }
+
+  it("finds a 120 m hill at about 6.7%", () => {
+    const { distance, altitude } = track(300, 420, 8);
+    expect(bestRepeatHill(distance, altitude)).toEqual({
+      start_m: 300,
+      length_m: 120,
+      grade_pct: 6.7,
+    });
+  });
+
+  it.each([
+    ["flat", track(300, 420, 0)],
+    ["downhill", track(300, 420, -8)],
+    ["a 30% wall", track(300, 400, 30)],
+    ["a 30 m hill", track(300, 330, 2)],
+  ])("is null for %s", (_label, { distance, altitude }) => {
+    expect(bestRepeatHill(distance, altitude)).toBeNull();
+  });
+
+  it("interpolates null altitude, null when there is none", () => {
+    const { distance, altitude } = track(300, 420, 8);
+    const gappy: (number | null)[] = [...altitude];
+    gappy[35] = null;
+    expect(bestRepeatHill(distance, gappy)?.start_m).toBe(300);
+    expect(
+      bestRepeatHill(
+        distance,
+        distance.map(() => null),
+      ),
+    ).toBeNull();
   });
 });

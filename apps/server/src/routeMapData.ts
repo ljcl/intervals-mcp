@@ -31,10 +31,13 @@ import {
 import { type IntervalsStreams } from "./intervalsStreams";
 import {
   cumulativeDistances,
+  haversineMeters,
   type ResolvedWaypoint,
+  type RouteTrack,
   resolveWaypoints,
   type WaypointInput,
 } from "./mapAnchors";
+import { type RunSuggestion } from "./routeSuggestions";
 import {
   type Columns,
   downsampleColumns,
@@ -83,7 +86,7 @@ export interface RouteMapAnnotations {
 }
 
 export interface RouteMapData {
-  source: "activity";
+  source: "activity" | "suggestion";
   id: string;
   name: string;
   activityType: string | null;
@@ -298,4 +301,114 @@ export function buildRouteMapData(
   return roundForWire(
     attachWaypoints(buildGeometry(activity, streams, intervals), waypoints),
   );
+}
+
+/**
+ * A route-map payload for a suggested route: the same downsampling and wire
+ * rounding as an activity, from a track whose only metric is altitude.
+ */
+export function buildTrackMapData(
+  id: string,
+  name: string,
+  track: RouteTrack,
+  climb_m: number,
+  waypoints: WaypointInput[],
+): RouteMapData {
+  const lat = lastValuePerBucket(
+    track.coordinates.map((c) => c[0]),
+    MAX_ROUTE_MAP_POINTS,
+  ) as number[];
+  const lng = lastValuePerBucket(
+    track.coordinates.map((c) => c[1]),
+    MAX_ROUTE_MAP_POINTS,
+  ) as number[];
+  const columns = downsampleColumns(
+    { distance: track.distance, altitude: track.altitude },
+    MAX_ROUTE_MAP_POINTS,
+  );
+  const coordinates = lat.map((la, i): [number, number] => [
+    la,
+    lng[i] as number,
+  ]);
+  const data: RouteMapData = {
+    source: "suggestion",
+    id,
+    name,
+    activityType: "Run",
+    distance: track.distance.at(-1) ?? 0,
+    elevationGain: climb_m,
+    coordinates,
+    start: coordinates[0] ?? null,
+    end: coordinates.at(-1) ?? null,
+    streams: {
+      distance: columns.distance as number[],
+      altitude: columns.altitude,
+    },
+  };
+  return roundForWire(attachWaypoints(data, waypoints));
+}
+
+export interface RouteSuggestionsMapData {
+  source: "suggestion";
+  date: string;
+  name: string;
+  startLabel: string;
+  candidates: Array<{ label: string; summary: string; map: RouteMapData }>;
+  warnings: string[];
+}
+
+/** One planned run's candidates as route-map payloads, with hill and via markers. */
+export function buildSuggestionsMapData(
+  run: RunSuggestion,
+  warnings: string[],
+): RouteSuggestionsMapData {
+  const seen = new Map<string, number>();
+  const candidates = run.candidates.map((c, index) => {
+    const base = c.kind === "past" ? `Past run ${c.date}` : c.name;
+    const count = (seen.get(base) ?? 0) + 1;
+    seen.set(base, count);
+    const waypoints: WaypointInput[] = [];
+    if (c.hill) {
+      waypoints.push({
+        km: c.hill.start_m / 1000,
+        label: `Hill: ${c.hill.length_m} m at ${c.hill.grade_pct}%`,
+        kind: "climb",
+      });
+    }
+    const via = run.via;
+    if (via) {
+      let nearest = 0;
+      c.track.coordinates.forEach((point, i) => {
+        if (
+          haversineMeters(point, via.point) <
+          haversineMeters(c.track.coordinates[nearest]!, via.point)
+        )
+          nearest = i;
+      });
+      waypoints.push({
+        km: (c.track.distance[nearest] ?? 0) / 1000,
+        label: via.label,
+        kind: "custom",
+      });
+    }
+    return {
+      label: count > 1 ? `${base} ${count}` : base,
+      summary: c.summary,
+      map: buildTrackMapData(
+        `${run.date}-${index}`,
+        `${run.name}: ${base}`,
+        c.track,
+        c.climb_m,
+        waypoints,
+      ),
+    };
+  });
+  return {
+    source: "suggestion",
+    date: run.date,
+    name: run.name,
+    startLabel: run.start.label,
+    candidates,
+    warnings: [...warnings, ...run.warnings],
+  };
 }

@@ -1,0 +1,22 @@
+.suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  font-family: var(--font-sans);
+}
+
+.context,
+.summary,
+.warning {
+  margin: 0;
+  font-size: var(--font-text-sm-size);
+  line-height: var(--line-height-tight);
+}
+
+.context {
+  color: var(--color-text-secondary);
+}
+
+.warning {
+  color: var(--color-text-danger);
+}

@@ -17,6 +17,8 @@ services:
       # UTC (the default) means: follow the athlete's intervals.icu time zone.
       # Etc/UTC pins UTC.
       - TZ=${TZ:-UTC}
+      - ORS_API_KEY=${ORS_API_KEY:-}
+      - HOME_START=${HOME_START:-}
       - PUBLIC_URL=${PUBLIC_URL:-}
       - MCP_AUTH_TOKEN=${MCP_AUTH_TOKEN:-}
       # Keep in step with ports; the image's healthcheck reads PORT.

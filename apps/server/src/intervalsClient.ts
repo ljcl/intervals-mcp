@@ -328,6 +328,23 @@ const IntervalsGearSchema = z
 export type IntervalsGear = z.infer<typeof IntervalsGearSchema>;
 const IntervalsGearResponseSchema = z.array(IntervalsGearSchema);
 
+// --- Calendar event schema (planned workouts) ---
+const IntervalsEventSchema = z
+  .object({
+    id: z.number(),
+    start_date_local: z.string(),
+    category: z.string().nullable().optional(),
+    type: z.string().nullable().optional(),
+    name: z.string().nullable().optional(),
+    description: z.string().nullable().optional(),
+    distance: z.number().nullable().optional(),
+    moving_time: z.number().nullable().optional(),
+  })
+  .passthrough();
+
+export type IntervalsEvent = z.infer<typeof IntervalsEventSchema>;
+const IntervalsEventsResponseSchema = z.array(IntervalsEventSchema);
+
 // --- Wellness schema ---
 // `id` is the record's date (YYYY-MM-DD). Apple Watch HRV arrives as
 // `hrvSDNN`; `hrv` (rMSSD) is null on those devices (docs/api-notes.md).
@@ -727,6 +744,36 @@ export async function listActivities(
       : a.start_date_local > b.start_date_local
         ? -1
         : 0,
+  );
+}
+
+/**
+ * Planned workouts (WORKOUT events, every sport) on the athlete's calendar
+ * in `range`, oldest first. Read only: RunFun writes the plan, this server
+ * never does (route suggestions read it).
+ */
+export async function listPlannedWorkouts(
+  apiKey: string,
+  range: DateRange,
+): Promise<IntervalsEvent[]> {
+  requireApiKey(apiKey);
+  const context = `listPlannedWorkouts for ${range.oldest} to ${range.newest}`;
+  let data: unknown;
+  try {
+    const response = await intervalsApi.get<unknown>(athletePath("/events"), {
+      headers: authHeaders(apiKey),
+      params: {
+        oldest: range.oldest,
+        newest: range.newest,
+        category: "WORKOUT",
+      },
+    });
+    data = response.data;
+  } catch (error) {
+    handleApiError(error, context);
+  }
+  return parseOrThrow(IntervalsEventsResponseSchema, data, context).sort(
+    (a, b) => a.start_date_local.localeCompare(b.start_date_local),
   );
 }
 

@@ -26,9 +26,22 @@ describe("parseToolArgs", () => {
   });
 
   it.each([undefined, {}, { id: "" }, { waypoints: [] }])(
-    "is null without an id: %j",
+    "is the suggestion map without an id: %j",
     (raw) => {
-      expect(parseToolArgs(raw)).toBeNull();
+      expect(parseToolArgs(raw)).toEqual({ kind: "suggestion", args: {} });
     },
   );
+
+  it("passes suggestion arguments through", () => {
+    expect(
+      parseToolArgs({
+        start: "Embarcadero, San Francisco",
+        terrain: "flat",
+        other: 1,
+      }),
+    ).toEqual({
+      kind: "suggestion",
+      args: { start: "Embarcadero, San Francisco", terrain: "flat" },
+    });
+  });
 });
