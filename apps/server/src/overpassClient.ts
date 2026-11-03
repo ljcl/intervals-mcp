@@ -1,9 +1,9 @@
 /**
  * Pedestrian crossings and traffic signals from OpenStreetMap (Overpass),
  * the "fewer road crossings" signal for route suggestions. Only an area's
- * bounding box leaves the server. Best effort: public instances are slow
- * (docs/api-notes.md), so any failure is null and the caller ranks by path
- * share instead.
+ * bounding box leaves the server. Best effort: public instances are slow or
+ * down (docs/api-notes.md), so any failure is null, the caller ranks by path
+ * share instead, and this process stops asking for a while.
  */
 import { CallCancelledError } from "./callScope";
 import { isAbortError, overpassApi } from "./fetchClient";
@@ -14,6 +14,11 @@ import { SERVER_VERSION } from "./version";
 export const CROSSING_GRID_DEG = 0.02;
 /** A crossing node this close to a route segment is on the route. */
 export const CROSSING_RADIUS_M = 12;
+/** After a failure, calls return null at once for this long instead of paying the 12 s cap again. */
+export const SKIP_AFTER_FAILURE_MS = 10 * 60_000;
+
+/** When (per the caller's clock) this process may ask Overpass again. */
+let skipUntil = 0;
 
 const METERS_PER_DEG_LAT = 110_540;
 const METERS_PER_DEG_LNG_AT_EQUATOR = 111_320;
@@ -47,16 +52,23 @@ export function snappedBounds(
   return [down(south), down(west), up(north), up(east)];
 }
 
-/** Crossing and signal nodes in the snapped area around `tracks`; null when Overpass did not answer usefully. */
+/**
+ * Crossing and signal nodes in the snapped area around `tracks`; null when
+ * Overpass did not answer usefully, or failed less than
+ * {@link SKIP_AFTER_FAILURE_MS} ago. `now` is injectable for tests.
+ */
 export async function loadCrossings(
   tracks: RouteTrack[],
+  now: () => number = Date.now,
 ): Promise<LatLng[] | null> {
   const bounds = snappedBounds(tracks);
   if (!bounds) return [];
+  if (now() < skipUntil) return null;
   const query = `[out:json][timeout:10];node[highway~"^(crossing|traffic_signals)$"](${bounds.join(",")});out skel qt;`;
+  const params = { data: query };
   try {
     const { data } = await overpassApi.get<unknown>("/interpreter", {
-      params: { data: query },
+      params,
       headers: {
         "User-Agent": `intervals-mcp/${SERVER_VERSION} (+https://github.com/ljcl/intervals-mcp)`,
       },
@@ -64,14 +76,26 @@ export async function loadCrossings(
     });
     const parsed = JSON.parse(String(data)) as {
       elements?: Array<{ lat?: unknown; lon?: unknown }>;
+      remark?: unknown;
     };
+    // A server-side timeout is a 200 with no elements and a remark: never zero crossings for a week.
+    if (typeof parsed.remark === "string") {
+      overpassApi.evictCached("/interpreter", params);
+      throw new Error("Overpass answered with a remark");
+    }
     return (parsed.elements ?? []).flatMap((e) =>
       typeof e.lat === "number" && typeof e.lon === "number"
         ? [[e.lat, e.lon] as LatLng]
         : [],
     );
   } catch (error) {
-    if (isAbortError(error) || error instanceof CallCancelledError) throw error;
+    // Its own message is the request URL, which carries the bounding box.
+    if (error instanceof CallCancelledError)
+      throw new CallCancelledError("Counting road crossings", {
+        cause: error.cause,
+      });
+    if (isAbortError(error)) throw error;
+    skipUntil = now() + SKIP_AFTER_FAILURE_MS;
     return null;
   }
 }

@@ -228,8 +228,8 @@ interface FetchConfig {
  */
 export interface ResponseCacheOptions {
   /**
-   * Returns the cache TTL (ms) for a cacheable GET path, or `null` to not cache
-   * it. Only GET/HEAD responses are ever cached.
+   * Returns the cache TTL (ms) for a cacheable read path, or `null` to not
+   * cache it. Only GET/HEAD responses and `readOnly` POSTs are ever cached.
    */
   ttlForPath: (path: string) => number | null;
   /** Max cached entries before LRU eviction (default 200). */
@@ -538,6 +538,29 @@ export class FetchClient {
   }
 
   /**
+   * Drops the cached response of one GET, named by the `url` and `params` its
+   * read passed: a 200 whose body reports a failure (an Overpass `remark`)
+   * must not be served for its whole TTL. A read still in flight is left to
+   * its waiters.
+   */
+  evictCached(url: string, params?: FetchConfig["params"]): void {
+    const key = this.requestUrl(url, params);
+    this.responseCache?.deleteMatching((cached) => cached === key);
+  }
+
+  /** The full URL of a request: the cache key of a GET. */
+  private requestUrl(url: string, params?: FetchConfig["params"]): string {
+    const fullUrl = url.startsWith("http") ? url : `${this.baseURL}${url}`;
+    if (!params) return fullUrl;
+    const searchParams = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      searchParams.append(key, String(value));
+    }
+    const separator = fullUrl.includes("?") ? "&" : "?";
+    return `${fullUrl}${separator}${searchParams.toString()}`;
+  }
+
+  /**
    * The snapshot from the most recent response that carried `Retry-After`,
    * or `null` until one does. intervals.icu sends none.
    */
@@ -662,18 +685,10 @@ export class FetchClient {
     url: string,
     config: FetchConfig = {},
   ): Promise<{ data: T }> {
-    const fullUrl = url.startsWith("http") ? url : `${this.baseURL}${url}`;
-    const requestConfig = { ...config, url: fullUrl };
-
-    // Build URL with query params
-    if (requestConfig.params) {
-      const searchParams = new URLSearchParams();
-      for (const [key, value] of Object.entries(requestConfig.params)) {
-        searchParams.append(key, String(value));
-      }
-      const separator = requestConfig.url.includes("?") ? "&" : "?";
-      requestConfig.url = `${requestConfig.url}${separator}${searchParams.toString()}`;
-    }
+    const requestConfig = {
+      ...config,
+      url: this.requestUrl(url, config.params),
+    };
 
     // Build fetch options
     const fetchOptions: RequestInit = {
@@ -1143,9 +1158,13 @@ export function orsCacheTtl(path: string): number | null {
 /**
  * OpenRouteService client (orsClient.ts is its only caller). 40 directions
  * a minute, so attempts start 1.5 s apart; 200 a day (docs/api-notes.md).
+ * A 10 s attempt and one retry, so a hung ORS cannot hold a tool call for
+ * over a minute.
  */
 export const orsApi = new FetchClient("https://api.openrouteservice.org", {
   minIntervalMs: 1500,
+  timeoutMs: 10_000,
+  maxRetries: 1,
   cache: { ttlForPath: orsCacheTtl, maxEntries: 200 },
 });
 
