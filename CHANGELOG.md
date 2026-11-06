@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.14.0](https://github.com/ljcl/intervals-mcp/compare/v2.13.1...v2.14.0) (2026-11-06)
+
+
+### Features
+
+* stored routes with stitch-route, amend-route and export-route ([#431](https://github.com/ljcl/intervals-mcp/issues/431)) ([5721c7c](https://github.com/ljcl/intervals-mcp/commit/5721c7cf63e5e4f9f69d1a112697cba52bad6601))
+
 ## [2.13.1](https://github.com/ljcl/intervals-mcp/compare/v2.13.0...v2.13.1) (2026-11-06)
 
 
