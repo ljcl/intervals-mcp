@@ -41,7 +41,7 @@ const suggestions: RouteSuggestions = {
         history_runs: 0,
       },
       end: null,
-      via: null,
+      via: [],
       shape: "loop",
       terrain: "flat",
       candidates: [
@@ -112,6 +112,40 @@ describe("suggest-run-route", () => {
     expect(parsed.count).toBe(1);
     expect(JSON.stringify(parsed)).not.toContain("coordinates");
     expect(parsed.runs[0]!.start).toMatchObject({ lat: 37.795, lng: -122.394 });
+  });
+
+  it("takes one via place or an ordered list, and lists them in order", async () => {
+    const run = suggestions.runs[0]!;
+    const places = [
+      {
+        label: "Blackwattle Bay",
+        point: [-33.8738, 151.1847] as [number, number],
+      },
+      {
+        label: "Anzac Bridge",
+        point: [-33.86884, 151.18512] as [number, number],
+      },
+    ];
+    vi.mocked(loadRouteSuggestions).mockResolvedValue({
+      ...suggestions,
+      runs: [{ ...run, via: places }],
+    });
+    const schema = suggestRunRouteTool.inputSchema;
+    expect(schema.parse({ via: "Anzac Bridge" }).via).toBe("Anzac Bridge");
+    const args = schema.parse({ via: ["Blackwattle Bay", "Anzac Bridge"] });
+    expect(args.via).toEqual(["Blackwattle Bay", "Anzac Bridge"]);
+    expect(schema.safeParse({ via: [] }).success).toBe(false);
+
+    const result = await suggestRunRouteTool.execute(args, "k");
+    expect(result.content[0]!.text).toContain(
+      "Via: Blackwattle Bay, then Anzac Bridge",
+    );
+    const parsed = RouteSuggestionsOutputSchema.parse(result.structuredContent);
+    expect(parsed.runs[0]!.via?.label).toBe("Blackwattle Bay");
+    expect(parsed.runs[0]!.via_points.map((p) => p.label)).toEqual([
+      "Blackwattle Bay",
+      "Anzac Bridge",
+    ]);
   });
 
   it("returns a RouteSuggestionError as its own message", async () => {

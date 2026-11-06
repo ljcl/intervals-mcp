@@ -1886,7 +1886,7 @@ describe("route map handlers", () => {
             history_runs: 3,
           },
           end: null,
-          via: null,
+          via: [],
           shape: "loop",
           terrain: "flat",
           candidates: [
@@ -1916,12 +1916,14 @@ describe("route map handlers", () => {
 
     const result = await dispatchToolCall("get-route-suggestions-data", {
       terrain: "flat",
+      via: ["-33.8738,151.1847", "-33.86884,151.18512"],
     });
 
     expect(result.isError).toBeUndefined();
     expect(mockedRouteSuggestions.mock.calls[0]![1]).toMatchObject({
       terrain: "flat",
       days: 1,
+      via: ["-33.8738,151.1847", "-33.86884,151.18512"],
     });
     const parsed = JSON.parse(result.content[0]?.text ?? "");
     expect(parsed.source).toBe("suggestion");
@@ -2518,13 +2520,17 @@ describe("view tools and hosts that cannot render MCP Apps (#77)", () => {
     },
     {
       name: "view-route-suggestions",
-      args: {},
+      // An ordered via list parses through both tools' schemas alike.
+      args: { via: ["-33.8738,151.1847", "-33.86884,151.18512"] },
       arrange: () => {
         mockedRouteSuggestions.mockResolvedValue(routeSuggestionsFixture(1));
       },
       kind: "route suggestions map",
       footer: "suggest-run-route",
-      twin: { name: "suggest-run-route", args: {} },
+      twin: {
+        name: "suggest-run-route",
+        args: { via: ["-33.8738,151.1847", "-33.86884,151.18512"] },
+      },
     },
     {
       name: "view-compare-activities",

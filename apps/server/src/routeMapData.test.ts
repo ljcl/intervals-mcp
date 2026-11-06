@@ -451,7 +451,7 @@ describe("suggestion payloads", () => {
     expect(data.elevationGain).toBe(25);
   });
 
-  it("marks the hill and via point on each candidate", () => {
+  it("marks the hill and each via point on each candidate", () => {
     const run = {
       event_id: 1,
       date: "2026-11-05",
@@ -466,7 +466,10 @@ describe("suggestion payloads", () => {
         history_runs: 0,
       },
       end: null,
-      via: { label: "The hill", point: coordinates[1200]! },
+      via: [
+        { label: "The hill", point: coordinates[1200]! },
+        { label: "The top", point: coordinates[1500]! },
+      ],
       shape: "loop" as const,
       terrain: "hill-repeats" as const,
       candidates: [
@@ -493,5 +496,10 @@ describe("suggestion payloads", () => {
       (w) => w.kind,
     );
     expect(kinds).toEqual(expect.arrayContaining(["climb", "custom"]));
+    expect(
+      data.candidates[0]!.map.annotations?.waypoints?.filter(
+        (w) => w.kind === "custom",
+      ).map((w) => w.label),
+    ).toEqual(["The hill", "The top"]);
   });
 });

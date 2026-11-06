@@ -1711,7 +1711,12 @@ export const RouteSuggestionsOutputSchema = z.object({
           .describe("Recent runs that started near this start"),
       }),
       end: RoutePlaceSchema.nullable(),
-      via: RoutePlaceSchema.nullable(),
+      via: RoutePlaceSchema.nullable().describe(
+        "The first via point; via_points lists them all",
+      ),
+      via_points: z
+        .array(RoutePlaceSchema)
+        .describe("Places the route passes, in order"),
       shape: z.enum(["loop", "out-and-back", "point-to-point"]),
       terrain: z.enum(["any", "flat", "rolling", "hilly", "hill-repeats"]),
       candidates: z.array(RouteCandidateSchema),

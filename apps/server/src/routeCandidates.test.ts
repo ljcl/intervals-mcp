@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   cumulativeDistances,
+  haversineMeters,
   type LatLng,
   type RouteTrack,
 } from "./mapAnchors";
@@ -8,12 +9,15 @@ import {
   DEFAULT_TERRAIN_BANDS,
   matchPastRuns,
   outAndBack,
+  passesInOrder,
   type RouteCandidate,
   rankGenerated,
   rankPast,
   sameRoute,
+  stretchWaypoints,
   terrainBands,
   terrainFits,
+  thereAndBack,
   trackClimb,
 } from "./routeCandidates";
 import { type RunStart } from "./startClusters";
@@ -178,6 +182,25 @@ describe("matchPastRuns", () => {
     ).toEqual([]);
   });
 
+  it("with via points, offers loops that pass them in order at any distance", () => {
+    // loopA's corners, in the order it runs them.
+    const north = loopA.coordinates[10]!;
+    const northEast = loopA.coordinates[20]!;
+    const runs = [
+      run("passes", "2026-10-01", loopA),
+      run("misses", "2026-10-01", loopB),
+    ];
+    const picked = matchPastRuns(runs, {
+      ...options,
+      target_m: target * 2,
+      via: [north, northEast],
+    });
+    expect(picked.map((c) => c.activity_id)).toEqual(["passes"]);
+    expect(
+      matchPastRuns(runs, { ...options, via: [northEast, north] }),
+    ).toEqual([]);
+  });
+
   it("offers nothing for point-to-point", () => {
     expect(
       matchPastRuns([run("a", "2026-10-01", loopA)], {
@@ -278,6 +301,86 @@ describe("outAndBack", () => {
     expect(
       Math.abs(folded.distance.at(-1)! - loopA.distance.at(-1)!),
     ).toBeLessThan(loopA.distance.at(-1)! * 0.05);
+  });
+});
+
+describe("passesInOrder", () => {
+  it("needs every point within 100 m, in order", () => {
+    const [a, b] = [loopA.coordinates[10]!, loopA.coordinates[30]!];
+    expect(passesInOrder(loopA, [a, b])).toBe(true);
+    expect(passesInOrder(loopA, [b, a])).toBe(false);
+    // About 110 m off the track.
+    expect(passesInOrder(loopA, [[a[0] + 0.001, a[1]]])).toBe(false);
+  });
+});
+
+describe("thereAndBack", () => {
+  it("runs a track then back the same way", () => {
+    const line: RouteTrack = {
+      coordinates: loopA.coordinates.slice(0, 11),
+      distance: loopA.distance.slice(0, 11),
+      altitude: loopA.altitude.slice(0, 11),
+    };
+    const both = thereAndBack(line);
+    expect(both.coordinates.at(-1)).toEqual(line.coordinates[0]);
+    expect(both.distance.at(-1)).toBeCloseTo(line.distance.at(-1)! * 2);
+  });
+});
+
+describe("stretchWaypoints", () => {
+  const start: LatLng = [-33.8774, 151.1847];
+  const via: LatLng = [-33.86884, 151.18512];
+  const chain = (points: LatLng[]) =>
+    points
+      .slice(1)
+      .reduce((sum, p, i) => sum + haversineMeters(points[i]!, p), 0);
+
+  it("puts a loop's detour beside a leg, as far out as adds the extra", () => {
+    const base = [start, via, start];
+    // Seeds 0 and 1 take the first leg; 2 and 3 the second.
+    for (const seed of [0, 1]) {
+      const stretched = stretchWaypoints(base, "loop", 2000, seed);
+      expect(stretched).toHaveLength(4);
+      expect(stretched[0]).toEqual(start);
+      expect(stretched.slice(2)).toEqual([via, start]);
+      expect(chain(stretched)).toBeCloseTo(chain(base) + 2000, -1);
+    }
+    // The seed's parity picks the side.
+    expect(stretchWaypoints(base, "loop", 2000, 0)[1]).not.toEqual(
+      stretchWaypoints(base, "loop", 2000, 1)[1],
+    );
+    expect(stretchWaypoints(base, "loop", 2000, 2).slice(0, 2)).toEqual([
+      start,
+      via,
+    ]);
+  });
+
+  it("puts consecutive seeds' detours on opposite sides of a one-via loop", () => {
+    const base = [start, via, start];
+    const detour = (seed: number) =>
+      stretchWaypoints(base, "loop", 2000, seed).find(
+        (p) => p !== start && p !== via,
+      )!;
+    for (let seed = 0; seed < 6; seed++)
+      expect(haversineMeters(detour(seed), detour(seed + 1))).toBeGreaterThan(
+        1000,
+      );
+  });
+
+  it("puts an out-and-back's turnaround past its last point, turned by the seed", () => {
+    const turns = [0, 1].map((seed) =>
+      stretchWaypoints([start, via], "out-and-back", 1500, seed),
+    );
+    for (const stretched of turns) {
+      expect(stretched.slice(0, 2)).toEqual([start, via]);
+      expect(haversineMeters(via, stretched[2]!)).toBeCloseTo(1500, -1);
+    }
+    // Seed 0 carries straight on, away from the start.
+    expect(haversineMeters(start, turns[0]![2]!)).toBeCloseTo(
+      haversineMeters(start, via) + 1500,
+      -1,
+    );
+    expect(turns[0]![2]).not.toEqual(turns[1]![2]);
   });
 });
 

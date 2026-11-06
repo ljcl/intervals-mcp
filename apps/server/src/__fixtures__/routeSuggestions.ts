@@ -30,7 +30,7 @@ export function routeSuggestionsFixture(runCount: number): RouteSuggestions {
       distance_source: "event" as const,
       start: { ...place, source: "argument" as const, history_runs: 0 },
       end: place,
-      via: place,
+      via: [place],
       shape: "loop" as const,
       terrain: "hill-repeats" as const,
       candidates: Array.from({ length: 4 }, (_, k) => ({
