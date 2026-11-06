@@ -412,44 +412,77 @@ export function moveToward(
   return moveBy(point, distance_m * Math.sin(rad), distance_m * Math.cos(rad));
 }
 
-/** A dead end shorter than this each way is a corner, not a spur. */
+/** Doubling back shorter than this each way is a corner, not a dead end. */
 const SPUR_MIN_M = 25;
 /** Sample spacing for {@link findSpurs}. */
 const SPUR_STEP_M = 5;
-/** Two samples this close count as the same place; covers a tip that falls between samples. */
-const SPUR_MATCH_M = 6;
+/** A return this close counts as the same way: a footway, or the path on its other side. */
+const SPUR_MATCH_M = 12;
+/** Directions at least this far apart (cosine) are opposite. */
+const OPPOSITE_COS = -0.7;
 
 /**
- * Where a track goes into a dead end and comes back the same way: around a
- * turn, the points `x` metres before and after it stay within 6 m of each
- * other for at least 25 m. Each spur is its `from_m`-`to_m` along the
- * track, its tip halfway.
+ * Where a track goes back the way it came: a stretch going one way with a
+ * later stretch within 12 m of it going the other way, for at least 25 m.
+ * Each is `from_m`, where it turns in, to `to_m`, where it is back out; a
+ * dead end's tip is between them, wherever the turn is.
  */
 export function findSpurs(
   track: RouteTrack,
 ): Array<{ from_m: number; to_m: number }> {
   const n = Math.floor(trackLength(track) / SPUR_STEP_M);
-  if (n < 2) return [];
-  const at = Array.from(
-    { length: n + 1 },
-    (_, i) => pointAtDistance(track, i * SPUR_STEP_M).point,
+  if (n < 3) return [];
+  const origin = track.coordinates[0]!;
+  const xy = Array.from({ length: n + 1 }, (_, i) =>
+    eastNorth(origin, pointAtDistance(track, i * SPUR_STEP_M).point),
   );
+  const dir = xy.map(([x, y], i) => {
+    const [nx, ny] = xy[Math.min(i + 1, n)]!;
+    const [px, py] = i === n ? xy[i - 1]! : [x, y];
+    const dx = nx - px;
+    const dy = ny - py;
+    const len = Math.hypot(dx, dy) || 1;
+    return [dx / len, dy / len] as const;
+  });
+  const cell = (x: number, y: number) =>
+    `${Math.floor(x / SPUR_MATCH_M)},${Math.floor(y / SPUR_MATCH_M)}`;
+  const grid = new Map<string, number[]>();
+  xy.forEach(([x, y], i) => {
+    const key = cell(x, y);
+    grid.set(key, [...(grid.get(key) ?? []), i]);
+  });
+  // The furthest later sample going back over each one, or -1.
+  const back = xy.map(([x, y], i) => {
+    let best = -1;
+    const cx = Math.floor(x / SPUR_MATCH_M);
+    const cy = Math.floor(y / SPUR_MATCH_M);
+    for (let gx = cx - 1; gx <= cx + 1; gx++)
+      for (let gy = cy - 1; gy <= cy + 1; gy++)
+        for (const j of grid.get(`${gx},${gy}`) ?? []) {
+          if (j <= i + 2 || j <= best) continue;
+          const [jx, jy] = xy[j]!;
+          const opposite =
+            dir[i]![0] * dir[j]![0] + dir[i]![1] * dir[j]![1] < OPPOSITE_COS;
+          if (opposite && Math.hypot(jx - x, jy - y) <= SPUR_MATCH_M) best = j;
+        }
+    return best;
+  });
   const spurs: Array<{ from_m: number; to_m: number }> = [];
-  for (let i = 1; i < n; i++) {
-    let k = 1;
+  for (let i = 0; i <= n; i++) {
+    if (back[i]! < 0) continue;
+    // A run of samples that each have a way back; gaps of one sample are noise.
+    let end = i;
+    let out = back[i]!;
     while (
-      i - k >= 0 &&
-      i + k <= n &&
-      haversineMeters(at[i - k]!, at[i + k]!) <= SPUR_MATCH_M
-    )
-      k++;
-    const reach = (k - 1) * SPUR_STEP_M;
-    if (reach < SPUR_MIN_M) continue;
-    spurs.push({
-      from_m: (i - k + 1) * SPUR_STEP_M,
-      to_m: (i + k - 1) * SPUR_STEP_M,
-    });
-    i += k - 1;
+      end + 1 <= n &&
+      (back[end + 1]! >= 0 || (end + 2 <= n && back[end + 2]! >= 0))
+    ) {
+      end++;
+      out = Math.max(out, back[end]!);
+    }
+    if ((end - i) * SPUR_STEP_M >= SPUR_MIN_M)
+      spurs.push({ from_m: i * SPUR_STEP_M, to_m: out * SPUR_STEP_M });
+    i = Math.max(end, out);
   }
   return spurs;
 }

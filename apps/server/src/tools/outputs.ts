@@ -1784,13 +1784,18 @@ const StoredRouteSegmentSchema = z.object({
       km: z.number(),
       label: z.string(),
       kind: z.enum(["via", "turnaround"]),
-      lat: z.number(),
+      lat: z.number().describe("Where it was asked for"),
       lng: z.number(),
       snapped_lat: z.number().describe("Where the route passes the via"),
       snapped_lng: z.number(),
       snap_m: z
         .number()
         .describe("Metres from lat,lng to where the route passes it"),
+      moved_m: z
+        .number()
+        .describe(
+          "Metres snap through moved it from lat,lng before routing; 0 when it did not",
+        ),
       match_name: z
         .string()
         .nullable()

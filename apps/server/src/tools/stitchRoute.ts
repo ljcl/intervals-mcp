@@ -56,7 +56,7 @@ Notes:
 `;
 
 const segment = z.discriminatedUnion("type", [
-  z.object({
+  z.strictObject({
     type: z.literal("activity"),
     id: intervalsActivityIdInput("The past run to take a part of.", {
       allowLatest: false,
@@ -64,7 +64,7 @@ const segment = z.discriminatedUnion("type", [
     from_km: kmInput("Its own km to start at; default 0").optional(),
     to_km: kmInput("Its own km to end at; default its end").optional(),
   }),
-  z.object({
+  z.strictObject({
     type: z.literal("route"),
     route_id: routeIdInput("A stored route to take a part of"),
     version: z
@@ -76,7 +76,7 @@ const segment = z.discriminatedUnion("type", [
     from_km: kmInput("Its km to start at; default 0").optional(),
     to_km: kmInput("Its km to end at; default its end").optional(),
   }),
-  z.object({
+  z.strictObject({
     type: z.literal("generated"),
     start: placeText
       .optional()
@@ -98,7 +98,7 @@ const segment = z.discriminatedUnion("type", [
       .optional()
       .describe("amend-route's fit_distance may change this section"),
   }),
-  z.object({
+  z.strictObject({
     type: z.literal("out_and_back"),
     at: placeText
       .optional()

@@ -86,6 +86,8 @@ export interface SegmentVia {
   kind: "via" | "turnaround";
   /** The place lookup that gave `point`; absent for a lat,lng, a shift or a turnaround. */
   match?: PlaceMatch;
+  /** Where the via was asked for, when snap through moved it to `point`. */
+  requested?: LatLng;
 }
 
 export type ClimbSource = "recorded" | "elevation_model" | "none";

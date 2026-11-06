@@ -143,7 +143,7 @@ export function storedRouteLines(result: StoredRouteStructured): string[] {
         : "";
       const where =
         via.kind === "via"
-          ? ` (${ll(via.lat, via.lng)}${match}; on the route at ${ll(via.snapped_lat, via.snapped_lng)}, ${via.snap_m} m away)`
+          ? ` (${ll(via.lat, via.lng)}${match}; on the route at ${ll(via.snapped_lat, via.snapped_lng)}, ${via.snap_m} m away${via.moved_m > 0 ? `, moved ${via.moved_m} m by snap through` : ""})`
           : "";
       lines.push(
         `   ${via.kind === "turnaround" ? "Turnaround" : "Via"} ${via.id} at km ${via.km.toFixed(2)}: ${via.label}${where}`,
