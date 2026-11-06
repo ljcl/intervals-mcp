@@ -131,10 +131,18 @@ describe("suggest-run-route", () => {
       runs: [{ ...run, via: places }],
     });
     const schema = suggestRunRouteTool.inputSchema;
-    expect(schema.parse({ via: "Anzac Bridge" }).via).toBe("Anzac Bridge");
+    expect(schema.parse({ via: "Anzac Bridge" }).via).toEqual(["Anzac Bridge"]);
     const args = schema.parse({ via: ["Blackwattle Bay", "Anzac Bridge"] });
     expect(args.via).toEqual(["Blackwattle Bay", "Anzac Bridge"]);
     expect(schema.safeParse({ via: [] }).success).toBe(false);
+    // A host holding the old string-only schema sends the list as JSON text.
+    expect(
+      schema.parse({ via: '["Blackwattle Bay", "Anzac Bridge"]' }).via,
+    ).toEqual(["Blackwattle Bay", "Anzac Bridge"]);
+    expect(schema.parse({ via: "[Anzac Bridge" }).via).toEqual([
+      "[Anzac Bridge",
+    ]);
+    expect(schema.safeParse({ via: '["a", 1]' }).success).toBe(false);
 
     const result = await suggestRunRouteTool.execute(args, "k");
     expect(result.content[0]!.text).toContain(

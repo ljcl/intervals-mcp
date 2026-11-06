@@ -201,6 +201,25 @@ describe("matchPastRuns", () => {
     ).toEqual([]);
   });
 
+  it("with via points, keeps a run off the asked terrain and says so", () => {
+    const north = loopA.coordinates[10]!;
+    // About 33 m/km, hilly against the bands.
+    const steep = run("steep", "2026-10-01", loopA, 200);
+    const [picked] = matchPastRuns([steep], {
+      ...options,
+      terrain: "rolling",
+      target_m: target + 2000,
+      via: [north],
+    });
+    expect(picked).toMatchObject({ activity_id: "steep", climb_m: 200 });
+    expect(picked!.summary).toBe(
+      'Your run "steep" on 2026-10-01, hilly for you rather than rolling',
+    );
+    expect(matchPastRuns([steep], { ...options, terrain: "rolling" })).toEqual(
+      [],
+    );
+  });
+
   it("offers nothing for point-to-point", () => {
     expect(
       matchPastRuns([run("a", "2026-10-01", loopA)], {
@@ -237,6 +256,20 @@ describe("rankPast", () => {
     expect(
       rankPast([recent, busy, quiet], 6000, "2026-11-03").map((c) => c.name),
     ).toEqual(["quiet", "busy", "recent"]);
+  });
+
+  it("puts a via run off the asked terrain after one on it", () => {
+    const steep = candidate({ kind: "past", name: "steep", climb_m: 60 });
+    const recent = candidate({
+      kind: "past",
+      name: "recent",
+      date: "2026-11-01",
+    });
+    expect(
+      rankPast([steep, recent], 6000, "2026-11-03", "flat", BANDS).map(
+        (c) => c.name,
+      ),
+    ).toEqual(["recent", "steep"]);
   });
 });
 

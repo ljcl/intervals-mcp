@@ -632,7 +632,7 @@ function buildToolDefs(): ToolDef[] {
     title: "Route suggestions map",
     description:
       "Open a map of where to run a planned run: the athlete's own past runs from that start and new routes, with a picker, an elevation strip and any hill for repeats marked. " +
-      "Takes the same arguments as suggest-run-route (one run), and its result carries that tool's text, so no second call is needed.",
+      "Takes the same arguments as suggest-run-route (one run; via is a list of places in the order the run passes them), and its result carries that tool's text, so no second call is needed.",
     inputSchema: toInputSchema(
       APP_TOOL_INPUT_SCHEMAS["view-route-suggestions"]!,
     ),
