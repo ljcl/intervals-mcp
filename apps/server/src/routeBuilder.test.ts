@@ -1014,3 +1014,57 @@ function moveTowardPoint(
     point[1] + metres / (111_320 * Math.cos((point[0] * Math.PI) / 180)),
   ];
 }
+
+describe("an out-and-back an edit has cut into parts", () => {
+  it("moves its turnaround like a via point, keeping the route joined", async () => {
+    const v1 = await stitchSunday();
+    const turnaround = summarizeRoute(v1.route, v1.version).segments[1]!
+      .vias[0]!;
+    const cut = await amendRoute(
+      "key",
+      {
+        route_id: v1.route.route_id,
+        base_version: 1,
+        operations: [
+          { op: "insert_via", km: 5.5, place: "Callan Park, Sydney" },
+        ],
+      },
+      ENV,
+    );
+    const moved = await amendRoute(
+      "key",
+      {
+        route_id: v1.route.route_id,
+        base_version: 2,
+        operations: [
+          {
+            op: "move_via",
+            via_id: turnaround.id,
+            shift: { direction: "north", distance_m: 100 },
+          },
+        ],
+      },
+      ENV,
+    );
+    expect(cut.version.version).toBe(2);
+    const summary = summarizeRoute(moved.route, moved.version);
+    const via = summary.segments
+      .flatMap((s) => s.vias)
+      .find((v) => v.id === turnaround.id);
+    expect(via).toBeDefined();
+    // The route still starts and ends where it did.
+    const before = versionTrack(v1.route, v1.version);
+    const after = versionTrack(moved.route, moved.version);
+    expect(
+      haversineMeters(after.coordinates.at(-1)!, before.coordinates.at(-1)!),
+    ).toBeLessThan(1);
+    const segments = versionSegments(moved.route, moved.version);
+    for (let i = 1; i < segments.length; i++)
+      expect(
+        haversineMeters(
+          segments[i - 1]!.track.coordinates.at(-1)!,
+          segments[i]!.track.coordinates[0]!,
+        ),
+      ).toBeLessThanOrEqual(30);
+  });
+});

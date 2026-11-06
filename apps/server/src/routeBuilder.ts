@@ -999,6 +999,21 @@ function anchors(segments: StoredSegment[], spans: Span[], skip?: string) {
   return [...out].sort((a, b) => a - b);
 }
 
+/**
+ * An out-and-back still whole: it ends where it starts. An edit inside one
+ * leaves parts of it, whose turnaround is then moved or removed like any
+ * via point.
+ */
+function isWholeOutAndBack(segment: StoredSegment): boolean {
+  return (
+    segment.kind === "out_and_back" &&
+    haversineMeters(
+      segment.track.coordinates[0]!,
+      segment.track.coordinates.at(-1)!,
+    ) <= JOIN_GAP_M
+  );
+}
+
 /** The segments with one cut at `at_m` (none on a segment end or a seam). */
 function splitAt(
   ctx: Ctx,
@@ -1132,7 +1147,7 @@ async function applyOperation(
     }
     case "remove_via": {
       const { index, via, at_m } = findVia(segments, spans, op.via_id);
-      if (via.kind === "turnaround") {
+      if (via.kind === "turnaround" && isWholeOutAndBack(segments[index]!)) {
         const span = spans[index]!;
         return {
           segments: segments.filter((_, i) => i !== index),
@@ -1155,7 +1170,7 @@ async function applyOperation(
       const { index, via, at_m } = findVia(segments, spans, op.via_id);
       const point = await movedPoint(ctx, op, via.point);
       const moved = `Moved ${via.label} ${op.shift ? `${op.shift.distance_m} m ${op.shift.direction}` : `to ${op.to}`}`;
-      if (via.kind === "turnaround") {
+      if (via.kind === "turnaround" && isWholeOutAndBack(segments[index]!)) {
         const segment = segments[index]!;
         const rebuilt = await outAndBackSegment(
           ctx,
@@ -1305,7 +1320,7 @@ async function fitDistance(
     )
     .filter((i) => i >= 0);
   const only = inside.length === 1 ? segments[inside[0]!]! : null;
-  if (only?.kind === "out_and_back") {
+  if (only && isWholeOutAndBack(only)) {
     const turn = only.vias.find((v) => v.kind === "turnaround");
     const at = only.track.coordinates[0]!;
     const heading = headingFrom(at, turn?.point ?? only.track.coordinates[1]!);
