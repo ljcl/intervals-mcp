@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.14.1](https://github.com/ljcl/intervals-mcp/compare/v2.14.0...v2.14.1) (2026-11-06)
+
+
+### Bug Fixes
+
+* route builder follow-ups after stitch-route ([#433](https://github.com/ljcl/intervals-mcp/issues/433)) ([08bbd72](https://github.com/ljcl/intervals-mcp/commit/08bbd72e7ab7f155ad46c9334f76cbcbd2c7b549))
+
 ## [2.14.0](https://github.com/ljcl/intervals-mcp/compare/v2.13.1...v2.14.0) (2026-11-06)
 
 
