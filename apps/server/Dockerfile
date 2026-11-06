@@ -51,6 +51,10 @@ RUN --mount=type=cache,target=/root/.bun/install/cache bun install --frozen-lock
 COPY --from=pruner /app/out/full/ ./
 RUN turbo run build --filter=@intervals-mcp/server^...
 RUN bun build apps/server/src/index.ts --target=bun --outdir apps/server/dist --sourcemap=linked
+# The route store's directory (DATA_DIR). The runner has no shell to make it,
+# so it is made here and copied over owned by the runtime user; a new named
+# volume mounted on it (docker-compose.yml) takes that owner.
+RUN mkdir -p /data
 
 # 3) Distroless runner: COPY only. nonroot (65534), no shell, ENTRYPOINT is bun.
 FROM oven/bun:1.4.4-distroless@sha256:153a951ae40106e125898103e6e990ee0f38e6aee7f561029e26cf9fbed23470 AS runner
@@ -76,9 +80,13 @@ COPY --from=builder  --chown=65534:65534 /app/packages/training-load/dist ./pack
 COPY --from=builder  --chown=65534:65534 /app/packages/compare-activities/dist ./packages/compare-activities/dist
 COPY --from=builder  --chown=65534:65534 /app/packages/activity-zones/dist ./packages/activity-zones/dist
 COPY --from=builder  --chown=65534:65534 /app/packages/fitness-trend/dist ./packages/fitness-trend/dist
+COPY --from=builder  --chown=65534:65534 /data /data
 
 USER 65534:65534
 ENV NODE_ENV=production
+# Stored routes. Mount a volume here to keep them when the container is
+# recreated (docker-compose.yml does).
+ENV DATA_DIR=/data
 # The default PORT.
 EXPOSE 3000
 

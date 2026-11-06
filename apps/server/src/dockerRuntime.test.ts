@@ -56,6 +56,8 @@ const NOT_IMPORT_DERIVED: Record<string, string> = {
   "apps/server/dist": "the bundled entrypoint (CMD runs dist/index.js)",
   "apps/server/node_modules/@intervals-mcp":
     "the workspace symlinks each app.html specifier resolves through",
+  "/data":
+    "the empty route-store directory (DATA_DIR), owned by the runtime user, that docker-compose.yml mounts a volume on",
 };
 
 function stripComments(source: string): string {

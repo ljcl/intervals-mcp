@@ -61,6 +61,42 @@ export function getHomeStart(): LatLng | null {
   return raw ? parseLatLng(raw) : null;
 }
 
+/** Where the route store keeps its files when DATA_DIR is unset (relative to the working directory). */
+export const DEFAULT_DATA_DIR = "data";
+/** Days a stored route is kept after it was last read or changed, when ROUTE_RETENTION_DAYS is unset. */
+export const DEFAULT_ROUTE_RETENTION_DAYS = 30;
+const MAX_ROUTE_RETENTION_DAYS = 3650;
+const RETENTION_RE = /^\d+$/;
+
+/**
+ * The directory the server keeps its own files in (stored routes,
+ * `routeStore.ts`): DATA_DIR, else `./data`. The Docker image sets it to
+ * `/data`, which docker-compose.yml mounts as a named volume.
+ */
+export function getDataDir(): string {
+  return process.env.DATA_DIR?.trim() || DEFAULT_DATA_DIR;
+}
+
+function parseRetention(raw: string | undefined): number | null {
+  const value = raw?.trim() ?? "";
+  if (!value) return DEFAULT_ROUTE_RETENTION_DAYS;
+  if (!RETENTION_RE.test(value)) return null;
+  const days = Number(value);
+  return days >= 1 && days <= MAX_ROUTE_RETENTION_DAYS ? days : null;
+}
+
+/**
+ * Days an unused stored route is kept: ROUTE_RETENTION_DAYS, else
+ * {@link DEFAULT_ROUTE_RETENTION_DAYS}. checkConfig rejects a bad value, so
+ * the fallback here only covers a value changed after startup.
+ */
+export function getRouteRetentionDays(): number {
+  return (
+    parseRetention(process.env.ROUTE_RETENTION_DAYS) ??
+    DEFAULT_ROUTE_RETENTION_DAYS
+  );
+}
+
 export function getIntervalsAthleteId(): string {
   return process.env.INTERVALS_ATHLETE_ID?.trim() || "0";
 }
@@ -216,6 +252,13 @@ export function checkConfig(): ConfigCheck {
     errors.push(
       // The value is not quoted: a near-miss is still the athlete's home.
       `HOME_START is not "lat,lng" in decimal degrees, for example 37.79,-122.39; leave it unset to infer the usual start from recent runs.`,
+    );
+  }
+
+  const retention = process.env.ROUTE_RETENTION_DAYS;
+  if (parseRetention(retention) === null) {
+    errors.push(
+      `ROUTE_RETENTION_DAYS is ${quoteValue(retention ?? "")}. It must be a whole number of days from 1 to ${MAX_ROUTE_RETENTION_DAYS}; leave it unset for ${DEFAULT_ROUTE_RETENTION_DAYS}.`,
     );
   }
 

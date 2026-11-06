@@ -147,6 +147,19 @@ vi.mock("./config", async (importOriginal) => {
 });
 
 const { connectTestClient } = await import("./mcpTestClient");
+const { makeRouteId } = await import("./routeStore");
+
+/** stitch-route's id for the stitch below: the hash of its parsed request. */
+const STITCHED_ID = makeRouteId(
+  "draft",
+  JSON.stringify({
+    name: "output schema",
+    segments: [
+      { type: "activity", id: activity.id, from_km: 0, to_km: 1 },
+      { type: "activity", id: activity.id, from_km: 1, to_km: 0 },
+    ],
+  }),
+);
 
 /** One or more calls per tool: the recorded run first, then other shapes. */
 const CALLS: Array<[tool: string, args: Record<string, unknown>]> = [
@@ -177,6 +190,27 @@ const CALLS: Array<[tool: string, args: Record<string, unknown>]> = [
   ["get-best-efforts", { id: activity.id }],
   ["get-race-prediction", { raceDistance: "10k" }],
   ["suggest-run-route", { days: 2 }],
+  [
+    "stitch-route",
+    {
+      name: "output schema",
+      segments: [
+        { type: "activity", id: activity.id, from_km: 0, to_km: 1 },
+        { type: "activity", id: activity.id, from_km: 1, to_km: 0 },
+      ],
+    },
+  ],
+  // The route stitch-route stored just above (its id comes from its request).
+  [
+    "amend-route",
+    {
+      route_id: STITCHED_ID,
+      base_version: 1,
+      operations: [{ op: "trim", from_km: 0, to_km: 0.5 }],
+    },
+  ],
+  ["export-route", { route_id: STITCHED_ID, format: "geojson" }],
+  ["export-route", { id: activity.id }],
   ["list-activities", {}],
   ["get-activity", { id: activity.id, includeIntervals: true }],
   ["get-activity", { id: activitySwim.id, includeIntervals: true }],

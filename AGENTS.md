@@ -111,7 +111,10 @@ breaking them has shipped bugs — do not work around them locally.
   Stream wire precision: `STREAM_DECIMALS` in `streamPrecision.ts`.
   Hill for repeats: `bestRepeatHill` in `hillAnalysis.ts`. Start clusters:
   `startClusters.ts`. Route candidate rules (past-run matching, ranking,
-  terrain bands, generated climb): `routeCandidates.ts`. Road crossings per
+  terrain bands, generated climb): `routeCandidates.ts`. Stored-route track
+  math (cut, join, version diff, carrying a km between versions, the 30 m
+  join gap): `routeGeometry.ts`; stored-route rules and the summary the
+  text and the map share: `routeBuilder.ts`. Road crossings per
   km: `crossingsPerKm` in `overpassClient.ts`.
   Weather, dew point and the weather note: `activityWeather.ts` (FIT
   humidity read by `fitWeather.ts`). Two runs' per-km difference and its
@@ -121,6 +124,15 @@ breaking them has shipped bugs — do not work around them locally.
   Cadence pace zones and the cadence-against-pace slope: `cadence.ts` in
   `packages/data`. Each pace names its moving time (`moving_time_source`).
   Text tool and app reading different copies is the failure mode these prevent.
+- **Stored routes live in `routeStore.ts`** (one JSON file per route under
+  `getDataDir()`, `/data` in the image, a compose volume). Nothing else
+  touches those files. A version is appended, never rewritten; amend-route
+  refuses a `base_version` that is not the latest, checked inside the
+  per-route lock before any routing. Every routing call counts against the
+  per-call ORS budget, and a call that runs out stores nothing. Results
+  never carry geometry: `export-route` attaches it, `view-route-map` draws
+  it. An image or file rides in the result's `attachments`, which only the
+  `tools/call` handler adds to `content`.
 - **Telemetry:** `dispatchToolCall` emits one JSON line per call; timer starts
   before token resolution (not-connected calls count); a returned `isError`
   counts as an error unless the call was cancelled (`cancelled`);

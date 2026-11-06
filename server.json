@@ -65,6 +65,18 @@
           "format": "number"
         },
         {
+          "name": "DATA_DIR",
+          "description": "Directory for stored routes (stitch-route, amend-route); the image uses /data, a volume in docker-compose.yml. Default ./data",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "ROUTE_RETENTION_DAYS",
+          "description": "Days a stored route not read or changed is kept, 1-3650 (default 30)",
+          "isRequired": false,
+          "format": "number"
+        },
+        {
           "name": "PUBLIC_URL",
           "description": "Public URL, used only to warn when /mcp is exposed without MCP_AUTH_TOKEN",
           "isRequired": false,

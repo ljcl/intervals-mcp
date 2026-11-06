@@ -1,7 +1,9 @@
 {
   "note": "Permission-relevant identity of every advertised tool (ljcl/strava-mcp#303). Changing an entry invalidates the stored 'Allow always' grant for that tool. See apps/server/src/toolSurface.test.ts for how to regenerate.",
   "tools": {
+    "amend-route": "0591cfeb8032f272",
     "compare-activities": "337bfd8e60926277",
+    "export-route": "cbcee360be18a1db",
     "get-activity": "e044bea8af0eb286",
     "get-activity-laps": "18c65ce32fcb4515",
     "get-activity-streams": "751f1ecfdf174e67",
@@ -19,7 +21,7 @@
     "get-hill-analysis": "1b0491d096a42324",
     "get-interval-analysis": "5c3b8133601accd5",
     "get-race-prediction": "252903e1aacb58c6",
-    "get-route-map-data": "adebc08f298b0fbe",
+    "get-route-map-data": "0dd2f280a9e4fe68",
     "get-route-suggestions-data": "e4a4d44823e92bb4",
     "get-running-dynamics": "8820e62f410fe405",
     "get-running-summary": "ff9a96521f3c4550",
@@ -29,7 +31,8 @@
     "get-wellness": "940e9b3ffdddc640",
     "list-activities": "379d71f548742cf3",
     "list-gear": "5e0547fa4d55675b",
-    "suggest-run-route": "0bce7db9ae7ddabe",
+    "stitch-route": "aefa7d733f693d9f",
+    "suggest-run-route": "5b22100429e9b51b",
     "update-activity": "6c27bb1796ec14cb",
     "update-gear": "ab44fd4ec7630892",
     "update-wellness": "ad1123e3f9905472",
@@ -38,7 +41,7 @@
     "view-cadence-trends": "2a723ba07f2cfe97",
     "view-compare-activities": "c7202e50529aec0e",
     "view-fitness-trend": "d9c36ed553027941",
-    "view-route-map": "1b9e6b120ca3024c",
+    "view-route-map": "9a053ae41423857d",
     "view-route-suggestions": "ae2ba360321a97d1",
     "view-training-load": "60beef127ffa794a"
   }

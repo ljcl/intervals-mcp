@@ -238,7 +238,9 @@ describe("dispatchToolCall input validation", () => {
       Object.entries(tool.inputSchema?.properties ?? {})
         .filter(
           ([key]) =>
-            key === "id" || key.endsWith("_id") || /^activityId\d$/.test(key),
+            // A stored route id is this server's own, not an intervals.icu id.
+            key !== "route_id" &&
+            (key === "id" || key.endsWith("_id") || /^activityId\d$/.test(key)),
         )
         .map(([key, schema]) => ({ field: `${tool.name}.${key}`, schema })),
     );
