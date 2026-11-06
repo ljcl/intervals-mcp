@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.13.0](https://github.com/ljcl/intervals-mcp/compare/v2.12.0...v2.13.0) (2026-11-06)
+
+
+### Features
+
+* fit via routes to the target distance ([#427](https://github.com/ljcl/intervals-mcp/issues/427)) ([da556dc](https://github.com/ljcl/intervals-mcp/commit/da556dc81e4396a436530d6ed330c61a4a007da7))
+
 ## [2.12.0](https://github.com/ljcl/intervals-mcp/compare/v2.11.0...v2.12.0) (2026-11-03)
 
 
