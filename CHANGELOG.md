@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.15.0](https://github.com/ljcl/intervals-mcp/compare/v2.14.1...v2.15.0) (2026-11-06)
+
+
+### Features
+
+* via match and snap details, dead-end warnings and snap through for stored routes ([#435](https://github.com/ljcl/intervals-mcp/issues/435)) ([e98db49](https://github.com/ljcl/intervals-mcp/commit/e98db4947b2dfcea81b40a872877d70d54985a15))
+
 ## [2.14.1](https://github.com/ljcl/intervals-mcp/compare/v2.14.0...v2.14.1) (2026-11-06)
 
 
