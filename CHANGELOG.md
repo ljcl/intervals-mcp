@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.15.1](https://github.com/ljcl/intervals-mcp/compare/v2.15.0...v2.15.1) (2026-11-06)
+
+
+### Bug Fixes
+
+* snap through re-checks, caps and merges vias, and vias keep what was asked ([#437](https://github.com/ljcl/intervals-mcp/issues/437)) ([703110b](https://github.com/ljcl/intervals-mcp/commit/703110b8d15db91ff357b93cc80b53a0666ed9a8))
+
 ## [2.15.0](https://github.com/ljcl/intervals-mcp/compare/v2.14.1...v2.15.0) (2026-11-06)
 
 
