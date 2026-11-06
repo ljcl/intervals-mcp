@@ -35,6 +35,8 @@ import {
 import { OrsApiError, type OrsRoute, orsRoute } from "./orsClient";
 import { NO_PROGRESS, type ReportProgress } from "./progress";
 import {
+  climbPerKm,
+  DEFAULT_TERRAIN_BANDS,
   eastNorth,
   stretchWaypoints,
   thereAndBack,
@@ -513,6 +515,12 @@ async function outAndBackSegment(
   }
   const { note, ...climb } = climbOf(track, "elevation_model");
   if (note) notes.push(note);
+  const perKm =
+    climb.climb_m === null ? 0 : climbPerKm(climb.climb_m, trackLength(track));
+  if (perKm > DEFAULT_TERRAIN_BANDS.flatBelow)
+    notes.push(
+      `It climbs ${climb.climb_m} m in ${km(trackLength(track))} km (${Math.round(perKm)} m per km), so it is not flat; another direction may be flatter.`,
+    );
   const turnaround = out.coordinates.at(-1)!;
   return {
     id: segmentId(ctx),

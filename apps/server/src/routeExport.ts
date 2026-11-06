@@ -2,8 +2,8 @@
  * Route files for export-route: GPX (a watch or app imports it as a
  * course) and GeoJSON (a client checks, joins or changes the geometry).
  * Pure text building; the one home for both formats. Each file is
- * simplified until it fits {@link MAX_FILE_CHARS}, so it rides in one tool
- * result.
+ * simplified until it fits {@link MAX_FILE_CHARS}, so a client that reads
+ * it into the chat stays within one response's budget.
  */
 import { type LatLng, type RouteTrack } from "./mapAnchors";
 import { pointAtDistance, simplifyTrack, trackLength } from "./routeGeometry";

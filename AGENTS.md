@@ -130,8 +130,9 @@ breaking them has shipped bugs — do not work around them locally.
   refuses a `base_version` that is not the latest, checked inside the
   per-route lock before any routing. Every routing call counts against the
   per-call ORS budget, and a call that runs out stores nothing. Results
-  never carry geometry: `export-route` attaches it, `view-route-map` draws
-  it. An image or file rides in the result's `attachments`, which only the
+  never carry geometry: `export-route` links it (a `resource_link` that
+  `resources/read` rebuilds), `view-route-map` draws it. An image or a
+  file's link rides in the result's `attachments`, which only the
   `tools/call` handler adds to `content`.
 - **Telemetry:** `dispatchToolCall` emits one JSON line per call; timer starts
   before token resolution (not-connected calls count); a returned `isError`

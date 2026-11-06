@@ -115,7 +115,11 @@ import {
   compareActivitiesTool,
   loadComparison,
 } from "./tools/compareActivities";
-import { exportRouteTool } from "./tools/exportRoute";
+import {
+  exportRouteTool,
+  isRouteExportUri,
+  readRouteExport,
+} from "./tools/exportRoute";
 import { getActivityTool } from "./tools/getActivity";
 import { getActivityLapsTool } from "./tools/getActivityLaps";
 import { getActivityStreamsTool } from "./tools/getActivityStreams";
@@ -1951,8 +1955,11 @@ function compareActivitiesViewLines(data: ComparisonResult): string[] {
 export type ToolAttachment =
   | { type: "image"; data: string; mimeType: string }
   | {
-      type: "resource";
-      resource: { uri: string; mimeType: string; text: string };
+      type: "resource_link";
+      uri: string;
+      name: string;
+      mimeType: string;
+      size: number;
     };
 
 interface ToolCallResult {
@@ -2383,6 +2390,11 @@ export function createServer({
 
   server.setRequestHandler("resources/read", async (request) => {
     const { uri } = request.params;
+    if (isRouteExportUri(uri)) {
+      const file = await readRouteExport(uri, getIntervalsApiKey());
+      if (!file) throw new ResourceNotFoundError(uri);
+      return { contents: [file] } as unknown as ReadResourceResult;
+    }
     const resource = APP_RESOURCES.find((r) => r.uri === uri);
     if (!resource) {
       // The typed error serialises as Invalid Params (-32602), where the

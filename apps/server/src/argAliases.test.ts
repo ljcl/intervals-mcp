@@ -108,6 +108,30 @@ describe("normalizeArgs: activity id spellings", () => {
   });
 });
 
+describe("normalizeArgs: a route id sent as id", () => {
+  const routeMap = argShape({
+    type: "object",
+    properties: { id: { type: "string" }, route_id: { type: "string" } },
+  });
+
+  it("reads a route id in id as route_id", () => {
+    expect(normalizeArgs({ id: "rjgteutkngf", version: 1 }, routeMap)).toEqual({
+      route_id: "rjgteutkngf",
+      version: 1,
+    });
+  });
+
+  it("leaves an activity id, a route_id already sent, or a tool without route_id alone", () => {
+    expect(normalizeArgs({ id: "i42" }, routeMap)).toEqual({ id: "i42" });
+    expect(
+      normalizeArgs({ id: "rjgteutkngf", route_id: "sabcdefghij" }, routeMap),
+    ).toEqual({ id: "rjgteutkngf", route_id: "sabcdefghij" });
+    expect(normalizeArgs({ id: "rjgteutkngf" }, single)).toEqual({
+      id: "rjgteutkngf",
+    });
+  });
+});
+
 describe("normalizeArgs: newest spellings (#175)", () => {
   const trainingLoad = argShape({
     type: "object",

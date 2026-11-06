@@ -43,6 +43,7 @@ vi.mock("./config", async (importOriginal) => ({
 }));
 
 const { dispatchToolCall } = await import("./server");
+const { readRouteExport } = await import("./tools/exportRoute");
 
 let dir: string;
 
@@ -123,6 +124,26 @@ describe("stitch-route", () => {
     expect(result.isError).toBe(true);
     expect(result.text).toMatch(/2025 protocol revision/);
   });
+  it("labels the path share as partial when past-run sections have none", async () => {
+    const { text } = await stitchSunday();
+    expect(text).toMatch(
+      /path share partial: 60% on paths over the \d+% of the distance that was routed; unknown for sections from past runs/,
+    );
+  });
+
+  it("warns when the out-and-back climbs", async () => {
+    vi.mocked(ors.orsRoute).mockImplementation(async (key, request) => {
+      const route = fakeOrsRoute(key, request);
+      route.track.altitude = route.track.distance.map((d) => 20 + d * 0.03);
+      return route;
+    });
+    const { structured } = await stitchSunday();
+    expect(structured.warnings).toContainEqual(
+      expect.stringMatching(
+        /^Section 2 \(km 5\.27-6\.27\): It climbs 1\d m in 1\.00 km .* not flat/,
+      ),
+    );
+  });
 });
 
 describe("view-route-map with a route_id", () => {
@@ -191,6 +212,13 @@ describe("view-route-map with a route_id", () => {
     const result = await call("view-route-map", { id: SUNDAY_ID }, {});
     expect(result.attachments?.[0]).toMatchObject({ type: "image" });
     expect(result.text).toContain("A picture of the track is attached");
+  });
+
+  it("maps a route id sent as id, as a host holding the old schema sends it", async () => {
+    const { structured } = await stitchSunday();
+    const result = await call("view-route-map", { id: structured.route_id });
+    expect(result.isError, result.text).toBeUndefined();
+    expect(result.text).toContain(`Route ${structured.route_id} version 1`);
   });
 
   it("refuses id and route_id together", async () => {
@@ -379,23 +407,31 @@ describe("amend-route", () => {
 });
 
 describe("export-route", () => {
-  it("attaches a GPX of the version asked, as long as that version (acceptance 5)", async () => {
+  it("links a GPX of the version asked, as long as that version (acceptance 5)", async () => {
     const { structured: v1 } = await stitchSunday();
     const result = await call("export-route", {
       route_id: v1.route_id,
-      version: 1,
       waypoints: [{ km: 8.8, label: "Anzac Bridge" }],
     });
     expect(result.isError, result.text).toBeUndefined();
-    const [file] = result.attachments ?? [];
-    expect(file).toMatchObject({
-      type: "resource",
-      resource: {
-        mimeType: "application/gpx+xml",
-        uri: `route-export://${v1.route_id}-v1.gpx`,
-      },
+    const [link] = result.attachments ?? [];
+    expect(link).toMatchObject({
+      type: "resource_link",
+      name: `${v1.route_id}-v1.gpx`,
+      mimeType: "application/gpx+xml",
     });
-    const gpx = (file as { resource: { text: string } }).resource.text;
+    expect(result.text).toContain(`GPX file linked: ${v1.route_id}-v1.gpx`);
+    const { uri, size } = link as { uri: string; size: number };
+    // A later version does not change what the link reads: it pins version 1.
+    await call("amend-route", {
+      route_id: v1.route_id,
+      base_version: 1,
+      operations: [{ op: "reverse" }],
+    });
+    const file = await readRouteExport(uri, "test-token");
+    expect(file).toMatchObject({ uri, mimeType: "application/gpx+xml" });
+    const gpx = file!.text;
+    expect(Buffer.byteLength(gpx)).toBe(size);
     expect(gpx.match(/<trk>/g)).toHaveLength(1);
     expect(gpx).toContain("<name>Sunday + Iron Cove (v1)</name>");
     expect(gpx).toContain("<name>km 13</name>");
@@ -423,8 +459,8 @@ describe("export-route", () => {
       id: SUNDAY_ID,
       format: "geojson",
     });
-    const file = (result.attachments![0] as { resource: { text: string } })
-      .resource;
+    const { uri } = result.attachments![0] as { uri: string };
+    const file = (await readRouteExport(uri, "test-token"))!;
     const geo = JSON.parse(file.text) as {
       features: Array<{ geometry: { type: string } }>;
     };
@@ -432,6 +468,16 @@ describe("export-route", () => {
     expect(
       geo.features.filter((f) => f.geometry.type === "Point"),
     ).toHaveLength(12);
+  });
+
+  it("reads no file for a malformed link or a route no longer stored", async () => {
+    expect(await readRouteExport("route-export://file/x.gpx", "t")).toBeNull();
+    expect(
+      await readRouteExport(
+        `route-export://file/x.gpx?args=${encodeURIComponent('{"route_id":"rabcdefghij","format":"gpx","km_markers":true}')}`,
+        "t",
+      ),
+    ).toBeNull();
   });
 
   it("needs route_id or id", async () => {
