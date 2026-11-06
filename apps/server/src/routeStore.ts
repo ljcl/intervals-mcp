@@ -27,9 +27,10 @@ import {
   utimes,
   writeFile,
 } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { getDataDir, getRouteRetentionDays } from "./config";
 import { type LatLng, type RouteTrack } from "./mapAnchors";
+import { type PlaceMatch } from "./orsClient";
 
 /** Days a suggested route nobody stitched, viewed or exported is kept. */
 export const SUGGESTION_RETENTION_DAYS = 3;
@@ -83,6 +84,8 @@ export interface SegmentVia {
   label: string;
   /** turnaround: the far end of an out-and-back. */
   kind: "via" | "turnaround";
+  /** The place lookup that gave `point`; absent for a lat,lng, a shift or a turnaround. */
+  match?: PlaceMatch;
 }
 
 export type ClimbSource = "recorded" | "elevation_model" | "none";
@@ -357,6 +360,28 @@ export async function appendVersion(
 }
 
 /** No stored route has this id: it never existed, or it expired. */
+/**
+ * What startup logs about the store: its directory, how many routes it
+ * holds, and whether it sits on the root filesystem. In a container that
+ * means no volume is mounted there, so recreating the container loses it.
+ */
+export async function routeStoreInfo(): Promise<{
+  dir: string;
+  routes: number;
+  onRootFs: boolean;
+}> {
+  const dir = resolve(getDataDir());
+  const names = await readdir(routesDir()).catch(() => [] as string[]);
+  const routes = names.filter(
+    (name) => name.endsWith(".json") && isRouteId(name.slice(0, -5)),
+  ).length;
+  const [own, root] = await Promise.all([
+    stat(dir).catch(() => null),
+    stat("/"),
+  ]);
+  return { dir, routes, onRootFs: own !== null && own.dev === root.dev };
+}
+
 export class RouteNotFoundError extends Error {
   constructor(readonly routeId: string) {
     super(

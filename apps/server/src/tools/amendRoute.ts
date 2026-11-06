@@ -18,6 +18,7 @@ import {
   routeBuildEnv,
   routeErrorResult,
   routeIdInput,
+  snapInput,
   storedRouteLines,
   storedRouteStructured,
 } from "./_storedRoutes";
@@ -54,6 +55,9 @@ Notes:
 - One call makes at most 12 routing calls. A change needing more stores
   nothing and returns a warning; the latest version stays as it was.
 - Places and points are sent to OpenRouteService.
+- Each via gives where it was asked for and where the route meets it. A
+  dead end the route goes into and back out of is a warning; snap
+  "through" moves such a via to where the route passes it.
 `;
 
 const shift = z
@@ -146,6 +150,7 @@ const inputSchema = z.object({
     .min(1)
     .max(MAX_AMEND_OPERATIONS)
     .describe("Changes, applied in order into one new version"),
+  snap: snapInput,
 });
 
 type AmendRouteInput = z.infer<typeof inputSchema>;
@@ -171,6 +176,7 @@ export const amendRouteTool = {
             route_id: args.route_id,
             base_version: args.base_version,
             operations: args.operations as AmendOperation[],
+            snap: args.snap,
           },
           routeBuildEnv(),
           progress,

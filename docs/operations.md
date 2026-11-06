@@ -425,7 +425,10 @@ UID 65534. `docker-compose.yml` mounts the named volume `route-data` there,
 so stored routes survive `docker compose up -d` recreating the container,
 an image update, and `docker compose down` (but not `down -v`). With
 `docker run`, add `-v route-data:/data`; without a volume, routes live in the
-container and go with it. A bind mount must be writable by UID 65534.
+container and go with it. A bind mount goes at `/data` (not `/app/data`) and
+must be writable by UID 65534, e.g. `./data:/data`. At startup the server
+logs `Route store <dir>: <n> stored routes`, and on Linux warns when that
+directory is on the root filesystem, i.e. no volume is mounted there.
 
 The image's `HEALTHCHECK` reads `PORT`, so a non-default port stays healthy:
 `docker run -e PORT=8080 -p 8080:8080 …`. `docker-compose.yml` pins

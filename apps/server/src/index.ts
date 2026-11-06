@@ -8,6 +8,7 @@ import {
 import { createShutdown, serveOptions } from "./httpServer";
 import { warnIfMcpUnprotected } from "./mcpAuth";
 import { createMcpEndpoint } from "./mcpEndpoint";
+import { routeStoreInfo } from "./routeStore";
 import { createServer } from "./server";
 
 // Every bad variable gets its own line, then the process stops.
@@ -25,6 +26,16 @@ const timeZone = timeZoneSetting();
 console.error(
   `intervals.icu athlete ${getIntervalsAthleteId()}, time zone ${timeZone.zone} (${timeZone.source})`,
 );
+
+const store = await routeStoreInfo();
+console.error(
+  `Route store ${store.dir}: ${store.routes} stored route${store.routes === 1 ? "" : "s"}`,
+);
+// Containers run on Linux; on a Mac every local directory shares the root's device.
+if (store.onRootFs && process.platform === "linux")
+  console.error(
+    `WARNING: ${store.dir} is not a mounted volume, so stored routes are lost when the container is recreated. Mount a volume or a directory writable by UID 65534 there (docker-compose.yml mounts route-data).`,
+  );
 
 const PORT = getPort();
 const HOST = "0.0.0.0";

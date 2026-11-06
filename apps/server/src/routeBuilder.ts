@@ -32,7 +32,7 @@ import {
   parseLatLng,
   type RouteTrack,
 } from "./mapAnchors";
-import { OrsApiError, type OrsRoute, orsRoute } from "./orsClient";
+import { OrsApiError, type OrsRoute, orsRoute, type Place } from "./orsClient";
 import { NO_PROGRESS, type ReportProgress } from "./progress";
 import {
   climbPerKm,
@@ -44,6 +44,7 @@ import {
 } from "./routeCandidates";
 import {
   concatTracks,
+  findSpurs,
   JOIN_GAP_M,
   moveToward,
   nearestOnTrack,
@@ -173,7 +174,14 @@ interface Ctx {
   activities: Map<string, Promise<LoadedActivity>>;
   /** Where a place name is looked up near. */
   focus: LatLng | null;
+  snap: Snap;
 }
+
+/**
+ * How a via meets the route: nearest, where OpenRouteService puts it; or
+ * through, moved off a dead end to where the route passes it.
+ */
+export type Snap = "nearest" | "through";
 
 export interface LoadedActivity {
   name: string;
@@ -186,6 +194,7 @@ function newCtx(
   progress: ReportProgress,
   nextId: number,
   focus: LatLng | null,
+  snap: Snap = "nearest",
 ): Ctx {
   return {
     apiKey,
@@ -195,6 +204,7 @@ function newCtx(
     nextId,
     activities: new Map(),
     focus: focus ?? env.homeStart,
+    snap,
   };
 }
 
@@ -229,13 +239,9 @@ export function layoutSegments(segments: StoredSegment[]): {
 
 // ---------- places ----------
 
-async function place(
-  ctx: Ctx,
-  text: string,
-): Promise<{ point: LatLng; label: string }> {
+async function place(ctx: Ctx, text: string): Promise<Place> {
   try {
-    const found = await resolvePlace(text, ctx.env, ctx.focus);
-    return { point: found.point, label: found.label };
+    return await resolvePlace(text, ctx.env, ctx.focus);
   } catch (error) {
     if (error instanceof RouteSuggestionError)
       throw new RouteBuildError(error.message);
@@ -425,11 +431,15 @@ async function activitySegment(
   };
 }
 
+type ViaInput = Pick<SegmentVia, "point" | "label" | "match"> & {
+  id?: string;
+};
+
 /** Vias placed along a track in order, each at its nearest point after the one before. */
 function placeVias(
   ctx: Ctx,
   track: RouteTrack,
-  vias: Array<{ point: LatLng; label: string; id?: string }>,
+  vias: ViaInput[],
 ): SegmentVia[] {
   let from = 0;
   return vias.map((via) => {
@@ -441,6 +451,7 @@ function placeVias(
       point: via.point,
       label: via.label,
       kind: "via" as const,
+      ...(via.match ? { match: via.match } : {}),
     };
   });
 }
@@ -450,7 +461,7 @@ async function generatedSegment(
   ctx: Ctx,
   start: LatLng,
   end: LatLng,
-  vias: Array<{ point: LatLng; label: string; id?: string }>,
+  vias: ViaInput[],
   options: { flexible?: boolean; kind?: "generated" | "join" } = {},
 ): Promise<StoredSegment> {
   const kind = options.kind ?? "generated";
@@ -460,9 +471,20 @@ async function generatedSegment(
       : vias.length > 0
         ? `a section through ${vias.map((v) => v.label).join(", ")}`
         : `a section from ${near(start)} to ${near(end)}`;
-  const route = await ors(ctx, [start, ...vias.map((v) => v.point), end], what);
+  let placed = vias;
+  let route = await ors(ctx, [start, ...placed.map((v) => v.point), end], what);
+  const notes: string[] = [];
+  if (ctx.snap === "through") {
+    const moved = throughVias(route.track, placed);
+    if (moved.notes.length > 0) {
+      placed = moved.vias;
+      notes.push(...moved.notes);
+      route = await ors(ctx, [start, ...placed.map((v) => v.point), end], what);
+    }
+  }
   const track = thinTrack(route.track);
   const { note, ...climb } = climbOf(track, "elevation_model");
+  if (note) notes.push(note);
   const label =
     kind === "join"
       ? "Join"
@@ -477,10 +499,35 @@ async function generatedSegment(
     track,
     ...climb,
     path_share: route.path_share,
-    vias: placeVias(ctx, track, vias),
+    vias: placeVias(ctx, track, placed),
     flexible: options.flexible ?? false,
-    notes: note ? [note] : [],
+    notes,
   };
+}
+
+/**
+ * `vias` with each one the route reaches by a dead end moved to where the
+ * route turns into it, so routing again passes it without turning back.
+ */
+function throughVias(
+  track: RouteTrack,
+  vias: ViaInput[],
+): { vias: ViaInput[]; notes: string[] } {
+  const spurs = findSpurs(track);
+  const notes: string[] = [];
+  let from = 0;
+  const moved = vias.map((via) => {
+    const at = nearestOnTrack(track, via.point, from).distance_m;
+    from = at;
+    const spur = spurs.find((s) => at > s.from_m && at < s.to_m);
+    if (!spur) return via;
+    const point = pointAtDistance(track, spur.from_m).point;
+    notes.push(
+      `Via ${via.label} was at the end of a ${Math.round((spur.to_m - spur.from_m) / 2)} m dead end, so it was moved ${Math.round(haversineMeters(via.point, point))} m to where the route passes it (snap through).`,
+    );
+    return { ...via, point };
+  });
+  return { vias: moved, notes };
 }
 
 /**
@@ -747,6 +794,7 @@ function dedupeVias(segments: StoredSegment[]): StoredSegment[] {
 export interface StitchInput {
   name?: string;
   segments: SegmentInput[];
+  snap?: Snap;
 }
 
 export interface BuildResult {
@@ -791,9 +839,14 @@ export async function stitchRoute(
     } else pinned.push(segment);
   }
   const name = input.name?.trim() || "Stitched route";
+  // snap joins the key only when set, so ids made before it stay the same.
   const routeId = makeRouteId(
     "draft",
-    JSON.stringify({ name, segments: pinned }),
+    JSON.stringify({
+      name,
+      segments: pinned,
+      ...(input.snap === "through" ? { snap: input.snap } : {}),
+    }),
   );
   const existing = await readRoute(routeId);
   if (existing)
@@ -804,7 +857,7 @@ export async function stitchRoute(
       ors_calls: 0,
     };
 
-  const ctx = newCtx(apiKey, env, progress, 1, null);
+  const ctx = newCtx(apiKey, env, progress, 1, null, input.snap);
   const built: Array<StoredSegment[] | null> = pinned.map(() => null);
   for (const [i, segment] of pinned.entries()) {
     if (segment.type === "activity") {
@@ -863,7 +916,7 @@ export async function stitchRoute(
       const vias = await Promise.all(
         (segment.via ?? []).map(async (text) => {
           const found = await place(ctx, text);
-          return { point: found.point, label: found.label };
+          return { point: found.point, label: found.label, match: found.match };
         }),
       );
       if (vias.length === 0 && haversineMeters(start, end) <= JOIN_GAP_M) {
@@ -1103,15 +1156,15 @@ async function movedPoint(
   ctx: Ctx,
   op: Extract<AmendOperation, { op: "move_via" }>,
   from: LatLng,
-): Promise<LatLng> {
-  if (op.to) return (await place(ctx, op.to)).point;
+): Promise<Pick<Place, "point" | "match">> {
+  if (op.to) return place(ctx, op.to);
   if (op.shift) {
     const heading = parseHeading(op.shift.direction);
     if (heading === null)
       throw new RouteBuildError(
         `"${op.shift.direction}" is not a direction; use north, north-east, east, … or degrees.`,
       );
-    return moveToward(from, heading, op.shift.distance_m);
+    return { point: moveToward(from, heading, op.shift.distance_m) };
   }
   throw new RouteBuildError("move_via needs to (a place) or shift.");
 }
@@ -1146,9 +1199,9 @@ async function applyOperation(
       const label = op.label ?? found.label;
       return {
         segments: await replaceRange(ctx, segments, before, after, (a, b) =>
-          generatedSegment(ctx, a, b, [{ point: found.point, label }]).then(
-            (s) => [s],
-          ),
+          generatedSegment(ctx, a, b, [
+            { point: found.point, label, match: found.match },
+          ]).then((s) => [s]),
         ),
         change: `Added via point ${label} near km ${km(at)}`,
       };
@@ -1176,7 +1229,7 @@ async function applyOperation(
     }
     case "move_via": {
       const { index, via, at_m } = findVia(segments, spans, op.via_id);
-      const point = await movedPoint(ctx, op, via.point);
+      const { point, match } = await movedPoint(ctx, op, via.point);
       const moved = `Moved ${via.label} ${op.shift ? `${op.shift.distance_m} m ${op.shift.direction}` : `to ${op.to}`}`;
       if (via.kind === "turnaround" && isWholeOutAndBack(segments[index]!)) {
         const segment = segments[index]!;
@@ -1199,7 +1252,7 @@ async function applyOperation(
       return {
         segments: await replaceRange(ctx, segments, before, after, (a, b) =>
           generatedSegment(ctx, a, b, [
-            { point, label: via.label, id: via.id },
+            { point, label: via.label, id: via.id, match },
           ]).then((s) => [s]),
         ),
         change: moved,
@@ -1230,7 +1283,7 @@ async function applyOperation(
             what = `a section through ${found.label}`;
             return [
               await generatedSegment(ctx, a, b, [
-                { point: found.point, label: found.label },
+                { point: found.point, label: found.label, match: found.match },
               ]),
             ];
           }
@@ -1457,6 +1510,7 @@ export async function amendRoute(
     route_id: string;
     base_version: number;
     operations: AmendOperation[];
+    snap?: Snap;
   },
   env: BuildEnv,
   progress: ReportProgress = NO_PROGRESS,
@@ -1483,6 +1537,7 @@ export async function amendRoute(
         progress,
         stored.next_id,
         segments[0]?.track.coordinates[0] ?? null,
+        input.snap,
       );
       seen.ctx = local;
       if (restoring) {
@@ -1538,6 +1593,14 @@ export interface ViaSummary {
   km: number;
   label: string;
   kind: "via" | "turnaround";
+  lat: number;
+  lng: number;
+  /** Where the route passes it, and how far that is from lat,lng. */
+  snapped_lat: number;
+  snapped_lng: number;
+  snap_m: number;
+  match_name: string | null;
+  match_type: string | null;
 }
 
 export interface SegmentSummary {
@@ -1578,6 +1641,34 @@ export interface RouteSummary {
 
 const round2 = (value: number) => Math.round(value * 100) / 100;
 const round3 = (value: number) => Math.round(value * 1000) / 1000;
+const round6 = (value: number) => Math.round(value * 1e6) / 1e6;
+
+/** Pelias layers precise enough to route through without a second look. */
+const PRECISE_MATCHES = new Set(["venue", "address"]);
+/** Two looked-up vias this close probably matched the same thing. */
+const SAME_LOOKUP_M = 50;
+
+/** Warnings for vias whose place lookup may have gone wrong. */
+function viaMatchWarnings(segments: StoredSegment[]): string[] {
+  const looked = segments.flatMap((s) => s.vias.filter((v) => v.match));
+  const warnings: string[] = [];
+  for (const via of looked)
+    if (!PRECISE_MATCHES.has(via.match!.type))
+      warnings.push(
+        `Via ${via.id} "${via.match!.query}" matched ${via.match!.name}, a ${via.match!.type}, not a venue or address, so it may be off; pass lat,lng to place it exactly.`,
+      );
+  looked.forEach((a, i) => {
+    for (const b of looked.slice(i + 1))
+      if (
+        a.match!.query !== b.match!.query &&
+        haversineMeters(a.point, b.point) <= SAME_LOOKUP_M
+      )
+        warnings.push(
+          `Vias ${a.id} "${a.match!.query}" and ${b.id} "${b.match!.query}" resolved within ${SAME_LOOKUP_M} m of each other, so one is probably wrong; pass lat,lng for it.`,
+        );
+  });
+  return warnings;
+}
 
 /** A version's numbers and sections, without geometry. */
 export function summarizeRoute(
@@ -1613,16 +1704,42 @@ export function summarizeRoute(
       path_share:
         segment.path_share === null ? null : round2(segment.path_share),
       flexible: segment.flexible,
-      vias: segment.vias.map((via) => ({
-        id: via.id,
-        km: round3((span.start_m + via.offset_m) / 1000),
-        label: via.label,
-        kind: via.kind,
-      })),
+      vias: segment.vias.map((via) => {
+        const snapped = pointAtDistance(
+          track,
+          span.start_m + via.offset_m,
+        ).point;
+        return {
+          id: via.id,
+          km: round3((span.start_m + via.offset_m) / 1000),
+          label: via.label,
+          kind: via.kind,
+          lat: round6(via.point[0]),
+          lng: round6(via.point[1]),
+          snapped_lat: round6(snapped[0]),
+          snapped_lng: round6(snapped[1]),
+          snap_m: Math.round(haversineMeters(via.point, snapped)),
+          match_name: via.match?.name ?? null,
+          match_type: via.match?.type ?? null,
+        };
+      }),
       notes: segment.notes,
     };
   });
-  const warnings = [...version.warnings];
+  const warnings = [...version.warnings, ...viaMatchWarnings(segments)];
+  segments.forEach((segment, index) => {
+    // An out-and-back doubles back by design; a past run is what was run.
+    if (
+      segment.source.type !== "ors" ||
+      segment.source.purpose === "out_and_back"
+    )
+      return;
+    const start = spans[index]!.start_m;
+    for (const spur of findSpurs(segment.track))
+      warnings.push(
+        `Section ${index + 1} goes into a dead end and back at km ${km(start + spur.from_m)}-${km(start + spur.to_m)}, ${Math.round((spur.to_m - spur.from_m) / 2)} m each way, usually a via that snapped to a stub; move it (move_via) or route with snap "through".`,
+      );
+  });
   summaries.forEach((s) => {
     for (const note of s.notes)
       warnings.push(

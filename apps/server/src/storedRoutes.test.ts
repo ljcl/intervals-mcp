@@ -13,9 +13,12 @@ import {
   fakeOrsRoute,
   SUNDAY_ACTIVITY,
   SUNDAY_ID,
+  sundayPointAt,
   sundayStreams,
 } from "./__fixtures__/sundayRoute";
+import { haversineMeters } from "./mapAnchors";
 import * as ors from "./orsClient";
+import { moveToward } from "./routeGeometry";
 import { type RouteMapData } from "./routeMapData";
 import { type StoredRouteStructured } from "./tools/_storedRoutes";
 
@@ -124,6 +127,103 @@ describe("stitch-route", () => {
     expect(result.isError).toBe(true);
     expect(result.text).toMatch(/2025 protocol revision/);
   });
+  it("gives each via's point and match, and warns on a coarse match or two vias at one point", async () => {
+    const pyrmont = moveToward(sundayPointAt(5.27), 0, 300);
+    vi.mocked(ors.geocode).mockImplementation(async (_key, text) => ({
+      label: "Pyrmont, NSW, Australia",
+      point: pyrmont,
+      match: { query: text, name: "Pyrmont", type: "locality" },
+    }));
+    const result = await call("stitch-route", {
+      name: "Wharves",
+      segments: [
+        { type: "activity", id: SUNDAY_ID, from_km: 0, to_km: 5.27 },
+        {
+          type: "generated",
+          via: [
+            "Jones Bay Wharf, Pyrmont, Sydney",
+            "Darling Island, Pyrmont, Sydney",
+          ],
+        },
+        { type: "activity", id: SUNDAY_ID, from_km: 5.27, to_km: 12.03 },
+      ],
+    });
+    expect(result.isError, result.text).toBeUndefined();
+    const { segments, warnings } =
+      result.structuredContent as StoredRouteStructured;
+    expect(segments[1]!.vias[0]).toMatchObject({
+      lat: Number(pyrmont[0].toFixed(6)),
+      lng: Number(pyrmont[1].toFixed(6)),
+      match_name: "Pyrmont",
+      match_type: "locality",
+    });
+    expect(result.text).toMatch(
+      /\(-33\.\d{5},151\.\d{5}, matched Pyrmont, locality; on the route at -33\.\d{5},151\.\d{5}, \d+ m away\)/,
+    );
+    expect(warnings).toContainEqual(
+      expect.stringMatching(
+        /^Via v\d+ "Jones Bay Wharf, Pyrmont, Sydney" matched Pyrmont, a locality, not a venue or address/,
+      ),
+    );
+    expect(warnings).toContainEqual(
+      expect.stringMatching(
+        /^Vias v\d+ "Jones Bay Wharf, Pyrmont, Sydney" and v\d+ "Darling Island, Pyrmont, Sydney" resolved within 50 m/,
+      ),
+    );
+    // An activity section's points are not lookups.
+    expect(segments[0]!.vias).toEqual([]);
+  });
+
+  /** A via 60 m past the section's end, in line with it: the fake router goes out to it and back. */
+  function stubStitch(snap?: "through") {
+    const a = sundayPointAt(5.27);
+    const b = sundayPointAt(6);
+    const t = 1 + 60 / haversineMeters(a, b);
+    const stub = `${(a[0] + (b[0] - a[0]) * t).toFixed(6)},${(a[1] + (b[1] - a[1]) * t).toFixed(6)}`;
+    return call("stitch-route", {
+      name: "Stub",
+      segments: [
+        { type: "activity", id: SUNDAY_ID, from_km: 0, to_km: 5.27 },
+        { type: "generated", via: [stub] },
+        { type: "activity", id: SUNDAY_ID, from_km: 6, to_km: 12.03 },
+      ],
+      ...(snap ? { snap } : {}),
+    });
+  }
+
+  it("warns when a routed section goes into a dead end and back, and says where the via meets the route", async () => {
+    const result = await stubStitch();
+    const { segments, warnings } =
+      result.structuredContent as StoredRouteStructured;
+    expect(warnings).toContainEqual(
+      expect.stringMatching(
+        /^Section 2 goes into a dead end and back at km 6\.\d\d-6\.\d\d, \d+ m each way/,
+      ),
+    );
+    const [via] = segments[1]!.vias;
+    expect(via!.snap_m).toBeLessThanOrEqual(5);
+    expect(via!.match_name).toBeNull();
+    expect(result.text).toMatch(
+      /on the route at -33\.\d{5},151\.\d{5}, \d m away/,
+    );
+  });
+
+  it("moves a via off a dead end with snap through, at one more routing call", async () => {
+    const nearest = (await stubStitch())
+      .structuredContent as StoredRouteStructured;
+    const result = await stubStitch("through");
+    const { warnings, ors_calls, route_id } =
+      result.structuredContent as StoredRouteStructured;
+    expect(route_id).not.toBe(nearest.route_id);
+    expect(ors_calls).toBe(nearest.ors_calls + 1);
+    expect(warnings.join("\n")).not.toMatch(/dead end and back/);
+    expect(warnings).toContainEqual(
+      expect.stringMatching(
+        /^Section 2 \(km [\d.-]+\): Via .* was at the end of a \d+ m dead end, so it was moved \d+ m to where the route passes it/,
+      ),
+    );
+  });
+
   it("labels the path share as partial when past-run sections have none", async () => {
     const { text } = await stitchSunday();
     expect(text).toMatch(

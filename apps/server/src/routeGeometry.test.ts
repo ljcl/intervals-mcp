@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { haversineMeters, type LatLng } from "./mapAnchors";
 import {
   concatTracks,
+  findSpurs,
   mapDistance,
   moveToward,
   nearestOnTrack,
@@ -198,5 +199,32 @@ describe("moveToward", () => {
       0,
     );
     expect(moveToward(from, 270, 200)[1]).toBeLessThan(from[1]);
+  });
+});
+
+describe("findSpurs", () => {
+  it("finds a dead end the track goes into and back out of", () => {
+    // East 500 m, north 60 m into a stub and back, then east 500 m more.
+    const base: LatLng = [-33.86, 151.17];
+    const corner = moveToward(base, 90, 500);
+    const points: LatLng[] = [];
+    for (let d = 0; d <= 500; d += 10) points.push(moveToward(base, 90, d));
+    for (let d = 10; d <= 60; d += 10) points.push(moveToward(corner, 0, d));
+    for (let d = 50; d >= 0; d -= 10) points.push(moveToward(corner, 0, d));
+    for (let d = 10; d <= 500; d += 10) points.push(moveToward(corner, 90, d));
+    const spurs = findSpurs(trackFromPoints(points));
+    expect(spurs).toHaveLength(1);
+    expect(spurs[0]!.from_m).toBeCloseTo(500, -1);
+    expect(spurs[0]!.to_m).toBeCloseTo(620, -1);
+  });
+
+  it("finds none on a straight line or a right-angle corner", () => {
+    expect(findSpurs(eastLine(1000))).toEqual([]);
+    const corner = moveToward([-33.86, 151.17], 90, 300);
+    const points: LatLng[] = [];
+    for (let d = 0; d <= 300; d += 10)
+      points.push(moveToward([-33.86, 151.17], 90, d));
+    for (let d = 10; d <= 300; d += 10) points.push(moveToward(corner, 0, d));
+    expect(findSpurs(trackFromPoints(points))).toEqual([]);
   });
 });

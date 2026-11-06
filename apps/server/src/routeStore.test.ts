@@ -11,6 +11,7 @@ import {
   RouteNotFoundError,
   RouteVersionConflictError,
   readRoute,
+  routeStoreInfo,
   type StoredSegment,
   sweepRoutes,
   versionSegments,
@@ -191,6 +192,15 @@ describe("appendVersion", () => {
         throw new Error("unreachable");
       }),
     ).rejects.toBeInstanceOf(RouteNotFoundError);
+  });
+});
+
+describe("routeStoreInfo", () => {
+  it("names the directory and counts only route files", async () => {
+    expect(await routeStoreInfo()).toMatchObject({ dir, routes: 0 });
+    await newRoute();
+    await writeFile(join(dir, "routes", "notes.json"), "{}");
+    expect(await routeStoreInfo()).toMatchObject({ dir, routes: 1 });
   });
 });
 

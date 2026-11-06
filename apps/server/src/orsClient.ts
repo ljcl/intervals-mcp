@@ -40,9 +40,19 @@ export class OrsApiError extends HttpError {
   }
 }
 
+/** What a place lookup matched: the text asked, the match's name and its Pelias layer. */
+export interface PlaceMatch {
+  query: string;
+  name: string;
+  /** venue, address, street, neighbourhood, locality, ... */
+  type: string;
+}
+
 export interface Place {
   label: string;
   point: LatLng;
+  /** Absent for a lat,lng, which needs no lookup. */
+  match?: PlaceMatch;
 }
 
 export interface OrsRoute {
@@ -72,7 +82,13 @@ const GeocodeSchema = z
           geometry: z.object({
             coordinates: z.tuple([z.number(), z.number()]),
           }),
-          properties: z.object({ label: z.string() }).passthrough(),
+          properties: z
+            .object({
+              label: z.string(),
+              name: z.string().optional(),
+              layer: z.string().optional(),
+            })
+            .passthrough(),
         })
         .passthrough(),
     ),
@@ -222,7 +238,12 @@ export async function geocode(
   const hit = parseOrThrow(GeocodeSchema, data, context).features[0];
   if (!hit) return null;
   const [lng, lat] = hit.geometry.coordinates;
-  return { label: hit.properties.label, point: [lat, lng] };
+  const { label, name, layer } = hit.properties;
+  return {
+    label,
+    point: [lat, lng],
+    match: { query: text, name: name ?? label, type: layer ?? "unknown" },
+  };
 }
 
 /** Parses a foot route (exported for tests and the spike fixtures). */

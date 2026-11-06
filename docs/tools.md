@@ -191,6 +191,24 @@ file per route under `DATA_DIR`; docs/operations.md). The rules live in
   is known, with `path_share_coverage`. Below full coverage the text says
   the share is partial and unknown for sections from past runs; recorded
   runs are not matched to OpenStreetMap ways.
+- Each via gives its point (`lat`, `lng`), where the route passes it
+  (`snapped_lat`, `snapped_lng`, the nearest point of the stored track) and
+  how far apart those are (`snap_m`), and, when it came from a place
+  lookup, what matched (`match_name`, `match_type`: the Pelias layer,
+  venue, address, street, locality, ...). The text shows these for vias,
+  not turnarounds. A match that is not a venue or address,
+  and two different place texts resolved within 50 m of each other, each
+  give a warning (`viaMatchWarnings`, `routeBuilder.ts`). A pier or wharf
+  resolves to wherever the geocoder puts it, often its centre; pass
+  lat,lng for its end.
+- A routed section (not an out-and-back, not a past run) that goes into a
+  dead end and back gives a warning with the km range (`findSpurs`,
+  `routeGeometry.ts`: the points either side of a turn stay within 6 m for
+  at least 25 m). With `snap: "through"` on `stitch-route` or
+  `amend-route`, a via the first routing reaches by such a dead end is
+  moved to where the route turns into it and the section is routed again
+  (one more call), with a note giving how far it moved. `snap` is part of
+  `stitch-route`'s id only when it is `through`.
 - An out-and-back whose climb is over 8 m per km (the default flat band,
   `DEFAULT_TERRAIN_BANDS`) carries a note, shown as a warning with its
   climb in metres, that another direction may be flatter.
