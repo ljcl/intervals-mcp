@@ -164,7 +164,7 @@ describe("result envelope", () => {
     expect(result?.resultType).toBe("complete");
     // ...list results carry the required CacheableResult fields, resolved
     // from `cacheHints` (the static surface only changes on redeploy)...
-    expect(result?.ttlMs).toBe(60 * 60 * 1000);
+    expect(result?.ttlMs).toBe(5 * 60 * 1000);
     expect(result?.cacheScope).toBe("private");
     // ...and the server identifies itself on each response instead of once
     // in an initialize handshake.
@@ -708,6 +708,8 @@ describe("tools/list input naming scheme (#141)", () => {
       "waypoints_version",
     ]);
     expect(keys("get-activity-streams-raw")).toEqual(["id"]);
+    expect(keys("stitch-route")).toContain("snap");
+    expect(keys("amend-route")).toContain("snap");
     expect(keys("view-compare-activities")).toEqual([
       "activityId1",
       "activityId2",

@@ -2249,12 +2249,13 @@ async function runToolCall(
 /**
  * How long a 2026-07-28 caller may cache the cacheable results (`ttlMs`).
  * The advertised surface is static per deployment — tools, prompts, and the
- * app resources only change on a redeploy — so an hour trades staleness
- * bounded by that window for fewer list round-trips. `cacheScope` is left on
+ * app resources only change on a redeploy. Five minutes, not an hour: a
+ * client honouring an hour kept the old schemas long after a deploy, so a
+ * new argument looked unpublished. `cacheScope` is left on
  * the SDK's conservative `private` default: `/mcp` can sit behind
  * `MCP_AUTH_TOKEN`, and an authed response has no business in a shared cache.
  */
-const STATIC_SURFACE_TTL_MS = 60 * 60 * 1000;
+const STATIC_SURFACE_TTL_MS = 5 * 60 * 1000;
 
 /**
  * The server for one request. `era` is the SDK's name for the request's

@@ -191,24 +191,36 @@ file per route under `DATA_DIR`; docs/operations.md). The rules live in
   is known, with `path_share_coverage`. Below full coverage the text says
   the share is partial and unknown for sections from past runs; recorded
   runs are not matched to OpenStreetMap ways.
-- Each via gives its point (`lat`, `lng`), where the route passes it
-  (`snapped_lat`, `snapped_lng`, the nearest point of the stored track) and
-  how far apart those are (`snap_m`), and, when it came from a place
-  lookup, what matched (`match_name`, `match_type`: the Pelias layer,
-  venue, address, street, locality, ...). The text shows these for vias,
-  not turnarounds. A match that is not a venue or address,
-  and two different place texts resolved within 50 m of each other, each
-  give a warning (`viaMatchWarnings`, `routeBuilder.ts`). A pier or wharf
+- A via keeps what was asked for: `label` is the place text (or lat,lng)
+  as given, `lat`/`lng` the point it was asked at (a looked-up place's
+  geocoded point). Where the route passes it is `snapped_lat`/`snapped_lng`
+  (the nearest point of the stored track), `snap_m` how far that is from
+  `lat`/`lng`, and `moved_m` how far snap through moved it before routing
+  (0 otherwise; the moved point is stored as the via's point, the asked
+  one as `requested`). A place lookup adds what matched (`match_name`,
+  `match_type`: the Pelias layer, venue, address, street, locality, ...).
+  The text shows these for vias, not turnarounds. A match that is not a
+  venue or address, and two different place texts resolved within 50 m of
+  each other, each give a warning (`viaMatchWarnings`, `routeBuilder.ts`);
+  so do consecutive vias within 10 m of each other. A pier or wharf
   resolves to wherever the geocoder puts it, often its centre; pass
   lat,lng for its end.
-- A routed section (not an out-and-back, not a past run) that goes into a
-  dead end and back gives a warning with the km range (`findSpurs`,
-  `routeGeometry.ts`: the points either side of a turn stay within 6 m for
-  at least 25 m). With `snap: "through"` on `stitch-route` or
-  `amend-route`, a via the first routing reaches by such a dead end is
-  moved to where the route turns into it and the section is routed again
-  (one more call), with a note giving how far it moved. `snap` is part of
+- A routed section (not an out-and-back, not a past run) that goes back
+  the way it came gives a warning with the km range and the vias in it
+  (`findSpurs`, `routeGeometry.ts`: a stretch with a later stretch going
+  the opposite way within 12 m of it, for at least 25 m, so a return along
+  the path beside the way out counts too). With `snap: "through"` on
+  `stitch-route` or `amend-route`, a via in such a stretch is moved to
+  where the route turns onto it, if that is within 50 m of where it was
+  asked for, and the section is routed again; the new track is checked the
+  same way, at most twice per section, each pass one routing call. A via
+  further than 50 m is kept, with a warning. Vias a pass puts within 10 m
+  of each other are merged, with a note. `snap` is part of
   `stitch-route`'s id only when it is `through`.
+- `stitch-route` segments and `amend-route` operations refuse a key they
+  do not take (`z.strictObject`), so `snap` on a segment is an error, not
+  silently dropped. Unknown top-level keys are still dropped and named in
+  the reply, as for every tool.
 - An out-and-back whose climb is over 8 m per km (the default flat band,
   `DEFAULT_TERRAIN_BANDS`) carries a note, shown as a warning with its
   climb in metres, that another direction may be flatter.

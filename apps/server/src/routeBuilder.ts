@@ -241,7 +241,9 @@ export function layoutSegments(segments: StoredSegment[]): {
 
 async function place(ctx: Ctx, text: string): Promise<Place> {
   try {
-    return await resolvePlace(text, ctx.env, ctx.focus);
+    // The athlete's words name the place; what the lookup matched is in `match`.
+    const found = await resolvePlace(text, ctx.env, ctx.focus);
+    return { ...found, label: text.trim() };
   } catch (error) {
     if (error instanceof RouteSuggestionError)
       throw new RouteBuildError(error.message);
@@ -431,8 +433,10 @@ async function activitySegment(
   };
 }
 
-type ViaInput = Pick<SegmentVia, "point" | "label" | "match"> & {
+type ViaInput = Pick<SegmentVia, "point" | "label" | "match" | "requested"> & {
   id?: string;
+  /** snap through left it where it was; it is not looked at again. */
+  held?: boolean;
 };
 
 /** Vias placed along a track in order, each at its nearest point after the one before. */
@@ -452,6 +456,7 @@ function placeVias(
       label: via.label,
       kind: "via" as const,
       ...(via.match ? { match: via.match } : {}),
+      ...(via.requested ? { requested: via.requested } : {}),
     };
   });
 }
@@ -475,12 +480,25 @@ async function generatedSegment(
   let route = await ors(ctx, [start, ...placed.map((v) => v.point), end], what);
   const notes: string[] = [];
   if (ctx.snap === "through") {
-    const moved = throughVias(route.track, placed);
-    if (moved.notes.length > 0) {
-      placed = moved.vias;
-      notes.push(...moved.notes);
+    // A move can land on another dead end, so the new track is checked again.
+    for (let pass = 0; pass < SNAP_THROUGH_PASSES; pass++) {
+      const step = throughVias(route.track, placed);
+      notes.push(...step.notes);
+      placed = step.vias;
+      if (!step.moved) break;
+      if (ctx.budget.calls <= 0) {
+        notes.push(
+          "snap through stopped with no routing calls left, so a via it moved was not routed through.",
+        );
+        break;
+      }
       route = await ors(ctx, [start, ...placed.map((v) => v.point), end], what);
     }
+    for (const via of placed)
+      if (via.requested)
+        notes.push(
+          `Via ${via.label} was on a way the route went along and back, so it was moved ${Math.round(haversineMeters(via.requested, via.point))} m to where the route passes it (snap through).`,
+        );
   }
   const track = thinTrack(route.track);
   const { note, ...climb } = climbOf(track, "elevation_model");
@@ -505,29 +523,61 @@ async function generatedSegment(
   };
 }
 
+/** snap through moves a via at most this far from where it was asked for. */
+const SNAP_THROUGH_MAX_M = 50;
+/** Times snap through reroutes one section. */
+const SNAP_THROUGH_PASSES = 2;
+/** Two vias this close are at one point. */
+const SAME_VIA_M = 10;
+
 /**
- * `vias` with each one the route reaches by a dead end moved to where the
- * route turns into it, so routing again passes it without turning back.
+ * One snap-through pass: each via the route reaches by going along a way
+ * and back moved to where the route turns onto that way, if that is within
+ * {@link SNAP_THROUGH_MAX_M} of where it was asked for, else held with a
+ * note. A via moved onto the one before it is merged into it.
  */
 function throughVias(
   track: RouteTrack,
   vias: ViaInput[],
-): { vias: ViaInput[]; notes: string[] } {
+): { vias: ViaInput[]; notes: string[]; moved: boolean } {
   const spurs = findSpurs(track);
   const notes: string[] = [];
   let from = 0;
-  const moved = vias.map((via) => {
+  const next = vias.map((via): ViaInput => {
     const at = nearestOnTrack(track, via.point, from).distance_m;
     from = at;
-    const spur = spurs.find((s) => at > s.from_m && at < s.to_m);
+    const spur = via.held
+      ? undefined
+      : spurs.find((s) => at > s.from_m && at < s.to_m);
     if (!spur) return via;
+    const asked = via.requested ?? via.point;
     const point = pointAtDistance(track, spur.from_m).point;
-    notes.push(
-      `Via ${via.label} was at the end of a ${Math.round((spur.to_m - spur.from_m) / 2)} m dead end, so it was moved ${Math.round(haversineMeters(via.point, point))} m to where the route passes it (snap through).`,
-    );
-    return { ...via, point };
+    const far = Math.round(haversineMeters(asked, point));
+    if (far > SNAP_THROUGH_MAX_M) {
+      notes.push(
+        `Via ${via.label} is on a way the route goes along and back; the nearest point it passes through is ${far} m away, more than the ${SNAP_THROUGH_MAX_M} m snap through moves a via, so it was kept. Move it with move_via.`,
+      );
+      return { ...via, held: true };
+    }
+    return { ...via, point, requested: asked };
   });
-  return { vias: moved, notes };
+  const moved = new Set(next.filter((via, i) => via.point !== vias[i]!.point));
+  const merged: ViaInput[] = [];
+  for (const via of next) {
+    const before = merged.at(-1);
+    if (
+      before &&
+      (moved.has(via) || moved.has(before)) &&
+      haversineMeters(before.point, via.point) <= SAME_VIA_M
+    ) {
+      notes.push(
+        `Via ${via.label} was merged into via ${before.label}: snap through put both at one point.`,
+      );
+      continue;
+    }
+    merged.push(via);
+  }
+  return { vias: merged, notes, moved: moved.size > 0 };
 }
 
 /**
@@ -1599,6 +1649,8 @@ export interface ViaSummary {
   snapped_lat: number;
   snapped_lng: number;
   snap_m: number;
+  /** How far snap through moved it from lat,lng; 0 when it did not. */
+  moved_m: number;
   match_name: string | null;
   match_type: string | null;
 }
@@ -1709,16 +1761,18 @@ export function summarizeRoute(
           track,
           span.start_m + via.offset_m,
         ).point;
+        const asked = via.requested ?? via.point;
         return {
           id: via.id,
           km: round3((span.start_m + via.offset_m) / 1000),
           label: via.label,
           kind: via.kind,
-          lat: round6(via.point[0]),
-          lng: round6(via.point[1]),
+          lat: round6(asked[0]),
+          lng: round6(asked[1]),
           snapped_lat: round6(snapped[0]),
           snapped_lng: round6(snapped[1]),
-          snap_m: Math.round(haversineMeters(via.point, snapped)),
+          snap_m: Math.round(haversineMeters(asked, snapped)),
+          moved_m: Math.round(haversineMeters(asked, via.point)),
           match_name: via.match?.name ?? null,
           match_type: via.match?.type ?? null,
         };
@@ -1735,9 +1789,27 @@ export function summarizeRoute(
     )
       return;
     const start = spans[index]!.start_m;
-    for (const spur of findSpurs(segment.track))
+    for (const spur of findSpurs(segment.track)) {
+      const inside = segment.vias
+        .filter((v) => v.offset_m > spur.from_m && v.offset_m < spur.to_m)
+        .map((v) => v.id);
       warnings.push(
-        `Section ${index + 1} goes into a dead end and back at km ${km(start + spur.from_m)}-${km(start + spur.to_m)}, ${Math.round((spur.to_m - spur.from_m) / 2)} m each way, usually a via that snapped to a stub; move it (move_via) or route with snap "through".`,
+        `Section ${index + 1} goes back the way it came at km ${km(start + spur.from_m)}-${km(start + spur.to_m)}, ${Math.round((spur.to_m - spur.from_m) / 2)} m each way${inside.length > 0 ? `, around ${inside.join(", ")}` : ""}: usually a via on a dead end or the far side of a pier; move it (move_via) or route with snap "through".`,
+      );
+    }
+  });
+  const ordered = summaries.flatMap((s, i) =>
+    s.vias.map((v, j) => ({ ...v, point: segments[i]!.vias[j]!.point })),
+  );
+  ordered.forEach((v, i) => {
+    const prev = ordered[i - 1];
+    if (
+      prev &&
+      prev.id !== v.id &&
+      haversineMeters(prev.point, v.point) <= SAME_VIA_M
+    )
+      warnings.push(
+        `Vias ${prev.id} and ${v.id} are at one point (km ${v.km.toFixed(2)}), so the route between them goes nowhere; remove one (remove_via) or move it.`,
       );
   });
   summaries.forEach((s) => {

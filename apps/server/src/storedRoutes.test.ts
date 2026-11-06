@@ -154,6 +154,7 @@ describe("stitch-route", () => {
     expect(segments[1]!.vias[0]).toMatchObject({
       lat: Number(pyrmont[0].toFixed(6)),
       lng: Number(pyrmont[1].toFixed(6)),
+      label: "Jones Bay Wharf, Pyrmont, Sydney",
       match_name: "Pyrmont",
       match_type: "locality",
     });
@@ -175,53 +176,125 @@ describe("stitch-route", () => {
   });
 
   /** A via 60 m past the section's end, in line with it: the fake router goes out to it and back. */
-  function stubStitch(snap?: "through") {
+  /** A point `metres` past km 6 of Sunday, in line from km 5.27: the fake router goes out to it and back. */
+  function pastEnd(metres: number) {
     const a = sundayPointAt(5.27);
     const b = sundayPointAt(6);
-    const t = 1 + 60 / haversineMeters(a, b);
-    const stub = `${(a[0] + (b[0] - a[0]) * t).toFixed(6)},${(a[1] + (b[1] - a[1]) * t).toFixed(6)}`;
+    const t = 1 + metres / haversineMeters(a, b);
+    return `${(a[0] + (b[0] - a[0]) * t).toFixed(6)},${(a[1] + (b[1] - a[1]) * t).toFixed(6)}`;
+  }
+
+  function stubStitch(via: string[], snap?: "through") {
     return call("stitch-route", {
       name: "Stub",
       segments: [
         { type: "activity", id: SUNDAY_ID, from_km: 0, to_km: 5.27 },
-        { type: "generated", via: [stub] },
+        { type: "generated", via },
         { type: "activity", id: SUNDAY_ID, from_km: 6, to_km: 12.03 },
       ],
       ...(snap ? { snap } : {}),
     });
   }
 
-  it("warns when a routed section goes into a dead end and back, and says where the via meets the route", async () => {
-    const result = await stubStitch();
+  it("warns when a routed section goes back the way it came, and says where the via meets the route", async () => {
+    const result = await stubStitch([pastEnd(60)]);
     const { segments, warnings } =
       result.structuredContent as StoredRouteStructured;
+    const [via] = segments[1]!.vias;
     expect(warnings).toContainEqual(
       expect.stringMatching(
-        /^Section 2 goes into a dead end and back at km 6\.\d\d-6\.\d\d, \d+ m each way/,
+        new RegExp(
+          `^Section 2 goes back the way it came at km \\d\\.\\d\\d-\\d\\.\\d\\d, \\d+ m each way, around ${via!.id}:`,
+        ),
       ),
     );
-    const [via] = segments[1]!.vias;
     expect(via!.snap_m).toBeLessThanOrEqual(5);
+    expect(via!.moved_m).toBe(0);
     expect(via!.match_name).toBeNull();
     expect(result.text).toMatch(
-      /on the route at -33\.\d{5},151\.\d{5}, \d m away/,
+      /on the route at -33\.\d{5},151\.\d{5}, \d m away\)/,
     );
   });
 
-  it("moves a via off a dead end with snap through, at one more routing call", async () => {
-    const nearest = (await stubStitch())
+  it("moves a via off a dead end with snap through, keeping where it was asked for", async () => {
+    const asked = pastEnd(30);
+    const nearest = (await stubStitch([asked]))
       .structuredContent as StoredRouteStructured;
-    const result = await stubStitch("through");
-    const { warnings, ors_calls, route_id } =
+    const result = await stubStitch([asked], "through");
+    const { warnings, ors_calls, route_id, segments } =
       result.structuredContent as StoredRouteStructured;
     expect(route_id).not.toBe(nearest.route_id);
     expect(ors_calls).toBe(nearest.ors_calls + 1);
-    expect(warnings.join("\n")).not.toMatch(/dead end and back/);
+    expect(warnings.join("\n")).not.toMatch(/the way it came/);
     expect(warnings).toContainEqual(
       expect.stringMatching(
-        /^Section 2 \(km [\d.-]+\): Via .* was at the end of a \d+ m dead end, so it was moved \d+ m to where the route passes it/,
+        /^Section 2 \(km [\d.-]+\): Via .* was on a way the route went along and back, so it was moved \d+ m to where the route passes it/,
       ),
     );
+    const [via] = segments[1]!.vias;
+    expect(`${via!.lat.toFixed(6)},${via!.lng.toFixed(6)}`).toBe(asked);
+    expect(via!.label).toBe(asked);
+    expect(via!.moved_m).toBeGreaterThan(25);
+    expect(via!.moved_m).toBeLessThanOrEqual(50);
+    expect(via!.snap_m).toBeGreaterThanOrEqual(via!.moved_m - 5);
+    expect(result.text).toMatch(/moved \d+ m by snap through\)/);
+  });
+
+  it("keeps a via snap through would move more than 50 m, and warns", async () => {
+    const result = await stubStitch([pastEnd(80)], "through");
+    const { warnings, segments } =
+      result.structuredContent as StoredRouteStructured;
+    expect(segments[1]!.vias[0]!.moved_m).toBe(0);
+    expect(warnings).toContainEqual(
+      expect.stringMatching(
+        /Via .* is on a way the route goes along and back; the nearest point it passes through is \d+ m away, more than the 50 m snap through moves a via, so it was kept/,
+      ),
+    );
+    expect(warnings).toContainEqual(
+      expect.stringMatching(/^Section 2 goes back the way it came/),
+    );
+  });
+
+  it("merges two vias snap through moves to one point", async () => {
+    const result = await stubStitch([pastEnd(20), pastEnd(30)], "through");
+    const { warnings, segments } =
+      result.structuredContent as StoredRouteStructured;
+    expect(segments[1]!.vias).toHaveLength(1);
+    expect(warnings).toContainEqual(
+      expect.stringMatching(
+        /Via .* was merged into via .*: snap through put both at one point\./,
+      ),
+    );
+  });
+
+  it("warns when consecutive vias are at one point", async () => {
+    const a = sundayPointAt(5.27);
+    const b = sundayPointAt(6);
+    const side = moveToward(
+      [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2],
+      0,
+      haversineMeters(a, b) / 2,
+    );
+    const at = `${side[0].toFixed(6)},${side[1].toFixed(6)}`;
+    const again = `${side[0].toFixed(5)},${side[1].toFixed(5)}`;
+    const result = await stubStitch([at, again]);
+    const { warnings } = result.structuredContent as StoredRouteStructured;
+    expect(warnings).toContainEqual(
+      expect.stringMatching(
+        /^Vias v\d+ and v\d+ are at one point \(km [\d.]+\), so the route between them goes nowhere/,
+      ),
+    );
+  });
+
+  it("refuses a key a segment does not take, rather than ignoring it", async () => {
+    const result = await call("stitch-route", {
+      segments: [
+        { type: "activity", id: SUNDAY_ID, from_km: 0, to_km: 5.27 },
+        { type: "generated", via: [pastEnd(30)], snap: "through" },
+      ],
+    });
+    expect(result.isError).toBe(true);
+    expect(result.text).toMatch(/snap/);
   });
 
   it("labels the path share as partial when past-run sections have none", async () => {

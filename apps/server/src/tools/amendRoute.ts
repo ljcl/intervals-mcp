@@ -73,23 +73,23 @@ const shift = z
   .describe("Move the point this far, instead of to a place");
 
 const operation = z.discriminatedUnion("op", [
-  z.object({
+  z.strictObject({
     op: z.literal("insert_via"),
     km: kmInput("Route km the new point is nearest"),
     place: placeText.describe("A place with its city, or lat,lng"),
     label: z.string().trim().min(1).max(80).optional(),
   }),
-  z.object({
+  z.strictObject({
     op: z.literal("remove_via"),
     via_id: z.string().trim().min(2).max(12).describe("e.g. v3"),
   }),
-  z.object({
+  z.strictObject({
     op: z.literal("move_via"),
     via_id: z.string().trim().min(2).max(12).describe("e.g. v3"),
     to: placeText.optional().describe("A place with its city, or lat,lng"),
     shift: shift.optional(),
   }),
-  z.object({
+  z.strictObject({
     op: z.literal("replace_section"),
     from_km: kmInput("Route km the section starts at"),
     to_km: kmInput("Route km the section ends at"),
@@ -107,7 +107,7 @@ const operation = z.discriminatedUnion("op", [
       .optional()
       .describe("Use part of a past run instead; its ends are routed to"),
   }),
-  z.object({
+  z.strictObject({
     op: z.literal("add_out_and_back"),
     km: kmInput("Route km it turns off at"),
     toward: placeText.describe(
@@ -119,20 +119,20 @@ const operation = z.discriminatedUnion("op", [
       .max(50)
       .describe("Out and back together"),
   }),
-  z.object({
+  z.strictObject({
     op: z.literal("trim"),
     from_km: kmInput("Route km to cut from"),
     to_km: kmInput("Route km to cut to"),
   }),
-  z.object({
+  z.strictObject({
     op: z.literal("fit_distance"),
     target_km: z.number().positive().max(200).describe("Whole route, km"),
     from_km: kmInput("Section to change; default the flexible one").optional(),
     to_km: kmInput("Section to change").optional(),
   }),
-  z.object({ op: z.literal("reverse") }),
-  z.object({ op: z.literal("undo") }),
-  z.object({
+  z.strictObject({ op: z.literal("reverse") }),
+  z.strictObject({ op: z.literal("undo") }),
+  z.strictObject({
     op: z.literal("restore"),
     version: z.number().int().positive(),
   }),

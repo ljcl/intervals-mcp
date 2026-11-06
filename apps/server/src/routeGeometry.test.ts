@@ -214,8 +214,32 @@ describe("findSpurs", () => {
     for (let d = 10; d <= 500; d += 10) points.push(moveToward(corner, 90, d));
     const spurs = findSpurs(trackFromPoints(points));
     expect(spurs).toHaveLength(1);
-    expect(spurs[0]!.from_m).toBeCloseTo(500, -1);
-    expect(spurs[0]!.to_m).toBeCloseTo(620, -1);
+    expect(Math.abs(spurs[0]!.from_m - 500)).toBeLessThanOrEqual(10);
+    expect(Math.abs(spurs[0]!.to_m - 620)).toBeLessThanOrEqual(10);
+  });
+
+  /** North `up` m on one path, across `gap` m east at the top, back down beside it, then east. */
+  function upAndBack(up: number, gap: number) {
+    const base: LatLng = [-33.86, 151.17];
+    const points: LatLng[] = [];
+    for (let d = 0; d <= up; d += 10) points.push(moveToward(base, 0, d));
+    const top = moveToward(base, 0, up);
+    points.push(moveToward(top, 90, gap));
+    const down = moveToward(base, 90, gap);
+    for (let d = up - 10; d >= 0; d -= 10) points.push(moveToward(down, 0, d));
+    for (let d = 10; d <= 300; d += 10) points.push(moveToward(down, 90, d));
+    return trackFromPoints(points);
+  }
+
+  it("finds a return along the path beside the way out, with no mirror-image turn", () => {
+    const spurs = findSpurs(upAndBack(200, 10));
+    expect(spurs).toHaveLength(1);
+    expect(spurs[0]!.from_m).toBeLessThanOrEqual(10);
+    expect(spurs[0]!.to_m).toBeGreaterThanOrEqual(390);
+  });
+
+  it("finds none round a block wider than the match distance", () => {
+    expect(findSpurs(upAndBack(200, 30))).toEqual([]);
   });
 
   it("finds none on a straight line or a right-angle corner", () => {

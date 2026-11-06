@@ -44,8 +44,10 @@ Related docs: [mcp-apps.md](mcp-apps.md) for the UI packages,
 - The endpoint parses every POST body itself with `parseJsonWithLargeInts` and
   hands the SDK a `parsedBody`. That seam keeps 64-bit ids losslessly intact;
   do not bypass it.
-- The `cacheHints` server option stamps a 1-hour `ttlMs` on
+- The `cacheHints` server option stamps a 5-minute `ttlMs` on
   list/read/discover results, because that surface only changes on redeploy.
+  It was an hour, and a client honouring that showed the old tool schemas
+  well after a deploy.
   `cacheScope` stays on the SDK's `private` default since `/mcp` can sit
   behind `MCP_AUTH_TOKEN`.
 - `httpServer.ts` holds what `index.ts` passes to `Bun.serve`: the routes
