@@ -151,4 +151,28 @@ describe("route-map main", () => {
       arguments: { start: "Embarcadero, San Francisco", terrain: "flat" },
     });
   });
+
+  it("fetches a stored route with its versions and waypoints", async () => {
+    const { calls, sendInput } = await mountApp();
+    const waypoints = [{ km: 7.8, end_km: 9, label: "Climb", kind: "climb" }];
+
+    await sendInput({
+      route_id: "r7k2m9qx4a",
+      version: 2,
+      compare_to_version: 1,
+      waypoints,
+      waypoints_version: 1,
+    });
+
+    expect(calls[0]).toEqual({
+      name: "get-route-map-data",
+      arguments: {
+        route_id: "r7k2m9qx4a",
+        version: 2,
+        compare_to_version: 1,
+        waypoints,
+        waypoints_version: 1,
+      },
+    });
+  });
 });

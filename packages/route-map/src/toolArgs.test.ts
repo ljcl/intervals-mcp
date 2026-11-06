@@ -44,4 +44,48 @@ describe("parseToolArgs", () => {
       args: { start: "Embarcadero, San Francisco", terrain: "flat" },
     });
   });
+
+  describe("route mode", () => {
+    it("reads a route_id with its versions and waypoints", () => {
+      const waypoints = [{ km: 7.8, end_km: 9, label: "Climb", kind: "climb" }];
+      expect(
+        parseToolArgs({
+          route_id: "r7k2m9qx4a",
+          version: 3,
+          compare_to_version: 2,
+          waypoints,
+          waypoints_version: 1,
+        }),
+      ).toEqual({
+        kind: "route",
+        route_id: "r7k2m9qx4a",
+        version: 3,
+        compare_to_version: 2,
+        waypoints,
+        waypoints_version: 1,
+      });
+    });
+
+    it("prefers route_id when an id is there too", () => {
+      expect(parseToolArgs({ route_id: "r1", id: "i5" })).toEqual({
+        kind: "route",
+        route_id: "r1",
+      });
+    });
+
+    it("drops version fields that are not positive whole numbers", () => {
+      expect(
+        parseToolArgs({
+          route_id: " r1 ",
+          version: 0,
+          compare_to_version: 1.5,
+          waypoints_version: "2",
+        }),
+      ).toEqual({ kind: "route", route_id: "r1" });
+    });
+
+    it("is not route mode with an empty route_id", () => {
+      expect(parseToolArgs({ route_id: " ", id: "i5" })).toEqual({ id: "i5" });
+    });
+  });
 });

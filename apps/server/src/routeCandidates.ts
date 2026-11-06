@@ -301,14 +301,15 @@ const M_PER_DEGREE = 111_320;
 const cosLat = (point: LatLng) => Math.cos((point[0] * Math.PI) / 180);
 
 /** East and north metres from `a` to `b` (flat earth: fine over a run's few km). */
-function eastNorth(a: LatLng, b: LatLng): [number, number] {
+export function eastNorth(a: LatLng, b: LatLng): [number, number] {
   return [
     (b[1] - a[1]) * M_PER_DEGREE * cosLat(a),
     (b[0] - a[0]) * M_PER_DEGREE,
   ];
 }
 
-function moveBy(point: LatLng, east: number, north: number): LatLng {
+/** `point` moved `east` and `north` metres (flat earth, as {@link eastNorth}). */
+export function moveBy(point: LatLng, east: number, north: number): LatLng {
   return [
     point[0] + north / M_PER_DEGREE,
     point[1] + east / (M_PER_DEGREE * cosLat(point)),

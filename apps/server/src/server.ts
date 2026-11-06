@@ -75,16 +75,20 @@ import {
   type ReportProgress,
 } from "./progress";
 import { completePromptArgument, getPrompt, listPrompts } from "./prompts";
+import { loadRouteVersion, RouteBuildError } from "./routeBuilder";
 import {
   buildRouteMapData,
+  buildStoredRouteMapData,
   buildSuggestionsMapData,
   type RouteMapData,
+  routeVersionOrNull,
 } from "./routeMapData";
 import {
   loadRouteSuggestions,
   type RouteSuggestionArgs,
   RouteSuggestionError,
 } from "./routeSuggestions";
+import { renderRoutePng, SECTION_COLOUR_NAMES } from "./staticMap";
 import {
   ERROR_RESULT_CLASS,
   parseTraceparent,
@@ -94,6 +98,7 @@ import {
 } from "./telemetry";
 import { READ_ONLY } from "./tools/_annotations";
 import {
+  noteToolFailure,
   prefixedErrorText,
   toolErrorText,
   toolFailureOf,
@@ -103,11 +108,14 @@ import {
   intervalsActivityIdInput,
   isActivityIdSchema,
 } from "./tools/_ids";
+import { routeIdInput } from "./tools/_storedRoutes";
+import { amendRouteTool } from "./tools/amendRoute";
 import {
   type ComparisonResult,
   compareActivitiesTool,
   loadComparison,
 } from "./tools/compareActivities";
+import { exportRouteTool } from "./tools/exportRoute";
 import { getActivityTool } from "./tools/getActivity";
 import { getActivityLapsTool } from "./tools/getActivityLaps";
 import { getActivityStreamsTool } from "./tools/getActivityStreams";
@@ -127,6 +135,7 @@ import { getTrainingLoadTool } from "./tools/getTrainingLoad";
 import { getWellnessTool } from "./tools/getWellness";
 import { listActivitiesTool } from "./tools/listActivities";
 import { listGearTool } from "./tools/listGear";
+import { stitchRouteTool } from "./tools/stitchRoute";
 import {
   routeSuggestionEnv,
   suggestRunRouteTool,
@@ -224,6 +233,13 @@ const waypointsInput = z
         .describe(
           "Distance from the start of the track, in kilometres, where this waypoint sits.",
         ),
+      end_km: z
+        .number()
+        .nonnegative()
+        .optional()
+        .describe(
+          "For a stretch (a climb from km to end_km): where it ends, in kilometres.",
+        ),
       label: z
         .string()
         .min(1)
@@ -319,6 +335,51 @@ const trainingLoadInput = z.object({
   newest: getTrainingLoadTool.inputSchema.shape.newest,
 });
 
+/**
+ * The route map's input: an activity id, or a stored route's id with an
+ * optional version, a version to compare with, and the version the
+ * waypoints' km refer to (they are carried onto the shown one).
+ */
+function routeMapInput(idText: string) {
+  return z
+    .object({
+      id: intervalsActivityIdInput(idText).optional(),
+      route_id: routeIdInput(
+        "A stored route (stitch-route, amend-route or suggest-run-route) to map instead of an activity",
+      ).optional(),
+      version: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe("With route_id: the version to show; default the latest"),
+      compare_to_version: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe(
+          "With route_id: another version to draw under it, with the changed part marked",
+        ),
+      waypoints: waypointsInput,
+      waypoints_version: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe(
+          "With route_id: the version the waypoints' km were read on; they are moved onto the shown version, with a warning for any that may be wrong",
+        ),
+    })
+    .refine(
+      (args) => (args.id === undefined) !== (args.route_id === undefined),
+      {
+        message:
+          "Pass id (an activity) or route_id (a stored route), not both.",
+      },
+    );
+}
+
 const APP_TOOL_INPUT_SCHEMAS: Record<string, z.ZodType> = {
   "view-activity-chart": z.object({
     id: intervalsActivityIdInput("The intervals.icu activity id to visualize."),
@@ -328,14 +389,12 @@ const APP_TOOL_INPUT_SCHEMAS: Record<string, z.ZodType> = {
   }),
   "view-cadence-trends": z.object({ days: cadenceDaysInput }),
   "get-cadence-trend-data": z.object({ days: cadenceDaysInput }),
-  "view-route-map": z.object({
-    id: intervalsActivityIdInput("The intervals.icu activity id to map."),
-    waypoints: waypointsInput,
-  }),
-  "get-route-map-data": z.object({
-    id: intervalsActivityIdInput("The intervals.icu activity id."),
-    waypoints: waypointsInput,
-  }),
+  "view-route-map": routeMapInput(
+    "The intervals.icu activity id to map; or pass route_id instead.",
+  ),
+  "get-route-map-data": routeMapInput(
+    "The intervals.icu activity id; or route_id.",
+  ),
   "view-route-suggestions": suggestRunRouteTool.inputSchema.omit({
     days: true,
   }),
@@ -499,6 +558,9 @@ const TOOLS = [
   getBestEffortsTool,
   getRacePredictionTool,
   suggestRunRouteTool,
+  stitchRouteTool,
+  amendRouteTool,
+  exportRouteTool,
   listActivitiesTool,
   getActivityTool,
   getActivityStreamsTool,
@@ -600,9 +662,11 @@ function buildToolDefs(): ToolDef[] {
     name: "view-route-map",
     title: "Route map",
     description:
-      "Open an interactive map of one activity's GPS track, fit to bounds with start and finish markers and a distance/elevation summary. " +
-      "Prefer this over a text summary when the user wants to see where an activity went. Takes the activity id. " +
-      "Optionally pin distance-anchored waypoints (fueling points, climb warnings, …) along the track via the waypoints array, useful when discussing a race plan or course guide.",
+      "Open an interactive map of one activity's GPS track, or of a stored route (route_id from stitch-route, amend-route or suggest-run-route), fit to bounds with start and finish markers and a distance/elevation summary. " +
+      "Prefer this over a text summary when the user wants to see where an activity went or what a route looks like. " +
+      "A stored route shows as one line with a colour per section, km markers and its via points; the latest version can be edited on the map (each edit calls amend-route). compare_to_version draws another version under it with the changed part marked. " +
+      "Optionally pin distance-anchored waypoints (fueling points, climb warnings, …) along the track via the waypoints array; with waypoints_version their km are moved onto the shown version, with a warning for any that may be wrong. " +
+      "A client that does not report MCP Apps support gets a picture of the map; export-route gives the geometry as GPX or GeoJSON.",
     inputSchema: toInputSchema(APP_TOOL_INPUT_SCHEMAS["view-route-map"]!),
     annotations: READ_ONLY,
     _meta: {
@@ -615,7 +679,7 @@ function buildToolDefs(): ToolDef[] {
     title: "Route map data",
     description:
       "Internal data feed for the route-map UI: returns [lat, lng] coordinates from the activity's recorded GPS track plus start/end points, distance, elevation gain, and (for activities with GPS streams) index-aligned metric streams (time, distance, altitude, heartrate, watts, velocity_smooth, grade_smooth) " +
-      "and annotation anchors (WORK-interval end markers, caller-supplied distance-anchored waypoints) for one activity as JSON. " +
+      "and annotation anchors (WORK-interval end markers, caller-supplied distance-anchored waypoints) for one activity as JSON; for a route_id, a stored route's version with its sections, via points, km markers and an optional compared version. " +
       "The view-route-map app calls this; not intended for direct model use.",
     inputSchema: toInputSchema(APP_TOOL_INPUT_SCHEMAS["get-route-map-data"]!),
     annotations: READ_ONLY,
@@ -842,6 +906,7 @@ const TOOL_EXECUTORS = new Map<
     content: Array<{ type: string; text: string }>;
     structuredContent?: unknown;
     isError?: boolean;
+    attachments?: ToolAttachment[];
   }>
 >();
 
@@ -1564,6 +1629,33 @@ async function loadRouteMapData(
   args: Record<string, unknown>,
   token: string,
 ): Promise<RouteMapData> {
+  if (typeof args.route_id === "string") {
+    const { route, version } = await loadRouteVersion(
+      args.route_id,
+      args.version as number | undefined,
+    );
+    const compareTo = routeVersionOrNull(
+      route,
+      args.compare_to_version as number | undefined,
+    );
+    if (args.compare_to_version !== undefined && !compareTo)
+      throw new RouteBuildError(
+        `Route ${route.route_id} has no version ${String(args.compare_to_version)} to compare with.`,
+      );
+    const waypointsVersion = routeVersionOrNull(
+      route,
+      args.waypoints_version as number | undefined,
+    );
+    if (args.waypoints_version !== undefined && !waypointsVersion)
+      throw new RouteBuildError(
+        `Route ${route.route_id} has no version ${String(args.waypoints_version)}; waypoints_version must be one of its versions.`,
+      );
+    return buildStoredRouteMapData(route, version, {
+      compareTo,
+      waypoints: args.waypoints as WaypointInput[] | undefined,
+      waypointsVersion,
+    });
+  }
   const activityId = String(args.id);
 
   const activity = await getIntervalsActivity(token, activityId);
@@ -1639,12 +1731,46 @@ async function handleViewRouteMap(
   progress: ReportProgress,
   context: ToolCallContext,
 ): Promise<ToolCallResult> {
-  const data = await loadRouteMapData(args, token);
+  let data: RouteMapData;
+  try {
+    data = await loadRouteMapData(args, token);
+  } catch (error) {
+    const handled = routeErrorResultOrNull(error);
+    if (handled) return handled;
+    throw error;
+  }
+  // A client that did not report MCP Apps gets the map as a picture.
+  const png = context.clientRendersApps ? null : renderRoutePng(data);
+  const attachments: ToolCallResult["attachments"] = png
+    ? [
+        {
+          type: "image",
+          data: Buffer.from(png).toString("base64"),
+          mimeType: "image/png",
+        },
+      ]
+    : undefined;
+  if (data.route) {
+    const lines = storedRouteMapLines(data, !context.clientRendersApps);
+    const result = await viewResult(
+      async () => lines,
+      { kind: "route map" },
+      args,
+      token,
+      progress,
+      context,
+    );
+    return attachments ? { ...result, attachments } : result;
+  }
   const lines = [
     `Activity: ${data.name}`,
     `Distance: ${(data.distance / 1000).toFixed(2)} km`,
     `Elevation gain: ${Math.round(data.elevationGain)} m`,
   ];
+  if (png)
+    lines.push(
+      "A picture of the track is attached (blue line, green start, red finish; no basemap). export-route gives it as GPX or GeoJSON.",
+    );
   // The map and its legend exist only on a host that renders the app (#77).
   if (data.coordinates.length === 0) {
     lines.push(
@@ -1669,7 +1795,7 @@ async function handleViewRouteMap(
   // The climbs come from get-hill-analysis, their one home; the waypoints
   // only this view has, so its lines stay ahead of them. Its pace and GAP
   // are a running model, so other sports get the footer instead.
-  return viewResult(
+  const result = await viewResult(
     async () => lines,
     {
       kind: "route map",
@@ -1684,6 +1810,74 @@ async function handleViewRouteMap(
     progress,
     context,
   );
+  return attachments ? { ...result, attachments } : result;
+}
+
+/** A route builder or store error as the view's result; null for any other error. */
+function routeErrorResultOrNull(error: unknown): ToolCallResult | null {
+  if (!(error instanceof RouteBuildError)) return null;
+  noteToolFailure(error);
+  return {
+    isError: true,
+    content: [{ type: "text", text: prefixedErrorText(error.message) }],
+  };
+}
+
+/**
+ * The text of a stored route's map: its numbers and sections, the change
+ * from a compared version, pins, and sections with an estimated value.
+ * Never the geometry: export-route gives that.
+ */
+function storedRouteMapLines(data: RouteMapData, picture: boolean): string[] {
+  const route = data.route!;
+  const lines = [
+    `Route ${route.route_id} version ${route.version} of ${route.latest_version}: ${data.name}`,
+    `Distance: ${(data.distance / 1000).toFixed(2)} km, climb ${Math.round(data.elevationGain)} m`,
+    "Sections:",
+  ];
+  route.segments.forEach((s, i) => {
+    const colour = SECTION_COLOUR_NAMES[i % SECTION_COLOUR_NAMES.length];
+    lines.push(
+      `${s.index}. km ${s.from_km.toFixed(2)}-${s.to_km.toFixed(2)} ${s.label}${picture ? ` (${colour})` : ""}`,
+    );
+  });
+  for (const via of route.vias)
+    lines.push(
+      `${via.kind === "turnaround" ? "Turnaround" : "Via"} ${via.id} at km ${via.km.toFixed(2)}: ${via.label}`,
+    );
+  const compare = route.compare;
+  if (compare) {
+    const c = compare.change;
+    const sign = c.distance_change_m >= 0 ? "+" : "-";
+    lines.push(
+      c.changed
+        ? `Compared with version ${compare.version}: version ${c.to_version} is ${sign}${(Math.abs(c.distance_change_m) / 1000).toFixed(2)} km; km ${c.from_km.toFixed(2)}-${c.to_km.toFixed(2)} of version ${c.to_version} differs (km ${c.old_from_km.toFixed(2)}-${c.old_to_km.toFixed(2)} of version ${c.from_version}).`
+        : `Compared with version ${compare.version}: the tracks are the same.`,
+    );
+  }
+  const waypoints = data.annotations?.waypoints ?? [];
+  if (waypoints.length > 0) {
+    lines.push(`Pins (km on version ${route.version}):`);
+    for (const w of waypoints)
+      lines.push(
+        `  km ${w.km}${w.end_km !== undefined ? `-${w.end_km}` : ""}: ${w.label} (${w.kind})`,
+      );
+  }
+  for (const warning of data.waypointWarnings ?? [])
+    lines.push(`Warning: ${warning}`);
+  for (const warning of route.warnings)
+    lines.push(
+      `Warning: km ${warning.from_km.toFixed(2)}-${warning.to_km.toFixed(2)}: ${warning.text}`,
+    );
+  if (!route.editable)
+    lines.push(
+      `This is not the latest version; amend-route changes version ${route.latest_version}, or restore this one.`,
+    );
+  if (picture)
+    lines.push(
+      `A picture of the route is attached: sections in the colours named, black dots every km, green start, red finish${compare ? ", the compared version in grey and the changed part in yellow" : ""}; no basemap. export-route gives it as GPX or GeoJSON.`,
+    );
+  return lines;
 }
 
 /**
@@ -1749,6 +1943,18 @@ function compareActivitiesViewLines(data: ComparisonResult): string[] {
   return lines;
 }
 
+/**
+ * An image or file a tool attaches to its result. Text stays in `content`,
+ * where the view twins and the ignored-argument note read it; the
+ * `tools/call` handler adds these after it.
+ */
+export type ToolAttachment =
+  | { type: "image"; data: string; mimeType: string }
+  | {
+      type: "resource";
+      resource: { uri: string; mimeType: string; text: string };
+    };
+
 interface ToolCallResult {
   // Index signature keeps this assignable to the SDK's ServerResult union.
   [key: string]: unknown;
@@ -1756,6 +1962,7 @@ interface ToolCallResult {
   structuredContent?: unknown;
   isError?: boolean;
   _meta?: Record<string, unknown>;
+  attachments?: ToolAttachment[];
 }
 
 /** MCP App tool name to handler (same dispatch path as the text tools). */
@@ -2154,8 +2361,12 @@ export function createServer({
     // codec — low-level tools/call handlers route through it themselves.
     // `ToolCallResult.content` is typed `{ type: string }` for the handler
     // table's sake; every emitted block is a spec text block.
+    const { attachments, ...rest } = result;
+    const wire = attachments
+      ? { ...rest, content: [...rest.content, ...attachments] }
+      : rest;
     return server.projectCallToolResult(
-      result as unknown as CallToolResult,
+      wire as unknown as CallToolResult,
       TOOL_DEFS.find((tool) => tool.name === name)?.outputSchema,
     );
   });

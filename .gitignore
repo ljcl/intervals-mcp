@@ -4,6 +4,9 @@ node_modules/
 # Build output
 dist/
 
+# Stored routes from a local server run (DATA_DIR defaults to ./data)
+data/
+
 # Turbo
 .turbo
 *.tsbuildinfo

@@ -141,12 +141,13 @@ interface PlannedRun {
 }
 
 /** ORS calls left in this tool call; `failure` is set once ORS fails, and no call is made after it. */
-interface Budget {
+export interface Budget {
   calls: number;
   failure: string | null;
 }
 
-const canCall = (budget: Budget) => budget.calls > 0 && budget.failure === null;
+export const canCall = (budget: Budget) =>
+  budget.calls > 0 && budget.failure === null;
 
 /**
  * One ORS call charged to the budget; null when it fails, which stops
@@ -177,7 +178,7 @@ async function orsCall(
 }
 
 /** Why ORS did not answer, as a clause; branches on type and status only (its messages carry coordinates). */
-function orsProblem(error: unknown): string {
+export function orsProblem(error: unknown): string {
   if (error instanceof RateLimitError)
     return "OpenRouteService's rate limit was reached";
   if (error instanceof OrsApiError) {
@@ -236,16 +237,20 @@ async function plannedRuns(
 }
 
 /** The ORS key a place name needs to be looked up. */
-function requireGeocoder(text: string, env: SuggestionEnv): string {
+function requireGeocoder(
+  text: string,
+  env: Pick<SuggestionEnv, "orsKey">,
+): string {
   if (env.orsKey) return env.orsKey;
   throw new RouteSuggestionError(
     `"${text}" is a place name, and looking up place names needs ORS_API_KEY. Pass it as lat,lng instead.`,
   );
 }
 
-async function resolvePlace(
+/** A place from "lat,lng" or a name looked up near `focus`; a lookup failure is a {@link RouteSuggestionError}. */
+export async function resolvePlace(
   text: string,
-  env: SuggestionEnv,
+  env: Pick<SuggestionEnv, "orsKey">,
   focus: LatLng | null,
 ): Promise<Place> {
   const point = parseLatLng(text);
@@ -311,7 +316,7 @@ async function resolveStart(
  * {@link MAX_RESCALE_RATIO} times. The try nearest the target; null when no
  * call could be made, the first failed, or it went by ferry.
  */
-async function fitToTarget(
+export async function fitToTarget(
   key: string,
   fit: {
     target_m: number;

@@ -105,6 +105,8 @@ export type WaypointKind = "fuel" | "climb" | "water" | "custom";
 /** A distance-anchored waypoint as supplied on the tool input. */
 export interface WaypointInput {
   km: number;
+  /** Where a stretch pin (a climb from km to end_km) ends. */
+  end_km?: number;
   label: string;
   kind: WaypointKind;
 }
@@ -113,6 +115,8 @@ export interface WaypointInput {
 export interface ResolvedWaypoint extends WaypointInput {
   /** Index into the (downsampled) coordinates. */
   index: number;
+  /** Where a stretch pin ends, as an index; set only with `end_km`. */
+  endIndex?: number;
 }
 
 /**
@@ -153,7 +157,15 @@ export function resolveWaypoints(
       dropped.push(waypoint);
       continue;
     }
-    resolved.push({ ...waypoint, index });
+    if (waypoint.end_km !== undefined && waypoint.end_km > waypoint.km) {
+      const endIndex = indexAtDistance(
+        distanceStream,
+        Math.min(waypoint.end_km * 1000, maxMeters),
+      );
+      resolved.push({ ...waypoint, index, endIndex });
+    } else {
+      resolved.push({ ...waypoint, index });
+    }
   }
   resolved.sort((a, b) => a.km - b.km);
   return { resolved, dropped };

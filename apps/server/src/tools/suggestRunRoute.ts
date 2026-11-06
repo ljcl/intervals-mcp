@@ -2,7 +2,8 @@ import { z } from "zod";
 import { getHomeStart, getOrsApiKey, getTimeZone } from "../config";
 import { type Place } from "../orsClient";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
-import { climbPerKm } from "../routeCandidates";
+import { storeSuggestedRoute } from "../routeBuilder";
+import { climbPerKm, type RouteCandidate } from "../routeCandidates";
 import {
   loadRouteSuggestions,
   RouteSuggestionError,
@@ -135,8 +136,42 @@ const place = (p: Place) => ({
   lng: round3(p.point[1]),
 });
 
+/**
+ * Stores every generated candidate so stitch-route, view-route-map and
+ * export-route can use it by route_id. A store that cannot write (a
+ * read-only volume) leaves the id out rather than failing the suggestion.
+ */
+export async function storeGeneratedCandidates(
+  s: RouteSuggestions,
+): Promise<Map<RouteCandidate, string>> {
+  const ids = new Map<RouteCandidate, string>();
+  for (const run of s.runs) {
+    for (const c of run.candidates) {
+      if (c.kind !== "generated") continue;
+      try {
+        ids.set(
+          c,
+          await storeSuggestedRoute({
+            name: `${run.name} ${run.date}: ${c.name}`,
+            track: c.track,
+            climb_m: c.climb_m,
+            path_share: c.path_share,
+            shape: c.shape,
+          }),
+        );
+      } catch {
+        // The suggestion stands without an id.
+      }
+    }
+  }
+  return ids;
+}
+
 /** The tool's structured result: no geometry (the app gets that). */
-export function toStructured(s: RouteSuggestions) {
+export function toStructured(
+  s: RouteSuggestions,
+  routeIds: ReadonlyMap<RouteCandidate, string> = new Map(),
+) {
   return {
     count: s.runs.length,
     generation_available: s.generation_available,
@@ -166,6 +201,7 @@ export function toStructured(s: RouteSuggestions) {
         name: c.name,
         date: c.date,
         shape: c.shape,
+        route_id: routeIds.get(c) ?? null,
         distance_m: Math.round(c.distance_m),
         distance_diff_m: Math.round(c.distance_m - run.distance_m),
         climb_m: Math.round(c.climb_m),
@@ -195,7 +231,12 @@ function lines(structured: ReturnType<typeof toStructured>): string[] {
     if (run.via_points.length > 0)
       out.push(`Via: ${run.via_points.map((p) => p.label).join(", then ")}`);
     run.candidates.forEach((c, i) => {
-      const head = c.kind === "past" ? `Past run ${c.date}` : c.name;
+      const head =
+        c.kind === "past"
+          ? `Past run ${c.date} (${c.activity_id})`
+          : c.route_id
+            ? `${c.name} (route ${c.route_id})`
+            : c.name;
       const crossings =
         c.crossings_per_km === null
           ? ""
@@ -254,7 +295,10 @@ export const suggestRunRouteTool = {
         routeSuggestionEnv(),
         progress,
       );
-      const structured = toStructured(suggestions);
+      const structured = toStructured(
+        suggestions,
+        await storeGeneratedCandidates(suggestions),
+      );
       warnOnSchemaDrift(name, RouteSuggestionsOutputSchema, structured);
       return {
         content: [

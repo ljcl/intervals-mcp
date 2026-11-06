@@ -1658,6 +1658,13 @@ const RouteCandidateSchema = z.object({
     .nullable()
     .describe("The past run's date, YYYY-MM-DD; null for a generated route"),
   shape: z.enum(["loop", "out-and-back", "point-to-point"]),
+  route_id: z
+    .string()
+    .nullable()
+    .optional()
+    .describe(
+      "A generated route's stored id, for view-route-map, export-route or a stitch-route segment; null for a past run (use activity_id)",
+    ),
   distance_m: z.number(),
   distance_diff_m: z.number().describe("distance_m minus the planned distance"),
   climb_m: z.number(),
@@ -1723,6 +1730,129 @@ export const RouteSuggestionsOutputSchema = z.object({
       warnings: z.array(z.string()),
     }),
   ),
+  warnings: z.array(z.string()),
+});
+
+// ---------- stitch-route / amend-route ----------
+const SegmentSourceSchema = z
+  .object({
+    type: z.enum(["activity", "route", "ors"]),
+    activity_id: z.string().optional(),
+    route_id: z.string().optional(),
+    version: z.number().int().optional(),
+    from_km: z
+      .number()
+      .optional()
+      .describe(
+        "The source's own km this section starts at; above to_km when it is run the other way",
+      ),
+    to_km: z.number().optional(),
+    purpose: z
+      .enum(["route", "out_and_back", "join"])
+      .optional()
+      .describe("For ors: a routed section, an out-and-back, or a routed gap"),
+  })
+  .describe("Where the section's track came from");
+
+const StoredRouteSegmentSchema = z.object({
+  index: z.number().int().describe("1-based position on the route"),
+  kind: z.enum(["activity", "route", "generated", "out_and_back", "join"]),
+  label: z.string(),
+  source: SegmentSourceSchema,
+  from_km: z.number().describe("Route km the section starts at"),
+  to_km: z.number(),
+  distance_m: z.number(),
+  climb_m: z
+    .number()
+    .nullable()
+    .describe("Null when the section has no altitude"),
+  climb_source: z
+    .enum(["recorded", "elevation_model", "none"])
+    .describe(
+      "recorded: the run's own altitude; elevation_model: OpenRouteService's",
+    ),
+  path_share: z
+    .number()
+    .nullable()
+    .describe(
+      "Share (0-1) on paths, from OpenRouteService; null for a recorded run",
+    ),
+  flexible: z.boolean().describe("fit_distance may change this section"),
+  vias: z.array(
+    z.object({
+      id: z.string().describe("Pass to amend-route's remove_via or move_via"),
+      km: z.number(),
+      label: z.string(),
+      kind: z.enum(["via", "turnaround"]),
+    }),
+  ),
+  notes: z
+    .array(z.string())
+    .describe("Why a value of this section is estimated or uncertain"),
+});
+
+export const StoredRouteOutputSchema = z.object({
+  route_id: z.string(),
+  name: z.string(),
+  version: z.number().int().describe("The version this result describes"),
+  latest_version: z.number().int(),
+  applied: z
+    .boolean()
+    .describe(
+      "False when nothing was stored: the routing budget ran out (amend-route keeps the latest version)",
+    ),
+  created: z
+    .boolean()
+    .describe(
+      "False when stitch-route had already stored this exact request, so it returned that route",
+    ),
+  distance_m: z.number(),
+  climb_m: z.number().describe("Sum of the sections' climbs"),
+  climb_complete: z
+    .boolean()
+    .describe("False when a section has no altitude, so climb_m is low"),
+  path_share: z
+    .number()
+    .nullable()
+    .describe("Share on paths over the sections where it is known"),
+  path_share_coverage: z
+    .number()
+    .describe("Share (0-1) of the distance whose path share is known"),
+  segments: z.array(StoredRouteSegmentSchema),
+  change: z
+    .object({
+      from_version: z.number().int(),
+      to_version: z.number().int(),
+      distance_change_m: z.number(),
+      changed: z.boolean(),
+      from_km: z.number().describe("Changed part on the new version"),
+      to_km: z.number(),
+      old_from_km: z.number().describe("The same part on the old version"),
+      old_to_km: z.number(),
+    })
+    .nullable()
+    .describe("What changed from the base version; null for stitch-route"),
+  ors_calls: z
+    .number()
+    .int()
+    .describe("OpenRouteService routing calls this call made"),
+  warnings: z.array(z.string()),
+});
+
+// ---------- export-route ----------
+export const RouteExportOutputSchema = z.object({
+  format: z.enum(["gpx", "geojson"]),
+  name: z.string(),
+  route_id: z.string().nullable(),
+  version: z.number().int().nullable(),
+  activity_id: z.string().nullable(),
+  distance_m: z.number(),
+  points: z.number().int().describe("Track points in the file"),
+  simplified_m: z
+    .number()
+    .describe("Tolerance the track was simplified to, metres"),
+  waypoints: z.number().int().describe("Km markers and pins in the file"),
+  uri: z.string().describe("The attached file's URI"),
   warnings: z.array(z.string()),
 });
 

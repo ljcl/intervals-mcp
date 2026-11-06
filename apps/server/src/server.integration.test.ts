@@ -200,10 +200,11 @@ const ID_FIELD = /(^|_)id(_\d+)?$|Id\d*$/;
 const ID_FIELD_COUNT = 23;
 
 /**
- * Gear ids are alphanumeric (`g123456`), not digit strings, so they are the
- * one id argument `intervalsActivityIdInput` does not serve.
+ * Gear ids are alphanumeric (`g123456`), and stored route ids are this
+ * server's own (`r7k2m9qx4a`), not digit strings, so they are the id
+ * arguments `intervalsActivityIdInput` does not serve.
  */
-const NON_NUMERIC_ID_FIELDS = new Set(["gearId"]);
+const NON_NUMERIC_ID_FIELDS = new Set(["gearId", "route_id"]);
 
 /**
  * intervals.icu types a gear reminder id as an int32 (OpenAPI
@@ -631,7 +632,13 @@ describe("2025-era requests (claude.ai's MCP Apps loader)", () => {
     expect(JSON.parse(block?.text ?? "").zoneSets).toHaveLength(1);
   });
 
-  const WRITES = ["update-activity", "update-wellness", "update-gear"];
+  const WRITES = [
+    "update-activity",
+    "update-wellness",
+    "update-gear",
+    "stitch-route",
+    "amend-route",
+  ];
 
   it("lists every tool but the writes", async () => {
     const client = await connectTestClient();
@@ -692,7 +699,14 @@ describe("tools/list input naming scheme (#141)", () => {
         tools.find((t) => t.name === name)?.inputSchema.properties ?? {},
       );
 
-    expect(keys("view-route-map")).toEqual(["id", "waypoints"]);
+    expect(keys("view-route-map")).toEqual([
+      "id",
+      "route_id",
+      "version",
+      "compare_to_version",
+      "waypoints",
+      "waypoints_version",
+    ]);
     expect(keys("get-activity-streams-raw")).toEqual(["id"]);
     expect(keys("view-compare-activities")).toEqual([
       "activityId1",

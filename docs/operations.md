@@ -15,6 +15,8 @@ rate limits, and endpoint security. For the code behind these see
 | `PORT` | No | Server port, 1-65535; blank or unset means `3000`. The image's `HEALTHCHECK` reads it |
 | `ORS_API_KEY` | No | OpenRouteService key (free Standard plan, 200 routes a day) for generated routes in `suggest-run-route`. Unset, it offers past runs only and place names cannot be looked up |
 | `HOME_START` | No | Usual run start as `lat,lng`, e.g. `37.79,-122.39`. Unset, the start is inferred from recent GPS runs; a malformed value stops startup |
+| `DATA_DIR` | No | Directory for stored routes (`stitch-route`, `amend-route`, and the routes `suggest-run-route` generates). Default `./data`; the image sets `/data`, which `docker-compose.yml` mounts as the named volume `route-data` |
+| `ROUTE_RETENTION_DAYS` | No | Days a stored route that is not read or changed is kept, 1-3650 (default 30). A suggested route nobody used is kept 3 days. A bad value stops startup |
 | `PUBLIC_URL` | No | Public URL. Warns at startup when `/mcp` is exposed without `MCP_AUTH_TOKEN`, and its host is allowed as a browser `Origin` on `/mcp` besides localhost |
 
 ### Startup checks
@@ -22,7 +24,8 @@ rate limits, and endpoint security. For the code behind these see
 The server checks its configuration before it listens. Each of these prints
 one line that names the variable: a missing `INTERVALS_API_KEY`, a `TZ` that
 `Intl` does not know, a `PORT` outside 1-65535, a malformed
-`INTERVALS_ATHLETE_ID`, and an `MCP_AUTH_TOKEN` with surrounding whitespace.
+`INTERVALS_ATHLETE_ID`, a `ROUTE_RETENTION_DAYS` that is not a whole number
+from 1 to 3650, and an `MCP_AUTH_TOKEN` with surrounding whitespace.
 The server reports all of them at once and exits with code 1. A token shorter
 than 32 characters only logs a `WARNING`.
 
@@ -367,11 +370,14 @@ It is `null` today, since intervals.icu sends none.
 
 ## Route suggestions and third parties
 
-`suggest-run-route` and `view-route-suggestions` are the only tools that talk
-to anything but intervals.icu. What leaves the server:
+`suggest-run-route`, `view-route-suggestions`, `stitch-route` and
+`amend-route` are the only tools that talk to anything but intervals.icu.
+What leaves the server:
 
 - OpenRouteService receives the start, end and via points, and the usual
-  start as the geocoding focus when a place name is looked up. This happens
+  start as the geocoding focus when a place name is looked up. For a
+  stored route it receives the ends of each section it routes (a gap, a
+  changed part, an out-and-back) and the places named. This happens
   only with `ORS_API_KEY` set; unset, nothing goes to OpenRouteService and
   only past runs are offered.
 - OpenStreetMap Overpass receives the bounding box around every candidate
@@ -387,13 +393,39 @@ to anything but intervals.icu. What leaves the server:
   start 1.5 s apart, one tool call makes at most 12, and the 12 calls are
   shared across the runs of a week request. An ORS attempt is capped at
   10 s with one retry. Both services' responses stay in
-  the in-memory cache, not on disk.
+  the in-memory cache, not on disk. `stitch-route` and `amend-route` have
+  the same 12 calls each; a change that needs more stores nothing.
+
+## Stored routes
+
+Stored routes are the server's only state on disk: one JSON file per route
+in `<DATA_DIR>/routes`, holding the route's tracks, so it holds parts of
+the athlete's GPS tracks and the places they named. Protect the volume as
+you would the API key's data.
+
+- Each file is replaced whole through a temporary file and a rename, so a
+  crash leaves the old version. Back up the directory (or the
+  `route-data` volume) to keep routes; delete a file to delete a route.
+- A route not read or changed for `ROUTE_RETENTION_DAYS` is deleted, and a
+  route `suggest-run-route` generated after 3 days. The check runs at most
+  every 6 hours, from a tool call that uses the store.
+- When the directory cannot be written (a read-only mount), `stitch-route`
+  and `amend-route` fail with the file error and `suggest-run-route`
+  answers without `route_id`s.
+- One server process owns the directory: changes to one route are put in
+  order inside the process, not across processes. Do not point two
+  replicas at one `DATA_DIR`.
 
 ## Docker notes
 
-The image is distroless and runs as non-root **UID 65534**. There is no
-persistent state to mount: credentials come from `INTERVALS_API_KEY` on every
-start.
+The image is distroless and runs as non-root **UID 65534**. Credentials
+come from `INTERVALS_API_KEY` on every start. The one persistent state is
+the route store at `/data` (`DATA_DIR`), which the image makes owned by
+UID 65534. `docker-compose.yml` mounts the named volume `route-data` there,
+so stored routes survive `docker compose up -d` recreating the container,
+an image update, and `docker compose down` (but not `down -v`). With
+`docker run`, add `-v route-data:/data`; without a volume, routes live in the
+container and go with it. A bind mount must be writable by UID 65534.
 
 The image's `HEALTHCHECK` reads `PORT`, so a non-default port stays healthy:
 `docker run -e PORT=8080 -p 8080:8080 …`. `docker-compose.yml` pins

@@ -21,5 +21,15 @@ services:
       - HOME_START=${HOME_START:-}
       - PUBLIC_URL=${PUBLIC_URL:-}
       - MCP_AUTH_TOKEN=${MCP_AUTH_TOKEN:-}
+      # Days a stored route (stitch-route, amend-route) is kept after its last
+      # use; blank means 30.
+      - ROUTE_RETENTION_DAYS=${ROUTE_RETENTION_DAYS:-}
       # Keep in step with ports; the image's healthcheck reads PORT.
       - PORT=3000
+    volumes:
+      # Stored routes (DATA_DIR=/data in the image). A named volume outlives
+      # the container, so routes survive `docker compose up -d` recreating it.
+      - route-data:/data
+
+volumes:
+  route-data:

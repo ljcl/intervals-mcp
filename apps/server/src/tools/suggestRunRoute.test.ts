@@ -101,10 +101,11 @@ describe("suggest-run-route", () => {
       "Start: Embarcadero, San Francisco, CA, USA (given)",
     );
     expect(text).toContain(
-      "1. Past run 2026-10-27: 6.1 km (+3.0 km), 38 m climb, 14.2 crossings/km, loop",
+      "1. Past run 2026-10-27 (i1): 6.1 km (+3.0 km), 38 m climb, 14.2 crossings/km, loop",
     );
-    expect(text).toContain(
-      "2. New loop: 3.2 km (+0.0 km), 22 m climb, 78% on paths, via Park Road, Foreshore Walk",
+    // A generated route is stored, so its route_id can be stitched, mapped or exported.
+    expect(text).toMatch(
+      /2\. New loop \(route s[a-z2-7]{10}\): 3\.2 km \(\+0\.0 km\), 22 m climb, 78% on paths, via Park Road, Foreshore Walk/,
     );
     expect(text).toContain("Hill for repeats: 120 m at 6.7%, from 2.3 km");
     expect(text).toContain("Warning: No new route was generated");
@@ -112,6 +113,9 @@ describe("suggest-run-route", () => {
     expect(parsed.count).toBe(1);
     expect(JSON.stringify(parsed)).not.toContain("coordinates");
     expect(parsed.runs[0]!.start).toMatchObject({ lat: 37.795, lng: -122.394 });
+    const [past, generated] = parsed.runs[0]!.candidates;
+    expect(past!.route_id).toBeNull();
+    expect(generated!.route_id).toMatch(/^s[a-z2-7]{10}$/);
   });
 
   it("takes one via place or an ordered list, and lists them in order", async () => {

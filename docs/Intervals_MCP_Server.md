@@ -51,7 +51,10 @@ rather than (or alongside) text.
 
 | Tool | Answers | Key params |
 | ---- | ------- | ---------- |
-| `suggest-run-route` | Where should I run my planned run? Past runs from that start that fit the distance and terrain, plus a newly generated route (needs `ORS_API_KEY`; without it, past runs only). Routes with fewer road crossings rank first when the public Overpass service answers, which it often does not | `date`, `days`, `distanceKm`, `start`, `end`, `via` (one place or a list, passed in order), `shape`, `terrain` |
+| `suggest-run-route` | Where should I run my planned run? Past runs from that start that fit the distance and terrain, plus a newly generated route (needs `ORS_API_KEY`; without it, past runs only), with a `route_id` to stitch, map or export it. Routes with fewer road crossings rank first when the public Overpass service answers, which it often does not | `date`, `days`, `distanceKm`, `start`, `end`, `via` (one place or a list, passed in order), `shape`, `terrain` |
+| `stitch-route` | Run my Sunday route, but add a 1 km out-and-back toward Iron Cove at halfway. Joins km ranges of past runs, stored routes, routed sections and out-and-backs into one stored route; gaps over 30 m are routed. Returns a `route_id`, version 1 and each section's km, source, climb and path share | `segments` (`activity`, `route`, `generated`, `out_and_back`), `name` |
+| `amend-route` | Move the turnaround 200 m west; go through the park; cut km 3-4; make it 15 km; undo. Routes only the changed part into a new version, keeps every old one, and says the distance change and the km that changed | `route_id`, `base_version` (must be the latest), `operations` |
+| `export-route` | Send me the GPX. A stored route's version or a past run as a GPX or GeoJSON file with a waypoint every km | `route_id` + `version`, or `id`; `format`, `waypoints` |
 
 ### Per-activity analysis
 
@@ -93,7 +96,7 @@ same numbers as text use the matching read tool (e.g. `get-fitness-trend`,
 | --------- | --------- | ----- |
 | `view-activity-chart` | `get-activity-streams-raw` | HR, power, pace, altitude, cadence, grade, and dynamics overlays with interval bands |
 | `view-cadence-trends` | `get-cadence-trend-data` | Cadence over time: timeline, scatter, zones, overlay views |
-| `view-route-map` | `get-route-map-data` | GPS track with start/finish markers and optional waypoints |
+| `view-route-map` | `get-route-map-data` | GPS track with start/finish markers and optional waypoints; with `route_id`, a stored route with a colour per section, km markers, via points, `compare_to_version` and edits on the map (each one an `amend-route` call). A client without MCP Apps gets a picture |
 | `view-route-suggestions` | `get-route-suggestions-data` | Past and new routes for a planned run, with a picker, elevation strip and any hill for repeats |
 | `view-training-load` | `get-training-load-data` | Weekly volume bars with a trend line and volume-spike weeks, a weekly load line, and Fitness/Fatigue/Form tiles; `runOnly` picks the starting scope; toggles whole-body vs runs-only; `newest` for a past block |
 | `view-compare-activities` | `get-compare-activities-data` | Two activities' streams overlaid with a delta summary |

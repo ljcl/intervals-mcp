@@ -12,10 +12,19 @@ import {
   type WaypointMarker,
 } from "./annotations";
 import { type ColorRun } from "./metrics";
+import { type StretchMarker } from "./routeLayers";
+import { type RouteVia } from "./types";
 
-/** Mirrors the grid view's split-marker color. */
+/** Mirrors the grid view's marker colors. */
 export const BASEMAP_COLORS = {
   split: "#3266ad",
+  /** A stored route's via points and its turnarounds. */
+  via: "#1f2937",
+  turnaround: "#b45309",
+  /** The compared version, drawn dashed under the route. */
+  compare: "#6b7280",
+  /** The halo under the part that changed from the compared version. */
+  changed: "#facc15",
 } as const;
 
 export interface TrackFeatureCollection {
@@ -253,4 +262,73 @@ export function nearestLatLngIndex(
     }
   }
   return best;
+}
+
+/** A stretch of the line between two indices, as one feature in `color`. */
+export function rangeToGeoJson(
+  coordinates: Array<[number, number]>,
+  startIndex: number,
+  endIndex: number,
+  color: string,
+): TrackFeatureCollection {
+  return trackToGeoJson(coordinates.slice(startIndex, endIndex + 1), [], color);
+}
+
+/** Stretch pins (a climb from km to end_km) as line features, per-kind colour. */
+export function stretchesToGeoJson(
+  coordinates: Array<[number, number]>,
+  stretches: StretchMarker[],
+): TrackFeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: stretches.flatMap(
+      (stretch) =>
+        rangeToGeoJson(
+          coordinates,
+          stretch.startIndex,
+          stretch.endIndex,
+          stretch.color,
+        ).features,
+    ),
+  };
+}
+
+/** Via point features: id and kind for paint and drag, a title for the popup. */
+export interface ViaFeatureCollection {
+  type: "FeatureCollection";
+  features: Array<{
+    type: "Feature";
+    properties: { id: string; kind: string; title: string; selected: number };
+    geometry: { type: "Point"; coordinates: [number, number] };
+  }>;
+}
+
+/**
+ * A stored route's via points as point features. `moved` draws one point
+ * where a drag has it now, before the route changes.
+ */
+export function viasToGeoJson(
+  vias: RouteVia[],
+  selectedId: string | null,
+  moved?: { id: string; point: [number, number] } | null,
+): ViaFeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: vias.map((via) => {
+      const [lat, lng] = moved?.id === via.id ? moved.point : via.point;
+      return {
+        type: "Feature" as const,
+        properties: {
+          id: via.id,
+          kind: via.kind,
+          title: `${via.kind === "turnaround" ? "Turnaround" : via.label} (${via.id}) · ${via.km.toFixed(1)} km`,
+          selected: via.id === selectedId ? 1 : 0,
+        },
+        geometry: {
+          type: "Point" as const,
+          coordinates: [lng, lat] as [number, number],
+        },
+      };
+    }),
+  };
 }

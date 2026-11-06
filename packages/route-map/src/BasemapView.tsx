@@ -25,13 +25,18 @@ import {
   BASEMAP_COLORS,
   nearestLatLngIndex,
   type PointFeatureCollection,
+  rangeToGeoJson,
   splitsToGeoJson,
+  stretchesToGeoJson,
   trackBounds,
   trackToGeoJson,
+  viasToGeoJson,
   waypointsToGeoJson,
 } from "./basemapData";
 import { type ColorRun } from "./metrics";
 import styles from "./RouteMap.module.css";
+import { type StretchMarker } from "./routeLayers";
+import { type RouteVia } from "./types";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 // MapLibre runs all source processing in a Web Worker, and by default (v6)
@@ -70,10 +75,34 @@ const FALLBACK_TRACK_COLOR = "#3b82f6";
 const SPLITS_LAYER = "splits";
 const WAYPOINTS_LAYER = "waypoints";
 const WAYPOINTS_DOT_LAYER = "waypoints-dot";
+const STRETCHES_LAYER = "stretches";
+const VIAS_LAYER = "vias";
 
 export interface BasemapLayerVisibility {
   splits: boolean;
   waypoints: boolean;
+}
+
+/** Map gestures that change a stored route. */
+export interface BasemapEdit {
+  /** A tap or click on the map adds a point there (not a scrub). */
+  addMode: boolean;
+  onPick: (lat: number, lng: number) => void;
+  onSelectVia: (id: string) => void;
+  /** A via point was dragged and let go here. */
+  onMoveVia: (id: string, lat: number, lng: number) => void;
+}
+
+/** What a stored route adds to the map. */
+export interface BasemapRouteOverlay {
+  /** The compared version's line, drawn dashed under the route. */
+  compare: Array<[number, number]> | null;
+  /** The part that changed from the compared version, as track indices. */
+  changed: { startIndex: number; endIndex: number } | null;
+  vias: RouteVia[];
+  selectedViaId: string | null;
+  /** Null when the shown version cannot be changed here. */
+  edit: BasemapEdit | null;
 }
 
 interface BasemapViewProps {
@@ -84,6 +113,10 @@ interface BasemapViewProps {
   /** Resolved annotation markers (already index-anchored). */
   splitMarkers: SplitMarker[];
   waypointMarkers: WaypointMarker[];
+  /** Stretch pins, highlighted along the line with the waypoints. */
+  stretches?: StretchMarker[];
+  /** A stored route's compare line, changed part, vias and edit gestures. */
+  route?: BasemapRouteOverlay | null;
   /** Footer legend toggles, applied as layer visibility. */
   visibility: BasemapLayerVisibility;
   mode: "mobile" | "desktop";
@@ -127,6 +160,8 @@ export function BasemapView({
   colorRuns,
   splitMarkers,
   waypointMarkers,
+  stretches = [],
+  route = null,
   visibility,
   mode,
   scrubIndex,
@@ -169,8 +204,12 @@ export function BasemapView({
   trackRef.current = track;
   const scrubIndexRef = useRef(scrubIndex);
   scrubIndexRef.current = scrubIndex;
-  const annotationsRef = useRef({ splitMarkers, waypointMarkers });
-  annotationsRef.current = { splitMarkers, waypointMarkers };
+  const annotationsRef = useRef({ splitMarkers, waypointMarkers, stretches });
+  annotationsRef.current = { splitMarkers, waypointMarkers, stretches };
+  const routeRef = useRef(route);
+  routeRef.current = route;
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -229,7 +268,9 @@ export function BasemapView({
       clearTimeout(failTimer);
 
       const coords = coordinatesRef.current;
-      const { splitMarkers, waypointMarkers } = annotationsRef.current;
+      const { splitMarkers, waypointMarkers, stretches } =
+        annotationsRef.current;
+      const overlay = routeRef.current;
 
       // Guard every add individually: maplibre's addSource throws
       // synchronously (e.g. on a duplicate id), and an unguarded throw here
@@ -257,6 +298,49 @@ export function BasemapView({
         }
       };
 
+      // A stored route: the compared version dashed under everything, and
+      // a halo under the part that changed.
+      if (overlay?.compare && overlay.compare.length > 1) {
+        addSourceSafe("compare", {
+          type: "geojson",
+          data: trackToGeoJson(overlay.compare, [], BASEMAP_COLORS.compare),
+        });
+        addLayerSafe({
+          id: "compare-line",
+          type: "line",
+          source: "compare",
+          layout: { "line-cap": "round", "line-join": "round" },
+          paint: {
+            "line-color": BASEMAP_COLORS.compare,
+            "line-width": 3,
+            "line-opacity": 0.7,
+            "line-dasharray": [2, 2],
+          },
+        });
+      }
+      if (overlay?.changed) {
+        addSourceSafe("changed", {
+          type: "geojson",
+          data: rangeToGeoJson(
+            coords,
+            overlay.changed.startIndex,
+            overlay.changed.endIndex,
+            BASEMAP_COLORS.changed,
+          ),
+        });
+        addLayerSafe({
+          id: "changed-halo",
+          type: "line",
+          source: "changed",
+          layout: { "line-cap": "round", "line-join": "round" },
+          paint: {
+            "line-color": BASEMAP_COLORS.changed,
+            "line-width": 14,
+            "line-opacity": 0.55,
+          },
+        });
+      }
+
       addSourceSafe("track", { type: "geojson", data: trackRef.current });
       addLayerSafe({
         id: "track-casing",
@@ -275,6 +359,23 @@ export function BasemapView({
         source: "track",
         layout: { "line-cap": "round", "line-join": "round" },
         paint: { "line-color": ["get", "color"], "line-width": 3.5 },
+      });
+
+      // Stretch pins: a wide, light band in the pin's colour over the line.
+      addSourceSafe("stretches", {
+        type: "geojson",
+        data: stretchesToGeoJson(coords, stretches),
+      });
+      addLayerSafe({
+        id: STRETCHES_LAYER,
+        type: "line",
+        source: "stretches",
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: {
+          "line-color": ["get", "color"],
+          "line-width": 10,
+          "line-opacity": 0.4,
+        },
       });
 
       addSourceSafe("splits", {
@@ -315,6 +416,43 @@ export function BasemapView({
         source: "waypoints",
         paint: { "circle-radius": 2, "circle-color": "#ffffff" },
       });
+
+      // Via points: dark circles, a turnaround in amber; the selected one
+      // has a wider ring.
+      if (overlay && overlay.vias.length > 0) {
+        addSourceSafe("vias", {
+          type: "geojson",
+          data: viasToGeoJson(overlay.vias, overlay.selectedViaId),
+        });
+        addLayerSafe({
+          id: VIAS_LAYER,
+          type: "circle",
+          source: "vias",
+          paint: {
+            // Bigger on a phone, where a finger drags it.
+            "circle-radius": modeRef.current === "mobile" ? 10 : 7,
+            "circle-color": [
+              "match",
+              ["get", "kind"],
+              "turnaround",
+              BASEMAP_COLORS.turnaround,
+              BASEMAP_COLORS.via,
+            ],
+            "circle-stroke-color": [
+              "case",
+              ["==", ["get", "selected"], 1],
+              BASEMAP_COLORS.changed,
+              "#ffffff",
+            ],
+            "circle-stroke-width": [
+              "case",
+              ["==", ["get", "selected"], 1],
+              4,
+              2,
+            ],
+          },
+        });
+      }
 
       const endpoints: PointFeatureCollection = {
         type: "FeatureCollection",
@@ -395,7 +533,7 @@ export function BasemapView({
       // Hover popups for the point markers ("Lap 2"). Bound only to layers
       // that actually got added: delegated listeners on a missing layer make
       // maplibre error on every pointer move.
-      for (const layerId of [SPLITS_LAYER, WAYPOINTS_LAYER]) {
+      for (const layerId of [SPLITS_LAYER, WAYPOINTS_LAYER, VIAS_LAYER]) {
         if (!map.getLayer(layerId)) continue;
         map.on("mousemove", layerId, (e) => {
           const title = e.features?.[0]?.properties?.title;
@@ -429,9 +567,81 @@ export function BasemapView({
         nearestLatLngIndex(coordinatesRef.current, lngLat.lat, lngLat.lng),
       );
     };
-    map.on("mousemove", (e) => scrubAt(e.lngLat));
-    // Touch drags pan the map; a tap is the touch scrub gesture.
-    map.on("click", (e) => scrubAt(e.lngLat));
+    /** The via point under a map point, when the route can be changed. */
+    const viaAt = (point: maplibregl.PointLike): string | null => {
+      if (!routeRef.current?.edit || !map.getLayer(VIAS_LAYER)) return null;
+      const id = map.queryRenderedFeatures(point, { layers: [VIAS_LAYER] })[0]
+        ?.properties?.id;
+      return typeof id === "string" ? id : null;
+    };
+
+    // Dragging a via point: the map does not pan while the point moves, the
+    // point follows the pointer, and letting go asks to move it there.
+    let drag: { id: string; at: maplibregl.LngLat | null } | null = null;
+    const viaSource = () =>
+      map.getSource<maplibregl.GeoJSONSource>("vias") ?? null;
+    const onDragMove = (
+      e: maplibregl.MapMouseEvent | maplibregl.MapTouchEvent,
+    ) => {
+      const overlay = routeRef.current;
+      if (!drag || !overlay) return;
+      drag.at = e.lngLat;
+      viaSource()?.setData(
+        viasToGeoJson(overlay.vias, overlay.selectedViaId, {
+          id: drag.id,
+          point: [e.lngLat.lat, e.lngLat.lng],
+        }),
+      );
+    };
+    const onDragEnd = () => {
+      map.off("mousemove", onDragMove);
+      map.off("touchmove", onDragMove);
+      const done = drag;
+      drag = null;
+      map.getCanvas().style.cursor = "";
+      if (done?.at) {
+        routeRef.current?.edit?.onMoveVia(done.id, done.at.lat, done.at.lng);
+      }
+    };
+    const onDragStart = (
+      e: maplibregl.MapMouseEvent | maplibregl.MapTouchEvent,
+    ) => {
+      if ("points" in e && e.points.length !== 1) return;
+      const id = viaAt(e.point);
+      if (!id) return;
+      // Keeps the map from panning under the point.
+      e.preventDefault();
+      drag = { id, at: null };
+      map.getCanvas().style.cursor = "grabbing";
+      map.on("mousemove", onDragMove);
+      map.on("touchmove", onDragMove);
+      map.once("mouseup", onDragEnd);
+      map.once("touchend", onDragEnd);
+    };
+    map.on("mousedown", onDragStart);
+    map.on("touchstart", onDragStart);
+
+    map.on("mousemove", (e) => {
+      if (!drag) scrubAt(e.lngLat);
+    });
+    // Touch drags pan the map; a tap is the touch scrub gesture. While the
+    // route is being changed, a tap on a via point selects it, and in add
+    // mode a tap anywhere else adds a point there.
+    map.on("click", (e) => {
+      const edit = routeRef.current?.edit;
+      if (edit) {
+        const id = viaAt(e.point);
+        if (id) {
+          edit.onSelectVia(id);
+          return;
+        }
+        if (edit.addMode) {
+          edit.onPick(e.lngLat.lat, e.lngLat.lng);
+          return;
+        }
+      }
+      scrubAt(e.lngLat);
+    });
     map.on("mouseout", () => onScrubRef.current(null));
 
     // Keep the tooltip glued to the scrubbed point while the camera moves.
@@ -491,6 +701,17 @@ export function BasemapView({
     setTipPoint(pair ? map.project([pair[1], pair[0]]) : null);
   }, [scrubIndex, coordinates, loaded]);
 
+  // Via points follow the selection (and drop a drag preview once the
+  // route reloads).
+  const vias = route?.vias;
+  const selectedViaId = route?.selectedViaId ?? null;
+  useEffect(() => {
+    if (!loaded || !vias) return;
+    mapRef.current
+      ?.getSource<maplibregl.GeoJSONSource>("vias")
+      ?.setData(viasToGeoJson(vias, selectedViaId));
+  }, [vias, selectedViaId, loaded]);
+
   // Footer legend toggles map onto layer visibility.
   useEffect(() => {
     if (!loaded) return;
@@ -504,7 +725,10 @@ export function BasemapView({
       }
     };
     apply([SPLITS_LAYER], visibility.splits);
-    apply([WAYPOINTS_LAYER, WAYPOINTS_DOT_LAYER], visibility.waypoints);
+    apply(
+      [WAYPOINTS_LAYER, WAYPOINTS_DOT_LAYER, STRETCHES_LAYER],
+      visibility.waypoints,
+    );
   }, [visibility, loaded]);
 
   const containerWidth = containerRef.current?.clientWidth ?? 0;
@@ -515,6 +739,7 @@ export function BasemapView({
         ref={containerRef}
         className={styles.basemap}
         data-compact={mode === "mobile" || undefined}
+        data-adding={route?.edit?.addMode || undefined}
       />
       {scrubTip && tipPoint && (
         <div

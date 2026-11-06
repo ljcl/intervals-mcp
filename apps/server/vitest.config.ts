@@ -1,9 +1,14 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
     globals: true,
     include: ["src/**/*.test.ts"],
+    // The route store writes under DATA_DIR; tests never write into the repo.
+    // A test that reads back what it stored stubs its own directory.
+    env: { DATA_DIR: join(tmpdir(), `intervals-mcp-vitest-${process.pid}`) },
     coverage: {
       provider: "v8",
       // json-summary feeds the CI job-summary table (scripts/coverage-summary.ts).

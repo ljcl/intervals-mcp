@@ -80,4 +80,26 @@ describe("buildRouteMapContextSummary", () => {
       'Viewing the map for Run activity "Treadmill". No GPS track is available for it.',
     );
   });
+
+  it("summarises a stored route, after the edit just made", () => {
+    const summary = buildRouteMapContextSummary({
+      name: "Bay Run (v4)",
+      activityType: "Run",
+      distanceKm: 13.24,
+      elevationGain: 120,
+      hasGeometry: true,
+      colorMetric: "Altitude",
+      route: {
+        routeId: "r1",
+        version: 4,
+        latestVersion: 4,
+        sectionCount: 1,
+        compare: "Compared with version 3: the line is the same.",
+      },
+      note: "Route r1 is now version 4.",
+    });
+    expect(summary).toBe(
+      'Route r1 is now version 4. Viewing the map for stored route "Bay Run (v4)" (route_id r1), version 4 of 4. Distance 13.2 km. Elevation gain 120 m. It has 1 section. Compared with version 3: the line is the same.',
+    );
+  });
 });

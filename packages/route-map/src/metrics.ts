@@ -14,7 +14,7 @@ import {
   rampColor,
   speedDisplay,
 } from "@intervals-mcp/data";
-import { type Point } from "./normalize";
+import { type Point, pointsPath } from "./normalize";
 import { type RouteMapData } from "./types";
 
 export { colorForValue, RAMP_GRADIENT_CSS } from "@intervals-mcp/data";
@@ -150,11 +150,6 @@ export interface TrackSegment {
 /** Distinct hues along the track; more bins means more paths in the DOM. */
 const COLOR_BINS = 12;
 
-/** Trim coordinates to 2 dp so the generated path strings stay compact. */
-function round(value: number): number {
-  return Math.round(value * 100) / 100;
-}
-
 /**
  * One run of consecutive track legs sharing a color bin, as an inclusive
  * index range over the track samples. Renderer-agnostic: the SVG view turns
@@ -221,10 +216,7 @@ export function buildTrackSegments(
   series: Pick<MetricSeries, "values" | "min" | "max">,
 ): TrackSegment[] {
   return buildColorRuns(series, points.length).map((run) => ({
-    path: points
-      .slice(run.startIndex, run.endIndex + 1)
-      .map((p, j) => `${j === 0 ? "M" : "L"}${round(p.x)} ${round(p.y)}`)
-      .join(" "),
+    path: pointsPath(points.slice(run.startIndex, run.endIndex + 1)),
     color: run.color,
   }));
 }

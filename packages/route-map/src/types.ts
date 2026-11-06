@@ -1,5 +1,6 @@
-/** Where the rendered path comes from: a recorded activity or a suggested route. */
-export type RouteMapSource = "activity" | "suggestion";
+/** Where the rendered path comes from: a recorded activity, a suggested
+ * route, or a stored route (one version of it). */
+export type RouteMapSource = "activity" | "suggestion" | "route";
 
 /**
  * Metric streams aligned index-for-index with `coordinates`. Present only when
@@ -57,6 +58,82 @@ export interface RouteMapData {
    * (e.g. beyond the track length). Informational; the view tool's text
    * surfaces them to the model. */
   waypointWarnings?: string[];
+  /** A stored route's sections, via points and versions. Set only when
+   * `source` is "route". */
+  route?: RouteMapRoute;
+}
+
+/** How a section of a stored route was made. */
+export type RouteSegmentKind =
+  | "activity"
+  | "route"
+  | "generated"
+  | "out_and_back"
+  | "join";
+
+/** One section of a stored route. Indices point into `coordinates`. */
+export interface RouteSegment {
+  index: number;
+  kind: RouteSegmentKind;
+  label: string;
+  from_km: number;
+  to_km: number;
+  startIndex: number;
+  endIndex: number;
+  climb_m: number | null;
+  path_share: number | null;
+  notes: string[];
+}
+
+/** A point the route goes through, or the turnaround of an out-and-back. */
+export interface RouteVia {
+  /** Id that amend-route takes, e.g. "v3". */
+  id: string;
+  km: number;
+  label: string;
+  kind: "via" | "turnaround";
+  /** Index into `coordinates`. */
+  index: number;
+  /** Where the point is, `[lat, lng]`. */
+  point: [number, number];
+}
+
+/** What changed between two versions of a stored route. */
+export interface RouteVersionChange {
+  from_version: number;
+  to_version: number;
+  distance_change_m: number;
+  changed: boolean;
+  /** The changed part on the newer version, km. */
+  from_km: number;
+  to_km: number;
+  /** The same part on the older version, km. */
+  old_from_km: number;
+  old_to_km: number;
+}
+
+/** A stored route's version, sections and edit state (`source` "route"). */
+export interface RouteMapRoute {
+  route_id: string;
+  version: number;
+  latest_version: number;
+  versions: Array<{ version: number; change: string }>;
+  /** True only for the latest version: edits apply to it alone. */
+  editable: boolean;
+  segments: RouteSegment[];
+  vias: RouteVia[];
+  kmMarkers: Array<{ km: number; index: number }>;
+  /** Sections with an estimated or uncertain value, by km. */
+  warnings: Array<{ from_km: number; to_km: number; text: string }>;
+  /** Another version drawn under this one, and the part that differs. */
+  compare?: {
+    version: number;
+    coordinates: Array<[number, number]>;
+    change: RouteVersionChange;
+    /** The changed part, as indices into this version's `coordinates`. */
+    startIndex: number;
+    endIndex: number;
+  };
 }
 
 /**
@@ -75,6 +152,10 @@ export interface RouteAnnotations {
     index: number;
     /** Distance from the start, in kilometres, as supplied by the caller. */
     km: number;
+    /** Where a stretch pin (a climb from km to end_km) ends. */
+    end_km?: number;
+    /** Index where a stretch pin ends; set only with `end_km`. */
+    endIndex?: number;
     label: string;
     kind: WaypointKind;
   }>;
@@ -86,6 +167,7 @@ export type WaypointKind = "fuel" | "climb" | "water" | "custom";
 /** A waypoint as supplied on the `view-route-map` tool input. */
 export interface WaypointArg {
   km: number;
+  end_km?: number;
   label: string;
   kind?: WaypointKind;
 }
@@ -113,4 +195,15 @@ export interface SuggestionArgs {
   args: Record<string, unknown>;
 }
 
-export type AppArgs = ToolArgs | SuggestionArgs;
+/** Tool input for `view-route-map` with a `route_id`: one stored route. */
+export interface RouteArgs {
+  kind: "route";
+  route_id: string;
+  version?: number;
+  compare_to_version?: number;
+  waypoints?: WaypointArg[];
+  /** The version the waypoints' km were read on. */
+  waypoints_version?: number;
+}
+
+export type AppArgs = ToolArgs | SuggestionArgs | RouteArgs;

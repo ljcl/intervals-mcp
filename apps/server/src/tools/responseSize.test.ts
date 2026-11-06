@@ -79,6 +79,8 @@ const { dispatchToolCall, TOOL_DEFS } = await import("../server");
 
 const ID = "i189757183";
 const ID_2 = "i189807578";
+/** The route stitch-route's case stores, for amend-route's case. */
+const stored = { route_id: "" };
 const LONG_RUN = syntheticAllTypesStreams(4 * 3600);
 
 /** Each date from `oldest` to `newest`, inclusive. */
@@ -523,6 +525,50 @@ const CASES: Record<string, SizeCase[]> = {
   "suggest-run-route": [
     { label: "7 runs, 4 candidates each", args: { days: 7 } },
   ],
+  // Runs before amend-route's case, which changes the route it stores.
+  "stitch-route": [
+    {
+      label: "4 h run out 20 km and back",
+      args: {
+        name: "response size",
+        segments: [
+          { type: "activity", id: ID, from_km: 0, to_km: 20 },
+          { type: "activity", id: ID, from_km: 20, to_km: 0 },
+        ],
+      },
+      setup: longRunStreams,
+      check: (result) => {
+        stored.route_id = (
+          result.structuredContent as { route_id: string }
+        ).route_id;
+      },
+    },
+  ],
+  "amend-route": [
+    {
+      label: "reverse the 40 km route",
+      args: {
+        get route_id() {
+          return stored.route_id;
+        },
+        base_version: 1,
+        operations: [{ op: "reverse" }],
+      },
+      setup: longRunStreams,
+    },
+  ],
+  "export-route": [
+    {
+      label: "4 h run as GPX",
+      args: { id: ID, format: "gpx" },
+      setup: longRunStreams,
+    },
+    {
+      label: "4 h run as GeoJSON",
+      args: { id: ID, format: "geojson" },
+      setup: longRunStreams,
+    },
+  ],
   "list-activities": [
     {
       label: "366 days, limit 200",
@@ -636,9 +682,13 @@ describe("response size budget", () => {
     async ({ name, args, setup, check }) => {
       setup?.();
       const result = await dispatchToolCall(name, args);
-      const text = result.content
-        .map((part) => ("text" in part ? part.text : ""))
-        .join("");
+      // An attached file reaches the model too; an image is not text.
+      const text = [
+        ...result.content.map((part) => ("text" in part ? part.text : "")),
+        ...(result.attachments ?? []).map((part) =>
+          part.type === "resource" ? part.resource.text : "",
+        ),
+      ].join("");
       // A size check on an error message proves nothing.
       expect(result.isError, text).toBeUndefined();
       await check?.(result);

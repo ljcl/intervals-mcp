@@ -2,11 +2,15 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   basicAuthHeader,
   checkConfig,
+  DEFAULT_DATA_DIR,
+  DEFAULT_ROUTE_RETENTION_DAYS,
+  getDataDir,
   getHomeStart,
   getIntervalsApiKey,
   getIntervalsAthleteId,
   getOrsApiKey,
   getPort,
+  getRouteRetentionDays,
   getTimeZone,
   MissingApiKeyError,
   setAthleteTimeZone,
@@ -84,6 +88,24 @@ describe("route suggestion settings", () => {
     expect(getHomeStart()).toEqual([37.79, -122.39]);
     delete process.env.HOME_START;
     expect(getHomeStart()).toBeNull();
+  });
+});
+
+describe("route store settings", () => {
+  it("reads DATA_DIR trimmed, ./data when unset or blank", () => {
+    process.env.DATA_DIR = " /data ";
+    expect(getDataDir()).toBe("/data");
+    process.env.DATA_DIR = "";
+    expect(getDataDir()).toBe(DEFAULT_DATA_DIR);
+  });
+
+  it("reads ROUTE_RETENTION_DAYS, the default when unset or invalid", () => {
+    process.env.ROUTE_RETENTION_DAYS = " 7 ";
+    expect(getRouteRetentionDays()).toBe(7);
+    delete process.env.ROUTE_RETENTION_DAYS;
+    expect(getRouteRetentionDays()).toBe(DEFAULT_ROUTE_RETENTION_DAYS);
+    process.env.ROUTE_RETENTION_DAYS = "0";
+    expect(getRouteRetentionDays()).toBe(DEFAULT_ROUTE_RETENTION_DAYS);
   });
 });
 
@@ -238,6 +260,19 @@ describe("checkConfig", () => {
     setValidEnv();
     expect(checkConfig()).toEqual({ errors: [], warnings: [] });
   });
+
+  it.each(["0", "-1", "2.5", "forever", "3651"])(
+    "reports ROUTE_RETENTION_DAYS=%j",
+    (raw) => {
+      setValidEnv();
+      process.env.ROUTE_RETENTION_DAYS = raw;
+      const { errors } = checkConfig();
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toMatch(
+        /^ROUTE_RETENTION_DAYS is ".*"\. It must be a whole number of days from 1 to 3650/,
+      );
+    },
+  );
 
   it("reports a missing API key once, naming the variable", () => {
     setValidEnv();

@@ -34,7 +34,8 @@ Related docs: [mcp-apps.md](mcp-apps.md) for the UI packages,
   `Mcp-Method`/`Mcp-Name` past a proxy or WAF rule keyed on them. The SDK
   passes each request's `era` to the server factory. On `legacy`,
   `createServer` lists no tool that is not annotated read-only (`WRITE_TOOLS`:
-  `update-activity`, `update-wellness`, `update-gear`), and `dispatchToolCall` gets `readOnly: true`
+  `update-activity`, `update-wellness`, `update-gear`, and `stitch-route` and
+  `amend-route`, which write this server's route store), and `dispatchToolCall` gets `readOnly: true`
   and refuses such a tool before it reads the arguments. The refusal is an
   `isError` result, logged as an `error` call. A new write tool is guarded
   through its annotations, with no change here.
@@ -487,6 +488,22 @@ athlete's own thirds of climb per km, 8 and 20 m/km under 10 runs) and the
 map offer the same routes. Its ORS budget is per call (12 calls, at most 2
 per seed), and the first non-cancellation ORS failure stops generation for
 the rest of that call, keeping the routes already made.
+
+**Stored routes have one home per rule.** `routeStore.ts` is the only
+module that reads or writes the route files (see [Stored routes](#stored-routes)).
+`routeGeometry.ts` holds the track math every stored-route surface shares:
+cutting a track at a distance (`sliceTrack`, interpolated ends), joining
+(`concatTracks`, counting each straight seam), `nearestOnTrack`, the
+version diff (`trackDiff`) and carrying a km from one version to another
+(`mapDistance`), and `JOIN_GAP_M` (30 m). `routeBuilder.ts` holds the
+rules: how sections are built and joined, each amend operation, the
+routing budget, and the summary (`summarizeRoute`) that `stitch-route`,
+`amend-route` and the route map all read, so the text and the map give the
+same km. It reuses `fitToTarget`, `resolvePlace` and `orsProblem` from
+`routeSuggestions.ts`, `stretchWaypoints`, `thereAndBack` and
+`trackClimb` from `routeCandidates.ts`, and the budget of 12 calls.
+`routeExport.ts` writes GPX and GeoJSON; `staticMap.ts` draws the PNG a
+client without MCP Apps gets.
 
 **Run types have one home.** `PACE_ACTIVITY_TYPES` in `packages/data`
 (`activity-types.ts`: Run, TrailRun, VirtualRun), because `speedSport` there
@@ -1017,6 +1034,49 @@ over 25,000 tokens: a 61 KB `get-activity-streams` payload and a 150 KB
   budget. App-only data feeds never reach the model and are not budgeted;
   their stream values are rounded with `STREAM_DECIMALS` (see
   [Streams](#streams)).
+
+## Stored routes
+
+`routeStore.ts` keeps one JSON file per route in `<DATA_DIR>/routes`
+(`getDataDir`, `config.ts`; `/data` in the image, a named volume in
+docker-compose.yml).
+
+- A route holds a pool of segments and its versions; a version lists
+  segment ids. A change adds only the segments it routed, so ten versions
+  of one route do not store ten copies of its unchanged sections. Tracks are
+  rounded to 6 decimals of degree and 0.1 m, and recorded runs are thinned
+  to a point every 5 m (after their climb is measured).
+- Ids: `r` plus 10 base32 characters for a route `stitch-route` made, `s`
+  for one `suggest-run-route` generated. `stitch-route`'s id is a hash of
+  its request, a suggested route's a hash of its track, so a repeat stores
+  nothing. `isRouteId` guards every path, so an id cannot leave the
+  directory.
+- A write goes to a temporary file and is renamed over the old one.
+  Changes to one route run one at a time (a promise chain per id), and
+  `appendVersion` checks the base version inside that lock, before the
+  builder routes anything.
+- Retention: a read sets the file's modified time, so the file's own time
+  is its last use. `sweepRoutes` deletes a draft unused for
+  `ROUTE_RETENTION_DAYS` (default 30), a suggested route after 3 days, and
+  a temporary file after a day. It runs at most every 6 hours, from a store
+  call; startup does not wait for it.
+- `stitch-route` and `amend-route` are annotated `WRITE_IDEMPOTENT`: they
+  add a route or a version and never overwrite one, and the same call again
+  changes nothing more (the same stitch returns its route; a repeated amend
+  is refused as stale). As writes, the 2025-era path neither lists nor runs
+  them. The route-map app's edit controls therefore fall back to asking the
+  chat to call `amend-route` where the host loads the app over that path
+  (docs/mcp-apps.md).
+- `suggest-run-route` stores its generated routes although it is read-only:
+  a suggested route is a cache of what it generated, kept 3 days, and a
+  store that cannot write only leaves `route_id` null.
+- Results never carry geometry. A tool that attaches a file or an image
+  (`export-route`, `view-route-map` for a client without MCP Apps) puts it
+  in the result's `attachments`; the `tools/call` handler appends them to
+  `content` after the text, so the view twins and the ignored-argument note
+  keep reading text blocks only. `responseSize.test.ts` counts an attached
+  file's text against the budget; `export-route` simplifies its track until
+  the file fits 32,000 characters.
 
 ## Input validation
 

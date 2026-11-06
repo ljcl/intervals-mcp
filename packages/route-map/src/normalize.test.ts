@@ -101,3 +101,33 @@ describe("projectRoute", () => {
     expect(w).toBeCloseTo(h, 1);
   });
 });
+
+describe("projection frame", () => {
+  const OPTS_ = { width: 640, height: 380, padding: 28 };
+  const coords: Array<[number, number]> = [
+    [-33.8625, 151.1715],
+    [-33.866, 151.153],
+    [-33.8545, 151.152],
+  ];
+
+  it("maps a viewBox point back to its lat/lng", () => {
+    const projected = projectRoute(coords, OPTS_)!;
+    for (const pair of coords) {
+      const [lat, lng] = projected.frame.unproject(
+        projected.frame.project(pair),
+      );
+      expect(lat).toBeCloseTo(pair[0], 9);
+      expect(lng).toBeCloseTo(pair[1], 9);
+    }
+  });
+
+  it("fits extra points in the same frame", () => {
+    const far: Array<[number, number]> = [[-33.9, 151.25]];
+    const alone = projectRoute(coords, OPTS_)!;
+    const shared = projectRoute(coords, OPTS_, far)!;
+    expect(shared.points).not.toEqual(alone.points);
+    const p = shared.frame.project(far[0]!);
+    expect(p.x).toBeLessThanOrEqual(OPTS_.width - OPTS_.padding + 1e-9);
+    expect(p.y).toBeLessThanOrEqual(OPTS_.height - OPTS_.padding + 1e-9);
+  });
+});

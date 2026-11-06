@@ -32,11 +32,26 @@ import { type IntervalsStreams } from "./intervalsStreams";
 import {
   cumulativeDistances,
   haversineMeters,
+  indexAtDistance,
   type ResolvedWaypoint,
   type RouteTrack,
   resolveWaypoints,
   type WaypointInput,
 } from "./mapAnchors";
+import {
+  compareVersions,
+  layoutSegments,
+  summarizeRoute,
+  type VersionChange,
+  versionTrack,
+} from "./routeBuilder";
+import { mapDistance, trackDiff, trackLength } from "./routeGeometry";
+import {
+  findVersion,
+  type StoredRoute,
+  type StoredVersion,
+  versionSegments,
+} from "./routeStore";
 import { type RunSuggestion } from "./routeSuggestions";
 import {
   type Columns,
@@ -85,8 +100,50 @@ export interface RouteMapAnnotations {
   waypoints?: ResolvedWaypoint[];
 }
 
+/** A stored route's sections, via points and km markers, as indices into `coordinates`. */
+export interface RouteMapRoute {
+  route_id: string;
+  version: number;
+  latest_version: number;
+  versions: Array<{ version: number; change: string }>;
+  /** Edits apply to the latest version only. */
+  editable: boolean;
+  segments: Array<{
+    index: number;
+    kind: string;
+    label: string;
+    from_km: number;
+    to_km: number;
+    startIndex: number;
+    endIndex: number;
+    climb_m: number | null;
+    path_share: number | null;
+    notes: string[];
+  }>;
+  vias: Array<{
+    id: string;
+    km: number;
+    label: string;
+    kind: "via" | "turnaround";
+    index: number;
+    point: [number, number];
+  }>;
+  kmMarkers: Array<{ km: number; index: number }>;
+  /** Sections with an estimated or uncertain value, by km. */
+  warnings: Array<{ from_km: number; to_km: number; text: string }>;
+  /** Another version drawn under this one, and the part that differs. */
+  compare?: {
+    version: number;
+    coordinates: Array<[number, number]>;
+    change: VersionChange;
+    /** The changed part, as indices into this version's `coordinates`. */
+    startIndex: number;
+    endIndex: number;
+  };
+}
+
 export interface RouteMapData {
-  source: "activity" | "suggestion";
+  source: "activity" | "suggestion" | "route";
   id: string;
   name: string;
   activityType: string | null;
@@ -99,6 +156,8 @@ export interface RouteMapData {
   annotations?: RouteMapAnnotations;
   /** Human-readable notes about waypoints that could not be placed. */
   waypointWarnings?: string[];
+  /** A stored route's sections and versions (source "route"). */
+  route?: RouteMapRoute;
 }
 
 /** Stream keys `buildRouteMapData` copies from `streams` onto the wire, besides `time`/`distance`. */
@@ -410,4 +469,185 @@ export function buildSuggestionsMapData(
     candidates,
     warnings: [...warnings, ...run.warnings],
   };
+}
+
+/** Points the compared version is drawn with: a faint line needs fewer. */
+const MAX_COMPARE_POINTS = 500;
+
+const round3 = (value: number) => Math.round(value * 1000) / 1000;
+
+/** Downsampled lat, lng and distance columns of a track. */
+function downsampleTrack(track: RouteTrack, maxPoints: number) {
+  const lat = lastValuePerBucket(
+    track.coordinates.map((c) => c[0]),
+    maxPoints,
+  ) as number[];
+  const lng = lastValuePerBucket(
+    track.coordinates.map((c) => c[1]),
+    maxPoints,
+  ) as number[];
+  const coordinates = lat.map((la, i): [number, number] => [
+    round(la, LATLNG_DECIMALS),
+    round(lng[i] as number, LATLNG_DECIMALS),
+  ]);
+  return { coordinates };
+}
+
+/**
+ * Pins whose km refer to version `from` moved onto `to`: unchanged before
+ * the change, shifted after it, and inside it placed at the nearest point,
+ * with a warning when none is near (`mapDistance`).
+ */
+function carryWaypoints(
+  waypoints: WaypointInput[],
+  before: RouteTrack,
+  after: RouteTrack,
+  fromVersion: number,
+  toVersion: number,
+): { waypoints: WaypointInput[]; warnings: string[] } {
+  const diff = trackDiff(before, after);
+  const warnings: string[] = [];
+  const moved = waypoints.map((w) => {
+    const start = mapDistance(w.km * 1000, before, after, diff);
+    const end =
+      w.end_km === undefined
+        ? null
+        : mapDistance(w.end_km * 1000, before, after, diff);
+    const km = round3(start.distance_m / 1000);
+    const endKm = end ? round3(end.distance_m / 1000) : undefined;
+    if (start.uncertain || end?.uncertain) {
+      warnings.push(
+        `Pin "${w.label}" was at km ${w.km} on version ${fromVersion}; that part changed in version ${toVersion}, so km ${km} may be wrong.`,
+      );
+    } else if (Math.abs(km - w.km) >= 0.01) {
+      warnings.push(
+        `Pin "${w.label}" moved from km ${w.km} (version ${fromVersion}) to km ${km} (version ${toVersion}).`,
+      );
+    }
+    return endKm === undefined ? { ...w, km } : { ...w, km, end_km: endKm };
+  });
+  return { waypoints: moved, warnings };
+}
+
+/**
+ * The route-map payload for one version of a stored route: one line, its
+ * sections with their km and source, via points, a marker every km, the
+ * sections with an estimated value, and optionally another version under
+ * it with the part that changed. Waypoints given for another version
+ * (`waypointsVersion`) are carried onto this one first.
+ */
+export function buildStoredRouteMapData(
+  route: StoredRoute,
+  version: StoredVersion,
+  options: {
+    compareTo?: StoredVersion;
+    waypoints?: WaypointInput[];
+    waypointsVersion?: StoredVersion;
+  } = {},
+): RouteMapData {
+  const summary = summarizeRoute(route, version);
+  const segments = versionSegments(route, version);
+  const { track } = layoutSegments(segments);
+  let waypoints = options.waypoints ?? [];
+  const carried: string[] = [];
+  const from = options.waypointsVersion;
+  if (from && from.version !== version.version && waypoints.length > 0) {
+    const moved = carryWaypoints(
+      waypoints,
+      versionTrack(route, from),
+      track,
+      from.version,
+      version.version,
+    );
+    waypoints = moved.waypoints;
+    carried.push(...moved.warnings);
+  }
+  const data = buildTrackMapData(
+    route.route_id,
+    `${route.name} (v${version.version})`,
+    track,
+    summary.climb_m,
+    waypoints,
+  );
+  data.source = "route";
+  data.activityType = "Run";
+  const distanceColumn = data.streams?.distance ?? [];
+  const at = (km: number) =>
+    Math.max(0, indexAtDistance(distanceColumn, km * 1000));
+  const length = trackLength(track);
+  const kmMarkers: RouteMapRoute["kmMarkers"] = [];
+  for (let k = 1; k * 1000 < length; k++)
+    kmMarkers.push({ km: k, index: at(k) });
+  const routeData: RouteMapRoute = {
+    route_id: route.route_id,
+    version: version.version,
+    latest_version: summary.latest_version,
+    versions: summary.versions.map((v) => ({
+      version: v.version,
+      change: v.change,
+    })),
+    editable: version.version === summary.latest_version,
+    segments: summary.segments.map((s) => ({
+      index: s.index,
+      kind: s.kind,
+      label: s.label,
+      from_km: s.from_km,
+      to_km: s.to_km,
+      startIndex: at(s.from_km),
+      endIndex: at(s.to_km),
+      climb_m: s.climb_m,
+      path_share: s.path_share,
+      notes: s.notes,
+    })),
+    vias: summary.segments.flatMap((s, i) =>
+      s.vias.map((via) => {
+        const point = segments[i]!.vias.find((v) => v.id === via.id)!.point;
+        return {
+          ...via,
+          index: at(via.km),
+          point: [
+            round(point[0], LATLNG_DECIMALS),
+            round(point[1], LATLNG_DECIMALS),
+          ] as [number, number],
+        };
+      }),
+    ),
+    kmMarkers,
+    warnings: summary.segments.flatMap((s) =>
+      s.notes.map((text) => ({ from_km: s.from_km, to_km: s.to_km, text })),
+    ),
+  };
+  const other = options.compareTo;
+  if (other && other.version !== version.version) {
+    // The change reads older to newer; the indices are on this version's side of it.
+    const shownIsNewer = other.version < version.version;
+    const diff = shownIsNewer
+      ? compareVersions(route, other, version)
+      : compareVersions(route, version, other);
+    const mine = shownIsNewer
+      ? { from_km: diff.from_km, to_km: diff.to_km }
+      : { from_km: diff.old_from_km, to_km: diff.old_to_km };
+    routeData.compare = {
+      version: other.version,
+      coordinates: downsampleTrack(
+        versionTrack(route, other),
+        MAX_COMPARE_POINTS,
+      ).coordinates,
+      change: diff,
+      startIndex: at(mine.from_km),
+      endIndex: at(mine.to_km),
+    };
+  }
+  data.route = routeData;
+  const warnings = [...(data.waypointWarnings ?? []), ...carried];
+  if (warnings.length > 0) data.waypointWarnings = warnings;
+  return data;
+}
+
+/** A version of a stored route by number, for the map's compare and waypoint options. */
+export function routeVersionOrNull(
+  route: StoredRoute,
+  version: number | undefined,
+): StoredVersion | undefined {
+  return version === undefined ? undefined : findVersion(route, version);
 }
