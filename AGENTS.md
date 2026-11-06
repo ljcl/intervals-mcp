@@ -113,7 +113,7 @@ breaking them has shipped bugs — do not work around them locally.
   `startClusters.ts`. Route candidate rules (past-run matching, ranking,
   terrain bands, generated climb): `routeCandidates.ts`. Stored-route track
   math (cut, join, version diff, carrying a km between versions, the 30 m
-  join gap): `routeGeometry.ts`; stored-route rules and the summary the
+  join gap, dead-end spurs): `routeGeometry.ts`; stored-route rules and the summary the
   text and the map share: `routeBuilder.ts`. Road crossings per
   km: `crossingsPerKm` in `overpassClient.ts`.
   Weather, dew point and the weather note: `activityWeather.ts` (FIT

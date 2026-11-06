@@ -30,6 +30,13 @@ export const routeIdInput = (text: string) =>
 
 export const placeText = z.string().trim().min(2).max(120);
 
+export const snapInput = z
+  .enum(["nearest", "through"])
+  .default("nearest")
+  .describe(
+    "nearest (default): a via meets the route where OpenRouteService snaps it. through: a via the route reaches by a dead end is moved to where the route turns into it, at one more routing call for that section",
+  );
+
 export const kmInput = (text: string) =>
   z.number().nonnegative().max(500).describe(text);
 
@@ -127,10 +134,21 @@ export function storedRouteLines(result: StoredRouteStructured): string[] {
     lines.push(
       `${s.index}. km ${s.from_km.toFixed(2)}-${s.to_km.toFixed(2)} ${s.label} [${sourceText(s)}${s.flexible ? ", flexible" : ""}]: ${km(s.distance_m)} km, ${climb}${share}`,
     );
-    for (const via of s.vias)
+    for (const via of s.vias) {
+      // A via shows where it was asked for and where the route meets it, so a wrong match or a far snap is visible.
+      const ll = (lat: number, lng: number) =>
+        `${lat.toFixed(5)},${lng.toFixed(5)}`;
+      const match = via.match_name
+        ? `, matched ${via.match_name}, ${via.match_type}`
+        : "";
+      const where =
+        via.kind === "via"
+          ? ` (${ll(via.lat, via.lng)}${match}; on the route at ${ll(via.snapped_lat, via.snapped_lng)}, ${via.snap_m} m away)`
+          : "";
       lines.push(
-        `   ${via.kind === "turnaround" ? "Turnaround" : "Via"} ${via.id} at km ${via.km.toFixed(2)}: ${via.label}`,
+        `   ${via.kind === "turnaround" ? "Turnaround" : "Via"} ${via.id} at km ${via.km.toFixed(2)}: ${via.label}${where}`,
       );
+    }
   }
   if (result.ors_calls > 0)
     lines.push(`Routing calls used: ${result.ors_calls}.`);

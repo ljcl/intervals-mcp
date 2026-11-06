@@ -883,7 +883,12 @@ Base `https://api.openrouteservice.org`, key in `Authorization: <key>` (no
   logged or shown (route suggestions branch on the status).
 - `GET /geocode/search?text=&size=1&focus.point.lat=&focus.point.lon=`
   answers `application/json; charset=utf-8`; "Embarcadero, San Francisco" gave
-  "The Embarcadero, San Francisco, CA, USA" (layer street).
+  "The Embarcadero, San Francisco, CA, USA" (layer street). Each feature's
+  properties carry `name`, `layer` (venue, address, street, neighbourhood,
+  locality, ...), `match_type` and `accuracy` (`centroid` there). A text the
+  geocoder cannot place exactly falls back to a coarser layer: in Pyrmont,
+  "Jones Bay Wharf" and "Darling Island" came back at one point, and the
+  wharf's street address about 500 m off (reported 2026-11-07).
 
 ## OpenStreetMap Overpass (route suggestions, verified 2026-11-03)
 

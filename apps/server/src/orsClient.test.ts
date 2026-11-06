@@ -157,6 +157,11 @@ describe("geocode", () => {
     expect(place).toEqual({
       label: feature.properties.label,
       point: [feature.geometry.coordinates[1], feature.geometry.coordinates[0]],
+      match: {
+        query: "Embarcadero, San Francisco",
+        name: "The Embarcadero",
+        type: "street",
+      },
     });
     expect(get.mock.calls[0]![1]).toMatchObject({
       params: {

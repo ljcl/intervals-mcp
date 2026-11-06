@@ -411,3 +411,45 @@ export function moveToward(
   const rad = (heading * Math.PI) / 180;
   return moveBy(point, distance_m * Math.sin(rad), distance_m * Math.cos(rad));
 }
+
+/** A dead end shorter than this each way is a corner, not a spur. */
+const SPUR_MIN_M = 25;
+/** Sample spacing for {@link findSpurs}. */
+const SPUR_STEP_M = 5;
+/** Two samples this close count as the same place; covers a tip that falls between samples. */
+const SPUR_MATCH_M = 6;
+
+/**
+ * Where a track goes into a dead end and comes back the same way: around a
+ * turn, the points `x` metres before and after it stay within 6 m of each
+ * other for at least 25 m. Each spur is its `from_m`-`to_m` along the
+ * track, its tip halfway.
+ */
+export function findSpurs(
+  track: RouteTrack,
+): Array<{ from_m: number; to_m: number }> {
+  const n = Math.floor(trackLength(track) / SPUR_STEP_M);
+  if (n < 2) return [];
+  const at = Array.from(
+    { length: n + 1 },
+    (_, i) => pointAtDistance(track, i * SPUR_STEP_M).point,
+  );
+  const spurs: Array<{ from_m: number; to_m: number }> = [];
+  for (let i = 1; i < n; i++) {
+    let k = 1;
+    while (
+      i - k >= 0 &&
+      i + k <= n &&
+      haversineMeters(at[i - k]!, at[i + k]!) <= SPUR_MATCH_M
+    )
+      k++;
+    const reach = (k - 1) * SPUR_STEP_M;
+    if (reach < SPUR_MIN_M) continue;
+    spurs.push({
+      from_m: (i - k + 1) * SPUR_STEP_M,
+      to_m: (i + k - 1) * SPUR_STEP_M,
+    });
+    i += k - 1;
+  }
+  return spurs;
+}

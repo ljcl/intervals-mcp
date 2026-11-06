@@ -14,6 +14,7 @@ import {
   routeBuildEnv,
   routeErrorResult,
   routeIdInput,
+  snapInput,
   storedRouteLines,
   storedRouteStructured,
 } from "./_storedRoutes";
@@ -49,6 +50,9 @@ Notes:
 - The same request returns the same route_id and stores nothing new.
 - Mark a generated section or out-and-back flexible so amend-route's
   fit_distance can change its length.
+- Each via gives where it was asked for and where the route meets it. A
+  dead end the route goes into and back out of is a warning; snap
+  "through" moves such a via to where the route passes it.
 `;
 
 const segment = z.discriminatedUnion("type", [
@@ -121,6 +125,7 @@ const inputSchema = z.object({
     .max(MAX_STITCH_SEGMENTS)
     .describe("The sections in running order"),
   name: z.string().trim().min(1).max(80).optional().describe("A name for it"),
+  snap: snapInput,
 });
 
 type StitchRouteInput = z.infer<typeof inputSchema>;
@@ -140,7 +145,11 @@ export const stitchRouteTool = {
     try {
       const built = await stitchRoute(
         apiKey,
-        { name: args.name, segments: args.segments as SegmentInput[] },
+        {
+          name: args.name,
+          segments: args.segments as SegmentInput[],
+          snap: args.snap,
+        },
         routeBuildEnv(),
         progress,
       );
