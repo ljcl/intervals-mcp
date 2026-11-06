@@ -19,7 +19,12 @@ import {
   REPEAT_HILL_MIN_M,
 } from "./hillAnalysis";
 import { listPlannedWorkouts } from "./intervalsClient";
-import { type LatLng, parseLatLng } from "./mapAnchors";
+import {
+  haversineMeters,
+  type LatLng,
+  parseLatLng,
+  type RouteTrack,
+} from "./mapAnchors";
 import {
   geocode,
   OrsApiError,
@@ -41,9 +46,11 @@ import {
   rankGenerated,
   rankPast,
   sameRoute,
+  stretchWaypoints,
   type Terrain,
   type TerrainBands,
   terrainBands,
+  thereAndBack,
   trackClimb,
 } from "./routeCandidates";
 import {
@@ -60,7 +67,7 @@ export const GENERATED_AWAY = 3;
 /** Seeds tried beyond those wanted, so ranking has a choice. */
 export const EXTRA_SEEDS = 1;
 export const GENERATED_DISTANCE_TOLERANCE = 0.05;
-/** A generated loop or out-and-back further off the distance than this is dropped. */
+/** A generated loop or out-and-back further off the distance than this is dropped (a via route's nearest is kept, with a warning). */
 export const GENERATED_MAX_MISS = 0.25;
 /** One request plus one rescale lands within 5% (docs/api-notes.md). */
 export const MAX_FIT_CALLS = 2;
@@ -78,7 +85,8 @@ export interface RouteSuggestionArgs {
   distanceKm?: number;
   start?: string;
   end?: string;
-  via?: string;
+  /** One place, or places to pass in order. */
+  via?: string | string[];
   shape?: RouteShape;
   terrain?: Terrain;
 }
@@ -101,7 +109,8 @@ export interface RunSuggestion {
   distance_source: "argument" | "event";
   start: Place & { source: StartSource; history_runs: number };
   end: Place | null;
-  via: Place | null;
+  /** In the order the route passes them. */
+  via: Place[];
   shape: RouteShape;
   terrain: Terrain;
   candidates: RouteCandidate[];
@@ -139,11 +148,16 @@ interface Budget {
 
 const canCall = (budget: Budget) => budget.calls > 0 && budget.failure === null;
 
-/** One ORS call charged to the budget; null when it fails, which stops generation for the rest of the tool call. */
+/**
+ * One ORS call charged to the budget; null when it fails, which stops
+ * generation for the rest of the tool call, except a `missable` call's 404:
+ * a stretch point ORS cannot reach (in the harbour, say) costs only that try.
+ */
 async function orsCall(
   key: string,
   request: OrsRouteRequest,
   budget: Budget,
+  missable = false,
 ): Promise<OrsRoute | null> {
   budget.calls -= 1;
   try {
@@ -151,6 +165,12 @@ async function orsCall(
   } catch (error) {
     // A cancelled call stops; any other failure keeps what was generated so far.
     if (error instanceof CallCancelledError || isAbortError(error)) throw error;
+    if (
+      missable &&
+      error instanceof OrsApiError &&
+      error.response.status === 404
+    )
+      return null;
     budget.failure = orsProblem(error);
     return null;
   }
@@ -170,6 +190,8 @@ function orsProblem(error: unknown): string {
   }
   return "the request to OpenRouteService failed";
 }
+
+const km = (meters: number) => (meters / 1000).toFixed(1);
 
 async function plannedRuns(
   apiKey: string,
@@ -281,54 +303,111 @@ async function resolveStart(
 }
 
 /**
- * A loop from `start` near `target_m`: one request, and one rescale (by at
- * most {@link RESCALE_CLAMP}) if it misses by over 5% but by less than
- * {@link MAX_RESCALE_RATIO} times; null when no call could be made, the
- * first failed, or it went by ferry.
+ * A route near `target_m` in up to {@link MAX_FIT_CALLS} tries: `request`
+ * turns a knob (a loop's asked length, a via route's stretch) into an ORS
+ * request and `length` measures the answer. A miss over 5% scales the knob
+ * once by the length wanted over the length it added past `floor_m`, by at
+ * most {@link RESCALE_CLAMP}, unless that is off by more than
+ * {@link MAX_RESCALE_RATIO} times. The try nearest the target; null when no
+ * call could be made, the first failed, or it went by ferry.
  */
-async function fitLoop(
+async function fitToTarget(
   key: string,
-  start: LatLng,
-  target_m: number,
-  seed: number,
+  fit: {
+    target_m: number;
+    floor_m: number;
+    knob: number;
+    request: (knob: number) => OrsRouteRequest;
+    length: (route: OrsRoute) => number;
+    missable?: boolean;
+  },
   budget: Budget,
   progress: ReportProgress,
 ): Promise<OrsRoute | null> {
-  let length = target_m;
+  const miss = (route: OrsRoute) => Math.abs(fit.length(route) - fit.target_m);
+  let knob = fit.knob;
   let best: OrsRoute | null = null;
   for (let call = 0; call < MAX_FIT_CALLS && canCall(budget); call++) {
     progress(`Generating a route (try ${call + 1})`);
-    const route = await orsCall(
-      key,
-      { waypoints: [start], roundTrip: { length_m: length, seed } },
-      budget,
-    );
+    const route = await orsCall(key, fit.request(knob), budget, fit.missable);
     // A ferry is never a run; avoid_features should keep ORS off one, so this is a backstop.
     if (!route || route.ferry_m > 0) break;
-    if (
-      !best ||
-      Math.abs(route.distance_m - target_m) <
-        Math.abs(best.distance_m - target_m)
-    )
-      best = route;
-    if (
-      Math.abs(route.distance_m - target_m) <=
-      target_m * GENERATED_DISTANCE_TOLERANCE
-    )
-      break;
-    const ratio = target_m / route.distance_m;
-    if (ratio < 1 / MAX_RESCALE_RATIO || ratio > MAX_RESCALE_RATIO) break;
-    length *= Math.min(RESCALE_CLAMP[1], Math.max(RESCALE_CLAMP[0], ratio));
+    if (!best || miss(route) < miss(best)) best = route;
+    if (miss(route) <= fit.target_m * GENERATED_DISTANCE_TOLERANCE) break;
+    const ratio =
+      (fit.target_m - fit.floor_m) / (fit.length(route) - fit.floor_m);
+    if (!(ratio >= 1 / MAX_RESCALE_RATIO && ratio <= MAX_RESCALE_RATIO)) break;
+    knob *= Math.min(RESCALE_CLAMP[1], Math.max(RESCALE_CLAMP[0], ratio));
   }
   return best;
+}
+
+/**
+ * Routes through the via points toward `target_m`: the via points alone
+ * first, then, when that is short, one stretched route per seed
+ * ({@link stretchWaypoints}), its first stretch set from the gap and how far
+ * the streets wander from a straight line. Every route made, the unstretched
+ * one first; the caller ranks them and warns when none is close.
+ */
+async function fitVia(
+  key: string,
+  plan: {
+    start: LatLng;
+    via: LatLng[];
+    shape: "loop" | "out-and-back";
+    target_m: number;
+  },
+  seeds: number[],
+  budget: Budget,
+  progress: ReportProgress,
+): Promise<OrsRoute[]> {
+  // An out-and-back's route is the way out; it is run twice.
+  const [waypoints, laps] =
+    plan.shape === "loop"
+      ? [[plan.start, ...plan.via, plan.start], 1]
+      : [[plan.start, ...plan.via], 2];
+  if (!canCall(budget)) return [];
+  progress("Routing through the via points");
+  const first = await orsCall(key, { waypoints }, budget);
+  if (!first || first.ferry_m > 0) return [];
+  const floor_m = laps * first.distance_m;
+  const gap = plan.target_m - floor_m;
+  // Close enough, or already too long: a via point cannot be left out.
+  if (gap <= plan.target_m * GENERATED_DISTANCE_TOLERANCE) return [first];
+  let straight = 0;
+  for (let i = 1; i < waypoints.length; i++)
+    straight += haversineMeters(waypoints[i - 1]!, waypoints[i]!);
+  const streets =
+    straight > 0 ? Math.min(2, Math.max(1, first.distance_m / straight)) : 2;
+  const routes = [first];
+  for (const seed of seeds) {
+    const route = await fitToTarget(
+      key,
+      {
+        target_m: plan.target_m,
+        floor_m,
+        knob: gap / (laps * streets),
+        request: (extra_m) => ({
+          waypoints: stretchWaypoints(waypoints, plan.shape, extra_m, seed),
+        }),
+        length: (r) => laps * r.distance_m,
+        missable: true,
+      },
+      budget,
+      progress,
+    );
+    if (route) routes.push(route);
+  }
+  return routes;
 }
 
 function generatedCandidate(
   route: OrsRoute,
   shape: RouteShape,
+  track: RouteTrack = shape === "out-and-back"
+    ? outAndBack(route.track)
+    : route.track,
 ): RouteCandidate {
-  const track =
-    shape === "out-and-back" ? outAndBack(route.track) : route.track;
   return {
     kind: "generated",
     activity_id: null,
@@ -359,7 +438,7 @@ async function generate(
   plan: {
     start: LatLng;
     end: LatLng | null;
-    via: LatLng | null;
+    via: LatLng[];
     shape: RouteShape;
     target_m: number;
   },
@@ -368,34 +447,58 @@ async function generate(
   budget: Budget,
   progress: ReportProgress,
 ): Promise<RouteCandidate[]> {
-  if (plan.shape === "point-to-point" || plan.via) {
-    if (!canCall(budget)) return [];
-    const waypoints = [
-      plan.start,
-      ...(plan.via ? [plan.via] : []),
-      plan.end ?? plan.start,
-    ];
-    const route = await orsCall(key, { waypoints }, budget);
+  const { start, end, via, shape, target_m } = plan;
+  if (shape === "point-to-point") {
+    if (!canCall(budget) || !end) return [];
+    const route = await orsCall(
+      key,
+      { waypoints: [start, ...via, end] },
+      budget,
+    );
     if (!route || route.ferry_m > 0) return [];
-    return [
-      generatedCandidate(
-        route,
-        plan.shape === "point-to-point" ? "point-to-point" : "loop",
+    return [generatedCandidate(route, shape)];
+  }
+  const seeds = Array.from(
+    { length: want + EXTRA_SEEDS },
+    (_, k) => seedBase + k,
+  );
+  if (via.length > 0) {
+    const routes = await fitVia(
+      key,
+      { start, via, shape, target_m },
+      seeds,
+      budget,
+      progress,
+    );
+    return dedupeRoutes(
+      routes.map((route) =>
+        generatedCandidate(
+          route,
+          shape,
+          shape === "out-and-back" ? thereAndBack(route.track) : route.track,
+        ),
       ),
-    ];
+    );
   }
   const tried: RouteCandidate[] = [];
-  for (let k = 0; k < want + EXTRA_SEEDS; k++) {
-    const route = await fitLoop(
+  for (const seed of seeds) {
+    const route = await fitToTarget(
       key,
-      plan.start,
-      plan.target_m,
-      seedBase + k,
+      {
+        target_m,
+        floor_m: 0,
+        knob: target_m,
+        request: (length_m) => ({
+          waypoints: [start],
+          roundTrip: { length_m, seed },
+        }),
+        length: (r) => r.distance_m,
+      },
       budget,
       progress,
     );
     // Null with budget left (a ferry) moves to the next seed; a spent or failed budget makes no more calls.
-    if (route) tried.push(generatedCandidate(route, plan.shape));
+    if (route) tried.push(generatedCandidate(route, shape));
   }
   return dedupeRoutes(tried);
 }
@@ -428,7 +531,8 @@ export async function loadRouteSuggestions(
     throw new RouteSuggestionError(
       "A point-to-point route needs an end place.",
     );
-  for (const text of [args.start, args.end, args.via]) {
+  const viaTexts = typeof args.via === "string" ? [args.via] : (args.via ?? []);
+  for (const text of [args.start, args.end, ...viaTexts]) {
     if (text && !parseLatLng(text)) requireGeocoder(text, env);
   }
   const planned = await plannedRuns(
@@ -454,7 +558,9 @@ export async function loadRouteSuggestions(
 
   const start = await resolveStart(args.start, env, clusters);
   const end = args.end ? await resolvePlace(args.end, env, start.point) : null;
-  const via = args.via ? await resolvePlace(args.via, env, start.point) : null;
+  const via = await Promise.all(
+    viaTexts.map((text) => resolvePlace(text, env, start.point)),
+  );
 
   const cluster = nearestCluster(clusters, start.point);
   const want = cluster ? GENERATED_AT_HOME : GENERATED_AWAY;
@@ -469,17 +575,17 @@ export async function loadRouteSuggestions(
     if (run.distance_m <= 0) {
       runWarnings.push("This planned run has no distance; pass distanceKm.");
     } else {
-      const matched =
-        cluster && !via
-          ? matchPastRuns(cluster.runs, {
-              target_m: run.distance_m,
-              shape,
-              terrain,
-              today: env.today,
-              exclude: usedPast,
-              bands,
-            })
-          : [];
+      const matched = cluster
+        ? matchPastRuns(cluster.runs, {
+            target_m: run.distance_m,
+            shape,
+            terrain,
+            today: env.today,
+            exclude: usedPast,
+            bands,
+            via: via.map((p) => p.point),
+          })
+        : [];
       if (terrain === "hill-repeats") {
         // Hills are found on every match before the cut, so a hilly loop ranked 7th still makes the pool.
         for (const c of matched)
@@ -496,7 +602,7 @@ export async function loadRouteSuggestions(
           {
             start: start.point,
             end: end?.point ?? null,
-            via: via?.point ?? null,
+            via: via.map((p) => p.point),
             shape,
             target_m: run.distance_m,
           },
@@ -517,16 +623,33 @@ export async function loadRouteSuggestions(
             "This call's routing budget is spent; ask for later runs on their own for new routes.",
           );
         }
-        if (shape !== "point-to-point" && !via && tried.length > 0) {
-          tried = tried.filter(
-            (c) =>
-              Math.abs(c.distance_m - run.distance_m) <=
-              run.distance_m * GENERATED_MAX_MISS,
+        if (shape !== "point-to-point" && tried.length > 0) {
+          const miss = (c: RouteCandidate) =>
+            Math.abs(c.distance_m - run.distance_m);
+          const near = tried.filter(
+            (c) => miss(c) <= run.distance_m * GENERATED_MAX_MISS,
           );
-          if (tried.length === 0)
+          if (near.length > 0) {
+            tried = near;
+          } else if (via.length > 0) {
+            // A via route is what was asked for: the nearest stays, with why it is off.
+            const nearest = tried.reduce((a, b) => (miss(b) < miss(a) ? b : a));
+            tried = [nearest];
+            const cause =
+              nearest.distance_m > run.distance_m
+                ? "passing the via points alone takes that far from this start"
+                : canCall(budget)
+                  ? "no detour from it came closer"
+                  : "route generation stopped before it could be stretched";
             runWarnings.push(
-              `No new loop close to ${(run.distance_m / 1000).toFixed(1)} km was found from this start.`,
+              `No route through the via points came within ${GENERATED_MAX_MISS * 100}% of ${km(run.distance_m)} km; the nearest, ${km(nearest.distance_m)} km, is offered: ${cause}.`,
             );
+          } else {
+            tried = [];
+            runWarnings.push(
+              `No new loop close to ${km(run.distance_m)} km was found from this start.`,
+            );
+          }
         }
       }
 

@@ -1,7 +1,8 @@
 /**
  * Route suggestion candidates: the shared shape, the athlete's terrain
- * bands, past-run matching, ranking, out-and-back folding and duplicate
- * detection. Pure; the engine (routeSuggestions.ts) does the I/O.
+ * bands, past-run matching, ranking, out-and-back folding, via-route
+ * stretching and duplicate detection. Pure; the engine
+ * (routeSuggestions.ts) does the I/O.
  */
 import { type RepeatHill } from "./hillAnalysis";
 import {
@@ -38,6 +39,8 @@ export interface RouteCandidate {
 }
 
 export const PAST_DISTANCE_TOLERANCE = 0.1;
+/** A past run passes a via point when its track comes this close. */
+export const VIA_MATCH_M = 100;
 export const MAX_PAST_CANDIDATES = 2;
 /** Past runs kept before crossings are counted and the best two chosen. */
 export const PAST_POOL = 6;
@@ -177,9 +180,24 @@ export function rankPast(
   );
 }
 
+/** Whether `track` comes within {@link VIA_MATCH_M} of every point, in order. */
+export function passesInOrder(track: RouteTrack, points: LatLng[]): boolean {
+  let i = 0;
+  for (const point of points) {
+    while (
+      i < track.coordinates.length &&
+      haversineMeters(track.coordinates[i]!, point) > VIA_MATCH_M
+    )
+      i++;
+    if (i === track.coordinates.length) return false;
+  }
+  return true;
+}
+
 /**
  * Past runs from one start that could fit a planned run: loops (they end
- * where they start) within 10% of the distance that fit the terrain, not
+ * where they start) within 10% of the distance (with via points: that pass
+ * them in order, at any distance) that fit the terrain, not
  * already used, duplicates removed (runs come newest first, so each route
  * keeps its latest recording and "not repeated in 7 days" is judged per
  * route), ranked by {@link rankPast}. The engine
@@ -195,17 +213,20 @@ export function matchPastRuns(
     today: string;
     exclude: ReadonlySet<string>;
     bands: TerrainBands;
+    via?: LatLng[];
   },
 ): RouteCandidate[] {
-  const { target_m, shape, terrain, today, exclude, bands } = options;
+  const { target_m, shape, terrain, today, exclude, bands, via = [] } = options;
   if (shape === "point-to-point") return [];
   const matching = runs
     .filter(
       (run) =>
         !exclude.has(run.id) &&
         isLoop(run.track) &&
-        Math.abs(run.distance_m - target_m) <=
-          target_m * PAST_DISTANCE_TOLERANCE &&
+        (via.length > 0
+          ? passesInOrder(run.track, via)
+          : Math.abs(run.distance_m - target_m) <=
+            target_m * PAST_DISTANCE_TOLERANCE) &&
         terrainFits(terrain, run.climb_m ?? 0, run.distance_m, bands),
     )
     .map(
@@ -239,14 +260,88 @@ export function outAndBack(track: RouteTrack): RouteTrack {
       ? next - 1
       : next,
   );
-  const out = track.coordinates.slice(0, turn + 1);
-  const outAltitude = track.altitude.slice(0, turn + 1);
-  const coordinates = [...out, ...out.slice(0, -1).reverse()];
+  return thereAndBack({
+    coordinates: track.coordinates.slice(0, turn + 1),
+    distance: track.distance.slice(0, turn + 1),
+    altitude: track.altitude.slice(0, turn + 1),
+  });
+}
+
+/** A track, then back the same way. */
+export function thereAndBack(track: RouteTrack): RouteTrack {
+  const coordinates = [
+    ...track.coordinates,
+    ...track.coordinates.slice(0, -1).reverse(),
+  ];
   return {
     coordinates,
     distance: cumulativeDistances(coordinates),
-    altitude: [...outAltitude, ...outAltitude.slice(0, -1).reverse()],
+    altitude: [...track.altitude, ...track.altitude.slice(0, -1).reverse()],
   };
+}
+
+const M_PER_DEGREE = 111_320;
+const cosLat = (point: LatLng) => Math.cos((point[0] * Math.PI) / 180);
+
+/** East and north metres from `a` to `b` (flat earth: fine over a run's few km). */
+function eastNorth(a: LatLng, b: LatLng): [number, number] {
+  return [
+    (b[1] - a[1]) * M_PER_DEGREE * cosLat(a),
+    (b[0] - a[0]) * M_PER_DEGREE,
+  ];
+}
+
+function moveBy(point: LatLng, east: number, north: number): LatLng {
+  return [
+    point[0] + north / M_PER_DEGREE,
+    point[1] + east / (M_PER_DEGREE * cosLat(point)),
+  ];
+}
+
+/** Turnaround headings an out-and-back tries by seed, off the line into its last via point. */
+const TURN_ANGLES = [0, Math.PI / 4, -Math.PI / 4, Math.PI / 2];
+
+/**
+ * Via-route waypoints made `extra_m` longer in a straight line. A loop
+ * (start, via points, start) gets a point beside the middle of one leg, as
+ * far out as makes the two legs to it `extra_m` longer than the leg; the
+ * seed picks the leg and the side. An out-and-back (start, via points; the
+ * return is the same way back) gets a turnaround `extra_m` past its last
+ * point; the seed turns its heading.
+ */
+export function stretchWaypoints(
+  waypoints: LatLng[],
+  shape: "loop" | "out-and-back",
+  extra_m: number,
+  seed: number,
+): LatLng[] {
+  if (shape === "out-and-back") {
+    const last = waypoints.at(-1)!;
+    const [east, north] = eastNorth(waypoints.at(-2)!, last);
+    const heading =
+      (Math.hypot(east, north) < 1 ? 0 : Math.atan2(east, north)) +
+      TURN_ANGLES[seed % TURN_ANGLES.length]!;
+    return [
+      ...waypoints,
+      moveBy(last, extra_m * Math.sin(heading), extra_m * Math.cos(heading)),
+    ];
+  }
+  const leg = Math.floor(seed / 2) % (waypoints.length - 1);
+  // Adding the leg puts consecutive seeds on opposite sides of a one-via loop, whose two legs are one line run both ways.
+  const side = (seed + leg) % 2 === 0 ? 1 : -1;
+  const from = waypoints[leg]!;
+  const [east, north] = eastNorth(from, waypoints[leg + 1]!);
+  const length = Math.hypot(east, north);
+  // Two legs of (length + extra) / 2 from the leg's middle: Pythagoras.
+  const out = (side * Math.sqrt(extra_m * (2 * length + extra_m))) / 2;
+  const [normalEast, normalNorth] =
+    length < 1 ? [1, 0] : [-north / length, east / length];
+  const middle = moveBy(from, east / 2, north / 2);
+  return [
+    ...waypoints.slice(0, leg + 1),
+    moveBy(middle, out * normalEast, out * normalNorth),
+    ...waypoints.slice(leg + 1),
+  ];
 }
 
 /**

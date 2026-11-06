@@ -10,6 +10,7 @@ import {
 } from "./mapAnchors";
 import { geocode, OrsApiError, type OrsRoute, orsRoute } from "./orsClient";
 import { loadCrossings } from "./overpassClient";
+import { passesInOrder } from "./routeCandidates";
 import {
   loadRouteSuggestions,
   RouteSuggestionError,
@@ -121,6 +122,29 @@ const history: RunStart[] = [
     track: homeLoop,
   },
 ];
+
+/** ORS through the waypoints in straight lines, `streets` times their length. */
+function straightRoute(waypoints: LatLng[], streets = 1): OrsRoute {
+  const coordinates: LatLng[] = [];
+  for (let i = 1; i < waypoints.length; i++) {
+    const [a, b] = [waypoints[i - 1]!, waypoints[i]!];
+    for (let k = 0; k < 50; k++)
+      coordinates.push([
+        a[0] + ((b[0] - a[0]) * k) / 50,
+        a[1] + ((b[1] - a[1]) * k) / 50,
+      ]);
+  }
+  coordinates.push(waypoints.at(-1)!);
+  const distance = cumulativeDistances(coordinates).map((d) => d * streets);
+  return route({ coordinates, distance, altitude: distance.map(() => 10) });
+}
+
+/** 1.5 km north of the usual start: homeLoop's first corner, so the past loop passes it. */
+const VIA: LatLng = [SF[0] + 0.0135, SF[1]];
+/** 1.5 km east of VIA. */
+const VIA_EAST: LatLng = [SF[0] + 0.0135, SF[1] + 0.017];
+const text = (point: LatLng) => `${point[0]},${point[1]}`;
+const km = (meters: number) => meters / 1000;
 
 beforeEach(() => {
   vi.mocked(listPlannedWorkouts).mockResolvedValue([
@@ -522,6 +546,7 @@ describe("loadRouteSuggestions", () => {
   it.each([
     ["a place name start", { start: "Embarcadero" }],
     ["a place name via", { via: "Ferry Building" }],
+    ["a place name in a via list", { via: ["37.8,-122.3", "Ferry Building"] }],
     ["a place name end", { end: "Ferry Building" }],
   ])(
     "refuses %s without an ORS key before reading history",
@@ -677,6 +702,150 @@ describe("loadRouteSuggestions", () => {
     expect(unrouted.map((r) => r.event_id)).toEqual([23, 24]);
     for (const r of unrouted)
       expect(r.warnings.join(" ")).toMatch(/budget is spent/);
+  });
+
+  describe("via routes", () => {
+    beforeEach(() => {
+      vi.mocked(orsRoute).mockImplementation(async (_key, request) =>
+        straightRoute(request.waypoints),
+      );
+    });
+    const generated = (candidates: { kind: string }[]) =>
+      candidates.filter((c) => c.kind === "generated");
+
+    it("stretches a via loop to the distance through the via point", async () => {
+      const run = (
+        await loadRouteSuggestions("k", { distanceKm: 6, via: text(VIA) }, ENV)
+      ).runs[0]!;
+      const waypoints = vi
+        .mocked(orsRoute)
+        .mock.calls.map((c) => c[1].waypoints);
+      // The via point alone (3 km), then a detour per seed.
+      expect(waypoints[0]).toEqual([SF, VIA, SF]);
+      expect(waypoints.slice(1).every((w) => w.length === 4)).toBe(true);
+      const routes = generated(run.candidates) as typeof run.candidates;
+      expect(routes).toHaveLength(1);
+      expect(routes[0]).toMatchObject({ shape: "loop", name: "New loop" });
+      expect(Math.abs(routes[0]!.distance_m - 6000)).toBeLessThan(300);
+      expect(passesInOrder(routes[0]!.track, [VIA])).toBe(true);
+      expect(run.warnings).toEqual([]);
+    });
+
+    it("rescales a stretch once when the streets wander more than the base", async () => {
+      vi.mocked(orsRoute).mockImplementation(async (_key, request) =>
+        straightRoute(
+          request.waypoints,
+          request.waypoints.length > 3 ? 1.15 : 1,
+        ),
+      );
+      const run = (
+        await loadRouteSuggestions("k", { distanceKm: 6, via: text(VIA) }, ENV)
+      ).runs[0]!;
+      // One base call, then two tries for each of the two seeds.
+      expect(vi.mocked(orsRoute)).toHaveBeenCalledTimes(5);
+      const route = generated(run.candidates)[0] as (typeof run.candidates)[0];
+      expect(Math.abs(route.distance_m - 6000)).toBeLessThan(300);
+    });
+
+    it("keeps the via route already at the distance without stretching it", async () => {
+      const run = (
+        await loadRouteSuggestions("k", { distanceKm: 3, via: text(VIA) }, ENV)
+      ).runs[0]!;
+      expect(vi.mocked(orsRoute)).toHaveBeenCalledTimes(1);
+      expect(generated(run.candidates)).toHaveLength(1);
+    });
+
+    it("runs an out-and-back through the via point to a turnaround and back", async () => {
+      const run = (
+        await loadRouteSuggestions(
+          "k",
+          { distanceKm: 6, via: text(VIA), shape: "out-and-back" },
+          ENV,
+        )
+      ).runs[0]!;
+      expect(run.shape).toBe("out-and-back");
+      expect(vi.mocked(orsRoute).mock.calls[0]![1].waypoints).toEqual([
+        SF,
+        VIA,
+      ]);
+      const routes = generated(run.candidates) as typeof run.candidates;
+      expect(routes.length).toBeGreaterThan(0);
+      for (const c of routes) {
+        expect(c).toMatchObject({
+          shape: "out-and-back",
+          name: "New out-and-back",
+        });
+        expect(Math.abs(c.distance_m - 6000)).toBeLessThan(300);
+        expect(c.track.coordinates.at(-1)).toEqual(SF);
+        expect(passesInOrder(c.track, [VIA])).toBe(true);
+      }
+    });
+
+    it("passes several via points in the order given", async () => {
+      const run = (
+        await loadRouteSuggestions(
+          "k",
+          { distanceKm: 8, via: [text(VIA), text(VIA_EAST)] },
+          ENV,
+        )
+      ).runs[0]!;
+      expect(run.via.map((p) => p.point)).toEqual([VIA, VIA_EAST]);
+      for (const [, request] of vi.mocked(orsRoute).mock.calls) {
+        const at = (p: LatLng) =>
+          request.waypoints.findIndex((w) => w[0] === p[0] && w[1] === p[1]);
+        expect(at(VIA)).toBeGreaterThan(0);
+        expect(at(VIA_EAST)).toBeGreaterThan(at(VIA));
+      }
+      const routes = generated(run.candidates) as typeof run.candidates;
+      expect(routes.length).toBeGreaterThan(0);
+      for (const c of routes) {
+        expect(passesInOrder(c.track, [VIA, VIA_EAST])).toBe(true);
+        expect(Math.abs(c.distance_m - 8000)).toBeLessThan(400);
+      }
+    });
+
+    it("offers a past run through the via point outside the distance tolerance", async () => {
+      const run = (
+        await loadRouteSuggestions("k", { distanceKm: 8, via: text(VIA) }, ENV)
+      ).runs[0]!;
+      const past = run.candidates.find((c) => c.kind === "past")!;
+      expect(past.activity_id).toBe("i1");
+      expect(km(past.distance_m - run.distance_m)).toBeCloseTo(-2.6, 1);
+    });
+
+    it("keeps the nearest via route with a warning when no stretch reaches the distance", async () => {
+      // Every detour point is unroutable (in the harbour, say): ORS answers 404.
+      vi.mocked(orsRoute).mockImplementation(async (_key, request) => {
+        if (request.waypoints.length > 3)
+          throw new OrsApiError("x", { status: 404, statusText: "", data: "" });
+        return straightRoute(request.waypoints);
+      });
+      const result = await loadRouteSuggestions(
+        "k",
+        { distanceKm: 6, via: text(VIA) },
+        ENV,
+      );
+      const run = result.runs[0]!;
+      // A missed detour costs its try, not the rest of the call.
+      expect(vi.mocked(orsRoute)).toHaveBeenCalledTimes(3);
+      expect(result.warnings.join(" ")).not.toMatch(/generation stopped/);
+      const routes = generated(run.candidates) as typeof run.candidates;
+      expect(routes.map((c) => Math.round(km(c.distance_m)))).toEqual([3]);
+      expect(run.warnings).toContain(
+        "No route through the via points came within 25% of 6.0 km; the nearest, 3.0 km, is offered: no detour from it came closer.",
+      );
+    });
+
+    it("warns when passing the via point alone is too long", async () => {
+      const far: LatLng = [SF[0] + 0.045, SF[1]];
+      const run = (
+        await loadRouteSuggestions("k", { distanceKm: 6, via: text(far) }, ENV)
+      ).runs[0]!;
+      expect(vi.mocked(orsRoute)).toHaveBeenCalledTimes(1);
+      expect(run.warnings.join(" ")).toMatch(
+        /within 25% of 6\.0 km; the nearest, 10\.0 km, is offered: passing the via points alone takes that far/,
+      );
+    });
   });
 
   it("lets a cancellation through", async () => {

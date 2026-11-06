@@ -20,7 +20,7 @@
     "get-interval-analysis": "5c3b8133601accd5",
     "get-race-prediction": "252903e1aacb58c6",
     "get-route-map-data": "adebc08f298b0fbe",
-    "get-route-suggestions-data": "ff588ee245b4970f",
+    "get-route-suggestions-data": "e4a4d44823e92bb4",
     "get-running-dynamics": "8820e62f410fe405",
     "get-running-summary": "ff9a96521f3c4550",
     "get-split-analysis": "9e0a68446d397078",
@@ -29,7 +29,7 @@
     "get-wellness": "940e9b3ffdddc640",
     "list-activities": "379d71f548742cf3",
     "list-gear": "5e0547fa4d55675b",
-    "suggest-run-route": "f61ef06adedc81ef",
+    "suggest-run-route": "0bce7db9ae7ddabe",
     "update-activity": "6c27bb1796ec14cb",
     "update-gear": "ab44fd4ec7630892",
     "update-wellness": "ad1123e3f9905472",
@@ -39,7 +39,7 @@
     "view-compare-activities": "c7202e50529aec0e",
     "view-fitness-trend": "d9c36ed553027941",
     "view-route-map": "1b9e6b120ca3024c",
-    "view-route-suggestions": "f1281a23d71c99e5",
+    "view-route-suggestions": "ae2ba360321a97d1",
     "view-training-load": "60beef127ffa794a"
   }
 }

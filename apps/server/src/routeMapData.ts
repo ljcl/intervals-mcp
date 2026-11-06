@@ -357,7 +357,7 @@ export interface RouteSuggestionsMapData {
   warnings: string[];
 }
 
-/** One planned run's candidates as route-map payloads, with hill and via markers. */
+/** One planned run's candidates as route-map payloads, with hill and via-point markers. */
 export function buildSuggestionsMapData(
   run: RunSuggestion,
   warnings: string[],
@@ -375,8 +375,7 @@ export function buildSuggestionsMapData(
         kind: "climb",
       });
     }
-    const via = run.via;
-    if (via) {
+    for (const via of run.via) {
       let nearest = 0;
       c.track.coordinates.forEach((point, i) => {
         if (

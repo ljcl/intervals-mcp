@@ -344,7 +344,7 @@ grid fallback (no Recharts). Calls `get-route-map-data` (app-only) with
   the card header and above the map. Each candidate is a route-map payload
   built by `buildTrackMapData` (the same builder as an activity's), so the
   elevation strip and metric colouring work unchanged. A hill for repeats and
-  the via point are waypoints (`climb` and `custom` kinds,
+  each via point are waypoints (`climb` and `custom` kinds,
   `buildSuggestionsMapData` in `routeMapData.ts`).
   The feed reads one planned run and reports the call's warnings.
 - Geometry always comes from the `latlng` stream: intervals.icu has no
