@@ -100,6 +100,13 @@ export function terrainFits(
   return perKm >= bands.flatBelow && perKm <= bands.hillyAbove;
 }
 
+/** The band a route's climb falls in, to name it when it misses the asked terrain. */
+function terrainOf(climb_m: number, distance_m: number, bands: TerrainBands) {
+  const perKm = climbPerKm(climb_m, distance_m);
+  if (perKm <= bands.flatBelow) return "flat";
+  return perKm > bands.hillyAbove ? "hilly" : "rolling";
+}
+
 /** Climb along an altitude column with {@link CLIMB_HYSTERESIS_M} hysteresis, gaps skipped. */
 export function trackClimb(altitude: (number | null)[]): number {
   let climb = 0;
@@ -164,16 +171,21 @@ function compareNullable(a: number | null, b: number | null): number {
   return a - b;
 }
 
-/** Past runs: not repeated in the last 7 days first, then fewer crossings, then closest distance. */
+/** Past runs: terrain fit first (only via runs can miss it), then not repeated in the last 7 days, then fewer crossings, then closest distance. */
 export function rankPast(
   candidates: RouteCandidate[],
   target_m: number,
   today: string,
+  terrain: Terrain = "any",
+  bands: TerrainBands = DEFAULT_TERRAIN_BANDS,
 ): RouteCandidate[] {
   const recent = (c: RouteCandidate) =>
     c.date !== null && daysBetween(c.date, today) <= RECENT_REPEAT_DAYS ? 1 : 0;
+  const misses = (c: RouteCandidate) =>
+    terrainFits(terrain, c.climb_m, c.distance_m, bands) ? 0 : 1;
   return [...candidates].sort(
     (a, b) =>
+      misses(a) - misses(b) ||
       recent(a) - recent(b) ||
       compareNullable(a.crossings_per_km, b.crossings_per_km) ||
       Math.abs(a.distance_m - target_m) - Math.abs(b.distance_m - target_m),
@@ -196,9 +208,9 @@ export function passesInOrder(track: RouteTrack, points: LatLng[]): boolean {
 
 /**
  * Past runs from one start that could fit a planned run: loops (they end
- * where they start) within 10% of the distance (with via points: that pass
- * them in order, at any distance) that fit the terrain, not
- * already used, duplicates removed (runs come newest first, so each route
+ * where they start) within 10% of the distance that fit the terrain (with
+ * via points: that pass them in order, at any distance or terrain, a terrain
+ * miss named in the summary), not already used, duplicates removed (runs come newest first, so each route
  * keeps its latest recording and "not repeated in 7 days" is judged per
  * route), ranked by {@link rankPast}. The engine
  * keeps {@link PAST_POOL}, counts their crossings, ranks again and keeps
@@ -223,29 +235,34 @@ export function matchPastRuns(
       (run) =>
         !exclude.has(run.id) &&
         isLoop(run.track) &&
+        // The via points are what was asked for, so a via run stays off the terrain.
         (via.length > 0
           ? passesInOrder(run.track, via)
           : Math.abs(run.distance_m - target_m) <=
-            target_m * PAST_DISTANCE_TOLERANCE) &&
-        terrainFits(terrain, run.climb_m ?? 0, run.distance_m, bands),
+              target_m * PAST_DISTANCE_TOLERANCE &&
+            terrainFits(terrain, run.climb_m ?? 0, run.distance_m, bands)),
     )
-    .map(
-      (run): RouteCandidate => ({
+    .map((run): RouteCandidate => {
+      const climb_m = run.climb_m ?? 0;
+      const off = terrainFits(terrain, climb_m, run.distance_m, bands)
+        ? ""
+        : `, ${terrainOf(climb_m, run.distance_m, bands)} for you rather than ${terrain}`;
+      return {
         kind: "past",
         activity_id: run.id,
         name: run.name,
         date: run.date,
         shape: "loop",
         distance_m: run.distance_m,
-        climb_m: run.climb_m ?? 0,
+        climb_m,
         path_share: null,
         crossings_per_km: null,
         hill: null,
-        summary: `Your run "${run.name}" on ${run.date}`,
+        summary: `Your run "${run.name}" on ${run.date}${off}`,
         track: run.track,
-      }),
-    );
-  return rankPast(dedupeRoutes(matching), target_m, today);
+      };
+    });
+  return rankPast(dedupeRoutes(matching), target_m, today, terrain, bands);
 }
 
 /** The first half of a track, then back the same way: an out-and-back as long as the track. */

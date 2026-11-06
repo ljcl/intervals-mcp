@@ -667,7 +667,7 @@ export async function loadRouteSuggestions(
             c.crossings_per_km = crossingsPerKm(c.track, nodes);
       }
 
-      const ranked = rankPast(pool, run.distance_m, env.today);
+      const ranked = rankPast(pool, run.distance_m, env.today, terrain, bands);
       if (terrain === "hill-repeats")
         ranked.sort((a, b) => Number(!a.hill) - Number(!b.hill));
       const past = ranked.slice(0, MAX_PAST_CANDIDATES);

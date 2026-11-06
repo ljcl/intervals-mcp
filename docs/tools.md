@@ -109,9 +109,12 @@ load.
   geocoded with the usual start as focus. A start with no history within
   range is treated as travel.
 - Past runs: up to 6 near the start and within 10% of the distance are
-  considered and 2 kept. With `via`, the distance rule is replaced by
-  passing within 100 m of every via point in order (`passesInOrder`), so a
-  past run at any distance can be offered; `distance_diff_m` shows the gap. Routes not run in the last 7 days come first
+  considered and 2 kept. With `via`, the distance and terrain rules are
+  replaced by passing within 100 m of every via point in order
+  (`passesInOrder`), so a past run at any distance can be offered;
+  `distance_diff_m` shows the gap, and a run off the asked terrain names its
+  band in `summary` and ranks after those on it. Then routes not run in the
+  last 7 days come first
   (judged on each route's latest recording, either way round), then fewer
   crossings, then closer distance; every recording of a route already
   offered is excluded later in the same week. For `hill-repeats`, hills are
@@ -141,7 +144,8 @@ load.
   naming the target, its distance and why (the via points alone are too
   far, generation stopped, or no detour came closer). `via` stays the
   first via point in the structured result; `via_points` has them all in
-  order.
+  order. A `via` string holding a JSON list (what a host still holding the
+  2.12 string-only schema sends for a list) is read as that list.
   `distance_source` says whether a run's distance came from the event or
   from `distanceKm`. The first ORS failure other than a cancellation stops
   generation for the rest of the call with one warning, keeping the routes
