@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.13.1](https://github.com/ljcl/intervals-mcp/compare/v2.13.0...v2.13.1) (2026-11-06)
+
+
+### Bug Fixes
+
+* read a via list sent as text and keep via past runs on any terrain ([#429](https://github.com/ljcl/intervals-mcp/issues/429)) ([0df1d87](https://github.com/ljcl/intervals-mcp/commit/0df1d877bcbdbc0f7093d68882745098143c5a78))
+
 ## [2.13.0](https://github.com/ljcl/intervals-mcp/compare/v2.12.0...v2.13.0) (2026-11-06)
 
 
