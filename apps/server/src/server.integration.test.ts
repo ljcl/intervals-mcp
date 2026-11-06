@@ -1067,6 +1067,44 @@ describe("resources/read", () => {
     expect(contents[0]?._meta?.ui?.csp?.connectDomains).toContain(TILE_ORIGIN);
   });
 
+  it("serves the file an export-route link names", async () => {
+    const { SUNDAY_ACTIVITY, SUNDAY_ID, sundayStreams } = await import(
+      "./__fixtures__/sundayRoute"
+    );
+    mockedIntervalsActivity.mockResolvedValue(
+      structuredClone(SUNDAY_ACTIVITY) as never,
+    );
+    mockedIntervalsStreams.mockImplementation(
+      async () => sundayStreams() as never,
+    );
+    const client = await connectTestClient();
+
+    const call = await client.send("tools/call", {
+      name: "export-route",
+      arguments: { id: SUNDAY_ID },
+    });
+    const content = call.result?.content as Array<Record<string, unknown>>;
+    const link = content.find((c) => c.type === "resource_link");
+    expect(link).toMatchObject({
+      name: `activity-${SUNDAY_ID}.gpx`,
+      mimeType: "application/gpx+xml",
+    });
+    expect(content.some((c) => c.type === "resource")).toBe(false);
+
+    const { result, error } = await client.send("resources/read", {
+      uri: link!.uri,
+    });
+    expect(error).toBeUndefined();
+    const [file] = (result?.contents ?? []) as Array<Record<string, unknown>>;
+    expect(file).toMatchObject({
+      uri: link!.uri,
+      mimeType: "application/gpx+xml",
+    });
+    expect(Buffer.byteLength(String(file!.text))).toBe(link!.size);
+    mockedIntervalsActivity.mockReset();
+    mockedIntervalsStreams.mockReset();
+  });
+
   it("rejects a uri the server does not serve", async () => {
     const client = await connectTestClient();
 

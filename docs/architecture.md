@@ -1070,13 +1070,16 @@ docker-compose.yml).
 - `suggest-run-route` stores its generated routes although it is read-only:
   a suggested route is a cache of what it generated, kept 3 days, and a
   store that cannot write only leaves `route_id` null.
-- Results never carry geometry. A tool that attaches a file or an image
-  (`export-route`, `view-route-map` for a client without MCP Apps) puts it
-  in the result's `attachments`; the `tools/call` handler appends them to
-  `content` after the text, so the view twins and the ignored-argument note
-  keep reading text blocks only. `responseSize.test.ts` counts an attached
-  file's text against the budget; `export-route` simplifies its track until
-  the file fits 32,000 characters.
+- Results never carry geometry. A tool that attaches an image
+  (`view-route-map` for a client without MCP Apps) or links a file
+  (`export-route`, a `resource_link`) puts it in the result's
+  `attachments`; the `tools/call` handler appends them to `content` after
+  the text, so the view twins and the ignored-argument note keep reading
+  text blocks only. The linked file is not in the result: a client reads
+  it with `resources/read`, which rebuilds it from the arguments the link's
+  uri holds (`readRouteExport`). An embedded text resource was shown
+  inline as text by claude.ai, so it is not used. `export-route` still
+  simplifies its track until the file fits 32,000 characters.
 
 ## Input validation
 
@@ -1089,7 +1092,10 @@ takes, a window's last day (`endDate`, `end_date`, `asOf`, `as_of`) to
 `newest` on a tool that takes `newest` (#175), and a camelCase/snake_case
 variant (`max_points`) to the tool's key, only when the tool's own key is
 absent. When two spellings of one key arrive, the first is used and the
-second is left for the ignored-arguments note. It matches an enum value ignoring
+second is left for the ignored-arguments note. On a tool that takes both
+`id` and `route_id`, a stored route's id sent as `id` is read as
+`route_id`: a host holding the schema from before `view-route-map` took
+`route_id` offers the model only `id`. It matches an enum value ignoring
 case, spaces, hyphens and underscores, with a trailing "k" read as "km"
 ("Half Marathon", "5K"), only when exactly one option matches. The
 advertised schemas and `tool-surface.lock.json` do not change. A call that

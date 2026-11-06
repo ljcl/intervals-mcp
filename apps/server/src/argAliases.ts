@@ -14,6 +14,7 @@
  * validation with the original value in the message.
  */
 
+import { isRouteId } from "./routeStore";
 import { addDays } from "./utils/localDate";
 
 /** The parts of a tool's advertised input schema the fix-up reads. */
@@ -129,6 +130,7 @@ export function normalizeArgs(
   }
   if (context) rangeToWindow(out, shape, context.today);
   weeksToDays(out, shape);
+  routeIdFromId(out, shape);
   for (const [key, options] of shape.enums) {
     const value = out[key];
     if (value === undefined) continue;
@@ -155,6 +157,18 @@ function weeksToDays(out: Record<string, unknown>, shape: ArgShape): void {
   if (raw === "" || !Number.isFinite(weeks)) return;
   out.days = weeks * 7;
   delete out.weeks;
+}
+
+/**
+ * A stored route's id sent as `id`, in place, read as `route_id` on a tool
+ * that takes both: a host still holding a tool's schema from before it took
+ * `route_id` offers the model only `id`. A route id is never an activity id.
+ */
+function routeIdFromId(out: Record<string, unknown>, shape: ArgShape): void {
+  if (!shape.keys.includes("route_id") || out.route_id !== undefined) return;
+  if (typeof out.id !== "string" || !isRouteId(out.id.trim())) return;
+  out.route_id = out.id;
+  delete out.id;
 }
 
 /** The range keys {@link rangeToWindow} reads. */

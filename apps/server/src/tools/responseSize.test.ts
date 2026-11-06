@@ -682,13 +682,10 @@ describe("response size budget", () => {
     async ({ name, args, setup, check }) => {
       setup?.();
       const result = await dispatchToolCall(name, args);
-      // An attached file reaches the model too; an image is not text.
-      const text = [
-        ...result.content.map((part) => ("text" in part ? part.text : "")),
-        ...(result.attachments ?? []).map((part) =>
-          part.type === "resource" ? part.resource.text : "",
-        ),
-      ].join("");
+      // Attachments are an image or a link to a file, not text.
+      const text = result.content
+        .map((part) => ("text" in part ? part.text : ""))
+        .join("");
       // A size check on an error message proves nothing.
       expect(result.isError, text).toBeUndefined();
       await check?.(result);

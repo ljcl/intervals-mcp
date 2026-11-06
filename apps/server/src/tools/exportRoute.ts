@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   loadRouteVersion,
+  RouteBuildError,
   readActivityTrack,
   summarizeRoute,
   versionTrack,
@@ -17,9 +18,10 @@ const name = "export-route";
 const description = `
 Gives a stored route or a past run's GPS track as a file: GPX to load as a
 course on a watch or app, or GeoJSON for a client to check, join or change
-the geometry. The file is attached to the result, with a marker every km
-and any pins; the text has only a summary. For "send me the GPX of that
-route" or "export version 1".
+the geometry. The result links the file (a resource link with its file
+name, which the client reads), with a marker every km and any pins; the
+text has only a summary. For "send me the GPX of that route" or "export
+version 1".
 
 Pass route_id (from stitch-route, amend-route or suggest-run-route) and
 optionally version, or id for a past run. The track is simplified (by a
@@ -77,6 +79,90 @@ const MIME = {
   geojson: "application/geo+json",
 } as const;
 
+/** The scheme of an export's link; resources/read rebuilds the file from it. */
+const SCHEME = "route-export:";
+
+/**
+ * The file for `args`, with its link: the link holds the arguments, the
+ * route's version pinned, so reading it later rebuilds the same file.
+ */
+async function buildExport(args: ExportRouteInput, apiKey: string) {
+  let fileName: string;
+  let input: Parameters<typeof exportRoute>[1];
+  let routeId: string | null = null;
+  let version: number | null = null;
+  if (args.route_id) {
+    const loaded = await loadRouteVersion(args.route_id, args.version);
+    const summary = summarizeRoute(loaded.route, loaded.version);
+    routeId = loaded.route.route_id;
+    version = loaded.version.version;
+    fileName = `${routeId}-v${version}`;
+    input = {
+      name: args.name ?? `${loaded.route.name} (v${version})`,
+      track: versionTrack(loaded.route, loaded.version),
+      kmMarkers: args.km_markers,
+      pins: args.waypoints ?? [],
+      properties: {
+        route_id: routeId,
+        version,
+        sections: summary.segments.map((s) => ({
+          index: s.index,
+          kind: s.kind,
+          label: s.label,
+          from_km: s.from_km,
+          to_km: s.to_km,
+        })),
+      },
+    };
+  } else {
+    const activityId = args.id!;
+    const loaded = await readActivityTrack(apiKey, activityId);
+    fileName = `activity-${activityId}`;
+    input = {
+      name: args.name ?? loaded.name,
+      track: loaded.track,
+      kmMarkers: args.km_markers,
+      pins: args.waypoints ?? [],
+      properties: { activity_id: activityId },
+    };
+  }
+  fileName = `${fileName}.${args.format}`;
+  const query = new URLSearchParams({
+    args: JSON.stringify(version === null ? args : { ...args, version }),
+  });
+  const uri = `${SCHEME}//file/${fileName}?${query}`;
+  return { fileName, uri, input, routeId, version };
+}
+
+/** Whether resources/read should hand `uri` to {@link readRouteExport}. */
+export function isRouteExportUri(uri: string): boolean {
+  return uri.startsWith(`${SCHEME}//`);
+}
+
+/**
+ * The file an export-route link names, rebuilt from the arguments in it;
+ * null when the link is malformed or its route is no longer stored.
+ */
+export async function readRouteExport(uri: string, apiKey: string) {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(new URL(uri).searchParams.get("args") ?? "");
+  } catch {
+    return null;
+  }
+  const parsed = inputSchema.safeParse(raw);
+  if (!parsed.success) return null;
+  try {
+    const built = await buildExport(parsed.data, apiKey);
+    const file = exportRoute(parsed.data.format, built.input);
+    return { uri, mimeType: MIME[parsed.data.format], text: file.text };
+  } catch (error) {
+    // The route or its version is no longer stored.
+    if (error instanceof RouteBuildError) return null;
+    throw error;
+  }
+}
+
 export const exportRouteTool = {
   name,
   title: "Export a route",
@@ -86,47 +172,11 @@ export const exportRouteTool = {
   outputSchema: RouteExportOutputSchema,
   execute: async (args: ExportRouteInput, apiKey: string) => {
     try {
-      let fileName: string;
-      let input: Parameters<typeof exportRoute>[1];
-      let routeId: string | null = null;
-      let version: number | null = null;
-      if (args.route_id) {
-        const loaded = await loadRouteVersion(args.route_id, args.version);
-        const summary = summarizeRoute(loaded.route, loaded.version);
-        routeId = loaded.route.route_id;
-        version = loaded.version.version;
-        fileName = `${routeId}-v${version}`;
-        input = {
-          name: args.name ?? `${loaded.route.name} (v${version})`,
-          track: versionTrack(loaded.route, loaded.version),
-          kmMarkers: args.km_markers,
-          pins: args.waypoints ?? [],
-          properties: {
-            route_id: routeId,
-            version,
-            sections: summary.segments.map((s) => ({
-              index: s.index,
-              kind: s.kind,
-              label: s.label,
-              from_km: s.from_km,
-              to_km: s.to_km,
-            })),
-          },
-        };
-      } else {
-        const activityId = args.id!;
-        const loaded = await readActivityTrack(apiKey, activityId);
-        fileName = `activity-${activityId}`;
-        input = {
-          name: args.name ?? loaded.name,
-          track: loaded.track,
-          kmMarkers: args.km_markers,
-          pins: args.waypoints ?? [],
-          properties: { activity_id: activityId },
-        };
-      }
+      const { fileName, uri, input, routeId, version } = await buildExport(
+        args,
+        apiKey,
+      );
       const file = exportRoute(args.format, input);
-      const uri = `route-export://${fileName}.${args.format}`;
       const length = trackLength(input.track);
       const warnings = (args.waypoints ?? [])
         .filter((w) => w.km * 1000 > length + 1)
@@ -149,7 +199,7 @@ export const exportRouteTool = {
       };
       warnOnSchemaDrift(name, RouteExportOutputSchema, structured);
       const lines = [
-        `${args.format === "gpx" ? "GPX" : "GeoJSON"} file attached: ${uri}`,
+        `${args.format === "gpx" ? "GPX" : "GeoJSON"} file linked: ${fileName}`,
         `"${input.name}", ${(length / 1000).toFixed(2)} km, ${file.points} track points (simplified to ${file.simplified_m} m), ${file.waypoints} waypoints.`,
         ...warnings.map((w) => `Warning: ${w}`),
       ];
@@ -158,8 +208,11 @@ export const exportRouteTool = {
         structuredContent: structured,
         attachments: [
           {
-            type: "resource" as const,
-            resource: { uri, mimeType: MIME[args.format], text: file.text },
+            type: "resource_link" as const,
+            uri,
+            name: fileName,
+            mimeType: MIME[args.format],
+            size: Buffer.byteLength(file.text),
           },
         ],
       };
