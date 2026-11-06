@@ -28,12 +28,22 @@ export interface ProjectedRoute {
   start: Point | null;
   /** Projected last point. */
   end: Point | null;
+  /** The frame the points were fit to: projects other `[lat, lng]` pairs
+   * (a compared version) onto the same map, and maps a point back. */
+  frame: ProjectionFrame;
+}
+
+/** One fit of `[lat, lng]` space onto the SVG frame, both ways. */
+export interface ProjectionFrame {
+  project: (pair: [number, number]) => Point;
+  /** The `[lat, lng]` pair at a viewBox point (the inverse of `project`). */
+  unproject: (point: Point) => [number, number];
 }
 
 const DEG_TO_RAD = Math.PI / 180;
 
 /**
- * Project `[lat, lng]` coordinates into the SVG frame described by `opts`.
+ * Fit `coordinates` into the SVG frame described by `opts`.
  *
  * Longitude degrees are scaled by `cos(meanLatitude)` so the route keeps its
  * true shape instead of stretching east–west (an equirectangular projection,
@@ -41,12 +51,10 @@ const DEG_TO_RAD = Math.PI / 180;
  * uniformly to fit within the padded frame and centred, with latitude flipped
  * so north points up.
  */
-export function projectRoute(
+function fitFrame(
   coordinates: Array<[number, number]>,
   opts: ProjectOptions,
-): ProjectedRoute | null {
-  if (coordinates.length === 0) return null;
-
+): ProjectionFrame {
   const { width, height, padding } = opts;
 
   const meanLat =
@@ -54,20 +62,16 @@ export function projectRoute(
   const lngScale = Math.cos(meanLat * DEG_TO_RAD);
 
   // Planar coordinates: x grows east, y grows north (flipped to SVG later).
-  const planar = coordinates.map(([lat, lng]) => ({
-    px: lng * lngScale,
-    py: lat,
-  }));
-
   let minX = Infinity;
   let maxX = -Infinity;
   let minY = Infinity;
   let maxY = -Infinity;
-  for (const { px, py } of planar) {
+  for (const [lat, lng] of coordinates) {
+    const px = lng * lngScale;
     if (px < minX) minX = px;
     if (px > maxX) maxX = px;
-    if (py < minY) minY = py;
-    if (py > maxY) maxY = py;
+    if (lat < minY) minY = lat;
+    if (lat > maxY) maxY = lat;
   }
 
   const spanX = maxX - minX;
@@ -87,22 +91,48 @@ export function projectRoute(
   const offsetX = padding + (availW - drawnW) / 2;
   const offsetY = padding + (availH - drawnH) / 2;
 
-  const points: Point[] = planar.map(({ px, py }) => ({
-    x: offsetX + (px - minX) * scale,
-    // Flip Y: the northern-most point (maxY) sits at the top of the frame.
-    y: offsetY + (maxY - py) * scale,
-  }));
+  return {
+    project: ([lat, lng]) => ({
+      x: offsetX + (lng * lngScale - minX) * scale,
+      // Flip Y: the northern-most point (maxY) sits at the top of the frame.
+      y: offsetY + (maxY - lat) * scale,
+    }),
+    unproject: ({ x, y }) => [
+      maxY - (y - offsetY) / scale,
+      ((x - offsetX) / scale + minX) / lngScale,
+    ],
+  };
+}
 
-  const path = points
-    .map((p, i) => `${i === 0 ? "M" : "L"}${round(p.x)} ${round(p.y)}`)
-    .join(" ");
+/**
+ * Project `[lat, lng]` coordinates into the SVG frame described by `opts`
+ * (see `fitFrame`). `fitAlso` are more pairs the frame must hold (a compared
+ * version drawn under the route), so both lines share one map.
+ */
+export function projectRoute(
+  coordinates: Array<[number, number]>,
+  opts: ProjectOptions,
+  fitAlso: Array<[number, number]> = [],
+): ProjectedRoute | null {
+  if (coordinates.length === 0) return null;
+
+  const frame = fitFrame([...coordinates, ...fitAlso], opts);
+  const points = coordinates.map(frame.project);
 
   return {
     points,
-    path,
+    path: pointsPath(points),
     start: points[0] ?? null,
     end: points[points.length - 1] ?? null,
+    frame,
   };
+}
+
+/** SVG path `d` string through `points`, in order. */
+export function pointsPath(points: Point[]): string {
+  return points
+    .map((p, i) => `${i === 0 ? "M" : "L"}${round(p.x)} ${round(p.y)}`)
+    .join(" ");
 }
 
 /** Trim coordinates to 2 dp so the generated path string stays compact. */

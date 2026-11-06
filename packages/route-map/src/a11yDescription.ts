@@ -19,8 +19,18 @@ export interface RouteMapA11yInput {
   /** Label of the metric the track is coloured by, when streams are present. */
   colorMetric?: string | null;
   splitCount?: number;
-  splitKind?: "laps" | "splits";
+  splitKind?: "laps" | "splits" | "km";
   waypointCount?: number;
+  /** A stored route: its version, sections and via points. */
+  route?: {
+    version: number;
+    latestVersion: number;
+    sections: Array<{ label: string; fromKm: number; toKm: number }>;
+    viaCount: number;
+    /** The compare line (`compareText`), when another version is drawn. */
+    compare: string | null;
+    warningCount: number;
+  };
 }
 
 const DEG_TO_RAD = Math.PI / 180;
@@ -155,7 +165,9 @@ function describeAnnotations(input: RouteMapA11yInput): string | null {
     parts.push(
       input.splitKind === "laps"
         ? `${input.splitCount} lap markers`
-        : `${input.splitCount} kilometre splits`,
+        : input.splitKind === "km"
+          ? `${input.splitCount} kilometre markers`
+          : `${input.splitCount} kilometre splits`,
     );
   }
   if (input.waypointCount) {
@@ -169,11 +181,47 @@ function describeAnnotations(input: RouteMapA11yInput): string | null {
   return `Marked along the route: ${parts.join(", ")}.`;
 }
 
+/** The stored-route part: sections by km, via points, compare, warnings. */
+function describeStoredRoute(
+  route: NonNullable<RouteMapA11yInput["route"]>,
+): string[] {
+  const parts: string[] = [];
+  const count = route.sections.length;
+  if (count > 0) {
+    const list = route.sections
+      .map(
+        (s) => `${s.fromKm.toFixed(1)} to ${s.toKm.toFixed(1)} km, ${s.label}`,
+      )
+      .join("; ");
+    parts.push(
+      `The line is coloured by section, ${count === 1 ? "1 section" : `${count} sections`}: ${list}.`,
+    );
+  }
+  if (route.viaCount > 0) {
+    parts.push(
+      route.viaCount === 1 ? "1 via point." : `${route.viaCount} via points.`,
+    );
+  }
+  if (route.compare) parts.push(route.compare);
+  if (route.warningCount > 0) {
+    parts.push(
+      route.warningCount === 1
+        ? "1 warning is listed below the map."
+        : `${route.warningCount} warnings are listed below the map.`,
+    );
+  }
+  return parts;
+}
+
 export function buildRouteMapA11yDescription(input: RouteMapA11yInput): string {
   const kind = input.activityType
     ? `${input.activityType} activity`
     : "activity";
-  const parts = [`Map of ${kind} "${input.name}".`];
+  const parts = input.route
+    ? [
+        `Map of stored route "${input.name}", version ${input.route.version} of ${input.route.latestVersion}.`,
+      ]
+    : [`Map of ${kind} "${input.name}".`];
 
   if (input.coordinates.length < 2) {
     parts.push("No GPS track is available.");
@@ -198,6 +246,8 @@ export function buildRouteMapA11yDescription(input: RouteMapA11yInput): string {
 
   const annotations = describeAnnotations(input);
   if (annotations) parts.push(annotations);
+
+  if (input.route) parts.push(...describeStoredRoute(input.route));
 
   return parts.join(" ");
 }

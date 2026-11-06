@@ -16,6 +16,7 @@ import {
 } from "@intervals-mcp/ui";
 import {
   type KeyboardEvent,
+  type MouseEvent,
   type PointerEvent,
   type ReactNode,
   useEffect,
@@ -47,7 +48,12 @@ import {
   type MetricKey,
   RAMP_GRADIENT_CSS,
 } from "./metrics";
-import { nearestPointIndex, type Point, projectRoute } from "./normalize";
+import {
+  nearestPointIndex,
+  type Point,
+  pointsPath,
+  projectRoute,
+} from "./normalize";
 import {
   canZoomIn,
   isZoomed,
@@ -60,8 +66,20 @@ import {
   zoomLevel,
   zoomViewBox,
 } from "./panZoom";
+import { RouteDetails } from "./RouteDetails";
+import { RouteEditPanel } from "./RouteEditPanel";
 import styles from "./RouteMap.module.css";
+import { formatLatLng, nearestRouteKm } from "./routeEdit";
+import {
+  buildSectionRuns,
+  buildStretchMarkers,
+  compareText,
+  routeKmMarkers,
+  routeWarnings,
+  sectionColorRuns,
+} from "./routeLayers";
 import { type RouteMapData } from "./types";
+import { type RouteAmend } from "./useRouteAmend";
 import {
   describeView,
   frameForIndexRange,
@@ -82,6 +100,11 @@ interface RouteMapProps {
   basemapEnabled?: boolean;
   /** Rendered right after the card header, before the map (suggestion picker). */
   beforeMap?: ReactNode;
+  /** A stored route's edit wiring (`useRouteAmend`). The controls show only
+   * with it and when the shown version is the latest. */
+  routeEdit?: RouteAmend | null;
+  /** A line the model context starts with, e.g. the edit just applied. */
+  contextNote?: string | null;
 }
 
 /** Frame geometry per layout. All values are SVG viewBox units. */
@@ -109,6 +132,10 @@ const STRIP_PAD_TOP = 8;
 
 /** Wheel-step zoom factor. */
 const WHEEL_ZOOM_FACTOR = 1.2;
+
+/** A via point moves only after the pointer travels this far (viewBox units,
+ * at base zoom), so a tap selects it instead. */
+const VIA_DRAG_THRESHOLD = 4;
 
 const GRID_ID = "route-map-grid";
 
@@ -162,19 +189,46 @@ export function RouteMap({
   viewToolRegistry = null,
   basemapEnabled = true,
   beforeMap,
+  routeEdit = null,
+  contextNote = null,
 }: RouteMapProps) {
   const isMobile = mode === "mobile";
   const dims = isMobile ? DIMS.mobile : DIMS.desktop;
   const distanceKm = data.distance / 1000;
+  /** A stored route: drawn by section, with vias, versions and edits. */
+  const route = data.route ?? null;
+  const compareCoordinates = route?.compare?.coordinates;
 
   const projected = useMemo(
     () =>
-      projectRoute(data.coordinates, {
-        width: dims.width,
-        height: dims.height,
-        padding: dims.padding,
-      }),
-    [data.coordinates, dims.width, dims.height, dims.padding],
+      projectRoute(
+        data.coordinates,
+        {
+          width: dims.width,
+          height: dims.height,
+          padding: dims.padding,
+        },
+        // The compared version shares the frame, so both lines fit.
+        compareCoordinates,
+      ),
+    [
+      data.coordinates,
+      compareCoordinates,
+      dims.width,
+      dims.height,
+      dims.padding,
+    ],
+  );
+
+  const sections = useMemo(
+    () => (route ? buildSectionRuns(route, data.coordinates.length) : []),
+    [route, data.coordinates.length],
+  );
+  const stretches = useMemo(() => buildStretchMarkers(data), [data]);
+  /** A stored route's warnings, its sections' and its pins'. */
+  const warnings = useMemo(
+    () => (data.route ? routeWarnings(data) : []),
+    [data],
   );
 
   const series = useMemo(() => buildMetricSeries(data), [data]);
@@ -186,19 +240,25 @@ export function RouteMap({
   const activeSeries =
     series.find((s) => s.key === metricKey) ?? series[0] ?? null;
 
+  // A stored route is coloured by section; the metric (altitude) then only
+  // feeds the scrub tooltip.
   const segments = useMemo(
     () =>
-      projected && activeSeries
+      projected && activeSeries && !route
         ? buildTrackSegments(projected.points, activeSeries)
         : [],
-    [projected, activeSeries],
+    [projected, activeSeries, route],
   );
 
   // Same color binning as the SVG segments, as index runs for the basemap.
   const colorRuns = useMemo(
     () =>
-      activeSeries ? buildColorRuns(activeSeries, data.coordinates.length) : [],
-    [activeSeries, data.coordinates.length],
+      route
+        ? sectionColorRuns(sections)
+        : activeSeries
+          ? buildColorRuns(activeSeries, data.coordinates.length)
+          : [],
+    [route, sections, activeSeries, data.coordinates.length],
   );
 
   /* ── Basemap ─────────────────────────────────────────────────── */
@@ -220,7 +280,10 @@ export function RouteMap({
 
   /* ── Annotation layers ───────────────────────────────────────── */
 
-  const splitMarkers = useMemo(() => buildSplitMarkers(data), [data]);
+  const splitMarkers = useMemo(
+    () => (data.route ? routeKmMarkers(data.route) : buildSplitMarkers(data)),
+    [data],
+  );
   const waypointMarkers = useMemo(() => buildWaypointMarkers(data), [data]);
 
   const layers = useMemo(() => {
@@ -228,13 +291,17 @@ export function RouteMap({
     if (splitMarkers.length > 0) {
       out.push({
         key: "splits",
-        label: data.annotations?.laps?.length ? "Laps" : "Splits",
+        label: data.route
+          ? "Km markers"
+          : data.annotations?.laps?.length
+            ? "Laps"
+            : "Splits",
       });
     }
     if (waypointMarkers.length > 0)
       out.push({ key: "waypoints", label: "Waypoints" });
     return out;
-  }, [splitMarkers, waypointMarkers, data.annotations?.laps]);
+  }, [splitMarkers, waypointMarkers, data.annotations?.laps, data.route]);
 
   const [hiddenLayers, setHiddenLayers] = useState<Set<LayerKey>>(new Set());
   const layerVisible = (key: LayerKey) => !hiddenLayers.has(key);
@@ -482,6 +549,113 @@ export function RouteMap({
     }
   };
 
+  /* ── Route edits ─────────────────────────────────────────────── */
+
+  const busy = routeEdit?.busy ?? false;
+  /** The controls and map gestures exist only on the latest version. */
+  const editable = route?.editable === true && routeEdit !== null;
+  const vias = route?.vias ?? [];
+  const [addMode, setAddMode] = useState(false);
+  const [selectedViaId, setSelectedViaId] = useState<string | null>(null);
+  // A new version may not have the selected point any more.
+  const selectedVia = vias.find((v) => v.id === selectedViaId) ?? null;
+
+  /** A point put on the map joins the route at the nearest km. */
+  const pickPoint = (lat: number, lng: number) => {
+    if (!editable || busy || !routeEdit) return;
+    const km = nearestRouteKm(data, lat, lng);
+    if (km === null) return;
+    routeEdit.amend({ op: "insert_via", km, place: formatLatLng(lat, lng) });
+    setAddMode(false);
+  };
+  const moveVia = (id: string, lat: number, lng: number) => {
+    if (!editable || busy || !routeEdit) return;
+    setSelectedViaId(id);
+    routeEdit.amend({ op: "move_via", via_id: id, to: formatLatLng(lat, lng) });
+  };
+
+  // Grid drag of a via point. The preview stays where it was let go until
+  // the change is done, then the new version (or the old point) shows.
+  const viaDrag = useRef<{
+    id: string;
+    pointerId: number;
+    start: Point;
+    moved: boolean;
+  } | null>(null);
+  const [dragPoint, setDragPoint] = useState<{
+    id: string;
+    point: Point;
+  } | null>(null);
+  const [wasBusy, setWasBusy] = useState(busy);
+  if (wasBusy !== busy) {
+    setWasBusy(busy);
+    if (!busy) setDragPoint(null);
+  }
+  /** The click that ends a via tap or drag is not an add-point tap. */
+  const suppressClick = useRef(false);
+
+  const svgPointAt = (clientX: number, clientY: number, rect: DOMRect) => {
+    const v = viewRef.current;
+    return {
+      x: v.x + ((clientX - rect.left) / rect.width) * v.w,
+      y: v.y + ((clientY - rect.top) / rect.height) * v.h,
+    };
+  };
+
+  const startViaDrag = (id: string) => (e: PointerEvent<SVGGElement>) => {
+    if (!editable || busy || !svgEl) return;
+    // The map must not pan or scrub under the point.
+    e.stopPropagation();
+    suppressClick.current = false;
+    const rect = svgEl.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+    try {
+      svgEl.setPointerCapture(e.pointerId);
+    } catch {
+      // No active pointer to capture (synthetic events); the drag still works
+      // while the pointer stays over the map.
+    }
+    viaDrag.current = {
+      id,
+      pointerId: e.pointerId,
+      start: svgPointAt(e.clientX, e.clientY, rect),
+      moved: false,
+    };
+  };
+
+  /** Ends a via drag: a move asks for the point there, a tap selects it. */
+  const finishViaDrag = (e: PointerEvent<SVGSVGElement>): boolean => {
+    const drag = viaDrag.current;
+    if (!drag || drag.pointerId !== e.pointerId) return false;
+    viaDrag.current = null;
+    suppressClick.current = true;
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (drag.moved && projected && rect.width > 0 && rect.height > 0) {
+      const point = svgPointAt(e.clientX, e.clientY, rect);
+      const [lat, lng] = projected.frame.unproject(point);
+      setDragPoint({ id: drag.id, point });
+      moveVia(drag.id, lat, lng);
+    } else {
+      setDragPoint(null);
+      setSelectedViaId(drag.id);
+    }
+    return true;
+  };
+
+  const handleMapClick = (e: MouseEvent<SVGSVGElement>) => {
+    if (suppressClick.current) {
+      suppressClick.current = false;
+      return;
+    }
+    if (!addMode || !projected) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+    const [lat, lng] = projected.frame.unproject(
+      svgPointAt(e.clientX, e.clientY, rect),
+    );
+    pickPoint(lat, lng);
+  };
+
   /* ── Scrub ───────────────────────────────────────────────────── */
 
   // One scrub index drives the markers on both the track and the elevation
@@ -501,6 +675,7 @@ export function RouteMap({
   /* ── Map pointer gestures ────────────────────────────────────── */
 
   const handleMapPointerDown = (e: PointerEvent<SVGSVGElement>) => {
+    suppressClick.current = false;
     if (!canZoom) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -509,6 +684,18 @@ export function RouteMap({
   const handleMapPointerMove = (e: PointerEvent<SVGSVGElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) return;
+
+    const drag = viaDrag.current;
+    if (drag && drag.pointerId === e.pointerId) {
+      const point = svgPointAt(e.clientX, e.clientY, rect);
+      const travel = Math.hypot(point.x - drag.start.x, point.y - drag.start.y);
+      if (!drag.moved && travel < VIA_DRAG_THRESHOLD * k) return;
+      drag.moved = true;
+      setScrubIndex(null);
+      setDragPoint({ id: drag.id, point });
+      return;
+    }
+
     const tracked = pointers.current.get(e.pointerId);
 
     if (tracked && pointers.current.size === 2) {
@@ -573,12 +760,26 @@ export function RouteMap({
     scrubAt(e.clientX, e.clientY, rect);
   };
 
-  const handleMapPointerEnd = (e: PointerEvent<SVGSVGElement>) => {
+  const releasePointer = (e: PointerEvent<SVGSVGElement>) => {
     pointers.current.delete(e.pointerId);
   };
 
+  const handleMapPointerEnd = (e: PointerEvent<SVGSVGElement>) => {
+    finishViaDrag(e);
+    releasePointer(e);
+  };
+
+  /** A cancelled gesture (the browser took it) moves nothing. */
+  const handleMapPointerCancel = (e: PointerEvent<SVGSVGElement>) => {
+    if (viaDrag.current?.pointerId === e.pointerId) {
+      viaDrag.current = null;
+      setDragPoint(null);
+    }
+    releasePointer(e);
+  };
+
   const clearScrub = (e: PointerEvent<SVGSVGElement>) => {
-    handleMapPointerEnd(e);
+    if (viaDrag.current?.pointerId !== e.pointerId) releasePointer(e);
     setScrubIndex(null);
   };
 
@@ -590,6 +791,46 @@ export function RouteMap({
     const idx = nearestXIndex(profile.xs, x);
     setScrubIndex(idx >= 0 ? idx : null);
   };
+
+  /* ── Stored route layers (grid view) ─────────────────────────── */
+
+  const routePaths = useMemo(() => {
+    if (!projected || !route) return null;
+    const { points, frame } = projected;
+    const slice = (from: number, to: number) =>
+      pointsPath(points.slice(from, to + 1));
+    const compare = route.compare;
+    return {
+      sections: sections
+        .filter((section) => section.endIndex > section.startIndex)
+        .map((section) => ({
+          key: section.index,
+          color: section.color.css,
+          path: slice(section.startIndex, section.endIndex),
+        })),
+      compare:
+        compare && compare.coordinates.length > 1
+          ? pointsPath(compare.coordinates.map(frame.project))
+          : null,
+      changed:
+        compare?.change.changed && compare.endIndex > compare.startIndex
+          ? slice(compare.startIndex, compare.endIndex)
+          : null,
+    };
+  }, [projected, route, sections]);
+
+  const stretchPaths = useMemo(
+    () =>
+      projected
+        ? stretches.map((stretch) => ({
+            ...stretch,
+            path: pointsPath(
+              projected.points.slice(stretch.startIndex, stretch.endIndex + 1),
+            ),
+          }))
+        : [],
+    [projected, stretches],
+  );
 
   /* ── Accessibility ───────────────────────────────────────────── */
 
@@ -605,18 +846,39 @@ export function RouteMap({
         elevationGain: data.elevationGain,
         coordinates: data.coordinates,
         altitude: data.streams?.altitude,
-        colorMetric: activeSeries?.label ?? null,
+        colorMetric: route ? null : (activeSeries?.label ?? null),
         // Counts reflect the layers actually drawn: a toggled-off layer
         // narrates as absent. Reads hiddenLayers directly (not the
         // layerVisible closure) so the dependency list stays honest.
         splitCount: hiddenLayers.has("splits") ? 0 : splitMarkers.length,
-        splitKind: data.annotations?.laps?.length ? "laps" : "splits",
+        splitKind: route
+          ? "km"
+          : data.annotations?.laps?.length
+            ? "laps"
+            : "splits",
         waypointCount: hiddenLayers.has("waypoints")
           ? 0
           : waypointMarkers.length,
+        route: route
+          ? {
+              version: route.version,
+              latestVersion: route.latest_version,
+              sections: sections.map((section) => ({
+                label: section.label,
+                fromKm: section.fromKm,
+                toKm: section.toKm,
+              })),
+              viaCount: route.vias.length,
+              compare: compareText(route),
+              warningCount: warnings.length,
+            }
+          : undefined,
       }),
     [
       data,
+      route,
+      sections,
+      warnings,
       distanceKm,
       activeSeries?.label,
       splitMarkers,
@@ -652,10 +914,22 @@ export function RouteMap({
         // `describeView` is the phrasing the screen reader hears, so the
         // model and the narration cannot describe different views.
         visible: partialView,
+        route: route
+          ? {
+              routeId: route.route_id,
+              version: route.version,
+              latestVersion: route.latest_version,
+              sectionCount: route.segments.length,
+              compare: compareText(route),
+            }
+          : null,
+        note: contextNote,
       }),
     [
       data.name,
       data.source,
+      route,
+      contextNote,
       distanceKm,
       data.elevationGain,
       projected !== null,
@@ -664,8 +938,9 @@ export function RouteMap({
     ],
   );
 
-  const subtitle =
-    data.source === "suggestion"
+  const subtitle = route
+    ? `Stored route · version ${route.version} of ${route.latest_version}`
+    : data.source === "suggestion"
       ? "Suggested route"
       : [data.activityType, "Activity"].filter(Boolean).join(" · ");
 
@@ -734,12 +1009,41 @@ export function RouteMap({
         <div className={styles.mapArea}>
           <p className={styles.srOnly}>{a11yDescription}</p>
           <BasemapView
-            key={data.id}
+            // The map draws its overlays once per mount, so a new version
+            // (or compare) is a new map.
+            key={`${data.id}:${route?.version ?? ""}:${route?.compare?.version ?? ""}`}
             accessibleLabel={`Map of ${data.name}`}
             coordinates={data.coordinates}
             colorRuns={colorRuns}
             splitMarkers={splitMarkers}
             waypointMarkers={waypointMarkers}
+            stretches={stretches}
+            route={
+              route
+                ? {
+                    compare: compareCoordinates ?? null,
+                    changed:
+                      route.compare?.change.changed &&
+                      route.compare.endIndex > route.compare.startIndex
+                        ? {
+                            startIndex: route.compare.startIndex,
+                            endIndex: route.compare.endIndex,
+                          }
+                        : null,
+                    vias,
+                    selectedViaId: selectedVia?.id ?? null,
+                    edit:
+                      editable && !busy
+                        ? {
+                            addMode,
+                            onPick: pickPoint,
+                            onSelectVia: setSelectedViaId,
+                            onMoveVia: moveVia,
+                          }
+                        : null,
+                  }
+                : null
+            }
             visibility={{
               splits: layerVisible("splits"),
               waypoints: layerVisible("waypoints"),
@@ -779,8 +1083,10 @@ export function RouteMap({
               onPointerDown={handleMapPointerDown}
               onPointerMove={handleMapPointerMove}
               onPointerUp={handleMapPointerEnd}
-              onPointerCancel={handleMapPointerEnd}
+              onPointerCancel={handleMapPointerCancel}
               onPointerLeave={clearScrub}
+              onClick={handleMapClick}
+              data-adding={(editable && addMode) || undefined}
             >
               <title id={mapTitleId}>
                 {`Map of ${data.name}, ${formatKm(data.distance)} kilometres`}
@@ -819,7 +1125,47 @@ export function RouteMap({
                 fill={`url(#${GRID_ID})`}
               />
 
-              {segments.length > 0 ? (
+              {/* A stored route: the compared version dashed under it, and
+                  a halo under the part that changed. */}
+              {routePaths?.compare && (
+                <path
+                  d={routePaths.compare}
+                  data-layer="compare"
+                  fill="none"
+                  stroke="var(--color-text-tertiary)"
+                  strokeWidth={2 * k}
+                  strokeDasharray={`${6 * k} ${5 * k}`}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              )}
+              {routePaths?.changed && (
+                <path
+                  d={routePaths.changed}
+                  data-layer="changed"
+                  fill="none"
+                  stroke="var(--chart-overlay-4)"
+                  strokeOpacity={0.35}
+                  strokeWidth={dims.stroke * 4 * k}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              )}
+
+              {routePaths ? (
+                routePaths.sections.map((section) => (
+                  <path
+                    key={`section-${section.key}`}
+                    d={section.path}
+                    data-layer="section"
+                    fill="none"
+                    stroke={section.color}
+                    strokeWidth={dims.stroke * k}
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                  />
+                ))
+              ) : segments.length > 0 ? (
                 segments.map((segment, i) => (
                   <path
                     // biome-ignore lint/suspicious/noArrayIndexKey: segments are derived, static per render, and an out-and-back track can repeat an identical path string
@@ -842,6 +1188,24 @@ export function RouteMap({
                   strokeLinecap="round"
                 />
               )}
+
+              {/* Stretch pins: a wide, light band along the line. */}
+              {layerVisible("waypoints") &&
+                stretchPaths.map((stretch) => (
+                  <path
+                    key={`stretch-${stretch.startIndex}-${stretch.title}`}
+                    d={stretch.path}
+                    data-layer="stretch"
+                    fill="none"
+                    stroke={stretch.color}
+                    strokeOpacity={0.4}
+                    strokeWidth={dims.stroke * 3 * k}
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                  >
+                    <title>{stretch.title}</title>
+                  </path>
+                ))}
 
               {/* Lap / km split dots. */}
               {layerVisible("splits") &&
@@ -902,6 +1266,69 @@ export function RouteMap({
                   strokeWidth={2 * k}
                 />
               )}
+
+              {/* Via points: a circle, a turnaround as a square. On the
+                  latest version they drag to move and tap to select. */}
+              {vias.map((via) => {
+                const p =
+                  dragPoint?.id === via.id
+                    ? dragPoint.point
+                    : projected.frame.project(via.point);
+                const r = dims.marker * (isMobile ? 1.1 : 0.95) * k;
+                const selected = via.id === selectedVia?.id;
+                const name =
+                  via.kind === "turnaround" ? "Turnaround" : via.label;
+                return (
+                  <g
+                    key={`via-${via.id}`}
+                    className={styles.via}
+                    data-via={via.id}
+                    data-editable={(editable && !busy) || undefined}
+                    data-selected={selected || undefined}
+                    onPointerDown={editable ? startViaDrag(via.id) : undefined}
+                  >
+                    <title>{`${name} (${via.id}) · ${via.km.toFixed(1)} km`}</title>
+                    {editable && (
+                      // A larger, unseen target for a finger.
+                      <circle
+                        cx={p.x}
+                        cy={p.y}
+                        r={r * 2.4}
+                        fill="transparent"
+                      />
+                    )}
+                    {via.kind === "turnaround" ? (
+                      <rect
+                        x={p.x - r}
+                        y={p.y - r}
+                        width={2 * r}
+                        height={2 * r}
+                        rx={1.5 * k}
+                        fill="var(--chart-overlay-4)"
+                        stroke={
+                          selected
+                            ? "var(--color-text-info)"
+                            : "var(--color-background-primary)"
+                        }
+                        strokeWidth={(selected ? 4 : 2) * k}
+                      />
+                    ) : (
+                      <circle
+                        cx={p.x}
+                        cy={p.y}
+                        r={r}
+                        fill="var(--color-text-primary)"
+                        stroke={
+                          selected
+                            ? "var(--color-text-info)"
+                            : "var(--color-background-primary)"
+                        }
+                        strokeWidth={(selected ? 4 : 2) * k}
+                      />
+                    )}
+                  </g>
+                );
+              })}
 
               {scrubPoint && scrubValue != null && activeSeries && (
                 <circle
@@ -1055,7 +1482,7 @@ export function RouteMap({
         </svg>
       )}
 
-      {projected && series.length > 0 && (
+      {projected && series.length > 0 && !route && (
         <div className={styles.controls}>
           {series.length > 1 && (
             <PillGroup>
@@ -1120,6 +1547,25 @@ export function RouteMap({
           </div>
         )}
       </div>
+
+      {route && (
+        <RouteDetails route={route} sections={sections} warnings={warnings} />
+      )}
+
+      {route && editable && routeEdit && (
+        <RouteEditPanel
+          route={route}
+          routeKm={distanceKm}
+          busy={busy}
+          notice={routeEdit.notice}
+          addMode={addMode}
+          onAddModeChange={setAddMode}
+          selectedViaId={selectedVia?.id ?? null}
+          onSelectVia={setSelectedViaId}
+          onAmend={routeEdit.amend}
+          compact={isMobile}
+        />
+      )}
     </div>
   );
 }

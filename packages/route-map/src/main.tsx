@@ -4,15 +4,15 @@ import {
   AppShell,
   ErrorState,
   type HostCtx,
-  LoadingState,
-  Skeleton,
   useServerToolData,
   type ViewToolRegistry,
 } from "@intervals-mcp/ui";
 import { type useApp } from "@modelcontextprotocol/ext-apps/react";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { LoadingSkeleton } from "./LoadingSkeleton";
 import { RouteMap } from "./RouteMap";
+import { RouteView } from "./RouteView";
 import { SuggestionMap } from "./SuggestionMap";
 import { parseToolArgs } from "./toolArgs";
 import {
@@ -23,13 +23,6 @@ import {
 } from "./types";
 import { VIEW_TOOLS } from "./viewToolDeclarations";
 import "./global.css";
-
-const LoadingSkeleton = () => (
-  <LoadingState label="Loading route map">
-    <Skeleton variant="bar" />
-    <Skeleton variant="chart" />
-  </LoadingState>
-);
 
 interface ContentProps {
   app: ReturnType<typeof useApp>["app"];
@@ -45,16 +38,15 @@ function ActivityContent({
   mode,
   viewToolRegistry,
 }: ContentProps & { toolArgs: ToolArgs }) {
-  const { data, loading, error, retry } = useServerToolData<RouteMapData>(
-    app,
-    "get-route-map-data",
-    { ...toolArgs },
-  );
+  const { data, loading, error, progress, retry } =
+    useServerToolData<RouteMapData>(app, "get-route-map-data", {
+      ...toolArgs,
+    });
 
   return (
     <AppShell hostCtx={hostCtx} mode={mode} app={app}>
       {loading ? (
-        <LoadingSkeleton />
+        <LoadingSkeleton progress={progress} />
       ) : error || !data ? (
         <ErrorState
           message={error ?? "No route map data available"}
@@ -79,7 +71,7 @@ function SuggestionContent({
   mode,
   viewToolRegistry,
 }: ContentProps & { args: Record<string, unknown> }) {
-  const { data, loading, error, retry } =
+  const { data, loading, error, progress, retry } =
     useServerToolData<RouteSuggestionsData>(app, "get-route-suggestions-data", {
       ...args,
     });
@@ -87,7 +79,7 @@ function SuggestionContent({
   return (
     <AppShell hostCtx={hostCtx} mode={mode} app={app}>
       {loading ? (
-        <LoadingSkeleton />
+        <LoadingSkeleton progress={progress} />
       ) : error || !data ? (
         <ErrorState
           message={error ?? "No route suggestions available"}
@@ -109,10 +101,12 @@ function AppContent({
   toolArgs,
   ...rest
 }: ContentProps & { toolArgs: AppArgs }) {
-  return "kind" in toolArgs ? (
-    <SuggestionContent args={toolArgs.args} {...rest} />
+  if (!("kind" in toolArgs))
+    return <ActivityContent toolArgs={toolArgs} {...rest} />;
+  return toolArgs.kind === "route" ? (
+    <RouteView args={toolArgs} {...rest} />
   ) : (
-    <ActivityContent toolArgs={toolArgs} {...rest} />
+    <SuggestionContent args={toolArgs.args} {...rest} />
   );
 }
 

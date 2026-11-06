@@ -261,3 +261,20 @@
 .dot[data-marker="end"] {
   background: var(--color-text-danger);
 }
+
+/* Add-point mode: a tap on the map adds a point, so show a crosshair. */
+.basemap[data-adding] :global(.maplibregl-canvas) {
+  cursor: crosshair;
+}
+
+/* ── Stored route: via points on the grid ─────── */
+
+/* A finger must be able to drag a point without the page scrolling. */
+.via[data-editable] {
+  touch-action: none;
+  cursor: grab;
+}
+
+.svg[data-adding] {
+  cursor: crosshair;
+}

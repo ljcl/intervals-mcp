@@ -347,6 +347,35 @@ grid fallback (no Recharts). Calls `get-route-map-data` (app-only) with
   each via point are waypoints (`climb` and `custom` kinds,
   `buildSuggestionsMapData` in `routeMapData.ts`).
   The feed reads one planned run and reports the call's warnings.
+- Route mode: with a `route_id` the app is a stored route
+  (`toolArgs.ts` passes `route_id`, `version`, `compare_to_version`,
+  `waypoints` and `waypoints_version` to `get-route-map-data`).
+  `RouteView.tsx` renders it. The payload's `route` field
+  (`buildStoredRouteMapData`, `routeMapData.ts`) carries the sections,
+  via points, km markers, per-section warnings and an optional compared
+  version, all as indices into `coordinates`. Both views draw one line with
+  a colour per section (`routeLayers.ts`), km markers, via points (a
+  turnaround is styled apart), stretch pins (`endIndex`), and the compared
+  version as a faint dashed line under the changed part. `RouteDetails.tsx`
+  lists the sections, "version N of M", the change and the warnings.
+- Route edits (`RouteEditPanel.tsx`, `useRouteAmend.ts`, `routeEdit.ts`)
+  show only when `route.editable` (the latest version) and an app is
+  connected. They are: drag a via point (`move_via` to "lat,lng"), add a
+  point by tapping the map (`insert_via` at the nearest route km), select
+  and remove a via point, and replace a km range directly or through a
+  place. Each gesture also has a labelled control. Each edit is one
+  `amend-route` call from the shown version; the controls are disabled
+  while it runs. On `applied: true` the app fetches the new version
+  (`useServerToolFetcher`), compared with the old one, with the pins'
+  `waypoints_version`, and the line "Route X is now version N (…)" goes
+  into the `useModelContextSync` summary, so the chat gets the new
+  `route_id` and version. On `applied: false` the server's warning shows,
+  and on `isError` its text. amend-route is a write, so the server refuses
+  it from a 2025-revision client, which is how claude.ai loads apps
+  (docs/architecture.md). On that refusal, or a failed call, the app sends
+  the operations to the chat with `sendMessage` (when the host takes
+  messages) so the chat model makes the call. The note then says the chat
+  will apply it, never that it is done.
 - Geometry always comes from the `latlng` stream: intervals.icu has no
   encoded-polyline endpoint (`GET /activity/{id}/map` returns the same
   latlng stream at the same resolution, nothing more; see docs/api-notes.md).

@@ -161,6 +161,34 @@ describe("buildRouteMapA11yDescription", () => {
   });
 });
 
+describe("buildRouteMapA11yDescription for a stored route", () => {
+  it("names the version, the sections, the vias and the warnings", () => {
+    const description = buildRouteMapA11yDescription({
+      name: "Bay Run (v2)",
+      activityType: "Run",
+      distanceKm: 7,
+      elevationGain: 0,
+      coordinates: loopTrack,
+      splitCount: 6,
+      splitKind: "km",
+      route: {
+        version: 2,
+        latestVersion: 3,
+        sections: [
+          { label: "To the bay", fromKm: 0, toKm: 2.5 },
+          { label: "Bay Run", fromKm: 2.5, toKm: 7 },
+        ],
+        viaCount: 1,
+        compare: "Compared with version 3: the line is the same.",
+        warningCount: 2,
+      },
+    });
+    expect(description).toBe(
+      'Map of stored route "Bay Run (v2)", version 2 of 3. 7.0 km. A loop returning to its start, spanning roughly 2.2 km east to west and 2.2 km north to south. Marked along the route: 6 kilometre markers. The line is coloured by section, 2 sections: 0.0 to 2.5 km, To the bay; 2.5 to 7.0 km, Bay Run. 1 via point. Compared with version 3: the line is the same. 2 warnings are listed below the map.',
+    );
+  });
+});
+
 describe("buildElevationStripDescription", () => {
   it("narrates the altitude range over the distance", () => {
     expect(buildElevationStripDescription([12.4, 96.2, 40], 8.23)).toBe(
