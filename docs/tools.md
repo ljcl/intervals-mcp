@@ -154,6 +154,30 @@ load.
   generation for the rest of the call with one warning, keeping the routes
   already made; past runs always come back. ORS allows 200 routes a day,
   and the 12 calls are shared across the runs of a week request.
+- Stitched via routes (`historyLegs.ts`): with via, each leg between
+  consecutive anchors (start, via points, then the start, the end, or
+  nothing for an out-and-back's way out) takes the shortest section of a
+  loaded past run (the 40 runs of 180 days, from any start) that passes
+  within 100 m of both ends, either way along it, unless it is longer than
+  twice the straight line plus 500 m. A run's own direction of travel is
+  preferred: its section the other way is used only when no forward one
+  qualifies, so a loop's way back is its other side. A combination in which
+  a leg runs an earlier leg's line backwards is dropped: a stitched route
+  never comes back the way it went (an out-and-back's fold aside). Sections
+  on one line (lengths within 10%, 10 points each within 30 m of the other)
+  group, most runs first, 3 per leg. A covered leg always takes a section;
+  ORS routes each run of uncovered legs through the via points between, and
+  each join over 30 m, at most 4 calls a run from the same 12 (a 404 drops
+  that route only). The two combinations nearest the distance are built.
+  They take the 25% rule with generated routes, rank after past runs and
+  before generated ones, are stored like them, and go out as
+  `kind: "generated"` with `history_share` set: a new kind would break hosts
+  holding the old tool list. Without ORS_API_KEY, one needing no join is
+  still offered.
+- A via matched no better than a suburb or city (a Pelias layer other than
+  venue, address or street) is refused, naming the match (`coarseVia`), in
+  every tool that takes a via. A start, end or `toward` may be a suburb.
+  The geocoder asks for venue, address and street first.
 - Crossings: counted from OpenStreetMap through Overpass for every
   candidate, past runs included (so it is queried even without
   `ORS_API_KEY`), one query per snapped 0.02 degree area, cached 7 days,
