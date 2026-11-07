@@ -193,20 +193,22 @@ describe("geocode", () => {
   });
 
   it("falls back to any layer when no venue, address or street matches", async () => {
-    get.mockResolvedValueOnce({ data: { features: [] } }).mockResolvedValueOnce({
-      data: {
-        features: [
-          {
-            geometry: { coordinates: [151.21, -33.87] },
-            properties: {
-              label: "Sydney, NSW, Australia",
-              name: "Sydney",
-              layer: "locality",
+    get
+      .mockResolvedValueOnce({ data: { features: [] } })
+      .mockResolvedValueOnce({
+        data: {
+          features: [
+            {
+              geometry: { coordinates: [151.21, -33.87] },
+              properties: {
+                label: "Sydney, NSW, Australia",
+                name: "Sydney",
+                layer: "locality",
+              },
             },
-          },
-        ],
-      },
-    });
+          ],
+        },
+      });
     const place = await geocode("key", "Anzac Bridge", [37.79, -122.4]);
     expect(place).toEqual({
       label: "Sydney, NSW, Australia",
