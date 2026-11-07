@@ -12,7 +12,7 @@ import {
   osmIndexInfo,
   osmIndexMeta,
 } from "./osmIndex";
-import { refreshOsmIndex } from "./osmIndexRefresh";
+import { refreshOsmIndex, startOsmIndexRefresh } from "./osmIndexRefresh";
 
 const URL_ = "https://example.org/x.osm.pbf";
 const DAY = 86_400_000;
@@ -72,6 +72,23 @@ describe("refreshOsmIndex", () => {
     expect(headers["If-None-Match"]).toBeUndefined();
     expect(osmIndexInfo(T0)).toMatchObject({ state: "ready", age_days: 0 });
     expect(leftovers()).toEqual([]);
+    const lines = errorLog.mock.calls.map(([m]: unknown[]) => String(m));
+    expect(lines).toContain(`OpenStreetMap index: downloading ${URL_}`);
+  });
+
+  it("logs when the extract covers only part of the area", async () => {
+    const area = areaAround([-33.87, 151.2], 25);
+    const bytes = osmPbfBytes({
+      nodes: [{ id: 1, lat: -33.87, lon: 151.2 }],
+      bbox: { ...area, north: -33.8, east: area.east + 1 },
+    });
+    const fetch = vi.fn(async () => new Response(bytes as unknown as BodyInit));
+    expect(await refreshOsmIndex({ fetch, now: () => T0 })).toBe("built");
+    expect(
+      errorLog.mock.calls.some(([m]: unknown[]) =>
+        /covering only .* of the requested area/.test(String(m)),
+      ),
+    ).toBe(true);
   });
 
   it("skips a check within a week, then asks conditionally", async () => {
@@ -93,6 +110,13 @@ describe("refreshOsmIndex", () => {
       state: "ready",
       age_days: 0,
     });
+    expect(
+      errorLog.mock.calls.some(
+        ([m]: unknown[]) =>
+          String(m) ===
+          `OpenStreetMap index: downloading ${URL_} (if changed since Sat, 31 Oct 2026 16:21:44 GMT)`,
+      ),
+    ).toBe(true);
   });
 
   it("rebuilds for a new HOME_START without conditional headers", async () => {
@@ -162,5 +186,42 @@ describe("refreshOsmIndex", () => {
     expect(
       await refreshOsmIndex({ fetch: async () => ok(), now: () => T0 }),
     ).toBe("built");
+  });
+});
+
+describe("startOsmIndexRefresh", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("says it is off, and starts nothing, without the settings", async () => {
+    vi.useFakeTimers();
+    const fetch = vi.fn(async () => new Response("no", { status: 500 }));
+    vi.stubGlobal("fetch", fetch);
+    vi.stubEnv("OSM_EXTRACT_URL", "");
+    startOsmIndexRefresh();
+    await vi.advanceTimersByTimeAsync(2 * DAY);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(String(errorLog.mock.calls[0]![0])).toMatch(
+      /^OpenStreetMap index: off/,
+    );
+  });
+
+  it("refreshes at once, then every 24 hours", async () => {
+    vi.useFakeTimers();
+    const fetch = vi.fn(async () => new Response("no", { status: 500 }));
+    vi.stubGlobal("fetch", fetch);
+    startOsmIndexRefresh();
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() =>
+      expect(
+        errorLog.mock.calls.some(([m]: unknown[]) =>
+          /refresh failed/.test(String(m)),
+        ),
+      ).toBe(true),
+    );
+    await vi.advanceTimersByTimeAsync(DAY);
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
   });
 });

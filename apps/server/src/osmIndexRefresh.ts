@@ -88,6 +88,9 @@ async function refresh(
   const started = now();
   try {
     await mkdir(dir, { recursive: true });
+    console.error(
+      `OpenStreetMap index: downloading ${url}${headers["If-None-Match"] || headers["If-Modified-Since"] ? ` (if changed since ${meta?.last_modified || meta?.etag})` : ""}`,
+    );
     const response = await fetchImpl(url, {
       headers,
       signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
@@ -118,8 +121,12 @@ async function refresh(
     await rename(tmp, osmIndexPath());
     // Close after the rename: a reader during the await would otherwise reopen and cache the old file.
     closeOsmIndex();
+    const partial =
+      areaKey(result.coverage) === areaKey(area)
+        ? ""
+        : `, covering only ${areaKey(result.coverage)} of the requested area`;
     console.error(
-      `OpenStreetMap index: ${result.ways} ways and ${result.stops} crossing stops within ${OSM_INDEX_RADIUS_KM} km of HOME_START, data from ${result.data_date}, built in ${Math.round((now() - started) / 1000)} s`,
+      `OpenStreetMap index: ${result.ways} ways and ${result.stops} crossing stops within ${OSM_INDEX_RADIUS_KM} km of HOME_START${partial}, data from ${result.data_date}, built in ${Math.round((now() - started) / 1000)} s`,
     );
     return "built";
   } catch (error) {

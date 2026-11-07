@@ -32,9 +32,14 @@ export interface OsmRelation {
   tags: Tags;
   members: OsmMember[];
 }
+export interface HeaderInfo {
+  replication_timestamp: number | null;
+  /** The extract's bounding box, null when the header carries none. */
+  bbox: { south: number; west: number; north: number; east: number } | null;
+}
 /** What a pass wants; a group kind with no callback is skipped undecoded. */
 export interface PbfVisitor {
-  header?(h: { replication_timestamp: number | null }): void;
+  header?(h: HeaderInfo): void;
   node?(n: OsmNode): void;
   way?(w: OsmWay): void;
   relation?(r: OsmRelation): void;
@@ -106,29 +111,35 @@ function blobData(buf: Uint8Array): Uint8Array {
     (tag, b, pbf) => {
       if (tag === 1) b.raw = pbf.readBytes();
       else if (tag === 3) b.zlib = pbf.readBytes();
-      else if (tag >= 4) b.other = true;
     },
-    {
-      raw: null as Uint8Array | null,
-      zlib: null as Uint8Array | null,
-      other: false,
-    },
+    { raw: null as Uint8Array | null, zlib: null as Uint8Array | null },
   );
   if (blob.raw) return blob.raw;
-  if (blob.zlib) return inflateSync(blob.zlib);
+  if (blob.zlib) {
+    try {
+      return inflateSync(blob.zlib, { maxOutputLength: MAX_BLOB_BYTES });
+    } catch (error) {
+      if (error instanceof RangeError) throw new Error("Corrupt .osm.pbf file");
+      throw error;
+    }
+  }
   throw new Error(
     "Unsupported .osm.pbf compression: only zlib and uncompressed blobs are read (Geofabrik and BBBike use zlib)",
   );
 }
 
-function readHeaderBlock(buf: Uint8Array): {
-  replication_timestamp: number | null;
-} {
+function readHeaderBlock(buf: Uint8Array): HeaderInfo {
   return new PbfReader(buf).readFields(
     (tag, h, pbf) => {
-      if (tag === 32) h.replication_timestamp = pbf.readVarint(true);
+      if (tag === 1) {
+        // HeaderBBox: left, right, top, bottom as nanodegrees.
+        const b = pbf.readMessage((t, box: number[], q) => {
+          box[t] = q.readSVarint() * 1e-9;
+        }, []);
+        h.bbox = { west: b[1]!, east: b[2]!, north: b[3]!, south: b[4]! };
+      } else if (tag === 32) h.replication_timestamp = pbf.readVarint(true);
     },
-    { replication_timestamp: null as number | null },
+    { replication_timestamp: null, bbox: null } as HeaderInfo,
   );
 }
 

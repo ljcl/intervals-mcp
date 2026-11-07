@@ -65,6 +65,11 @@ describe("wayClass", () => {
     [{ natural: "water" }, "green_edge"],
     [{ natural: "coastline" }, "green_edge"],
     [{ waterway: "river" }, "green_edge"],
+    [{ waterway: "stream" }, "green_edge"],
+    [{ waterway: "drain" }, null],
+    [{ waterway: "ditch" }, null],
+    [{ waterway: "river", tunnel: "culvert" }, null],
+    [{ waterway: "stream", tunnel: "yes" }, null],
   ] as const)("%o is %s", (tags, expected) => {
     expect(wayClass(tags)).toBe(expected);
   });
@@ -170,6 +175,7 @@ describe("buildOsmIndex", () => {
     expect(meta).toEqual({
       schema_version: "1",
       area: areaKey(AREA),
+      coverage: areaKey(AREA),
       source_url: SOURCE.url,
       etag: SOURCE.etag,
       last_modified: SOURCE.last_modified,
@@ -199,5 +205,52 @@ describe("buildOsmIndex", () => {
         ],
       }),
     ).rejects.toThrow(/not sorted by id/);
+  });
+
+  it("keeps only the part of the area the header's bbox covers", async () => {
+    const west = at(150, 0).lon;
+    const { result, db } = await build({
+      bbox: { south: AREA.south, west, north: AREA.north, east: AREA.east + 1 },
+      nodes: [
+        { id: 1, ...at(0, 0) },
+        { id: 2, ...at(100, 0) },
+        { id: 3, ...at(200, 0) },
+        { id: 4, ...at(300, 0) },
+        { id: 5, ...at(250, 0), tags: { highway: "crossing" } },
+        { id: 6, ...at(50, 0), tags: { highway: "crossing" } },
+      ],
+      ways: [{ id: 100, refs: [1, 2, 3, 4], tags: { highway: "footway" } }],
+    });
+    const coverage = { ...AREA, west };
+    const meta = Object.fromEntries(
+      (
+        db.prepare("SELECT key, value FROM meta").all() as Array<{
+          key: string;
+          value: string;
+        }>
+      ).map((r) => [r.key, r.value]),
+    );
+    expect(meta.area).toBe(areaKey(AREA));
+    expect(meta.coverage).toBe(areaKey(coverage));
+    expect(areaKey(result.coverage)).toBe(areaKey(coverage));
+    const way = db.prepare("SELECT points FROM ways").get() as {
+      points: Uint8Array;
+    };
+    expect(way.points.length / 16).toBe(2);
+    expect(
+      (
+        db.prepare("SELECT count(*) AS n FROM stop_nodes").get() as {
+          n: number;
+        }
+      ).n,
+    ).toBe(1);
+    db.close();
+  });
+
+  it("refuses an extract with no node within the area", async () => {
+    await expect(build({ nodes: [{ id: 1, ...far }] })).rejects.toThrow(
+      "The extract has no data within 25 km of HOME_START",
+    );
+    await expect(build({})).rejects.toThrow(/no data within 25 km/);
   });
 });

@@ -1,9 +1,12 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { deflateSync } from "node:zlib";
+import { PbfWriter } from "pbf";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type FixtureExtract, osmPbfBytes } from "./__fixtures__/osmPbf";
 import {
+  type HeaderInfo,
   type OsmNode,
   type OsmRelation,
   type OsmWay,
@@ -69,15 +72,17 @@ async function readAll(bytes: Uint8Array) {
   const ways: OsmWay[] = [];
   const relations: OsmRelation[] = [];
   let timestamp: number | null | undefined;
+  let bbox: HeaderInfo["bbox"] | undefined;
   await readOsmPbf(await fileOf(bytes), {
     header: (h) => {
       timestamp = h.replication_timestamp;
+      bbox = h.bbox;
     },
     node: (n) => nodes.push(n),
     way: (w) => ways.push(w),
     relation: (r) => relations.push(r),
   });
-  return { nodes, ways, relations, timestamp };
+  return { nodes, ways, relations, timestamp, bbox };
 }
 
 describe("readOsmPbf", () => {
@@ -142,4 +147,57 @@ describe("readOsmPbf", () => {
     new DataView(bytes.buffer).setUint32(0, 1 << 20);
     await expect(readAll(bytes)).rejects.toThrow(/Corrupt \.osm\.pbf file/);
   });
+
+  it("refuses a blob header claiming more than 32 MiB", async () => {
+    await expect(rawBlock(blobHeader(33 * 1024 * 1024))).rejects.toThrow(
+      /Corrupt \.osm\.pbf file/,
+    );
+  });
+
+  it("refuses a zlib blob that inflates past 32 MiB", async () => {
+    const blob = new PbfWriter();
+    blob.writeBytesField(3, deflateSync(Buffer.alloc(33 * 1024 * 1024)));
+    const body = blob.finish();
+    await expect(rawBlock(blobHeader(body.length), body)).rejects.toThrow(
+      /Corrupt \.osm\.pbf file/,
+    );
+  });
+
+  it("reads the header's bounding box, or null without one", async () => {
+    const bbox = { south: -34.1, west: 150.9, north: -33.6, east: 151.4 };
+    let got: unknown;
+    await readOsmPbf(await fileOf(osmPbfBytes({ ...EXTRACT, bbox })), {
+      header: (h) => {
+        got = h.bbox;
+      },
+    });
+    expect(got).toEqual({
+      south: expect.closeTo(-34.1, 9),
+      west: expect.closeTo(150.9, 9),
+      north: expect.closeTo(-33.6, 9),
+      east: expect.closeTo(151.4, 9),
+    });
+    expect((await readAll(osmPbfBytes(EXTRACT))).bbox).toBeNull();
+  });
 });
+
+function blobHeader(datasize: number): Uint8Array {
+  const head = new PbfWriter();
+  head.writeStringField(1, "OSMData");
+  head.writeVarintField(3, datasize);
+  const bytes = head.finish();
+  const out = new Uint8Array(4 + bytes.length);
+  new DataView(out.buffer).setUint32(0, bytes.length);
+  out.set(bytes, 4);
+  return out;
+}
+
+async function rawBlock(
+  header: Uint8Array,
+  body: Uint8Array = new Uint8Array(0),
+) {
+  const bytes = new Uint8Array(header.length + body.length);
+  bytes.set(header);
+  bytes.set(body, header.length);
+  return readAll(bytes);
+}

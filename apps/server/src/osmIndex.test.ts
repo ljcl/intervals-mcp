@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type FixtureExtract,
@@ -64,8 +65,10 @@ async function index(opts: {
   }>;
   stops?: Array<{ xy: [number, number]; tags: Record<string, string> }>;
   relations?: FixtureExtract["relations"];
+  bbox?: FixtureExtract["bbox"];
 }) {
-  const nodes: FixtureNode[] = [];
+  // An extract with nothing in the area does not build; this one node is the minimum.
+  const nodes: FixtureNode[] = [{ id: nextId++, lat: HOME[0], lon: HOME[1] }];
   const ways = (opts.ways ?? []).map((w) => {
     const refs = w.xy.map(([x, y]) => {
       const [lat, lon] = pt(x, y);
@@ -81,7 +84,15 @@ async function index(opts: {
   }
   await mkdir(osmIndexDir(), { recursive: true });
   const pbf = join(dir, "x.osm.pbf");
-  await writeFile(pbf, osmPbfBytes({ nodes, ways, relations: opts.relations }));
+  await writeFile(
+    pbf,
+    osmPbfBytes({
+      nodes,
+      ways,
+      relations: opts.relations,
+      bbox: opts.bbox,
+    }),
+  );
   await buildOsmIndex(
     pbf,
     osmIndexPath(),
@@ -233,11 +244,49 @@ describe("routeOsmStats", () => {
   });
 });
 
+describe("coverage", () => {
+  it("is null for a track leaving the part the extract covers", async () => {
+    const area = areaAround(HOME, 25);
+    await index({
+      bbox: { ...area, west: pt(500, 0)[1], east: area.east + 1 },
+    });
+    expect(routeOsmStats(track([0, 0], [1000, 0]))).toBeNull();
+    expect(routeOsmStats(track([600, 0], [1000, 0]))).not.toBeNull();
+  });
+});
+
+describe("the settings gate", () => {
+  it("stops serving a leftover index once a setting is unset", async () => {
+    await index({});
+    expect(routeOsmStats(ALONG)).not.toBeNull();
+    vi.stubEnv("OSM_EXTRACT_URL", "");
+    expect(routeOsmStats(ALONG)).toBeNull();
+    vi.stubEnv("OSM_EXTRACT_URL", "https://example.org/x.osm.pbf");
+    vi.stubEnv("HOME_START", "");
+    expect(routeOsmStats(ALONG)).toBeNull();
+    vi.stubEnv("HOME_START", `${HOME[0]},${HOME[1]}`);
+    expect(routeOsmStats(ALONG)).not.toBeNull();
+  });
+});
+
 describe("a missing index", () => {
+  it("is not read when its schema version differs", async () => {
+    await index({});
+    const db = new DatabaseSync(osmIndexPath());
+    db.exec("UPDATE meta SET value = '0' WHERE key = 'schema_version'");
+    db.close();
+    closeOsmIndex();
+    expect(routeOsmStats(ALONG)).toBeNull();
+    expect(osmIndexInfo()).toEqual({ state: "missing" });
+  });
+
   it("is seen once built, without closeOsmIndex", async () => {
     expect(routeOsmStats(ALONG)).toBeNull();
     const pbf = join(dir, "y.osm.pbf");
-    await writeFile(pbf, osmPbfBytes({ nodes: [], ways: [] }));
+    await writeFile(
+      pbf,
+      osmPbfBytes({ nodes: [{ id: 1, lat: HOME[0], lon: HOME[1] }] }),
+    );
     await mkdir(osmIndexDir(), { recursive: true });
     await buildOsmIndex(
       pbf,

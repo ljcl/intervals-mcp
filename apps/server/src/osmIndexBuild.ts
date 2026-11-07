@@ -14,6 +14,7 @@ import {
   inArea,
   METERS_PER_DEG_LAT,
   METERS_PER_DEG_LNG_AT_EQUATOR,
+  OSM_INDEX_RADIUS_KM,
   OSM_SCHEMA_VERSION,
   type OsmArea,
   STOP_MERGE_M,
@@ -46,7 +47,12 @@ function isGreen(t: Tags): boolean {
     t.leisure === "park" ||
     t.natural === "water" ||
     t.natural === "coastline" ||
-    t.waterway !== undefined
+    // Culverts and tunnels are not visible, and drains and ditches are not scenery.
+    (t.waterway !== undefined &&
+      t.waterway !== "drain" &&
+      t.waterway !== "ditch" &&
+      t.tunnel !== "culvert" &&
+      t.tunnel !== "yes")
   );
 }
 
@@ -188,6 +194,8 @@ export interface BuildResult {
   ways: number;
   stops: number;
   data_date: string;
+  /** The part of the area the extract covers; the area itself when all of it. */
+  coverage: OsmArea;
 }
 
 export async function buildOsmIndex(
@@ -215,17 +223,34 @@ export async function buildOsmIndex(
     const nodes = new NodeTable();
     const crossings: Crossing[] = [];
     let replication = null as number | null;
+    // Only what the extract covers is measured: confident zeros beyond it would rank first.
+    let coverage = area;
+    let inAreaNodes = 0;
     await readOsmPbf(pbfPath, {
       header(h) {
         replication = h.replication_timestamp;
+        if (h.bbox)
+          coverage = {
+            south: Math.max(area.south, h.bbox.south),
+            west: Math.max(area.west, h.bbox.west),
+            north: Math.min(area.north, h.bbox.north),
+            east: Math.min(area.east, h.bbox.east),
+          };
       },
       node(n) {
         if (!inArea(area, n.lat, n.lon)) return;
+        inAreaNodes++;
+        if (!inArea(coverage, n.lat, n.lon)) return;
         nodes.add(n.id, n.lat, n.lon);
         const signal = crossingOf(n.tags);
         if (signal !== null) crossings.push({ lat: n.lat, lng: n.lon, signal });
       },
     });
+
+    if (inAreaNodes === 0)
+      throw new Error(
+        `The extract has no data within ${OSM_INDEX_RADIUS_KM} km of HOME_START`,
+      );
 
     const insertWay = db.prepare(
       "INSERT INTO ways (class, ring, points) VALUES (?, ?, ?)",
@@ -302,6 +327,7 @@ export async function buildOsmIndex(
     for (const [key, value] of Object.entries({
       schema_version: OSM_SCHEMA_VERSION,
       area: areaKey(area),
+      coverage: areaKey(coverage),
       source_url: source.url,
       etag: source.etag,
       last_modified: source.last_modified,
@@ -311,7 +337,7 @@ export async function buildOsmIndex(
     }))
       insertMeta.run(key, value);
     db.exec("COMMIT");
-    return { ways, stops: new Set(stopIds).size, data_date };
+    return { ways, stops: new Set(stopIds).size, data_date, coverage };
   } finally {
     db.close();
   }

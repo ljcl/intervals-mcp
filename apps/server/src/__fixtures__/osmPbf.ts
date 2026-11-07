@@ -36,6 +36,8 @@ export interface FixtureExtract {
   ways?: FixtureWay[];
   relations?: FixtureRelation[];
   replicationTimestamp?: number;
+  /** Written as the header's HeaderBBox. */
+  bbox?: { south: number; west: number; north: number; east: number };
   compression?: "zlib" | "raw" | "lzma";
 }
 
@@ -47,6 +49,19 @@ export function osmPbfBytes(x: FixtureExtract): Uint8Array {
   const header = new PbfWriter();
   header.writeStringField(4, "OsmSchema-V0.6");
   header.writeStringField(4, "DenseNodes");
+  if (x.bbox) {
+    const b = x.bbox;
+    header.writeMessage(
+      1,
+      (_: null, m: PbfWriter) => {
+        m.writeSVarintField(1, Math.round(b.west * 1e9));
+        m.writeSVarintField(2, Math.round(b.east * 1e9));
+        m.writeSVarintField(3, Math.round(b.north * 1e9));
+        m.writeSVarintField(4, Math.round(b.south * 1e9));
+      },
+      null,
+    );
+  }
   if (x.replicationTimestamp !== undefined)
     header.writeVarintField(32, x.replicationTimestamp);
   const parts = [fileBlock("OSMHeader", header.finish(), x.compression)];

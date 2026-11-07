@@ -110,7 +110,8 @@ const HEADING_TOLERANCE_RAD = (HEADING_TOLERANCE_DEG * Math.PI) / 180;
 
 interface OpenIndex {
   db: DatabaseSync;
-  area: OsmArea;
+  /** The part of the area the extract covers; reads outside it are not measured. */
+  coverage: OsmArea;
   meta: Record<string, string>;
 }
 
@@ -119,6 +120,7 @@ let current: OpenIndex | null | undefined;
 let reportedUnreadable = false;
 
 function openIndex(): OpenIndex | null {
+  if (!getOsmExtractUrl() || !getHomeStart()) return null;
   if (current !== undefined) return current;
   const path = osmIndexPath();
   // Not cached: a build that lands later must be seen without a restart.
@@ -131,14 +133,16 @@ function openIndex(): OpenIndex | null {
       value: string;
     }>;
     const meta = Object.fromEntries(rows.map((r) => [r.key, r.value]));
-    const [south, west, north, east] = (meta.area ?? "").split(",").map(Number);
+    const [south, west, north, east] = (meta.coverage ?? meta.area ?? "")
+      .split(",")
+      .map(Number);
     if (meta.schema_version !== OSM_SCHEMA_VERSION || east === undefined) {
       db.close();
       return null;
     }
     current = {
       db,
-      area: { south: south!, west: west!, north: north!, east },
+      coverage: { south: south!, west: west!, north: north!, east },
       meta,
     };
   } catch (error) {
@@ -268,13 +272,14 @@ const round = (v: number, places: number) =>
 
 /**
  * The OpenStreetMap measures of one route; null without an index, when any
- * point lies outside its area, or for a track shorter than one sample.
+ * point lies outside its coverage, or for a track shorter than one sample.
  */
 export function routeOsmStats(track: RouteTrack): OsmStats | null {
   const index = openIndex();
   if (!index) return null;
   const coords = track.coordinates;
-  if (coords.some(([lat, lng]) => !inArea(index.area, lat, lng))) return null;
+  if (coords.some(([lat, lng]) => !inArea(index.coverage, lat, lng)))
+    return null;
   const [lat0, lng0] = coords[0] ?? [0, 0];
   const kx = Math.cos((lat0 * Math.PI) / 180) * METERS_PER_DEG_LNG_AT_EQUATOR;
   const project = (lat: number, lng: number): [number, number] => [

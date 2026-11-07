@@ -271,6 +271,8 @@ describe("checkConfig", () => {
     process.env.PORT = "3000";
     process.env.INTERVALS_ATHLETE_ID = "i12345";
     process.env.MCP_AUTH_TOKEN = "t".repeat(64);
+    delete process.env.OSM_EXTRACT_URL;
+    delete process.env.HOME_START;
   }
 
   it("passes a valid environment", () => {
