@@ -307,6 +307,21 @@ describe("stitchedCandidate", () => {
     expect(stitchedCandidate(plan!, [], "loop")).toBeNull();
   });
 
+  it("counts climb per piece, not across the seam between two sections", () => {
+    const [first] = legOptions([run("r1", [S, A])], S, A);
+    const [second] = legOptions([run("r2", [A, B])], A, B);
+    first!.track.altitude = first!.track.distance.map(() => 10);
+    second!.track.altitude = second!.track.distance.map(() => 30);
+    const [plan] = planStitches(
+      [[first!], [second!]],
+      [S, A, B],
+      2000,
+      "point-to-point",
+    );
+    expect(plan!.pieces.map((p) => p.kind)).toEqual(["section", "section"]);
+    expect(stitchedCandidate(plan!, [], "point-to-point")!.climb_m).toBe(0);
+  });
+
   it("runs an out-and-back's way out there and back", () => {
     const [plan] = planStitches(
       [legOptions([run("r1", [S, A])], S, A)],

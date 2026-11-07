@@ -233,13 +233,13 @@ export function planStitches(
 ): StitchPlan[] {
   if (options.every((o) => o.length === 0)) return [];
   const laps = shape === "out-and-back" ? 2 : 1;
-  // retraces.has("l1.i|l2.j"): leg l2's option j is leg l1's option i reversed.
+  // retraces.has("l1.i|l2.j"): leg l2's option j repeats leg l1's option i's line (sameLine ignores direction, so either way).
   const retraces = new Set<string>();
   for (let l1 = 0; l1 < options.length; l1++)
     for (let l2 = l1 + 1; l2 < options.length; l2++)
       for (const [i, o1] of options[l1]!.entries())
         for (const [j, o2] of options[l2]!.entries())
-          if (sameLine(reverseTrack(o1.track), o2.track))
+          if (sameLine(o1.track, o2.track))
             retraces.add(`${l1}.${i}|${l2}.${j}`);
   const combos: {
     choice: (LegOption | null)[];
@@ -301,6 +301,8 @@ export function stitchedCandidate(
   shape: RouteShape,
 ): RouteCandidate | null {
   const tracks: RouteTrack[] = [];
+  // Climb is summed per piece: the seam between two devices' or ORS's altitudes is not climb.
+  let climb_m = 0;
   const runs = new Map<string, RunRef>();
   let section_m = 0;
   let fill_m = 0;
@@ -310,9 +312,11 @@ export function stitchedCandidate(
       const fill = fills[next++];
       if (!fill) return null;
       tracks.push(fill);
+      climb_m += trackClimb(fill.altitude);
       fill_m += trackLength(fill);
     } else {
       tracks.push(piece.option.track);
+      climb_m += trackClimb(piece.option.track.altitude);
       section_m += trackLength(piece.option.track);
       const run = piece.option.runs[0]!;
       runs.set(run.id, run);
@@ -331,7 +335,7 @@ export function stitchedCandidate(
     date: null,
     shape,
     distance_m: Math.round(trackLength(track)),
-    climb_m: trackClimb(track.altitude),
+    climb_m: climb_m * laps,
     path_share: null,
     history_share: section_m / trackLength(way),
     crossings_per_km: null,
