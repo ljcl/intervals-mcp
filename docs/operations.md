@@ -13,7 +13,7 @@ rate limits, and endpoint security. For the code behind these see
 | `TZ` | No | IANA zone for today and default date ranges, e.g. `Australia/Sydney`. Unset, blank or exactly `UTC` (compose's default) means the athlete's intervals.icu time zone ([Time zone](#time-zone)); `Etc/UTC` pins UTC; an unknown zone stops startup |
 | `MCP_AUTH_TOKEN` | No | Shared secret; when set, `/mcp` and the detailed half of `/health` require `Authorization: Bearer <token>` (or `?token=` for `/health`). Use at least 32 characters; a shorter one logs a startup `WARNING`, and surrounding whitespace stops startup |
 | `PORT` | No | Server port, 1-65535; blank or unset means `3000`. The image's `HEALTHCHECK` reads it |
-| `ORS_API_KEY` | No | OpenRouteService key (free Standard plan, 200 routes a day) for generated routes in `suggest-run-route`. Unset, it offers past runs only and place names cannot be looked up |
+| `ORS_API_KEY` | No | OpenRouteService key (free Standard plan, 200 routes a day) for generated routes in `suggest-run-route`. Unset, it offers past runs and stitched routes only and place names cannot be looked up |
 | `HOME_START` | No | Usual run start as `lat,lng`, e.g. `37.79,-122.39`. Unset, the start is inferred from recent GPS runs; a malformed value stops startup |
 | `DATA_DIR` | No | Directory for stored routes (`stitch-route`, `amend-route`, and the routes `suggest-run-route` generates). Default `./data`; the image sets `/data`, which `docker-compose.yml` mounts as the named volume `route-data` |
 | `ROUTE_RETENTION_DAYS` | No | Days a stored route that is not read or changed is kept, 1-3650 (default 30). A suggested route nobody used is kept 3 days. A bad value stops startup |

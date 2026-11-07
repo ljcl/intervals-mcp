@@ -73,6 +73,7 @@ import {
 } from "./routeStore";
 import {
   type Budget,
+  coarseVia,
   fitToTarget,
   GENERATED_DISTANCE_TOLERANCE,
   ORS_CALL_BUDGET,
@@ -249,6 +250,15 @@ async function place(ctx: Ctx, text: string): Promise<Place> {
       throw new RouteBuildError(error.message);
     throw error;
   }
+}
+
+/** A via point: refused when the lookup placed it no better than a suburb (`coarseVia`). */
+async function viaPlace(ctx: Ctx, text: string): Promise<Place> {
+  // `place` swaps the label for the asked text; the match keeps what was found.
+  const found = await place(ctx, text);
+  const problem = coarseVia(found, text);
+  if (problem) throw new RouteBuildError(problem);
+  return found;
 }
 
 /** A "toward" text: a compass direction or degrees, else a place. */
@@ -965,7 +975,7 @@ export async function stitchRoute(
         );
       const vias = await Promise.all(
         (segment.via ?? []).map(async (text) => {
-          const found = await place(ctx, text);
+          const found = await viaPlace(ctx, text);
           return { point: found.point, label: found.label, match: found.match };
         }),
       );
@@ -1207,7 +1217,7 @@ async function movedPoint(
   op: Extract<AmendOperation, { op: "move_via" }>,
   from: LatLng,
 ): Promise<Pick<Place, "point" | "match">> {
-  if (op.to) return place(ctx, op.to);
+  if (op.to) return viaPlace(ctx, op.to);
   if (op.shift) {
     const heading = parseHeading(op.shift.direction);
     if (heading === null)
@@ -1234,7 +1244,7 @@ async function applyOperation(
   switch (op.op) {
     case "insert_via": {
       const at = kmToM(op.km, length, "km");
-      const found = await place(ctx, op.place);
+      const found = await viaPlace(ctx, op.place);
       const marks = anchors(segments, spans);
       const before = Math.max(
         ...marks.filter((m) => m < at - SAME_M),
@@ -1329,7 +1339,7 @@ async function applyOperation(
             ];
           }
           if (op.through) {
-            const found = await place(ctx, op.through);
+            const found = await viaPlace(ctx, op.through);
             what = `a section through ${found.label}`;
             return [
               await generatedSegment(ctx, a, b, [
@@ -1696,6 +1706,7 @@ const round3 = (value: number) => Math.round(value * 1000) / 1000;
 const round6 = (value: number) => Math.round(value * 1e6) / 1e6;
 
 /** Pelias layers precise enough to route through without a second look. */
+// Warns on more than orsClient's PRECISE_LAYERS, which refuses (a street routes but may be off); thresholds differ on purpose.
 const PRECISE_MATCHES = new Set(["venue", "address"]);
 /** Two looked-up vias this close probably matched the same thing. */
 const SAME_LOOKUP_M = 50;

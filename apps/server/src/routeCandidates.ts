@@ -19,7 +19,8 @@ export type RouteShape = "loop" | "out-and-back" | "point-to-point";
 export type Terrain = "any" | "flat" | "rolling" | "hilly" | "hill-repeats";
 
 export interface RouteCandidate {
-  kind: "past" | "generated";
+  /** "stitched": sections of past runs joined by ORS (historyLegs.ts); sent as "generated" on the wire. */
+  kind: "past" | "generated" | "stitched";
   /** The past run's activity id; null for a generated route. */
   activity_id: string | null;
   name: string;
@@ -30,6 +31,8 @@ export interface RouteCandidate {
   climb_m: number;
   /** Generated routes only: share on paths, footways, tracks, cycleways. */
   path_share: number | null;
+  /** Stitched routes only: share (0-1) of the route on sections of past runs. */
+  history_share?: number;
   /** Crossings and signals per km (OpenStreetMap); null when not counted. */
   crossings_per_km: number | null;
   /** Set by the engine for terrain hill-repeats. */

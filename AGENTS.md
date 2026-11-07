@@ -111,10 +111,12 @@ breaking them has shipped bugs — do not work around them locally.
   Stream wire precision: `STREAM_DECIMALS` in `streamPrecision.ts`.
   Hill for repeats: `bestRepeatHill` in `hillAnalysis.ts`. Start clusters:
   `startClusters.ts`. Route candidate rules (past-run matching, ranking,
-  terrain bands, generated climb): `routeCandidates.ts`. Stored-route track
-  math (cut, join, version diff, carrying a km between versions, the 30 m
-  join gap, dead-end spurs): `routeGeometry.ts`; stored-route rules and the summary the
-  text and the map share: `routeBuilder.ts`. Road crossings per
+  terrain bands, generated climb): `routeCandidates.ts`. Stitched via legs
+  (passes, sections, same line, combinations, fills): `historyLegs.ts`.
+  Stored-route track math (cut, join, version diff, carrying a km between
+  versions, the 30 m join gap, dead-end spurs): `routeGeometry.ts`;
+  stored-route rules and the summary the text and the map share:
+  `routeBuilder.ts`. Road crossings per
   km: `crossingsPerKm` in `overpassClient.ts`.
   Weather, dew point and the weather note: `activityWeather.ts` (FIT
   humidity read by `fitWeather.ts`). Two runs' per-km difference and its

@@ -115,7 +115,46 @@ describe("suggest-run-route", () => {
     expect(parsed.runs[0]!.start).toMatchObject({ lat: 37.795, lng: -122.394 });
     const [past, generated] = parsed.runs[0]!.candidates;
     expect(past!.route_id).toBeNull();
+    expect(past!.history_share).toBeNull();
+    expect(generated!.history_share).toBeNull();
     expect(generated!.route_id).toMatch(/^s[a-z2-7]{10}$/);
+  });
+
+  it("sends a stitched route as generated, with its share from past runs", async () => {
+    const base = suggestions.runs[0]!;
+    vi.mocked(loadRouteSuggestions).mockResolvedValue({
+      ...suggestions,
+      runs: [
+        {
+          ...base,
+          candidates: [
+            {
+              ...base.candidates[1]!,
+              kind: "stitched",
+              name: "From your runs",
+              path_share: null,
+              history_share: 0.914,
+              hill: null,
+              summary:
+                "From 2 past runs: Glebe loop 2026-10-30, Bay run 2026-10-12",
+            },
+          ],
+        },
+      ],
+    });
+    const result = await suggestRunRouteTool.execute(
+      suggestRunRouteTool.inputSchema.parse({}),
+      "k",
+    );
+    expect(result.content[0]!.text).toMatch(
+      /1\. From your runs \(route s[a-z2-7]{10}\): 3\.2 km \(\+0\.0 km\), 22 m climb, 91% from your runs, From 2 past runs: Glebe loop 2026-10-30, Bay run 2026-10-12/,
+    );
+    const parsed = RouteSuggestionsOutputSchema.parse(result.structuredContent);
+    expect(parsed.runs[0]!.candidates[0]).toMatchObject({
+      kind: "generated",
+      history_share: 0.91,
+    });
+    expect(parsed.runs[0]!.candidates[0]!.route_id).toMatch(/^s[a-z2-7]{10}$/);
   });
 
   it("takes one via place or an ordered list, and lists them in order", async () => {

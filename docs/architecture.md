@@ -489,7 +489,12 @@ athlete's own thirds of climb per km, 8 and 20 m/km under 10 runs) and the
 `route-map` suggestion mode (`buildSuggestionsMapData`), so the text and the
 map offer the same routes. Its ORS budget is per call (12 calls, at most 2
 per seed), and the first non-cancellation ORS failure stops generation for
-the rest of that call, keeping the routes already made.
+the rest of that call, keeping the routes already made. `historyLegs.ts`
+holds the stitched via route rules: where a run passes an anchor, the section
+between two (the run's own direction first), the no-retrace rule, same-line
+grouping, which combinations are built and where ORS fills. `coarseVia`
+(`routeSuggestions.ts`) refuses a via placed no better than a suburb, for
+every tool that takes one.
 
 **Stored routes have one home per rule.** `routeStore.ts` is the only
 module that reads or writes the route files (see [Stored routes](#stored-routes)).

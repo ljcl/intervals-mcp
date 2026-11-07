@@ -6,6 +6,7 @@ import roundTripFixture from "./__fixtures__/ors/round-trip-sf.json";
 import { CallCancelledError } from "./callScope";
 import { HttpError, orsApi } from "./fetchClient";
 import {
+  GEOCODE_CIRCLE_KM,
   geocode,
   OrsApiError,
   orsRoute,
@@ -163,12 +164,17 @@ describe("geocode", () => {
         type: "street",
       },
     });
+    expect(get).toHaveBeenCalledTimes(1);
     expect(get.mock.calls[0]![1]).toMatchObject({
       params: {
         text: "Embarcadero, San Francisco",
         size: 1,
+        layers: "venue,address,street",
         "focus.point.lat": 37.79,
         "focus.point.lon": -122.4,
+        "boundary.circle.lat": 37.79,
+        "boundary.circle.lon": -122.4,
+        "boundary.circle.radius": GEOCODE_CIRCLE_KM,
       },
     });
   });
@@ -187,10 +193,49 @@ describe("geocode", () => {
       "Looking up a place stopped: the tool call was cancelled.",
     );
     expect((error as Error).message).not.toMatch(/\d+\.\d+/);
+    expect(get).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to any layer when no venue, address or street matches", async () => {
+    get
+      .mockResolvedValueOnce({ data: { features: [] } })
+      .mockResolvedValueOnce({
+        data: {
+          features: [
+            {
+              geometry: { coordinates: [151.21, -33.87] },
+              properties: {
+                label: "Sydney, NSW, Australia",
+                name: "Sydney",
+                layer: "locality",
+              },
+            },
+          ],
+        },
+      });
+    const place = await geocode("key", "Anzac Bridge", [37.79, -122.4]);
+    expect(place).toEqual({
+      label: "Sydney, NSW, Australia",
+      point: [-33.87, 151.21],
+      match: { query: "Anzac Bridge", name: "Sydney", type: "locality" },
+    });
+    expect(get).toHaveBeenCalledTimes(2);
+    expect(get.mock.calls[1]![1]!.params).not.toHaveProperty("layers");
+    expect(get.mock.calls[1]![1]!.params).not.toHaveProperty(
+      "boundary.circle.radius",
+    );
   });
 
   it("is null when nothing matches", async () => {
     get.mockResolvedValue({ data: { features: [] } });
+    expect(await geocode("key", "zzzz", [37.79, -122.4])).toBeNull();
+    expect(get).toHaveBeenCalledTimes(2);
+  });
+
+  it("makes one unfiltered request without a focus point", async () => {
+    get.mockResolvedValue({ data: { features: [] } });
     expect(await geocode("key", "zzzz", null)).toBeNull();
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(get.mock.calls[0]![1]!.params).not.toHaveProperty("layers");
   });
 });

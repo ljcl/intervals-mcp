@@ -27,6 +27,13 @@ export const ROUND_TRIP_POINTS = 4;
 
 /** ORS waytype values that keep a runner off roads: Path, Track, Cycleway, Footway (docs/api-notes.md). */
 export const PATH_WAYTYPES = new Set([4, 5, 6, 7]);
+
+/** Pelias layers precise enough to route through; a via matched only coarser (neighbourhood, locality, ...) is refused (`coarseVia`, routeSuggestions.ts). */
+export const PRECISE_LAYERS = new Set(["venue", "address", "street"]);
+// Not the same set as routeBuilder's PRECISE_MATCHES, which only warns (street stays routable here); thresholds differ on purpose.
+/** The layered lookup stays this close to the focus: focus only biases, and a same-named street can sit anywhere. */
+export const GEOCODE_CIRCLE_KM = 50;
+
 /** ORS waytype Ferry: a route on one is not a run. */
 const FERRY_WAYTYPE = 9;
 
@@ -211,17 +218,42 @@ function parseOrThrow<T>(
   return result.data;
 }
 
-/** The top place for `text`, biased toward `focus`, or null when none matched. */
+/**
+ * The top place for `text`, biased toward `focus`, or null when none
+ * matched. Pelias ranks a suburb above a named bridge or park, so with a
+ * focus point the precise layers are asked first and any layer only when
+ * they have nothing. Without a focus the filter can pick a far-away place,
+ * so there is one unfiltered lookup (docs/api-notes.md).
+ */
 export async function geocode(
   key: string,
   text: string,
   focus: LatLng | null,
 ): Promise<Place | null> {
+  if (!focus) return geocodeOnce(key, text, null, null);
+  return (
+    (await geocodeOnce(key, text, focus, [...PRECISE_LAYERS].join(","))) ??
+    (await geocodeOnce(key, text, focus, null))
+  );
+}
+
+async function geocodeOnce(
+  key: string,
+  text: string,
+  focus: LatLng | null,
+  layers: string | null,
+): Promise<Place | null> {
   const context = "look up a place";
   const params: Record<string, string | number> = { text, size: 1 };
+  if (layers) params.layers = layers;
   if (focus) {
     params["focus.point.lat"] = focus[0];
     params["focus.point.lon"] = focus[1];
+    if (layers) {
+      params["boundary.circle.lat"] = focus[0];
+      params["boundary.circle.lon"] = focus[1];
+      params["boundary.circle.radius"] = GEOCODE_CIRCLE_KM;
+    }
   }
   let data: unknown;
   try {

@@ -889,6 +889,20 @@ Base `https://api.openrouteservice.org`, key in `Authorization: <key>` (no
   geocoder cannot place exactly falls back to a coarser layer: in Pyrmont,
   "Jones Bay Wharf" and "Darling Island" came back at one point, and the
   wharf's street address about 500 m off (reported 2026-11-07).
+  `layers=venue,address,street` limits the answer to those layers; `geocode`
+  uses it only with a focus point, asking with it first and without it only
+  when it has no hit. Without a focus it makes one unfiltered lookup. Checked
+  live 2026-11-07: "Anzac Bridge, Sydney" gave Sydney, NSW, Australia (layer
+  locality) both with the filter and without it, because Pelias parses the
+  city and falls back to it. "Anzac Bridge" alone with the filter and no focus
+  gave "ANZAC Bridge, Eketahuna, NZ" (layer street), hence the focus rule.
+  The layered request also sends `boundary.circle.lat/lon` (the focus) and
+  `boundary.circle.radius=50` (km), since focus only biases; the unfiltered
+  fallback sends neither. Checked live 2026-11-07 from Glebe
+  (-33.8796,151.1857) with layers and circle: "Anzac Bridge" gave "ANZAC
+  Bridge Shared Pedestrian and Bicycle Path, NSW, Australia" (layer street);
+  "Anzac Bridge, Sydney" still gave "Sydney, NSW, Australia" (layer locality),
+  which the via refusal catches.
 
 ## OpenStreetMap Overpass (route suggestions, verified 2026-11-03)
 
