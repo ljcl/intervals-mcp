@@ -36,16 +36,17 @@ with its name; when it does, pass distanceKm.
 Notes:
 - Without start: HOME_START, else the most frequent start of recent GPS
   runs.
-- Without ORS_API_KEY: past runs only, and no place lookup (pass lat,lng).
+- Without ORS_API_KEY: past runs and stitched routes only, and no place
+  lookup (pass lat,lng).
 - Start, end and via points are sent to OpenRouteService, and the area's
   bounding box to OpenStreetMap Overpass, which counts road crossings.
 - Fewer crossings rank first when Overpass answers (often not); else new
-  routes rank by share on paths, past runs by recency and distance.
-- A new route usually lands within 5% of the distance. A loop over 25% off
-  is dropped; a via route keeps its nearest, with a warning. Point-to-point
-  routes are as long as the streets make them. The gap is shown.
-- With via, past runs passing every via point in order are offered at any
-  distance or terrain, noting a terrain miss.
+  routes rank by share on paths.
+- A new route usually lands within 5% of the distance; a loop over 25% off
+  is dropped, a via route keeps its nearest with a warning. The gap is shown.
+- With via: past runs passing every via in order (any distance or
+  terrain), then a route stitched from sections of past runs between the
+  vias. A via matching only a suburb or city is refused.
 - A week of runs shares one budget of routing calls; later runs may get
   past runs only, with a warning.
 `;
@@ -137,7 +138,7 @@ const place = (p: Place) => ({
 });
 
 /**
- * Stores every generated candidate so stitch-route, view-route-map and
+ * Stores every candidate that is not a past run so stitch-route, view-route-map and
  * export-route can use it by route_id. A store that cannot write (a
  * read-only volume) leaves the id out rather than failing the suggestion.
  */
@@ -147,7 +148,7 @@ export async function storeGeneratedCandidates(
   const ids = new Map<RouteCandidate, string>();
   for (const run of s.runs) {
     for (const c of run.candidates) {
-      if (c.kind !== "generated") continue;
+      if (c.kind === "past") continue;
       try {
         ids.set(
           c,
@@ -196,7 +197,8 @@ export function toStructured(
       shape: run.shape,
       terrain: run.terrain,
       candidates: run.candidates.map((c) => ({
-        kind: c.kind,
+        // Stitched goes out as generated: a new kind breaks hosts holding the old tool list (outputSchemaCompat.test.ts).
+        kind: c.kind === "past" ? ("past" as const) : ("generated" as const),
         activity_id: c.activity_id,
         name: c.name,
         date: c.date,
@@ -208,6 +210,10 @@ export function toStructured(
         climb_per_km: Math.round(climbPerKm(c.climb_m, c.distance_m) * 10) / 10,
         path_share:
           c.path_share === null ? null : Math.round(c.path_share * 100) / 100,
+        history_share:
+          c.history_share === undefined
+            ? null
+            : Math.round(c.history_share * 100) / 100,
         crossings_per_km: c.crossings_per_km,
         hill: c.hill,
         summary: c.summary,
@@ -245,10 +251,14 @@ function lines(structured: ReturnType<typeof toStructured>): string[] {
         c.path_share === null
           ? ""
           : `, ${Math.round(c.path_share * 100)}% on paths`;
+      const own =
+        c.history_share === null
+          ? ""
+          : `, ${Math.round(c.history_share * 100)}% from your runs`;
       const tail =
         c.kind === "past"
           ? `, ${c.shape}. ${c.summary}`
-          : `${paths}, ${c.summary}`;
+          : `${paths}${own}, ${c.summary}`;
       out.push(
         `${i + 1}. ${head}: ${km(c.distance_m)} km (${signedKm(c.distance_diff_m)} km), ${c.climb_m} m climb${crossings}${tail}`,
       );

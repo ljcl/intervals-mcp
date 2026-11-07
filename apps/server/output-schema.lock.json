@@ -1326,6 +1326,7 @@
       "runs[].candidates[].hill.length_m: number",
       "runs[].candidates[].hill.start_m: number",
       "runs[].candidates[].hill: null object",
+      "runs[].candidates[].history_share: null number",
       "runs[].candidates[].kind: =\"generated\" =\"past\" string",
       "runs[].candidates[].name: string",
       "runs[].candidates[].path_share: null number",

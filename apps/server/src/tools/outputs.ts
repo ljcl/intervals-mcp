@@ -1647,7 +1647,11 @@ const RoutePlaceSchema = z.object({
 });
 
 const RouteCandidateSchema = z.object({
-  kind: z.enum(["past", "generated"]),
+  kind: z
+    .enum(["past", "generated"])
+    .describe(
+      "past: one of the athlete's runs; generated: a new route (stitched from sections of past runs when history_share is set)",
+    ),
   activity_id: z
     .string()
     .nullable()
@@ -1674,6 +1678,12 @@ const RouteCandidateSchema = z.object({
     .nullable()
     .describe(
       "Share (0-1) of a generated route on paths, footways, tracks or cycleways; null for a past run",
+    ),
+  history_share: z
+    .number()
+    .nullable()
+    .describe(
+      "Share (0-1) of a route stitched from the athlete's past runs that follows them; null for any other route",
     ),
   crossings_per_km: z
     .number()
