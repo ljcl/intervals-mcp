@@ -5,6 +5,7 @@ import { RequestTimeoutError } from "./fetchClient";
 import { type IntervalsEvent, listPlannedWorkouts } from "./intervalsClient";
 import {
   cumulativeDistances,
+  haversineMeters,
   type LatLng,
   type RouteTrack,
 } from "./mapAnchors";
@@ -753,6 +754,10 @@ describe("loadRouteSuggestions", () => {
     });
     const generated = (candidates: { kind: string }[]) =>
       candidates.filter((c) => c.kind === "generated");
+    /** A loop from SF heading south and west: it never passes VIA, so nothing is stitched. */
+    const awayFromVia: RunStart[] = [
+      { ...history[0]!, id: "i2", track: square(SF[0], SF[1], -0.0135) },
+    ];
 
     it("stretches a via loop to the distance through the via point", async () => {
       const run = (
@@ -789,6 +794,10 @@ describe("loadRouteSuggestions", () => {
     });
 
     it("keeps the via route already at the distance without stretching it", async () => {
+      vi.mocked(loadRunStarts).mockResolvedValue({
+        runs: awayFromVia,
+        skipped: 0,
+      });
       const run = (
         await loadRouteSuggestions("k", { distanceKm: 3, via: text(VIA) }, ENV)
       ).runs[0]!;
@@ -823,6 +832,10 @@ describe("loadRouteSuggestions", () => {
     });
 
     it("passes several via points in the order given", async () => {
+      vi.mocked(loadRunStarts).mockResolvedValue({
+        runs: awayFromVia,
+        skipped: 0,
+      });
       const run = (
         await loadRouteSuggestions(
           "k",
@@ -855,6 +868,10 @@ describe("loadRouteSuggestions", () => {
     });
 
     it("keeps the nearest via route with a warning when no stretch reaches the distance", async () => {
+      vi.mocked(loadRunStarts).mockResolvedValue({
+        runs: awayFromVia,
+        skipped: 0,
+      });
       // Every detour point is unroutable (in the harbour, say): ORS answers 404.
       vi.mocked(orsRoute).mockImplementation(async (_key, request) => {
         if (request.waypoints.length > 3)
@@ -886,6 +903,133 @@ describe("loadRouteSuggestions", () => {
       expect(run.warnings.join(" ")).toMatch(
         /within 25% of 6\.0 km; the nearest, 10\.0 km, is offered: passing the via points alone takes that far/,
       );
+    });
+
+    describe("stitched from past runs", () => {
+      /** About 1 km north of SF, then about 1 km east of that. */
+      const N: LatLng = [SF[0] + 0.009, SF[1]];
+      const NE: LatLng = [SF[0] + 0.009, SF[1] + 0.0114];
+      const NORTH_MORE: LatLng = [SF[0] + 0.018, SF[1]];
+      function runOn(id: string, points: LatLng[]): RunStart {
+        const { track, distance_m } = straightRoute(points);
+        return {
+          id,
+          date: "2026-10-01",
+          name: `Run ${id}`,
+          distance_m,
+          climb_m: 5,
+          track,
+        };
+      }
+      const fromStart = (w: LatLng[]) =>
+        w[0]![0] === SF[0] && w[0]![1] === SF[1];
+      const args = {
+        distanceKm: 3.5,
+        start: text(SF),
+        via: [text(N), text(NE)],
+      };
+
+      it("builds a via loop from past runs, before the ORS route, with no fill", async () => {
+        vi.mocked(loadRunStarts).mockResolvedValue({
+          runs: [runOn("a", [SF, N, NORTH_MORE]), runOn("b", [N, NE, SF])],
+          skipped: 0,
+        });
+        vi.mocked(orsRoute).mockImplementation(async (_key, request) =>
+          straightRoute(request.waypoints, 1.2),
+        );
+        const run = (await loadRouteSuggestions("k", args, ENV)).runs[0]!;
+        expect(run.candidates.map((c) => c.kind)).toEqual([
+          "stitched",
+          "generated",
+        ]);
+        const stitched = run.candidates[0]!;
+        expect(passesInOrder(stitched.track, [N, NE])).toBe(true);
+        expect(stitched.history_share).toBeGreaterThan(0.99);
+        expect(stitched.summary).toBe(
+          "From 2 past runs: Run a 2026-10-01, Run b 2026-10-01",
+        );
+        for (const [, request] of vi.mocked(orsRoute).mock.calls)
+          expect(fromStart(request.waypoints)).toBe(true);
+      });
+
+      it("routes the legs no run covers once, through the via points between", async () => {
+        vi.mocked(loadRunStarts).mockResolvedValue({
+          runs: [runOn("a", [SF, N, NORTH_MORE])],
+          skipped: 0,
+        });
+        const run = (await loadRouteSuggestions("k", args, ENV)).runs[0]!;
+        const fills = vi
+          .mocked(orsRoute)
+          .mock.calls.map(([, r]) => r.waypoints)
+          .filter((w) => !fromStart(w));
+        expect(fills).toHaveLength(1);
+        expect(haversineMeters(fills[0]![0]!, N)).toBeLessThan(100);
+        expect(fills[0]!.slice(1)).toEqual([NE, SF]);
+        const stitched = run.candidates.find((c) => c.kind === "stitched")!;
+        expect(stitched.history_share).toBeGreaterThan(0.2);
+        expect(stitched.history_share).toBeLessThan(0.4);
+        expect(stitched.summary).toBe(
+          "From 1 past run: Run a 2026-10-01; 2.4 km routed by OpenRouteService",
+        );
+      });
+
+      it("offers a stitched route without an ORS key when no join needs routing", async () => {
+        vi.mocked(loadRunStarts).mockResolvedValue({
+          runs: [runOn("a", [SF, N, NORTH_MORE]), runOn("b", [N, NE, SF])],
+          skipped: 0,
+        });
+        const run = (
+          await loadRouteSuggestions("k", args, { ...ENV, orsKey: null })
+        ).runs[0]!;
+        expect(run.candidates.map((c) => c.kind)).toEqual(["stitched"]);
+        expect(vi.mocked(orsRoute)).not.toHaveBeenCalled();
+      });
+
+      it("drops a stitched route whose fill ORS cannot route, and keeps generating", async () => {
+        vi.mocked(loadRunStarts).mockResolvedValue({
+          runs: [runOn("a", [SF, N, NORTH_MORE])],
+          skipped: 0,
+        });
+        vi.mocked(orsRoute).mockImplementation(async (_key, request) => {
+          if (!fromStart(request.waypoints))
+            throw new OrsApiError("x", {
+              status: 404,
+              statusText: "",
+              data: "",
+            });
+          return straightRoute(request.waypoints);
+        });
+        const result = await loadRouteSuggestions("k", args, ENV);
+        expect(result.runs[0]!.candidates.map((c) => c.kind)).toEqual([
+          "generated",
+        ]);
+        expect(result.warnings.join(" ")).not.toMatch(/generation stopped/);
+      });
+
+      it("offers the stitched route as the nearest when none reaches the distance", async () => {
+        vi.mocked(loadRunStarts).mockResolvedValue({
+          runs: [runOn("a", [SF, N, NORTH_MORE]), runOn("b", [N, NE, SF])],
+          skipped: 0,
+        });
+        // Every stretch is unroutable, so ORS offers only its 3.4 km base route; run b out and back
+        // (SF, NE, N, NE, SF) is the 4.8 km stitched route, nearest to 8 km but over 25% short.
+        vi.mocked(orsRoute).mockImplementation(async (_key, request) => {
+          if (request.waypoints.length > 4)
+            throw new OrsApiError("x", {
+              status: 404,
+              statusText: "",
+              data: "",
+            });
+          return straightRoute(request.waypoints);
+        });
+        const run = (
+          await loadRouteSuggestions("k", { ...args, distanceKm: 8 }, ENV)
+        ).runs[0]!;
+        expect(run.candidates.map((c) => c.kind)).toEqual(["stitched"]);
+        expect(run.warnings).toContain(
+          "No route through the via points came within 25% of 8.0 km; the nearest, 4.8 km, is offered: it follows your past runs between the via points, which cannot be stretched.",
+        );
+      });
     });
   });
 
