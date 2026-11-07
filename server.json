@@ -52,6 +52,13 @@
           "format": "string"
         },
         {
+          "name": "OSM_EXTRACT_URL",
+          "description": "URL of an .osm.pbf (e.g. a BBBike city or Geofabrik region) for the local OpenStreetMap index that counts road crossings in route suggestions; needs HOME_START",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string"
+        },
+        {
           "name": "MCP_AUTH_TOKEN",
           "description": "Shared secret (32+ characters) gating /mcp and detailed /health (recommended when internet-facing)",
           "isRequired": false,

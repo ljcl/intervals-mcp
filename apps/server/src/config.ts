@@ -10,8 +10,9 @@
  * index.ts runs it first, so a bad value stops startup with a message that
  * names the variable, rather than failing later inside a tool call.
  *
- * getOrsApiKey() and getHomeStart() are the homes for the route suggestion
- * settings (ORS_API_KEY, HOME_START); HOME_START is validated by checkConfig().
+ * getOrsApiKey(), getHomeStart() and getOsmExtractUrl() are the homes for the
+ * route suggestion settings (ORS_API_KEY, HOME_START, OSM_EXTRACT_URL);
+ * HOME_START and OSM_EXTRACT_URL are validated by checkConfig().
  *
  * getTimeZone() is the one home for the zone every local date uses. It also
  * holds the athlete's zone that athleteTimeZone.ts reads from intervals.icu
@@ -59,6 +60,21 @@ export function getOrsApiKey(): string | null {
 export function getHomeStart(): LatLng | null {
   const raw = process.env.HOME_START?.trim();
   return raw ? parseLatLng(raw) : null;
+}
+
+/** The .osm.pbf the OpenStreetMap index is built from (OSM_EXTRACT_URL), or null when unset or not an http(s) URL. */
+export function getOsmExtractUrl(): string | null {
+  const raw = process.env.OSM_EXTRACT_URL?.trim();
+  return raw && isHttpUrl(raw) ? raw : null;
+}
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const { protocol } = new URL(value);
+    return protocol === "https:" || protocol === "http:";
+  } catch {
+    return false;
+  }
 }
 
 /** Where the route store keeps its files when DATA_DIR is unset (relative to the working directory). */
@@ -252,6 +268,17 @@ export function checkConfig(): ConfigCheck {
     errors.push(
       // The value is not quoted: a near-miss is still the athlete's home.
       `HOME_START is not "lat,lng" in decimal degrees, for example 37.79,-122.39; leave it unset to infer the usual start from recent runs.`,
+    );
+  }
+
+  const osmUrl = process.env.OSM_EXTRACT_URL?.trim();
+  if (osmUrl && !isHttpUrl(osmUrl)) {
+    errors.push(
+      `OSM_EXTRACT_URL is ${quoteValue(osmUrl)}, which is not an http(s) URL. Set it to an .osm.pbf download, for example https://download.bbbike.org/osm/bbbike/Sydney/Sydney.osm.pbf, or leave it unset.`,
+    );
+  } else if (osmUrl && !homeStart) {
+    warnings.push(
+      "OSM_EXTRACT_URL is set but HOME_START is not: the OpenStreetMap index keeps 25 km around HOME_START, so no index is built and road crossings are not counted.",
     );
   }
 
