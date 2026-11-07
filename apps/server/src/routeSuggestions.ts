@@ -696,7 +696,7 @@ export async function loadRouteSuggestions(
         progress,
       );
       let tried: RouteCandidate[] = [];
-      // After an ORS failure, later runs skip generation; the call-level warning says why.
+      // After an ORS failure (a stitch fill's included), generation is skipped for this and later runs; the call-level warning says why.
       if (env.orsKey && budget.failure === null) {
         const before = budget.calls;
         tried = await generate(
@@ -785,12 +785,12 @@ export async function loadRouteSuggestions(
           Math.abs(a.distance_m - run.distance_m) -
             Math.abs(b.distance_m - run.distance_m),
       );
-      // Duplicates of a past run go before the cut, so the next route fills the slot.
+      // Duplicates of a past run go before the cut, so the next generated route fills the slot.
+      const lead = dedupeRoutes([...past, ...ownLines]);
       candidates = dedupeRoutes([
-        ...past,
-        ...ownLines,
+        ...lead,
         ...rankGenerated(tried, terrain, run.distance_m, bands),
-      ]).slice(0, past.length + ownLines.length + want);
+      ]).slice(0, lead.length + want);
 
       if (terrain === "hill-repeats") {
         candidates.sort((a, b) => Number(!a.hill) - Number(!b.hill));

@@ -1000,10 +1000,45 @@ describe("loadRouteSuggestions", () => {
           return straightRoute(request.waypoints);
         });
         const result = await loadRouteSuggestions("k", args, ENV);
+        const fills = vi
+          .mocked(orsRoute)
+          .mock.calls.map(([, r]) => r.waypoints)
+          .filter((w) => !fromStart(w));
+        expect(fills).toHaveLength(1);
         expect(result.runs[0]!.candidates.map((c) => c.kind)).toEqual([
           "generated",
         ]);
         expect(result.warnings.join(" ")).not.toMatch(/generation stopped/);
+      });
+
+      it("keeps the stitched routes already made when ORS fails", async () => {
+        vi.mocked(loadRunStarts).mockResolvedValue({
+          runs: [runOn("a", [SF, N, NORTH_MORE]), runOn("b", [N, NE, SF])],
+          skipped: 0,
+        });
+        vi.mocked(orsRoute).mockRejectedValue(handledRateLimit("orsRoute"));
+        const result = await loadRouteSuggestions("k", args, ENV);
+        expect(result.runs[0]!.candidates.map((c) => c.kind)).toEqual([
+          "stitched",
+        ]);
+        expect(result.warnings.join(" ")).toMatch(/Route generation stopped/);
+      });
+
+      it("does not let a stitched duplicate of a past run open an extra generated slot", async () => {
+        vi.mocked(loadRunStarts).mockResolvedValue({
+          runs: [runOn("a", [SF, N, NE, SF])],
+          skipped: 0,
+        });
+        vi.mocked(orsRoute).mockImplementation(async (_key, request) =>
+          straightRoute(request.waypoints),
+        );
+        // 3.8 km is over 5% past the 3.4 km base route, so ORS stretches it into several routes.
+        const run = (
+          await loadRouteSuggestions("k", { ...args, distanceKm: 3.8 }, ENV)
+        ).runs[0]!;
+        expect(
+          run.candidates.filter((c) => c.kind === "generated"),
+        ).toHaveLength(1);
       });
 
       it("offers the stitched route as the nearest when none reaches the distance", async () => {
