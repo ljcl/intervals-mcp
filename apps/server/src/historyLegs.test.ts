@@ -15,7 +15,7 @@ import {
   type RouteTrack,
 } from "./mapAnchors";
 import { passesInOrder } from "./routeCandidates";
-import { trackLength } from "./routeGeometry";
+import { nearestOnTrack, reverseTrack, trackLength } from "./routeGeometry";
 import { type RunStart } from "./startClusters";
 
 /** Start, about 1 km north of it, about 1 km east of that, and 2 km north. */
@@ -95,6 +95,17 @@ describe("legSection", () => {
     expect(legSection(detour, S, A)).toBeNull();
   });
 
+  it("prefers the run's own direction over a shorter reversed pass", () => {
+    // Passes A at 0 and 2000 m, FAR at 3000 m: the 1 km from the second pass.
+    const section = legSection(run("r1", [A, S, A, FAR]), A, FAR)!;
+    expect(trackLength(section.track)).toBeCloseTo(haversineMeters(A, FAR), -1);
+    // Up street 1 to FAR and back down street 2: A to S runs down street 2, not up.
+    const loop = run("r2", [S, A, FAR, east(FAR, 300), east(S, 300), S]);
+    const down = legSection(loop, FAR, S)!;
+    expect(down.track.coordinates[0]).toEqual(FAR);
+    expect(nearestOnTrack(down.track, east(A, 300)).offset_m).toBeLessThan(30);
+  });
+
   it("handles two anchors closer together than the pass radius", () => {
     const close = east(A, 50);
     const section = legSection(run("r1", [S, A, close, B]), A, close);
@@ -150,7 +161,7 @@ describe("planStitches", () => {
   it("routes only the uncovered legs, through the anchors between", () => {
     const anchors = stitchAnchors(S, [A, B], "loop", null);
     const options = [legOptions([run("r1", [S, A])], S, A), [], []];
-    const plans = planStitches(options, anchors, 3500, 1);
+    const plans = planStitches(options, anchors, 3500, "loop");
     expect(plans).toHaveLength(1);
     expect(plans[0]!.pieces.map((p) => p.kind)).toEqual(["section", "fill"]);
     const fill = plans[0]!.pieces[1]!;
@@ -160,7 +171,7 @@ describe("planStitches", () => {
   });
 
   it("makes nothing when no leg is covered", () => {
-    expect(planStitches([[], []], [S, A, S], 2000, 1)).toEqual([]);
+    expect(planStitches([[], []], [S, A, S], 2000, "loop")).toEqual([]);
   });
 
   it("joins sections that meet within 30 m and fills a wider gap", () => {
@@ -170,7 +181,7 @@ describe("planStitches", () => {
       legOptions([run("r2", [east(A, 20), B])], A, B),
       legOptions([run("r3", [east(B, 60), S])], B, S),
     ];
-    const [plan] = planStitches(options, anchors, 3500, 1);
+    const [plan] = planStitches(options, anchors, 3500, "loop");
     expect(plan!.pieces.map((p) => p.kind)).toEqual([
       "section",
       "section",
@@ -190,10 +201,76 @@ describe("planStitches", () => {
       A,
     );
     // Way out 1.0, 1.3 or 1.9 km: there and back 2.0, 2.6 or 3.8 km.
-    const plans = planStitches([options], [S, A], 2600, 2);
+    const plans = planStitches([options], [S, A], 2600, "out-and-back");
     expect(plans.map((p) => Math.round(p.estimate_m / 100) / 10)).toEqual([
       2.6, 2.0,
     ]);
+  });
+});
+
+describe("no retracing", () => {
+  it("one via: the way back takes the run's other street", () => {
+    const loop = run("r1", [S, A, east(A, 500), east(S, 500), S]);
+    const anchors = stitchAnchors(S, [A], "loop", null);
+    const options = [legOptions([loop], S, A), legOptions([loop], A, S)];
+    const plans = planStitches(options, anchors, 3000, "loop");
+    expect(plans).toHaveLength(1);
+    const [out, back] = plans[0]!.pieces.map((p) => {
+      if (p.kind !== "section") throw new Error("expected a section");
+      return p.option.track;
+    });
+    expect(sameLine(reverseTrack(out!), back!)).toBe(false);
+    expect(
+      Math.abs(plans[0]!.estimate_m - trackLength(loop.track)),
+    ).toBeLessThan(150);
+  });
+
+  it("two vias: the last leg takes the east street", () => {
+    const loop = run("r1", [S, FAR, east(FAR, 300), east(S, 300), S]);
+    const anchors = stitchAnchors(S, [A, FAR], "loop", null);
+    const options = [
+      legOptions([loop], S, A),
+      legOptions([loop], A, FAR),
+      legOptions([loop], FAR, S),
+    ];
+    const [plan] = planStitches(options, anchors, 4600, "loop");
+    const last = plan!.pieces.at(-1)!;
+    if (last.kind !== "section") throw new Error("expected a section");
+    expect(
+      nearestOnTrack(last.option.track, east(A, 300)).offset_m,
+    ).toBeLessThan(30);
+  });
+
+  it("gives no plan when history only retraces one street", () => {
+    const outAndBack = run("r1", [S, A, S]);
+    const options = [
+      legOptions([outAndBack], S, A),
+      legOptions([outAndBack], A, S),
+    ];
+    expect(planStitches(options, [S, A, S], 2000, "loop")).toEqual([]);
+  });
+});
+
+describe("fills at the ends", () => {
+  it("fills from the start anchor to a first section that starts over 30 m away", () => {
+    const options = [legOptions([run("r1", [east(S, 60), A])], S, A), []];
+    const [plan] = planStitches(options, [S, A, S], 3000, "loop");
+    const [first, section] = plan!.pieces;
+    expect(plan!.pieces.map((p) => p.kind)).toEqual([
+      "fill",
+      "section",
+      "fill",
+    ]);
+    if (first?.kind !== "fill" || section?.kind !== "section")
+      throw new Error("unexpected pieces");
+    expect(first.waypoints[0]).toEqual(S);
+    expect(first.waypoints.at(-1)).toEqual(section.option.track.coordinates[0]);
+  });
+
+  it("adds no end fill to an out-and-back whose section stops 40 m short of the via", () => {
+    const options = [legOptions([run("r1", [S, east(A, 40)])], S, A)];
+    const [plan] = planStitches(options, [S, A], 2000, "out-and-back");
+    expect(plan!.pieces.map((p) => p.kind)).toEqual(["section"]);
   });
 });
 
@@ -205,7 +282,7 @@ describe("stitchedCandidate", () => {
       [],
       legOptions([run("r3", [B, S], "2026-10-02")], B, S),
     ];
-    const [plan] = planStitches(options, anchors, 3500, 1);
+    const [plan] = planStitches(options, anchors, 3500, "loop");
     expect(plan!.pieces.map((p) => p.kind)).toEqual([
       "section",
       "fill",
@@ -235,12 +312,21 @@ describe("stitchedCandidate", () => {
       [legOptions([run("r1", [S, A])], S, A)],
       [S, A],
       2000,
-      2,
+      "out-and-back",
     );
     const c = stitchedCandidate(plan!, [], "out-and-back")!;
     expect(c.distance_m).toBeCloseTo(2 * haversineMeters(S, A), -1);
     expect(c.track.coordinates.at(-1)).toEqual(S);
     expect(c.history_share).toBeCloseTo(1, 2);
     expect(c.summary).toBe("From 1 past run: Run r1 2026-10-01");
+  });
+
+  it("doubles the routed km of an out-and-back in the summary", () => {
+    const options = [legOptions([run("r1", [S, A])], S, A), []];
+    const [plan] = planStitches(options, [S, A, B], 4000, "out-and-back");
+    const c = stitchedCandidate(plan!, [line([A, B])], "out-and-back")!;
+    expect(c.summary).toBe(
+      "From 1 past run: Run r1 2026-10-01; 2.0 km routed by OpenRouteService",
+    );
   });
 });

@@ -99,7 +99,13 @@ export function passes(track: RouteTrack, point: LatLng): number[] {
   return out;
 }
 
-/** The shortest part of `run` from a pass of `a` to a pass of `b`, in that direction; null when it misses one or only detours between them. */
+/**
+ * The shortest part of `run` from a pass of `a` to a pass of `b`; null when it
+ * misses one or only detours between them. A pair in the run's own direction
+ * of travel wins over a shorter reversed one (a loop that goes up street A and
+ * back down street B must not give both legs street A); the reversed pair is
+ * the fallback.
+ */
 export function legSection(
   run: RunStart,
   a: LatLng,
@@ -107,13 +113,20 @@ export function legSection(
 ): Section | null {
   const limit =
     SECTION_DETOUR_FACTOR * haversineMeters(a, b) + SECTION_DETOUR_SLACK_M;
-  let best: { from: number; to: number } | null = null;
+  const atB = passes(run.track, b);
+  let forward: { from: number; to: number } | null = null;
+  let reversed: { from: number; to: number } | null = null;
   for (const from of passes(run.track, a))
-    for (const to of passes(run.track, b)) {
+    for (const to of atB) {
       const length = Math.abs(to - from);
       if (length === 0 || length > limit) continue;
-      if (!best || length < Math.abs(best.to - best.from)) best = { from, to };
+      if (from < to) {
+        if (!forward || length < forward.to - forward.from)
+          forward = { from, to };
+      } else if (!reversed || length < reversed.from - reversed.to)
+        reversed = { from, to };
     }
+  const best = forward ?? reversed;
   if (!best) return null;
   const part = sliceTrack(
     run.track,
@@ -173,6 +186,7 @@ export function legOptions(
 function piecesFor(
   choice: (LegOption | null)[],
   anchors: LatLng[],
+  shape: RouteShape,
 ): StitchPiece[] {
   const pieces: StitchPiece[] = [];
   let at = anchors[0]!;
@@ -197,7 +211,8 @@ function piecesFor(
   const end = anchors.at(-1)!;
   if (pending.length > 0)
     pieces.push({ kind: "fill", waypoints: [at, ...pending] });
-  else if (haversineMeters(at, end) > JOIN_GAP_M)
+  // An out-and-back turns at its last via, which its last section already reaches.
+  else if (shape !== "out-and-back" && haversineMeters(at, end) > JOIN_GAP_M)
     pieces.push({ kind: "fill", waypoints: [at, end] });
   return pieces;
 }
@@ -205,22 +220,37 @@ function piecesFor(
 /**
  * Up to {@link STITCHED_COMBINATIONS} ways along the athlete's lines: every
  * covered leg takes one of its options (so the fewest legs go to ORS), an
- * uncovered one is a gap. None when no leg is covered. Closest estimate to
- * `target_m` first (`laps` 2 for an out-and-back), then more km on sections.
+ * uncovered one is a gap. None when no leg is covered. A combination whose
+ * later leg runs an earlier leg's line the other way is dropped (no retracing
+ * a street out and back as a "loop"). Closest estimate to `target_m` first
+ * (doubled for an out-and-back), then more km on sections.
  */
 export function planStitches(
   options: LegOption[][],
   anchors: LatLng[],
   target_m: number,
-  laps: 1 | 2,
+  shape: RouteShape,
 ): StitchPlan[] {
   if (options.every((o) => o.length === 0)) return [];
+  const laps = shape === "out-and-back" ? 2 : 1;
+  // retraces.has("l1.i|l2.j"): leg l2's option j is leg l1's option i reversed.
+  const retraces = new Set<string>();
+  for (let l1 = 0; l1 < options.length; l1++)
+    for (let l2 = l1 + 1; l2 < options.length; l2++)
+      for (const [i, o1] of options[l1]!.entries())
+        for (const [j, o2] of options[l2]!.entries())
+          if (sameLine(reverseTrack(o1.track), o2.track))
+            retraces.add(`${l1}.${i}|${l2}.${j}`);
   const combos: {
     choice: (LegOption | null)[];
     estimate_m: number;
     section_m: number;
   }[] = [];
-  const walk = (leg: number, choice: (LegOption | null)[]) => {
+  const walk = (
+    leg: number,
+    choice: (LegOption | null)[],
+    picked: string[],
+  ) => {
     if (leg === options.length) {
       let section_m = 0;
       let gap_m = 0;
@@ -238,10 +268,17 @@ export function planStitches(
       return;
     }
     const lines = options[leg]!;
-    for (const option of lines.length > 0 ? lines : [null])
-      walk(leg + 1, [...choice, option]);
+    if (lines.length === 0) {
+      walk(leg + 1, [...choice, null], picked);
+      return;
+    }
+    lines.forEach((option, i) => {
+      if (picked.some((earlier) => retraces.has(`${earlier}|${leg}.${i}`)))
+        return;
+      walk(leg + 1, [...choice, option], [...picked, `${leg}.${i}`]);
+    });
   };
-  walk(0, []);
+  walk(0, [], []);
   return combos
     .sort(
       (x, y) =>
@@ -250,7 +287,7 @@ export function planStitches(
     )
     .slice(0, STITCHED_COMBINATIONS)
     .map((c) => ({
-      pieces: piecesFor(c.choice, anchors),
+      pieces: piecesFor(c.choice, anchors, shape),
       estimate_m: c.estimate_m,
     }));
 }
