@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.15.2](https://github.com/ljcl/intervals-mcp/compare/v2.15.1...v2.15.2) (2026-11-07)
+
+
+### Bug Fixes
+
+* keep section notes out of stored route warnings ([#439](https://github.com/ljcl/intervals-mcp/issues/439)) ([fb23062](https://github.com/ljcl/intervals-mcp/commit/fb230625af69dc4853f5541c4a580247a3422f08))
+
 ## [2.15.1](https://github.com/ljcl/intervals-mcp/compare/v2.15.0...v2.15.1) (2026-11-06)
 
 
