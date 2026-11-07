@@ -1722,6 +1722,15 @@ function viaMatchWarnings(segments: StoredSegment[]): string[] {
   return warnings;
 }
 
+/** The one warning line that points at the sections with notes. */
+function sectionNotesWarning(indices: number[]): string {
+  const sections =
+    indices.length === 1
+      ? `Section ${indices[0]} has notes`
+      : `${indices.length} sections have notes (${indices.join(", ")})`;
+  return `${sections}; read them with each section.`;
+}
+
 /** A version's numbers and sections, without geometry. */
 export function summarizeRoute(
   route: StoredRoute,
@@ -1812,12 +1821,10 @@ export function summarizeRoute(
         `Vias ${prev.id} and ${v.id} are at one point (km ${v.km.toFixed(2)}), so the route between them goes nowhere; remove one (remove_via) or move it.`,
       );
   });
-  summaries.forEach((s) => {
-    for (const note of s.notes)
-      warnings.push(
-        `Section ${s.index} (km ${s.from_km.toFixed(2)}-${s.to_km.toFixed(2)}): ${note}`,
-      );
-  });
+  // A section's notes stay with the section; the warnings only count them.
+  const noted = summaries.filter((s) => s.notes.length > 0);
+  if (noted.length > 0)
+    warnings.push(sectionNotesWarning(noted.map((s) => s.index)));
   return {
     route_id: route.route_id,
     name: route.name,
