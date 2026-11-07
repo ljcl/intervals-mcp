@@ -146,6 +146,16 @@ describe("refreshOsmIndex", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
+  it("serves the new index after a swap with a cached read handle", async () => {
+    await refreshOsmIndex({ fetch: async () => ok(), now: () => T0 });
+    osmIndexMeta();
+    vi.stubEnv("HOME_START", "-33.9,151.25");
+    expect(
+      await refreshOsmIndex({ fetch: async () => ok(), now: () => T0 + DAY }),
+    ).toBe("built");
+    expect(osmIndexMeta()!.area).toBe(areaKey(areaAround([-33.9, 151.25], 25)));
+  });
+
   it("builds over a stale temporary file", async () => {
     await mkdir(osmIndexDir(), { recursive: true });
     await writeFile(join(osmIndexDir(), "index.sqlite.tmp"), "junk");

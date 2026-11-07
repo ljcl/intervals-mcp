@@ -115,8 +115,9 @@ async function refresh(
       },
       now(),
     );
-    closeOsmIndex();
     await rename(tmp, osmIndexPath());
+    // Close after the rename: a reader during the await would otherwise reopen and cache the old file.
+    closeOsmIndex();
     console.error(
       `OpenStreetMap index: ${result.ways} ways and ${result.stops} crossing stops within ${OSM_INDEX_RADIUS_KM} km of HOME_START, data from ${result.data_date}, built in ${Math.round((now() - started) / 1000)} s`,
     );
@@ -134,7 +135,6 @@ async function refresh(
 
 /** A 304: the index is current as of `at`. */
 function touchCheckedAt(at: number): void {
-  closeOsmIndex();
   const db = new DatabaseSync(osmIndexPath());
   try {
     db.prepare("UPDATE meta SET value = ? WHERE key = 'checked_at'").run(
@@ -143,4 +143,5 @@ function touchCheckedAt(at: number): void {
   } finally {
     db.close();
   }
+  closeOsmIndex();
 }
