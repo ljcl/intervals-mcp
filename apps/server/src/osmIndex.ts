@@ -120,9 +120,10 @@ let reportedUnreadable = false;
 
 function openIndex(): OpenIndex | null {
   if (current !== undefined) return current;
-  current = null;
   const path = osmIndexPath();
+  // Not cached: a build that lands later must be seen without a restart.
   if (!existsSync(path)) return null;
+  current = null;
   try {
     const db = new DatabaseSync(path, { readOnly: true });
     const rows = db.prepare("SELECT key, value FROM meta").all() as Array<{
@@ -343,14 +344,20 @@ export function routeOsmStats(track: RouteTrack): OsmStats | null {
     for (let i = 0; i < flat.length; i += 2)
       points.push(project(flat[i]!, flat[i + 1]!));
     for (const s of segmentsOf(points)) grids[way.class].add(s);
-    if (way.ring)
-      rings.push({
-        points,
-        minX: Math.min(...points.map((p) => p[0])),
-        maxX: Math.max(...points.map((p) => p[0])),
-        minY: Math.min(...points.map((p) => p[1])),
-        maxY: Math.max(...points.map((p) => p[1])),
-      });
+    if (way.ring) {
+      // A loop, not Math.min(...): a harbour ring can exceed the argument limit.
+      let minX = Infinity;
+      let maxX = -Infinity;
+      let minY = Infinity;
+      let maxY = -Infinity;
+      for (const [px, py] of points) {
+        if (px < minX) minX = px;
+        if (px > maxX) maxX = px;
+        if (py < minY) minY = py;
+        if (py > maxY) maxY = py;
+      }
+      rings.push({ points, minX, maxX, minY, maxY });
+    }
   }
 
   let onPath = 0;

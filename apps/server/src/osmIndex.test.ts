@@ -233,6 +233,23 @@ describe("routeOsmStats", () => {
   });
 });
 
+describe("a missing index", () => {
+  it("is seen once built, without closeOsmIndex", async () => {
+    expect(routeOsmStats(ALONG)).toBeNull();
+    const pbf = join(dir, "y.osm.pbf");
+    await writeFile(pbf, osmPbfBytes({ nodes: [], ways: [] }));
+    await mkdir(osmIndexDir(), { recursive: true });
+    await buildOsmIndex(
+      pbf,
+      osmIndexPath(),
+      areaAround(HOME, 25),
+      { url: "https://example.org/x.osm.pbf", etag: "", last_modified: "" },
+      Date.parse("2026-11-01T00:00:00Z"),
+    );
+    expect(routeOsmStats(ALONG)).not.toBeNull();
+  });
+});
+
 describe("osmIndexInfo", () => {
   it("is unconfigured without OSM_EXTRACT_URL or HOME_START", () => {
     vi.stubEnv("OSM_EXTRACT_URL", "");
