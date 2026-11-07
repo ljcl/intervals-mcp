@@ -700,7 +700,7 @@ junction's signal node and its crossings count once.
 
 The index is one SQLite file, `DATA_DIR/osm/index.sqlite`, opened with
 `node:sqlite` because the tests run under Node as well as Bun. Tables:
-`meta` (schema version, area, source URL, etag, last-modified, data date,
+`meta` (schema version, area, coverage, source URL, etag, last-modified, data date,
 built and checked times), `ways` (class, ring flag, points as a Float64
 blob), `way_cells` and `stop_nodes`, both keyed by 0.01 degree cell (about
 1 km). A missing file is looked for again on every read, so a build that
@@ -731,7 +731,7 @@ a crossing street does not count as running along it. It counts as green
 within 50 m of a park or water edge, or inside a ring. Crossings are the
 merged stops with a node within 12 m of the route, per km, and signals the
 signalised ones among them. It returns null without an index, when any
-point lies outside the area, or for a track shorter than a sample.
+point lies outside the coverage, or for a track shorter than a sample.
 `osmIndexInfo` reports `unconfigured`, `missing` or `ready` with
 the data date and the days since the last successful check;
 `routeSuggestions.ts` (`osmWarnings`) turns them into one warning for
