@@ -890,12 +890,12 @@ Base `https://api.openrouteservice.org`, key in `Authorization: <key>` (no
   "Jones Bay Wharf" and "Darling Island" came back at one point, and the
   wharf's street address about 500 m off (reported 2026-11-07).
   `layers=venue,address,street` limits the answer to those layers; `geocode`
-  asks with it first and without it only when it has no hit. Checked live
-  2026-11-07: "Anzac Bridge, Sydney" gave Sydney, NSW, Australia (layer
+  uses it only with a focus point, asking with it first and without it only
+  when it has no hit. Without a focus it makes one unfiltered lookup. Checked
+  live 2026-11-07: "Anzac Bridge, Sydney" gave Sydney, NSW, Australia (layer
   locality) both with the filter and without it, because Pelias parses the
-  city and falls back to it. "Anzac Bridge" alone with the filter gave "ANZAC
-  Bridge, Eketahuna, NZ" (layer street, no focus point), so the filter only
-  helps when the text has no city suffix and a focus point keeps it local.
+  city and falls back to it. "Anzac Bridge" alone with the filter and no focus
+  gave "ANZAC Bridge, Eketahuna, NZ" (layer street), hence the focus rule.
 
 ## OpenStreetMap Overpass (route suggestions, verified 2026-11-03)
 

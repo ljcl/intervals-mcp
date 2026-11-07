@@ -189,6 +189,7 @@ describe("geocode", () => {
       "Looking up a place stopped: the tool call was cancelled.",
     );
     expect((error as Error).message).not.toMatch(/\d+\.\d+/);
+    expect(get).toHaveBeenCalledTimes(1);
   });
 
   it("falls back to any layer when no venue, address or street matches", async () => {
@@ -206,7 +207,7 @@ describe("geocode", () => {
         ],
       },
     });
-    const place = await geocode("key", "Anzac Bridge", null);
+    const place = await geocode("key", "Anzac Bridge", [37.79, -122.4]);
     expect(place).toEqual({
       label: "Sydney, NSW, Australia",
       point: [-33.87, 151.21],
@@ -218,7 +219,14 @@ describe("geocode", () => {
 
   it("is null when nothing matches", async () => {
     get.mockResolvedValue({ data: { features: [] } });
-    expect(await geocode("key", "zzzz", null)).toBeNull();
+    expect(await geocode("key", "zzzz", [37.79, -122.4])).toBeNull();
     expect(get).toHaveBeenCalledTimes(2);
+  });
+
+  it("makes one unfiltered request without a focus point", async () => {
+    get.mockResolvedValue({ data: { features: [] } });
+    expect(await geocode("key", "zzzz", null)).toBeNull();
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(get.mock.calls[0]![1]!.params).not.toHaveProperty("layers");
   });
 });

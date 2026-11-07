@@ -30,6 +30,7 @@ export const PATH_WAYTYPES = new Set([4, 5, 6, 7]);
 
 /** Pelias layers precise enough to route through; a via matched only coarser (neighbourhood, locality, ...) is refused (`coarseVia`, routeSuggestions.ts). */
 export const PRECISE_LAYERS = new Set(["venue", "address", "street"]);
+
 /** ORS waytype Ferry: a route on one is not a run. */
 const FERRY_WAYTYPE = 9;
 
@@ -216,15 +217,17 @@ function parseOrThrow<T>(
 
 /**
  * The top place for `text`, biased toward `focus`, or null when none
- * matched. Pelias ranks a suburb above a named bridge or park, so the
- * precise layers are asked first and any layer only when they have nothing
- * (docs/api-notes.md).
+ * matched. Pelias ranks a suburb above a named bridge or park, so with a
+ * focus point the precise layers are asked first and any layer only when
+ * they have nothing. Without a focus the filter can pick a far-away place,
+ * so there is one unfiltered lookup (docs/api-notes.md).
  */
 export async function geocode(
   key: string,
   text: string,
   focus: LatLng | null,
 ): Promise<Place | null> {
+  if (!focus) return geocodeOnce(key, text, null, null);
   return (
     (await geocodeOnce(key, text, focus, [...PRECISE_LAYERS].join(","))) ??
     (await geocodeOnce(key, text, focus, null))
