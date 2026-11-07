@@ -73,12 +73,12 @@ import {
 } from "./routeStore";
 import {
   type Budget,
+  coarseVia,
   fitToTarget,
   GENERATED_DISTANCE_TOLERANCE,
   ORS_CALL_BUDGET,
   orsProblem,
   RouteSuggestionError,
-  coarseVia,
   resolvePlace,
 } from "./routeSuggestions";
 

@@ -31,8 +31,8 @@ import {
   type OrsRoute,
   type OrsRouteRequest,
   orsRoute,
-  PRECISE_LAYERS,
   type Place,
+  PRECISE_LAYERS,
 } from "./orsClient";
 import { crossingsPerKm, loadCrossings } from "./overpassClient";
 import { NO_PROGRESS, type ReportProgress } from "./progress";
