@@ -163,10 +163,12 @@ describe("geocode", () => {
         type: "street",
       },
     });
+    expect(get).toHaveBeenCalledTimes(1);
     expect(get.mock.calls[0]![1]).toMatchObject({
       params: {
         text: "Embarcadero, San Francisco",
         size: 1,
+        layers: "venue,address,street",
         "focus.point.lat": 37.79,
         "focus.point.lon": -122.4,
       },
@@ -189,8 +191,34 @@ describe("geocode", () => {
     expect((error as Error).message).not.toMatch(/\d+\.\d+/);
   });
 
+  it("falls back to any layer when no venue, address or street matches", async () => {
+    get.mockResolvedValueOnce({ data: { features: [] } }).mockResolvedValueOnce({
+      data: {
+        features: [
+          {
+            geometry: { coordinates: [151.21, -33.87] },
+            properties: {
+              label: "Sydney, NSW, Australia",
+              name: "Sydney",
+              layer: "locality",
+            },
+          },
+        ],
+      },
+    });
+    const place = await geocode("key", "Anzac Bridge", null);
+    expect(place).toEqual({
+      label: "Sydney, NSW, Australia",
+      point: [-33.87, 151.21],
+      match: { query: "Anzac Bridge", name: "Sydney", type: "locality" },
+    });
+    expect(get).toHaveBeenCalledTimes(2);
+    expect(get.mock.calls[1]![1]!.params).not.toHaveProperty("layers");
+  });
+
   it("is null when nothing matches", async () => {
     get.mockResolvedValue({ data: { features: [] } });
     expect(await geocode("key", "zzzz", null)).toBeNull();
+    expect(get).toHaveBeenCalledTimes(2);
   });
 });
