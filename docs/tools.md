@@ -178,14 +178,12 @@ load.
   venue, address or street) is refused, naming the match (`coarseVia`), in
   every tool that takes a via. A start, end or `toward` may be a suburb.
   The geocoder asks for venue, address and street first.
-- Crossings: counted from OpenStreetMap through Overpass for every
-  candidate, past runs included (so it is queried even without
-  `ORS_API_KEY`), one query per snapped 0.02 degree area, cached 7 days,
-  capped at 12 s, never retried. Crossings are counted only when the public
-  Overpass service answers, which it often does not (every public instance
-  was down on 2026-11-03). After a failure the process stops asking for 10
-  minutes, and new routes rank by path share and past runs by recency and
-  distance, with one warning.
+- Measures: crossings (merged within 25 m), signals, off-road path share,
+  main-road km and green share come from the server's OpenStreetMap index
+  (`OSM_EXTRACT_URL`, 25 km around `HOME_START`, refreshed weekly) for every
+  candidate, past runs included. Outside it, or without it, they are null,
+  generated routes keep the OpenRouteService path share, and one warning
+  says why. An index not refreshed in 14 days adds a warning.
 - Terrain: flat, rolling and hilly are the athlete's own thirds of climb per
   km over their recent runs (8 and 20 m/km under 10 runs). On 2026-11-03
   the live bands were 11.2 and 13.3 m/km. A generated route's climb uses a

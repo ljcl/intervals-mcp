@@ -56,7 +56,7 @@ breaking them has shipped bugs — do not work around them locally.
   is still there.
 - **Caching policy lives in `intervalsCacheTtl`** (`fetchClient.ts`;
   path-keyed TTLs; key is full URL, TTL matches query-stripped path; a
-  `readOnly` POST, as ORS routing and Overpass are, is retried and cached
+  `readOnly` POST, as ORS routing is, is retried and cached
   like a GET with its body in the key). Writes
   invalidate descendants AND ancestors; `skipCache: true` guards append
   reads. intervals.icu sends no rate-limit headers, so its client
@@ -116,8 +116,10 @@ breaking them has shipped bugs — do not work around them locally.
   Stored-route track math (cut, join, version diff, carrying a km between
   versions, the 30 m join gap, dead-end spurs): `routeGeometry.ts`;
   stored-route rules and the summary the text and the map share:
-  `routeBuilder.ts`. Road crossings per
-  km: `crossingsPerKm` in `overpassClient.ts`.
+  `routeBuilder.ts`. Road crossings,
+  signals, off-road path share, main-road km and green share of a route:
+  `routeOsmStats` in `osmIndex.ts` (built by `osmIndexBuild.ts`, refreshed by
+  `osmIndexRefresh.ts`).
   Weather, dew point and the weather note: `activityWeather.ts` (FIT
   humidity read by `fitWeather.ts`). Two runs' per-km difference and its
   drift verdict: `compareKmSplits` in `kmComparison.ts`, on the splits of
@@ -161,8 +163,8 @@ breaking them has shipped bugs — do not work around them locally.
   `process.env.TZ` or Intl's default zone elsewhere; `checkConfig()` is the
   startup gate (docs/architecture.md#configuration-and-time-zone).
 - **intervals.icu data goes through `intervalsClient.ts`; routing and
-  geocoding go through `orsClient.ts`; road crossings through
-  `overpassClient.ts`.** The retired Strava client has been deleted; do not
+  geocoding go through `orsClient.ts`; OpenStreetMap data through the local
+  index (`osmIndex.ts`), never a live OSM API.** The retired Strava client has been deleted; do not
   add another client for data intervals.icu already holds.
 - **Ids go through `intervalsActivityIdInput`** (accepts an optional `i`
   prefix, e.g. `i189807578`), in `tools/_ids.ts`. Advertised schema is

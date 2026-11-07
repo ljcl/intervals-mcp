@@ -15,6 +15,7 @@ rate limits, and endpoint security. For the code behind these see
 | `PORT` | No | Server port, 1-65535; blank or unset means `3000`. The image's `HEALTHCHECK` reads it |
 | `ORS_API_KEY` | No | OpenRouteService key (free Standard plan, 200 routes a day) for generated routes in `suggest-run-route`. Unset, it offers past runs and stitched routes only and place names cannot be looked up |
 | `HOME_START` | No | Usual run start as `lat,lng`, e.g. `37.79,-122.39`. Unset, the start is inferred from recent GPS runs; a malformed value stops startup |
+| `OSM_EXTRACT_URL` | No | URL of an `.osm.pbf` for the local OpenStreetMap index that ranks route suggestions (crossings, signals, off-road paths, main roads, parks). Needs `HOME_START`; the index keeps 25 km around it. A city extract is smallest, e.g. `https://download.bbbike.org/osm/bbbike/Sydney/Sydney.osm.pbf` (55 MB, weekly); a Geofabrik region also works (Australia is 973 MB). Unset: crossings are not counted. A value that is not an http(s) URL stops startup |
 | `DATA_DIR` | No | Directory for stored routes (`stitch-route`, `amend-route`, and the routes `suggest-run-route` generates). Default `./data`; the image sets `/data`, which `docker-compose.yml` mounts as the named volume `route-data` |
 | `ROUTE_RETENTION_DAYS` | No | Days a stored route that is not read or changed is kept, 1-3650 (default 30). A suggested route nobody used is kept 3 days. A bad value stops startup |
 | `PUBLIC_URL` | No | Public URL. Warns at startup when `/mcp` is exposed without `MCP_AUTH_TOKEN`, and its host is allowed as a browser `Origin` on `/mcp` besides localhost |
@@ -380,15 +381,9 @@ What leaves the server:
   changed part, an out-and-back) and the places named. This happens
   only with `ORS_API_KEY` set; unset, nothing goes to OpenRouteService and
   only past runs are offered.
-- OpenStreetMap Overpass receives the bounding box around every candidate
-  route, past runs included, snapped to a 0.02 degree grid (about 2 km), to
-  count road crossings. It needs no key, so this happens whenever route
-  suggestions run, with or without `ORS_API_KEY`, and the box covers the
-  usual start. Crossings are counted only when the public Overpass service
-  answers, which it often does not: it can be slow, every public instance
-  was down on 2026-11-03, and a query is capped at 12 s. Results are cached
-  for 7 days. A failure only drops the ranking to path share with a warning,
-  and the process then skips Overpass for 10 minutes.
+- The OpenStreetMap extract is downloaded from `OSM_EXTRACT_URL` once a
+  week at most; the request carries no location. Route geometry never
+  leaves the server for OpenStreetMap.
 - OpenRouteService allows 200 routes a day and 40 a minute, so requests
   start 1.5 s apart, one tool call makes at most 12, and the 12 calls are
   shared across the runs of a week request. An ORS attempt is capped at
@@ -415,6 +410,36 @@ you would the API key's data.
 - One server process owns the directory: changes to one route are put in
   order inside the process, not across processes. Do not point two
   replicas at one `DATA_DIR`.
+
+## OpenStreetMap index
+
+With `OSM_EXTRACT_URL` and `HOME_START` set, the server keeps
+`<DATA_DIR>/osm/index.sqlite` (`/data/osm/index.sqlite` on the `route-data`
+volume): the crossings, paths, main roads and parks within 25 km of
+`HOME_START`. It is tens of MB for a city (20 MB for Sydney). During a
+build the downloaded extract sits beside it as `extract.osm.pbf` and is
+deleted afterwards, so leave room for the extract (55 MB for BBBike Sydney,
+973 MB for Geofabrik Australia). A build holds about 16 bytes per node in
+the area, roughly 100-200 MB for a city; Sydney peaked at 261 MB of process
+memory (RSS) and took 3 s from the 55 MB extract. A larger region takes
+longer, because every node in the file is read.
+
+The first build starts at startup and route suggestions work without it
+meanwhile (with a warning). After that it checks daily, rebuilds when the
+last successful check is over 7 days old, and a 304 from the source only
+renews the check. Log lines, on stderr:
+
+- `OpenStreetMap index: N ways and N crossing stops within 25 km of
+  HOME_START, data from <date>, built in N s` after a build.
+- `OpenStreetMap index: refresh failed (<reason>); keeping the index with
+  data from <date>. Trying again in a day.` (or `no index yet`). The old
+  index keeps serving.
+- `OpenStreetMap index: off (...)` at startup when either setting is
+  missing.
+
+To force a rebuild, delete `index.sqlite` and restart. A change to
+`OSM_EXTRACT_URL` or `HOME_START` rebuilds on its own. Route suggestions
+warn when the last successful check is over 14 days old.
 
 ## Docker notes
 

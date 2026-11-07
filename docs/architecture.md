@@ -107,15 +107,12 @@ never per-tool.
   message. A text read would replace the bytes that are not valid UTF-8.
 - `FetchClient` stops the upstream work of a cancelled call scope; see
   "Cancellation".
-- Three clients share the class: `intervalsApi` (intervals.icu, all athlete
-  data, through `intervalsClient.ts`), `orsApi` (OpenRouteService routing and
-  geocoding, `orsClient.ts`, paced 1.5 s apart for its 40 a minute, 10 s
-  cap, one retry) and `overpassApi` (OpenStreetMap road crossings,
-  `overpassClient.ts`, 12 s cap, no retries; a failure skips it for 10
-  minutes, and a 200 whose body reports a failure is dropped from the cache
-  with `evictCached`). Do not add a client for data intervals.icu holds.
+- Two clients share the class: `intervalsApi` (intervals.icu, all athlete
+  data, through `intervalsClient.ts`) and `orsApi` (OpenRouteService routing
+  and geocoding, `orsClient.ts`, paced 1.5 s apart for its 40 a minute, 10 s
+  cap, one retry). Do not add a client for data intervals.icu holds.
 - A request with `readOnly: true` is a POST that changes nothing (ORS
-  routing and Overpass queries, which take a body): it retries and caches
+  routing, which takes a body): it retries and caches
   like a GET, and its body is part of the cache key. Without the flag a POST
   is a write and is never retried.
 - An error body goes into `HttpError.message` only as a one-line summary
@@ -483,8 +480,8 @@ reusing the GAP grades. `startClusters.ts` groups recent run starts (300 m,
 recency weighted) into the athlete's usual start. `routeCandidates.ts` holds
 the candidate rules: past-run matching and ranking, the terrain bands (the
 athlete's own thirds of climb per km, 8 and 20 m/km under 10 runs) and the
-3 m climb hysteresis for generated routes. `crossingsPerKm`
-(`overpassClient.ts`) counts road crossings within 12 m of a route per km.
+3 m climb hysteresis for generated routes. `routeOsmStats` (`osmIndex.ts`)
+measures each candidate against the local OpenStreetMap index.
 `routeSuggestions.ts` composes them for `suggest-run-route` and the
 `route-map` suggestion mode (`buildSuggestionsMapData`), so the text and the
 map offer the same routes. Its ORS budget is per call (12 calls, at most 2
@@ -673,6 +670,64 @@ streams, converts speed to grade-adjusted speed on the gap basis, excludes
 the warm-up and runs `computeAerobicAnalysis`. get-aerobic-analysis and
 get-running-summary (which fills a missing intervals.icu value from it)
 both call it.
+
+## OpenStreetMap index
+
+Route suggestions rank candidates by road crossings, signals, off-road
+paths, main roads and parks. These come from a local index, never a live
+OpenStreetMap API (the public instances were too slow and often down, see
+docs/api-notes.md). The source is the `.osm.pbf` at
+`OSM_EXTRACT_URL` (a BBBike city or a Geofabrik region), read in-process by
+`osmPbf.ts` with `pbf` and `node:zlib`; there is no osmium. The index covers
+a 25 km square around `HOME_START` (`areaAround`); with either setting
+missing it is off and one startup line says so.
+
+`osmIndexBuild.ts` builds it in three passes over the file: the outer ways
+of park and water multipolygons, then the nodes inside the area (crossings
+and signals among them), then the ways, stored as runs of their in-area
+points. Memory grows with the in-area nodes (about 16 bytes each), not with
+the extract. Classes: `path` (highway footway, path, pedestrian or track; a
+shared path as `highway=cycleway` with `foot=designated` or `yes`, or
+`designation=shared_path`; not `footway=sidewalk` or `crossing`, the street
+footpath in Australian tagging; not `foot` or `access` of `no` or
+`private`), `main_road` (trunk, primary and secondary, with links) and
+`green_edge` (parks, water, coastline and waterways; multipolygon outer
+rings count, and a closed ring other than a coastline counts as an area).
+Crossing and signal nodes under 25 m apart merge into one stop, so a
+junction's signal node and its crossings count once.
+
+The index is one SQLite file, `DATA_DIR/osm/index.sqlite`, opened with
+`node:sqlite` because the tests run under Node as well as Bun. Tables:
+`meta` (schema version, area, source URL, etag, last-modified, data date,
+built and checked times), `ways` (class, ring flag, points as a Float64
+blob), `way_cells` and `stop_nodes`, both keyed by 0.01 degree cell (about
+1 km). A missing file is looked for again on every read, so a build that
+lands is seen without a restart.
+
+`osmIndexRefresh.ts` runs at startup and daily, outside any tool call. It
+rebuilds when the index is missing, was made for another URL, area or schema
+version, or was last checked over 7 days ago. The download sends
+`If-None-Match` and `If-Modified-Since` from the stored meta; a 304 only
+updates `checked_at`. Otherwise the file is saved, built into
+`index.sqlite.tmp`, renamed into place, and only then is the read handle
+dropped, so a reader in between cannot reopen and cache the old file. A
+fetch is capped at 30 minutes. A failure logs one line, keeps the old index
+and waits for the next daily check. Plain `fetch`, not `FetchClient`: this
+is a background file download, not a cached API read.
+
+`routeOsmStats` reads it: the route is sampled every 10 m. A sample counts
+as on a path within 15 m or on a main road within 20 m of a way of that
+class, only when the way's heading is within 30 degrees of the route's, so
+a crossing street does not count as running along it. It counts as green
+within 50 m of a park or water edge, or inside a ring. Crossings are the
+merged stops with a node within 12 m of the route, per km, and signals the
+signalised ones among them. It returns null without an index, when any
+point lies outside the area, or for a track shorter than a sample.
+`osmIndexInfo` reports `unconfigured`, `missing` or `ready` with
+the data date and the days since the last successful check;
+`routeSuggestions.ts` (`osmWarnings`) turns them into one warning for
+routes that could not be measured, and another when the last check is over
+14 days old.
 
 ## Per-call telemetry
 
