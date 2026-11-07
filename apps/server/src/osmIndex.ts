@@ -7,7 +7,7 @@
  */
 import { join } from "node:path";
 import { getDataDir } from "./config";
-import type { LatLng } from "./mapAnchors";
+import { type LatLng } from "./mapAnchors";
 
 export const OSM_SCHEMA_VERSION = "1";
 export const OSM_INDEX_RADIUS_KM = 25;

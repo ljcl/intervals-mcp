@@ -14,8 +14,8 @@ import {
   inArea,
   METERS_PER_DEG_LAT,
   METERS_PER_DEG_LNG_AT_EQUATOR,
-  type OsmArea,
   OSM_SCHEMA_VERSION,
+  type OsmArea,
   STOP_MERGE_M,
   type WayClass,
 } from "./osmIndex";

@@ -1,7 +1,7 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type FixtureExtract, osmPbfBytes } from "./__fixtures__/osmPbf";
 import { areaAround, areaKey } from "./osmIndex";
