@@ -19,6 +19,7 @@ services:
       - TZ=${TZ:-UTC}
       - ORS_API_KEY=${ORS_API_KEY:-}
       - HOME_START=${HOME_START:-}
+      - OSM_EXTRACT_URL=${OSM_EXTRACT_URL:-}
       - PUBLIC_URL=${PUBLIC_URL:-}
       - MCP_AUTH_TOKEN=${MCP_AUTH_TOKEN:-}
       # Days a stored route (stitch-route, amend-route) is kept after its last

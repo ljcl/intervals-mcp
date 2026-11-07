@@ -860,8 +860,8 @@ Base `https://api.openrouteservice.org`, key in `Authorization: <key>` (no
 - Waytype values seen around Sydney and San Francisco: 7 Footway
   (56-83% of most loops: OSM tags sidewalks as footways), 3 Street,
   6 Cycleway, 2 Road, 0 Unknown, 8 Steps, 4 Path, 9 Ferry. Path share is
-  therefore a weak "off the road" signal; crossings come from Overpass
-  instead.
+  therefore a weak "off the road" signal; off-road share and crossings
+  come from the local OpenStreetMap index instead.
 - Ferries: without `options.avoid_features: ["ferries"]`, a "6 km" round
   trip from The Embarcadero came back with 24 km on waytype 9 (Ferry).
   Every request now sends it, and a route with any Ferry distance is
@@ -904,7 +904,11 @@ Base `https://api.openrouteservice.org`, key in `Authorization: <key>` (no
   "Anzac Bridge, Sydney" still gave "Sydney, NSW, Australia" (layer locality),
   which the via refusal catches.
 
-## OpenStreetMap Overpass (route suggestions, verified 2026-11-03)
+## OpenStreetMap Overpass (retired 2026-11-08)
+
+Route suggestions no longer call Overpass. The slowness and outages below
+are why; crossings now come from the local OpenStreetMap index (next
+section). Kept as a record.
 
 `GET https://overpass-api.de/api/interpreter?data=<query>` with
 `node[highway~"^(crossing|traffic_signals)$"](s,w,n,e);out skel qt;`. A 6 km
@@ -922,3 +926,37 @@ every call. The query's `[timeout:10]` can also end server side as HTTP 200
 with `elements: []` and a `remark` starting "runtime error"; that body is
 treated as a failure and evicted from the cache, never stored as zero
 crossings.
+
+## OpenStreetMap extracts (verified 2026-11-07)
+
+Source of the local index (`OSM_EXTRACT_URL`).
+
+- BBBike `https://download.bbbike.org/osm/bbbike/Sydney/Sydney.osm.pbf`:
+  57,755,460 bytes (55 MB). `Last-Modified` changes weekly (Sat 31 Oct 2026).
+- Geofabrik `https://download.geofabrik.de/australia-oceania/australia-latest.osm.pbf`:
+  973,007,838 bytes (973 MB). Answers a 307 redirect, then sends
+  `Last-Modified`, which changes daily.
+- The reader uses the header's HeaderBBox (field 1, nanodegrees) when
+  present to know what the extract covers.
+- Both are zlib-compressed blobs with `Sort.Type_then_ID`, so nodes arrive
+  sorted by id (the reader relies on it and refuses an unsorted file).
+- Conditional GET was not verified. The refresh sends `If-None-Match` and
+  `If-Modified-Since` from the last download and falls back to a full
+  download when the server ignores them.
+- Australian tagging the classes rely on: a shared path is `highway=cycleway`
+  with `foot=designated`; `footway=sidewalk` is the street footpath, not an
+  off-road path.
+- The header's replication timestamp is the data date; BBBike Sydney gave
+  2026-10-31T00:00:00Z.
+
+Smoke on the BBBike Sydney file (2026-11-08, 25 km around -33.876,151.178,
+Bun 1.4.4 on macOS):
+
+- Build 3 s, peak RSS 261 MB, `index.sqlite` 20.3 MB.
+- 94,985 ways: path 59,975 (408k points), main_road 23,162, green_edge
+  11,848 (5,710 rings).
+- 62,974 crossing nodes merged into 31,679 stops, 3,094 of them signalised.
+- `routeOsmStats` on hand-drawn tracks (straight lines between guessed
+  points, so path and road shares understate), 20-40 ms per route: Glebe
+  foreshore 0.8 crossings/km, 32% path, 62% green; Parramatta Road 3
+  crossings/km, 0.5 signals/km, 0.8 km main road; Centennial Park 98% green.

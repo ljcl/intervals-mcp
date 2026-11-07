@@ -10,7 +10,7 @@ import {
   type RouteTrack,
 } from "./mapAnchors";
 import { geocode, OrsApiError, type OrsRoute, orsRoute } from "./orsClient";
-import { loadCrossings } from "./overpassClient";
+import { osmIndexInfo, routeOsmStats } from "./osmIndex";
 import { passesInOrder } from "./routeCandidates";
 import {
   loadRouteSuggestions,
@@ -28,9 +28,10 @@ vi.mock("./orsClient", async (o) => ({
   geocode: vi.fn(),
   orsRoute: vi.fn(),
 }));
-vi.mock("./overpassClient", async (o) => ({
-  ...(await o<typeof import("./overpassClient")>()),
-  loadCrossings: vi.fn(),
+vi.mock("./osmIndex", async (o) => ({
+  ...(await o<typeof import("./osmIndex")>()),
+  routeOsmStats: vi.fn(),
+  osmIndexInfo: vi.fn(),
 }));
 vi.mock("./startClusters", async (o) => ({
   ...(await o<typeof import("./startClusters")>()),
@@ -147,12 +148,25 @@ const VIA_EAST: LatLng = [SF[0] + 0.0135, SF[1] + 0.017];
 const text = (point: LatLng) => `${point[0]},${point[1]}`;
 const km = (meters: number) => meters / 1000;
 
+const STATS = {
+  crossings_per_km: 0,
+  signals_per_km: 0,
+  path_share: 0.7,
+  main_road_km: 0,
+  green_share: 0.4,
+};
+
 beforeEach(() => {
   vi.mocked(listPlannedWorkouts).mockResolvedValue([
     event(10, "2026-11-04", homeLoop.distance.at(-1)!),
   ]);
   vi.mocked(loadRunStarts).mockResolvedValue({ runs: history, skipped: 0 });
-  vi.mocked(loadCrossings).mockReset().mockResolvedValue([]);
+  vi.mocked(routeOsmStats).mockReset().mockReturnValue(STATS);
+  vi.mocked(osmIndexInfo).mockReset().mockReturnValue({
+    state: "ready",
+    data_date: "2026-11-01T00:00:00.000Z",
+    age_days: 1,
+  });
   vi.mocked(geocode).mockReset();
   vi.mocked(orsRoute).mockReset();
   let n = 0;
@@ -226,25 +240,76 @@ describe("loadRouteSuggestions", () => {
   it("drops the generated route with the most crossings", async () => {
     // A crossing node on loop 2's start: of the 4 seeds tried away from home, loop 2 ranks last.
     const busyStart = generatedLoop(2).coordinates[0]!;
-    vi.mocked(loadCrossings).mockResolvedValue([busyStart]);
+    vi.mocked(routeOsmStats).mockImplementation((t) =>
+      t.coordinates[0]![0] === busyStart[0] &&
+      t.coordinates[0]![1] === busyStart[1]
+        ? { ...STATS, crossings_per_km: 9 }
+        : STATS,
+    );
     const run = (await loadRouteSuggestions("k", { start: "37.8,-122.3" }, ENV))
       .runs[0]!;
-    expect(vi.mocked(loadCrossings)).toHaveBeenCalledTimes(1);
     expect(
       run.candidates.map((c) => c.track.coordinates[0]),
     ).not.toContainEqual(busyStart);
   });
 
-  it("warns once and still answers when crossings cannot be counted", async () => {
-    vi.mocked(loadCrossings).mockResolvedValue(null);
+  it.each([
+    [
+      { state: "unconfigured" } as const,
+      "Road crossings, signals and main roads were not counted: no OpenStreetMap index is configured (OSM_EXTRACT_URL and HOME_START), so new routes were ranked by their share on paths and past runs by recency and distance.",
+    ],
+    [
+      { state: "missing" } as const,
+      "Road crossings, signals and main roads were not counted: the OpenStreetMap index has not been built yet (see the server log), so new routes were ranked by their share on paths and past runs by recency and distance.",
+    ],
+    [
+      {
+        state: "ready",
+        data_date: "2026-11-01T00:00:00.000Z",
+        age_days: 1,
+      } as const,
+      "Road crossings, signals and main roads were not counted for routes outside the OpenStreetMap index (25 km around HOME_START), so those were ranked by share on paths.",
+    ],
+  ])("warns once when routes are not indexed (%o)", async (info, warning) => {
+    vi.mocked(routeOsmStats).mockReturnValue(null);
+    vi.mocked(osmIndexInfo).mockReturnValue(info);
+    const result = await loadRouteSuggestions("k", {}, ENV);
+    expect(result.warnings.filter((w) => /were not counted/.test(w))).toEqual([
+      warning,
+    ]);
+    const [past, generated] = result.runs[0]!.candidates;
+    expect(past!.crossings_per_km).toBeNull();
+    expect(past!.path_share).toBeNull();
+    expect(generated!.path_share).toBe(0.7);
+    expect(generated!.signals_per_km ?? null).toBeNull();
+  });
+
+  it("measures every candidate kind from the index", async () => {
+    vi.mocked(routeOsmStats).mockReturnValue({
+      ...STATS,
+      path_share: 0.91,
+      signals_per_km: 1.5,
+    });
+    const run = (await loadRouteSuggestions("k", {}, ENV)).runs[0]!;
+    for (const c of run.candidates)
+      expect(c).toMatchObject({
+        path_share: 0.91,
+        signals_per_km: 1.5,
+        main_road_km: 0,
+        green_share: 0.4,
+      });
+  });
+
+  it("warns when the index has not been refreshed in two weeks", async () => {
+    vi.mocked(osmIndexInfo).mockReturnValue({
+      state: "ready",
+      data_date: "2026-10-01T00:00:00.000Z",
+      age_days: 15,
+    });
     const result = await loadRouteSuggestions("k", {}, ENV);
     expect(result.warnings).toContain(
-      "Road crossings could not be counted (OpenStreetMap Overpass did not answer), so new routes were ranked by their share on paths and past runs by recency and distance.",
+      "The OpenStreetMap index was last refreshed 15 days ago; its weekly refresh is failing (see the server log).",
     );
-    expect(result.runs[0]!.candidates.map((c) => c.crossings_per_km)).toEqual([
-      null,
-      null,
-    ]);
   });
 
   it("offers past runs only without an ORS key and refuses place names", async () => {
@@ -531,16 +596,15 @@ describe("loadRouteSuggestions", () => {
     );
   });
 
-  it("asks Overpass once after it fails", async () => {
+  it("warns once per call across runs when routes are not indexed", async () => {
     vi.mocked(listPlannedWorkouts).mockResolvedValue([
       event(10, "2026-11-04", homeLoop.distance.at(-1)!),
       event(11, "2026-11-06", homeLoop.distance.at(-1)!),
     ]);
-    vi.mocked(loadCrossings).mockResolvedValue(null);
+    vi.mocked(routeOsmStats).mockReturnValue(null);
     const result = await loadRouteSuggestions("k", { days: 7 }, ENV);
-    expect(vi.mocked(loadCrossings)).toHaveBeenCalledTimes(1);
     expect(
-      result.warnings.filter((w) => /crossings could not be counted/.test(w)),
+      result.warnings.filter((w) => /were not counted/.test(w)),
     ).toHaveLength(1);
   });
 

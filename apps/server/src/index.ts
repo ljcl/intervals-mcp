@@ -8,6 +8,7 @@ import {
 import { createShutdown, serveOptions } from "./httpServer";
 import { warnIfMcpUnprotected } from "./mcpAuth";
 import { createMcpEndpoint } from "./mcpEndpoint";
+import { startOsmIndexRefresh } from "./osmIndexRefresh";
 import { routeStoreInfo } from "./routeStore";
 import { createServer } from "./server";
 
@@ -36,6 +37,9 @@ if (store.onRootFs && process.platform === "linux")
   console.error(
     `WARNING: ${store.dir} is not a mounted volume, so stored routes are lost when the container is recreated. Mount a volume or a directory writable by UID 65534 there (docker-compose.yml mounts route-data).`,
   );
+
+// Builds or refreshes the OpenStreetMap index in the background (osmIndexRefresh.ts).
+startOsmIndexRefresh();
 
 const PORT = getPort();
 const HOST = "0.0.0.0";

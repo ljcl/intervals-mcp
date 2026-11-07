@@ -9,6 +9,7 @@ import {
   getIntervalsApiKey,
   getIntervalsAthleteId,
   getOrsApiKey,
+  getOsmExtractUrl,
   getPort,
   getRouteRetentionDays,
   getTimeZone,
@@ -88,6 +89,22 @@ describe("route suggestion settings", () => {
     expect(getHomeStart()).toEqual([37.79, -122.39]);
     delete process.env.HOME_START;
     expect(getHomeStart()).toBeNull();
+  });
+});
+
+describe("getOsmExtractUrl", () => {
+  it("reads an http(s) URL, null when unset, blank or another scheme", () => {
+    delete process.env.OSM_EXTRACT_URL;
+    expect(getOsmExtractUrl()).toBeNull();
+    process.env.OSM_EXTRACT_URL = "  ";
+    expect(getOsmExtractUrl()).toBeNull();
+    process.env.OSM_EXTRACT_URL =
+      " https://download.bbbike.org/osm/bbbike/Sydney/Sydney.osm.pbf ";
+    expect(getOsmExtractUrl()).toBe(
+      "https://download.bbbike.org/osm/bbbike/Sydney/Sydney.osm.pbf",
+    );
+    process.env.OSM_EXTRACT_URL = "ftp://example.org/a.osm.pbf";
+    expect(getOsmExtractUrl()).toBeNull();
   });
 });
 
@@ -254,10 +271,43 @@ describe("checkConfig", () => {
     process.env.PORT = "3000";
     process.env.INTERVALS_ATHLETE_ID = "i12345";
     process.env.MCP_AUTH_TOKEN = "t".repeat(64);
+    delete process.env.OSM_EXTRACT_URL;
+    delete process.env.HOME_START;
   }
 
   it("passes a valid environment", () => {
     setValidEnv();
+    expect(checkConfig()).toEqual({ errors: [], warnings: [] });
+  });
+
+  it("reports an OSM_EXTRACT_URL that is not an http(s) URL", () => {
+    setValidEnv();
+    process.env.HOME_START = "-33.87,151.2";
+    process.env.OSM_EXTRACT_URL = "Sydney.osm.pbf";
+    const { errors } = checkConfig();
+    expect(errors).toEqual([
+      'OSM_EXTRACT_URL is "Sydney.osm.pbf", which is not an http(s) URL. Set it to an .osm.pbf download, for example https://download.bbbike.org/osm/bbbike/Sydney/Sydney.osm.pbf, or leave it unset.',
+    ]);
+  });
+
+  it("warns when OSM_EXTRACT_URL is set without HOME_START", () => {
+    setValidEnv();
+    delete process.env.HOME_START;
+    process.env.OSM_EXTRACT_URL =
+      "https://download.bbbike.org/osm/bbbike/Sydney/Sydney.osm.pbf";
+    expect(checkConfig()).toEqual({
+      errors: [],
+      warnings: [
+        "OSM_EXTRACT_URL is set but HOME_START is not: the OpenStreetMap index keeps 25 km around HOME_START, so no index is built and road crossings are not counted.",
+      ],
+    });
+  });
+
+  it("accepts OSM_EXTRACT_URL with HOME_START", () => {
+    setValidEnv();
+    process.env.HOME_START = "-33.87,151.2";
+    process.env.OSM_EXTRACT_URL =
+      "https://download.bbbike.org/osm/bbbike/Sydney/Sydney.osm.pbf";
     expect(checkConfig()).toEqual({ errors: [], warnings: [] });
   });
 
