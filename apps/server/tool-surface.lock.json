@@ -1,7 +1,7 @@
 {
   "note": "Permission-relevant identity of every advertised tool (ljcl/strava-mcp#303). Changing an entry invalidates the stored 'Allow always' grant for that tool. See apps/server/src/toolSurface.test.ts for how to regenerate.",
   "tools": {
-    "amend-route": "8730d90c738d9133",
+    "amend-route": "677080b22a519117",
     "compare-activities": "337bfd8e60926277",
     "export-route": "cbcee360be18a1db",
     "get-activity": "e044bea8af0eb286",
@@ -31,7 +31,7 @@
     "get-wellness": "940e9b3ffdddc640",
     "list-activities": "379d71f548742cf3",
     "list-gear": "5e0547fa4d55675b",
-    "stitch-route": "2cd554887ff7ca0a",
+    "stitch-route": "87af8270cdad78a1",
     "suggest-run-route": "de5147b9ee667934",
     "update-activity": "6c27bb1796ec14cb",
     "update-gear": "ab44fd4ec7630892",

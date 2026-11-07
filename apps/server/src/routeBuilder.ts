@@ -33,6 +33,7 @@ import {
   type RouteTrack,
 } from "./mapAnchors";
 import { OrsApiError, type OrsRoute, orsRoute, type Place } from "./orsClient";
+import { routeOsmStats } from "./osmIndex";
 import { NO_PROGRESS, type ReportProgress } from "./progress";
 import {
   climbPerKm,
@@ -1692,10 +1693,15 @@ export interface RouteSummary {
   /** Sum of the sections' climbs; sections with no altitude add nothing (climb_complete false). */
   climb_m: number;
   climb_complete: boolean;
-  /** Share on paths over the sections where it is known; null where none is. */
+  /** The whole route's share from the OpenStreetMap index, else the OpenRouteService share over the sections where it is known; null where none is. */
   path_share: number | null;
-  /** Share (0-1) of the distance whose path share is known. */
+  /** Share (0-1) of the distance whose path share is known; 1 from the index. */
   path_share_coverage: number;
+  /** From the OpenStreetMap index (routeOsmStats); null without it or outside it. */
+  crossings_per_km: number | null;
+  signals_per_km: number | null;
+  main_road_km: number | null;
+  green_share: number | null;
   segments: SegmentSummary[];
   versions: Array<{ version: number; change: string; created_at: string }>;
   warnings: string[];
@@ -1836,6 +1842,8 @@ export function summarizeRoute(
   const noted = summaries.filter((s) => s.notes.length > 0);
   if (noted.length > 0)
     warnings.push(sectionNotesWarning(noted.map((s) => s.index)));
+  // One meaning for the whole route when the index covers it; sections keep theirs.
+  const osm = routeOsmStats(track);
   return {
     route_id: route.route_id,
     name: route.name,
@@ -1846,8 +1854,20 @@ export function summarizeRoute(
     distance_m: Math.round(distance),
     climb_m: Math.round(climb),
     climb_complete: climbComplete,
-    path_share: shareKnown > 0 ? round2(onPaths / shareKnown) : null,
-    path_share_coverage: distance > 0 ? round2(shareKnown / distance) : 0,
+    path_share: osm
+      ? osm.path_share
+      : shareKnown > 0
+        ? round2(onPaths / shareKnown)
+        : null,
+    path_share_coverage: osm
+      ? 1
+      : distance > 0
+        ? round2(shareKnown / distance)
+        : 0,
+    crossings_per_km: osm?.crossings_per_km ?? null,
+    signals_per_km: osm?.signals_per_km ?? null,
+    main_road_km: osm?.main_road_km ?? null,
+    green_share: osm?.green_share ?? null,
     segments: summaries,
     versions: route.versions.map((v) => ({
       version: v.version,

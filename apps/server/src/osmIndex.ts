@@ -2,8 +2,9 @@
  * Local OpenStreetMap index: road crossings, off-road paths, main roads and
  * park and water edges within OSM_INDEX_RADIUS_KM of HOME_START, built from
  * an .osm.pbf (osmIndexBuild.ts) and refreshed weekly (osmIndexRefresh.ts).
- * Route suggestions measure every candidate here and never ask OpenStreetMap
- * live. docs/architecture.md, "OpenStreetMap index".
+ * Route suggestions measure every candidate here, and stored route summaries
+ * their whole track; nothing asks OpenStreetMap live. docs/architecture.md,
+ * "OpenStreetMap index".
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";

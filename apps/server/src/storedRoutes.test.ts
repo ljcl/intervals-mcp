@@ -18,6 +18,7 @@ import {
 } from "./__fixtures__/sundayRoute";
 import { haversineMeters } from "./mapAnchors";
 import * as ors from "./orsClient";
+import { routeOsmStats } from "./osmIndex";
 import { moveToward } from "./routeGeometry";
 import { type RouteMapData } from "./routeMapData";
 import { type StoredRouteStructured } from "./tools/_storedRoutes";
@@ -26,6 +27,11 @@ vi.mock("./orsClient", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./orsClient")>()),
   orsRoute: vi.fn(),
   geocode: vi.fn(),
+}));
+
+vi.mock("./osmIndex", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./osmIndex")>()),
+  routeOsmStats: vi.fn(),
 }));
 
 vi.mock("./intervalsClient", async (importOriginal) => ({
@@ -59,6 +65,7 @@ beforeEach(async () => {
   vi.mocked(ors.geocode).mockImplementation(async (key, text) =>
     fakeGeocode(key, text),
   );
+  vi.mocked(routeOsmStats).mockReset().mockReturnValue(null);
 });
 
 afterEach(async () => {
@@ -329,10 +336,37 @@ describe("stitch-route", () => {
   });
 
   it("labels the path share as partial when past-run sections have none", async () => {
-    const { text } = await stitchSunday();
+    const { structured, text } = await stitchSunday();
     expect(text).toMatch(
       /path share partial: 60% on paths over the \d+% of the distance that was routed; unknown for sections from past runs/,
     );
+    expect(text).not.toContain("crossings/km");
+    expect(structured.crossings_per_km).toBeNull();
+  });
+
+  it("gives the whole route's measures from the OpenStreetMap index when it covers the route", async () => {
+    vi.mocked(routeOsmStats).mockReturnValue({
+      crossings_per_km: 2.4,
+      signals_per_km: 0.8,
+      path_share: 0.31,
+      main_road_km: 0.6,
+      green_share: 0.55,
+    });
+    const { structured, text } = await stitchSunday();
+    expect(structured).toMatchObject({
+      path_share: 0.31,
+      path_share_coverage: 1,
+      crossings_per_km: 2.4,
+      signals_per_km: 0.8,
+      main_road_km: 0.6,
+      green_share: 0.55,
+    });
+    // A section keeps its own share.
+    expect(structured.segments[1]!.path_share).toBe(0.6);
+    expect(text).toContain(
+      "31% on paths, 2.4 crossings/km, 0.8 signals/km, 0.6 km on main roads, 55% by parks or water",
+    );
+    expect(text).not.toContain("path share partial");
   });
 
   it("warns when the out-and-back climbs", async () => {
