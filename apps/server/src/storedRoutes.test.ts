@@ -226,10 +226,18 @@ describe("stitch-route", () => {
     expect(route_id).not.toBe(nearest.route_id);
     expect(ors_calls).toBe(nearest.ors_calls + 1);
     expect(warnings.join("\n")).not.toMatch(/the way it came/);
-    expect(warnings).toContainEqual(
+    expect(segments[1]!.notes).toContainEqual(
       expect.stringMatching(
-        /^Section 2 \(km [\d.-]+\): Via .* was on a way the route went along and back, so it was moved \d+ m to where the route passes it/,
+        /^Via .* was on a way the route went along and back, so it was moved \d+ m to where the route passes it/,
       ),
+    );
+    // A section's note is not repeated in the warnings, only counted.
+    expect(warnings.join("\n")).not.toMatch(/was on a way the route went/);
+    expect(warnings).toContain(
+      "Section 2 has notes; read them with each section.",
+    );
+    expect(result.text).toMatch(
+      /\n {3}Note: Via .* was on a way the route went along and back/,
     );
     const [via] = segments[1]!.vias;
     expect(`${via!.lat.toFixed(6)},${via!.lng.toFixed(6)}`).toBe(asked);
@@ -245,7 +253,7 @@ describe("stitch-route", () => {
     const { warnings, segments } =
       result.structuredContent as StoredRouteStructured;
     expect(segments[1]!.vias[0]!.moved_m).toBe(0);
-    expect(warnings).toContainEqual(
+    expect(segments[1]!.notes).toContainEqual(
       expect.stringMatching(
         /Via .* is on a way the route goes along and back; the nearest point it passes through is \d+ m away, more than the 50 m snap through moves a via, so it was kept/,
       ),
@@ -260,10 +268,13 @@ describe("stitch-route", () => {
     const { warnings, segments } =
       result.structuredContent as StoredRouteStructured;
     expect(segments[1]!.vias).toHaveLength(1);
-    expect(warnings).toContainEqual(
+    expect(segments[1]!.notes).toContainEqual(
       expect.stringMatching(
         /Via .* was merged into via .*: snap through put both at one point\./,
       ),
+    );
+    expect(warnings).toContain(
+      "Section 2 has notes; read them with each section.",
     );
   });
 
@@ -311,10 +322,11 @@ describe("stitch-route", () => {
       return route;
     });
     const { structured } = await stitchSunday();
-    expect(structured.warnings).toContainEqual(
-      expect.stringMatching(
-        /^Section 2 \(km 5\.27-6\.27\): It climbs 1\d m in 1\.00 km .* not flat/,
-      ),
+    expect(structured.segments[1]!.notes).toContainEqual(
+      expect.stringMatching(/^It climbs 1\d m in 1\.00 km .* not flat/),
+    );
+    expect(structured.warnings).toContain(
+      "Section 2 has notes; read them with each section.",
     );
   });
 });

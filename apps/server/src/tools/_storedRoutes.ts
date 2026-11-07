@@ -149,6 +149,7 @@ export function storedRouteLines(result: StoredRouteStructured): string[] {
         `   ${via.kind === "turnaround" ? "Turnaround" : "Via"} ${via.id} at km ${via.km.toFixed(2)}: ${via.label}${where}`,
       );
     }
+    for (const note of s.notes) lines.push(`   Note: ${note}`);
   }
   if (result.ors_calls > 0)
     lines.push(`Routing calls used: ${result.ors_calls}.`);

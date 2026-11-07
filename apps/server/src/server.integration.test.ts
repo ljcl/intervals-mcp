@@ -708,8 +708,16 @@ describe("tools/list input naming scheme (#141)", () => {
       "waypoints_version",
     ]);
     expect(keys("get-activity-streams-raw")).toEqual(["id"]);
-    expect(keys("stitch-route")).toContain("snap");
-    expect(keys("amend-route")).toContain("snap");
+    for (const name of ["stitch-route", "amend-route"]) {
+      const snap = tools.find((t) => t.name === name)?.inputSchema.properties
+        ?.snap;
+      expect(snap, name).toMatchObject({
+        type: "string",
+        enum: ["nearest", "through"],
+        default: "nearest",
+        description: expect.stringContaining("through:"),
+      });
+    }
     expect(keys("view-compare-activities")).toEqual([
       "activityId1",
       "activityId2",

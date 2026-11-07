@@ -948,9 +948,34 @@ describe("refusals worded for the athlete", () => {
     expect(summary.segments[0]!.notes[0]).toMatch(
       /The way toward Callan Park, Sydney is 0\.30 km, so this out-and-back is 0\.60 km, not 2\.00 km/,
     );
-    expect(summary.warnings[0]).toMatch(
-      /^Section 1 \(km 0\.00-0\.60\): The way toward/,
+    // The note stays with its section; the warnings only point at it.
+    expect(summary.warnings).toEqual([
+      "Section 1 has notes; read them with each section.",
+    ]);
+  });
+
+  it("counts the sections with notes in one warning line", async () => {
+    const at = moveTowardPoint(PLACES["Callan Park, Sydney"]!, 300);
+    const built = await stitchRoute(
+      "key",
+      {
+        segments: [1, 2].map((n) => ({
+          type: "out_and_back" as const,
+          at: `${at[0]},${at[1]}`,
+          toward: "Callan Park, Sydney",
+          distance_km: n + 1,
+        })),
+      },
+      ENV,
     );
+    const summary = summarizeRoute(built.route, built.version);
+    const noted = summary.segments.filter((s) => s.notes.length > 0);
+    expect(noted.map((s) => s.index)).toEqual([1, 2]);
+    const counts = summary.warnings.filter((w) => w.includes("have notes"));
+    expect(counts).toEqual([
+      "2 sections have notes (1, 2); read them with each section.",
+    ]);
+    expect(summary.warnings.join("\n")).not.toMatch(/The way toward/);
   });
 
   it("takes a stored route backwards, and refuses a version it does not have", async () => {

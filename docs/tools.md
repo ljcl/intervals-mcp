@@ -222,8 +222,14 @@ file per route under `DATA_DIR`; docs/operations.md). The rules live in
   silently dropped. Unknown top-level keys are still dropped and named in
   the reply, as for every tool.
 - An out-and-back whose climb is over 8 m per km (the default flat band,
-  `DEFAULT_TERRAIN_BANDS`) carries a note, shown as a warning with its
-  climb in metres, that another direction may be flatter.
+  `DEFAULT_TERRAIN_BANDS`) carries a note, with its climb in metres, that
+  another direction may be flatter.
+- A section's notes (an estimate, a via snap through moved, kept or merged,
+  an out-and-back cut short or climbing) are in that section's `notes` and,
+  in the text, on `Note:` lines under it. They are not repeated in
+  `warnings`: that has one line naming the sections with notes ("Section 2
+  has notes", "3 sections have notes (1, 2, 4)"), next to the warnings for
+  the whole route.
 - Joining: two adjacent sections whose ends are within 30 m are joined with
   a straight line. A wider gap is routed as a `join` section. A gap
   OpenRouteService cannot route is an error naming both sections, the
