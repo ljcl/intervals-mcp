@@ -20,6 +20,7 @@ import {
   REPEAT_HILL_MIN_M,
 } from "./hillAnalysis";
 import {
+  type LegOption,
   legOptions,
   planStitches,
   STITCH_FILL_CALLS,
@@ -50,6 +51,7 @@ import {
   matchPastRuns,
   outAndBack,
   PAST_POOL,
+  passesInOrder,
   type RouteCandidate,
   type RouteShape,
   rankGenerated,
@@ -67,7 +69,6 @@ import {
   loadRunStarts,
   nearestCluster,
   OUTDOOR_RUN_TYPES,
-  type RunStart,
   type StartCluster,
 } from "./startClusters";
 import { addDays, daysBetween } from "./utils/localDate";
@@ -297,7 +298,7 @@ export async function resolvePlace(
  */
 export function coarseVia(place: Place, text: string): string | null {
   if (!place.match || PRECISE_LAYERS.has(place.match.type)) return null;
-  return `"${text.trim()}" matched only ${place.match.name} (a ${place.match.type}), so it was not routed; pass lat,lng for it.`;
+  return `"${text.trim()}" matched only ${place.match.name} (a ${place.match.type}), so it was not routed; try the place name without its suburb or city, or pass lat,lng.`;
 }
 
 async function resolveStart(
@@ -474,15 +475,12 @@ async function stitch(
     shape: RouteShape;
     target_m: number;
   },
-  runs: RunStart[],
+  legs: { anchors: LatLng[]; options: LegOption[][] },
   budget: Budget,
   progress: ReportProgress,
 ): Promise<RouteCandidate[]> {
   if (plan.via.length === 0) return [];
-  const anchors = stitchAnchors(plan.start, plan.via, plan.shape, plan.end);
-  const options = anchors
-    .slice(1)
-    .map((to, i) => legOptions(runs, anchors[i]!, to));
+  const { anchors, options } = legs;
   const plans = planStitches(options, anchors, plan.target_m, plan.shape);
   const routed = new Map<string, RouteTrack | null>();
   let calls = STITCH_FILL_CALLS;
@@ -509,7 +507,9 @@ async function stitch(
       if (!fill) break;
     }
     const candidate = stitchedCandidate(stitchPlan, fills, plan.shape);
-    if (candidate) made.push(candidate);
+    // ORS can snap a fill's via point away.
+    if (candidate && passesInOrder(candidate.track, plan.via))
+      made.push(candidate);
   }
   return dedupeRoutes(made);
 }
@@ -641,13 +641,27 @@ export async function loadRouteSuggestions(
   const start = await resolveStart(args.start, env, clusters);
   const end = args.end ? await resolvePlace(args.end, env, start.point) : null;
   const via = await Promise.all(
-    viaTexts.map(async (text) => {
-      const found = await resolvePlace(text, env, start.point);
-      const problem = coarseVia(found, text);
-      if (problem) throw new RouteSuggestionError(problem);
-      return found;
-    }),
+    viaTexts.map((text) => resolvePlace(text, env, start.point)),
   );
+  // Checked in the asked order, so the first coarse via is the one named.
+  viaTexts.forEach((text, i) => {
+    const problem = coarseVia(via[i]!, text);
+    if (problem) throw new RouteSuggestionError(problem);
+  });
+  // The lines past runs take between the anchors do not depend on the planned run.
+  const anchors = stitchAnchors(
+    start.point,
+    via.map((p) => p.point),
+    shape,
+    end?.point ?? null,
+  );
+  const legs = {
+    anchors,
+    options:
+      via.length > 0
+        ? anchors.slice(1).map((to, i) => legOptions(history, anchors[i]!, to))
+        : [],
+  };
 
   const cluster = nearestCluster(clusters, start.point);
   const want = cluster ? GENERATED_AT_HOME : GENERATED_AWAY;
@@ -688,13 +702,7 @@ export async function loadRouteSuggestions(
         target_m: run.distance_m,
       };
       // Stitched first, so their few fills come out of the budget before the seeds.
-      const stitched = await stitch(
-        env.orsKey,
-        plan,
-        history,
-        budget,
-        progress,
-      );
+      const stitched = await stitch(env.orsKey, plan, legs, budget, progress);
       let tried: RouteCandidate[] = [];
       // After an ORS failure (a stitch fill's included), generation is skipped for this and later runs; the call-level warning says why.
       if (env.orsKey && budget.failure === null) {
@@ -752,6 +760,17 @@ export async function loadRouteSuggestions(
           );
         }
       }
+      if (stitched.length > 0 && !made.some((c) => c.kind === "stitched")) {
+        const nearest = stitched.reduce((a, b) =>
+          Math.abs(b.distance_m - run.distance_m) <
+          Math.abs(a.distance_m - run.distance_m)
+            ? b
+            : a,
+        );
+        runWarnings.push(
+          `A route along your past runs through the via points is ${km(nearest.distance_m)} km; ask for about ${km(nearest.distance_m)} km to see it.`,
+        );
+      }
       tried = made.filter((c) => c.kind === "generated");
       const kept = made.filter((c) => c.kind === "stitched");
 
@@ -779,9 +798,12 @@ export async function loadRouteSuggestions(
           if (sameRoute(r.track, c.track)) usedPast.add(r.id);
       }
       // The athlete's own lines first, then the most of them, then the distance.
+      // Shares are bucketed (0.05): seams make near-equal shares differ slightly, which must not decide the order.
+      const bucket = (c: RouteCandidate) =>
+        Math.round((c.history_share ?? 0) * 20);
       const ownLines = [...kept].sort(
         (a, b) =>
-          (b.history_share ?? 0) - (a.history_share ?? 0) ||
+          bucket(b) - bucket(a) ||
           Math.abs(a.distance_m - run.distance_m) -
             Math.abs(b.distance_m - run.distance_m),
       );
