@@ -381,8 +381,9 @@ What leaves the server:
   changed part, an out-and-back) and the places named. This happens
   only with `ORS_API_KEY` set; unset, nothing goes to OpenRouteService and
   only past runs are offered.
-- The OpenStreetMap extract is downloaded from `OSM_EXTRACT_URL` once a
-  week at most; the request carries no location. Route geometry never
+- The OpenStreetMap extract is downloaded from `OSM_EXTRACT_URL` when the
+  index is over 7 days old (a conditional request, so an unchanged extract is
+  not downloaded again); the request carries no location. Route geometry never
   leaves the server for OpenStreetMap.
 - OpenRouteService allows 200 routes a day and 40 a minute, so requests
   start 1.5 s apart, one tool call makes at most 12, and the 12 calls are
@@ -425,12 +426,20 @@ memory (RSS) and took 3 s from the 55 MB extract. A larger region takes
 longer, because every node in the file is read.
 
 The first build starts at startup and route suggestions work without it
-meanwhile (with a warning). After that it checks daily, rebuilds when the
-last successful check is over 7 days old, and a 304 from the source only
-renews the check. Log lines, on stderr:
+meanwhile (with a warning). After that the refresh checks daily and rebuilds
+when the index is over 7 days old, as a conditional GET: a 304 from the
+source only renews the check, so an unchanged extract is not downloaded
+again. A failure is retried at the next daily check, and a change to
+`OSM_EXTRACT_URL` or `HOME_START` downloads at once. Log lines, on stderr:
 
+- `OpenStreetMap index: downloading <url>` when a download starts, with
+  `(if changed since <date or etag>)` when the request is conditional.
 - `OpenStreetMap index: N ways and N crossing stops within 25 km of
-  HOME_START, data from <date>, built in N s` after a build.
+  HOME_START, data from <date>, built in N s` after a build. When the
+  extract covers only part of the 25 km square (its header bounding box
+  cuts it) the line adds `, covering only <s,w,n,e> of the requested area`:
+  routes reaching beyond that are not measured, so they get no crossing
+  counts and rank without them. Use a larger extract.
 - `OpenStreetMap index: refresh failed (<reason>); keeping the index with
   data from <date>. Trying again in a day.` (or `no index yet`). The old
   index keeps serving.

@@ -936,6 +936,8 @@ Source of the local index (`OSM_EXTRACT_URL`).
 - Geofabrik `https://download.geofabrik.de/australia-oceania/australia-latest.osm.pbf`:
   973,007,838 bytes (973 MB). Answers a 307 redirect, then sends
   `Last-Modified`, which changes daily.
+- The reader uses the header's HeaderBBox (field 1, nanodegrees) when
+  present to know what the extract covers.
 - Both are zlib-compressed blobs with `Sort.Type_then_ID`, so nodes arrive
   sorted by id (the reader relies on it and refuses an unsorted file).
 - Conditional GET was not verified. The refresh sends `If-None-Match` and

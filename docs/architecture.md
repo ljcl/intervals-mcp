@@ -692,7 +692,9 @@ shared path as `highway=cycleway` with `foot=designated` or `yes`, or
 footpath in Australian tagging; not `foot` or `access` of `no` or
 `private`), `main_road` (trunk, primary and secondary, with links) and
 `green_edge` (parks, water, coastline and waterways; multipolygon outer
-rings count, and a closed ring other than a coastline counts as an area).
+rings count, and a closed ring other than a coastline counts as an area
+only when the whole way is inside the area; `waterway` counts except drains,
+ditches and anything tagged `tunnel=culvert` or `tunnel=yes`).
 Crossing and signal nodes under 25 m apart merge into one stop, so a
 junction's signal node and its crossings count once.
 
@@ -714,6 +716,13 @@ dropped, so a reader in between cannot reopen and cache the old file. A
 fetch is capped at 30 minutes. A failure logs one line, keeps the old index
 and waits for the next daily check. Plain `fetch`, not `FetchClient`: this
 is a background file download, not a cached API read.
+
+The index also stores `coverage`: the area intersected with the extract's
+header bounding box (just the area when the header has none). Only nodes
+inside it are kept, `routeOsmStats` returns null for a track leaving it, and a
+build with no node in the area fails. The configured square stays in `area`,
+which the refresh compares. `openIndex` also returns nothing once
+`OSM_EXTRACT_URL` or `HOME_START` is unset.
 
 `routeOsmStats` reads it: the route is sampled every 10 m. A sample counts
 as on a path within 15 m or on a main road within 20 m of a way of that
