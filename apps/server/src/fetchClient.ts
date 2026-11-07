@@ -537,17 +537,6 @@ export class FetchClient {
     this.inFlight.clear();
   }
 
-  /**
-   * Drops the cached response of one GET, named by the `url` and `params` its
-   * read passed: a 200 whose body reports a failure (an Overpass `remark`)
-   * must not be served for its whole TTL. A read still in flight is left to
-   * its waiters.
-   */
-  evictCached(url: string, params?: FetchConfig["params"]): void {
-    const key = this.requestUrl(url, params);
-    this.responseCache?.deleteMatching((cached) => cached === key);
-  }
-
   /** The full URL of a request: the cache key of a GET. */
   private requestUrl(url: string, params?: FetchConfig["params"]): string {
     const fullUrl = url.startsWith("http") ? url : `${this.baseURL}${url}`;
@@ -1166,24 +1155,4 @@ export const orsApi = new FetchClient("https://api.openrouteservice.org", {
   timeoutMs: 10_000,
   maxRetries: 1,
   cache: { ttlForPath: orsCacheTtl, maxEntries: 200 },
-});
-
-/** Crossings in an area change rarely: one query serves a week of calls. */
-export function overpassCacheTtl(path: string): number | null {
-  return path === "/interpreter" ? 7 * DAY_MS : null;
-}
-
-/**
- * OpenStreetMap Overpass (overpassClient.ts is its only caller). Public
- * instances can take 20-40 s, so one attempt is capped at 12 s and never
- * retried: a slow instance costs a ranking signal, not the call.
- */
-export const overpassApi = new FetchClient("https://overpass-api.de/api", {
-  timeoutMs: 12_000,
-  maxRetries: 0,
-  cache: {
-    ttlForPath: overpassCacheTtl,
-    maxEntries: 50,
-    maxBytes: 8 * 1024 * 1024,
-  },
 });

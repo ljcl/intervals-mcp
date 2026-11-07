@@ -6,7 +6,6 @@ import {
   HttpError,
   intervalsCacheTtl,
   orsCacheTtl,
-  overpassCacheTtl,
   parseJsonWithLargeInts,
   parseRateLimitHeaders,
   RateLimitError,
@@ -838,26 +837,6 @@ describe("FetchClient response cache", () => {
     expect(a.data.name).toBe("first");
     expect(b.data.name).toBe("first");
     expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("evicts one cached GET by its url and params, and leaves the others", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockImplementation(async () => makeResponse('{"ok":true}'));
-    vi.stubGlobal("fetch", fetchMock);
-
-    const client = newCachingClient();
-    await client.get("/activities/1", { params: { q: "a b" } });
-    await client.get("/activities/2");
-    client.evictCached("/activities/1", { q: "a b" });
-    await client.get("/activities/1", { params: { q: "a b" } });
-    await client.get("/activities/2");
-
-    expect(fetchMock.mock.calls.map((c) => String(c[0]))).toEqual([
-      "https://example.test/activities/1?q=a+b",
-      "https://example.test/activities/2",
-      "https://example.test/activities/1?q=a+b",
-    ]);
   });
 
   it("does not cache paths the policy declines (miss every time)", async () => {
@@ -2419,9 +2398,5 @@ describe("route client cache TTL policies", () => {
       30 * 60_000,
     );
     expect(orsCacheTtl("/v2/isochrones/foot-walking")).toBeNull();
-  });
-  it("caches an Overpass area a week", () => {
-    expect(overpassCacheTtl("/interpreter")).toBe(7 * 24 * 60 * 60_000);
-    expect(overpassCacheTtl("/status")).toBeNull();
   });
 });

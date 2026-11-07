@@ -1677,7 +1677,7 @@ const RouteCandidateSchema = z.object({
     .number()
     .nullable()
     .describe(
-      "Share (0-1) of a generated route on paths, footways, tracks or cycleways; null for a past run",
+      "Share (0-1) on off-road paths (footways, paths, tracks, shared cycleways; not street footpaths) from the server's OpenStreetMap index; for a generated route outside it, from OpenRouteService way types; null when unknown",
     ),
   history_share: z
     .number()
@@ -1689,7 +1689,25 @@ const RouteCandidateSchema = z.object({
     .number()
     .nullable()
     .describe(
-      "Pedestrian crossings and traffic signals per km from OpenStreetMap; null when they could not be counted",
+      "Road crossings per km from the server's OpenStreetMap index (crossings and signals within 25 m are one stop); null when the route is outside the index",
+    ),
+  signals_per_km: z
+    .number()
+    .nullable()
+    .describe(
+      "Crossing stops with traffic signals per km; null when not counted",
+    ),
+  main_road_km: z
+    .number()
+    .nullable()
+    .describe(
+      "km on or beside trunk, primary and secondary roads; null when not counted",
+    ),
+  green_share: z
+    .number()
+    .nullable()
+    .describe(
+      "Share (0-1) within 50 m of a park, water or coastline, or inside a park; null when not counted",
     ),
   hill: z
     .object({

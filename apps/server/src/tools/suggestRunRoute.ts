@@ -38,10 +38,10 @@ Notes:
   runs.
 - Without ORS_API_KEY: past runs and stitched routes only, and no place
   lookup (pass lat,lng).
-- Start, end and via points are sent to OpenRouteService, and the area's
-  bounding box to OpenStreetMap Overpass, which counts road crossings.
-- Fewer crossings rank first when Overpass answers (often not); else new
-  routes rank by share on paths.
+- Start, end and via points are sent to OpenRouteService. Crossings,
+  signals, main roads, parks and off-road paths come from an
+  OpenStreetMap index on the server (25 km around HOME_START).
+- Fewer crossings rank first, then share on off-road paths.
 - A new route usually lands within 5% of the distance; a loop over 25% off
   is dropped, a via route keeps its nearest with a warning. The gap is shown.
 - With via: past runs passing every via in order (any distance or
@@ -215,6 +215,9 @@ export function toStructured(
             ? null
             : Math.round(c.history_share * 100) / 100,
         crossings_per_km: c.crossings_per_km,
+        signals_per_km: c.signals_per_km ?? null,
+        main_road_km: c.main_road_km ?? null,
+        green_share: c.green_share ?? null,
         hill: c.hill,
         summary: c.summary,
       })),
@@ -247,6 +250,14 @@ function lines(structured: ReturnType<typeof toStructured>): string[] {
         c.crossings_per_km === null
           ? ""
           : `, ${c.crossings_per_km} crossings/km`;
+      const signals =
+        c.signals_per_km === null ? "" : `, ${c.signals_per_km} signals/km`;
+      const roads =
+        c.main_road_km === null ? "" : `, ${c.main_road_km} km on main roads`;
+      const green =
+        c.green_share === null
+          ? ""
+          : `, ${Math.round(c.green_share * 100)}% by parks or water`;
       const paths =
         c.path_share === null
           ? ""
@@ -257,10 +268,10 @@ function lines(structured: ReturnType<typeof toStructured>): string[] {
           : `, ${Math.round(c.history_share * 100)}% from your runs`;
       const tail =
         c.kind === "past"
-          ? `, ${c.shape}. ${c.summary}`
-          : `${paths}${own}, ${c.summary}`;
+          ? `${paths}${green}, ${c.shape}. ${c.summary}`
+          : `${paths}${green}${own}, ${c.summary}`;
       out.push(
-        `${i + 1}. ${head}: ${km(c.distance_m)} km (${signedKm(c.distance_diff_m)} km), ${c.climb_m} m climb${crossings}${tail}`,
+        `${i + 1}. ${head}: ${km(c.distance_m)} km (${signedKm(c.distance_diff_m)} km), ${c.climb_m} m climb${crossings}${signals}${roads}${tail}`,
       );
       if (c.hill)
         out.push(

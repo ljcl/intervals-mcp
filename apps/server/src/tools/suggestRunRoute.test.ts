@@ -53,8 +53,11 @@ const suggestions: RouteSuggestions = {
           shape: "loop",
           distance_m: 6100,
           climb_m: 38,
-          path_share: null,
+          path_share: 0.62,
           crossings_per_km: 14.2,
+          signals_per_km: 2.1,
+          main_road_km: 0.4,
+          green_share: 0.35,
           hill: null,
           summary: 'Your run "Home loop" on 2026-10-27',
           track,
@@ -101,7 +104,7 @@ describe("suggest-run-route", () => {
       "Start: Embarcadero, San Francisco, CA, USA (given)",
     );
     expect(text).toContain(
-      "1. Past run 2026-10-27 (i1): 6.1 km (+3.0 km), 38 m climb, 14.2 crossings/km, loop",
+      "1. Past run 2026-10-27 (i1): 6.1 km (+3.0 km), 38 m climb, 14.2 crossings/km, 2.1 signals/km, 0.4 km on main roads, 62% on paths, 35% by parks or water, loop",
     );
     // A generated route is stored, so its route_id can be stitched, mapped or exported.
     expect(text).toMatch(
@@ -114,6 +117,16 @@ describe("suggest-run-route", () => {
     expect(JSON.stringify(parsed)).not.toContain("coordinates");
     expect(parsed.runs[0]!.start).toMatchObject({ lat: 37.795, lng: -122.394 });
     const [past, generated] = parsed.runs[0]!.candidates;
+    expect(past).toMatchObject({
+      signals_per_km: 2.1,
+      main_road_km: 0.4,
+      green_share: 0.35,
+    });
+    expect(generated).toMatchObject({
+      signals_per_km: null,
+      main_road_km: null,
+      green_share: null,
+    });
     expect(past!.route_id).toBeNull();
     expect(past!.history_share).toBeNull();
     expect(generated!.history_share).toBeNull();

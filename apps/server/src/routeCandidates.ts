@@ -29,12 +29,18 @@ export interface RouteCandidate {
   shape: RouteShape;
   distance_m: number;
   climb_m: number;
-  /** Generated routes only: share on paths, footways, tracks, cycleways. */
+  /** Share (0-1) on off-road paths: from the OpenStreetMap index when the route lies in it, else ORS way types for a generated route; null when unknown. */
   path_share: number | null;
   /** Stitched routes only: share (0-1) of the route on sections of past runs. */
   history_share?: number;
-  /** Crossings and signals per km (OpenStreetMap); null when not counted. */
+  /** Merged crossing stops per km (OpenStreetMap index); null when not counted. */
   crossings_per_km: number | null;
+  /** The signalised stops among them, per km; absent or null when not counted. */
+  signals_per_km?: number | null;
+  /** km on or beside trunk, primary and secondary roads; absent or null when not counted. */
+  main_road_km?: number | null;
+  /** Share (0-1) within 50 m of a park, water or coastline, or inside a park; absent or null when not counted. */
+  green_share?: number | null;
   /** Set by the engine for terrain hill-repeats. */
   hill: RepeatHill | null;
   summary: string;
@@ -45,7 +51,7 @@ export const PAST_DISTANCE_TOLERANCE = 0.1;
 /** A past run passes a via point when its track comes this close. */
 export const VIA_MATCH_M = 100;
 export const MAX_PAST_CANDIDATES = 2;
-/** Past runs kept before crossings are counted and the best two chosen. */
+/** Past runs kept before they are measured and the best two chosen. */
 export const PAST_POOL = 6;
 export const RECENT_REPEAT_DAYS = 7;
 /** A rise counts once it reaches this far above the last low, so elevation noise does not add up. */
@@ -216,7 +222,7 @@ export function passesInOrder(track: RouteTrack, points: LatLng[]): boolean {
  * miss named in the summary), not already used, duplicates removed (runs come newest first, so each route
  * keeps its latest recording and "not repeated in 7 days" is judged per
  * route), ranked by {@link rankPast}. The engine
- * keeps {@link PAST_POOL}, counts their crossings, ranks again and keeps
+ * keeps {@link PAST_POOL}, measures them, ranks again and keeps
  * {@link MAX_PAST_CANDIDATES}. Point-to-point plans get none.
  */
 export function matchPastRuns(
