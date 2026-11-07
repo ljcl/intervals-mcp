@@ -896,6 +896,13 @@ Base `https://api.openrouteservice.org`, key in `Authorization: <key>` (no
   locality) both with the filter and without it, because Pelias parses the
   city and falls back to it. "Anzac Bridge" alone with the filter and no focus
   gave "ANZAC Bridge, Eketahuna, NZ" (layer street), hence the focus rule.
+  The layered request also sends `boundary.circle.lat/lon` (the focus) and
+  `boundary.circle.radius=50` (km), since focus only biases; the unfiltered
+  fallback sends neither. Checked live 2026-11-07 from Glebe
+  (-33.8796,151.1857) with layers and circle: "Anzac Bridge" gave "ANZAC
+  Bridge Shared Pedestrian and Bicycle Path, NSW, Australia" (layer street);
+  "Anzac Bridge, Sydney" still gave "Sydney, NSW, Australia" (layer locality),
+  which the via refusal catches.
 
 ## OpenStreetMap Overpass (route suggestions, verified 2026-11-03)
 

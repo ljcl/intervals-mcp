@@ -6,6 +6,7 @@ import roundTripFixture from "./__fixtures__/ors/round-trip-sf.json";
 import { CallCancelledError } from "./callScope";
 import { HttpError, orsApi } from "./fetchClient";
 import {
+  GEOCODE_CIRCLE_KM,
   geocode,
   OrsApiError,
   orsRoute,
@@ -171,6 +172,9 @@ describe("geocode", () => {
         layers: "venue,address,street",
         "focus.point.lat": 37.79,
         "focus.point.lon": -122.4,
+        "boundary.circle.lat": 37.79,
+        "boundary.circle.lon": -122.4,
+        "boundary.circle.radius": GEOCODE_CIRCLE_KM,
       },
     });
   });
@@ -217,6 +221,9 @@ describe("geocode", () => {
     });
     expect(get).toHaveBeenCalledTimes(2);
     expect(get.mock.calls[1]![1]!.params).not.toHaveProperty("layers");
+    expect(get.mock.calls[1]![1]!.params).not.toHaveProperty(
+      "boundary.circle.radius",
+    );
   });
 
   it("is null when nothing matches", async () => {

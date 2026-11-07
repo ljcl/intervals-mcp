@@ -1706,6 +1706,7 @@ const round3 = (value: number) => Math.round(value * 1000) / 1000;
 const round6 = (value: number) => Math.round(value * 1e6) / 1e6;
 
 /** Pelias layers precise enough to route through without a second look. */
+// Warns on more than orsClient's PRECISE_LAYERS, which refuses (a street routes but may be off); thresholds differ on purpose.
 const PRECISE_MATCHES = new Set(["venue", "address"]);
 /** Two looked-up vias this close probably matched the same thing. */
 const SAME_LOOKUP_M = 50;

@@ -30,6 +30,9 @@ export const PATH_WAYTYPES = new Set([4, 5, 6, 7]);
 
 /** Pelias layers precise enough to route through; a via matched only coarser (neighbourhood, locality, ...) is refused (`coarseVia`, routeSuggestions.ts). */
 export const PRECISE_LAYERS = new Set(["venue", "address", "street"]);
+// Not the same set as routeBuilder's PRECISE_MATCHES, which only warns (street stays routable here); thresholds differ on purpose.
+/** The layered lookup stays this close to the focus: focus only biases, and a same-named street can sit anywhere. */
+export const GEOCODE_CIRCLE_KM = 50;
 
 /** ORS waytype Ferry: a route on one is not a run. */
 const FERRY_WAYTYPE = 9;
@@ -246,6 +249,11 @@ async function geocodeOnce(
   if (focus) {
     params["focus.point.lat"] = focus[0];
     params["focus.point.lon"] = focus[1];
+    if (layers) {
+      params["boundary.circle.lat"] = focus[0];
+      params["boundary.circle.lon"] = focus[1];
+      params["boundary.circle.radius"] = GEOCODE_CIRCLE_KM;
+    }
   }
   let data: unknown;
   try {
