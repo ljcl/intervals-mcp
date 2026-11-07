@@ -31,6 +31,7 @@ import {
   type OrsRoute,
   type OrsRouteRequest,
   orsRoute,
+  PRECISE_LAYERS,
   type Place,
 } from "./orsClient";
 import { crossingsPerKm, loadCrossings } from "./overpassClient";
@@ -277,6 +278,17 @@ export async function resolvePlace(
       `No place matched "${text}". Add the suburb or city, or pass lat,lng.`,
     );
   return hit;
+}
+
+/**
+ * Why a looked-up via is refused: Pelias placed it no better than a suburb
+ * or city, and routing through that centre goes somewhere else. Null for a
+ * precise match or a lat,lng. Vias only: a suburb is a fair start, end or
+ * heading.
+ */
+export function coarseVia(place: Place, text: string): string | null {
+  if (!place.match || PRECISE_LAYERS.has(place.match.type)) return null;
+  return `"${text.trim()}" matched only ${place.match.name} (a ${place.match.type}), so it was not routed; pass lat,lng for it.`;
 }
 
 async function resolveStart(
@@ -564,7 +576,12 @@ export async function loadRouteSuggestions(
   const start = await resolveStart(args.start, env, clusters);
   const end = args.end ? await resolvePlace(args.end, env, start.point) : null;
   const via = await Promise.all(
-    viaTexts.map((text) => resolvePlace(text, env, start.point)),
+    viaTexts.map(async (text) => {
+      const found = await resolvePlace(text, env, start.point);
+      const problem = coarseVia(found, text);
+      if (problem) throw new RouteSuggestionError(problem);
+      return found;
+    }),
   );
 
   const cluster = nearestCluster(clusters, start.point);

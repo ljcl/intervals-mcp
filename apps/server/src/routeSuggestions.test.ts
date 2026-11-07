@@ -668,6 +668,47 @@ describe("loadRouteSuggestions", () => {
     ).rejects.toThrow(/No place matched "Nowhere Park"/);
   });
 
+  it("refuses a via that matches only a suburb or city", async () => {
+    vi.mocked(geocode).mockResolvedValue({
+      label: "Sydney, NSW, Australia",
+      point: [-33.87, 151.21],
+      match: { query: "Anzac Bridge", name: "Sydney", type: "locality" },
+    });
+    await expect(
+      loadRouteSuggestions("k", { distanceKm: 6, via: "Anzac Bridge" }, ENV),
+    ).rejects.toThrow(
+      '"Anzac Bridge" matched only Sydney (a locality), so it was not routed; pass lat,lng for it.',
+    );
+    expect(vi.mocked(orsRoute)).not.toHaveBeenCalled();
+  });
+
+  it("routes through a via that matches a street", async () => {
+    vi.mocked(geocode).mockResolvedValue({
+      label: "Anzac Bridge, Pyrmont, NSW, Australia",
+      point: VIA,
+      match: { query: "Anzac Bridge", name: "Anzac Bridge", type: "street" },
+    });
+    const run = (
+      await loadRouteSuggestions(
+        "k",
+        { distanceKm: 6, via: "Anzac Bridge" },
+        ENV,
+      )
+    ).runs[0]!;
+    expect(run.via[0]!.point).toEqual(VIA);
+  });
+
+  it("still starts from a suburb", async () => {
+    vi.mocked(geocode).mockResolvedValue({
+      label: "Glebe, NSW, Australia",
+      point: SF,
+      match: { query: "Glebe", name: "Glebe", type: "locality" },
+    });
+    const run = (await loadRouteSuggestions("k", { start: "Glebe" }, ENV))
+      .runs[0]!;
+    expect(run.start.point).toEqual(SF);
+  });
+
   it("fills the new-route slot past a duplicate of a past run", async () => {
     let n = 0;
     // The first loop ORS returns is the past run itself, and ranks first on distance.

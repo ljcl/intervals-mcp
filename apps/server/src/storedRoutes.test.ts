@@ -132,7 +132,7 @@ describe("stitch-route", () => {
     vi.mocked(ors.geocode).mockImplementation(async (_key, text) => ({
       label: "Pyrmont, NSW, Australia",
       point: pyrmont,
-      match: { query: text, name: "Pyrmont", type: "locality" },
+      match: { query: text, name: "Pyrmont", type: "street" },
     }));
     const result = await call("stitch-route", {
       name: "Wharves",
@@ -156,14 +156,14 @@ describe("stitch-route", () => {
       lng: Number(pyrmont[1].toFixed(6)),
       label: "Jones Bay Wharf, Pyrmont, Sydney",
       match_name: "Pyrmont",
-      match_type: "locality",
+      match_type: "street",
     });
     expect(result.text).toMatch(
-      /\(-33\.\d{5},151\.\d{5}, matched Pyrmont, locality; on the route at -33\.\d{5},151\.\d{5}, \d+ m away\)/,
+      /\(-33\.\d{5},151\.\d{5}, matched Pyrmont, street; on the route at -33\.\d{5},151\.\d{5}, \d+ m away\)/,
     );
     expect(warnings).toContainEqual(
       expect.stringMatching(
-        /^Via v\d+ "Jones Bay Wharf, Pyrmont, Sydney" matched Pyrmont, a locality, not a venue or address/,
+        /^Via v\d+ "Jones Bay Wharf, Pyrmont, Sydney" matched Pyrmont, a street, not a venue or address/,
       ),
     );
     expect(warnings).toContainEqual(
@@ -173,6 +173,26 @@ describe("stitch-route", () => {
     );
     // An activity section's points are not lookups.
     expect(segments[0]!.vias).toEqual([]);
+  });
+
+  it("refuses a via that matches only a suburb", async () => {
+    vi.mocked(ors.geocode).mockImplementation(async (_key, text) => ({
+      label: "Pyrmont, NSW, Australia",
+      point: moveToward(sundayPointAt(5.27), 0, 300),
+      match: { query: text, name: "Pyrmont", type: "locality" },
+    }));
+    const result = await call("stitch-route", {
+      name: "Wharves",
+      segments: [
+        { type: "activity", id: SUNDAY_ID, from_km: 0, to_km: 5.27 },
+        { type: "generated", via: ["Jones Bay Wharf, Pyrmont, Sydney"] },
+        { type: "activity", id: SUNDAY_ID, from_km: 5.27, to_km: 12.03 },
+      ],
+    });
+    expect(result.isError).toBe(true);
+    expect(result.text).toContain(
+      '"Jones Bay Wharf, Pyrmont, Sydney" matched only Pyrmont (a locality), so it was not routed; pass lat,lng for it.',
+    );
   });
 
   /** A via 60 m past the section's end, in line with it: the fake router goes out to it and back. */
