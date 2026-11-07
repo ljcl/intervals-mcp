@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.16.0](https://github.com/ljcl/intervals-mcp/compare/v2.15.2...v2.16.0) (2026-11-07)
+
+
+### Features
+
+* stitch via routes from the athlete's own runs and refuse suburb-level vias ([#441](https://github.com/ljcl/intervals-mcp/issues/441)) ([a53f9a7](https://github.com/ljcl/intervals-mcp/commit/a53f9a7a61d0611e1e80ed0820f010829b163870))
+
 ## [2.15.2](https://github.com/ljcl/intervals-mcp/compare/v2.15.1...v2.15.2) (2026-11-07)
 
 
