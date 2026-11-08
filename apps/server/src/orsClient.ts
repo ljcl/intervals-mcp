@@ -33,6 +33,48 @@ export const PRECISE_LAYERS = new Set(["venue", "address", "street"]);
 // Not the same set as routeBuilder's PRECISE_MATCHES, which only warns (street stays routable here); thresholds differ on purpose.
 /** The layered lookup stays this close to the focus: focus only biases, and a same-named street can sit anywhere. */
 export const GEOCODE_CIRCLE_KM = 50;
+/** Hits read per lookup: Pelias can rank a road above the park named for it (Pirrama Road over Pirrama Park). */
+export const GEOCODE_HITS = 10;
+/** Where a hit's words are looked for: its name, label and the places it sits in (a "Sydney" in the text is the county, not in the label). */
+const PLACE_WORD_FIELDS = [
+  "name",
+  "label",
+  "street",
+  "neighbourhood",
+  "borough",
+  "locality",
+  "localadmin",
+  "county",
+  "macrocounty",
+  "region",
+  "region_a",
+  "macroregion",
+  "country",
+  "country_a",
+] as const;
+/** Street words written one way, so "Pirrama Rd" finds Pirrama Road; "st" is street and saint. */
+const WORD_FORMS: Record<string, string> = {
+  street: "st",
+  saint: "st",
+  road: "rd",
+  avenue: "ave",
+  av: "ave",
+  parade: "pde",
+  highway: "hwy",
+  drive: "dr",
+  lane: "ln",
+  place: "pl",
+  crescent: "cres",
+  terrace: "tce",
+  boulevard: "blvd",
+  boulevarde: "blvd",
+  bvd: "blvd",
+  square: "sq",
+  mount: "mt",
+  point: "pt",
+};
+/** Joining words a label may leave out ("the Anzac Bridge"). */
+const FILLER_WORDS = new Set(["the", "and", "of"]);
 
 /** ORS waytype Ferry: a route on one is not a run. */
 const FERRY_WAYTYPE = 9;
@@ -53,6 +95,8 @@ export interface PlaceMatch {
   name: string;
   /** venue, address, street, neighbourhood, locality, ... */
   type: string;
+  /** Words of the query the match has nowhere in its name or places (Pelias rates a wrong fuzzy match exact); absent or empty when it has them all. */
+  missing?: string[];
 }
 
 export interface Place {
@@ -218,12 +262,26 @@ function parseOrThrow<T>(
   return result.data;
 }
 
+/** The words of a place text, lowercased, accents, apostrophes and joining words dropped, street words in one form. */
+function placeWords(text: string): string[] {
+  return text
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/['\u2019]/g, "")
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((w) => w && !FILLER_WORDS.has(w))
+    .map((w) => WORD_FORMS[w] ?? w);
+}
+
 /**
- * The top place for `text`, biased toward `focus`, or null when none
- * matched. Pelias ranks a suburb above a named bridge or park, so with a
- * focus point the precise layers are asked first and any layer only when
- * they have nothing. Without a focus the filter can pick a far-away place,
- * so there is one unfiltered lookup (docs/api-notes.md).
+ * The best place for `text`, biased toward `focus`, or null when none
+ * matched: the first hit with every word of the text, else the first hit
+ * (its `match.missing` names the words it lacks). Pelias ranks a suburb above
+ * a named bridge or park, so with a focus point the precise layers are asked
+ * first and any layer only when they have nothing. Without a focus the
+ * filter can pick a far-away place, so there is one unfiltered lookup
+ * (docs/api-notes.md).
  */
 export async function geocode(
   key: string,
@@ -244,7 +302,7 @@ async function geocodeOnce(
   layers: string | null,
 ): Promise<Place | null> {
   const context = "look up a place";
-  const params: Record<string, string | number> = { text, size: 1 };
+  const params: Record<string, string | number> = { text, size: GEOCODE_HITS };
   if (layers) params.layers = layers;
   if (focus) {
     params["focus.point.lat"] = focus[0];
@@ -267,14 +325,31 @@ async function geocodeOnce(
   } catch (error) {
     handleOrsError(error, context, "Looking up a place");
   }
-  const hit = parseOrThrow(GeocodeSchema, data, context).features[0];
-  if (!hit) return null;
+  const hits = parseOrThrow(GeocodeSchema, data, context).features;
+  if (hits.length === 0) return null;
+  const asked = [...new Set(placeWords(text))];
+  const scored = hits.map((hit) => {
+    const props = hit.properties as Record<string, unknown>;
+    const has = new Set(
+      PLACE_WORD_FIELDS.flatMap((field) =>
+        typeof props[field] === "string" ? placeWords(props[field]) : [],
+      ),
+    );
+    return { hit, missing: asked.filter((w) => !has.has(w)) };
+  });
+  const { hit, missing } =
+    scored.find((s) => s.missing.length === 0) ?? scored[0]!;
   const [lng, lat] = hit.geometry.coordinates;
   const { label, name, layer } = hit.properties;
   return {
     label,
     point: [lat, lng],
-    match: { query: text, name: name ?? label, type: layer ?? "unknown" },
+    match: {
+      query: text,
+      name: name ?? label,
+      type: layer ?? "unknown",
+      missing,
+    },
   };
 }
 

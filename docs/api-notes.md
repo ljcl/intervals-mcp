@@ -881,7 +881,7 @@ Base `https://api.openrouteservice.org`, key in `Authorization: <key>` (no
 - No routable point: HTTP 404, `{"error":{"code":2010,"message":"Cannot find
   point 0: <lat>,<lng>"}}`. The message carries coordinates, so it is never
   logged or shown (route suggestions branch on the status).
-- `GET /geocode/search?text=&size=1&focus.point.lat=&focus.point.lon=`
+- `GET /geocode/search?text=&size=10&focus.point.lat=&focus.point.lon=`
   answers `application/json; charset=utf-8`; "Embarcadero, San Francisco" gave
   "The Embarcadero, San Francisco, CA, USA" (layer street). Each feature's
   properties carry `name`, `layer` (venue, address, street, neighbourhood,
@@ -903,6 +903,17 @@ Base `https://api.openrouteservice.org`, key in `Authorization: <key>` (no
   Bridge Shared Pedestrian and Bicycle Path, NSW, Australia" (layer street);
   "Anzac Bridge, Sydney" still gave "Sydney, NSW, Australia" (layer locality),
   which the via refusal catches.
+- `confidence` and `match_type` do not show a wrong match. Checked live
+  2026-11-08 from Glebe with layers and circle: "Glebe Foreshore Walk" gave
+  "Foreshore Promenade, Pyrmont" first (about 3 km off) with confidence 1
+  and match exact; no hit had "glebe" and "walk". "Pirrama Park" gave
+  Pirrama Road first and the park venue third. So `geocode` asks for 10
+  hits (`size=10`) and takes the first with every word of the text, looked
+  for in `name`, `label` and the place fields (`locality`, `localadmin`,
+  `county`, `macrocounty`, `region`, ...): Sydney suburbs' labels leave out
+  "Sydney", which is in `county`. A park venue's point is not its centre:
+  "Jubilee Park" (Glebe) came back at -33.87543,151.17872, 30 m inside the
+  south edge and 330 m from the foreshore path on its north side.
 
 ## OpenStreetMap Overpass (retired 2026-11-08)
 

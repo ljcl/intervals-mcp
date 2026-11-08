@@ -15,6 +15,7 @@ import {
   osmIndexDir,
   osmIndexInfo,
   osmIndexPath,
+  parkReach,
   routeOsmStats,
 } from "./osmIndex";
 import { buildOsmIndex } from "./osmIndexBuild";
@@ -241,6 +242,93 @@ describe("routeOsmStats", () => {
     expect(routeOsmStats(track([0, 0], [30_000, 0]))).toBeNull();
     expect(routeOsmStats(track([0, 0], [3, 0]))).toBeNull();
     expect(routeOsmStats(ALONG)).not.toBeNull();
+  });
+});
+
+describe("parkReach", () => {
+  // A 400 m square park whose looked-up point sits near its south edge.
+  const SQUARE: Array<[number, number]> = [
+    [0, 0],
+    [400, 0],
+    [400, 400],
+    [0, 400],
+  ];
+  const POINT = pt(200, 30);
+
+  it("reaches inside a named park and within the radius of its edge", async () => {
+    await index({
+      ways: [
+        {
+          xy: SQUARE,
+          closed: true,
+          tags: { leisure: "park", name: "Jubilee Park" },
+        },
+      ],
+    });
+    const reaches = parkReach(POINT, "jubilee park", 100)!;
+    expect(reaches(pt(200, 200))).toBe(true);
+    expect(reaches(pt(200, 480))).toBe(true);
+    expect(reaches(pt(200, 520))).toBe(false);
+    expect(reaches(pt(-90, 200))).toBe(true);
+    expect(parkReach(POINT, "Wentworth Park", 100)).toBeNull();
+    // A looked-up point just outside the park still names it; far outside does not.
+    expect(parkReach(pt(200, -60), "Jubilee Park", 100)?.(pt(200, 480))).toBe(
+      true,
+    );
+    expect(parkReach(pt(600, 30), "Jubilee Park", 100)).toBeNull();
+  });
+
+  it("joins a multipolygon's outer ways in any order", async () => {
+    await index({
+      ways: [
+        { id: 9001, xy: [SQUARE[2]!, SQUARE[3]!, SQUARE[0]!] },
+        { id: 9002, xy: [SQUARE[0]!, SQUARE[1]!, SQUARE[2]!] },
+      ],
+      relations: [
+        {
+          id: 700,
+          tags: { type: "multipolygon", leisure: "park", name: "Jubilee Park" },
+          members: [
+            { type: "way", ref: 9001, role: "outer" },
+            { type: "way", ref: 9002, role: "outer" },
+          ],
+        },
+      ],
+    });
+    expect(parkReach(POINT, "Jubilee Park", 100)?.(pt(200, 480))).toBe(true);
+  });
+
+  it("has no outline for a park missing a way or cut by the area edge", async () => {
+    await index({
+      ways: [
+        { id: 9001, xy: [SQUARE[2]!, SQUARE[3]!, SQUARE[0]!] },
+        { id: 9002, xy: [SQUARE[0]!, [30_000, 0], SQUARE[2]!] },
+      ],
+      relations: [
+        {
+          id: 700,
+          tags: { type: "multipolygon", leisure: "park", name: "Cut Park" },
+          members: [
+            { type: "way", ref: 9001, role: "outer" },
+            { type: "way", ref: 9002, role: "outer" },
+          ],
+        },
+        {
+          id: 701,
+          tags: { type: "multipolygon", leisure: "park", name: "Gone Park" },
+          members: [
+            { type: "way", ref: 9001, role: "outer" },
+            { type: "way", ref: 9999, role: "outer" },
+          ],
+        },
+      ],
+    });
+    expect(parkReach(POINT, "Cut Park", 100)).toBeNull();
+    expect(parkReach(POINT, "Gone Park", 100)).toBeNull();
+  });
+
+  it("is null without an index", () => {
+    expect(parkReach(POINT, "Jubilee Park", 100)).toBeNull();
   });
 });
 

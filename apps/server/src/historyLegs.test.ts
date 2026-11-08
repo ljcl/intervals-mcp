@@ -70,6 +70,23 @@ describe("passes", () => {
     expect(Math.abs(atA[0]! - trackLength(outAndBack) / 2)).toBeLessThan(5);
     expect(passes(outAndBack, B)).toEqual([]);
   });
+
+  it("counts a park via passed at its edge, at the spot nearest its point", () => {
+    // The park's point is 300 m east of a run that follows its western edge.
+    const point = east(A, 300);
+    const park = {
+      point,
+      reaches: (p: LatLng) =>
+        p[1] >= east(A, -100)[1] && p[1] <= east(A, 400)[1],
+    };
+    const track = line([S, A, FAR]);
+    expect(passes(track, point)).toEqual([]);
+    const at = passes(track, park);
+    expect(at).toHaveLength(1);
+    expect(Math.abs(at[0]! - trackLength(line([S, A])))).toBeLessThan(5);
+    expect(passesInOrder(track, [park, FAR])).toBe(true);
+    expect(legSection(run("r1", [S, A, FAR]), S, park)).not.toBeNull();
+  });
 });
 
 describe("legSection", () => {

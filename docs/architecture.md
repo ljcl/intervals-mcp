@@ -490,8 +490,11 @@ the rest of that call, keeping the routes already made. `historyLegs.ts`
 holds the stitched via route rules: where a run passes an anchor, the section
 between two (the run's own direction first), the no-retrace rule, same-line
 grouping, which combinations are built and where ORS fills. `coarseVia`
-(`routeSuggestions.ts`) refuses a via placed no better than a suburb, for
-every tool that takes one.
+(`routeSuggestions.ts`) refuses a via placed no better than a suburb, or on a
+place lacking words of its text, for every tool that takes one. A via is a
+point or, for a named park, its point and `parkReach` (`osmIndex.ts`);
+`nearVia` (`routeCandidates.ts`) is the one pass test, used by past-run
+matching, stitched sections and the stitched route check.
 
 **Stored routes have one home per rule.** `routeStore.ts` is the only
 module that reads or writes the route files (see [Stored routes](#stored-routes)).
@@ -694,7 +697,9 @@ footpath in Australian tagging; not `foot` or `access` of `no` or
 `green_edge` (parks, water, coastline and waterways; multipolygon outer
 rings count, and a closed ring other than a coastline counts as an area
 only when the whole way is inside the area; `waterway` counts except drains,
-ditches and anything tagged `tunnel=culvert` or `tunnel=yes`).
+ditches and anything tagged `tunnel=culvert` or `tunnel=yes`). Named parks
+also keep their whole outline (a closed `leisure=park` way, or every outer
+way of a park multipolygon); one cut by the area or extract edge is left out.
 Crossing and signal nodes under 25 m apart merge into one stop, so a
 junction's signal node and its crossings count once.
 
@@ -703,7 +708,9 @@ The index is one SQLite file, `DATA_DIR/osm/index.sqlite`, opened with
 `meta` (schema version, area, coverage, source URL, etag, last-modified, data date,
 built and checked times), `ways` (class, ring flag, points as a Float64
 blob), `way_cells` and `stop_nodes`, both keyed by 0.01 degree cell (about
-1 km). A missing file is looked for again on every read, so a build that
+1 km), and `parks` (name, bounding box, outline ways as one Float64 blob
+with NaN pairs between ways; `parkReach` tests inside by even-odd over the
+segments, so the ways need no joining). A missing file is looked for again on every read, so a build that
 lands is seen without a restart.
 
 `osmIndexRefresh.ts` runs at startup and daily, outside any tool call. It

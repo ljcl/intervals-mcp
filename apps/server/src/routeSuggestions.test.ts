@@ -10,7 +10,7 @@ import {
   type RouteTrack,
 } from "./mapAnchors";
 import { geocode, OrsApiError, type OrsRoute, orsRoute } from "./orsClient";
-import { osmIndexInfo, routeOsmStats } from "./osmIndex";
+import { osmIndexInfo, parkReach, routeOsmStats } from "./osmIndex";
 import { passesInOrder } from "./routeCandidates";
 import {
   loadRouteSuggestions,
@@ -32,6 +32,7 @@ vi.mock("./osmIndex", async (o) => ({
   ...(await o<typeof import("./osmIndex")>()),
   routeOsmStats: vi.fn(),
   osmIndexInfo: vi.fn(),
+  parkReach: vi.fn(),
 }));
 vi.mock("./startClusters", async (o) => ({
   ...(await o<typeof import("./startClusters")>()),
@@ -162,6 +163,7 @@ beforeEach(() => {
   ]);
   vi.mocked(loadRunStarts).mockResolvedValue({ runs: history, skipped: 0 });
   vi.mocked(routeOsmStats).mockReset().mockReturnValue(STATS);
+  vi.mocked(parkReach).mockReset().mockReturnValue(null);
   vi.mocked(osmIndexInfo).mockReset().mockReturnValue({
     state: "ready",
     data_date: "2026-11-01T00:00:00.000Z",
@@ -762,6 +764,29 @@ describe("loadRouteSuggestions", () => {
     ).rejects.toThrow(/^"First Place" matched only/);
   });
 
+  it("refuses a via whose match lacks words of the text", async () => {
+    vi.mocked(geocode).mockResolvedValue({
+      label: "Foreshore Promenade, Pyrmont, NSW, Australia",
+      point: VIA,
+      match: {
+        query: "Glebe Foreshore Walk",
+        name: "Foreshore Promenade",
+        type: "street",
+        missing: ["glebe", "walk"],
+      },
+    });
+    await expect(
+      loadRouteSuggestions(
+        "k",
+        { distanceKm: 6, via: "Glebe Foreshore Walk" },
+        ENV,
+      ),
+    ).rejects.toThrow(
+      '"Glebe Foreshore Walk" matched only Foreshore Promenade, which has no "glebe" or "walk", so it was not routed; check the name, or pass lat,lng.',
+    );
+    expect(vi.mocked(orsRoute)).not.toHaveBeenCalled();
+  });
+
   it("routes through a via that matches a street", async () => {
     vi.mocked(geocode).mockResolvedValue({
       label: "Anzac Bridge, Pyrmont, NSW, Australia",
@@ -1029,6 +1054,53 @@ describe("loadRouteSuggestions", () => {
         );
         for (const [, request] of vi.mocked(orsRoute).mock.calls)
           expect(fromStart(request.waypoints)).toBe(true);
+      });
+
+      it("counts a named park as passed at its edge", async () => {
+        // The park's looked-up point is about 300 m off every run; both runs pass the park at N.
+        const parkPoint: LatLng = [N[0] - 0.0027, N[1] + 0.0033];
+        vi.mocked(geocode).mockResolvedValue({
+          label: "Jubilee Park, Glebe, NSW, Australia",
+          point: parkPoint,
+          match: {
+            query: "Jubilee Park",
+            name: "Jubilee Park",
+            type: "venue",
+            missing: [],
+          },
+        });
+        vi.mocked(parkReach).mockReturnValue(
+          (p) => haversineMeters(p, N) <= 100,
+        );
+        vi.mocked(loadRunStarts).mockResolvedValue({
+          runs: [runOn("a", [SF, N, NORTH_MORE]), runOn("b", [N, NE, SF])],
+          skipped: 0,
+        });
+        vi.mocked(orsRoute).mockImplementation(async (_key, request) =>
+          straightRoute(request.waypoints, 1.2),
+        );
+        const run = (
+          await loadRouteSuggestions(
+            "k",
+            { ...args, via: ["Jubilee Park", text(NE)] },
+            ENV,
+          )
+        ).runs[0]!;
+        expect(vi.mocked(parkReach)).toHaveBeenCalledWith(
+          parkPoint,
+          "Jubilee Park",
+          100,
+        );
+        const stitched = run.candidates[0]!;
+        expect(stitched.kind).toBe("stitched");
+        // The two runs pass the park 140 m apart; the join between them skips its point.
+        expect(stitched.history_share).toBeGreaterThan(0.9);
+        const fills = vi
+          .mocked(orsRoute)
+          .mock.calls.map(([, r]) => r.waypoints)
+          .filter((w) => !fromStart(w));
+        expect(fills).toHaveLength(1);
+        expect(fills[0]).not.toContainEqual(parkPoint);
       });
 
       it("routes the legs no run covers once, through the via points between", async () => {

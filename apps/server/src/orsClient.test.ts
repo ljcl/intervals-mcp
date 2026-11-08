@@ -7,6 +7,7 @@ import { CallCancelledError } from "./callScope";
 import { HttpError, orsApi } from "./fetchClient";
 import {
   GEOCODE_CIRCLE_KM,
+  GEOCODE_HITS,
   geocode,
   OrsApiError,
   orsRoute,
@@ -162,13 +163,14 @@ describe("geocode", () => {
         query: "Embarcadero, San Francisco",
         name: "The Embarcadero",
         type: "street",
+        missing: [],
       },
     });
     expect(get).toHaveBeenCalledTimes(1);
     expect(get.mock.calls[0]![1]).toMatchObject({
       params: {
         text: "Embarcadero, San Francisco",
-        size: 1,
+        size: GEOCODE_HITS,
         layers: "venue,address,street",
         "focus.point.lat": 37.79,
         "focus.point.lon": -122.4,
@@ -217,13 +219,89 @@ describe("geocode", () => {
     expect(place).toEqual({
       label: "Sydney, NSW, Australia",
       point: [-33.87, 151.21],
-      match: { query: "Anzac Bridge", name: "Sydney", type: "locality" },
+      match: {
+        query: "Anzac Bridge",
+        name: "Sydney",
+        type: "locality",
+        missing: ["anzac", "bridge"],
+      },
     });
     expect(get).toHaveBeenCalledTimes(2);
     expect(get.mock.calls[1]![1]!.params).not.toHaveProperty("layers");
     expect(get.mock.calls[1]![1]!.params).not.toHaveProperty(
       "boundary.circle.radius",
     );
+  });
+
+  const hit = (name: string, layer: string, props: object = {}) => ({
+    geometry: { coordinates: [151.19, -33.86] },
+    properties: {
+      label: `${name}, Pyrmont, NSW, Australia`,
+      name,
+      layer,
+      ...props,
+    },
+  });
+
+  it("takes the first hit with every word of the text", async () => {
+    // Live ORS order for "Pirrama Park" (8 Nov 2026): the road outranks the park.
+    get.mockResolvedValue({
+      data: {
+        features: [
+          hit("Pirrama Road", "street"),
+          hit("48 Pirrama Road", "address"),
+          hit("Pirrama Park", "venue"),
+        ],
+      },
+    });
+    const place = await geocode("key", "Pirrama Park", [-33.89, 151.19]);
+    expect(place!.match).toEqual({
+      query: "Pirrama Park",
+      name: "Pirrama Park",
+      type: "venue",
+      missing: [],
+    });
+  });
+
+  it("names the words the top hit lacks when no hit has them all", async () => {
+    get.mockResolvedValue({
+      data: {
+        features: [
+          hit("Foreshore Promenade", "street"),
+          hit("Foreshore Road", "street"),
+        ],
+      },
+    });
+    const place = await geocode(
+      "key",
+      "Glebe Foreshore Walk",
+      [-33.89, 151.19],
+    );
+    expect(place!.match).toMatchObject({
+      name: "Foreshore Promenade",
+      missing: ["glebe", "walk"],
+    });
+  });
+
+  it("matches street abbreviations, accents, case, joining words and the county", async () => {
+    get.mockResolvedValue({
+      data: {
+        features: [
+          hit("ANZAC Bridge Shared Pedestrian and Bicycle Path", "street", {
+            county: "Sydney",
+          }),
+          hit("Pirrama Road", "street"),
+          hit("Café Saint Mary's", "venue"),
+        ],
+      },
+    });
+    const name = async (text: string) =>
+      (await geocode("key", text, [-33.89, 151.19]))!.match!.name;
+    expect(await name("the Anzac bridge, Sydney")).toBe(
+      "ANZAC Bridge Shared Pedestrian and Bicycle Path",
+    );
+    expect(await name("Pirrama Rd")).toBe("Pirrama Road");
+    expect(await name("cafe St Marys")).toBe("Café Saint Mary's");
   });
 
   it("is null when nothing matches", async () => {

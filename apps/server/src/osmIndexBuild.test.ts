@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type FixtureExtract, osmPbfBytes } from "./__fixtures__/osmPbf";
-import { areaAround, areaKey } from "./osmIndex";
+import { areaAround, areaKey, OSM_SCHEMA_VERSION } from "./osmIndex";
 import { buildOsmIndex, mergeStops, wayClass } from "./osmIndexBuild";
 
 const HOME: [number, number] = [-33.87, 151.2];
@@ -173,7 +173,7 @@ describe("buildOsmIndex", () => {
       ).map((r) => [r.key, r.value]),
     );
     expect(meta).toEqual({
-      schema_version: "1",
+      schema_version: OSM_SCHEMA_VERSION,
       area: areaKey(AREA),
       coverage: areaKey(AREA),
       source_url: SOURCE.url,

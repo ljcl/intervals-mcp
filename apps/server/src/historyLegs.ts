@@ -7,11 +7,13 @@
  */
 import { haversineMeters, type LatLng, type RouteTrack } from "./mapAnchors";
 import {
+  nearVia,
   type RouteCandidate,
   type RouteShape,
   thereAndBack,
   trackClimb,
-  VIA_MATCH_M,
+  type Via,
+  viaPoint,
 } from "./routeCandidates";
 import {
   concatTracks,
@@ -65,30 +67,28 @@ export interface StitchPlan {
 /** Start, via points, then the start again (loop), the end (point-to-point) or nothing (out-and-back: the way out). */
 export function stitchAnchors(
   start: LatLng,
-  via: LatLng[],
+  via: Via[],
   shape: RouteShape,
   end: LatLng | null,
-): LatLng[] {
+): Via[] {
   if (shape === "loop") return [start, ...via, start];
   if (shape === "out-and-back") return [start, ...via];
   return [start, ...via, ...(end ? [end] : [])];
 }
 
-/** Where a track passes `point`: per visit within {@link VIA_MATCH_M}, the distance along it of the nearest spot. */
-export function passes(track: RouteTrack, point: LatLng): number[] {
+/** Where a track passes `anchor` ({@link nearVia}): per visit, the distance along it of the spot nearest its point. */
+export function passes(track: RouteTrack, anchor: Via): number[] {
   const { coordinates, distance } = track;
+  const point = viaPoint(anchor);
   const out: number[] = [];
   let i = 0;
   while (i < coordinates.length) {
-    if (haversineMeters(coordinates[i]!, point) > VIA_MATCH_M) {
+    if (!nearVia(coordinates[i]!, anchor)) {
       i++;
       continue;
     }
     const first = i;
-    while (
-      i + 1 < coordinates.length &&
-      haversineMeters(coordinates[i + 1]!, point) <= VIA_MATCH_M
-    )
+    while (i + 1 < coordinates.length && nearVia(coordinates[i + 1]!, anchor))
       i++;
     // One sample either side, so the nearest spot can lie on the line into or out of the visit.
     const from = distance[Math.max(0, first - 1)]!;
@@ -106,13 +106,10 @@ export function passes(track: RouteTrack, point: LatLng): number[] {
  * back down street B must not give both legs street A); the reversed pair is
  * the fallback.
  */
-export function legSection(
-  run: RunStart,
-  a: LatLng,
-  b: LatLng,
-): Section | null {
+export function legSection(run: RunStart, a: Via, b: Via): Section | null {
   const limit =
-    SECTION_DETOUR_FACTOR * haversineMeters(a, b) + SECTION_DETOUR_SLACK_M;
+    SECTION_DETOUR_FACTOR * haversineMeters(viaPoint(a), viaPoint(b)) +
+    SECTION_DETOUR_SLACK_M;
   const atB = passes(run.track, b);
   let forward: { from: number; to: number } | null = null;
   let reversed: { from: number; to: number } | null = null;
@@ -159,11 +156,7 @@ export function sameLine(a: RouteTrack, b: RouteTrack): boolean {
 }
 
 /** The lines past runs (newest first) take from `a` to `b`: most runs first, then shortest, at most {@link MAX_SECTIONS_PER_LEG}. */
-export function legOptions(
-  runs: RunStart[],
-  a: LatLng,
-  b: LatLng,
-): LegOption[] {
+export function legOptions(runs: RunStart[], a: Via, b: Via): LegOption[] {
   const groups: LegOption[] = [];
   for (const run of runs) {
     const section = legSection(run, a, b);
@@ -185,21 +178,21 @@ export function legOptions(
 /** The pieces for one choice of line per leg (null: no run covers it), with the fills between. */
 function piecesFor(
   choice: (LegOption | null)[],
-  anchors: LatLng[],
+  anchors: Via[],
   shape: RouteShape,
 ): StitchPiece[] {
   const pieces: StitchPiece[] = [];
-  let at = anchors[0]!;
+  let at = viaPoint(anchors[0]!);
   // Anchors of uncovered legs a fill must still pass, in order.
   let pending: LatLng[] = [];
   choice.forEach((option, leg) => {
     if (!option) {
-      pending.push(anchors[leg + 1]!);
+      pending.push(viaPoint(anchors[leg + 1]!));
       return;
     }
     const first = option.track.coordinates[0]!;
     if (pending.length > 0 || haversineMeters(at, first) > JOIN_GAP_M)
-      // The last pending anchor is where this section starts (within 100 m), so the fill goes to the section instead.
+      // The section starts where it passes the last pending anchor, so the fill goes to the section instead.
       pieces.push({
         kind: "fill",
         waypoints: [at, ...pending.slice(0, -1), first],
@@ -208,7 +201,7 @@ function piecesFor(
     pieces.push({ kind: "section", option });
     at = option.track.coordinates.at(-1)!;
   });
-  const end = anchors.at(-1)!;
+  const end = viaPoint(anchors.at(-1)!);
   if (pending.length > 0)
     pieces.push({ kind: "fill", waypoints: [at, ...pending] });
   // An out-and-back turns at its last via, which its last section already reaches.
@@ -227,7 +220,7 @@ function piecesFor(
  */
 export function planStitches(
   options: LegOption[][],
-  anchors: LatLng[],
+  anchors: Via[],
   target_m: number,
   shape: RouteShape,
 ): StitchPlan[] {
@@ -258,7 +251,8 @@ export function planStitches(
         if (option) section_m += trackLength(option.track);
         else
           gap_m +=
-            haversineMeters(anchors[i]!, anchors[i + 1]!) * FILL_STREET_FACTOR;
+            haversineMeters(viaPoint(anchors[i]!), viaPoint(anchors[i + 1]!)) *
+            FILL_STREET_FACTOR;
       });
       combos.push({
         choice,

@@ -175,9 +175,17 @@ load.
   holding the old tool list. Without ORS_API_KEY, one needing no join is
   still offered.
 - A via matched no better than a suburb or city (a Pelias layer other than
-  venue, address or street) is refused, naming the match (`coarseVia`), in
-  every tool that takes a via. A start, end or `toward` may be a suburb.
-  The geocoder asks for venue, address and street first.
+  venue, address or street), or to a place lacking a word of the text, is
+  refused, naming the match (`coarseVia`), in every tool that takes a via. A
+  start, end or `toward` may be a suburb. The geocoder asks for venue,
+  address and street first, reads 10 hits and takes the first with every
+  word of the text (in its name or the places it sits in; "Rd" finds Road).
+- A via looked up by name that lands in, or within 100 m of, an
+  OpenStreetMap park of the same name counts as passed anywhere within
+  100 m of that park, for past runs and stitched sections alike: its
+  looked-up point can sit far from the edge a run follows (`parkReach`,
+  `osmIndex.ts`). Live 2026-11-08: "Jubilee Park" took a 14 km route from
+  53% to 91% from past runs.
 - Measures: crossings (merged within 25 m), signals, off-road path share,
   main-road km and green share come from the server's OpenStreetMap index
   (`OSM_EXTRACT_URL`, 25 km around `HOME_START`, refreshed weekly) for every
