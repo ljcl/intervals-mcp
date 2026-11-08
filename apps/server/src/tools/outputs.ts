@@ -1761,7 +1761,9 @@ export const RouteSuggestionsOutputSchema = z.object({
   count: z.number().int().describe("Planned runs in the result"),
   generation_available: z
     .boolean()
-    .describe("False when ORS_API_KEY is unset: only past runs are offered"),
+    .describe(
+      "False when ORS_API_KEY is unset: nothing is routed, so only past runs and saved corridors are offered",
+    ),
   runs: z.array(
     z.object({
       event_id: z.number().nullable(),
@@ -1785,7 +1787,20 @@ export const RouteSuggestionsOutputSchema = z.object({
         "The first via point; via_points lists them all",
       ),
       via_points: z
-        .array(RoutePlaceSchema)
+        .array(
+          RoutePlaceSchema.extend({
+            corridor: z
+              .object({
+                route_id: z.string(),
+                name: z.string(),
+                reversed: z.boolean(),
+              })
+              .nullable()
+              .describe(
+                "The saved corridor this via is, run end to end; null for a place",
+              ),
+          }),
+        )
         .describe("Places the route passes, in order"),
       shape: z.enum(["loop", "out-and-back", "point-to-point"]),
       terrain: z.enum(["any", "flat", "rolling", "hilly", "hill-repeats"]),
@@ -1928,6 +1943,72 @@ export const StoredRouteOutputSchema = z.object({
     .number()
     .int()
     .describe("OpenRouteService routing calls this call made"),
+  warnings: z.array(z.string()),
+});
+
+// ---------- list-corridors, manage-corridors ----------
+const CorridorEntrySchema = z.object({
+  route_id: z.string(),
+  name: z.string(),
+  length_m: z.number().int(),
+  path_share: z
+    .number()
+    .nullable()
+    .describe("Share on paths, 0-1; null outside the OpenStreetMap index"),
+  one_way: z.boolean(),
+  runs: z
+    .number()
+    .int()
+    .nullable()
+    .describe(
+      "Loaded runs that follow it; null from manage-corridors, which reads no history",
+    ),
+  distance_m: z
+    .number()
+    .int()
+    .nullable()
+    .describe(
+      "Metres from the search point to its nearest point; null from manage-corridors, which reads no history",
+    ),
+  created_at: z.string(),
+});
+
+export const CorridorListOutputSchema = z.object({
+  count: z.number().int().describe("Saved corridors"),
+  near: z
+    .object({ label: z.string(), lat: z.number(), lng: z.number() })
+    .nullable()
+    .describe(
+      "The point corridors are ordered from; null when no start is known",
+    ),
+  corridors: z
+    .array(CorridorEntrySchema)
+    .describe("Nearest first; by name when near is null"),
+  found: z
+    .array(
+      z.object({
+        activity_id: z.string(),
+        name: z.string(),
+        date: z.string(),
+        from_km: z.number(),
+        to_km: z.number(),
+        length_m: z.number().int(),
+        runs: z.number().int(),
+        start_lat: z.number(),
+        start_lng: z.number(),
+        end_lat: z.number(),
+        end_lng: z.number(),
+      }),
+    )
+    .describe("Stretches the runs repeat that are not saved"),
+  warnings: z.array(z.string()),
+});
+
+export const CorridorResultOutputSchema = z.object({
+  action: z.enum(["add", "rename", "set_one_way", "delete"]),
+  corridor: CorridorEntrySchema.nullable().describe("Null after delete"),
+  created: z.boolean().describe("add only: false when it was already saved"),
+  deleted: z.boolean(),
   warnings: z.array(z.string()),
 });
 

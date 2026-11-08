@@ -138,7 +138,9 @@ import { getSplitAnalysisTool } from "./tools/getSplitAnalysis";
 import { getTrainingLoadTool } from "./tools/getTrainingLoad";
 import { getWellnessTool } from "./tools/getWellness";
 import { listActivitiesTool } from "./tools/listActivities";
+import { listCorridorsTool } from "./tools/listCorridors";
 import { listGearTool } from "./tools/listGear";
+import { manageCorridorsTool } from "./tools/manageCorridors";
 import { stitchRouteTool } from "./tools/stitchRoute";
 import {
   routeSuggestionEnv,
@@ -563,6 +565,8 @@ const TOOLS = [
   getRacePredictionTool,
   suggestRunRouteTool,
   stitchRouteTool,
+  listCorridorsTool,
+  manageCorridorsTool,
   amendRouteTool,
   exportRouteTool,
   listActivitiesTool,

@@ -12,6 +12,7 @@ import {
   type VersionChange,
 } from "../routeBuilder";
 import {
+  CorridorNotFoundError,
   isRouteId,
   RouteNotFoundError,
   RouteVersionConflictError,
@@ -170,6 +171,7 @@ export function routeErrorResult(error: unknown, context: string) {
   if (
     error instanceof RouteBuildError ||
     error instanceof RouteNotFoundError ||
+    error instanceof CorridorNotFoundError ||
     error instanceof RouteVersionConflictError
   ) {
     noteToolFailure(error);

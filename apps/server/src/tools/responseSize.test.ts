@@ -557,6 +557,18 @@ const CASES: Record<string, SizeCase[]> = {
       setup: longRunStreams,
     },
   ],
+  "manage-corridors": [
+    {
+      label: "save km 0-20 of a 4 h run",
+      args: {
+        action: "add",
+        name: "response size",
+        activity: { id: ID, from_km: 0, to_km: 20 },
+      },
+      setup: longRunStreams,
+    },
+  ],
+  "list-corridors": [{ label: "no history", args: { near: "37.79,-122.39" } }],
   "export-route": [
     {
       label: "4 h run as GPX",

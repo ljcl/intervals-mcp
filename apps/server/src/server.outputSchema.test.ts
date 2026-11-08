@@ -210,6 +210,15 @@ const CALLS: Array<[tool: string, args: Record<string, unknown>]> = [
     },
   ],
   ["export-route", { route_id: STITCHED_ID, format: "geojson" }],
+  [
+    "manage-corridors",
+    {
+      action: "add",
+      name: "Output schema corridor",
+      activity: { id: activity.id, from_km: 0, to_km: 1 },
+    },
+  ],
+  ["list-corridors", {}],
   ["export-route", { id: activity.id }],
   ["list-activities", {}],
   ["get-activity", { id: activity.id, includeIntervals: true }],

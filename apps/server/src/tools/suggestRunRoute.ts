@@ -100,7 +100,7 @@ const inputSchema = z.object({
     .union([placeText.transform(viaFromText).pipe(viaList), viaList])
     .optional()
     .describe(
-      "A place the route must pass, or a list passed in that order: each a place with its city, or lat,lng",
+      "A place the route must pass, or a list passed in that order: each a place with its city, lat,lng, or a saved corridor's name (list-corridors), run end to end",
     ),
   shape: z
     .enum(["loop", "out-and-back", "point-to-point"])
@@ -195,7 +195,10 @@ export function toStructured(
       end: run.end ? place(run.end) : null,
       // The first via point, as before via took a list; via_points has them all.
       via: run.via[0] ? place(run.via[0]) : null,
-      via_points: run.via.map(place),
+      via_points: run.via.map((p) => ({
+        ...place(p),
+        corridor: p.corridor ?? null,
+      })),
       shape: run.shape,
       terrain: run.terrain,
       candidates: run.candidates.map((c) => ({
@@ -254,7 +257,15 @@ function lines(structured: ReturnType<typeof toStructured>): string[] {
     out.push(`Start: ${run.start.label} (${START_SOURCE[run.start.source]})`);
     if (run.end) out.push(`End: ${run.end.label}`);
     if (run.via_points.length > 0)
-      out.push(`Via: ${run.via_points.map((p) => p.label).join(", then ")}`);
+      out.push(
+        `Via: ${run.via_points
+          .map((p) =>
+            p.corridor
+              ? `${p.label} (corridor${p.corridor.reversed ? ", reversed" : ""})`
+              : p.label,
+          )
+          .join(", then ")}`,
+      );
     run.candidates.forEach((c, i) => {
       const head =
         c.kind === "past"
@@ -307,7 +318,9 @@ function lines(structured: ReturnType<typeof toStructured>): string[] {
   }
   for (const warning of structured.warnings) out.push(`Warning: ${warning}`);
   if (!structured.generation_available)
-    out.push("New routes need ORS_API_KEY; only past runs were offered.");
+    out.push(
+      "New routes need ORS_API_KEY; without it nothing is routed, so only your past runs and saved corridors were offered.",
+    );
   return out;
 }
 

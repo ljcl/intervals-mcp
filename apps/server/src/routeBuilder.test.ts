@@ -15,6 +15,7 @@ import { haversineMeters } from "./mapAnchors";
 import * as ors from "./orsClient";
 import { routeOsmStats } from "./osmIndex";
 import {
+  addCorridor,
   amendRoute,
   type BuildEnv,
   compareVersions,
@@ -28,7 +29,12 @@ import {
   versionTrack,
 } from "./routeBuilder";
 import { trackDiff, trackLength } from "./routeGeometry";
-import { findVersion, readRoute, versionSegments } from "./routeStore";
+import {
+  deleteCorridor,
+  findVersion,
+  readRoute,
+  versionSegments,
+} from "./routeStore";
 
 vi.mock("./orsClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./orsClient")>();
@@ -1128,5 +1134,336 @@ describe("an out-and-back an edit has cut into parts", () => {
           segments[i]!.track.coordinates[0]!,
         ),
       ).toBeLessThanOrEqual(30);
+  });
+});
+
+describe("addCorridor", () => {
+  const run = (
+    name: string,
+    source: Parameters<typeof addCorridor>[1]["source"],
+  ) => addCorridor("key", { name, source }, ENV);
+  const sunday = (extra: object) => ({
+    type: "activity" as const,
+    id: SUNDAY_ID,
+    ...extra,
+  });
+  const latLng = (km: number) => sundayPointAt(km).join(",");
+
+  it("stores a km range of a run as one activity section", async () => {
+    const { route, created } = await run(
+      "Bay Run",
+      sunday({ from_km: 1, to_km: 3 }),
+    );
+    expect(created).toBe(true);
+    expect(route.kind).toBe("corridor");
+    expect(route.route_id).toMatch(/^c/);
+    const segments = versionSegments(route, findVersion(route, 1)!);
+    expect(segments.map((s) => s.kind)).toEqual(["activity"]);
+    const length = trackLength(segments[0]!.track);
+    expect(Math.abs(length - 2000) / 2000).toBeLessThan(0.02);
+  });
+
+  it("runs from the first pass of one place to the next pass of another", async () => {
+    const { route } = await run(
+      "Between",
+      sunday({ from: latLng(1), to: latLng(3) }),
+    );
+    const [segment] = versionSegments(route, findVersion(route, 1)!);
+    const source = segment!.source as { from_km: number; to_km: number };
+    expect(source.from_km).toBeCloseTo(1, 1);
+    expect(source.to_km).toBeCloseTo(3, 1);
+  });
+
+  it("refuses a from place that matched only a suburb", async () => {
+    vi.mocked(ors.geocode).mockResolvedValue({
+      label: "Glebe, NSW, Australia",
+      point: sundayPointAt(1),
+      match: { query: "Glebe", name: "Glebe", type: "locality" },
+    });
+    await expect(
+      run("Suburb", sunday({ from: "Glebe", to: latLng(3) })),
+    ).rejects.toThrow(/matched only Glebe \(a locality\)/);
+  });
+
+  it("refuses a place the run does not pass", async () => {
+    await expect(
+      run("Nowhere", sunday({ from: latLng(1), to: "-33.0,150.0" })),
+    ).rejects.toThrow(/does not pass "-33.0,150.0"/);
+  });
+
+  it("copies a range of a stored route", async () => {
+    const built = await stitchSunday();
+    const { route } = await run("From route", {
+      type: "route",
+      route_id: built.route.route_id,
+      from_km: 0,
+      to_km: 2,
+    });
+    const segments = versionSegments(route, findVersion(route, 1)!);
+    expect(segments.map((s) => s.kind)).toEqual(["activity"]);
+    expect(trackLength(segments[0]!.track)).toBeCloseTo(2000, -2);
+  });
+
+  it("refuses km and places together", async () => {
+    await expect(
+      run("Both", sunday({ from_km: 1, from: latLng(1), to: latLng(3) })),
+    ).rejects.toThrow(RouteBuildError);
+  });
+
+  it("refuses a name with no words and a taken name", async () => {
+    await expect(
+      run("  !! ", sunday({ from_km: 1, to_km: 3 })),
+    ).rejects.toThrow(/at least one word/);
+    const first = await run("Bay Run", sunday({ from_km: 1, to_km: 3 }));
+    await expect(
+      run("run bay", sunday({ from_km: 4, to_km: 6 })),
+    ).rejects.toThrow(new RegExp(`"Bay Run".*${first.route.route_id}`));
+  });
+
+  it("refuses a stretch under 200 m", async () => {
+    await expect(
+      run("Short", sunday({ from_km: 1, to_km: 1.1 })),
+    ).rejects.toThrow(/at least 200 m/);
+  });
+
+  it("returns the saved corridor for the same add twice", async () => {
+    const first = await run("Bay Run", sunday({ from_km: 1, to_km: 3 }));
+    const again = await run("Bay Run", sunday({ from_km: 1, to_km: 3 }));
+    expect(again.created).toBe(false);
+    expect(again.route.route_id).toBe(first.route.route_id);
+  });
+
+  it("refuses the same range under another name, naming the saved one", async () => {
+    await run("Bay Run", sunday({ from_km: 1, to_km: 3 }));
+    await expect(
+      run("Harbour Loop", sunday({ from_km: 1, to_km: 3 })),
+    ).rejects.toThrow(/already saved as corridor "Bay Run"/);
+  });
+});
+
+describe("corridors in stitchRoute and amendRoute", () => {
+  const save = (name: string, one_way = false) =>
+    addCorridor(
+      "key",
+      {
+        name,
+        one_way,
+        source: { type: "activity", id: SUNDAY_ID, from_km: 4, to_km: 6 },
+      },
+      ENV,
+    );
+  const first = {
+    type: "activity" as const,
+    id: SUNDAY_ID,
+    from_km: 0,
+    to_km: 6,
+  };
+  const startOf = (segments: { track: { coordinates: number[][] } }[]) =>
+    segments[0]!.track.coordinates[0] as [number, number];
+
+  it("stores the corridor, reversed when the section before ends at its far end", async () => {
+    await save("Bay Run");
+    const built = await stitchRoute(
+      "key",
+      { segments: [first, { type: "corridor", name: "bay run" }] },
+      ENV,
+    );
+    const segments = versionSegments(built.route, built.version);
+    const corridorPart = segments.slice(1);
+    expect(corridorPart.every((s) => s.label === "Bay Run")).toBe(true);
+    expect(
+      haversineMeters(startOf(corridorPart), sundayPointAt(6)),
+    ).toBeLessThan(30);
+    expect(trackLength(layoutSegments(corridorPart).track)).toBeCloseTo(
+      2000,
+      -2,
+    );
+  });
+
+  it("makes a new route when a corridor is deleted and saved again under its name", async () => {
+    const request = {
+      segments: [{ type: "corridor" as const, name: "Bay Run" }],
+    };
+    const old = await save("Bay Run");
+    const one = await stitchRoute("key", request, ENV);
+    await deleteCorridor(old.route.route_id);
+    await addCorridor(
+      "key",
+      {
+        name: "Bay Run",
+        source: { type: "activity", id: SUNDAY_ID, from_km: 1, to_km: 3 },
+      },
+      ENV,
+    );
+    const two = await stitchRoute("key", request, ENV);
+    expect(two.created).toBe(true);
+    expect(two.route.route_id).not.toBe(one.route.route_id);
+  });
+
+  it("runs it stored when the section before ends at its start", async () => {
+    await save("Bay Run");
+    const built = await stitchRoute(
+      "key",
+      {
+        segments: [
+          { type: "activity", id: SUNDAY_ID, from_km: 2, to_km: 4 },
+          { type: "corridor", name: "Bay Run" },
+        ],
+      },
+      ENV,
+    );
+    const part = versionSegments(built.route, built.version).slice(1);
+    expect(haversineMeters(startOf(part), sundayPointAt(4))).toBeLessThan(30);
+  });
+
+  it("takes a km range of the corridor", async () => {
+    await save("Bay Run");
+    const built = await stitchRoute(
+      "key",
+      {
+        segments: [{ type: "corridor", name: "Bay Run", from_km: 0, to_km: 1 }],
+      },
+      ENV,
+    );
+    const track = versionTrack(built.route, built.version);
+    expect(trackLength(track)).toBeCloseTo(1000, -2);
+  });
+
+  it("refuses reversed on a one-way corridor", async () => {
+    await save("Hill Climb", true);
+    await expect(
+      stitchRoute(
+        "key",
+        {
+          segments: [{ type: "corridor", name: "Hill Climb", reversed: true }],
+        },
+        ENV,
+      ),
+    ).rejects.toThrow(/one-way/);
+  });
+
+  it("refuses an unknown name and suggests a near one", async () => {
+    await save("Bay Run");
+    await expect(
+      stitchRoute(
+        "key",
+        { segments: [{ type: "corridor", name: "Bay" }] },
+        ENV,
+      ),
+    ).rejects.toThrow(
+      /No saved corridor is named "Bay"; did you mean "Bay Run"\?/,
+    );
+  });
+
+  it("replaces a section with a corridor, labelled with its name", async () => {
+    await save("Bay Run");
+    const v1 = await stitchSunday();
+    const done = await amendRoute(
+      "key",
+      {
+        route_id: v1.route.route_id,
+        base_version: 1,
+        operations: [
+          {
+            op: "replace_section",
+            from_km: 8,
+            to_km: 10,
+            corridor: { name: "Bay Run" },
+          },
+        ],
+      },
+      ENV,
+    );
+    const segments = versionSegments(done.route, done.version);
+    expect(segments.some((s) => s.label === "Bay Run")).toBe(true);
+  });
+
+  it("runs a one-way corridor stored even when its km are given high to low", async () => {
+    await save("Hill Climb", true);
+    const built = await stitchRoute(
+      "key",
+      {
+        segments: [
+          { type: "activity", id: SUNDAY_ID, from_km: 8, to_km: 10 },
+          { type: "corridor", name: "Hill Climb", from_km: 2, to_km: 0 },
+        ],
+      },
+      ENV,
+    );
+    const part = versionSegments(built.route, built.version).filter(
+      (s) => s.label === "Hill Climb",
+    );
+    expect(haversineMeters(startOf(part), sundayPointAt(4))).toBeLessThan(30);
+  });
+
+  it("runs reversed when asked, whatever order the km are given", async () => {
+    await save("Bay Run");
+    const built = await stitchRoute(
+      "key",
+      {
+        segments: [
+          {
+            type: "corridor",
+            name: "Bay Run",
+            from_km: 2,
+            to_km: 0,
+            reversed: true,
+          },
+        ],
+      },
+      ENV,
+    );
+    const part = versionSegments(built.route, built.version);
+    expect(haversineMeters(startOf(part), sundayPointAt(6))).toBeLessThan(30);
+  });
+
+  it("starts an amended corridor section at the end nearer the replaced range", async () => {
+    await save("Bay Run");
+    const v1 = await stitchSunday();
+    const done = await amendRoute(
+      "key",
+      {
+        route_id: v1.route.route_id,
+        base_version: 1,
+        operations: [
+          {
+            op: "replace_section",
+            from_km: 8,
+            to_km: 10,
+            corridor: { name: "Bay Run" },
+          },
+        ],
+      },
+      ENV,
+    );
+    const part = versionSegments(done.route, done.version).filter(
+      (s) => s.label === "Bay Run",
+    );
+    // km 8 of the route is nearer the corridor's far end (run km 6) than its start (km 4).
+    expect(haversineMeters(startOf(part), sundayPointAt(6))).toBeLessThan(30);
+  });
+
+  it("refuses more than one of through, activity and corridor", async () => {
+    await save("Bay Run");
+    const v1 = await stitchSunday();
+    await expect(
+      amendRoute(
+        "key",
+        {
+          route_id: v1.route.route_id,
+          base_version: 1,
+          operations: [
+            {
+              op: "replace_section",
+              from_km: 8,
+              to_km: 10,
+              through: "Callan Park, Sydney",
+              corridor: { name: "Bay Run" },
+            },
+          ],
+        },
+        ENV,
+      ),
+    ).rejects.toThrow("Pass one of through, activity or corridor.");
   });
 });

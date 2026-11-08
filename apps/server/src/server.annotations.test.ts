@@ -105,7 +105,10 @@ const EXPECTED_CLASS: Record<string, "read" | "destroy" | "store"> = {
   "stitch-route": "store",
   "amend-route": "store",
 
+  "list-corridors": "read",
+
   // Writes.
+  "manage-corridors": "destroy",
   "update-activity": "destroy",
   "update-wellness": "destroy",
   "update-gear": "destroy",
@@ -152,7 +155,7 @@ describe("tool annotations exhaustiveness", () => {
   it("every read tool spells out both hints a permission bucket reads", () => {
     const reads = TOOL_DEFS.filter((t) => EXPECTED_CLASS[t.name] === "read");
     // Guards the table itself: an empty filter would make this vacuous.
-    expect(reads.length).toBe(38);
+    expect(reads.length).toBe(39);
     for (const tool of reads) {
       expect(tool.annotations?.readOnlyHint, tool.name).toBe(true);
       expect(tool.annotations?.destructiveHint, tool.name).toBe(false);
@@ -208,7 +211,7 @@ describe("annotations on the wire", () => {
     const reads = tools.filter(
       (t) => EXPECTED_CLASS[t.name as string] === "read",
     );
-    expect(reads.length).toBe(38);
+    expect(reads.length).toBe(39);
     for (const tool of reads) {
       const annotations = tool.annotations as Record<string, unknown>;
       // `in` rather than a truthiness check: the failure mode being guarded

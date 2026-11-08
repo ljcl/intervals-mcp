@@ -262,6 +262,44 @@ describe("suggest-run-route", () => {
     ]);
   });
 
+  it("marks a corridor via and its direction", async () => {
+    const run = suggestions.runs[0]!;
+    vi.mocked(loadRouteSuggestions).mockResolvedValue({
+      ...suggestions,
+      runs: [
+        {
+          ...run,
+          via: [
+            {
+              label: "Glebe foreshore",
+              point: [-33.8738, 151.1847],
+              corridor: {
+                route_id: "cabcdefghij",
+                name: "Glebe foreshore",
+                reversed: true,
+              },
+            },
+            { label: "Anzac Bridge", point: [-33.86884, 151.18512] },
+          ],
+        },
+      ],
+    });
+    const result = await suggestRunRouteTool.execute(
+      suggestRunRouteTool.inputSchema.parse({}),
+      "k",
+    );
+    expect(result.content[0]!.text).toContain(
+      "Via: Glebe foreshore (corridor, reversed), then Anzac Bridge",
+    );
+    const parsed = RouteSuggestionsOutputSchema.parse(result.structuredContent);
+    expect(parsed.runs[0]!.via_points[0]!.corridor).toEqual({
+      route_id: "cabcdefghij",
+      name: "Glebe foreshore",
+      reversed: true,
+    });
+    expect(parsed.runs[0]!.via_points[1]!.corridor).toBeNull();
+  });
+
   it("returns a RouteSuggestionError as its own message", async () => {
     vi.mocked(loadRouteSuggestions).mockRejectedValue(
       new RouteSuggestionError("No planned run from a to b."),

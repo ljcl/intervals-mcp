@@ -25,8 +25,7 @@ const name = "stitch-route";
 const description = `
 Joins parts of past runs, stored routes and new routed sections into one
 stored route, for "run my Sunday route but add an out-and-back to Iron
-Cove at the halfway point" or "start with the first 5 km of last week's
-long run, then head home". Returns a route_id and version 1, with the
+Cove at the halfway point". Returns a route_id and version 1, with the
 distance, climb, share on paths and the km range of each section; never
 the geometry. Then: view-route-map with route_id to see it, amend-route to
 change one part, export-route for a GPX file. For where to run a planned
@@ -38,13 +37,15 @@ Segments, in running order:
 - generated: routed by OpenRouteService through via points. Start defaults
   to where the section before ends, end to where the next starts (the last
   one goes back to the route's start).
+- corridor: a saved corridor by name (list-corridors), its own km range; it
+  starts at the end nearer the section before unless reversed is set.
 - out_and_back: there and back toward a place or a compass direction.
 
 Notes:
 - Ends within 30 m are joined directly; a wider gap is routed, and a gap
   that cannot be routed is an error that says where it is.
-- Each section keeps its source and its climb. A routed section's climb is
-  OpenRouteService's elevation model; a past run's is its own altitude.
+- Each section keeps its source and its climb (a routed one's is
+  OpenRouteService's elevation model).
 - One call makes at most 12 routing calls; a stitch needing more stores
   nothing. Places and points are sent to OpenRouteService.
 - The same request returns the same route_id and stores nothing new.
@@ -75,6 +76,16 @@ const segment = z.discriminatedUnion("type", [
       .describe("Its version; default the latest"),
     from_km: kmInput("Its km to start at; default 0").optional(),
     to_km: kmInput("Its km to end at; default its end").optional(),
+  }),
+  z.strictObject({
+    type: z.literal("corridor"),
+    name: z.string().trim().min(1).max(80).describe("A saved corridor's name"),
+    reversed: z
+      .boolean()
+      .optional()
+      .describe("Run it backwards; default the end nearer the section before"),
+    from_km: kmInput("Its own km to start at; default 0").optional(),
+    to_km: kmInput("Its own km to end at; default its end").optional(),
   }),
   z.strictObject({
     type: z.literal("generated"),

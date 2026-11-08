@@ -43,8 +43,8 @@ stitch-route's or an earlier amend-route's result.
 Operations run in order on one new version:
 - insert_via: route through a place, near a km (within 1 km either side).
 - remove_via / move_via: a via point or an out-and-back's turnaround.
-- replace_section: route km from-to again, directly, through a place, or
-  along part of a past run.
+- replace_section: route km from-to again, directly, through a place, along
+  part of a past run, or along a saved corridor.
 - add_out_and_back: at a km, toward a place or a direction.
 - trim: remove km from-to and reconnect the ends.
 - fit_distance: change the flexible section (or km from-to) so the whole
@@ -106,6 +106,16 @@ const operation = z.discriminatedUnion("op", [
       })
       .optional()
       .describe("Use part of a past run instead; its ends are routed to"),
+    corridor: z
+      .object({
+        name: z.string().trim().min(1).max(80).describe("A saved corridor"),
+        reversed: z
+          .boolean()
+          .optional()
+          .describe("Run it backwards; default from the section's start"),
+      })
+      .optional()
+      .describe("Use a saved corridor instead; its ends are routed to"),
   }),
   z.strictObject({
     op: z.literal("add_out_and_back"),

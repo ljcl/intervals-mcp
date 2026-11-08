@@ -353,6 +353,52 @@ describe("stitchedCandidate", () => {
     expect(c.summary).toBe("From 1 past run: Run r1 2026-10-01");
   });
 
+  it("names a corridor section and counts its km as from your runs", () => {
+    const corridor = {
+      track: line([A, B]),
+      runs: [],
+      corridor: { route_id: "cabcdefghij", name: "Glebe foreshore" },
+    };
+    const [plan] = planStitches(
+      [
+        legOptions([run("r1", [S, A])], S, A),
+        [corridor],
+        legOptions([run("r3", [B, S], "2026-10-02")], B, S),
+      ],
+      [S, A, B, S],
+      3500,
+      "loop",
+    );
+    const c = stitchedCandidate(plan!, [], "loop")!;
+    expect(c.summary).toBe(
+      "From 2 past runs: Run r1 2026-10-01, Run r3 2026-10-02; corridor: Glebe foreshore",
+    );
+    expect(c.history_share).toBeCloseTo(1, 2);
+    // A corridor alone: no past run to name.
+    const [alone] = planStitches([[corridor]], [A, B], 1000, "point-to-point");
+    expect(stitchedCandidate(alone!, [], "point-to-point")!.summary).toBe(
+      "From your corridors; corridor: Glebe foreshore",
+    );
+  });
+
+  it("needs no fill between two corridors that share an end", () => {
+    const corridor = (name: string, points: LatLng[]) => ({
+      track: line(points),
+      runs: [],
+      corridor: { route_id: `c-${name}`, name },
+    });
+    const [plan] = planStitches(
+      [[corridor("First", [S, A])], [], [corridor("Second", [A, B])]],
+      [S, A, A, B],
+      2000,
+      "point-to-point",
+    );
+    expect(plan!.pieces.map((p) => p.kind)).toEqual(["section", "section"]);
+    expect(stitchedCandidate(plan!, [], "point-to-point")!.summary).toBe(
+      "From your corridors; corridors: First, Second",
+    );
+  });
+
   it("doubles the routed km of an out-and-back in the summary", () => {
     const options = [legOptions([run("r1", [S, A])], S, A), []];
     const [plan] = planStitches(options, [S, A, B], 4000, "out-and-back");

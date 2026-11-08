@@ -263,7 +263,7 @@ function parseOrThrow<T>(
 }
 
 /** The words of a place text, lowercased, accents, apostrophes and joining words dropped, street words in one form. */
-function placeWords(text: string): string[] {
+export function placeWords(text: string): string[] {
   return text
     .normalize("NFD")
     .replace(/\p{M}/gu, "")
