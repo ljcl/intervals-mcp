@@ -48,10 +48,11 @@ interface Section {
   run: RunRef;
 }
 
-/** A line between two anchors: its newest run's section, and every run on it, newest first. */
+/** A line between two anchors: its newest run's section, and every run on it, newest first; or a saved corridor (no runs). */
 export interface LegOption {
   track: RouteTrack;
   runs: RunRef[];
+  corridor?: { route_id: string; name: string };
 }
 
 export type StitchPiece =
@@ -187,7 +188,9 @@ function piecesFor(
   let pending: LatLng[] = [];
   choice.forEach((option, leg) => {
     if (!option) {
-      pending.push(viaPoint(anchors[leg + 1]!));
+      const [from, to] = [viaPoint(anchors[leg]!), viaPoint(anchors[leg + 1]!)];
+      // Two anchors at one spot (a corridor ending where the next starts) leave nothing to fill.
+      if (haversineMeters(from, to) > JOIN_GAP_M) pending.push(to);
       return;
     }
     const first = option.track.coordinates[0]!;
@@ -298,6 +301,7 @@ export function stitchedCandidate(
   // Climb is summed per piece: the seam between two devices' or ORS's altitudes is not climb.
   let climb_m = 0;
   const runs = new Map<string, RunRef>();
+  const corridors = new Set<string>();
   let section_m = 0;
   let fill_m = 0;
   let next = 0;
@@ -312,14 +316,24 @@ export function stitchedCandidate(
       tracks.push(piece.option.track);
       climb_m += trackClimb(piece.option.track.altitude);
       section_m += trackLength(piece.option.track);
-      const run = piece.option.runs[0]!;
-      runs.set(run.id, run);
+      const run = piece.option.runs[0];
+      if (run) runs.set(run.id, run);
+      if (piece.option.corridor) corridors.add(piece.option.corridor.name);
     }
   }
   const way = concatTracks(tracks);
   const track = shape === "out-and-back" ? thereAndBack(way) : way;
   const laps = shape === "out-and-back" ? 2 : 1;
   const used = [...runs.values()];
+  const names = [...corridors];
+  const from =
+    used.length === 0
+      ? "From your corridors"
+      : `From ${used.length} past run${used.length === 1 ? "" : "s"}: ${used.map((r) => `${r.name} ${r.date}`).join(", ")}`;
+  const corridorText =
+    names.length > 0
+      ? `; corridor${names.length === 1 ? "" : "s"}: ${names.join(", ")}`
+      : "";
   const routed =
     fill_m > 0 ? `; ${km(fill_m * laps)} km routed by OpenRouteService` : "";
   return {
@@ -334,7 +348,7 @@ export function stitchedCandidate(
     history_share: section_m / trackLength(way),
     crossings_per_km: null,
     hill: null,
-    summary: `From ${used.length} past run${used.length === 1 ? "" : "s"}: ${used.map((r) => `${r.name} ${r.date}`).join(", ")}${routed}`,
+    summary: `${from}${corridorText}${routed}`,
     track,
   };
 }

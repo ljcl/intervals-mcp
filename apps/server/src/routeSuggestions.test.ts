@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { handledRateLimit } from "./__fixtures__";
 import { CallCancelledError } from "./callScope";
+import { followsCorridor } from "./corridors";
 import { RequestTimeoutError } from "./fetchClient";
 import { type IntervalsEvent, listPlannedWorkouts } from "./intervalsClient";
 import {
@@ -12,6 +13,8 @@ import {
 import { geocode, OrsApiError, type OrsRoute, orsRoute } from "./orsClient";
 import { osmIndexInfo, parkReach, routeOsmStats } from "./osmIndex";
 import { passesInOrder } from "./routeCandidates";
+import { concatTracks } from "./routeGeometry";
+import { listCorridors, type StoredRoute } from "./routeStore";
 import {
   loadRouteSuggestions,
   RouteSuggestionError,
@@ -33,6 +36,10 @@ vi.mock("./osmIndex", async (o) => ({
   routeOsmStats: vi.fn(),
   osmIndexInfo: vi.fn(),
   parkReach: vi.fn(),
+}));
+vi.mock("./routeStore", async (o) => ({
+  ...(await o<typeof import("./routeStore")>()),
+  listCorridors: vi.fn(),
 }));
 vi.mock("./startClusters", async (o) => ({
   ...(await o<typeof import("./startClusters")>()),
@@ -169,6 +176,7 @@ beforeEach(() => {
     data_date: "2026-11-01T00:00:00.000Z",
     age_days: 1,
   });
+  vi.mocked(listCorridors).mockReset().mockResolvedValue([]);
   vi.mocked(geocode).mockReset();
   vi.mocked(orsRoute).mockReset();
   let n = 0;
@@ -1482,6 +1490,257 @@ describe("loadRouteSuggestions", () => {
         expect(run.warnings).toContain(
           "No route through the via points came within 25% of 8.0 km; the nearest, 4.8 km, is offered: it follows your past runs between the via points, which cannot be stretched.",
         );
+      });
+    });
+  });
+
+  describe("corridor vias", () => {
+    /** About 1 km north of SF, about 1 km east of that, and 2 km north. */
+    const N: LatLng = [SF[0] + 0.009, SF[1]];
+    const NE: LatLng = [SF[0] + 0.009, SF[1] + 0.0114];
+    const NORTH_MORE: LatLng = [SF[0] + 0.018, SF[1]];
+    function runOn(id: string, points: LatLng[]): RunStart {
+      const { track, distance_m } = straightRoute(points);
+      return {
+        id,
+        date: "2026-10-01",
+        name: `Run ${id}`,
+        distance_m,
+        climb_m: 5,
+        track,
+      };
+    }
+    /** A saved corridor from `a` to `b`, stored as two segments. */
+    function corridor(
+      name: string,
+      a: LatLng,
+      b: LatLng,
+      one_way = false,
+    ): StoredRoute {
+      const mid: LatLng = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+      const segment = (id: string, points: LatLng[]) => ({
+        id,
+        kind: "activity" as const,
+        label: name,
+        source: {
+          type: "activity" as const,
+          activity_id: "i9",
+          from_km: 0,
+          to_km: 1,
+        },
+        track: straightRoute(points).track,
+        climb_m: 0,
+        climb_source: "recorded" as const,
+        path_share: null,
+        vias: [],
+        flexible: false,
+        notes: [],
+      });
+      return {
+        format: 1,
+        route_id: `c-${name}`,
+        name,
+        kind: "corridor",
+        one_way,
+        created_at: "2026-10-01T00:00:00.000Z",
+        next_id: 3,
+        segments: { g1: segment("g1", [a, mid]), g2: segment("g2", [mid, b]) },
+        versions: [
+          {
+            version: 1,
+            parent: null,
+            created_at: "2026-10-01T00:00:00.000Z",
+            change: "Saved",
+            segment_ids: ["g1", "g2"],
+            warnings: [],
+          },
+        ],
+      };
+    }
+    const trackOf = (route: StoredRoute) =>
+      concatTracks(Object.values(route.segments).map((s) => s.track));
+    const bayRun = corridor("Bay Run", N, NE);
+    const bayLeg = { track: trackOf(bayRun), entry: N, exit: NE };
+    const args = { distanceKm: 3.5, start: text(SF), via: "bay run" };
+
+    beforeEach(() => {
+      vi.mocked(listCorridors).mockResolvedValue([bayRun]);
+      vi.mocked(orsRoute).mockImplementation(async (_key, request) =>
+        straightRoute(request.waypoints, 1.2),
+      );
+    });
+
+    it("runs a corridor named like a real place, with no ORS key and no lookup", async () => {
+      vi.mocked(geocode).mockResolvedValue({
+        label: "Bay Run, Sydney, NSW, Australia",
+        point: [-33.86, 151.15],
+        match: { query: "Bay Run", name: "Bay Run", type: "street" },
+      });
+      vi.mocked(loadRunStarts).mockResolvedValue({
+        runs: [runOn("a", [SF, N, NORTH_MORE]), runOn("b", [N, NE, SF])],
+        skipped: 0,
+      });
+      const run = (
+        await loadRouteSuggestions("k", args, { ...ENV, orsKey: null })
+      ).runs[0]!;
+      expect(vi.mocked(geocode)).not.toHaveBeenCalled();
+      expect(vi.mocked(orsRoute)).not.toHaveBeenCalled();
+      expect(run.via).toEqual([
+        {
+          label: "Bay Run",
+          point: N,
+          corridor: { route_id: "c-Bay Run", name: "Bay Run", reversed: false },
+        },
+      ]);
+      const stitched = run.candidates.find((c) => c.kind === "stitched")!;
+      expect(stitched.summary).toBe(
+        "From 2 past runs: Run a 2026-10-01, Run b 2026-10-01; corridor: Bay Run",
+      );
+      expect(followsCorridor(stitched.track, bayLeg)).toBe(true);
+      expect(stitched.history_share).toBeGreaterThan(0.99);
+    });
+
+    it("routes only the fills, and generates no route", async () => {
+      vi.mocked(loadRunStarts).mockResolvedValue({
+        runs: [runOn("a", [SF, N, NORTH_MORE])],
+        skipped: 0,
+      });
+      const result = await loadRouteSuggestions("k", args, ENV);
+      const run = result.runs[0]!;
+      expect(vi.mocked(orsRoute).mock.calls.map(([, r]) => r)).toEqual([
+        { waypoints: [NE, SF] },
+      ]);
+      expect(run.candidates.map((c) => c.kind)).toEqual(["stitched"]);
+      expect(passesInOrder(run.candidates[0]!.track, [N, NE])).toBe(true);
+      expect([...run.warnings, ...result.warnings].join(" ")).not.toMatch(
+        /generated|generation/,
+      );
+    });
+
+    it("may spend more than the stitch fill share of the budget on fills", async () => {
+      // Four corridors round a 1 km square, 100 m short of each corner: five fills.
+      const E: LatLng = [SF[0], SF[1] + 0.0114];
+      const lat = 0.0009;
+      const lng = 0.00114;
+      const sides = [
+        corridor("Alpha path", [SF[0] + lat, SF[1]], [N[0] - lat, N[1]]),
+        corridor("Bravo path", [N[0], N[1] + lng], [NE[0], NE[1] - lng]),
+        corridor("Charlie path", [NE[0] - lat, NE[1]], [E[0] + lat, E[1]]),
+        corridor("Delta path", [E[0], E[1] - lng], [SF[0], SF[1] + lng]),
+      ];
+      vi.mocked(listCorridors).mockResolvedValue(sides);
+      vi.mocked(loadRunStarts).mockResolvedValue({ runs: [], skipped: 0 });
+      vi.mocked(orsRoute).mockImplementation(async (_key, request) =>
+        straightRoute(request.waypoints),
+      );
+      const run = (
+        await loadRouteSuggestions(
+          "k",
+          {
+            distanceKm: 4,
+            start: text(SF),
+            via: ["Alpha path", "Bravo path", "Charlie path", "Delta path"],
+          },
+          ENV,
+        )
+      ).runs[0]!;
+      expect(vi.mocked(orsRoute)).toHaveBeenCalledTimes(5);
+      const stitched = run.candidates.find((c) => c.kind === "stitched")!;
+      expect(stitched.summary).toBe(
+        "From your corridors; corridors: Alpha path, Bravo path, Charlie path, Delta path; 0.6 km routed by OpenRouteService",
+      );
+      for (const side of sides) {
+        const track = trackOf(side);
+        expect(
+          followsCorridor(stitched.track, {
+            track,
+            entry: track.coordinates[0]!,
+            exit: track.coordinates.at(-1)!,
+          }),
+        ).toBe(true);
+      }
+    });
+
+    it("runs a corridor from its nearer end, unless it is one-way", async () => {
+      // Stored from NE to N; an out-and-back from SF reaches N first.
+      const westward = corridor("Bay Run", NE, N);
+      vi.mocked(listCorridors).mockResolvedValue([westward]);
+      const outAndBack = { ...args, shape: "out-and-back" as const };
+      const run = (await loadRouteSuggestions("k", outAndBack, ENV)).runs[0]!;
+      expect(run.via[0]).toMatchObject({
+        point: N,
+        corridor: { reversed: true },
+      });
+      vi.mocked(listCorridors).mockResolvedValue([
+        corridor("Bay Run", NE, N, true),
+      ]);
+      const oneWay = (await loadRouteSuggestions("k", outAndBack, ENV))
+        .runs[0]!;
+      expect(oneWay.via[0]).toMatchObject({
+        point: NE,
+        corridor: { reversed: false },
+      });
+    });
+
+    it("keeps a past run only when it runs the whole corridor", async () => {
+      const detour: LatLng = [N[0] + 0.003, N[1] + 0.0057];
+      vi.mocked(loadRunStarts).mockResolvedValue({
+        runs: [
+          runOn("full", [SF, N, NE, SF]),
+          runOn("leaves", [SF, N, detour, NE, SF]),
+        ],
+        skipped: 0,
+      });
+      const run = (
+        await loadRouteSuggestions("k", args, { ...ENV, orsKey: null })
+      ).runs[0]!;
+      expect(
+        run.candidates
+          .filter((c) => c.kind === "past")
+          .map((c) => c.activity_id),
+      ).toEqual(["full"]);
+    });
+
+    it("returns the same routes for the same call", async () => {
+      vi.mocked(loadRunStarts).mockResolvedValue({
+        runs: [runOn("a", [SF, N, NORTH_MORE])],
+        skipped: 0,
+      });
+      const first = await loadRouteSuggestions("k", args, ENV);
+      const second = await loadRouteSuggestions("k", args, ENV);
+      expect(first.runs[0]!.candidates.length).toBeGreaterThan(0);
+      expect(second.runs[0]!.candidates).toEqual(first.runs[0]!.candidates);
+    });
+
+    it("names a saved corridor when a looked-up via is refused", async () => {
+      vi.mocked(listCorridors).mockResolvedValue([
+        corridor("Glebe foreshore", N, NE),
+      ]);
+      vi.mocked(geocode).mockResolvedValue({
+        label: "Glebe, NSW, Australia",
+        point: SF,
+        match: { query: "Glebe", name: "Glebe", type: "locality" },
+      });
+      await expect(
+        loadRouteSuggestions("k", { ...args, via: "Glebe" }, ENV),
+      ).rejects.toThrow(
+        '"Glebe" matched only Glebe (a locality), so it was not routed; try the place name without its suburb or city, or pass lat,lng, or use the saved corridor "Glebe foreshore".',
+      );
+    });
+
+    it("scores a corridor route outside the OpenStreetMap index", async () => {
+      vi.mocked(routeOsmStats).mockReturnValue(null);
+      vi.mocked(loadRunStarts).mockResolvedValue({
+        runs: [runOn("a", [SF, N, NORTH_MORE])],
+        skipped: 0,
+      });
+      const run = (await loadRouteSuggestions("k", args, ENV)).runs[0]!;
+      const stitched = run.candidates.find((c) => c.kind === "stitched")!;
+      expect(stitched.score).toBeGreaterThan(0);
+      expect(stitched.score_breakdown).toMatchObject({
+        crossings: null,
+        main_roads: null,
+        green: null,
       });
     });
   });

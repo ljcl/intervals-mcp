@@ -1785,7 +1785,20 @@ export const RouteSuggestionsOutputSchema = z.object({
         "The first via point; via_points lists them all",
       ),
       via_points: z
-        .array(RoutePlaceSchema)
+        .array(
+          RoutePlaceSchema.extend({
+            corridor: z
+              .object({
+                route_id: z.string(),
+                name: z.string(),
+                reversed: z.boolean(),
+              })
+              .nullable()
+              .describe(
+                "The saved corridor this via is, run end to end; null for a place",
+              ),
+          }),
+        )
         .describe("Places the route passes, in order"),
       shape: z.enum(["loop", "out-and-back", "point-to-point"]),
       terrain: z.enum(["any", "flat", "rolling", "hilly", "hill-repeats"]),
