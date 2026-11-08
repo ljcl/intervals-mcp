@@ -852,9 +852,8 @@ export async function loadRouteSuggestions(
             ++taken[c.kind] <= (c.kind === "past" ? MAX_PAST_CANDIDATES : want),
         )
         .slice(0, MAX_ROUTES);
-      // Another recording of a picked loop is the same route, so it is used too.
+      // Another recording of a picked loop is the same route, so it is used too (a stitched copy of a past run included).
       for (const c of candidates) {
-        if (c.kind !== "past") continue;
         for (const r of cluster?.runs ?? [])
           if (sameRoute(r.track, c.track)) usedPast.add(r.id);
       }

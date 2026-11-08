@@ -189,12 +189,6 @@ describe("loadRouteSuggestions", () => {
       };
     };
 
-    // One distinct generated loop (every seed returns it, so dedupe keeps one), as the 3-route cap would otherwise cut a past run.
-    const oneGenerated = () =>
-      vi
-        .mocked(orsRoute)
-        .mockImplementation(async () => route(generatedLoop(1)));
-
     it("gives every route a score and breakdown", async () => {
       const run = (await loadRouteSuggestions("k", {}, ENV)).runs[0]!;
       for (const c of run.candidates) {
@@ -209,7 +203,6 @@ describe("loadRouteSuggestions", () => {
     });
 
     it("puts a quiet new route ahead of a busy past run", async () => {
-      oneGenerated();
       vi.mocked(routeOsmStats).mockImplementation((t) =>
         t === homeLoop
           ? { ...STATS, crossings_per_km: 6, signals_per_km: 2 }
@@ -224,7 +217,6 @@ describe("loadRouteSuggestions", () => {
 
     it("drops a run from this week behind an equal older one", async () => {
       // Distinct loops from the same start (east and west of it), or dedupeRoutes keeps one.
-      oneGenerated();
       const older = pastRun("old", "2026-10-01", SF[0]);
       const recent = {
         ...pastRun("new", "2026-10-31", SF[0]),
@@ -304,13 +296,8 @@ describe("loadRouteSuggestions", () => {
       history_runs: 1,
       label: "Usual start (1 recent run)",
     });
-    expect(run.candidates.map((c) => c.kind).sort()).toEqual([
-      "generated",
-      "past",
-    ]);
-    expect(run.candidates.find((c) => c.kind === "generated")!.summary).toBe(
-      "via Foreshore Walk, Park Road",
-    );
+    expect(run.candidates.map((c) => c.kind)).toEqual(["past", "generated"]);
+    expect(run.candidates[1]!.summary).toBe("via Foreshore Walk, Park Road");
     expect(run.candidates.every((c) => c.crossings_per_km === 0)).toBe(true);
     expect(result.generation_available).toBe(true);
   });
@@ -1153,12 +1140,14 @@ describe("loadRouteSuggestions", () => {
         via: [text(N), text(NE)],
       };
 
-      it("returns at most 3 routes", async () => {
+      it("returns the 3 best of more routes than that, cutting the lowest score", async () => {
+        const SE: LatLng = [SF[0] - 0.009, SF[1] + 0.0114];
         vi.mocked(loadRunStarts).mockResolvedValue({
           runs: [
             runOn("a", [SF, N, NORTH_MORE]),
             runOn("b", [N, NE, SF]),
             runOn("c", [SF, N, NE, SF]),
+            runOn("d", [SF, N, NE, SE, SF]),
           ],
           skipped: 0,
         });
@@ -1166,7 +1155,13 @@ describe("loadRouteSuggestions", () => {
           straightRoute(request.waypoints, 1.2),
         );
         const run = (await loadRouteSuggestions("k", args, ENV)).runs[0]!;
-        expect(run.candidates.length).toBeLessThanOrEqual(3);
+        // Four routes pass the per-kind caps (2 past, 1 generated, 1 stitched); the lowest score, run d, is cut.
+        expect(run.candidates).toHaveLength(3);
+        const scores = run.candidates.map((c) => c.score!);
+        expect(scores).toEqual([...scores].sort((a, b) => b - a));
+        const ids = run.candidates.map((c) => c.activity_id);
+        expect(ids).toContain("c");
+        expect(ids).not.toContain("d");
       });
 
       it("builds a via loop from past runs, before the ORS route, with no fill", async () => {
