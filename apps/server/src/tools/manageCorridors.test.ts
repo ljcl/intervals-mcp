@@ -131,6 +131,16 @@ describe("manage-corridors", () => {
     expect(text(result as never)).toContain("Bay Run");
   });
 
+  it("refuses a rename to a name with no words", async () => {
+    const added = await add("Bay Run");
+    const id = (
+      added as { structuredContent: { corridor: { route_id: string } } }
+    ).structuredContent.corridor.route_id;
+    const result = await run({ action: "rename", route_id: id, name: " !! " });
+    expect(isError(result)).toBe(true);
+    expect(text(result as never)).toContain("at least one word");
+  });
+
   it("renames and sets one-way", async () => {
     const added = await add("Bay Run");
     const id = (

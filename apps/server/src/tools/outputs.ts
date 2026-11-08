@@ -1979,7 +1979,9 @@ export const CorridorListOutputSchema = z.object({
     .describe(
       "The point corridors are ordered from; null when no start is known",
     ),
-  corridors: z.array(CorridorEntrySchema).describe("Nearest first"),
+  corridors: z
+    .array(CorridorEntrySchema)
+    .describe("Nearest first; by name when near is null"),
   found: z
     .array(
       z.object({

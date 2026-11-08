@@ -17,7 +17,7 @@ const name = "list-corridors";
 
 const description = `
 Lists the athlete's saved running corridors (named lines they run again and
-again, kept as stored routes) nearest first, and stretches their recent
+again, kept as stored routes) nearest first (by name without near), and stretches their recent
 runs repeat that are not saved yet, for "which corridors do I have near
 the office?" or "what do I keep running that I have not named?". Each
 corridor gives its route_id, length, share on paths, how many recent runs
@@ -29,7 +29,8 @@ route_id draws it.
 
 Notes:
 - near is a place with its city, or lat,lng; default HOME_START, else the
-  athlete's usual start.
+  athlete's usual start. A place name is sent to OpenRouteService for
+  lookup.
 - Reads the athlete's recent runs (up to 180 days); found stretches are the
   parts of them 1 km or longer that several runs share.
 `;

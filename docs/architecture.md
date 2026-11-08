@@ -1142,19 +1142,19 @@ docker-compose.yml).
   to a point every 5 m (after their climb is measured).
 - Ids: `r` plus 10 base32 characters for a route `stitch-route` made, `s`
   for one `suggest-run-route` generated, `c` for a corridor
-  (`manage-corridors`; kind `corridor`, one-way flag `one_way`, never swept). `stitch-route`'s id is a hash of
-  its request, a suggested route's a hash of its track, so a repeat stores
-  nothing. `isRouteId` guards every path, so an id cannot leave the
-  directory.
+  (`manage-corridors`; kind `corridor`, one-way flag `one_way`, never
+  swept). `stitch-route`'s id is a hash of its request, a suggested route's
+  a hash of its track, so a repeat stores nothing. `isRouteId` guards
+  every path, so an id cannot leave the directory.
 - A write goes to a temporary file and is renamed over the old one.
   Changes to one route run one at a time (a promise chain per id), and
   `appendVersion` checks the base version inside that lock, before the
   builder routes anything.
 - Retention: a read sets the file's modified time, so the file's own time
-  is its last use. `sweepRoutes` never touches a corridor; it deletes a draft unused for
-  `ROUTE_RETENTION_DAYS` (default 30), a suggested route after 3 days, and
-  a temporary file after a day. It runs at most every 6 hours, from a store
-  call; startup does not wait for it.
+  is its last use. `sweepRoutes` never touches a corridor; it deletes a
+  draft unused for `ROUTE_RETENTION_DAYS` (default 30), a suggested route
+  after 3 days, and a temporary file after a day. It runs at most every 6
+  hours, from a store call; startup does not wait for it.
 - `stitch-route` and `amend-route` are annotated `WRITE_IDEMPOTENT`: they
   add a route or a version and never overwrite one, and the same call again
   changes nothing more (the same stitch returns its route; a repeated amend

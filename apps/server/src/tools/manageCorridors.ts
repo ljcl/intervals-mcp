@@ -163,6 +163,7 @@ export const manageCorridorsTool = {
         } else {
           if (args.action === "rename") {
             const key = corridorKey(args.name!);
+            if (!key) return refuse("A corridor name needs at least one word.");
             const taken = (await listCorridors()).find(
               (c) => c.route_id !== id && corridorKey(c.name) === key,
             );
