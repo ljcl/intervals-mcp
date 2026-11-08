@@ -303,7 +303,7 @@ describe("routeNotes", () => {
     expect(routeNotes(track, "out-and-back")).toEqual([]);
   });
 
-  it("gives the stick's length for a lollipop, not half the whole loop", () => {
+  it("gives no note for a lollipop; its retracing is in retracedM", () => {
     const base: LatLng = [-33.86, 151.17];
     const stickEnd = moveToward(base, 0, 300);
     const points: LatLng[] = [];
@@ -322,9 +322,29 @@ describe("routeNotes", () => {
         if (d + 10 > len) at = moveToward(at, heading, d);
       }
     for (let d = 290; d >= 0; d -= 10) points.push(moveToward(base, 0, d));
-    const [note] = routeNotes(trackFromPoints(points), "loop");
-    const m = Number(/(\d+) m each way/.exec(note ?? "")?.[1]);
-    expect(Math.abs(m - 300)).toBeLessThanOrEqual(20);
+    expect(routeNotes(trackFromPoints(points), "loop")).toEqual([]);
+  });
+
+  it("gives no note for a loop that leaves and returns along the same street", () => {
+    const base: LatLng = [-33.86, 151.17];
+    const stickEnd = moveToward(base, 0, 100);
+    const points: LatLng[] = [];
+    for (let d = 0; d <= 100; d += 10) points.push(moveToward(base, 0, d));
+    // A square loop of about 1.7 km at the street's end, then back down the street.
+    const sides: Array<[number, number]> = [
+      [90, 425],
+      [0, 425],
+      [270, 425],
+      [180, 425],
+    ];
+    let at = stickEnd;
+    for (const [heading, len] of sides)
+      for (let d = 10; d <= len; d += 10) {
+        points.push(moveToward(at, heading, d));
+        if (d + 10 > len) at = moveToward(at, heading, d);
+      }
+    for (let d = 90; d >= 0; d -= 10) points.push(moveToward(base, 0, d));
+    expect(routeNotes(trackFromPoints(points), "loop")).toEqual([]);
   });
 
   it("gives no notes when an out-and-back was asked", () => {

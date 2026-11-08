@@ -254,11 +254,20 @@ export function knownLines(runs: RunStart[]): (track: RouteTrack) => number {
 
 const km1 = (m: number) => (m / 1000).toFixed(1);
 
-/** Notes on a route: each dead-end spur; none for an out-and-back, which goes back by design. */
+/** Slack on a dead end's span (way in plus way back) for the turn itself. */
+const DEAD_END_SLACK_M = 50;
+
+/**
+ * Notes on a route: each dead-end spur, where the return starts right after the
+ * stretch. A shared start street or lollipop stick spans the whole loop and is
+ * left to `retracedM`. None for an out-and-back, which goes back by design.
+ */
 export function routeNotes(track: RouteTrack, asked: RouteShape): string[] {
   if (asked === "out-and-back") return [];
-  return findSpurs(track).map(
-    (s) =>
-      `Goes back the way it came from km ${km1(s.from_m)}, ${Math.round(s.length_m)} m each way.`,
-  );
+  return findSpurs(track)
+    .filter((s) => s.to_m - s.from_m <= 2 * s.length_m + DEAD_END_SLACK_M)
+    .map(
+      (s) =>
+        `Goes back the way it came from km ${km1(s.from_m)}, ${Math.round(s.length_m)} m each way.`,
+    );
 }
