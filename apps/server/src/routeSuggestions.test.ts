@@ -1646,6 +1646,18 @@ describe("loadRouteSuggestions", () => {
       );
     });
 
+    it("names an ORS failure, not the budget, when a corridor cannot be joined", async () => {
+      vi.mocked(loadRunStarts).mockResolvedValue({ runs: [], skipped: 0 });
+      vi.mocked(orsRoute).mockRejectedValue(
+        new OrsApiError("x", { status: 403, statusText: "", data: "" }),
+      );
+      const run = (await loadRouteSuggestions("k", args, ENV)).runs[0]!;
+      expect(run.candidates).toEqual([]);
+      const text = run.warnings.join(" ");
+      expect(text).toContain("No route along the corridor could be joined: ");
+      expect(text).not.toContain("budget is spent");
+    });
+
     it("keeps a $ in a corridor name literal in the refusal hint", async () => {
       vi.mocked(listCorridors).mockResolvedValue([
         corridor("Bay $& Run", N, NE),

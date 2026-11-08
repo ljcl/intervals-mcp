@@ -380,7 +380,7 @@ What leaves the server:
   stored route it receives the ends of each section it routes (a gap, a
   changed part, an out-and-back) and the places named. This happens
   only with `ORS_API_KEY` set; unset, nothing goes to OpenRouteService and
-  only past runs are offered.
+  only past runs and saved corridors are offered.
 - The OpenStreetMap extract is downloaded from `OSM_EXTRACT_URL` when the
   index is over 7 days old (a conditional request, so an unchanged extract is
   not downloaded again); the request carries no location. Route geometry never

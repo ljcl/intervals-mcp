@@ -826,11 +826,13 @@ export async function loadRouteSuggestions(
       );
       if (corridorLegs.length > 0 && stitched.length === 0) {
         runWarnings.push(
-          !canCall(budget)
-            ? "This call's routing budget is spent; ask for this run on its own."
-            : !env.orsKey
-              ? "Joining a corridor to the rest of the route needs ORS_API_KEY where no past run covers the join."
-              : "No route along the corridor could be joined to the rest of the route.",
+          budget.failure
+            ? `No route along the corridor could be joined: ${budget.failure}.`
+            : !canCall(budget)
+              ? "This call's routing budget is spent; ask for this run on its own."
+              : !env.orsKey
+                ? "Joining a corridor to the rest of the route needs ORS_API_KEY where no past run covers the join."
+                : "No route along the corridor could be joined to the rest of the route.",
         );
       }
       let tried: RouteCandidate[] = [];

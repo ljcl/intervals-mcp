@@ -17,8 +17,9 @@ const name = "list-corridors";
 
 const description = `
 Lists the athlete's saved running corridors (named lines they run again and
-again, kept as stored routes) nearest first (by name without near), and stretches their recent
-runs repeat that are not saved yet, for "which corridors do I have near
+again, kept as stored routes) nearest first (by name when no start is
+known), and stretches their recent runs repeat that are not saved yet,
+for "which corridors do I have near
 the office?" or "what do I keep running that I have not named?". Each
 corridor gives its route_id, length, share on paths, how many recent runs
 follow it and how far it is from the search point.

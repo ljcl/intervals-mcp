@@ -1761,7 +1761,9 @@ export const RouteSuggestionsOutputSchema = z.object({
   count: z.number().int().describe("Planned runs in the result"),
   generation_available: z
     .boolean()
-    .describe("False when ORS_API_KEY is unset: only past runs are offered"),
+    .describe(
+      "False when ORS_API_KEY is unset: nothing is routed, so only past runs and saved corridors are offered",
+    ),
   runs: z.array(
     z.object({
       event_id: z.number().nullable(),
