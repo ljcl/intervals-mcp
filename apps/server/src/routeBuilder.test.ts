@@ -1342,6 +1342,71 @@ describe("corridors in stitchRoute and amendRoute", () => {
     expect(segments.some((s) => s.label === "Bay Run")).toBe(true);
   });
 
+  it("runs a one-way corridor stored even when its km are given high to low", async () => {
+    await save("Hill Climb", true);
+    const built = await stitchRoute(
+      "key",
+      {
+        segments: [
+          { type: "activity", id: SUNDAY_ID, from_km: 8, to_km: 10 },
+          { type: "corridor", name: "Hill Climb", from_km: 2, to_km: 0 },
+        ],
+      },
+      ENV,
+    );
+    const part = versionSegments(built.route, built.version).filter(
+      (s) => s.label === "Hill Climb",
+    );
+    expect(haversineMeters(startOf(part), sundayPointAt(4))).toBeLessThan(30);
+  });
+
+  it("runs reversed when asked, whatever order the km are given", async () => {
+    await save("Bay Run");
+    const built = await stitchRoute(
+      "key",
+      {
+        segments: [
+          {
+            type: "corridor",
+            name: "Bay Run",
+            from_km: 2,
+            to_km: 0,
+            reversed: true,
+          },
+        ],
+      },
+      ENV,
+    );
+    const part = versionSegments(built.route, built.version);
+    expect(haversineMeters(startOf(part), sundayPointAt(6))).toBeLessThan(30);
+  });
+
+  it("starts an amended corridor section at the end nearer the replaced range", async () => {
+    await save("Bay Run");
+    const v1 = await stitchSunday();
+    const done = await amendRoute(
+      "key",
+      {
+        route_id: v1.route.route_id,
+        base_version: 1,
+        operations: [
+          {
+            op: "replace_section",
+            from_km: 8,
+            to_km: 10,
+            corridor: { name: "Bay Run" },
+          },
+        ],
+      },
+      ENV,
+    );
+    const part = versionSegments(done.route, done.version).filter(
+      (s) => s.label === "Bay Run",
+    );
+    // km 8 of the route is nearer the corridor's far end (run km 6) than its start (km 4).
+    expect(haversineMeters(startOf(part), sundayPointAt(6))).toBeLessThan(30);
+  });
+
   it("refuses more than one of through, activity and corridor", async () => {
     await save("Bay Run");
     const v1 = await stitchSunday();

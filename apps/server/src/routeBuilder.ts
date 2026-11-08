@@ -860,8 +860,11 @@ async function corridorSegments(
     findVersion(route, version) ?? latestVersion(route),
   );
   const length_km = trackLength(track) / 1000;
-  const lo = piece.from_km ?? 0;
-  const hi = piece.to_km ?? length_km;
+  // The km are a range, not a direction: only reversed or near sets that.
+  const a0 = piece.from_km ?? 0;
+  const b0 = piece.to_km ?? length_km;
+  const lo = Math.min(a0, b0);
+  const hi = Math.max(a0, b0);
   let reversed = piece.reversed ?? false;
   if (piece.reversed === undefined && near && !route.one_way) {
     const a = pointAtDistance(track, lo * 1000).point;
