@@ -209,10 +209,14 @@ file per route under `DATA_DIR`; docs/operations.md). The rules live in
   the climb came from (`recorded` altitude, OpenRouteService's
   `elevation_model`, or `none`), its share on paths (null for a recorded
   run), its via points and notes on any estimated value. The route's climb
-  is the sum of its sections'; its path share is over the sections where it
-  is known, with `path_share_coverage`. Below full coverage the text says
-  the share is partial and unknown for sections from past runs; recorded
-  runs are not matched to OpenStreetMap ways.
+  is the sum of its sections'. When the server's OpenStreetMap index covers
+  the whole track, the route's path share, crossings, signals, main-road km
+  and green share come from it, measured as `suggest-run-route` measures a
+  candidate, with `path_share_coverage` 1; each section keeps the share it
+  was stored with. Otherwise those four are null and the path share is
+  OpenRouteService's over the sections where it is known, with
+  `path_share_coverage`. Below full coverage the text says the share is
+  partial and unknown for sections from past runs.
 - A via keeps what was asked for: `label` is the place text (or lat,lng)
   as given, `lat`/`lng` the point it was asked at (a looked-up place's
   geocoded point). Where the route passes it is `snapped_lat`/`snapped_lng`

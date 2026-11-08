@@ -76,6 +76,10 @@ export function storedRouteStructured(
     climb_complete: summary.climb_complete,
     path_share: summary.path_share,
     path_share_coverage: summary.path_share_coverage,
+    crossings_per_km: summary.crossings_per_km,
+    signals_per_km: summary.signals_per_km,
+    main_road_km: summary.main_road_km,
+    green_share: summary.green_share,
     segments: summary.segments,
     change: extra.change,
     ors_calls: extra.ors_calls,
@@ -100,7 +104,7 @@ function sourceText(segment: RouteSummary["segments"][number]): string {
 /** The text of a stored route result: its numbers, sections and via points, never its geometry. */
 export function storedRouteLines(result: StoredRouteStructured): string[] {
   const lines: string[] = [];
-  // Path share comes from OpenRouteService, so sections from past runs have none.
+  // Without the OpenStreetMap index the share is OpenRouteService's, so sections from past runs have none.
   const share = `${Math.round((result.path_share ?? 0) * 100)}% on paths`;
   const paths =
     result.path_share === null
@@ -108,9 +112,13 @@ export function storedRouteLines(result: StoredRouteStructured): string[] {
       : result.path_share_coverage < 1
         ? `path share partial: ${share} over the ${Math.round(result.path_share_coverage * 100)}% of the distance that was routed; unknown for sections from past runs`
         : share;
+  const osm =
+    result.crossings_per_km === null
+      ? ""
+      : `, ${result.crossings_per_km} crossings/km, ${result.signals_per_km} signals/km, ${result.main_road_km} km on main roads, ${Math.round((result.green_share ?? 0) * 100)}% by parks or water`;
   lines.push(
     `Route ${result.route_id} version ${result.version} of ${result.latest_version}: "${result.name}"`,
-    `Distance ${km(result.distance_m)} km, climb ${result.climb_m} m${result.climb_complete ? "" : " (some sections have no altitude)"}, ${paths}`,
+    `Distance ${km(result.distance_m)} km, climb ${result.climb_m} m${result.climb_complete ? "" : " (some sections have no altitude)"}, ${paths}${osm}`,
   );
   if (result.change) {
     const c = result.change;

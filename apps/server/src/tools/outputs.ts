@@ -1646,6 +1646,34 @@ const RoutePlaceSchema = z.object({
   lng: z.number(),
 });
 
+/** The OpenStreetMap index's measures of a whole route (routeOsmStats), shared by suggestions and stored routes. */
+const OSM_MEASURES = {
+  crossings_per_km: z
+    .number()
+    .nullable()
+    .describe(
+      "Road crossings per km from the server's OpenStreetMap index (crossings and signals within 25 m are one stop); null when the route is outside the index",
+    ),
+  signals_per_km: z
+    .number()
+    .nullable()
+    .describe(
+      "Crossing stops with traffic signals per km; null when not counted",
+    ),
+  main_road_km: z
+    .number()
+    .nullable()
+    .describe(
+      "km on or beside trunk, primary and secondary roads; null when not counted",
+    ),
+  green_share: z
+    .number()
+    .nullable()
+    .describe(
+      "Share (0-1) within 50 m of a park, water or coastline, or inside a park; null when not counted",
+    ),
+};
+
 const RouteCandidateSchema = z.object({
   kind: z
     .enum(["past", "generated"])
@@ -1685,30 +1713,7 @@ const RouteCandidateSchema = z.object({
     .describe(
       "Share (0-1) of a route stitched from the athlete's past runs that follows them; null for any other route",
     ),
-  crossings_per_km: z
-    .number()
-    .nullable()
-    .describe(
-      "Road crossings per km from the server's OpenStreetMap index (crossings and signals within 25 m are one stop); null when the route is outside the index",
-    ),
-  signals_per_km: z
-    .number()
-    .nullable()
-    .describe(
-      "Crossing stops with traffic signals per km; null when not counted",
-    ),
-  main_road_km: z
-    .number()
-    .nullable()
-    .describe(
-      "km on or beside trunk, primary and secondary roads; null when not counted",
-    ),
-  green_share: z
-    .number()
-    .nullable()
-    .describe(
-      "Share (0-1) within 50 m of a park, water or coastline, or inside a park; null when not counted",
-    ),
+  ...OSM_MEASURES,
   hill: z
     .object({
       start_m: z.number(),
@@ -1803,7 +1808,7 @@ const StoredRouteSegmentSchema = z.object({
     .number()
     .nullable()
     .describe(
-      "Share (0-1) on paths, from OpenRouteService; null for a recorded run",
+      "Share (0-1) on paths: OpenRouteService way types, or the OpenStreetMap index for a route suggest-run-route stored; null for a recorded run",
     ),
   flexible: z.boolean().describe("fit_distance may change this section"),
   vias: z.array(
@@ -1866,10 +1871,15 @@ export const StoredRouteOutputSchema = z.object({
   path_share: z
     .number()
     .nullable()
-    .describe("Share on paths over the sections where it is known"),
+    .describe(
+      "Share (0-1) on off-road paths over the whole route from the server's OpenStreetMap index; outside it, the OpenRouteService way-type share over the sections where it is known",
+    ),
   path_share_coverage: z
     .number()
-    .describe("Share (0-1) of the distance whose path share is known"),
+    .describe(
+      "Share (0-1) of the distance whose path share is known; 1 from the OpenStreetMap index",
+    ),
+  ...OSM_MEASURES,
   segments: z.array(StoredRouteSegmentSchema),
   change: z
     .object({

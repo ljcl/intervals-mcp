@@ -738,6 +738,13 @@ the data date and the days since the last successful check;
 routes that could not be measured, and another when the last check is over
 14 days old.
 
+`summarizeRoute` (`routeBuilder.ts`) measures a stored route's whole track
+too, so `stitch-route`, `amend-route`, `export-route` and `view-route-map`
+share one path share and never blend the index's meaning with
+OpenRouteService's footway share (which counts street footpaths). A track
+the index does not cover keeps the OpenRouteService share over its routed
+sections. A section's own share stays as stored.
+
 ## Per-call telemetry
 
 `dispatchToolCall` is timed end to end and emits one structured JSON line per

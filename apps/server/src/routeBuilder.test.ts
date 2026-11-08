@@ -13,6 +13,7 @@ import {
 } from "./__fixtures__/sundayRoute";
 import { haversineMeters } from "./mapAnchors";
 import * as ors from "./orsClient";
+import { routeOsmStats } from "./osmIndex";
 import {
   amendRoute,
   type BuildEnv,
@@ -38,6 +39,11 @@ vi.mock("./orsClient", async (importOriginal) => {
   };
 });
 
+vi.mock("./osmIndex", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./osmIndex")>()),
+  routeOsmStats: vi.fn(),
+}));
+
 vi.mock("./intervalsClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./intervalsClient")>();
   return {
@@ -59,6 +65,7 @@ beforeEach(async () => {
   vi.mocked(ors.geocode).mockImplementation(async (key, text) =>
     fakeGeocode(key, text),
   );
+  vi.mocked(routeOsmStats).mockReset().mockReturnValue(null);
 });
 
 afterEach(async () => {
@@ -141,6 +148,36 @@ describe("stitchRoute", () => {
     expect(last!.climb_m).toBeLessThanOrEqual(31);
     expect(summary.path_share).toBe(0.6);
     expect(summary.path_share_coverage).toBeLessThan(0.1);
+    expect(summary.crossings_per_km).toBeNull();
+  });
+
+  it("takes the whole route's path share from the OpenStreetMap index when it covers the route", async () => {
+    const built = await stitchSunday();
+    vi.mocked(routeOsmStats).mockReturnValue({
+      crossings_per_km: 2.4,
+      signals_per_km: 0.8,
+      path_share: 0.31,
+      main_road_km: 0.6,
+      green_share: 0.55,
+    });
+    const summary = summarizeRoute(built.route, built.version);
+    expect(routeOsmStats).toHaveBeenCalledWith(
+      versionTrack(built.route, built.version),
+    );
+    expect(summary).toMatchObject({
+      path_share: 0.31,
+      path_share_coverage: 1,
+      crossings_per_km: 2.4,
+      signals_per_km: 0.8,
+      main_road_km: 0.6,
+      green_share: 0.55,
+    });
+    // Sections keep the share they were stored with.
+    expect(summary.segments.map((s) => s.path_share)).toEqual([
+      null,
+      0.6,
+      null,
+    ]);
   });
 
   it("returns the stored route for the same request without routing again", async () => {
