@@ -39,15 +39,15 @@ Notes:
   runs.
 - Without ORS_API_KEY: past runs and stitched routes only, and no place
   lookup (pass lat,lng).
-- Places go to OpenRouteService. Crossings, signals, main roads, parks
+- Start, end and via points are sent to OpenRouteService. Crossings, signals, main roads, parks
   and paths come from a server OpenStreetMap index (25 km around
   HOME_START).
-- Routes are scored 0-100 for running (paths, known lines, crossings,
-  main roads, backtracking, green, fit) and the best 3 come back.
-- A new route lands within about 5% of the distance; a loop over 25% off
+- Routes are scored 0-100 for running (see score_breakdown) and the best
+  3 come back.
+- A new route usually lands within about 5% of the distance; a loop over 25% off
   is dropped, a via route keeps its nearest with a warning.
 - With via: past runs passing every via in order (any distance or
-  terrain), then a route stitched from sections of past runs between the
+  terrain), and a route stitched from sections of past runs between the
   vias. A via matching only a suburb or city is refused.
 - A week of runs shares one routing budget; later runs may get past runs
   only, with a warning.

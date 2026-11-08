@@ -22,6 +22,7 @@ import { type RunStart } from "./startClusters";
 const CTX = {
   target_m: 10_000,
   terrain: "any" as const,
+  shape: "loop" as const,
   bands: DEFAULT_TERRAIN_BANDS,
   today: "2026-11-08",
 };
@@ -268,6 +269,24 @@ describe("knownLines", () => {
   });
 });
 
+describe("scoreRoute with unmeasured parts", () => {
+  it("scales a null known_share out to 100", () => {
+    const { score, breakdown } = scoreRoute(candidate(), null, 0, CTX);
+    expect(breakdown.known_lines).toBeNull();
+    expect(score).toBe(100);
+  });
+
+  it("counts no backtracking when an out-and-back was asked", () => {
+    const asked = { ...CTX, shape: "out-and-back" as const };
+    expect(scoreRoute(candidate(), 1, 5000, asked).breakdown.backtracking).toBe(
+      10,
+    );
+    expect(scoreRoute(candidate(), 1, 5000, CTX).breakdown.backtracking).toBe(
+      0,
+    );
+  });
+});
+
 describe("routeNotes", () => {
   it("notes a dead end on a loop, nothing on an out-and-back", () => {
     const base: LatLng = [-33.86, 151.17];
@@ -279,10 +298,36 @@ describe("routeNotes", () => {
     for (let d = 10; d <= 500; d += 10) points.push(moveToward(corner, 90, d));
     const track = trackFromPoints(points);
     expect(routeNotes(track, "loop")).toEqual([
-      expect.stringMatching(
-        /^Goes back the way it came at km 0\.5-0\.6, \d+ m each way\.$/,
-      ),
+      "Goes back the way it came from km 0.5, 55 m each way.",
     ]);
     expect(routeNotes(track, "out-and-back")).toEqual([]);
+  });
+
+  it("gives the stick's length for a lollipop, not half the whole loop", () => {
+    const base: LatLng = [-33.86, 151.17];
+    const stickEnd = moveToward(base, 0, 300);
+    const points: LatLng[] = [];
+    for (let d = 0; d <= 300; d += 10) points.push(moveToward(base, 0, d));
+    // A square loop of about 1.7 km at the stick's end, then back down the stick.
+    const sides: Array<[number, number]> = [
+      [90, 425],
+      [0, 425],
+      [270, 425],
+      [180, 425],
+    ];
+    let at = stickEnd;
+    for (const [heading, len] of sides)
+      for (let d = 10; d <= len; d += 10) {
+        points.push(moveToward(at, heading, d));
+        if (d + 10 > len) at = moveToward(at, heading, d);
+      }
+    for (let d = 290; d >= 0; d -= 10) points.push(moveToward(base, 0, d));
+    const [note] = routeNotes(trackFromPoints(points), "loop");
+    const m = Number(/(\d+) m each way/.exec(note ?? "")?.[1]);
+    expect(Math.abs(m - 300)).toBeLessThanOrEqual(20);
+  });
+
+  it("gives no notes when an out-and-back was asked", () => {
+    expect(routeNotes(TRACK, "out-and-back")).toEqual([]);
   });
 });

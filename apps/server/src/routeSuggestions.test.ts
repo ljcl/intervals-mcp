@@ -270,6 +270,48 @@ describe("loadRouteSuggestions", () => {
       expect(run.candidates.map((c) => c.kind)).toContain("past");
     });
 
+    /** The first seed (both of its tries) gives `first`, later seeds `second`; `first` scores better. */
+    const twoSeeds = (first: OrsRoute, second: OrsRoute) => {
+      let firstSeed: number | undefined;
+      vi.mocked(orsRoute).mockImplementation(async (_key, req) => {
+        const seed = req.roundTrip?.seed;
+        firstSeed ??= seed;
+        return seed === firstSeed ? first : second;
+      });
+      vi.mocked(routeOsmStats).mockImplementation((t) =>
+        t === first.track ? STATS : { ...STATS, crossings_per_km: 6 },
+      );
+    };
+
+    it("returns the flat seed for a flat request though the hilly one scores higher", async () => {
+      const hilly = route(square(SF[0] - 0.02, SF[1], 0.0135, 300));
+      const flat = route(generatedLoop(2));
+      twoSeeds(hilly, flat);
+      const run = (await loadRouteSuggestions("k", { terrain: "flat" }, ENV))
+        .runs[0]!;
+      const generated = run.candidates.filter((c) => c.kind === "generated");
+      expect(generated).toHaveLength(1);
+      expect(generated[0]!.track).toBe(flat.track);
+    });
+
+    it("returns the on-target seed without vias though a 20% short one scores higher", async () => {
+      const short = route(square(SF[0] - 0.02, SF[1], 0.0108));
+      const onTarget = route(generatedLoop(2));
+      twoSeeds(short, onTarget);
+      const run = (await loadRouteSuggestions("k", {}, ENV)).runs[0]!;
+      const generated = run.candidates.filter((c) => c.kind === "generated");
+      expect(generated).toHaveLength(1);
+      expect(generated[0]!.track).toBe(onTarget.track);
+    });
+
+    it("leaves known lines unmeasured with fewer than 3 runs loaded", async () => {
+      const run = (await loadRouteSuggestions("k", {}, ENV)).runs[0]!;
+      for (const c of run.candidates) {
+        expect(c.known_share).toBe(0);
+        expect(c.score_breakdown!.known_lines).toBeNull();
+      }
+    });
+
     it("scores routes the OSM index cannot measure", async () => {
       vi.mocked(routeOsmStats).mockReturnValue(null);
       const run = (await loadRouteSuggestions("k", {}, ENV)).runs[0]!;
@@ -363,11 +405,11 @@ describe("loadRouteSuggestions", () => {
   it.each([
     [
       { state: "unconfigured" } as const,
-      "Road crossings, signals and main roads were not counted: no OpenStreetMap index is configured (OSM_EXTRACT_URL and HOME_START), so their scores leave out crossings, main roads and green.",
+      "Road crossings, signals and main roads were not counted: no OpenStreetMap index is configured (OSM_EXTRACT_URL and HOME_START), so route scores leave out crossings, main roads and green.",
     ],
     [
       { state: "missing" } as const,
-      "Road crossings, signals and main roads were not counted: the OpenStreetMap index has not been built yet (see the server log), so their scores leave out crossings, main roads and green.",
+      "Road crossings, signals and main roads were not counted: the OpenStreetMap index has not been built yet (see the server log), so route scores leave out crossings, main roads and green.",
     ],
     [
       {
@@ -375,7 +417,7 @@ describe("loadRouteSuggestions", () => {
         data_date: "2026-11-01T00:00:00.000Z",
         age_days: 1,
       } as const,
-      "Road crossings, signals and main roads were not counted for routes outside the OpenStreetMap index (25 km around HOME_START), so their scores leave out crossings, main roads and green.",
+      "Road crossings, signals and main roads were not counted for routes outside the OpenStreetMap index (25 km around HOME_START), so route scores leave out crossings, main roads and green.",
     ],
   ])("warns once when routes are not indexed (%o)", async (info, warning) => {
     vi.mocked(routeOsmStats).mockReturnValue(null);

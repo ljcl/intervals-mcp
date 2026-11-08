@@ -495,14 +495,16 @@ function backStretches(
  * Where a track goes back the way it came: a stretch going one way with a
  * later stretch within 12 m of it going the other way, for at least 25 m.
  * Each is `from_m`, where it turns in, to `to_m`, where it is back out; a
- * dead end's tip is between them, wherever the turn is.
+ * dead end's tip is between them, wherever the turn is. `length_m` is the
+ * stretch's own length, one way.
  */
 export function findSpurs(
   track: RouteTrack,
-): Array<{ from_m: number; to_m: number }> {
+): Array<{ from_m: number; to_m: number; length_m: number }> {
   return backStretches(backPasses(track), true).map((s) => ({
     from_m: s.first * SPUR_STEP_M,
     to_m: s.out * SPUR_STEP_M,
+    length_m: (s.last - s.first) * SPUR_STEP_M,
   }));
 }
 

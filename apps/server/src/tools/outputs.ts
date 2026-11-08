@@ -1731,7 +1731,7 @@ const RouteCandidateSchema = z.object({
       recency: z.number(),
     })
     .describe(
-      "Points per factor (maxima 25, 20, 15, 15, 10, 10, 5; recency 0 or -10), scaled up when the OpenStreetMap index could not measure crossings, main roads or green (those are then null); they add up to score",
+      "Points per factor (maxima 25, 20, 15, 15, 10, 10, 5; recency 0 or -10), scaled up when the OpenStreetMap index could not measure crossings, main roads or green (those are then null; paths is null for a past run with no path share); they add up to score unless it is floored at 0",
     ),
   known_share: z
     .number()

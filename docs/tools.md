@@ -191,8 +191,9 @@ load.
   says why. An index not refreshed in 14 days adds a warning.
 - Score: every candidate (past, stitched and generated) gets 0-100 from
   `routeScore.ts`, and the score orders them, best first. Hill repeats put
-  routes with a repeat hill first; a tie goes to the closer distance, then
-  to the athlete's own run. At most 3 come back: at most 2 past runs, at
+  routes with a repeat hill first; then routes that fit the asked terrain,
+  then (without vias) routes within 10% of the distance, come before the
+  score; a tie goes to the closer distance, then to the athlete's own run. At most 3 come back: at most 2 past runs, at
   most `want` generated (1 from the usual start, 3 away from it). Stitched
   routes are capped only by the 3. The spare seed gives the score a choice
   but adds no route.
@@ -1381,7 +1382,7 @@ for `newest`.
 | `get-cadence-trend-data` | Summary cadence/pace data for the cadence trends UI (app-only) |
 | `view-route-map` | Interactive map of an activity's GPS track or a stored route's version (`route_id`), fit to bounds with start/finish markers; optional distance-anchored waypoints and stretches, `compare_to_version`, and edits on the map that call `amend-route` (MCP App) |
 | `get-route-map-data` | `[lat, lng]` coordinates from the activity's latlng stream plus index-aligned metric streams and WORK-interval end markers for the route map UI; for a `route_id`, the version's sections, via points, km markers and a compared version (app-only) |
-| `view-route-suggestions` | Map of one planned run's suggested routes: a picker over past and generated routes, an elevation strip and any hill for repeats marked; takes `suggest-run-route`'s arguments except `days` (MCP App) |
+| `view-route-suggestions` | Map of one planned run's suggested routes: a picker over past and generated routes (at most 3, labels carry the score), an elevation strip and any hill for repeats marked; takes `suggest-run-route`'s arguments except `days` (MCP App) |
 | `get-route-suggestions-data` | One planned run's candidate routes as route-map payloads (coordinates, distance and altitude streams, hill and via markers) for the suggestion mode of the route-map UI (app-only) |
 | `view-training-load` | Weekly running-volume bars with a rolling trend line, volume-spike warning weeks, a weekly load line, and Fitness/Fatigue/Form tiles; `runOnly` picks the scope load and CTL/ATL/TSB cover, and a Whole body/Runs only toggle in the card switches it, caching each side; `newest` ends the chart on a past date, and a past partial week is labelled partial. Its text adds a `Scope:` line (whole-body with the activity types, or run-only, and where CTL/ATL came from) and a `Current (as of DATE): CTL x / ATL y / TSB +z` line when fitness is known (`End of window` and a `Past window:` line for a past window); its `Load:` total is the payload's `totals.load` (MCP App) |
 | `get-training-load-data` | Per-week volume, trend value, warning flags, weekly load, and current CTL/ATL/TSB for the training-load UI; `runOnly` (default false) switches load and CTL/ATL/TSB between whole-body and run-only, while volume and spike warnings stay run-based (app-only) |

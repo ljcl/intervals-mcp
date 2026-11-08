@@ -53,6 +53,8 @@ export type ScoreBreakdown = Record<ScoreFactor, number | null> & {
 export interface ScoreContext {
   target_m: number;
   terrain: Terrain;
+  /** The asked shape: an out-and-back request goes back by design. */
+  shape: RouteShape;
   bands: TerrainBands;
   today: string;
 }
@@ -75,7 +77,7 @@ const FACTORS = Object.keys(SCORE_WEIGHTS) as ScoreFactor[];
 /** Each factor's share (0-1) of its points; null when its measure is unknown. */
 function shares(
   c: RouteCandidate,
-  known_share: number,
+  known_share: number | null,
   retraced_m: number,
   ctx: ScoreContext,
 ): Record<ScoreFactor, number | null> {
@@ -89,7 +91,7 @@ function shares(
       : 1;
   return {
     paths: c.path_share === null ? null : clamp01(c.path_share),
-    known_lines: clamp01(known_share),
+    known_lines: known_share === null ? null : clamp01(known_share),
     // crossings_per_km already counts signalised stops; adding signals counts each twice.
     crossings:
       c.crossings_per_km === null
@@ -102,7 +104,7 @@ function shares(
         ? null
         : clamp01(1 - c.main_road_km / km / MAIN_ROAD_CAP),
     backtracking:
-      c.shape === "out-and-back"
+      ctx.shape === "out-and-back" || c.shape === "out-and-back"
         ? 1
         : clamp01(1 - retraced_m / 1000 / RETRACED_CAP_KM),
     green: c.green_share == null ? null : clamp01(c.green_share),
@@ -117,7 +119,7 @@ function shares(
  */
 export function scoreRoute(
   c: RouteCandidate,
-  known_share: number,
+  known_share: number | null,
   retraced_m: number,
   ctx: ScoreContext,
 ): { score: number; breakdown: ScoreBreakdown } {
@@ -210,8 +212,9 @@ function samples(track: RouteTrack, origin: LatLng): Sample[] {
  * Known lines from the loaded runs, built once per call: the returned
  * function gives a track's share (0-1) of 10 m samples that at least
  * KNOWN_RUNS distinct runs follow (a sample within KNOWN_MATCH_M heading
- * within 30 degrees either way). The heading keeps a road from matching the
- * footpath beside it, and a line run the other way is the same line.
+ * within 30 degrees either way). The 20 m radius keeps a road from matching
+ * the footpath beside it; the heading separates crossing streets, and a line
+ * run the other way is the same line.
  */
 export function knownLines(runs: RunStart[]): (track: RouteTrack) => number {
   const origin = runs[0]?.track.coordinates[0];
@@ -237,6 +240,7 @@ export function knownLines(runs: RunStart[]): (track: RouteTrack) => number {
         for (let j = cell(s.y) - 1; j <= cell(s.y) + 1; j++)
           for (const o of grid.get(`${i},${j}`) ?? [])
             if (
+              seen.size < KNOWN_RUNS &&
               !seen.has(o.run) &&
               Math.hypot(o.x - s.x, o.y - s.y) <= KNOWN_MATCH_M &&
               Math.abs(o.dx * s.dx + o.dy * s.dy) >= KNOWN_HEADING_COS
@@ -251,10 +255,10 @@ export function knownLines(runs: RunStart[]): (track: RouteTrack) => number {
 const km1 = (m: number) => (m / 1000).toFixed(1);
 
 /** Notes on a route: each dead-end spur; none for an out-and-back, which goes back by design. */
-export function routeNotes(track: RouteTrack, shape: RouteShape): string[] {
-  if (shape === "out-and-back") return [];
+export function routeNotes(track: RouteTrack, asked: RouteShape): string[] {
+  if (asked === "out-and-back") return [];
   return findSpurs(track).map(
     (s) =>
-      `Goes back the way it came at km ${km1(s.from_m)}-${km1(s.to_m)}, ${Math.round((s.to_m - s.from_m) / 2)} m each way.`,
+      `Goes back the way it came from km ${km1(s.from_m)}, ${Math.round(s.length_m)} m each way.`,
   );
 }
