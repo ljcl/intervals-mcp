@@ -1714,6 +1714,36 @@ const RouteCandidateSchema = z.object({
       "Share (0-1) of a route stitched from the athlete's past runs that follows them; null for any other route",
     ),
   ...OSM_MEASURES,
+  score: z
+    .number()
+    .describe(
+      "0-100 running score that orders the routes: paths, known lines, crossings, main roads, backtracking, green and fit to the plan, less 10 for a past run repeated within 7 days",
+    ),
+  score_breakdown: z
+    .object({
+      paths: z.number().nullable(),
+      known_lines: z.number().nullable(),
+      crossings: z.number().nullable(),
+      main_roads: z.number().nullable(),
+      backtracking: z.number().nullable(),
+      green: z.number().nullable(),
+      fit: z.number().nullable(),
+      recency: z.number(),
+    })
+    .describe(
+      "Points per factor (maxima 25, 20, 15, 15, 10, 10, 5; recency 0 or -10), scaled up when the OpenStreetMap index could not measure crossings, main roads or green (those are then null); they add up to score",
+    ),
+  known_share: z
+    .number()
+    .describe(
+      "Share (0-1) on lines at least 3 of the athlete's recent runs follow",
+    ),
+  retraced_km: z
+    .number()
+    .describe("km where the route runs back over itself the other way"),
+  notes: z
+    .array(z.string())
+    .describe("Notes on the route, such as a dead-end spur"),
   hill: z
     .object({
       start_m: z.number(),

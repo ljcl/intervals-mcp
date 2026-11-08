@@ -492,6 +492,10 @@ describe("suggestion payloads", () => {
     };
     const data = buildSuggestionsMapData(run, []);
     expect(data.candidates[0]!.label).toBe("New loop");
+    run.candidates[0]!.score = 72;
+    expect(buildSuggestionsMapData(run, []).candidates[0]!.label).toBe(
+      "New loop, score 72",
+    );
     const kinds = data.candidates[0]!.map.annotations?.waypoints?.map(
       (w) => w.kind,
     );

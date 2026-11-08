@@ -450,7 +450,7 @@ export function buildSuggestionsMapData(
       });
     }
     return {
-      label: count > 1 ? `${base} ${count}` : base,
+      label: `${count > 1 ? `${base} ${count}` : base}${c.score === undefined ? "" : `, score ${c.score}`}`,
       summary: c.summary,
       map: buildTrackMapData(
         `${run.date}-${index}`,

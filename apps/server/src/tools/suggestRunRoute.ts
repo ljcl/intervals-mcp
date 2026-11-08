@@ -4,6 +4,7 @@ import { type Place } from "../orsClient";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
 import { storeSuggestedRoute } from "../routeBuilder";
 import { climbPerKm, type RouteCandidate } from "../routeCandidates";
+import { scoreLosses } from "../routeScore";
 import {
   loadRouteSuggestions,
   RouteSuggestionError,
@@ -38,17 +39,18 @@ Notes:
   runs.
 - Without ORS_API_KEY: past runs and stitched routes only, and no place
   lookup (pass lat,lng).
-- Start, end and via points are sent to OpenRouteService. Crossings,
-  signals, main roads, parks and off-road paths come from an
-  OpenStreetMap index on the server (25 km around HOME_START).
-- Fewer crossings rank first, then share on off-road paths.
-- A new route usually lands within 5% of the distance; a loop over 25% off
-  is dropped, a via route keeps its nearest with a warning. The gap is shown.
+- Places go to OpenRouteService. Crossings, signals, main roads, parks
+  and paths come from a server OpenStreetMap index (25 km around
+  HOME_START).
+- Routes are scored 0-100 for running (paths, known lines, crossings,
+  main roads, backtracking, green, fit) and the best 3 come back.
+- A new route lands within about 5% of the distance; a loop over 25% off
+  is dropped, a via route keeps its nearest with a warning.
 - With via: past runs passing every via in order (any distance or
   terrain), then a route stitched from sections of past runs between the
   vias. A via matching only a suburb or city is refused.
-- A week of runs shares one budget of routing calls; later runs may get
-  past runs only, with a warning.
+- A week of runs shares one routing budget; later runs may get past runs
+  only, with a warning.
 `;
 
 const placeText = z.string().trim().min(2).max(120);
@@ -218,6 +220,20 @@ export function toStructured(
         signals_per_km: c.signals_per_km ?? null,
         main_road_km: c.main_road_km ?? null,
         green_share: c.green_share ?? null,
+        score: c.score ?? 0,
+        score_breakdown: c.score_breakdown ?? {
+          paths: null,
+          known_lines: null,
+          crossings: null,
+          main_roads: null,
+          backtracking: null,
+          green: null,
+          fit: null,
+          recency: 0,
+        },
+        known_share: c.known_share ?? 0,
+        retraced_km: c.retraced_km ?? 0,
+        notes: c.notes ?? [],
         hill: c.hill,
         summary: c.summary,
       })),
@@ -270,13 +286,20 @@ function lines(structured: ReturnType<typeof toStructured>): string[] {
         c.kind === "past"
           ? `${paths}${green}, ${c.shape}. ${c.summary}`
           : `${paths}${green}${own}, ${c.summary}`;
+      const losses = scoreLosses(c.score_breakdown);
+      const score = `, score ${c.score}${
+        losses.length > 0
+          ? ` (lost: ${losses.map((l) => `${l.label} ${Math.round(l.points)}`).join(", ")})`
+          : ""
+      }`;
       out.push(
-        `${i + 1}. ${head}: ${km(c.distance_m)} km (${signedKm(c.distance_diff_m)} km), ${c.climb_m} m climb${crossings}${signals}${roads}${tail}`,
+        `${i + 1}. ${head}: ${km(c.distance_m)} km (${signedKm(c.distance_diff_m)} km), ${c.climb_m} m climb${score}${crossings}${signals}${roads}${tail}`,
       );
       if (c.hill)
         out.push(
           `   Hill for repeats: ${c.hill.length_m} m at ${c.hill.grade_pct}%, from ${km(c.hill.start_m)} km`,
         );
+      for (const note of c.notes) out.push(`   Note: ${note}`);
     });
     if (run.candidates.length === 0) out.push("No candidate routes.");
     for (const warning of run.warnings) out.push(`Warning: ${warning}`);

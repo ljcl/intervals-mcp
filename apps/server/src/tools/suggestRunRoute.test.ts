@@ -104,11 +104,11 @@ describe("suggest-run-route", () => {
       "Start: Embarcadero, San Francisco, CA, USA (given)",
     );
     expect(text).toContain(
-      "1. Past run 2026-10-27 (i1): 6.1 km (+3.0 km), 38 m climb, 14.2 crossings/km, 2.1 signals/km, 0.4 km on main roads, 62% on paths, 35% by parks or water, loop",
+      "1. Past run 2026-10-27 (i1): 6.1 km (+3.0 km), 38 m climb, score 0, 14.2 crossings/km, 2.1 signals/km, 0.4 km on main roads, 62% on paths, 35% by parks or water, loop",
     );
     // A generated route is stored, so its route_id can be stitched, mapped or exported.
     expect(text).toMatch(
-      /2\. New loop \(route s[a-z2-7]{10}\): 3\.2 km \(\+0\.0 km\), 22 m climb, 78% on paths, via Park Road, Foreshore Walk/,
+      /2\. New loop \(route s[a-z2-7]{10}\): 3\.2 km \(\+0\.0 km\), 22 m climb, score 0, 78% on paths, via Park Road, Foreshore Walk/,
     );
     expect(text).toContain("Hill for repeats: 120 m at 6.7%, from 2.3 km");
     expect(text).toContain("Warning: No new route was generated");
@@ -131,6 +131,56 @@ describe("suggest-run-route", () => {
     expect(past!.history_share).toBeNull();
     expect(generated!.history_share).toBeNull();
     expect(generated!.route_id).toMatch(/^s[a-z2-7]{10}$/);
+  });
+
+  it("publishes the score, its lost factors, and notes", async () => {
+    const base = suggestions.runs[0]!;
+    vi.mocked(loadRouteSuggestions).mockResolvedValue({
+      ...suggestions,
+      runs: [
+        {
+          ...base,
+          candidates: [
+            {
+              ...base.candidates[1]!,
+              score: 72,
+              score_breakdown: {
+                paths: 25,
+                known_lines: 14,
+                crossings: 8,
+                main_roads: 15,
+                backtracking: 10,
+                green: 10,
+                fit: 5,
+                recency: 0,
+              },
+              known_share: 0.4,
+              retraced_km: 0.12,
+              notes: [
+                "Goes back the way it came at km 0.5-0.6, 60 m each way.",
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    const result = await suggestRunRouteTool.execute(
+      suggestRunRouteTool.inputSchema.parse({}),
+      "k",
+    );
+    const text = result.content[0]!.text;
+    expect(text).toContain(", score 72 (lost: crossings 7, known lines 6)");
+    expect(text).toContain(
+      "   Note: Goes back the way it came at km 0.5-0.6, 60 m each way.",
+    );
+    const parsed = RouteSuggestionsOutputSchema.parse(result.structuredContent);
+    expect(parsed.runs[0]!.candidates[0]).toMatchObject({
+      score: 72,
+      known_share: 0.4,
+      retraced_km: 0.12,
+      notes: ["Goes back the way it came at km 0.5-0.6, 60 m each way."],
+      score_breakdown: { crossings: 8, known_lines: 14, recency: 0 },
+    });
   });
 
   it("sends a stitched route as generated, with its share from past runs", async () => {
@@ -160,7 +210,7 @@ describe("suggest-run-route", () => {
       "k",
     );
     expect(result.content[0]!.text).toMatch(
-      /1\. From your runs \(route s[a-z2-7]{10}\): 3\.2 km \(\+0\.0 km\), 22 m climb, 91% from your runs, From 2 past runs: Glebe loop 2026-10-30, Bay run 2026-10-12/,
+      /1\. From your runs \(route s[a-z2-7]{10}\): 3\.2 km \(\+0\.0 km\), 22 m climb, score 0, 91% from your runs, From 2 past runs: Glebe loop 2026-10-30, Bay run 2026-10-12/,
     );
     const parsed = RouteSuggestionsOutputSchema.parse(result.structuredContent);
     expect(parsed.runs[0]!.candidates[0]).toMatchObject({
