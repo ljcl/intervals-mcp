@@ -483,8 +483,13 @@ athlete's own thirds of climb per km, 8 and 20 m/km under 10 runs) and the
 3 m climb hysteresis for generated routes. `routeOsmStats` (`osmIndex.ts`)
 measures each candidate against the local OpenStreetMap index.
 `routeScore.ts` is the one home of the score: its weights, known lines
-(`knownLines`, built once per call from the loaded runs) and the per-route
-notes (`routeNotes`). `retracedM` (`routeGeometry.ts`) follows `findSpurs`'s
+(`knownLines`, built once per call from the loaded runs; its line-follower
+index is `lineFollowers`, its 10 m samples `knownSamples`) and the per-route
+notes (`routeNotes`). `corridors.ts` is the one home of corridor names
+(`corridorKey`, `matchCorridor`), the stretches found in history
+(`foundStretches`), covering runs (`coveringRuns`), a corridor via's
+direction (`chooseDirections`) and whether a run follows one
+(`followsCorridor`). `retracedM` (`routeGeometry.ts`) follows `findSpurs`'s
 rule. `routeSuggestions.ts` scores every candidate after the OSM measures,
 orders them by score, and composes them for `suggest-run-route` and the
 `route-map` suggestion mode (`buildSuggestionsMapData`), so the text and the
@@ -1136,7 +1141,8 @@ docker-compose.yml).
   rounded to 6 decimals of degree and 0.1 m, and recorded runs are thinned
   to a point every 5 m (after their climb is measured).
 - Ids: `r` plus 10 base32 characters for a route `stitch-route` made, `s`
-  for one `suggest-run-route` generated. `stitch-route`'s id is a hash of
+  for one `suggest-run-route` generated, `c` for a corridor
+  (`manage-corridors`; kind `corridor`, one-way flag `one_way`, never swept). `stitch-route`'s id is a hash of
   its request, a suggested route's a hash of its track, so a repeat stores
   nothing. `isRouteId` guards every path, so an id cannot leave the
   directory.
@@ -1145,7 +1151,7 @@ docker-compose.yml).
   `appendVersion` checks the base version inside that lock, before the
   builder routes anything.
 - Retention: a read sets the file's modified time, so the file's own time
-  is its last use. `sweepRoutes` deletes a draft unused for
+  is its last use. `sweepRoutes` never touches a corridor; it deletes a draft unused for
   `ROUTE_RETENTION_DAYS` (default 30), a suggested route after 3 days, and
   a temporary file after a day. It runs at most every 6 hours, from a store
   call; startup does not wait for it.

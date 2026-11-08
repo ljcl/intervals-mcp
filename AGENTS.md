@@ -121,6 +121,9 @@ breaking them has shipped bugs — do not work around them locally.
   `routeOsmStats` in `osmIndex.ts` (built by `osmIndexBuild.ts`, refreshed by
   `osmIndexRefresh.ts`). Route score, its weights, known lines and route
   notes: `routeScore.ts`; retraced metres: `retracedM` in `routeGeometry.ts`.
+  Corridor names, found stretches, covering runs and a corridor via's
+  direction: `corridors.ts`; the line-follower index under known lines:
+  `lineFollowers` in `routeScore.ts`.
   Weather, dew point and the weather note: `activityWeather.ts` (FIT
   humidity read by `fitWeather.ts`). Two runs' per-km difference and its
   drift verdict: `compareKmSplits` in `kmComparison.ts`, on the splits of
@@ -131,7 +134,8 @@ breaking them has shipped bugs — do not work around them locally.
   Text tool and app reading different copies is the failure mode these prevent.
 - **Stored routes live in `routeStore.ts`** (one JSON file per route under
   `getDataDir()`, `/data` in the image, a compose volume). Nothing else
-  touches those files. A version is appended, never rewritten; amend-route
+  touches those files. Corridors (kind `corridor`, id prefix `c`) live there
+  too and are never swept. A version is appended, never rewritten; amend-route
   refuses a `base_version` that is not the latest, checked inside the
   per-route lock before any routing. Every routing call counts against the
   per-call ORS budget, and a call that runs out stores nothing. Results
