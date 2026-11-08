@@ -1224,3 +1224,145 @@ describe("addCorridor", () => {
     ).rejects.toThrow(/already saved as corridor "Bay Run"/);
   });
 });
+
+describe("corridors in stitchRoute and amendRoute", () => {
+  const save = (name: string, one_way = false) =>
+    addCorridor(
+      "key",
+      {
+        name,
+        one_way,
+        source: { type: "activity", id: SUNDAY_ID, from_km: 4, to_km: 6 },
+      },
+      ENV,
+    );
+  const first = {
+    type: "activity" as const,
+    id: SUNDAY_ID,
+    from_km: 0,
+    to_km: 6,
+  };
+  const startOf = (segments: { track: { coordinates: number[][] } }[]) =>
+    segments[0]!.track.coordinates[0] as [number, number];
+
+  it("stores the corridor, reversed when the section before ends at its far end", async () => {
+    await save("Bay Run");
+    const built = await stitchRoute(
+      "key",
+      { segments: [first, { type: "corridor", name: "bay run" }] },
+      ENV,
+    );
+    const segments = versionSegments(built.route, built.version);
+    const corridorPart = segments.slice(1);
+    expect(corridorPart.every((s) => s.label === "Bay Run")).toBe(true);
+    expect(
+      haversineMeters(startOf(corridorPart), sundayPointAt(6)),
+    ).toBeLessThan(30);
+    expect(trackLength(layoutSegments(corridorPart).track)).toBeCloseTo(
+      2000,
+      -2,
+    );
+  });
+
+  it("runs it stored when the section before ends at its start", async () => {
+    await save("Bay Run");
+    const built = await stitchRoute(
+      "key",
+      {
+        segments: [
+          { type: "activity", id: SUNDAY_ID, from_km: 2, to_km: 4 },
+          { type: "corridor", name: "Bay Run" },
+        ],
+      },
+      ENV,
+    );
+    const part = versionSegments(built.route, built.version).slice(1);
+    expect(haversineMeters(startOf(part), sundayPointAt(4))).toBeLessThan(30);
+  });
+
+  it("takes a km range of the corridor", async () => {
+    await save("Bay Run");
+    const built = await stitchRoute(
+      "key",
+      {
+        segments: [{ type: "corridor", name: "Bay Run", from_km: 0, to_km: 1 }],
+      },
+      ENV,
+    );
+    const track = versionTrack(built.route, built.version);
+    expect(trackLength(track)).toBeCloseTo(1000, -2);
+  });
+
+  it("refuses reversed on a one-way corridor", async () => {
+    await save("Hill Climb", true);
+    await expect(
+      stitchRoute(
+        "key",
+        {
+          segments: [{ type: "corridor", name: "Hill Climb", reversed: true }],
+        },
+        ENV,
+      ),
+    ).rejects.toThrow(/one-way/);
+  });
+
+  it("refuses an unknown name and suggests a near one", async () => {
+    await save("Bay Run");
+    await expect(
+      stitchRoute(
+        "key",
+        { segments: [{ type: "corridor", name: "Bay" }] },
+        ENV,
+      ),
+    ).rejects.toThrow(
+      /No saved corridor is named "Bay"; did you mean "Bay Run"\?/,
+    );
+  });
+
+  it("replaces a section with a corridor, labelled with its name", async () => {
+    await save("Bay Run");
+    const v1 = await stitchSunday();
+    const done = await amendRoute(
+      "key",
+      {
+        route_id: v1.route.route_id,
+        base_version: 1,
+        operations: [
+          {
+            op: "replace_section",
+            from_km: 8,
+            to_km: 10,
+            corridor: { name: "Bay Run" },
+          },
+        ],
+      },
+      ENV,
+    );
+    const segments = versionSegments(done.route, done.version);
+    expect(segments.some((s) => s.label === "Bay Run")).toBe(true);
+  });
+
+  it("refuses more than one of through, activity and corridor", async () => {
+    await save("Bay Run");
+    const v1 = await stitchSunday();
+    await expect(
+      amendRoute(
+        "key",
+        {
+          route_id: v1.route.route_id,
+          base_version: 1,
+          operations: [
+            {
+              op: "replace_section",
+              from_km: 8,
+              to_km: 10,
+              through: "Callan Park, Sydney",
+              corridor: { name: "Bay Run" },
+            },
+          ],
+        },
+        ENV,
+      ),
+    ).rejects.toThrow("Pass one of through, activity or corridor.");
+  });
+});

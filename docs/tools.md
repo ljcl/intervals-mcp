@@ -298,8 +298,12 @@ file per route under `DATA_DIR`; docs/operations.md). The rules live in
   `to_km` runs it backwards), `route` (a stored route's km range; its
   sections are copied with their own sources), `generated` (start defaults
   to the end of the section before, end to the start of the next; the last
-  one goes back to the route's start) and `out_and_back` (toward a place or
-  a compass heading, turned at half its distance). Past runs and stored
+  one goes back to the route's start), `corridor` (a saved corridor by
+  name, its own km range; it starts at the end nearer the section before
+  unless `reversed` is set, pinned to its latest version) and `out_and_back`
+  (toward a place or a compass heading, turned at half its distance).
+  `amend-route`'s `replace_section` takes `corridor` the same way, by
+  default from the replaced range's start. Past runs and stored
   routes are read first. The id is a hash of the request, with each stored
   route pinned to its latest version, so the same request returns the same
   route (`created: false`) and routes nothing.
