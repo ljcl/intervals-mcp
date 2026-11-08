@@ -12,6 +12,7 @@ import {
   type LatLng,
   type RouteTrack,
 } from "./mapAnchors";
+import { type ScoreBreakdown } from "./routeScore";
 import { CLUSTER_RADIUS_M, type RunStart } from "./startClusters";
 import { daysBetween } from "./utils/localDate";
 
@@ -41,6 +42,16 @@ export interface RouteCandidate {
   main_road_km?: number | null;
   /** Share (0-1) within 50 m of a park, water or coastline, or inside a park; absent or null when not counted. */
   green_share?: number | null;
+  /** Set by the engine (routeScore.ts): the 0-100 running score. */
+  score?: number;
+  /** Points per factor, scaled; null when not measured (routeScore.ts). */
+  score_breakdown?: ScoreBreakdown;
+  /** Share (0-1) on lines at least 3 loaded runs follow (routeScore.ts `knownLines`). */
+  known_share?: number;
+  /** km a later stretch runs back over the other way (routeGeometry.ts `retracedM`). */
+  retraced_km?: number;
+  /** Short notes on the route, e.g. a dead-end spur (routeScore.ts `routeNotes`). */
+  notes?: string[];
   /** Set by the engine for terrain hill-repeats. */
   hill: RepeatHill | null;
   summary: string;
