@@ -265,6 +265,19 @@ describe("loadRouteSuggestions", () => {
       ]);
     });
 
+    it("keeps one generated route though two seeds beat a past run", async () => {
+      vi.mocked(routeOsmStats).mockImplementation((t) =>
+        t === homeLoop
+          ? { ...STATS, crossings_per_km: 6, signals_per_km: 2 }
+          : STATS,
+      );
+      const run = (await loadRouteSuggestions("k", {}, ENV)).runs[0]!;
+      expect(run.candidates.filter((c) => c.kind === "generated")).toHaveLength(
+        1,
+      );
+      expect(run.candidates.map((c) => c.kind)).toContain("past");
+    });
+
     it("scores routes the OSM index cannot measure", async () => {
       vi.mocked(routeOsmStats).mockReturnValue(null);
       const run = (await loadRouteSuggestions("k", {}, ENV)).runs[0]!;
@@ -276,7 +289,7 @@ describe("loadRouteSuggestions", () => {
     });
   });
 
-  it("offers a past run and the new loops from the usual start", async () => {
+  it("offers a past run and one new loop from the usual start", async () => {
     const result = await loadRouteSuggestions("k", {}, ENV);
     const run = result.runs[0]!;
     expect(run).toMatchObject({
@@ -292,7 +305,6 @@ describe("loadRouteSuggestions", () => {
       label: "Usual start (1 recent run)",
     });
     expect(run.candidates.map((c) => c.kind).sort()).toEqual([
-      "generated",
       "generated",
       "past",
     ]);
@@ -982,8 +994,7 @@ describe("loadRouteSuggestions", () => {
       expect(waypoints[0]).toEqual([SF, VIA, SF]);
       expect(waypoints.slice(1).every((w) => w.length === 4)).toBe(true);
       const routes = generated(run.candidates) as typeof run.candidates;
-      // One stretched loop per seed, both kept now that the cut is by score.
-      expect(routes).toHaveLength(2);
+      expect(routes).toHaveLength(1);
       expect(routes[0]).toMatchObject({ shape: "loop", name: "New loop" });
       expect(Math.abs(routes[0]!.distance_m - 6000)).toBeLessThan(300);
       expect(passesInOrder(routes[0]!.track, [VIA])).toBe(true);
@@ -1303,7 +1314,7 @@ describe("loadRouteSuggestions", () => {
         expect(result.warnings.join(" ")).toMatch(/Route generation stopped/);
       });
 
-      it("does not list a stitched duplicate of a past run beside it", async () => {
+      it("does not let a stitched duplicate of a past run open an extra generated slot", async () => {
         vi.mocked(loadRunStarts).mockResolvedValue({
           runs: [runOn("a", [SF, N, NE, SF])],
           skipped: 0,
@@ -1315,9 +1326,9 @@ describe("loadRouteSuggestions", () => {
         const run = (
           await loadRouteSuggestions("k", { ...args, distanceKm: 3.8 }, ENV)
         ).runs[0]!;
-        expect(run.candidates.map((c) => c.kind)).not.toContain("stitched");
-        expect(run.candidates.filter((c) => c.kind === "past")).toHaveLength(1);
-        expect(run.candidates.length).toBeLessThanOrEqual(3);
+        expect(
+          run.candidates.filter((c) => c.kind === "generated"),
+        ).toHaveLength(1);
       });
 
       it("drops a stitched route whose fill misses a via point by more than 100 m", async () => {
@@ -1375,7 +1386,7 @@ describe("loadRouteSuggestions", () => {
         );
       });
 
-      it("ranks stitched routes of equal score by distance to the target, the cap of 3 cutting the farther", async () => {
+      it("ranks stitched routes within 5% of the same share by distance to the target", async () => {
         // Two lines to a via 5.5 km north; each run starts a little off SF, so each has a short fill.
         const VIA_FAR: LatLng = [SF[0] + 0.0495, SF[1]];
         const bulge = (east: number): LatLng => [SF[0] + 0.02475, SF[1] + east];
@@ -1404,12 +1415,11 @@ describe("loadRouteSuggestions", () => {
           )
         ).runs[0]!;
         const own = run.candidates.filter((c) => c.kind === "stitched");
-        expect(own[0]!.distance_m / 1000).toBeCloseTo(14.1, 0);
-        // The 11.5 km line scores the same and is further off 14 km, so it is the one the cap of 3 drops.
-        expect(run.candidates.length).toBeLessThanOrEqual(3);
-        expect(own.map((c) => c.distance_m / 1000)).not.toContainEqual(
+        expect(own.map((c) => c.distance_m / 1000)).toEqual([
+          expect.closeTo(14.1, 0),
           expect.closeTo(11.5, 0),
-        );
+        ]);
+        expect(own[0]!.history_share!).toBeLessThan(own[1]!.history_share!);
       });
 
       it("offers the stitched route as the nearest when none reaches the distance", async () => {

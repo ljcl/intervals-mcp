@@ -843,11 +843,14 @@ export async function loadRouteSuggestions(
             kindOrder[a.kind] - kindOrder[b.kind],
         ),
       );
-      const pastKept = ordered
-        .filter((c) => c.kind === "past")
-        .slice(0, MAX_PAST_CANDIDATES);
+      // The spare seed gives the score a choice; it adds no route beyond `want`.
+      const taken = { past: 0, generated: 0 };
       candidates = ordered
-        .filter((c) => c.kind !== "past" || pastKept.includes(c))
+        .filter(
+          (c) =>
+            c.kind === "stitched" ||
+            ++taken[c.kind] <= (c.kind === "past" ? MAX_PAST_CANDIDATES : want),
+        )
         .slice(0, MAX_ROUTES);
       // Another recording of a picked loop is the same route, so it is used too.
       for (const c of candidates) {
