@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.17.0](https://github.com/ljcl/intervals-mcp/compare/v2.16.0...v2.17.0) (2026-11-08)
+
+
+### Features
+
+* **routes:** measure stored routes against the local OpenStreetMap index ([#445](https://github.com/ljcl/intervals-mcp/issues/445)) ([3298bfd](https://github.com/ljcl/intervals-mcp/commit/3298bfd7f9249bcd3b1677b029205c6fc1b72403))
+* **routes:** rank route suggestions from a local OpenStreetMap index ([#443](https://github.com/ljcl/intervals-mcp/issues/443)) ([5fb91d0](https://github.com/ljcl/intervals-mcp/commit/5fb91d0bbc4ac7c6007ae4115180603948d3a291))
+
 ## [2.16.0](https://github.com/ljcl/intervals-mcp/compare/v2.15.2...v2.16.0) (2026-11-07)
 
 
