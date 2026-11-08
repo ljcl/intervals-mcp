@@ -494,7 +494,7 @@ function generatedCandidate(
  * Via routes along the athlete's own lines (historyLegs.ts): sections of
  * past runs between the anchors, ORS filling only what no run covers. A fill
  * is missable (a 404 drops that route only); the run's fills spend at most
- * `fillCalls`, and one the two routes share is routed once.
+ * `fillCalls`, and one any two routes share is routed once (`routed`, kept for the whole call).
  * Without a key, only a route needing no fill is made.
  */
 async function stitch(
@@ -509,12 +509,12 @@ async function stitch(
   legs: { anchors: Via[]; options: LegOption[][] },
   budget: Budget,
   progress: ReportProgress,
-  fillCalls = STITCH_FILL_CALLS,
+  fillCalls: number,
+  routed: Map<string, RouteTrack | null>,
 ): Promise<RouteCandidate[]> {
   if (plan.via.length === 0) return [];
   const { anchors, options } = legs;
   const plans = planStitches(options, anchors, plan.target_m, plan.shape);
-  const routed = new Map<string, RouteTrack | null>();
   let calls = fillCalls;
   const made: RouteCandidate[] = [];
   for (const stitchPlan of plans) {
@@ -697,7 +697,10 @@ export async function loadRouteSuggestions(
     const hint = corridorHint(text, savedCorridors);
     throw new RouteSuggestionError(
       hint
-        ? problem.replace(/\.$/, `, or use the saved corridor "${hint.name}".`)
+        ? problem.replace(
+            /\.$/,
+            () => `, or use the saved corridor "${hint.name}".`,
+          )
         : problem,
     );
   });
@@ -771,6 +774,7 @@ export async function loadRouteSuggestions(
   const want = cluster ? GENERATED_AT_HOME : GENERATED_AWAY;
   const budget: Budget = { calls: ORS_CALL_BUDGET, failure: null };
   const usedPast = new Set<string>();
+  const fillCache = new Map<string, RouteTrack | null>();
   let notIndexed = false;
   const runs: RunSuggestion[] = [];
 
@@ -818,7 +822,17 @@ export async function loadRouteSuggestions(
         budget,
         progress,
         corridorLegs.length > 0 ? ORS_CALL_BUDGET : STITCH_FILL_CALLS,
+        fillCache,
       );
+      if (corridorLegs.length > 0 && stitched.length === 0) {
+        runWarnings.push(
+          !canCall(budget)
+            ? "This call's routing budget is spent; ask for this run on its own."
+            : !env.orsKey
+              ? "Joining a corridor to the rest of the route needs ORS_API_KEY where no past run covers the join."
+              : "No route along the corridor could be joined to the rest of the route.",
+        );
+      }
       let tried: RouteCandidate[] = [];
       // After an ORS failure (a stitch fill's included), generation is skipped for this and later runs; the call-level warning says why.
       // A corridor is run as saved, so no generated route goes through it.

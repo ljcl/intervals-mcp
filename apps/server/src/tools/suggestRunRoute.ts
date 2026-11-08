@@ -318,7 +318,9 @@ function lines(structured: ReturnType<typeof toStructured>): string[] {
   }
   for (const warning of structured.warnings) out.push(`Warning: ${warning}`);
   if (!structured.generation_available)
-    out.push("New routes need ORS_API_KEY; only past runs were offered.");
+    out.push(
+      "New routes need ORS_API_KEY; without it only routes along past runs were offered.",
+    );
   return out;
 }
 

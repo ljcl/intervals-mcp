@@ -1617,6 +1617,49 @@ describe("loadRouteSuggestions", () => {
       );
     });
 
+    it("shares fills between planned runs", async () => {
+      vi.mocked(listPlannedWorkouts).mockResolvedValue([
+        event(10, "2026-11-04", 3500),
+        event(11, "2026-11-06", 3500),
+      ]);
+      vi.mocked(loadRunStarts).mockResolvedValue({
+        runs: [runOn("a", [SF, N, NORTH_MORE])],
+        skipped: 0,
+      });
+      const result = await loadRouteSuggestions(
+        "k",
+        { days: 7, start: text(SF), via: "bay run" },
+        ENV,
+      );
+      expect(result.runs).toHaveLength(2);
+      expect(vi.mocked(orsRoute)).toHaveBeenCalledTimes(1);
+    });
+
+    it("says why a corridor run has no route when there is no ORS key", async () => {
+      vi.mocked(loadRunStarts).mockResolvedValue({ runs: [], skipped: 0 });
+      const run = (
+        await loadRouteSuggestions("k", args, { ...ENV, orsKey: null })
+      ).runs[0]!;
+      expect(run.candidates).toEqual([]);
+      expect(run.warnings.join(" ")).toContain(
+        "Joining a corridor to the rest of the route needs ORS_API_KEY",
+      );
+    });
+
+    it("keeps a $ in a corridor name literal in the refusal hint", async () => {
+      vi.mocked(listCorridors).mockResolvedValue([
+        corridor("Bay $& Run", N, NE),
+      ]);
+      vi.mocked(geocode).mockResolvedValue({
+        label: "Bay, NSW, Australia",
+        point: SF,
+        match: { query: "Bay", name: "Bay", type: "locality" },
+      });
+      await expect(
+        loadRouteSuggestions("k", { ...args, via: "Bay" }, ENV),
+      ).rejects.toThrow('or use the saved corridor "Bay $& Run".');
+    });
+
     it("may spend more than the stitch fill share of the budget on fills", async () => {
       // Four corridors round a 1 km square, 100 m short of each corner: five fills.
       const E: LatLng = [SF[0], SF[1] + 0.0114];
