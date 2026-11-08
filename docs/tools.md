@@ -121,7 +121,7 @@ load.
   later in the same week. For `hill-repeats`, hills are found on every match
   before the 6 are chosen, and routes with a hill come first.
 - Generation: one new route at the athlete's usual start, three where the
-  start has no run history within 300 m, from `wanted + 1` seeds so ranking
+  start has no run history within 300 m, from `wanted + 1` seeds so the score
   has a choice. Seeds come from the run's date, so a week request and a
   one-run request for the same day get the same loops. A seed takes at
   most 2 ORS calls (one rescale, by at most 0.75 to 1.33 times, and none

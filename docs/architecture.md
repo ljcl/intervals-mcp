@@ -680,7 +680,7 @@ both call it.
 
 ## OpenStreetMap index
 
-Route suggestions rank candidates by road crossings, signals, off-road
+Route suggestions score candidates partly on road crossings, signals, off-road
 paths, main roads and parks. These come from a local index, never a live
 OpenStreetMap API (the public instances were too slow and often down, see
 docs/api-notes.md). The source is the `.osm.pbf` at
