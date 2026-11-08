@@ -8,6 +8,7 @@ import {
   nearestOnTrack,
   parseHeading,
   pointAtDistance,
+  retracedM,
   reverseTrack,
   simplifyTrack,
   sliceTrack,
@@ -250,5 +251,61 @@ describe("findSpurs", () => {
       points.push(moveToward([-33.86, 151.17], 90, d));
     for (let d = 10; d <= 300; d += 10) points.push(moveToward(corner, 0, d));
     expect(findSpurs(trackFromPoints(points))).toEqual([]);
+  });
+});
+
+describe("retracedM", () => {
+  const base: LatLng = [-33.86, 151.17];
+  /** Points every 10 m from `from` along `heading` for `metres`, excluding the first. */
+  const leg = (from: LatLng, heading: number, metres: number): LatLng[] => {
+    const out: LatLng[] = [];
+    for (let d = 10; d <= metres; d += 10)
+      out.push(moveToward(from, heading, d));
+    return out;
+  };
+
+  it("counts a lollipop's stick once", () => {
+    // North 200 m, a 250 m square loop, back south down the stick.
+    const top = moveToward(base, 0, 200);
+    const points: LatLng[] = [base, ...leg(base, 0, 200)];
+    const ne = moveToward(top, 90, 250);
+    points.push(...leg(top, 90, 250));
+    points.push(...leg(ne, 0, 250));
+    const nw = moveToward(ne, 0, 250);
+    points.push(...leg(nw, 270, 250));
+    const back = moveToward(nw, 270, 250);
+    points.push(...leg(back, 180, 250));
+    points.push(...leg(top, 180, 200));
+    expect(
+      Math.abs(retracedM(trackFromPoints(points)) - 200),
+    ).toBeLessThanOrEqual(15);
+  });
+
+  it("is 0 round a plain loop", () => {
+    const points: LatLng[] = [base, ...leg(base, 0, 500)];
+    const a = moveToward(base, 0, 500);
+    points.push(...leg(a, 90, 500));
+    const b = moveToward(a, 90, 500);
+    points.push(...leg(b, 180, 500));
+    const c = moveToward(b, 180, 500);
+    points.push(...leg(c, 270, 500));
+    expect(retracedM(trackFromPoints(points))).toBe(0);
+  });
+
+  it("counts two separate retraced stretches", () => {
+    // East 600 m with two 150 m north spurs (at 150 m and at 450 m), each out and back.
+    const points: LatLng[] = [base];
+    const s1 = moveToward(base, 90, 150);
+    points.push(...leg(base, 90, 150));
+    points.push(...leg(s1, 0, 150));
+    points.push(...leg(moveToward(s1, 0, 150), 180, 150));
+    const s2 = moveToward(s1, 90, 300);
+    points.push(...leg(s1, 90, 300));
+    points.push(...leg(s2, 0, 150));
+    points.push(...leg(moveToward(s2, 0, 150), 180, 150));
+    points.push(...leg(s2, 90, 150));
+    expect(
+      Math.abs(retracedM(trackFromPoints(points)) - 300),
+    ).toBeLessThanOrEqual(30);
   });
 });
