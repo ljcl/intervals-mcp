@@ -116,13 +116,10 @@ load.
   replaced by passing within 100 m of every via point in order
   (`passesInOrder`), so a past run at any distance can be offered;
   `distance_diff_m` shows the gap, and a run off the asked terrain names its
-  band in `summary` and ranks after those on it. Then routes not run in the
-  last 7 days come first
-  (judged on each route's latest recording, either way round), then fewer
-  crossings, then closer distance; every recording of a route already
-  offered is excluded later in the same week. For `hill-repeats`, hills are
-  found on every match before the 6 are chosen, and past runs with a hill
-  come first.
+  band in `summary` and its fit is halved. The score orders the candidates
+  (see Score below); every recording of a route already offered is excluded
+  later in the same week. For `hill-repeats`, hills are found on every match
+  before the 6 are chosen, and routes with a hill come first.
 - Generation: one new route at the athlete's usual start, three where the
   start has no run history within 300 m, from `wanted + 1` seeds so ranking
   has a choice. Seeds come from the run's date, so a week request and a
@@ -169,8 +166,8 @@ load.
   ORS routes each run of uncovered legs through the via points between, and
   each join over 30 m, at most 4 calls a run from the same 12 (a 404 drops
   that route only). The two combinations nearest the distance are built.
-  They take the 25% rule with generated routes, rank after past runs and
-  before generated ones, are stored like them, and go out as
+  They take the 25% rule with generated routes, are scored like the others,
+  are stored like them, and go out as
   `kind: "generated"` with `history_share` set: a new kind would break hosts
   holding the old tool list. Without ORS_API_KEY, one needing no join is
   still offered.
@@ -192,6 +189,34 @@ load.
   candidate, past runs included. Outside it, or without it, they are null,
   generated routes keep the OpenRouteService path share, and one warning
   says why. An index not refreshed in 14 days adds a warning.
+- Score: every candidate (past, stitched and generated) gets 0-100 from
+  `routeScore.ts`, and the score orders them, best first. Hill repeats put
+  routes with a repeat hill first; a tie goes to the closer distance, then
+  to the athlete's own run. At most 3 come back: at most 2 past runs, at
+  most `want` generated (1 from the usual start, 3 away from it). Stitched
+  routes are capped only by the 3. The spare seed gives the score a choice
+  but adds no route.
+
+  | Factor | Max | Points |
+  | --- | --- | --- |
+  | paths | 25 | share on paths |
+  | known_lines | 20 | share of the track on lines 3+ loaded runs follow |
+  | crossings | 15 | 1 - (crossings + signals) per km / 8 |
+  | main_roads | 15 | 1 - main-road share / 25% |
+  | backtracking | 10 | 1 - retraced km / 2; full for an out-and-back |
+  | green | 10 | green share |
+  | fit | 5 | 1 - distance miss / 25% of target; halved on a terrain miss |
+  | recency | -10 | a past run done in the last 7 days |
+
+  A factor the OpenStreetMap index cannot measure is left out and the rest
+  scale to 100; recency is never scaled. Known lines: 10 m samples within
+  20 m of a point that 3 or more of the loaded runs pass, heading within 30
+  degrees either way (`knownLines`). Retraced km: `retracedM`
+  (`routeGeometry.ts`, `findSpurs`'s rule); a dead-end spur adds a `Note:`
+  line. The text adds `, score N (lost: ...)`, naming up to 3 factors that
+  lost at least 2 points. Each candidate's structured output adds `score`,
+  `score_breakdown` (points per factor, null when unmeasured, and
+  `recency`), `known_share`, `retraced_km` and `notes`.
 - Terrain: flat, rolling and hilly are the athlete's own thirds of climb per
   km over their recent runs (8 and 20 m/km under 10 runs). On 2026-11-03
   the live bands were 11.2 and 13.3 m/km. A generated route's climb uses a
