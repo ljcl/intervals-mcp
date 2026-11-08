@@ -11,7 +11,6 @@ import {
   outAndBack,
   passesInOrder,
   type RouteCandidate,
-  rankGenerated,
   rankPast,
   sameRoute,
   stretchWaypoints,
@@ -270,59 +269,6 @@ describe("rankPast", () => {
         (c) => c.name,
       ),
     ).toEqual(["recent", "steep"]);
-  });
-});
-
-describe("rankGenerated", () => {
-  it("puts terrain fit first, then crossings, then path share", () => {
-    const steep = candidate({
-      name: "steep",
-      climb_m: 60,
-      crossings_per_km: 1,
-    });
-    const busy = candidate({
-      name: "busy",
-      climb_m: 20,
-      crossings_per_km: 30,
-      path_share: 0.9,
-    });
-    const quiet = candidate({
-      name: "quiet",
-      climb_m: 20,
-      crossings_per_km: 10,
-      path_share: 0.2,
-    });
-    expect(
-      rankGenerated([steep, busy, quiet], "flat", 6000, BANDS).map(
-        (c) => c.name,
-      ),
-    ).toEqual(["quiet", "busy", "steep"]);
-  });
-
-  it("puts a route within 10% of the distance ahead of one far off with more path share", () => {
-    const onTarget = candidate({
-      name: "5.9 km",
-      distance_m: 5900,
-      path_share: 0.3,
-      crossings_per_km: 20,
-    });
-    const short = candidate({
-      name: "1.2 km",
-      distance_m: 1200,
-      path_share: 0.9,
-      crossings_per_km: 1,
-    });
-    expect(
-      rankGenerated([short, onTarget], "any", 6000, BANDS).map((c) => c.name),
-    ).toEqual(["5.9 km", "1.2 km"]);
-  });
-
-  it("falls back to path share when crossings are unknown", () => {
-    const roads = candidate({ name: "roads", path_share: 0.2 });
-    const paths = candidate({ name: "paths", path_share: 0.8 });
-    expect(
-      rankGenerated([roads, paths], "any", 6000, BANDS).map((c) => c.name),
-    ).toEqual(["paths", "roads"]);
   });
 });
 
