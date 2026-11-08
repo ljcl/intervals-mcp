@@ -47,6 +47,7 @@ import {
   OSM_INDEX_RADIUS_KM,
   OSM_STALE_DAYS,
   osmIndexInfo,
+  parkReach,
   routeOsmStats,
 } from "./osmIndex";
 import { NO_PROGRESS, type ReportProgress } from "./progress";
@@ -68,6 +69,8 @@ import {
   terrainBands,
   thereAndBack,
   trackClimb,
+  VIA_MATCH_M,
+  type Via,
 } from "./routeCandidates";
 import {
   clusterStarts,
@@ -297,13 +300,19 @@ export async function resolvePlace(
 
 /**
  * Why a looked-up via is refused: Pelias placed it no better than a suburb
- * or city, and routing through that centre goes somewhere else. Null for a
- * precise match or a lat,lng. Vias only: a suburb is a fair start, end or
- * heading.
+ * or city, or on a place lacking words of the text ("Glebe Foreshore Walk"
+ * matched Foreshore Promenade, Pyrmont, rated exact), and routing through it
+ * goes somewhere else. Null for a precise match or a lat,lng. Vias only: a
+ * suburb is a fair start, end or heading.
  */
 export function coarseVia(place: Place, text: string): string | null {
-  if (!place.match || PRECISE_LAYERS.has(place.match.type)) return null;
-  return `"${text.trim()}" matched only ${place.match.name} (a ${place.match.type}), so it was not routed; try the place name without its suburb or city, or pass lat,lng.`;
+  const { match } = place;
+  if (!match) return null;
+  if (!PRECISE_LAYERS.has(match.type))
+    return `"${text.trim()}" matched only ${match.name} (a ${match.type}), so it was not routed; try the place name without its suburb or city, or pass lat,lng.`;
+  if (match.missing?.length)
+    return `"${text.trim()}" matched only ${match.name}, which has no ${match.missing.map((w) => `"${w}"`).join(" or ")}, so it was not routed; check the name, or pass lat,lng.`;
+  return null;
 }
 
 async function resolveStart(
@@ -476,11 +485,11 @@ async function stitch(
   plan: {
     start: LatLng;
     end: LatLng | null;
-    via: LatLng[];
+    via: Via[];
     shape: RouteShape;
     target_m: number;
   },
-  legs: { anchors: LatLng[]; options: LegOption[][] },
+  legs: { anchors: Via[]; options: LegOption[][] },
   budget: Budget,
   progress: ReportProgress,
 ): Promise<RouteCandidate[]> {
@@ -653,10 +662,15 @@ export async function loadRouteSuggestions(
     const problem = coarseVia(via[i]!, text);
     if (problem) throw new RouteSuggestionError(problem);
   });
+  // A looked-up park is passed anywhere near it, not only near its point.
+  const targets: Via[] = via.map((p) => {
+    const reaches = p.match && parkReach(p.point, p.match.name, VIA_MATCH_M);
+    return reaches ? { point: p.point, reaches } : p.point;
+  });
   // The lines past runs take between the anchors do not depend on the planned run.
   const anchors = stitchAnchors(
     start.point,
-    via.map((p) => p.point),
+    targets,
     shape,
     end?.point ?? null,
   );
@@ -689,7 +703,7 @@ export async function loadRouteSuggestions(
             today: env.today,
             exclude: usedPast,
             bands,
-            via: via.map((p) => p.point),
+            via: targets,
           })
         : [];
       if (terrain === "hill-repeats") {
@@ -707,7 +721,13 @@ export async function loadRouteSuggestions(
         target_m: run.distance_m,
       };
       // Stitched first, so their few fills come out of the budget before the seeds.
-      const stitched = await stitch(env.orsKey, plan, legs, budget, progress);
+      const stitched = await stitch(
+        env.orsKey,
+        { ...plan, via: targets },
+        legs,
+        budget,
+        progress,
+      );
       let tried: RouteCandidate[] = [];
       // After an ORS failure (a stitch fill's included), generation is skipped for this and later runs; the call-level warning says why.
       if (env.orsKey && budget.failure === null) {

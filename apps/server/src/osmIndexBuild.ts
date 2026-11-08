@@ -2,7 +2,8 @@
  * Builds the local OpenStreetMap index (osmIndex.ts) from an .osm.pbf in
  * three passes: the outer ways of park and water multipolygons, the nodes
  * inside the area (crossings among them), then the ways, stored as runs of
- * their in-area points. Memory grows with the nodes inside the area (about
+ * their in-area points, and named parks' whole outlines (osmIndex.ts
+ * `parkReach`). Memory grows with the nodes inside the area (about
  * 16 bytes each), not with the size of the extract.
  */
 import { rmSync } from "node:fs";
@@ -29,6 +30,7 @@ CREATE TABLE way_cells (cell INTEGER NOT NULL, way_id INTEGER NOT NULL);
 CREATE INDEX way_cells_cell ON way_cells (cell);
 CREATE TABLE stop_nodes (cell INTEGER NOT NULL, stop_id INTEGER NOT NULL, signal INTEGER NOT NULL, lat REAL NOT NULL, lng REAL NOT NULL);
 CREATE INDEX stop_nodes_cell ON stop_nodes (cell);
+CREATE TABLE parks (id INTEGER PRIMARY KEY, name TEXT NOT NULL, south REAL NOT NULL, west REAL NOT NULL, north REAL NOT NULL, east REAL NOT NULL, lines BLOB NOT NULL);
 `;
 
 const PATH_HIGHWAYS = new Set(["footway", "path", "pedestrian", "track"]);
@@ -211,12 +213,28 @@ export async function buildOsmIndex(
     db.exec(SCHEMA);
 
     const greenOuter = new Set<number>();
+    // A named park multipolygon's outer ways, joined into its outline in the way pass.
+    const parkRelations = new Map<
+      number,
+      { name: string; ways: number; lines: number[][] | null }
+    >();
+    const parkOuter = new Map<number, number[]>();
     await readOsmPbf(pbfPath, {
       relation(r) {
         if (r.tags.type !== "multipolygon" || !isGreen(r.tags)) return;
-        for (const m of r.members)
-          if (m.type === "way" && (m.role === "outer" || m.role === ""))
-            greenOuter.add(m.ref);
+        const outer = r.members.filter(
+          (m) => m.type === "way" && (m.role === "outer" || m.role === ""),
+        );
+        for (const m of outer) greenOuter.add(m.ref);
+        if (r.tags.leisure !== "park" || !r.tags.name || outer.length === 0)
+          return;
+        parkRelations.set(r.id, {
+          name: r.tags.name,
+          ways: outer.length,
+          lines: [],
+        });
+        for (const m of outer)
+          parkOuter.set(m.ref, [...(parkOuter.get(m.ref) ?? []), r.id]);
       },
     });
 
@@ -280,13 +298,35 @@ export async function buildOsmIndex(
       ways++;
     };
 
+    const parks: Array<{ name: string; lines: number[][] }> = [];
+    /** Every point of the way, flat [lat, lng, ...]; null when one lies outside the extract. */
+    const wholeWay = (refs: number[]): number[] | null => {
+      const out: number[] = [];
+      for (const ref of refs) {
+        const p = nodes.get(ref);
+        if (!p) return null;
+        out.push(p[0], p[1]);
+      }
+      return out;
+    };
+
     db.exec("BEGIN");
     await readOsmPbf(pbfPath, {
       way(w) {
+        const closed = w.refs.length >= 4 && w.refs[0] === w.refs.at(-1);
+        if (w.tags.leisure === "park" && w.tags.name && closed) {
+          const line = wholeWay(w.refs);
+          if (line) parks.push({ name: w.tags.name, lines: [line] });
+        }
+        for (const id of parkOuter.get(w.id) ?? []) {
+          const park = parkRelations.get(id)!;
+          const line = park.lines && wholeWay(w.refs);
+          // A park cut by the area or extract edge has no outline to test inside.
+          park.lines = line ? [...park.lines!, line] : null;
+        }
         const cls = wayClass(w.tags);
         const green = greenOuter.has(w.id);
         if (!cls && !green) return;
-        const closed = w.refs.length >= 4 && w.refs[0] === w.refs.at(-1);
         for (const run of inAreaRuns(w.refs, nodes)) {
           // Inside an island (a closed coastline) is land, not water.
           const ring =
@@ -298,6 +338,38 @@ export async function buildOsmIndex(
         }
       },
     });
+
+    for (const park of parkRelations.values())
+      if (park.lines?.length === park.ways)
+        parks.push({ name: park.name, lines: park.lines });
+    const insertPark = db.prepare(
+      "INSERT INTO parks (name, south, west, north, east, lines) VALUES (?, ?, ?, ?, ?, ?)",
+    );
+    for (const park of parks) {
+      let south = Infinity;
+      let west = Infinity;
+      let north = -Infinity;
+      let east = -Infinity;
+      for (const line of park.lines)
+        for (let i = 0; i < line.length; i += 2) {
+          south = Math.min(south, line[i]!);
+          north = Math.max(north, line[i]!);
+          west = Math.min(west, line[i + 1]!);
+          east = Math.max(east, line[i + 1]!);
+        }
+      // NaN pairs separate the lines.
+      const flat = park.lines.flatMap((line, i) =>
+        i === 0 ? line : [Number.NaN, Number.NaN, ...line],
+      );
+      insertPark.run(
+        park.name,
+        south,
+        west,
+        north,
+        east,
+        new Uint8Array(new Float64Array(flat).buffer),
+      );
+    }
 
     const stopIds = mergeStops(crossings);
     const signalStops = new Set(stopIds.filter((_, i) => crossings[i]!.signal));

@@ -447,7 +447,8 @@ again. A failure is retried at the next daily check, and a change to
   missing.
 
 To force a rebuild, delete `index.sqlite` and restart. A change to
-`OSM_EXTRACT_URL` or `HOME_START` rebuilds on its own. Route suggestions
+`OSM_EXTRACT_URL` or `HOME_START` rebuilds on its own, and so does a
+release that changes the index's schema (as the one adding park outlines did). Route suggestions
 warn when the last successful check is over 14 days old.
 
 ## Docker notes

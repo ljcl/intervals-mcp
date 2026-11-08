@@ -201,14 +201,27 @@ export function rankPast(
   );
 }
 
-/** Whether `track` comes within {@link VIA_MATCH_M} of every point, in order. */
-export function passesInOrder(track: RouteTrack, points: LatLng[]): boolean {
+/**
+ * A via point, or a named park's looked-up point with a test for anywhere
+ * within {@link VIA_MATCH_M} of the park (osmIndex.ts `parkReach`): the point
+ * can sit far from the edge a run follows.
+ */
+export type Via = LatLng | { point: LatLng; reaches: (p: LatLng) => boolean };
+
+export const viaPoint = (via: Via): LatLng =>
+  Array.isArray(via) ? via : via.point;
+
+/** Whether `p` passes the via: within {@link VIA_MATCH_M} of its point, or of its park. */
+export function nearVia(p: LatLng, via: Via): boolean {
+  if (Array.isArray(via)) return haversineMeters(p, via) <= VIA_MATCH_M;
+  return haversineMeters(p, via.point) <= VIA_MATCH_M || via.reaches(p);
+}
+
+/** Whether `track` passes every via ({@link nearVia}), in order. */
+export function passesInOrder(track: RouteTrack, vias: Via[]): boolean {
   let i = 0;
-  for (const point of points) {
-    while (
-      i < track.coordinates.length &&
-      haversineMeters(track.coordinates[i]!, point) > VIA_MATCH_M
-    )
+  for (const via of vias) {
+    while (i < track.coordinates.length && !nearVia(track.coordinates[i]!, via))
       i++;
     if (i === track.coordinates.length) return false;
   }
@@ -234,7 +247,7 @@ export function matchPastRuns(
     today: string;
     exclude: ReadonlySet<string>;
     bands: TerrainBands;
-    via?: LatLng[];
+    via?: Via[];
   },
 ): RouteCandidate[] {
   const { target_m, shape, terrain, today, exclude, bands, via = [] } = options;

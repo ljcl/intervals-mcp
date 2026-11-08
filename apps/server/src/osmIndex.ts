@@ -1,6 +1,6 @@
 /**
  * Local OpenStreetMap index: road crossings, off-road paths, main roads and
- * park and water edges within OSM_INDEX_RADIUS_KM of HOME_START, built from
+ * park and water edges, and named parks' outlines, within OSM_INDEX_RADIUS_KM of HOME_START, built from
  * an .osm.pbf (osmIndexBuild.ts) and refreshed weekly (osmIndexRefresh.ts).
  * Route suggestions measure every candidate here, and stored route summaries
  * their whole track; nothing asks OpenStreetMap live. docs/architecture.md,
@@ -12,7 +12,7 @@ import { DatabaseSync } from "node:sqlite";
 import { getDataDir, getHomeStart, getOsmExtractUrl } from "./config";
 import { type LatLng, type RouteTrack } from "./mapAnchors";
 
-export const OSM_SCHEMA_VERSION = "1";
+export const OSM_SCHEMA_VERSION = "2";
 export const OSM_INDEX_RADIUS_KM = 25;
 export const OSM_STALE_DAYS = 14;
 /** Crossing and signal nodes this close are one stop: a junction's signal node and its crossings. */
@@ -266,6 +266,85 @@ function insideRing(x: number, y: number, r: Ring): boolean {
       inside = !inside;
   }
   return inside;
+}
+
+/** Even-odd over a set of segments: the outline's ways need not be joined or ordered. */
+function insideSegments(x: number, y: number, segments: Segment[]): boolean {
+  let inside = false;
+  for (const { x1, y1, x2, y2 } of segments)
+    if (y1 > y !== y2 > y && x < ((x2 - x1) * (y - y1)) / (y2 - y1) + x1)
+      inside = !inside;
+  return inside;
+}
+
+/**
+ * A test for "in, or within `radius_m` of, the smallest park named `name`
+ * (any case) that `point` is in or within `radius_m` of"; null without an
+ * index or such a park. A looked-up park's point can sit 300 m from the edge
+ * a run follows, or just outside the park (Jubilee Park, Glebe, is a node on
+ * its edge).
+ */
+export function parkReach(
+  point: LatLng,
+  name: string,
+  radius_m: number,
+): ((p: LatLng) => boolean) | null {
+  const index = openIndex();
+  if (!index) return null;
+  const [lat0, lng0] = point;
+  const kx = Math.cos((lat0 * Math.PI) / 180) * METERS_PER_DEG_LNG_AT_EQUATOR;
+  const padLat = radius_m / METERS_PER_DEG_LAT;
+  const padLng = radius_m / kx;
+  const rows = index.db
+    .prepare(
+      "SELECT name, lines FROM parks WHERE south <= ? AND north >= ? AND west <= ? AND east >= ? ORDER BY (north - south) * (east - west)",
+    )
+    .all(lat0 + padLat, lat0 - padLat, lng0 + padLng, lng0 - padLng) as Array<{
+    name: string;
+    lines: Uint8Array;
+  }>;
+  const project = ([lat, lng]: LatLng): [number, number] => [
+    (lng - lng0) * kx,
+    (lat - lat0) * METERS_PER_DEG_LAT,
+  ];
+  for (const row of rows) {
+    if (row.name.toLowerCase() !== name.toLowerCase()) continue;
+    const flat = new Float64Array(row.lines.slice().buffer);
+    const segments: Segment[] = [];
+    let line: Array<[number, number]> = [];
+    for (let i = 0; i <= flat.length; i += 2) {
+      if (i === flat.length || Number.isNaN(flat[i]!)) {
+        segments.push(...segmentsOf(line));
+        line = [];
+      } else line.push(project([flat[i]!, flat[i + 1]!]));
+    }
+    const reaches = (x: number, y: number) =>
+      insideSegments(x, y, segments) ||
+      segments.some((s) => distanceToSegment(x, y, s) <= radius_m);
+    if (!reaches(0, 0)) continue;
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (const s of segments) {
+      minX = Math.min(minX, s.x1, s.x2);
+      maxX = Math.max(maxX, s.x1, s.x2);
+      minY = Math.min(minY, s.y1, s.y2);
+      maxY = Math.max(maxY, s.y1, s.y2);
+    }
+    return (p) => {
+      const [x, y] = project(p);
+      if (
+        x < minX - radius_m ||
+        x > maxX + radius_m ||
+        y < minY - radius_m ||
+        y > maxY + radius_m
+      )
+        return false;
+      return reaches(x, y);
+    };
+  }
+  return null;
 }
 
 const round = (v: number, places: number) =>
