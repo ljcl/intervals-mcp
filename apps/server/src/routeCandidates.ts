@@ -12,6 +12,7 @@ import {
   type LatLng,
   type RouteTrack,
 } from "./mapAnchors";
+import { type ScoreBreakdown } from "./routeScore";
 import { CLUSTER_RADIUS_M, type RunStart } from "./startClusters";
 import { daysBetween } from "./utils/localDate";
 
@@ -41,6 +42,16 @@ export interface RouteCandidate {
   main_road_km?: number | null;
   /** Share (0-1) within 50 m of a park, water or coastline, or inside a park; absent or null when not counted. */
   green_share?: number | null;
+  /** Set by the engine (routeScore.ts): the 0-100 running score. */
+  score?: number;
+  /** Points per factor, scaled; null when not measured (routeScore.ts). */
+  score_breakdown?: ScoreBreakdown;
+  /** Share (0-1) on lines at least 3 loaded runs follow (routeScore.ts `knownLines`). */
+  known_share?: number;
+  /** km a later stretch runs back over the other way (routeGeometry.ts `retracedM`). */
+  retraced_km?: number;
+  /** Short notes on the route, e.g. a dead-end spur (routeScore.ts `routeNotes`). */
+  notes?: string[];
   /** Set by the engine for terrain hill-repeats. */
   hill: RepeatHill | null;
   summary: string;
@@ -180,7 +191,7 @@ function compareNullable(a: number | null, b: number | null): number {
   return a - b;
 }
 
-/** Past runs: terrain fit first (only via runs can miss it), then not repeated in the last 7 days, then fewer crossings, then closest distance. */
+/** The order matchPastRuns keeps its pool in (which past runs get measured and scored): terrain fit first, then not repeated in the last 7 days, then fewer crossings, then closest distance. */
 export function rankPast(
   candidates: RouteCandidate[],
   target_m: number,
@@ -382,39 +393,4 @@ export function stretchWaypoints(
     moveBy(middle, out * normalEast, out * normalNorth),
     ...waypoints.slice(leg + 1),
   ];
-}
-
-/**
- * Generated candidates best first: within {@link PAST_DISTANCE_TOLERANCE}
- * of the distance, then terrain fit, then (hill repeats) a hill found, then
- * fewer crossings, then the share on paths, then climb in the asked
- * direction (least for flat, most for hilly), then distance.
- */
-export function rankGenerated(
-  candidates: RouteCandidate[],
-  terrain: Terrain,
-  target_m: number,
-  bands: TerrainBands,
-): RouteCandidate[] {
-  const misfit = (c: RouteCandidate) =>
-    terrainFits(terrain, c.climb_m, c.distance_m, bands) ? 0 : 1;
-  const offTarget = (c: RouteCandidate) =>
-    Math.abs(c.distance_m - target_m) <= target_m * PAST_DISTANCE_TOLERANCE
-      ? 0
-      : 1;
-  const perKm = (c: RouteCandidate) => climbPerKm(c.climb_m, c.distance_m);
-  return [...candidates].sort(
-    (a, b) =>
-      offTarget(a) - offTarget(b) ||
-      misfit(a) - misfit(b) ||
-      (terrain === "hill-repeats" ? Number(!a.hill) - Number(!b.hill) : 0) ||
-      compareNullable(a.crossings_per_km, b.crossings_per_km) ||
-      (b.path_share ?? 0) - (a.path_share ?? 0) ||
-      (terrain === "flat"
-        ? perKm(a) - perKm(b)
-        : terrain === "hilly"
-          ? perKm(b) - perKm(a)
-          : 0) ||
-      Math.abs(a.distance_m - target_m) - Math.abs(b.distance_m - target_m),
-  );
 }

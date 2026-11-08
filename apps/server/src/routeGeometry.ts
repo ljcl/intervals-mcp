@@ -421,15 +421,8 @@ const SPUR_MATCH_M = 12;
 /** Directions at least this far apart (cosine) are opposite. */
 const OPPOSITE_COS = -0.7;
 
-/**
- * Where a track goes back the way it came: a stretch going one way with a
- * later stretch within 12 m of it going the other way, for at least 25 m.
- * Each is `from_m`, where it turns in, to `to_m`, where it is back out; a
- * dead end's tip is between them, wherever the turn is.
- */
-export function findSpurs(
-  track: RouteTrack,
-): Array<{ from_m: number; to_m: number }> {
+/** Per 5 m sample, the furthest later sample going back over it the other way, or -1; empty for a track under 3 samples. */
+function backPasses(track: RouteTrack): number[] {
   const n = Math.floor(trackLength(track) / SPUR_STEP_M);
   if (n < 3) return [];
   const origin = track.coordinates[0]!;
@@ -451,8 +444,7 @@ export function findSpurs(
     const key = cell(x, y);
     grid.set(key, [...(grid.get(key) ?? []), i]);
   });
-  // The furthest later sample going back over each one, or -1.
-  const back = xy.map(([x, y], i) => {
+  return xy.map(([x, y], i) => {
     let best = -1;
     const cx = Math.floor(x / SPUR_MATCH_M);
     const cy = Math.floor(y / SPUR_MATCH_M);
@@ -467,10 +459,22 @@ export function findSpurs(
         }
     return best;
   });
-  const spurs: Array<{ from_m: number; to_m: number }> = [];
+}
+
+/**
+ * Runs of samples that each have a way back (gaps of one sample are noise),
+ * at least SPUR_MIN_M long: `first` and `last` sample, and `out`, the
+ * furthest return. `skip` jumps past the return (a spur's inside is not
+ * another spur); without it every retraced stretch is found.
+ */
+function backStretches(
+  back: number[],
+  skip: boolean,
+): Array<{ first: number; last: number; out: number }> {
+  const n = back.length - 1;
+  const stretches: Array<{ first: number; last: number; out: number }> = [];
   for (let i = 0; i <= n; i++) {
     if (back[i]! < 0) continue;
-    // A run of samples that each have a way back; gaps of one sample are noise.
     let end = i;
     let out = back[i]!;
     while (
@@ -481,8 +485,33 @@ export function findSpurs(
       out = Math.max(out, back[end]!);
     }
     if ((end - i) * SPUR_STEP_M >= SPUR_MIN_M)
-      spurs.push({ from_m: i * SPUR_STEP_M, to_m: out * SPUR_STEP_M });
-    i = Math.max(end, out);
+      stretches.push({ first: i, last: end, out });
+    i = skip ? Math.max(end, out) : end;
   }
-  return spurs;
+  return stretches;
+}
+
+/**
+ * Where a track goes back the way it came: a stretch going one way with a
+ * later stretch within 12 m of it going the other way, for at least 25 m.
+ * Each is `from_m`, where it turns in, to `to_m`, where it is back out; a
+ * dead end's tip is between them, wherever the turn is. `length_m` is the
+ * stretch's own length, one way.
+ */
+export function findSpurs(
+  track: RouteTrack,
+): Array<{ from_m: number; to_m: number; length_m: number }> {
+  return backStretches(backPasses(track), true).map((s) => ({
+    from_m: s.first * SPUR_STEP_M,
+    to_m: s.out * SPUR_STEP_M,
+    length_m: (s.last - s.first) * SPUR_STEP_M,
+  }));
+}
+
+/** Metres of `track` a later stretch runs back over the other way ({@link findSpurs}'s rule); each retraced stretch counts once. */
+export function retracedM(track: RouteTrack): number {
+  return backStretches(backPasses(track), false).reduce(
+    (sum, s) => sum + (s.last - s.first) * SPUR_STEP_M,
+    0,
+  );
 }

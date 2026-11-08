@@ -13,6 +13,7 @@ import {
   buildTrackMapData,
   MAX_ROUTE_MAP_POINTS,
 } from "./routeMapData";
+import { type RunSuggestion } from "./routeSuggestions";
 import { rawUnitDecimals } from "./streamPrecision";
 
 const activity = (
@@ -452,7 +453,7 @@ describe("suggestion payloads", () => {
   });
 
   it("marks the hill and each via point on each candidate", () => {
-    const run = {
+    const run: RunSuggestion = {
       event_id: 1,
       date: "2026-11-05",
       name: "Hill sprints",
@@ -492,6 +493,10 @@ describe("suggestion payloads", () => {
     };
     const data = buildSuggestionsMapData(run, []);
     expect(data.candidates[0]!.label).toBe("New loop");
+    run.candidates[0]!.score = 72;
+    expect(buildSuggestionsMapData(run, []).candidates[0]!.label).toBe(
+      "New loop, score 72",
+    );
     const kinds = data.candidates[0]!.map.annotations?.waypoints?.map(
       (w) => w.kind,
     );

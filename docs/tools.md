@@ -116,15 +116,12 @@ load.
   replaced by passing within 100 m of every via point in order
   (`passesInOrder`), so a past run at any distance can be offered;
   `distance_diff_m` shows the gap, and a run off the asked terrain names its
-  band in `summary` and ranks after those on it. Then routes not run in the
-  last 7 days come first
-  (judged on each route's latest recording, either way round), then fewer
-  crossings, then closer distance; every recording of a route already
-  offered is excluded later in the same week. For `hill-repeats`, hills are
-  found on every match before the 6 are chosen, and past runs with a hill
-  come first.
+  band in `summary` and its fit is halved. The score orders the candidates
+  (see Score below); every recording of a route already offered is excluded
+  later in the same week. For `hill-repeats`, hills are found on every match
+  before the 6 are chosen, and routes with a hill come first.
 - Generation: one new route at the athlete's usual start, three where the
-  start has no run history within 300 m, from `wanted + 1` seeds so ranking
+  start has no run history within 300 m, from `wanted + 1` seeds so the score
   has a choice. Seeds come from the run's date, so a week request and a
   one-run request for the same day get the same loops. A seed takes at
   most 2 ORS calls (one rescale, by at most 0.75 to 1.33 times, and none
@@ -169,8 +166,8 @@ load.
   ORS routes each run of uncovered legs through the via points between, and
   each join over 30 m, at most 4 calls a run from the same 12 (a 404 drops
   that route only). The two combinations nearest the distance are built.
-  They take the 25% rule with generated routes, rank after past runs and
-  before generated ones, are stored like them, and go out as
+  They take the 25% rule with generated routes, are scored like the others,
+  are stored like them, and go out as
   `kind: "generated"` with `history_share` set: a new kind would break hosts
   holding the old tool list. Without ORS_API_KEY, one needing no join is
   still offered.
@@ -192,6 +189,35 @@ load.
   candidate, past runs included. Outside it, or without it, they are null,
   generated routes keep the OpenRouteService path share, and one warning
   says why. An index not refreshed in 14 days adds a warning.
+- Score: every candidate (past, stitched and generated) gets 0-100 from
+  `routeScore.ts`, and the score orders them, best first. Hill repeats put
+  routes with a repeat hill first; then routes that fit the asked terrain,
+  then (without vias) routes within 10% of the distance, come before the
+  score; a tie goes to the closer distance, then to the athlete's own run. At most 3 come back: at most 2 past runs, at
+  most `want` generated (1 from the usual start, 3 away from it). Stitched
+  routes are capped only by the 3. The spare seed gives the score a choice
+  but adds no route.
+
+  | Factor | Max | Points |
+  | --- | --- | --- |
+  | paths | 25 | share on paths |
+  | known_lines | 20 | share of the track on lines 3+ loaded runs follow |
+  | crossings | 15 | 1 - (crossings + signals) per km / 8 |
+  | main_roads | 15 | 1 - main-road share / 25% |
+  | backtracking | 10 | 1 - retraced km / 2; full for an out-and-back |
+  | green | 10 | green share |
+  | fit | 5 | 1 - distance miss / 25% of target; halved on a terrain miss |
+  | recency | -10 | a past run done in the last 7 days |
+
+  A factor the OpenStreetMap index cannot measure is left out and the rest
+  scale to 100; recency is never scaled. Known lines: 10 m samples within
+  20 m of a point that 3 or more of the loaded runs pass, heading within 30
+  degrees either way (`knownLines`). Retraced km: `retracedM`
+  (`routeGeometry.ts`, `findSpurs`'s rule); a dead-end spur adds a `Note:`
+  line. The text adds `, score N (lost: ...)`, naming up to 3 factors that
+  lost at least 2 points. Each candidate's structured output adds `score`,
+  `score_breakdown` (points per factor, null when unmeasured, and
+  `recency`), `known_share`, `retraced_km` and `notes`.
 - Terrain: flat, rolling and hilly are the athlete's own thirds of climb per
   km over their recent runs (8 and 20 m/km under 10 runs). On 2026-11-03
   the live bands were 11.2 and 13.3 m/km. A generated route's climb uses a
@@ -1356,7 +1382,7 @@ for `newest`.
 | `get-cadence-trend-data` | Summary cadence/pace data for the cadence trends UI (app-only) |
 | `view-route-map` | Interactive map of an activity's GPS track or a stored route's version (`route_id`), fit to bounds with start/finish markers; optional distance-anchored waypoints and stretches, `compare_to_version`, and edits on the map that call `amend-route` (MCP App) |
 | `get-route-map-data` | `[lat, lng]` coordinates from the activity's latlng stream plus index-aligned metric streams and WORK-interval end markers for the route map UI; for a `route_id`, the version's sections, via points, km markers and a compared version (app-only) |
-| `view-route-suggestions` | Map of one planned run's suggested routes: a picker over past and generated routes, an elevation strip and any hill for repeats marked; takes `suggest-run-route`'s arguments except `days` (MCP App) |
+| `view-route-suggestions` | Map of one planned run's suggested routes: a picker over past and generated routes (at most 3, labels carry the score), an elevation strip and any hill for repeats marked; takes `suggest-run-route`'s arguments except `days` (MCP App) |
 | `get-route-suggestions-data` | One planned run's candidate routes as route-map payloads (coordinates, distance and altitude streams, hill and via markers) for the suggestion mode of the route-map UI (app-only) |
 | `view-training-load` | Weekly running-volume bars with a rolling trend line, volume-spike warning weeks, a weekly load line, and Fitness/Fatigue/Form tiles; `runOnly` picks the scope load and CTL/ATL/TSB cover, and a Whole body/Runs only toggle in the card switches it, caching each side; `newest` ends the chart on a past date, and a past partial week is labelled partial. Its text adds a `Scope:` line (whole-body with the activity types, or run-only, and where CTL/ATL came from) and a `Current (as of DATE): CTL x / ATL y / TSB +z` line when fitness is known (`End of window` and a `Past window:` line for a past window); its `Load:` total is the payload's `totals.load` (MCP App) |
 | `get-training-load-data` | Per-week volume, trend value, warning flags, weekly load, and current CTL/ATL/TSB for the training-load UI; `runOnly` (default false) switches load and CTL/ATL/TSB between whole-body and run-only, while volume and spike warnings stay run-based (app-only) |

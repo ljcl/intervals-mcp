@@ -478,11 +478,15 @@ best 20-minute heart rate, both of the last 90 days.
 (`hillAnalysis.ts`) finds the 60-200 m stretch at 5-12% for hill repeats,
 reusing the GAP grades. `startClusters.ts` groups recent run starts (300 m,
 recency weighted) into the athlete's usual start. `routeCandidates.ts` holds
-the candidate rules: past-run matching and ranking, the terrain bands (the
+the candidate rules: past-run matching, the terrain bands (the
 athlete's own thirds of climb per km, 8 and 20 m/km under 10 runs) and the
 3 m climb hysteresis for generated routes. `routeOsmStats` (`osmIndex.ts`)
 measures each candidate against the local OpenStreetMap index.
-`routeSuggestions.ts` composes them for `suggest-run-route` and the
+`routeScore.ts` is the one home of the score: its weights, known lines
+(`knownLines`, built once per call from the loaded runs) and the per-route
+notes (`routeNotes`). `retracedM` (`routeGeometry.ts`) follows `findSpurs`'s
+rule. `routeSuggestions.ts` scores every candidate after the OSM measures,
+orders them by score, and composes them for `suggest-run-route` and the
 `route-map` suggestion mode (`buildSuggestionsMapData`), so the text and the
 map offer the same routes. Its ORS budget is per call (12 calls, at most 2
 per seed), and the first non-cancellation ORS failure stops generation for
@@ -676,7 +680,7 @@ both call it.
 
 ## OpenStreetMap index
 
-Route suggestions rank candidates by road crossings, signals, off-road
+Route suggestions score candidates partly on road crossings, signals, off-road
 paths, main roads and parks. These come from a local index, never a live
 OpenStreetMap API (the public instances were too slow and often down, see
 docs/api-notes.md). The source is the `.osm.pbf` at
