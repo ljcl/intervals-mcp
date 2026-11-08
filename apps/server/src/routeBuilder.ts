@@ -146,6 +146,7 @@ export type SegmentInput =
       from_km?: number;
       to_km?: number;
       version?: number;
+      route_id?: string;
     }
   | {
       type: "out_and_back";
@@ -932,7 +933,7 @@ export async function addCorridor(
       );
     const { track } = await loadActivity(ctx, source.id);
     ctx.focus = track.coordinates[0] ?? null;
-    const at = async (text: string) => (await place(ctx, text)).point;
+    const at = async (text: string) => (await viaPlace(ctx, text)).point;
     const [from, to] = [await at(source.from), await at(source.to)];
     const into = passes(track, from)[0];
     if (into === undefined)
@@ -1098,9 +1099,14 @@ export async function stitchRoute(
           new RouteNotFoundError(segment.route_id).message,
         );
       pinned.push({ ...segment, version: latestVersion(source).version });
-    } else if (segment.type === "corridor" && segment.version === undefined) {
+    } else if (segment.type === "corridor") {
       const source = await findCorridor(segment.name);
-      pinned.push({ ...segment, version: latestVersion(source).version });
+      // route_id too: a corridor deleted and saved again under the name restarts at version 1.
+      pinned.push({
+        ...segment,
+        route_id: source.route_id,
+        version: segment.version ?? latestVersion(source).version,
+      });
     } else pinned.push(segment);
   }
   const name = input.name?.trim() || "Stitched route";

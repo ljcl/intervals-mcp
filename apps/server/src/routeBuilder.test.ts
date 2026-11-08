@@ -29,7 +29,12 @@ import {
   versionTrack,
 } from "./routeBuilder";
 import { trackDiff, trackLength } from "./routeGeometry";
-import { findVersion, readRoute, versionSegments } from "./routeStore";
+import {
+  deleteCorridor,
+  findVersion,
+  readRoute,
+  versionSegments,
+} from "./routeStore";
 
 vi.mock("./orsClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./orsClient")>();
@@ -1169,6 +1174,17 @@ describe("addCorridor", () => {
     expect(source.to_km).toBeCloseTo(3, 1);
   });
 
+  it("refuses a from place that matched only a suburb", async () => {
+    vi.mocked(ors.geocode).mockResolvedValue({
+      label: "Glebe, NSW, Australia",
+      point: sundayPointAt(1),
+      match: { query: "Glebe", name: "Glebe", type: "locality" },
+    });
+    await expect(
+      run("Suburb", sunday({ from: "Glebe", to: latLng(3) })),
+    ).rejects.toThrow(/matched only Glebe \(a locality\)/);
+  });
+
   it("refuses a place the run does not pass", async () => {
     await expect(
       run("Nowhere", sunday({ from: latLng(1), to: "-33.0,150.0" })),
@@ -1262,6 +1278,26 @@ describe("corridors in stitchRoute and amendRoute", () => {
       2000,
       -2,
     );
+  });
+
+  it("makes a new route when a corridor is deleted and saved again under its name", async () => {
+    const request = {
+      segments: [{ type: "corridor" as const, name: "Bay Run" }],
+    };
+    const old = await save("Bay Run");
+    const one = await stitchRoute("key", request, ENV);
+    await deleteCorridor(old.route.route_id);
+    await addCorridor(
+      "key",
+      {
+        name: "Bay Run",
+        source: { type: "activity", id: SUNDAY_ID, from_km: 1, to_km: 3 },
+      },
+      ENV,
+    );
+    const two = await stitchRoute("key", request, ENV);
+    expect(two.created).toBe(true);
+    expect(two.route.route_id).not.toBe(one.route.route_id);
   });
 
   it("runs it stored when the section before ends at its start", async () => {
