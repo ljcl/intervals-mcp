@@ -68,6 +68,29 @@ describe("list-corridors", () => {
     expect(out).toMatchObject({ count: 0, corridors: [], found: [] });
   });
 
+  it("lists by name with no known start", async () => {
+    vi.stubEnv("HOME_START", "");
+    await manageCorridorsTool.execute(
+      {
+        action: "add",
+        name: "Bay Run",
+        activity: { id: SUNDAY_ID, from_km: 1, to_km: 3 },
+      },
+      "key",
+    );
+    vi.mocked(loadRunStarts).mockResolvedValue({ runs: [], skipped: 0 });
+    const result = await listCorridorsTool.execute({}, "key");
+    expect(isError(result)).toBeUndefined();
+    const out = CorridorListOutputSchema.parse(
+      (result as { structuredContent: unknown }).structuredContent,
+    );
+    expect(out.near).toBeNull();
+    expect(out.found).toEqual([]);
+    expect(out.corridors).toMatchObject([
+      { name: "Bay Run", distance_m: null },
+    ]);
+  });
+
   it("offers a found stretch, lists it once saved, nearest first", async () => {
     const before = await list();
     expect(before.corridors).toEqual([]);

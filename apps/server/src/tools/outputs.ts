@@ -1960,7 +1960,12 @@ const CorridorEntrySchema = z.object({
 
 export const CorridorListOutputSchema = z.object({
   count: z.number().int().describe("Saved corridors"),
-  near: z.object({ label: z.string(), lat: z.number(), lng: z.number() }),
+  near: z
+    .object({ label: z.string(), lat: z.number(), lng: z.number() })
+    .nullable()
+    .describe(
+      "The point corridors are ordered from; null when no start is known",
+    ),
   corridors: z.array(CorridorEntrySchema).describe("Nearest first"),
   found: z
     .array(

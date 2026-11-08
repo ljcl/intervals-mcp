@@ -1268,7 +1268,7 @@
       "near.label: string",
       "near.lat: number",
       "near.lng: number",
-      "near: object",
+      "near: null object",
       "warnings: array"
     ],
     "list-gear": [

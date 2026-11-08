@@ -65,20 +65,28 @@ export const listCorridorsTool = {
         env.today,
         progress,
       );
+      // Without near, a missing start only drops the ordering and the found stretches.
       const near = await resolveStart(
         args.near,
         env,
         clusterStarts(runs, env.today),
-      );
+      ).catch((error) => {
+        if (!args.near && error instanceof RouteSuggestionError) return null;
+        throw error;
+      });
       const saved = await listCorridors();
       const followers = lineFollowers(runs.map((r) => r.track));
       const corridors = saved
-        .map((c) => corridorEntry(c, followers, near.point))
-        .sort((a, b) => (a.distance_m ?? 0) - (b.distance_m ?? 0));
-      const found = foundStretches(
-        runs,
-        saved.map((c) => versionTrack(c, latestVersion(c))),
-        near.point,
+        .map((c) => corridorEntry(c, followers, near?.point ?? null))
+        .sort((a, b) => (near ? (a.distance_m ?? 0) - (b.distance_m ?? 0) : 0));
+      const found = (
+        near
+          ? foundStretches(
+              runs,
+              saved.map((c) => versionTrack(c, latestVersion(c))),
+              near.point,
+            )
+          : []
       ).map((f) => ({
         activity_id: f.activity_id,
         name: f.name,
@@ -100,17 +108,21 @@ export const listCorridorsTool = {
           : [];
       const structured = {
         count: corridors.length,
-        near: {
-          label: near.label,
-          lat: round3(near.point[0]),
-          lng: round3(near.point[1]),
-        },
+        near: near
+          ? {
+              label: near.label,
+              lat: round3(near.point[0]),
+              lng: round3(near.point[1]),
+            }
+          : null,
         corridors,
         found,
         warnings,
       };
       warnOnSchemaDrift(name, CorridorListOutputSchema, structured);
-      const lines = [`Near ${near.label}:`];
+      const lines = [
+        near ? `Near ${near.label}:` : "No start known; ordered by name.",
+      ];
       if (corridors.length === 0) lines.push("No saved corridors.");
       for (const c of corridors) lines.push(corridorLine(c));
       if (found.length > 0) {

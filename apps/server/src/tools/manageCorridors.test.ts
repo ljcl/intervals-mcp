@@ -84,11 +84,6 @@ describe("manage-corridors", () => {
         route: { route_id: "rabcdefghij" },
       },
     ],
-    ["rename without name", { action: "rename", route_id: "cabcdefghij" }],
-    [
-      "set_one_way without flag",
-      { action: "set_one_way", route_id: "cabcdefghij" },
-    ],
     ["delete without id", { action: "delete" }],
   ])("refuses %s and stores nothing", async (_label, args) => {
     const result = await run(args as Args);
@@ -96,6 +91,30 @@ describe("manage-corridors", () => {
     expect(text(result as never)).toMatch(/^❌/);
     expect(await listCorridors()).toHaveLength(0);
   });
+
+  it.each([
+    ["rename", {}, "rename needs name"],
+    ["set_one_way", {}, "set_one_way needs one_way"],
+    ["delete", { route_id: "" }, "delete needs route_id"],
+  ])(
+    "refuses %s with a missing field and changes nothing",
+    async (action, extra, message) => {
+      const added = await add("Bay Run");
+      const id = (
+        added as { structuredContent: { corridor: { route_id: string } } }
+      ).structuredContent.corridor.route_id;
+      const result = await run({
+        action,
+        route_id: id,
+        ...extra,
+      } as Args);
+      expect(isError(result)).toBe(true);
+      expect(text(result as never)).toContain(message);
+      expect(await listCorridors()).toMatchObject([
+        { route_id: id, name: "Bay Run", one_way: false },
+      ]);
+    },
+  );
 
   it("refuses a rename to a name another corridor has", async () => {
     await add("Bay Run");
