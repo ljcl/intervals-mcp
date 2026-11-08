@@ -19,8 +19,10 @@
  * nothing.
  */
 import { CallCancelledError } from "./callScope";
+import { corridorKey, MIN_CORRIDOR_M } from "./corridors";
 import { isAbortError } from "./fetchClient";
 import { activityDisplayName } from "./formatters";
+import { passes } from "./historyLegs";
 import { getActivity } from "./intervalsClient";
 import {
   IntervalsStreamsUnavailableError,
@@ -42,6 +44,7 @@ import {
   stretchWaypoints,
   thereAndBack,
   trackClimb,
+  VIA_MATCH_M,
 } from "./routeCandidates";
 import {
   concatTracks,
@@ -62,6 +65,7 @@ import {
   createRoute,
   findVersion,
   latestVersion,
+  listCorridors,
   makeRouteId,
   RouteNotFoundError,
   readRoute,
@@ -799,6 +803,127 @@ async function routeSegments(
   return from <= to
     ? parts
     : parts.reverse().map((part) => reverseSegment(ctx, part));
+}
+
+// ---------- corridors ----------
+
+export type CorridorSource =
+  | {
+      type: "activity";
+      id: string;
+      from_km?: number;
+      to_km?: number;
+      from?: string;
+      to?: string;
+    }
+  | {
+      type: "route";
+      route_id: string;
+      version?: number;
+      from_km?: number;
+      to_km?: number;
+    };
+
+/**
+ * Saves a corridor: a stored route of kind corridor with the source's
+ * sections. Its id comes from the source and range, so the same add
+ * returns the saved corridor (created false); refused with nothing stored
+ * when the name is taken or the stretch is under MIN_CORRIDOR_M.
+ */
+export async function addCorridor(
+  apiKey: string,
+  input: { name: string; one_way?: boolean; source: CorridorSource },
+  env: BuildEnv,
+  progress: ReportProgress = NO_PROGRESS,
+): Promise<{ route: StoredRoute; created: boolean }> {
+  const name = input.name.trim();
+  const key = corridorKey(name);
+  if (!key)
+    throw new RouteBuildError("A corridor name needs at least one word.");
+  const ctx = newCtx(apiKey, env, progress, 1, null, undefined);
+  let source = input.source;
+  if (
+    source.type === "activity" &&
+    (source.from !== undefined || source.to !== undefined)
+  ) {
+    if (source.from_km !== undefined || source.to_km !== undefined)
+      throw new RouteBuildError(
+        "Give the run's km range or two places it passes, not both.",
+      );
+    if (source.from === undefined || source.to === undefined)
+      throw new RouteBuildError(
+        "Give both from and to, the places the corridor starts and ends at.",
+      );
+    const { track } = await loadActivity(ctx, source.id);
+    ctx.focus = track.coordinates[0] ?? null;
+    const at = async (text: string) => (await place(ctx, text)).point;
+    const [from, to] = [await at(source.from), await at(source.to)];
+    const into = passes(track, from)[0];
+    if (into === undefined)
+      throw new RouteBuildError(
+        `Activity ${source.id} does not pass "${source.from}" (within ${VIA_MATCH_M} m).`,
+      );
+    const out = passes(track, to).find((d) => d > into);
+    if (out === undefined)
+      throw new RouteBuildError(
+        `Activity ${source.id} does not pass "${source.to}" after "${source.from}".`,
+      );
+    source = {
+      type: "activity",
+      id: source.id,
+      from_km: Math.round(into) / 1000,
+      to_km: Math.round(out) / 1000,
+    };
+  }
+  if (source.type === "route" && source.version === undefined) {
+    const stored = await readRoute(source.route_id);
+    if (!stored)
+      throw new RouteBuildError(
+        new RouteNotFoundError(source.route_id).message,
+      );
+    source = { ...source, version: latestVersion(stored).version };
+  }
+  const routeId = makeRouteId("corridor", JSON.stringify(source));
+  const existing = await readRoute(routeId);
+  if (existing) {
+    if (corridorKey(existing.name) === key)
+      return { route: existing, created: false };
+    throw new RouteBuildError(
+      `This stretch is already saved as corridor "${existing.name}" (${routeId}).`,
+    );
+  }
+  const taken = (await listCorridors()).find(
+    (c) => corridorKey(c.name) === key,
+  );
+  if (taken)
+    throw new RouteBuildError(
+      `A corridor named "${taken.name}" is already saved (${taken.route_id}); rename or delete it first.`,
+    );
+  const segments =
+    source.type === "activity"
+      ? [await activitySegment(ctx, source.id, source.from_km, source.to_km)]
+      : await routeSegments(
+          ctx,
+          source.route_id,
+          source.version,
+          source.from_km,
+          source.to_km,
+        );
+  const length = trackLength(layoutSegments(segments).track);
+  if (length < MIN_CORRIDOR_M)
+    throw new RouteBuildError(
+      `That stretch is ${Math.round(length)} m; a corridor is at least ${MIN_CORRIDOR_M} m.`,
+    );
+  return createRoute({
+    route_id: routeId,
+    name,
+    kind: "corridor",
+    one_way: input.one_way ?? false,
+    next_id: ctx.nextId,
+    segments,
+    change: `Saved as corridor from ${source.type === "activity" ? `activity ${source.id}` : `route ${source.route_id}`} km ${km((source.from_km ?? 0) * 1000)}-${source.to_km === undefined ? "end" : km(source.to_km * 1000)}`,
+    warnings: [],
+  });
 }
 
 // ---------- joining ----------
