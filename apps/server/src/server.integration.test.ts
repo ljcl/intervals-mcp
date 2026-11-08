@@ -468,6 +468,26 @@ describe("tools/call", () => {
     expect(result?.isError).toBe(true);
   });
 
+  it("lists the corridor tools and refuses to delete a non-corridor", async () => {
+    const client = await connectTestClient();
+    const { result } = await client.send("tools/list");
+    const tools = (result?.tools ?? []) as Array<{
+      name: string;
+      inputSchema: { type?: string };
+    }>;
+    for (const name of ["list-corridors", "manage-corridors"])
+      expect(tools.find((t) => t.name === name)?.inputSchema.type).toBe(
+        "object",
+      );
+    const call = await client.send("tools/call", {
+      name: "manage-corridors",
+      arguments: { action: "delete", route_id: "cabcdefghij" },
+    });
+    expect(call.result?.isError).toBe(true);
+    const [block] = (call.result?.content ?? []) as Array<{ text: string }>;
+    expect(block?.text).toMatch(/^❌/);
+  });
+
   it("answers an unknown tool without breaking the session", async () => {
     const client = await connectTestClient();
 
@@ -638,6 +658,7 @@ describe("2025-era requests (claude.ai's MCP Apps loader)", () => {
     "update-gear",
     "stitch-route",
     "amend-route",
+    "manage-corridors",
   ];
 
   it("lists every tool but the writes", async () => {

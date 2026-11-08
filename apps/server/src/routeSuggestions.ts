@@ -319,7 +319,7 @@ export function coarseVia(place: Place, text: string): string | null {
   return null;
 }
 
-async function resolveStart(
+export async function resolveStart(
   text: string | undefined,
   env: SuggestionEnv,
   clusters: StartCluster[],
