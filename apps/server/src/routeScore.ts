@@ -182,7 +182,7 @@ export function scoreLosses(
 export const KNOWN_RUNS = 3;
 /** A run's sample this close (and heading the same line) follows it. */
 export const KNOWN_MATCH_M = 20;
-const KNOWN_STEP_M = 10;
+export const KNOWN_STEP_M = 10;
 /** Headings within 30 degrees, either way. */
 const KNOWN_HEADING_COS = Math.cos(Math.PI / 6);
 
@@ -208,21 +208,30 @@ function samples(track: RouteTrack, origin: LatLng): Sample[] {
   });
 }
 
+/** Samples of a track: (length / 10 m) + 1, none under 10 m. */
+const sampleCount = (track: RouteTrack) => {
+  const n = Math.floor(trackLength(track) / KNOWN_STEP_M);
+  return n < 1 ? 0 : n + 1;
+};
+
 /**
- * Known lines from the loaded runs, built once per call: the returned
- * function gives a track's share (0-1) of 10 m samples that at least
- * KNOWN_RUNS distinct runs follow (a sample within KNOWN_MATCH_M heading
- * within 30 degrees either way). The 20 m radius keeps a road from matching
- * the footpath beside it; the heading separates crossing streets, and a line
- * run the other way is the same line.
+ * A line index over `tracks`, built once: for each 10 m sample of a track,
+ * the indices of `tracks` with a sample within KNOWN_MATCH_M heading within
+ * 30 degrees either way (a line run the other way is the same line; the
+ * heading keeps a road from matching a crossing street). `cap` stops
+ * counting a sample's followers at that many.
  */
-export function knownLines(runs: RunStart[]): (track: RouteTrack) => number {
-  const origin = runs[0]?.track.coordinates[0];
-  if (!origin || runs.length < KNOWN_RUNS) return () => 0;
+export function lineFollowers(
+  tracks: RouteTrack[],
+): (track: RouteTrack, cap?: number) => Set<number>[] {
+  const origin = tracks[0]?.coordinates[0];
+  if (!origin)
+    return (track) =>
+      Array.from({ length: sampleCount(track) }, () => new Set<number>());
   const cell = (v: number) => Math.floor(v / KNOWN_MATCH_M);
   const grid = new Map<string, Array<Sample & { run: number }>>();
-  runs.forEach((run, r) => {
-    for (const s of samples(run.track, origin)) {
+  tracks.forEach((t, r) => {
+    for (const s of samples(t, origin)) {
       const key = `${cell(s.x)},${cell(s.y)}`;
       const item = { ...s, run: r };
       const list = grid.get(key);
@@ -230,25 +239,39 @@ export function knownLines(runs: RunStart[]): (track: RouteTrack) => number {
       else grid.set(key, [item]);
     }
   });
-  return (track) => {
-    const own = samples(track, origin);
-    if (own.length === 0) return 0;
-    let known = 0;
-    for (const s of own) {
+  return (track, cap = Number.POSITIVE_INFINITY) =>
+    samples(track, origin).map((s) => {
       const seen = new Set<number>();
       for (let i = cell(s.x) - 1; i <= cell(s.x) + 1; i++)
         for (let j = cell(s.y) - 1; j <= cell(s.y) + 1; j++)
           for (const o of grid.get(`${i},${j}`) ?? [])
             if (
-              seen.size < KNOWN_RUNS &&
+              seen.size < cap &&
               !seen.has(o.run) &&
               Math.hypot(o.x - s.x, o.y - s.y) <= KNOWN_MATCH_M &&
               Math.abs(o.dx * s.dx + o.dy * s.dy) >= KNOWN_HEADING_COS
             )
               seen.add(o.run);
-      if (seen.size >= KNOWN_RUNS) known++;
-    }
-    return known / own.length;
+      return seen;
+    });
+}
+
+/** Per 10 m sample of a track: whether KNOWN_RUNS distinct loaded runs follow it. */
+export function knownSamples(
+  runs: RunStart[],
+): (track: RouteTrack) => boolean[] {
+  const followers = lineFollowers(runs.map((r) => r.track));
+  return (track) =>
+    followers(track, KNOWN_RUNS).map((s) => s.size >= KNOWN_RUNS);
+}
+
+/** Known lines from the loaded runs, built once per call: a track's share (0-1) of known samples ({@link knownSamples}). */
+export function knownLines(runs: RunStart[]): (track: RouteTrack) => number {
+  if (runs.length < KNOWN_RUNS) return () => 0;
+  const known = knownSamples(runs);
+  return (track) => {
+    const flags = known(track);
+    return flags.length === 0 ? 0 : flags.filter(Boolean).length / flags.length;
   };
 }
 
