@@ -4,9 +4,12 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   appendVersion,
+  CorridorNotFoundError,
   createRoute,
+  deleteCorridor,
   isRouteId,
   latestVersion,
+  listCorridors,
   makeRouteId,
   RouteNotFoundError,
   RouteVersionConflictError,
@@ -14,6 +17,7 @@ import {
   routeStoreInfo,
   type StoredSegment,
   sweepRoutes,
+  updateCorridor,
   versionSegments,
 } from "./routeStore";
 
@@ -258,5 +262,93 @@ describe("sweepRoutes", () => {
 
   it("finds nothing to sweep before any route is stored", async () => {
     expect(await sweepRoutes()).toBe(0);
+  });
+});
+
+describe("corridors", () => {
+  async function corridor(key: string, name: string, one_way?: boolean) {
+    return createRoute({
+      route_id: makeRouteId("corridor", key),
+      name,
+      kind: "corridor",
+      ...(one_way === undefined ? {} : { one_way }),
+      next_id: 2,
+      segments: [segment("g1")],
+      change: "Saved as corridor",
+      warnings: [],
+    });
+  }
+
+  it("gives corridor ids the c prefix", () => {
+    const id = makeRouteId("corridor", "x");
+    expect(id).toMatch(/^c[a-z2-7]{10}$/);
+    expect(isRouteId(id)).toBe(true);
+  });
+
+  it("never sweeps a corridor", async () => {
+    const { route } = await corridor("a", "Bay Run");
+    const old = new Date(Date.now() - 400 * 24 * 60 * 60 * 1000);
+    await utimes(join(dir, "routes", `${route.route_id}.json`), old, old);
+    expect(await sweepRoutes()).toBe(0);
+    expect(await readRoute(route.route_id)).not.toBeNull();
+  });
+
+  it("lists corridors by name and skips other routes", async () => {
+    await corridor("b", "Glebe foreshore");
+    await corridor("a", "Bay Run", true);
+    await createRoute({
+      route_id: makeRouteId("draft", "d"),
+      name: "Draft",
+      kind: "draft",
+      next_id: 2,
+      segments: [segment("g1")],
+      change: "x",
+      warnings: [],
+    });
+    const list = await listCorridors();
+    expect(list.map((c) => [c.name, c.one_way])).toEqual([
+      ["Bay Run", true],
+      ["Glebe foreshore", undefined],
+    ]);
+  });
+
+  it("lists nothing when no route was ever stored", async () => {
+    expect(await listCorridors()).toEqual([]);
+  });
+
+  it("renames and sets one-way without a new version", async () => {
+    const { route } = await corridor("a", "Bay Run");
+    const updated = await updateCorridor(route.route_id, {
+      name: "The Bay Run",
+      one_way: true,
+    });
+    expect(updated.name).toBe("The Bay Run");
+    expect(updated.one_way).toBe(true);
+    expect(updated.versions).toEqual(route.versions);
+    expect((await readRoute(route.route_id))?.name).toBe("The Bay Run");
+  });
+
+  it("deletes a corridor and refuses other ids", async () => {
+    const { route } = await corridor("a", "Bay Run");
+    await deleteCorridor(route.route_id);
+    expect(await readRoute(route.route_id)).toBeNull();
+    await expect(deleteCorridor(route.route_id)).rejects.toBeInstanceOf(
+      CorridorNotFoundError,
+    );
+    const { route: draft } = await createRoute({
+      route_id: makeRouteId("draft", "d"),
+      name: "Draft",
+      kind: "draft",
+      next_id: 2,
+      segments: [segment("g1")],
+      change: "x",
+      warnings: [],
+    });
+    await expect(deleteCorridor(draft.route_id)).rejects.toBeInstanceOf(
+      CorridorNotFoundError,
+    );
+    await expect(
+      updateCorridor(draft.route_id, { name: "x" }),
+    ).rejects.toBeInstanceOf(CorridorNotFoundError);
   });
 });

@@ -13,6 +13,7 @@
  * Retention: a file not read or changed for ROUTE_RETENTION_DAYS (a
  * suggested route: {@link SUGGESTION_RETENTION_DAYS}) is deleted by
  * {@link sweepRoutes}, which runs at most every {@link SWEEP_INTERVAL_MS}.
+ * A saved corridor is never swept; it stays until {@link deleteCorridor}.
  * A read sets the file's modified time, so the file's own time is the last
  * use.
  */
@@ -40,11 +41,17 @@ const SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const FORMAT = 1;
 
-/** "r" for a route stitch-route made, "s" for one suggest-run-route generated, then 10 base32 characters. */
-const ROUTE_ID_RE = /^[rs][a-z2-7]{10}$/;
+/** "r" stitch-route, "s" suggest-run-route, "c" a saved corridor, then 10 base32 characters. */
+const ROUTE_ID_RE = /^[rsc][a-z2-7]{10}$/;
 const BASE32 = "abcdefghijklmnopqrstuvwxyz234567";
 
-export type RouteKind = "draft" | "suggestion";
+export type RouteKind = "draft" | "suggestion" | "corridor";
+
+const ID_PREFIX: Record<RouteKind, string> = {
+  draft: "r",
+  suggestion: "s",
+  corridor: "c",
+};
 
 /** Where a segment's geometry came from. */
 export type SegmentSource =
@@ -127,6 +134,8 @@ export interface StoredRoute {
   route_id: string;
   name: string;
   kind: RouteKind;
+  /** Corridors only: runs only in its stored direction. Absent is false. */
+  one_way?: boolean;
   created_at: string;
   /** Next free number for segment and via ids. */
   next_id: number;
@@ -153,7 +162,7 @@ export function makeRouteId(kind: RouteKind, key?: string): string {
   const bytes = key
     ? createHash("sha256").update(key).digest()
     : randomBytes(10);
-  return `${kind === "draft" ? "r" : "s"}${base32(bytes)}`;
+  return `${ID_PREFIX[kind]}${base32(bytes)}`;
 }
 
 function routesDir(): string {
@@ -263,6 +272,7 @@ export async function createRoute(input: {
   route_id: string;
   name: string;
   kind: RouteKind;
+  one_way?: boolean;
   next_id: number;
   segments: StoredSegment[];
   change: string;
@@ -278,6 +288,7 @@ export async function createRoute(input: {
       route_id: input.route_id,
       name: input.name,
       kind: input.kind,
+      ...(input.one_way !== undefined ? { one_way: input.one_way } : {}),
       created_at: now,
       next_id: input.next_id,
       segments: compactSegments(input.segments),
@@ -425,6 +436,7 @@ export async function sweepRoutes(now = Date.now()): Promise<number> {
     const temp = name.endsWith(".tmp");
     const id = name.replace(/\.json$/, "");
     if (!temp && (!name.endsWith(".json") || !isRouteId(id))) continue;
+    if (!temp && id.startsWith("c")) continue; // Corridors are kept until deleted.
     try {
       const { mtimeMs } = await stat(path);
       const cutoff = temp
@@ -441,4 +453,63 @@ export async function sweepRoutes(now = Date.now()): Promise<number> {
     }
   }
   return deleted;
+}
+
+/** No saved corridor has this id. */
+export class CorridorNotFoundError extends Error {
+  constructor(readonly routeId: string) {
+    super(`No saved corridor has id ${routeId}; list-corridors lists them.`);
+    this.name = "CorridorNotFoundError";
+  }
+}
+
+/** Every saved corridor, by name. */
+export async function listCorridors(): Promise<StoredRoute[]> {
+  let names: string[];
+  try {
+    names = await readdir(routesDir());
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+  const out: StoredRoute[] = [];
+  for (const name of names) {
+    const id = name.replace(/\.json$/, "");
+    if (!name.endsWith(".json") || !id.startsWith("c") || !isRouteId(id))
+      continue;
+    const route = await readRoute(id);
+    if (route?.kind === "corridor") out.push(route);
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+async function readCorridor(routeId: string): Promise<StoredRoute> {
+  const route = await readRoute(routeId);
+  if (route?.kind !== "corridor") throw new CorridorNotFoundError(routeId);
+  return route;
+}
+
+/** A corridor's name or one-way flag: labels of the same line, so no version is added. */
+export async function updateCorridor(
+  routeId: string,
+  change: { name?: string; one_way?: boolean },
+): Promise<StoredRoute> {
+  return withLock(routeId, async () => {
+    const route = await readCorridor(routeId);
+    const updated: StoredRoute = {
+      ...route,
+      ...(change.name !== undefined ? { name: change.name } : {}),
+      ...(change.one_way !== undefined ? { one_way: change.one_way } : {}),
+    };
+    await writeRoute(updated);
+    return updated;
+  });
+}
+
+/** Deletes a saved corridor; any other route is refused. */
+export async function deleteCorridor(routeId: string): Promise<void> {
+  await withLock(routeId, async () => {
+    await readCorridor(routeId);
+    await unlink(routePath(routeId));
+  });
 }
