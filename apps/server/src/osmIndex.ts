@@ -12,7 +12,7 @@ import { DatabaseSync } from "node:sqlite";
 import { getDataDir, getHomeStart, getOsmExtractUrl } from "./config";
 import { type LatLng, type RouteTrack } from "./mapAnchors";
 
-export const OSM_SCHEMA_VERSION = "2";
+export const OSM_SCHEMA_VERSION = "3";
 export const OSM_INDEX_RADIUS_KM = 25;
 export const OSM_STALE_DAYS = 14;
 /** Crossing and signal nodes this close are one stop: a junction's signal node and its crossings. */
@@ -277,6 +277,35 @@ function insideSegments(x: number, y: number, segments: Segment[]): boolean {
   return inside;
 }
 
+/** A park row's outline as segments; NaN pairs separate its lines. */
+function parkSegments(
+  lines: Uint8Array,
+  project: (p: LatLng) => [number, number],
+): Segment[] {
+  const flat = new Float64Array(lines.slice().buffer);
+  const segments: Segment[] = [];
+  let line: Array<[number, number]> = [];
+  for (let i = 0; i <= flat.length; i += 2) {
+    if (i === flat.length || Number.isNaN(flat[i]!)) {
+      segments.push(...segmentsOf(line));
+      line = [];
+    } else line.push(project([flat[i]!, flat[i + 1]!]));
+  }
+  return segments;
+}
+
+function parkReaches(
+  segments: Segment[],
+  x: number,
+  y: number,
+  radius_m: number,
+): boolean {
+  return (
+    insideSegments(x, y, segments) ||
+    segments.some((s) => distanceToSegment(x, y, s) <= radius_m)
+  );
+}
+
 /**
  * A test for "in, or within `radius_m` of, the smallest park named `name`
  * (any case) that `point` is in or within `radius_m` of"; null without an
@@ -309,18 +338,9 @@ export function parkReach(
   ];
   for (const row of rows) {
     if (row.name.toLowerCase() !== name.toLowerCase()) continue;
-    const flat = new Float64Array(row.lines.slice().buffer);
-    const segments: Segment[] = [];
-    let line: Array<[number, number]> = [];
-    for (let i = 0; i <= flat.length; i += 2) {
-      if (i === flat.length || Number.isNaN(flat[i]!)) {
-        segments.push(...segmentsOf(line));
-        line = [];
-      } else line.push(project([flat[i]!, flat[i + 1]!]));
-    }
+    const segments = parkSegments(row.lines, project);
     const reaches = (x: number, y: number) =>
-      insideSegments(x, y, segments) ||
-      segments.some((s) => distanceToSegment(x, y, s) <= radius_m);
+      parkReaches(segments, x, y, radius_m);
     if (!reaches(0, 0)) continue;
     let minX = Infinity;
     let maxX = -Infinity;
@@ -345,6 +365,66 @@ export function parkReach(
     };
   }
   return null;
+}
+
+export const PLACE_PARK_M = 50;
+export const PLACE_WAY_M = 60;
+
+/** A name for where `point` is: the smallest park it is in or beside, else the nearest named way; null with no index or nothing near. */
+export function placeNear(point: LatLng): string | null {
+  const index = openIndex();
+  if (!index || !inArea(index.coverage, point[0], point[1])) return null;
+  const [lat0, lng0] = point;
+  const kx = Math.cos((lat0 * Math.PI) / 180) * METERS_PER_DEG_LNG_AT_EQUATOR;
+  const project = ([lat, lng]: LatLng): [number, number] => [
+    (lng - lng0) * kx,
+    (lat - lat0) * METERS_PER_DEG_LAT,
+  ];
+  const padLat = PLACE_PARK_M / METERS_PER_DEG_LAT;
+  const padLng = PLACE_PARK_M / kx;
+  const parks = index.db
+    .prepare(
+      "SELECT name, lines FROM parks WHERE south <= ? AND north >= ? AND west <= ? AND east >= ? ORDER BY (north - south) * (east - west)",
+    )
+    .all(lat0 + padLat, lat0 - padLat, lng0 + padLng, lng0 - padLng) as Array<{
+    name: string;
+    lines: Uint8Array;
+  }>;
+  for (const park of parks)
+    if (parkReaches(parkSegments(park.lines, project), 0, 0, PLACE_PARK_M))
+      return park.name;
+
+  const wayPadLat = PLACE_WAY_M / METERS_PER_DEG_LAT;
+  const wayPadLng = PLACE_WAY_M / kx;
+  const cells = JSON.stringify(
+    cellsIn(
+      lat0 - wayPadLat,
+      lng0 - wayPadLng,
+      lat0 + wayPadLat,
+      lng0 + wayPadLng,
+    ),
+  );
+  const ways = index.db
+    .prepare(
+      "SELECT DISTINCT w.name, w.points FROM named_way_cells c JOIN named_ways w ON w.id = c.way_id WHERE c.cell IN (SELECT value FROM json_each(?))",
+    )
+    .all(cells) as Array<{ name: string; points: Uint8Array }>;
+  let best: string | null = null;
+  let bestM = PLACE_WAY_M;
+  for (const way of ways) {
+    const flat = new Float64Array(way.points.slice().buffer);
+    const points: Array<[number, number]> = [];
+    for (let i = 0; i < flat.length; i += 2)
+      points.push(project([flat[i]!, flat[i + 1]!]));
+    for (const s of segmentsOf(points)) {
+      const d = distanceToSegment(0, 0, s);
+      if (d <= bestM) {
+        bestM = d;
+        best = way.name;
+      }
+    }
+  }
+  return best;
 }
 
 const round = (v: number, places: number) =>

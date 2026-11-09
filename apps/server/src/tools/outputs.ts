@@ -2019,6 +2019,18 @@ export const CorridorListOutputSchema = z.object({
         start_lng: z.number(),
         end_lat: z.number(),
         end_lng: z.number(),
+        start_place: z
+          .string()
+          .nullable()
+          .describe(
+            "A park or street at this end; null when the OpenStreetMap index has nothing near",
+          ),
+        end_place: z
+          .string()
+          .nullable()
+          .describe(
+            "A park or street at this end; null when the OpenStreetMap index has nothing near",
+          ),
       }),
     )
     .describe("Stretches the runs repeat that are not saved"),

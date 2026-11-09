@@ -10,7 +10,7 @@ import {
   sundayStreams,
 } from "../__fixtures__/sundayRoute";
 import { geocode } from "../orsClient";
-import { routeOsmStats } from "../osmIndex";
+import { placeNear, routeOsmStats } from "../osmIndex";
 import { readActivityTrack } from "../routeBuilder";
 import { loadRunStarts, type RunStart } from "../startClusters";
 import { listCorridorsTool } from "./listCorridors";
@@ -20,6 +20,7 @@ import { CorridorListOutputSchema } from "./outputs";
 vi.mock("../osmIndex", async (o) => ({
   ...(await o<typeof import("../osmIndex")>()),
   routeOsmStats: vi.fn(),
+  placeNear: vi.fn(),
 }));
 vi.mock("../intervalsClient", async (o) => ({
   ...(await o<typeof import("../intervalsClient")>()),
@@ -41,6 +42,7 @@ beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "list-corridors-"));
   vi.stubEnv("DATA_DIR", dir);
   vi.mocked(routeOsmStats).mockReset().mockReturnValue(null);
+  vi.mocked(placeNear).mockReset().mockReturnValue(null);
   const { track } = await readActivityTrack("key", SUNDAY_ID);
   const runs: RunStart[] = ["2026-11-01", "2026-10-25", "2026-10-18"].map(
     (date, i) => ({
@@ -154,6 +156,27 @@ describe("list-corridors", () => {
     expect(text).toMatch(/^1\. /m);
     expect(text).toContain("overlaps Glebe foreshore");
     for (const f of out.found) expect(f.overlaps_found).not.toContain(f.n);
+  });
+
+  it("names the ends of a found stretch when the index knows them", async () => {
+    const quiet = await listCorridorsTool.execute({ near }, "key");
+    expect(
+      (quiet as { content: { text: string }[] }).content[0]!.text,
+    ).not.toMatch(/ to /);
+    vi.mocked(placeNear)
+      .mockReturnValueOnce("Jubilee Park")
+      .mockReturnValueOnce("Bridge Road");
+    const result = await listCorridorsTool.execute({ near }, "key");
+    const out = CorridorListOutputSchema.parse(
+      (result as { structuredContent: unknown }).structuredContent,
+    );
+    expect(out.found[0]).toMatchObject({
+      start_place: "Jubilee Park",
+      end_place: "Bridge Road",
+    });
+    expect(
+      (result as { content: { text: string }[] }).content[0]!.text,
+    ).toContain(": Jubilee Park to Bridge Road");
   });
 
   describe("through", () => {

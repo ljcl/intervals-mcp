@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { foundStretches, linesOverlap, runsThrough } from "../corridors";
+import { placeNear } from "../osmIndex";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
 import { versionTrack } from "../routeBuilder";
 import { lineFollowers } from "../routeScore";
@@ -142,6 +143,8 @@ export const listCorridorsTool = {
         start_lng: round3(f.start[1]),
         end_lat: round3(f.end[0]),
         end_lng: round3(f.end[1]),
+        start_place: placeNear(f.start),
+        end_place: placeNear(f.end),
       }));
       const warnings =
         skipped > 0
@@ -173,7 +176,7 @@ export const listCorridorsTool = {
         lines.push("Found in your runs, not saved:");
         for (const f of found)
           lines.push(
-            `${f.n}. ${f.name} ${f.date} (${f.activity_id}) km ${f.from_km.toFixed(2)}-${f.to_km.toFixed(2)} (${(f.length_m / 1000).toFixed(1)} km, ${f.runs} runs)${overlapText(f)}`,
+            `${f.n}. ${f.name} ${f.date} (${f.activity_id}) km ${f.from_km.toFixed(2)}-${f.to_km.toFixed(2)} (${(f.length_m / 1000).toFixed(1)} km, ${f.runs} runs)${f.start_place && f.end_place ? `: ${f.start_place} to ${f.end_place}` : ""}${overlapText(f)}`,
           );
         lines.push(
           "Save one with manage-corridors add (activity id and km range).",
