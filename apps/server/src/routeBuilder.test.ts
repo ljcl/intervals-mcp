@@ -11,7 +11,7 @@ import {
   sundayPointAt,
   sundayStreams,
 } from "./__fixtures__/sundayRoute";
-import { haversineMeters } from "./mapAnchors";
+import { haversineMeters, type RouteTrack } from "./mapAnchors";
 import * as ors from "./orsClient";
 import * as osmIndex from "./osmIndex";
 import { routeOsmStats } from "./osmIndex";
@@ -29,6 +29,7 @@ import {
   summarizeRoute,
   versionTrack,
 } from "./routeBuilder";
+import { trackClimb } from "./routeCandidates";
 import {
   concatTracks,
   moveToward,
@@ -786,31 +787,50 @@ describe("layout and suggestions", () => {
       fakeOrsRoute("k", {
         waypoints: [sundayPointAt(a), sundayPointAt(b)],
       }).track;
-    const [t1, t2, t3] = [mk(0, 1), mk(1, 2), mk(2, 3)];
-    const track = concatTracks([t1, t2, t3]);
+    // A steady rise, so every section has climb.
+    const rising = (t: RouteTrack): RouteTrack => ({
+      ...t,
+      altitude: t.distance.map((d) => d * 0.03),
+    });
+    const [t1, t2, t3, t4] = [mk(0, 1), mk(1, 2), mk(2, 3), mk(3, 4)].map(
+      rising,
+    );
+    const track = concatTracks([t1!, t2!, t3!, t4!]);
+    const climb = [t1!, t2!, t3!, t4!].reduce(
+      (sum, t) => sum + trackClimb(t.altitude),
+      0,
+    );
     const id = await storeSuggestedRoute({
       name: "Stitched",
       track,
-      climb_m: 5,
+      climb_m: climb,
       path_share: null,
       shape: "point-to-point",
       sections: [
         {
           kind: "run",
-          track: t1,
+          track: t1!,
           run: { id: "a1", name: "Sat run" },
           from_m: 1234,
           to_m: 500,
         },
         {
           kind: "corridor",
-          track: t2,
+          track: t2!,
           route_id: "cabcdefghij",
           version: 2,
           name: "Foreshore",
           reversed: false,
         },
-        { kind: "fill", track: t3 },
+        { kind: "fill", track: t3! },
+        {
+          kind: "corridor",
+          track: t4!,
+          route_id: "cabcdefghij",
+          version: 2,
+          name: "Foreshore",
+          reversed: true,
+        },
       ],
     });
     const { route, version } = await loadRouteVersion(id);
@@ -819,7 +839,20 @@ describe("layout and suggestions", () => {
       ["activity", "Sat run km 1.23-0.50"],
       ["route", "Foreshore"],
       ["generated", "Routed join"],
+      ["route", "Foreshore"],
     ]);
+    const back = segments[3]!.source;
+    if (back.type !== "route") throw new Error("expected a route source");
+    expect(back.from_km).toBeGreaterThan(back.to_km);
+    expect(back.to_km).toBe(0);
+    const summary = summarizeRoute(route, version);
+    expect(summary.climb_m).toBeGreaterThan(0);
+    expect(segments.reduce((sum, s) => sum + (s.climb_m ?? 0), 0)).toBeCloseTo(
+      climb,
+      6,
+    );
+    expect(summary.climb_m).toBeCloseTo(climb, 0);
+    expect(Math.abs(summary.distance_m - trackLength(track))).toBeLessThan(4);
     expect(segments[0]!.source).toMatchObject({
       type: "activity",
       activity_id: "a1",
@@ -835,6 +868,66 @@ describe("layout and suggestions", () => {
     expect(segments[2]!.source).toEqual({ type: "ors", purpose: "route" });
     const laid = layoutSegments(segments).track;
     expect(Math.abs(trackLength(laid) - trackLength(track))).toBeLessThan(3);
+  });
+
+  it("clips and reverses a stored corridor section by its own km", async () => {
+    const t = fakeOrsRoute("k", {
+      waypoints: [sundayPointAt(5), sundayPointAt(7)],
+    }).track;
+    const length = trackLength(t);
+    const L = Math.round(length) / 1000;
+    const id = await storeSuggestedRoute({
+      name: "Reversed corridor",
+      track: t,
+      climb_m: 0,
+      path_share: null,
+      shape: "point-to-point",
+      sections: [
+        {
+          kind: "corridor",
+          track: t,
+          route_id: "cabcdefghij",
+          version: 1,
+          name: "Foreshore",
+          reversed: true,
+        },
+      ],
+    });
+    const trimmed = await amendRoute(
+      "key",
+      {
+        route_id: id,
+        base_version: 1,
+        operations: [{ op: "trim", from_km: 0.1, to_km: 0.3 }],
+      },
+      ENV,
+    );
+    const pieces = versionSegments(trimmed.route, trimmed.version).filter(
+      (s) => s.source.type === "route",
+    );
+    const kms = pieces.map((s) =>
+      s.source.type === "route" ? [s.source.from_km, s.source.to_km] : [],
+    );
+    // The first 100 m runs L to L - 0.1; the part after 300 m runs L - 0.3 to 0.
+    expect(kms[0]![0]).toBeCloseTo(L, 2);
+    expect(kms[0]![1]).toBeCloseTo(L - 0.1, 2);
+    expect(kms.at(-1)![0]).toBeCloseTo(L - 0.3, 2);
+    expect(kms.at(-1)![1]).toBeCloseTo(0, 2);
+    const reversed = await amendRoute(
+      "key",
+      {
+        route_id: id,
+        base_version: 2,
+        operations: [{ op: "reverse" }],
+      },
+      ENV,
+    );
+    const [first] = versionSegments(reversed.route, reversed.version);
+    // The last piece, L - 0.3 down to 0, now runs 0 up to L - 0.3.
+    expect(first!.source).toMatchObject({ type: "route", from_km: 0 });
+    expect(
+      first!.source.type === "route" ? first!.source.to_km : -1,
+    ).toBeCloseTo(L - 0.3, 2);
   });
 
   it("stores a suggested route once, by its track", async () => {

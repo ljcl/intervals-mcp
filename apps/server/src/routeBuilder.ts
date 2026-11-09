@@ -675,9 +675,9 @@ async function outAndBackSegment(
   };
 }
 
-/** The activity km at `offset` metres into a segment cut from it. */
-function activityKmAt(
-  source: Extract<SegmentSource, { type: "activity" }>,
+/** The source km at `offset` metres into a segment cut from it, running from `from_km` to `to_km` (either way). */
+function sourceKmAt(
+  source: Extract<SegmentSource, { type: "activity" | "route" }>,
   length: number,
   offset: number,
 ): number {
@@ -702,8 +702,8 @@ function clipSegment(
   if (source.type === "activity") {
     source = {
       ...source,
-      from_km: activityKmAt(source, length, from),
-      to_km: activityKmAt(source, length, to),
+      from_km: sourceKmAt(source, length, from),
+      to_km: sourceKmAt(source, length, to),
     };
     label = label.replace(
       / km [\d.]+-[\d.]+$/,
@@ -712,8 +712,8 @@ function clipSegment(
   } else if (source.type === "route") {
     source = {
       ...source,
-      from_km: source.from_km + from / 1000,
-      to_km: source.from_km + to / 1000,
+      from_km: sourceKmAt(source, length, from),
+      to_km: sourceKmAt(source, length, to),
     };
   }
   const climb =
