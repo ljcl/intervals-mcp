@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.18.0](https://github.com/ljcl/intervals-mcp/compare/v2.17.1...v2.18.0) (2026-11-08)
+
+
+### Features
+
+* **routes:** saved running corridors as vias and stitch pieces ([#450](https://github.com/ljcl/intervals-mcp/issues/450)) ([a0f2cc0](https://github.com/ljcl/intervals-mcp/commit/a0f2cc0327a8d3a08dd981e1000638c62db3ca30))
+* **routes:** score route suggestions 0-100 and order by score ([#448](https://github.com/ljcl/intervals-mcp/issues/448)) ([f11ee35](https://github.com/ljcl/intervals-mcp/commit/f11ee350b08789a4783ceeff6409c0689b04b557))
+
+
+### Bug Fixes
+
+* **deps:** bump @modelcontextprotocol/ext-apps from 2.0.3 to 2.0.4 in the production-minor-patch group ([#453](https://github.com/ljcl/intervals-mcp/issues/453)) ([b4c8a7f](https://github.com/ljcl/intervals-mcp/commit/b4c8a7f938e3b9690eca64732db55c5f578864e9))
+
 ## [2.17.1](https://github.com/ljcl/intervals-mcp/compare/v2.17.0...v2.17.1) (2026-11-08)
 
 
