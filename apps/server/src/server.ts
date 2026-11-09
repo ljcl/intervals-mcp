@@ -1847,9 +1847,14 @@ async function handleViewRouteMap(
     {
       kind: "route map",
       footer: "get-activity",
-      twin: isPaceActivity(data.activityType ?? "")
-        ? getHillAnalysisTool.name
-        : undefined,
+      // A part of a run gets the footer: the twin has no km range, so its
+      // climbs would be the whole run's.
+      twin:
+        isPaceActivity(data.activityType ?? "") &&
+        args.from_km === undefined &&
+        args.to_km === undefined
+          ? getHillAnalysisTool.name
+          : undefined,
       keepLines: true,
     },
     args,

@@ -2807,4 +2807,30 @@ describe("view tools and hosts that cannot render MCP Apps (#77)", () => {
     expect(text).not.toContain("GAP");
     expect(text.endsWith("For detail, call get-activity.")).toBe(true);
   });
+
+  it("gives a part of a run no whole-run climbs, and a whole run its hill twin", async () => {
+    const text = async (args: Record<string, unknown>) => {
+      mockedIntervalsActivity.mockResolvedValue(run());
+      mockedIntervalsStreams.mockImplementation(async () => [
+        ...runStreams(),
+        {
+          type: "latlng",
+          data: Array.from({ length: 701 }, (_, i) => -33.9 + i * 1e-5),
+          data2: Array.from({ length: 701 }, (_, i) => 151.2 + i * 1e-5),
+        },
+        {
+          type: "altitude",
+          data: Array.from({ length: 701 }, (_, i) => 10 + i * 0.06),
+        },
+      ]);
+      const result = await dispatchToolCall("view-route-map", args, {
+        client: { rendersApps: false },
+      });
+      return result.content[0]?.text ?? "";
+    };
+    const part = await text({ id: "123", from_km: 0.5, to_km: 1.5 });
+    expect(part).not.toContain("descents");
+    expect(part.endsWith("For detail, call get-activity.")).toBe(true);
+    expect(await text({ id: "123" })).toContain("descents");
+  });
 });
