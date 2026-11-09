@@ -109,7 +109,8 @@ planned it plans a route anyway. A planned run already done (its event is
 paired with an activity) is left out, so the next one is planned, and a
 warning names the runs left out. A cheap argument error (a place name with no
 `ORS_API_KEY`, point-to-point with no `end`) is reported before the history
-load.
+load. When only 1 or 2 routes come back, `routes_note` says why (null
+otherwise).
 
 - Start: `start`, else `HOME_START`, else the most frequent start of recent
   GPS runs (`startClusters.ts`: starts within 300 m cluster, recent runs
@@ -179,7 +180,8 @@ load.
   each join over 30 m, at most 4 calls a run from the same 12 (a 404 drops
   that route only). The two combinations nearest the distance are built.
   They take the 25% rule with generated routes, are scored like the others,
-  are stored like them, and go out as
+  are stored like them (as their sections: a run, a corridor and a routed
+  join each, from 0 m; an out-and-back is one section), and go out as
   `kind: "generated"` with `history_share` set: a new kind would break hosts
   holding the old tool list. Without ORS_API_KEY, one needing no join is
   still offered.
@@ -250,7 +252,15 @@ unique name and may be one-way. `suggest-run-route` and
 `view-route-suggestions` take its name as a via, `stitch-route` a `corridor`
 segment and `amend-route` a `corridor` replacement. `list-corridors` also
 finds stretches of 1 km or more that recent runs share and that no corridor
-covers. The rules live in `corridors.ts`.
+covers; each is numbered (`n`), names its ends from the OSM index
+(`start_place`, `end_place`) and lists the found stretches and corridors it
+overlaps by 20% or more (`overlaps_found`, `overlaps_corridors`).
+`list-corridors` with `through` (one or two places) lists recent runs that
+pass them instead, each with the km range to save. `manage-corridors` `add`
+refuses a place no run comes close to, naming how near the closest comes,
+and a pair of places given in the wrong order; a saved entry from a run
+carries `from_run`. `recut` replaces a corridor's line from a new run range
+and keeps its id, name and one-way flag. The rules live in `corridors.ts`.
 
 ### Stored routes
 

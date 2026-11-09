@@ -121,8 +121,9 @@ breaking them has shipped bugs — do not work around them locally.
   `routeOsmStats` in `osmIndex.ts` (built by `osmIndexBuild.ts`, refreshed by
   `osmIndexRefresh.ts`). Route score, its weights, known lines and route
   notes: `routeScore.ts`; retraced metres: `retracedM` in `routeGeometry.ts`.
-  Corridor names, found stretches, covering runs and a corridor via's
-  direction: `corridors.ts`; the line-follower index under known lines:
+  Place names at a point: `placeNear` in `osmIndex.ts`. Corridor names,
+  found stretches, covering runs, runs through a place, overlaps and a
+  corridor via's direction combinations: `corridors.ts`; the line-follower index under known lines:
   `lineFollowers` in `routeScore.ts`.
   Weather, dew point and the weather note: `activityWeather.ts` (FIT
   humidity read by `fitWeather.ts`). Two runs' per-km difference and its

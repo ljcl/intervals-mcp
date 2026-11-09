@@ -487,9 +487,15 @@ measures each candidate against the local OpenStreetMap index.
 index is `lineFollowers`, its 10 m samples `knownSamples`) and the per-route
 notes (`routeNotes`). `corridors.ts` is the one home of corridor names
 (`corridorKey`, `matchCorridor`), the stretches found in history
-(`foundStretches`), covering runs (`coveringRuns`), a corridor via's
-directions to try (`directionCombos`) and whether a run follows one
-(`followsCorridor`). `retracedM` (`routeGeometry.ts`) follows `findSpurs`'s
+(`foundStretches`), covering runs (`coveringRuns`), runs passing one or two
+places (`runsThrough`), found stretches or corridors on the same line
+(`linesOverlap`), a corridor via's directions to try (`directionCombos`: up
+to 4, shortest straight-line joins first, each built and scored) and whether
+a run follows one (`followsCorridor`). A stitched suggestion is stored as its
+sections (run, corridor, routed join), except an out-and-back, which is one
+section. `placeNear` (`osmIndex.ts`) names a point: the smallest park it is in
+or within 50 m of, else the nearest named way within 60 m; it names the ends
+of found stretches. `retracedM` (`routeGeometry.ts`) follows `findSpurs`'s
 rule. `routeSuggestions.ts` scores every candidate after the OSM measures,
 orders them by score, and composes them for `suggest-run-route` and the
 `route-map` suggestion mode (`buildSuggestionsMapData`), so the text and the
@@ -719,7 +725,9 @@ built and checked times), `ways` (class, ring flag, points as a Float64
 blob), `way_cells` and `stop_nodes`, both keyed by 0.01 degree cell (about
 1 km), and `parks` (name, bounding box, outline ways as one Float64 blob
 with NaN pairs between ways; `parkReach` tests inside by even-odd over the
-segments, so the ways need no joining). A missing file is looked for again on every read, so a build that
+segments, so the ways need no joining). Schema 3 adds `named_ways` (every
+named way, its points as a Float64 blob) and `named_way_cells`, which
+`placeNear` reads. A missing file is looked for again on every read, so a build that
 lands is seen without a restart.
 
 `osmIndexRefresh.ts` runs at startup and daily, outside any tool call. It
