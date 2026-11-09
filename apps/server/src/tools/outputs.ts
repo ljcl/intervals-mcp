@@ -1805,6 +1805,10 @@ export const RouteSuggestionsOutputSchema = z.object({
       shape: z.enum(["loop", "out-and-back", "point-to-point"]),
       terrain: z.enum(["any", "flat", "rolling", "hilly", "hill-repeats"]),
       candidates: z.array(RouteCandidateSchema),
+      routes_note: z
+        .string()
+        .nullable()
+        .describe("Why fewer than 3 routes came back; null otherwise"),
       warnings: z.array(z.string()),
     }),
   ),

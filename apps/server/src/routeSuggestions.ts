@@ -150,6 +150,7 @@ export interface RunSuggestion {
   shape: RouteShape;
   terrain: Terrain;
   candidates: RouteCandidate[];
+  routes_note: string | null;
   warnings: string[];
 }
 
@@ -230,6 +231,42 @@ export function orsProblem(error: unknown): string {
 
 const km = (meters: number) => (meters / 1000).toFixed(1);
 
+const oneOff = (date: string, distanceKm: number): PlannedRun => ({
+  event_id: null,
+  date,
+  name: "Run",
+  description: null,
+  distance_m: distanceKm * 1000,
+  distance_source: "argument",
+});
+
+const count = (n: number, one: string, many: string) =>
+  `${n} ${n === 1 ? one : many}`;
+
+/** Why fewer than MAX_ROUTES came back; null at none or the full number. */
+export function routesNote(
+  candidates: RouteCandidate[],
+  corridorVia: boolean,
+): string | null {
+  const n = candidates.length;
+  if (n === 0 || n >= MAX_ROUTES) return null;
+  const only = `Only ${count(n, "route", "routes")}`;
+  if (corridorVia)
+    return `${only}: a corridor is run as saved, so no new route is generated; only past runs along it and routes joined from your runs count.`;
+  const of = (k: RouteCandidate["kind"]) =>
+    candidates.filter((c) => c.kind === k).length;
+  const parts = [
+    of("past") ? `${count(of("past"), "past run", "past runs")} fit` : "",
+    of("stitched")
+      ? `${count(of("stitched"), "route", "routes")} built from your runs`
+      : "",
+    of("generated")
+      ? `${count(of("generated"), "new route was", "new routes were")} kept`
+      : "",
+  ].filter(Boolean);
+  return `${only}: ${parts.join(", ")}.`;
+}
+
 /**
  * The planned runs to route: outdoor runs in the window that are not done
  * yet. intervals.icu pairs a completed workout with its activity
@@ -270,19 +307,7 @@ async function plannedRuns(
           : `No planned run from ${oldest} to ${newest}. Pass distanceKm to plan a route anyway.`,
       );
     }
-    return {
-      runs: [
-        {
-          event_id: null,
-          date: oldest,
-          name: "Run",
-          description: null,
-          distance_m: distanceKm * 1000,
-          distance_source: "argument",
-        },
-      ],
-      done,
-    };
+    return { runs: [oneOff(oldest, distanceKm)], done };
   }
   return {
     runs: chosen.map((e) => ({
@@ -688,12 +713,15 @@ export async function loadRouteSuggestions(
   ]) {
     if (text && !parseLatLng(text)) requireGeocoder(text, env);
   }
-  const { runs: planned, done } = await plannedRuns(
-    apiKey,
-    args.date ?? env.today,
-    args.days ?? 1,
-    args.distanceKm,
-  );
+  const { runs: planned, done } =
+    args.distanceKm !== undefined && !args.date && (args.days ?? 1) <= 1
+      ? { runs: [oneOff(env.today, args.distanceKm)], done: [] }
+      : await plannedRuns(
+          apiKey,
+          args.date ?? env.today,
+          args.days ?? 1,
+          args.distanceKm,
+        );
 
   const { runs: history, skipped } = await loadRunStarts(
     apiKey,
@@ -1023,6 +1051,7 @@ export async function loadRouteSuggestions(
       shape,
       terrain,
       candidates,
+      routes_note: routesNote(candidates, corridorLegs.length > 0),
       warnings: runWarnings,
     });
   }

@@ -77,6 +77,7 @@ const suggestions: RouteSuggestions = {
           track,
         },
       ],
+      routes_note: null,
       warnings: [
         "No new route was generated: OpenRouteService's rate limit was reached.",
       ],
@@ -131,6 +132,22 @@ describe("suggest-run-route", () => {
     expect(past!.history_share).toBeNull();
     expect(generated!.history_share).toBeNull();
     expect(generated!.route_id).toMatch(/^s[a-z2-7]{10}$/);
+  });
+
+  it("prints the routes note after the candidates", async () => {
+    vi.mocked(loadRouteSuggestions).mockResolvedValue({
+      ...suggestions,
+      runs: [{ ...suggestions.runs[0]!, routes_note: "Only 2 routes: why." }],
+    });
+    const result = await suggestRunRouteTool.execute(
+      suggestRunRouteTool.inputSchema.parse({}),
+      "k",
+    );
+    expect(result.content[0]!.text).toContain("Note: Only 2 routes: why.");
+    expect(
+      RouteSuggestionsOutputSchema.parse(result.structuredContent).runs[0]!
+        .routes_note,
+    ).toBe("Only 2 routes: why.");
   });
 
   it("publishes the score, its lost factors, and notes", async () => {

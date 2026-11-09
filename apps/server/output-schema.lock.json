@@ -1418,6 +1418,7 @@
       "runs[].end: null object",
       "runs[].event_id: null number",
       "runs[].name: string",
+      "runs[].routes_note: null string",
       "runs[].shape: =\"loop\" =\"out-and-back\" =\"point-to-point\" string",
       "runs[].start.history_runs: integer",
       "runs[].start.label: string",

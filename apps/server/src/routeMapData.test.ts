@@ -489,6 +489,7 @@ describe("suggestion payloads", () => {
           track,
         },
       ],
+      routes_note: null,
       warnings: [],
     };
     const data = buildSuggestionsMapData(run, []);

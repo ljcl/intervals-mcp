@@ -1909,6 +1909,7 @@ describe("route map handlers", () => {
               },
             },
           ],
+          routes_note: null,
           warnings: [],
         },
       ],
