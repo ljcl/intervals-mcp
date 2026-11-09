@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { handledRateLimit } from "../__fixtures__";
+import { loadRouteVersion } from "../routeBuilder";
+import { versionSegments } from "../routeStore";
 import {
   loadRouteSuggestions,
   RouteSuggestionError,
@@ -235,6 +237,62 @@ describe("suggest-run-route", () => {
       history_share: 0.91,
     });
     expect(parsed.runs[0]!.candidates[0]!.route_id).toMatch(/^s[a-z2-7]{10}$/);
+  });
+
+  it("stores a stitched route's sections but never sends them", async () => {
+    const base = suggestions.runs[0]!;
+    const cand = base.candidates[1]!;
+    // A track of its own: a suggestion's id comes from its track.
+    const track = {
+      coordinates: [
+        [37.7, -122.4],
+        [37.71, -122.4],
+      ] as [number, number][],
+      distance: [0, 1100],
+      altitude: [5, 9],
+    };
+    vi.mocked(loadRouteSuggestions).mockResolvedValue({
+      ...suggestions,
+      runs: [
+        {
+          ...base,
+          candidates: [
+            {
+              ...cand,
+              track,
+              kind: "stitched",
+              name: "From your runs",
+              path_share: null,
+              history_share: 0.5,
+              hill: null,
+              summary: "From 1 past run: Glebe loop 2026-10-30",
+              sections: [
+                {
+                  kind: "run",
+                  track,
+                  run: { id: "i1", name: "Glebe loop" },
+                  from_m: 0,
+                  to_m: 800,
+                },
+                { kind: "fill", track },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    const result = await suggestRunRouteTool.execute(
+      suggestRunRouteTool.inputSchema.parse({}),
+      "k",
+    );
+    expect(JSON.stringify(result.structuredContent)).not.toContain("sections");
+    const id = RouteSuggestionsOutputSchema.parse(result.structuredContent)
+      .runs[0]!.candidates[0]!.route_id!;
+    const { route, version } = await loadRouteVersion(id);
+    expect(versionSegments(route, version).map((s) => s.kind)).toEqual([
+      "activity",
+      "generated",
+    ]);
   });
 
   it("takes one via place or an ordered list, and lists them in order", async () => {

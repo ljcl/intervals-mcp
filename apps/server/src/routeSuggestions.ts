@@ -797,6 +797,7 @@ export async function loadRouteSuggestions(
         exit: track.coordinates.at(-1)!,
       };
       const { route_id, name } = r.route;
+      const version = latestVersion(r.route).version;
       via.push({
         label: name,
         point: leg.entry,
@@ -807,7 +808,9 @@ export async function loadRouteSuggestions(
       corridorAt.set(targets.length + 1, {
         track,
         runs: [],
-        corridor: { route_id, name },
+        from_m: 0,
+        to_m: 0,
+        corridor: { route_id, name, version, reversed: reversed[i]! },
       });
       targets.push(leg.entry, leg.exit);
     });

@@ -161,6 +161,7 @@ export async function storeGeneratedCandidates(
             climb_m: c.climb_m,
             path_share: c.path_share,
             shape: c.shape,
+            sections: c.sections,
           }),
         );
       } catch {

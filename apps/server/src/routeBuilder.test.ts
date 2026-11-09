@@ -29,7 +29,12 @@ import {
   summarizeRoute,
   versionTrack,
 } from "./routeBuilder";
-import { moveToward, trackDiff, trackLength } from "./routeGeometry";
+import {
+  concatTracks,
+  moveToward,
+  trackDiff,
+  trackLength,
+} from "./routeGeometry";
 import {
   deleteCorridor,
   findVersion,
@@ -774,6 +779,62 @@ describe("layout and suggestions", () => {
     expect(spans.at(-1)!.end_m).toBeCloseTo(trackLength(track), 3);
     for (let i = 1; i < spans.length; i++)
       expect(spans[i]!.start_m).toBeGreaterThanOrEqual(spans[i - 1]!.end_m);
+  });
+
+  it("stores a stitched suggestion as one segment per section", async () => {
+    const mk = (a: number, b: number) =>
+      fakeOrsRoute("k", {
+        waypoints: [sundayPointAt(a), sundayPointAt(b)],
+      }).track;
+    const [t1, t2, t3] = [mk(0, 1), mk(1, 2), mk(2, 3)];
+    const track = concatTracks([t1, t2, t3]);
+    const id = await storeSuggestedRoute({
+      name: "Stitched",
+      track,
+      climb_m: 5,
+      path_share: null,
+      shape: "point-to-point",
+      sections: [
+        {
+          kind: "run",
+          track: t1,
+          run: { id: "a1", name: "Sat run" },
+          from_m: 1234,
+          to_m: 500,
+        },
+        {
+          kind: "corridor",
+          track: t2,
+          route_id: "cabcdefghij",
+          version: 2,
+          name: "Foreshore",
+          reversed: false,
+        },
+        { kind: "fill", track: t3 },
+      ],
+    });
+    const { route, version } = await loadRouteVersion(id);
+    const segments = versionSegments(route, version);
+    expect(segments.map((s) => [s.kind, s.label])).toEqual([
+      ["activity", "Sat run km 1.23-0.50"],
+      ["route", "Foreshore"],
+      ["generated", "Routed join"],
+    ]);
+    expect(segments[0]!.source).toMatchObject({
+      type: "activity",
+      activity_id: "a1",
+      from_km: 1.234,
+      to_km: 0.5,
+    });
+    expect(segments[1]!.source).toMatchObject({
+      type: "route",
+      route_id: "cabcdefghij",
+      version: 2,
+      from_km: 0,
+    });
+    expect(segments[2]!.source).toEqual({ type: "ors", purpose: "route" });
+    const laid = layoutSegments(segments).track;
+    expect(Math.abs(trackLength(laid) - trackLength(track))).toBeLessThan(3);
   });
 
   it("stores a suggested route once, by its track", async () => {

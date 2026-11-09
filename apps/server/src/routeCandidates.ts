@@ -19,6 +19,25 @@ import { daysBetween } from "./utils/localDate";
 export type RouteShape = "loop" | "out-and-back" | "point-to-point";
 export type Terrain = "any" | "flat" | "rolling" | "hilly" | "hill-repeats";
 
+/** A piece of a stitched route, in running order. */
+export type RouteSection =
+  | {
+      kind: "run";
+      track: RouteTrack;
+      run: { id: string; name: string };
+      from_m: number;
+      to_m: number;
+    }
+  | {
+      kind: "corridor";
+      track: RouteTrack;
+      route_id: string;
+      version: number;
+      name: string;
+      reversed: boolean;
+    }
+  | { kind: "fill"; track: RouteTrack };
+
 export interface RouteCandidate {
   /** "stitched": sections of past runs joined by ORS (historyLegs.ts); sent as "generated" on the wire. */
   kind: "past" | "generated" | "stitched";
@@ -56,6 +75,8 @@ export interface RouteCandidate {
   hill: RepeatHill | null;
   summary: string;
   track: RouteTrack;
+  /** Stitched routes only: the pieces of `track` in order; left out for an out-and-back. */
+  sections?: RouteSection[];
 }
 
 export const PAST_DISTANCE_TOLERANCE = 0.1;
