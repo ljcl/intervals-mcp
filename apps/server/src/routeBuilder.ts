@@ -50,6 +50,8 @@ import {
   thereAndBack,
   trackClimb,
   VIA_MATCH_M,
+  type Via,
+  viaPoint,
 } from "./routeCandidates";
 import {
   concatTracks,
@@ -90,6 +92,7 @@ import {
   orsProblem,
   RouteSuggestionError,
   resolvePlace,
+  viaTarget,
 } from "./routeSuggestions";
 
 /** Sections one stitch-route call may join. */
@@ -933,18 +936,25 @@ export async function addCorridor(
       );
     const { track } = await loadActivity(ctx, source.id);
     ctx.focus = track.coordinates[0] ?? null;
-    const at = async (text: string) => (await viaPlace(ctx, text)).point;
-    const [from, to] = [await at(source.from), await at(source.to)];
+    const { id, from: fromText, to: toText } = source;
+    const at = async (text: string) => viaTarget(await viaPlace(ctx, text));
+    const [from, to] = [await at(fromText), await at(toText)];
+    const miss = (text: string, via: Via) => {
+      const { distance_m, offset_m } = nearestOnTrack(track, viaPoint(via));
+      return `Activity ${id} does not pass "${text}" (within ${VIA_MATCH_M} m): it comes closest at km ${km(distance_m)}, ${Math.round(offset_m)} m away.`;
+    };
     const into = passes(track, from)[0];
-    if (into === undefined)
+    if (into === undefined) throw new RouteBuildError(miss(fromText, from));
+    const toPasses = passes(track, to);
+    const out = toPasses.find((d) => d > into);
+    if (out === undefined) {
+      const before = toPasses[0];
       throw new RouteBuildError(
-        `Activity ${source.id} does not pass "${source.from}" (within ${VIA_MATCH_M} m).`,
+        before === undefined
+          ? miss(toText, to)
+          : `Activity ${id} passes "${toText}" at km ${km(before)}, before "${fromText}" at km ${km(into)}: it ran them the other way, so swap from and to.`,
       );
-    const out = passes(track, to).find((d) => d > into);
-    if (out === undefined)
-      throw new RouteBuildError(
-        `Activity ${source.id} does not pass "${source.to}" after "${source.from}".`,
-      );
+    }
     source = {
       type: "activity",
       id: source.id,

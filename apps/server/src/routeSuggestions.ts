@@ -309,6 +309,12 @@ function requireGeocoder(
   );
 }
 
+/** A looked-up park is passed anywhere near it, not only near its point. */
+export function viaTarget(p: Place): Via {
+  const reaches = p.match && parkReach(p.point, p.match.name, VIA_MATCH_M);
+  return reaches ? { point: p.point, reaches } : p.point;
+}
+
 /** A place from "lat,lng" or a name looked up near `focus`; a lookup failure is a {@link RouteSuggestionError}. */
 export async function resolvePlace(
   text: string,
@@ -757,9 +763,7 @@ export async function loadRouteSuggestions(
     if (r.place) {
       const p = r.place;
       via.push(p);
-      // A looked-up park is passed anywhere near it, not only near its point.
-      const reaches = p.match && parkReach(p.point, p.match.name, VIA_MATCH_M);
-      targets.push(reaches ? { point: p.point, reaches } : p.point);
+      targets.push(viaTarget(p));
       return;
     }
     const track = reversed[i] ? reverseTrack(r.track) : r.track;

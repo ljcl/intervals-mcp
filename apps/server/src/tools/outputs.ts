@@ -1956,6 +1956,16 @@ const CorridorEntrySchema = z.object({
     .nullable()
     .describe("Share on paths, 0-1; null outside the OpenStreetMap index"),
   one_way: z.boolean(),
+  from_run: z
+    .object({
+      activity_id: z.string(),
+      from_km: z.number(),
+      to_km: z.number(),
+    })
+    .nullable()
+    .describe(
+      "The past run and its km this corridor was cut from; null when it spans several sections",
+    ),
   runs: z
     .number()
     .int()

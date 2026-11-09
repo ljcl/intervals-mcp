@@ -13,6 +13,7 @@ import {
 } from "./__fixtures__/sundayRoute";
 import { haversineMeters } from "./mapAnchors";
 import * as ors from "./orsClient";
+import * as osmIndex from "./osmIndex";
 import { routeOsmStats } from "./osmIndex";
 import {
   addCorridor,
@@ -28,7 +29,7 @@ import {
   summarizeRoute,
   versionTrack,
 } from "./routeBuilder";
-import { trackDiff, trackLength } from "./routeGeometry";
+import { moveToward, trackDiff, trackLength } from "./routeGeometry";
 import {
   deleteCorridor,
   findVersion,
@@ -1189,6 +1190,48 @@ describe("addCorridor", () => {
     await expect(
       run("Nowhere", sunday({ from: latLng(1), to: "-33.0,150.0" })),
     ).rejects.toThrow(/does not pass "-33.0,150.0"/);
+  });
+
+  it("says how near the run comes to a place it misses", async () => {
+    const off = moveToward(sundayPointAt(1.5), 0, 300).join(",");
+    const err = await run("Near", sunday({ from: latLng(1), to: off })).catch(
+      (e) => e as Error,
+    );
+    const m = /comes closest at km (\d+\.\d+), (\d+) m away/.exec(
+      (err as Error).message,
+    );
+    expect(m).not.toBeNull();
+    expect(Number(m![1])).toBeCloseTo(1.5, 0);
+    expect(Math.abs(Number(m![2]) - 300)).toBeLessThan(10);
+  });
+
+  it("says to swap from and to when the run passes them the other way", async () => {
+    await expect(
+      run("Backwards", sunday({ from: latLng(3), to: latLng(1) })),
+    ).rejects.toThrow(
+      /passes ".*" at km 1\.\d+, before ".*" at km 3\.\d+: it ran them the other way, so swap from and to\./,
+    );
+  });
+
+  it("counts a park as passed anywhere within its reach", async () => {
+    vi.mocked(ors.geocode).mockResolvedValue({
+      label: "Big Park, Sydney",
+      point: [-33.0, 150.0],
+      match: { query: "Big Park", name: "Big Park", type: "venue" },
+    });
+    const spy = vi
+      .spyOn(osmIndex, "parkReach")
+      .mockReturnValue((p) => haversineMeters(p, sundayPointAt(3)) < 100);
+    try {
+      const { route } = await run(
+        "Park",
+        sunday({ from: latLng(1), to: "Big Park" }),
+      );
+      const [segment] = versionSegments(route, findVersion(route, 1)!);
+      expect((segment!.source as { to_km: number }).to_km).toBeCloseTo(3, 0);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("copies a range of a stored route", async () => {

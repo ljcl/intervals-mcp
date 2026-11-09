@@ -53,12 +53,21 @@ describe("manage-corridors", () => {
       first as {
         structuredContent: {
           created: boolean;
-          corridor: { route_id: string; runs: null };
+          corridor: {
+            route_id: string;
+            runs: null;
+            from_run: unknown;
+          };
         };
       }
     ).structuredContent;
     expect(out.created).toBe(true);
     expect(out.corridor.runs).toBeNull();
+    expect(out.corridor.from_run).toEqual({
+      activity_id: SUNDAY_ID,
+      from_km: 1,
+      to_km: 3,
+    });
     CorridorResultOutputSchema.parse(
       (first as { structuredContent: unknown }).structuredContent,
     );
