@@ -19,6 +19,27 @@ describe("parseToolArgs", () => {
     });
   });
 
+  it("keeps a run part's km range when numbers, drops it otherwise", () => {
+    expect(parseToolArgs({ id: "i1", from_km: 6, to_km: 2 })).toEqual({
+      id: "i1",
+      from_km: 6,
+      to_km: 2,
+    });
+    expect(parseToolArgs({ id: "i1", from_km: -1, to_km: "3" })).toEqual({
+      id: "i1",
+    });
+    expect(parseToolArgs({ id: "i1", from_km: Number.NaN })).toEqual({
+      id: "i1",
+    });
+  });
+
+  it("ignores the km range on the route_id path", () => {
+    expect(parseToolArgs({ route_id: "rabcdefghij", from_km: 1 })).toEqual({
+      kind: "route",
+      route_id: "rabcdefghij",
+    });
+  });
+
   it("drops waypoints that are not a list", () => {
     expect(parseToolArgs({ id: "i1", waypoints: "none" })).toEqual({
       id: "i1",

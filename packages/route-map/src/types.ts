@@ -177,6 +177,9 @@ export interface WaypointArg {
 export interface ToolArgs {
   id: string;
   waypoints?: WaypointArg[];
+  /** Draw only this part of the run (km, either order). */
+  from_km?: number;
+  to_km?: number;
 }
 
 /** Payload of the app-only `get-route-suggestions-data` tool: one planned run's candidates. */

@@ -1,5 +1,10 @@
 import { ID_ARG_KEYS, toolArgId, toolArgRecord } from "@intervals-mcp/ui";
-import { type AppArgs, type RouteArgs, type WaypointArg } from "./types";
+import {
+  type AppArgs,
+  type RouteArgs,
+  type ToolArgs,
+  type WaypointArg,
+} from "./types";
 
 const SUGGESTION_KEYS = [
   "date",
@@ -55,7 +60,13 @@ export function parseToolArgs(raw: unknown): AppArgs {
       if (args[key] !== undefined) passed[key] = args[key];
     return { kind: "suggestion", args: passed };
   }
-  return Array.isArray(args.waypoints)
-    ? { id, waypoints: args.waypoints as WaypointArg[] }
-    : { id };
+  const out: ToolArgs = { id };
+  if (Array.isArray(args.waypoints))
+    out.waypoints = args.waypoints as WaypointArg[];
+  for (const key of ["from_km", "to_km"] as const) {
+    const value = args[key];
+    if (typeof value === "number" && Number.isFinite(value) && value >= 0)
+      out[key] = value;
+  }
+  return out;
 }
