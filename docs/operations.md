@@ -442,17 +442,20 @@ again. A failure is retried at the next daily check, and a change to
   counts and rank without them. Use a larger extract.
 - `OpenStreetMap index: refresh failed (<reason>); keeping the index with
   data from <date>. Trying again in a day.` (or `no index yet`). The old
-  index keeps serving.
+  index keeps serving, except when the failed download was for a schema
+  change: there is no index until the next daily try.
 - `OpenStreetMap index: off (...)` at startup when either setting is
   missing.
 
 To force a rebuild, delete `index.sqlite` and restart. A change to
-`OSM_EXTRACT_URL` or `HOME_START` rebuilds on its own, and so does a
-release that changes the index's schema (as the ones adding park outlines and
-named ways did). Schema 3 (named ways, for place names) rebuilds on the next
-refresh after the upgrade; until it finishes the index is missing, so route
-measures are absent and suggestions warn. The file grows with the named ways. Route suggestions
-warn when the last successful check is over 14 days old.
+`OSM_EXTRACT_URL` or `HOME_START` rebuilds on its own, and so does a release
+that changes the index's schema (as the ones adding park outlines and named ways
+did). Schema 3 (named ways, for place names) rebuilds on the next refresh after
+the upgrade; until it finishes the index is missing, so route measures are
+absent and suggestions warn. In that window park-edge reach also falls back to
+the point, so add, recut and through can miss a park. The file grows with the
+named ways. Route suggestions warn when the last successful check is over 14
+days old.
 
 ## Docker notes
 

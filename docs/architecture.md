@@ -111,10 +111,9 @@ never per-tool.
   data, through `intervalsClient.ts`) and `orsApi` (OpenRouteService routing
   and geocoding, `orsClient.ts`, paced 1.5 s apart for its 40 a minute, 10 s
   cap, one retry). Do not add a client for data intervals.icu holds.
-- A request with `readOnly: true` is a POST that changes nothing (ORS
-  routing, which takes a body): it retries and caches
-  like a GET, and its body is part of the cache key. Without the flag a POST
-  is a write and is never retried.
+- A request with `readOnly: true` is a POST that changes nothing (ORS routing,
+  which takes a body): it retries and caches like a GET, and its body is part of
+  the cache key. Without the flag a POST is a write and is never retried.
 - An error body goes into `HttpError.message` only as a one-line summary
   (`summarizeErrorBody`): an HTML page becomes its `<title>`, anything else
   is cut to 200 characters. `handleApiError` uses the same summary. The raw

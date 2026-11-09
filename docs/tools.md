@@ -255,8 +255,8 @@ finds stretches of 1 km or more that recent runs share and that no corridor
 covers; each is numbered (`n`), names its ends from the OSM index
 (`start_place`, `end_place`) and lists the found stretches and corridors it
 overlaps by 20% or more (`overlaps_found`, `overlaps_corridors`).
-`list-corridors` with `through` (one or two places) lists recent runs that
-pass them instead, each with the km range to save. `manage-corridors` `add`
+`list-corridors` with `through` (one or two places) adds the recent runs that
+pass them, each with the km range to save. `manage-corridors` `add`
 refuses a place no run comes close to, naming how near the closest comes,
 and a pair of places given in the wrong order; a saved entry from a run
 carries `from_run`. `recut` replaces a corridor's line from a new run range

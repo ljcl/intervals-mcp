@@ -31,7 +31,7 @@ the office?" or "what do I keep running that I have not named?". Each
 corridor gives its route_id, length, share on paths, how many recent runs
 follow it and how far it is from the search point.
 
-through (one or two places) lists recent runs through them instead.
+through (one or two places) lists recent runs through them as well.
 
 Then: manage-corridors add to save a found stretch (its activity_id and km
 range), rename, set one-way or delete. view-route-map with a corridor's

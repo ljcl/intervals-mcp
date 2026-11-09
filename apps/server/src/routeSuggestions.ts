@@ -559,7 +559,7 @@ function generatedCandidate(
  * Via routes along the athlete's own lines (historyLegs.ts): sections of
  * past runs between the anchors, ORS filling only what no run covers. A fill
  * is missable (a 404 drops that route only); the run's fills spend at most
- * `fillCalls`, and one any two routes share is routed once (`routed`, kept for the whole call).
+ * `fillCalls` (per direction plan when a corridor via is in play), and one any two routes share is routed once (`routed`, kept for the whole call).
  * Without a key, only a route needing no fill is made.
  */
 async function stitch(
@@ -858,7 +858,9 @@ export async function loadRouteSuggestions(
     let candidates: RouteCandidate[] = [];
     const planOf = new Map<RouteCandidate, DirectionPlan>();
     if (run.distance_m <= 0) {
-      runWarnings.push("This planned run has no distance; pass distanceKm.");
+      runWarnings.push(
+        "This planned run has no distance; pass date and distanceKm.",
+      );
     } else {
       // A past run through a corridor's ends counts only when it runs the corridor between them.
       const matched: RouteCandidate[] = [];
