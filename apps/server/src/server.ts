@@ -1681,10 +1681,17 @@ async function loadRouteMapData(
   const activityId = String(args.id);
   if (part) {
     const { name, track } = await readActivityTrack(token, activityId);
-    const [a, b] = [
+    const length = trackLength(track) / 1000;
+    const [askedA, askedB] = [
       (args.from_km as number | undefined) ?? 0,
-      (args.to_km as number | undefined) ?? trackLength(track) / 1000,
+      (args.to_km as number | undefined) ?? length,
     ].sort((x, y) => x - y) as [number, number];
+    const a = Math.min(askedA, length);
+    const b = Math.min(askedB, length);
+    if ((b - a) * 1000 < 1)
+      throw new RouteBuildError(
+        `The run is ${length.toFixed(2)} km long, so km ${askedA} to ${askedB} is empty.`,
+      );
     const piece = sliceTrack(track, a * 1000, b * 1000);
     const data = buildTrackMapData(
       activityId,

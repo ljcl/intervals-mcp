@@ -1849,6 +1849,38 @@ describe("route map handlers", () => {
     }
   });
 
+  it("refuses an empty km range on a run map", async () => {
+    for (const range of [
+      { from_km: 50, to_km: 60 },
+      { from_km: 3, to_km: 3 },
+    ]) {
+      mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
+      mockedIntervalsStreams.mockResolvedValueOnce(routeMapStreamsFixture());
+      const result = await dispatchToolCall("get-route-map-data", {
+        id: "123",
+        ...range,
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toMatch(
+        /The run is \d+\.\d\d km long, so km .* is empty\./,
+      );
+    }
+  });
+
+  it("clamps to_km past the end to the finish, in the title too", async () => {
+    mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
+    mockedIntervalsStreams.mockResolvedValueOnce(routeMapStreamsFixture());
+    const result = await dispatchToolCall("get-route-map-data", {
+      id: "123",
+      from_km: 2,
+      to_km: 30,
+    });
+    expect(result.isError).toBeUndefined();
+    const data = JSON.parse(result.content[0]?.text ?? "{}");
+    expect(data.name).not.toContain("30.00");
+    expect(data.name).toMatch(/ km 2\.00-\d+\.\d\d$/);
+  });
+
   it("refuses from_km with route_id", async () => {
     const result = await dispatchToolCall("view-route-map", {
       route_id: "rabcdefghij",
