@@ -178,24 +178,25 @@ export interface CorridorLeg {
   exit: LatLng;
 }
 
+export const MAX_DIRECTION_TRIES = 4;
+
 /**
- * Per via, whether its corridor is run reversed (false for a point): of
- * every allowed combination (a one-way corridor only stored), the one with
- * the shortest straight lines between the anchors outside corridors. On a
- * tie, stored on the earliest via where they differ. `end` is the start for
- * a loop, the end for point-to-point, null for an out-and-back.
+ * Directions to try for the vias, per combination whether each corridor is
+ * run reversed: cheapest straight-line joins first (a tie keeps stored on the
+ * earliest via that differs), a one-way corridor stored only. A straight line
+ * cannot see water or a dead end, so the engine builds several and the score
+ * chooses.
  */
-export function chooseDirections(
+export function directionCombos(
   start: LatLng,
   items: Array<LatLng | { track: RouteTrack; one_way: boolean }>,
   end: LatLng | null,
-): boolean[] {
+  max = MAX_DIRECTION_TRIES,
+): boolean[][] {
   const corridors = items.flatMap((item, i) =>
     Array.isArray(item) ? [] : [i],
   );
-  let best: boolean[] = items.map(() => false);
-  let bestCost = Number.POSITIVE_INFINITY;
-  // The earliest corridor is the highest bit, so a smaller mask is stored on the earliest via that differs.
+  const combos: Array<{ reversed: boolean[]; cost: number }> = [];
   for (let mask = 0; mask < 2 ** corridors.length; mask++) {
     const reversed = items.map(() => false);
     corridors.forEach((index, k) => {
@@ -222,12 +223,13 @@ export function chooseDirections(
       at = exit;
     });
     if (end) cost += haversineMeters(at, end);
-    if (cost < bestCost) {
-      bestCost = cost;
-      best = reversed;
-    }
+    combos.push({ reversed, cost });
   }
-  return best;
+  // sort is stable, so a tie keeps the smaller mask.
+  return combos
+    .sort((x, y) => x.cost - y.cost)
+    .slice(0, max)
+    .map((c) => c.reversed);
 }
 
 /** Whether a track passes the corridor's entry, then its exit, and runs its line between (sameLine, 30 m). */

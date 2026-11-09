@@ -488,7 +488,7 @@ index is `lineFollowers`, its 10 m samples `knownSamples`) and the per-route
 notes (`routeNotes`). `corridors.ts` is the one home of corridor names
 (`corridorKey`, `matchCorridor`), the stretches found in history
 (`foundStretches`), covering runs (`coveringRuns`), a corridor via's
-direction (`chooseDirections`) and whether a run follows one
+directions to try (`directionCombos`) and whether a run follows one
 (`followsCorridor`). `retracedM` (`routeGeometry.ts`) follows `findSpurs`'s
 rule. `routeSuggestions.ts` scores every candidate after the OSM measures,
 orders them by score, and composes them for `suggest-run-route` and the

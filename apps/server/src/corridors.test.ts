@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  chooseDirections,
   corridorHint,
   corridorKey,
   coveringRuns,
+  directionCombos,
   followsCorridor,
   foundStretches,
   knownStretches,
@@ -131,29 +131,46 @@ describe("coveringRuns", () => {
   });
 });
 
-describe("chooseDirections", () => {
+describe("directionCombos", () => {
   // A corridor east from 1 km to 2 km; point-to-point runs between 0 and 3 km.
   const corridor = { track: line(1000, 2000), one_way: false };
   const west: LatLng = [LAT, LNG];
   const east: LatLng = [LAT, LNG + 3000 * DLNG];
-  it("enters at the nearer end", () => {
+  it("enters at the nearer end first", () => {
     // Stored: 1,000 + 1,000 m of joins; reversed: 2,000 + 2,000 m.
-    expect(chooseDirections(west, [corridor], east)).toEqual([false]);
-    expect(chooseDirections(east, [corridor], west)).toEqual([true]);
+    expect(directionCombos(west, [corridor], east)[0]).toEqual([false]);
+    expect(directionCombos(east, [corridor], west)[0]).toEqual([true]);
   });
-  it("keeps a one-way corridor stored", () => {
+  it("keeps a one-way corridor stored, as the only combination", () => {
     expect(
-      chooseDirections(east, [{ ...corridor, one_way: true }], west),
-    ).toEqual([false]);
+      directionCombos(east, [{ ...corridor, one_way: true }], west),
+    ).toEqual([[false]]);
   });
-  it("keeps stored on a tie", () => {
+  it("returns both ways of a two-way corridor, stored first on a tie", () => {
     // A loop with one corridor: both ways add the same two joins.
-    expect(chooseDirections(west, [corridor], west)).toEqual([false]);
+    expect(directionCombos(west, [corridor], west)).toEqual([[false], [true]]);
   });
   it("leaves points alone", () => {
-    expect(chooseDirections(west, [east, corridor], west)).toEqual([
+    expect(directionCombos(west, [east, corridor], west)[0]).toEqual([
       false,
       true,
+    ]);
+  });
+  it("caps at max", () => {
+    expect(directionCombos(west, [corridor], east, 1)).toEqual([[false]]);
+  });
+  it("returns the cheapest 4 of 3 corridors, by cost", () => {
+    // Reversing a corridor adds twice its length: 600, 1,000 or 1,400 m, and the first two together 1,600 m.
+    const items = [
+      { track: line(1000, 1300), one_way: false },
+      { track: line(2000, 2500), one_way: false },
+      { track: line(3000, 3700), one_way: false },
+    ];
+    expect(directionCombos(west, items, [LAT, LNG + 4000 * DLNG])).toEqual([
+      [false, false, false],
+      [true, false, false],
+      [false, true, false],
+      [false, false, true],
     ]);
   });
 });

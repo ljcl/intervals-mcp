@@ -150,8 +150,9 @@ load.
   far, generation stopped, or no detour came closer). `via` stays the
   first via point in the structured result; `via_points` has them all in
   order. A via whose words match a saved corridor's name (`matchCorridor`,
-  `corridors.ts`) runs the whole corridor, in the direction with the shorter
-  joins (a one-way corridor only as stored); it needs no geocode and no
+  `corridors.ts`) runs the whole corridor; up to 4 direction combinations
+  are built, shortest straight-line joins first, and the score picks (a
+  one-way corridor only as stored); it needs no geocode and no
   `ORS_API_KEY`, no generated route is made while a via is a corridor, a
   stitched route runs it as a fixed section, and `via_points[].corridor`
   names it. A via refused as too coarse names a corridor whose name holds
