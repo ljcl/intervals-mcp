@@ -2001,6 +2001,7 @@ export const CorridorListOutputSchema = z.object({
   found: z
     .array(
       z.object({
+        n: z.number().int().describe("1-based position in this list"),
         activity_id: z.string(),
         name: z.string(),
         date: z.string(),
@@ -2008,6 +2009,12 @@ export const CorridorListOutputSchema = z.object({
         to_km: z.number(),
         length_m: z.number().int(),
         runs: z.number().int(),
+        overlaps_found: z
+          .array(z.number().int())
+          .describe("The n of other found stretches this shares a line with"),
+        overlaps_corridors: z
+          .array(z.string())
+          .describe("Names of saved corridors this shares a line with"),
         start_lat: z.number(),
         start_lng: z.number(),
         end_lat: z.number(),

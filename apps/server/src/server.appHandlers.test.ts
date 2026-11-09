@@ -1829,6 +1829,37 @@ describe("route map handlers", () => {
     expect(text).not.toContain("No GPS track");
   });
 
+  it("view-route-map draws only from_km to to_km of a run, either order", async () => {
+    for (const range of [
+      { from_km: 2, to_km: 6 },
+      { from_km: 6, to_km: 2 },
+    ]) {
+      mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
+      mockedIntervalsStreams.mockResolvedValueOnce(routeMapStreamsFixture());
+      const result = await dispatchToolCall("get-route-map-data", {
+        id: "123",
+        ...range,
+      });
+      expect(result.isError).toBeUndefined();
+      const data = JSON.parse(result.content[0]?.text ?? "{}");
+      expect(data.name).toMatch(/ km 2\.00-6\.00$/);
+      expect(data.source).toBe("activity");
+      expect(data.distance).toBeGreaterThan(3500);
+      expect(data.distance).toBeLessThan(4500);
+    }
+  });
+
+  it("refuses from_km with route_id", async () => {
+    const result = await dispatchToolCall("view-route-map", {
+      route_id: "rabcdefghij",
+      from_km: 1,
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain(
+      "from_km and to_km go with id, for part of a past run.",
+    );
+  });
+
   it("view-route-map flags an empty track on a host that renders the map", async () => {
     mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
     // intervals.icu returns no streams for a manual/no-GPS entry.

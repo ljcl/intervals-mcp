@@ -130,6 +130,32 @@ describe("list-corridors", () => {
     );
   });
 
+  it("numbers found stretches and names what they overlap", async () => {
+    const before = await list();
+    expect(before.found.map((f) => f.n)).toEqual(
+      before.found.map((_, i) => i + 1),
+    );
+    const stretch = before.found[0]!;
+    await manageCorridorsTool.execute(
+      {
+        action: "add",
+        name: "Glebe foreshore",
+        activity: { id: stretch.activity_id, from_km: 8, to_km: 10 },
+      },
+      "key",
+    );
+    const result = await listCorridorsTool.execute({ near }, "key");
+    const out = CorridorListOutputSchema.parse(
+      (result as { structuredContent: unknown }).structuredContent,
+    );
+    const hit = out.found.find((f) => f.overlaps_corridors.length > 0);
+    expect(hit?.overlaps_corridors).toEqual(["Glebe foreshore"]);
+    const text = (result as { content: { text: string }[] }).content[0]!.text;
+    expect(text).toMatch(/^1\. /m);
+    expect(text).toContain("overlaps Glebe foreshore");
+    for (const f of out.found) expect(f.overlaps_found).not.toContain(f.n);
+  });
+
   describe("through", () => {
     const place = (km: number) => sundayPointAt(km).join(",");
     const through = async (places: string[]) => {

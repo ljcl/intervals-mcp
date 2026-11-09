@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { foundStretches, runsThrough } from "../corridors";
+import { foundStretches, linesOverlap, runsThrough } from "../corridors";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
 import { versionTrack } from "../routeBuilder";
 import { lineFollowers } from "../routeScore";
@@ -34,7 +34,8 @@ through (one or two places) lists recent runs through them instead.
 
 Then: manage-corridors add to save a found stretch (its activity_id and km
 range), rename, set one-way or delete. view-route-map with a corridor's
-route_id draws it.
+route_id draws it, or a found stretch with its activity_id, from_km and
+to_km.
 
 Notes:
 - near is a place with its city, or lat,lng; default HOME_START, else the
@@ -63,6 +64,14 @@ const inputSchema = z.object({
 type ListCorridorsInput = z.infer<typeof inputSchema>;
 
 const round3 = (v: number) => Math.round(v * 1e3) / 1e3;
+
+const overlapText = (f: {
+  overlaps_found: number[];
+  overlaps_corridors: string[];
+}) => {
+  const parts = [...f.overlaps_found.map(String), ...f.overlaps_corridors];
+  return parts.length > 0 ? `; overlaps ${parts.join(", ")}` : "";
+};
 
 export const listCorridorsTool = {
   name,
@@ -108,15 +117,12 @@ export const listCorridorsTool = {
       const corridors = saved
         .map((c) => corridorEntry(c, followers, near?.point ?? null))
         .sort((a, b) => (near ? (a.distance_m ?? 0) - (b.distance_m ?? 0) : 0));
-      const found = (
-        near
-          ? foundStretches(
-              runs,
-              saved.map((c) => versionTrack(c, latestVersion(c))),
-              near.point,
-            )
-          : []
-      ).map((f) => ({
+      const savedTracks = saved.map((c) => versionTrack(c, latestVersion(c)));
+      const foundRaw = near
+        ? foundStretches(runs, savedTracks, near.point)
+        : [];
+      const found = foundRaw.map((f, i) => ({
+        n: i + 1,
         activity_id: f.activity_id,
         name: f.name,
         date: f.date,
@@ -124,6 +130,14 @@ export const listCorridorsTool = {
         to_km: f.to_km,
         length_m: f.length_m,
         runs: f.runs,
+        overlaps_found: foundRaw
+          .map((g, j) =>
+            j !== i && linesOverlap(f.track, g.track) ? j + 1 : 0,
+          )
+          .filter(Boolean),
+        overlaps_corridors: saved
+          .filter((_, j) => linesOverlap(f.track, savedTracks[j]!))
+          .map((c) => c.name),
         start_lat: round3(f.start[0]),
         start_lng: round3(f.start[1]),
         end_lat: round3(f.end[0]),
@@ -159,7 +173,7 @@ export const listCorridorsTool = {
         lines.push("Found in your runs, not saved:");
         for (const f of found)
           lines.push(
-            `${f.name} ${f.date} (${f.activity_id}) km ${f.from_km.toFixed(2)}-${f.to_km.toFixed(2)} (${(f.length_m / 1000).toFixed(1)} km, ${f.runs} runs)`,
+            `${f.n}. ${f.name} ${f.date} (${f.activity_id}) km ${f.from_km.toFixed(2)}-${f.to_km.toFixed(2)} (${(f.length_m / 1000).toFixed(1)} km, ${f.runs} runs)${overlapText(f)}`,
           );
         lines.push(
           "Save one with manage-corridors add (activity id and km range).",

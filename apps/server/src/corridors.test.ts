@@ -7,6 +7,7 @@ import {
   followsCorridor,
   foundStretches,
   knownStretches,
+  linesOverlap,
   MAX_THROUGH,
   matchCorridor,
   runsThrough,
@@ -236,5 +237,18 @@ describe("runsThrough", () => {
       run(String(i + 1), track),
     );
     expect(runsThrough(many, [at(500)])).toHaveLength(MAX_THROUGH);
+  });
+});
+
+describe("linesOverlap", () => {
+  it("counts a short line inside a long one, either way round", () => {
+    const stretch = line(0, 3000);
+    const corridor = line(1000, 1900);
+    expect(linesOverlap(stretch, corridor)).toBe(true);
+    expect(linesOverlap(corridor, stretch)).toBe(true);
+  });
+  it("ignores a small share and a parallel line", () => {
+    expect(linesOverlap(line(0, 3000), line(2700, 6000))).toBe(false);
+    expect(linesOverlap(line(0, 3000), line(0, 3000, 200))).toBe(false);
   });
 });

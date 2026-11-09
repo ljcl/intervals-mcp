@@ -27,6 +27,23 @@ export const FOUND_GAP_M = 30;
 export const FOUND_MIN_M = 1000;
 /** A stretch this much on a saved corridor or a kept stretch repeats it. */
 export const FOUND_OVERLAP = 0.8;
+
+/** Share of a line that follows another for the two to overlap. */
+export const OVERLAP_MARK = 0.2;
+
+function followedShare(track: RouteTrack, other: RouteTrack): number {
+  const sets = lineFollowers([other])(track, 1);
+  return sets.length === 0
+    ? 0
+    : sets.filter((s) => s.size > 0).length / sets.length;
+}
+
+/** Whether 20% or more of either line follows the other. */
+export function linesOverlap(a: RouteTrack, b: RouteTrack): boolean {
+  return (
+    followedShare(a, b) >= OVERLAP_MARK || followedShare(b, a) >= OVERLAP_MARK
+  );
+}
 export const MAX_FOUND = 10;
 export const FOUND_NEAR_M = 5000;
 /** A run covers a line when it follows this share of its samples. */

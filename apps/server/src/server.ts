@@ -75,11 +75,18 @@ import {
   type ReportProgress,
 } from "./progress";
 import { completePromptArgument, getPrompt, listPrompts } from "./prompts";
-import { loadRouteVersion, RouteBuildError } from "./routeBuilder";
+import {
+  loadRouteVersion,
+  RouteBuildError,
+  readActivityTrack,
+} from "./routeBuilder";
+import { trackClimb } from "./routeCandidates";
+import { sliceTrack, trackLength } from "./routeGeometry";
 import {
   buildRouteMapData,
   buildStoredRouteMapData,
   buildSuggestionsMapData,
+  buildTrackMapData,
   type RouteMapData,
   routeVersionOrNull,
 } from "./routeMapData";
@@ -108,7 +115,7 @@ import {
   intervalsActivityIdInput,
   isActivityIdSchema,
 } from "./tools/_ids";
-import { routeIdInput } from "./tools/_storedRoutes";
+import { kmInput, routeIdInput } from "./tools/_storedRoutes";
 import { amendRouteTool } from "./tools/amendRoute";
 import {
   type ComparisonResult,
@@ -367,6 +374,8 @@ function routeMapInput(idText: string) {
         .describe(
           "With route_id: another version to draw under it, with the changed part marked",
         ),
+      from_km: kmInput("With id: draw only this part of the run").optional(),
+      to_km: kmInput("With id: draw only this part of the run").optional(),
       waypoints: waypointsInput,
       waypoints_version: z
         .number()
@@ -1637,7 +1646,12 @@ async function loadRouteMapData(
   args: Record<string, unknown>,
   token: string,
 ): Promise<RouteMapData> {
+  const part = args.from_km !== undefined || args.to_km !== undefined;
   if (typeof args.route_id === "string") {
+    if (part)
+      throw new RouteBuildError(
+        "from_km and to_km go with id, for part of a past run.",
+      );
     const { route, version } = await loadRouteVersion(
       args.route_id,
       args.version as number | undefined,
@@ -1665,6 +1679,24 @@ async function loadRouteMapData(
     });
   }
   const activityId = String(args.id);
+  if (part) {
+    const { name, track } = await readActivityTrack(token, activityId);
+    const [a, b] = [
+      (args.from_km as number | undefined) ?? 0,
+      (args.to_km as number | undefined) ?? trackLength(track) / 1000,
+    ].sort((x, y) => x - y) as [number, number];
+    const piece = sliceTrack(track, a * 1000, b * 1000);
+    const data = buildTrackMapData(
+      activityId,
+      `${name} km ${a.toFixed(2)}-${b.toFixed(2)}`,
+      piece,
+      trackClimb(piece.altitude),
+      (args.waypoints as WaypointInput[] | undefined) ?? [],
+    );
+    // A part of a run reads as an activity map, not a suggestion.
+    data.source = "activity";
+    return data;
+  }
 
   const activity = await getIntervalsActivity(token, activityId);
 
