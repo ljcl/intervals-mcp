@@ -70,6 +70,7 @@ import {
 } from "./routeGeometry";
 import {
   appendVersion,
+  CorridorNotFoundError,
   createRoute,
   findVersion,
   latestVersion,
@@ -922,7 +923,42 @@ export async function addCorridor(
   if (!key)
     throw new RouteBuildError("A corridor name needs at least one word.");
   const ctx = newCtx(apiKey, env, progress, 1, null, undefined);
-  let source = input.source;
+  const source = await normalizeSource(ctx, input.source);
+  const routeId = makeRouteId("corridor", JSON.stringify(source));
+  const existing = await readRoute(routeId);
+  if (existing) {
+    if (corridorKey(existing.name) === key)
+      return { route: existing, created: false };
+    throw new RouteBuildError(
+      `This stretch is already saved as corridor "${existing.name}" (${routeId}).`,
+    );
+  }
+  const taken = (await listCorridors()).find(
+    (c) => corridorKey(c.name) === key,
+  );
+  if (taken)
+    throw new RouteBuildError(
+      `A corridor named "${taken.name}" is already saved (${taken.route_id}); rename or delete it first.`,
+    );
+  const segments = await sourceSegments(ctx, source);
+  return createRoute({
+    route_id: routeId,
+    name,
+    kind: "corridor",
+    one_way: input.one_way ?? false,
+    next_id: ctx.nextId,
+    segments,
+    change: corridorChange("Saved as corridor from", source),
+    warnings: [],
+  });
+}
+
+/** Turns a source's places and unpinned route version into km and a version. */
+async function normalizeSource(
+  ctx: Ctx,
+  input: CorridorSource,
+): Promise<CorridorSource> {
+  let source = input;
   if (
     source.type === "activity" &&
     (source.from !== undefined || source.to !== undefined)
@@ -971,22 +1007,14 @@ export async function addCorridor(
       );
     source = { ...source, version: latestVersion(stored).version };
   }
-  const routeId = makeRouteId("corridor", JSON.stringify(source));
-  const existing = await readRoute(routeId);
-  if (existing) {
-    if (corridorKey(existing.name) === key)
-      return { route: existing, created: false };
-    throw new RouteBuildError(
-      `This stretch is already saved as corridor "${existing.name}" (${routeId}).`,
-    );
-  }
-  const taken = (await listCorridors()).find(
-    (c) => corridorKey(c.name) === key,
-  );
-  if (taken)
-    throw new RouteBuildError(
-      `A corridor named "${taken.name}" is already saved (${taken.route_id}); rename or delete it first.`,
-    );
+  return source;
+}
+
+/** The source's sections; refused under MIN_CORRIDOR_M. */
+async function sourceSegments(
+  ctx: Ctx,
+  source: CorridorSource,
+): Promise<StoredSegment[]> {
   const segments =
     source.type === "activity"
       ? [await activitySegment(ctx, source.id, source.from_km, source.to_km)]
@@ -1002,16 +1030,45 @@ export async function addCorridor(
     throw new RouteBuildError(
       `That stretch is ${Math.round(length)} m; a corridor is at least ${MIN_CORRIDOR_M} m.`,
     );
-  return createRoute({
-    route_id: routeId,
-    name,
-    kind: "corridor",
-    one_way: input.one_way ?? false,
-    next_id: ctx.nextId,
-    segments,
-    change: `Saved as corridor from ${source.type === "activity" ? `activity ${source.id}` : `route ${source.route_id}`} km ${km((source.from_km ?? 0) * 1000)}-${source.to_km === undefined ? "end" : km(source.to_km * 1000)}`,
-    warnings: [],
-  });
+  return segments;
+}
+
+const corridorChange = (verb: string, source: CorridorSource) =>
+  `${verb} ${source.type === "activity" ? `activity ${source.id}` : `route ${source.route_id}`} km ${km((source.from_km ?? 0) * 1000)}-${source.to_km === undefined ? "end" : km(source.to_km * 1000)}`;
+
+/** Replaces a corridor's line with a new cut as a new version; id, name and one-way stay. */
+export async function recutCorridor(
+  apiKey: string,
+  routeId: string,
+  input: CorridorSource,
+  env: BuildEnv,
+  progress: ReportProgress = NO_PROGRESS,
+): Promise<StoredRoute> {
+  const current = await readRoute(routeId);
+  if (current?.kind !== "corridor") throw new CorridorNotFoundError(routeId);
+  const { route } = await appendVersion(
+    routeId,
+    latestVersion(current).version,
+    async (stored) => {
+      const ctx = newCtx(
+        apiKey,
+        env,
+        progress,
+        stored.next_id,
+        null,
+        undefined,
+      );
+      const source = await normalizeSource(ctx, input);
+      const segments = await sourceSegments(ctx, source);
+      return {
+        segments,
+        next_id: ctx.nextId,
+        change: corridorChange("Re-cut", source),
+        warnings: [],
+      };
+    },
+  );
+  return route;
 }
 
 // ---------- joining ----------

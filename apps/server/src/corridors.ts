@@ -4,7 +4,7 @@
  * found in history, covering runs, a corridor via's direction and whether
  * a run follows a corridor. Pure; the tools and engine read and store.
  */
-import { passes, sameLine } from "./historyLegs";
+import { legSection, passes, sameLine } from "./historyLegs";
 import {
   haversineMeters,
   type LatLng,
@@ -12,6 +12,7 @@ import {
   type RouteTrack,
 } from "./mapAnchors";
 import { placeWords } from "./orsClient";
+import { type Via } from "./routeCandidates";
 import { sliceTrack, trackLength } from "./routeGeometry";
 import {
   KNOWN_RUNS,
@@ -241,4 +242,38 @@ export function followsCorridor(track: RouteTrack, leg: CorridorLeg): boolean {
       out !== undefined && sameLine(sliceTrack(track, into, out), leg.track)
     );
   });
+}
+
+export const MAX_THROUGH = 10;
+
+export interface RunThrough {
+  activity_id: string;
+  name: string;
+  date: string;
+  from_km: number;
+  to_km: number | null;
+}
+
+/** Recent runs through one place, or through two (the shortest part between them), newest first. */
+export function runsThrough(runs: RunStart[], places: Via[]): RunThrough[] {
+  const km = (m: number) => Math.round(m / 10) / 100;
+  const out: RunThrough[] = [];
+  for (const run of [...runs].sort((a, b) => b.date.localeCompare(a.date))) {
+    if (out.length >= MAX_THROUGH) break;
+    const ids = { activity_id: run.id, name: run.name, date: run.date };
+    if (places.length === 1) {
+      const first = passes(run.track, places[0]!)[0];
+      if (first !== undefined)
+        out.push({ ...ids, from_km: km(first), to_km: null });
+      continue;
+    }
+    const section = legSection(run, places[0]!, places[1]!);
+    if (section)
+      out.push({
+        ...ids,
+        from_km: km(section.from_m),
+        to_km: km(section.to_m),
+      });
+  }
+  return out;
 }

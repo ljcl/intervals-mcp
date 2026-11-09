@@ -6,8 +6,10 @@ import {
   SUNDAY_ACTIVITY,
   SUNDAY_ID,
   SUNDAY_START,
+  sundayPointAt,
   sundayStreams,
 } from "../__fixtures__/sundayRoute";
+import { geocode } from "../orsClient";
 import { routeOsmStats } from "../osmIndex";
 import { readActivityTrack } from "../routeBuilder";
 import { loadRunStarts, type RunStart } from "../startClusters";
@@ -23,6 +25,10 @@ vi.mock("../intervalsClient", async (o) => ({
   ...(await o<typeof import("../intervalsClient")>()),
   getActivity: vi.fn(async () => structuredClone(SUNDAY_ACTIVITY)),
   getActivityStreams: vi.fn(async () => sundayStreams()),
+}));
+vi.mock("../orsClient", async (o) => ({
+  ...(await o<typeof import("../orsClient")>()),
+  geocode: vi.fn(),
 }));
 vi.mock("../startClusters", async (o) => ({
   ...(await o<typeof import("../startClusters")>()),
@@ -122,5 +128,58 @@ describe("list-corridors", () => {
     expect(after.found.map((f) => `${f.from_km}-${f.to_km}`)).not.toContain(
       `${stretch.from_km}-${stretch.to_km}`,
     );
+  });
+
+  describe("through", () => {
+    const place = (km: number) => sundayPointAt(km).join(",");
+    const through = async (places: string[]) => {
+      const result = await listCorridorsTool.execute(
+        { near, through: places },
+        "key",
+      );
+      return result as {
+        isError?: boolean;
+        content: Array<{ text: string }>;
+        structuredContent: {
+          through: Array<{ from_km: number; to_km: number | null }> | null;
+        };
+      };
+    };
+
+    it("is null when not asked", async () => {
+      expect((await list()).through).toBeNull();
+    });
+
+    it("lists runs through one place, newest first", async () => {
+      const out = await through([place(2)]);
+      expect(out.structuredContent.through).toHaveLength(3);
+      expect(out.structuredContent.through![0]!.to_km).toBeNull();
+      expect(out.structuredContent.through![0]!.from_km).toBeCloseTo(2, 0);
+    });
+
+    it("says other way when the places are in the reverse order", async () => {
+      const fwd = await through([place(1), place(3)]);
+      expect(fwd.content[0]!.text).not.toContain("(other way)");
+      const back = await through([place(3), place(1)]);
+      expect(back.content[0]!.text).toContain("(other way)");
+    });
+
+    it("refuses a place that matched only a suburb", async () => {
+      vi.stubEnv("ORS_API_KEY", "k");
+      vi.mocked(geocode).mockResolvedValue({
+        label: "Glebe, NSW, Australia",
+        point: sundayPointAt(1),
+        match: { query: "Glebe", name: "Glebe", type: "locality" },
+      });
+      const out = await through(["Glebe"]);
+      expect(out.isError).toBe(true);
+      expect(out.content[0]!.text).toContain("matched only Glebe");
+    });
+
+    it("says so when no run passes", async () => {
+      const out = await through(["-33.0,150.0"]);
+      expect(out.structuredContent.through).toEqual([]);
+      expect(out.content[0]!.text).toContain("No recent run passes that.");
+    });
   });
 });

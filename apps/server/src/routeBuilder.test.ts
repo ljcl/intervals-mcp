@@ -23,6 +23,7 @@ import {
   layoutSegments,
   loadRouteVersion,
   RouteBuildError,
+  recutCorridor,
   type SegmentInput,
   stitchRoute,
   storeSuggestedRoute,
@@ -1435,6 +1436,42 @@ describe("addCorridor", () => {
     await expect(
       run("Harbour Loop", sunday({ from_km: 1, to_km: 3 })),
     ).rejects.toThrow(/already saved as corridor "Bay Run"/);
+  });
+});
+
+describe("recutCorridor", () => {
+  const sunday = (from_km: number, to_km: number) => ({
+    type: "activity" as const,
+    id: SUNDAY_ID,
+    from_km,
+    to_km,
+  });
+
+  it("appends a version with the same id and name", async () => {
+    const { route } = await addCorridor(
+      "key",
+      { name: "Bay Run", source: sunday(1, 3) },
+      ENV,
+    );
+    const cut = await recutCorridor("key", route.route_id, sunday(4, 6), ENV);
+    expect(cut.route_id).toBe(route.route_id);
+    expect(cut.name).toBe("Bay Run");
+    expect(cut.versions.map((v) => v.version)).toEqual([1, 2]);
+  });
+
+  it("refuses a short cut and an unknown corridor, adding nothing", async () => {
+    const { route } = await addCorridor(
+      "key",
+      { name: "Bay Run", source: sunday(1, 3) },
+      ENV,
+    );
+    await expect(
+      recutCorridor("key", route.route_id, sunday(4, 4.1), ENV),
+    ).rejects.toThrow(/at least 200 m/);
+    expect((await readRoute(route.route_id))!.versions).toHaveLength(1);
+    await expect(
+      recutCorridor("key", "cabcdefghij", sunday(4, 6), ENV),
+    ).rejects.toThrow();
   });
 });
 

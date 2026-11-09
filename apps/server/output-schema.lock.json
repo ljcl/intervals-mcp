@@ -1273,6 +1273,12 @@
       "near.lat: number",
       "near.lng: number",
       "near: null object",
+      "through: array null",
+      "through[].activity_id: string",
+      "through[].date: string",
+      "through[].from_km: number",
+      "through[].name: string",
+      "through[].to_km: null number",
       "warnings: array"
     ],
     "list-gear": [
@@ -1297,7 +1303,7 @@
       "units: object"
     ],
     "manage-corridors": [
-      "action: =\"add\" =\"delete\" =\"rename\" =\"set_one_way\" string",
+      "action: =\"add\" =\"delete\" =\"recut\" =\"rename\" =\"set_one_way\" string",
       "corridor.created_at: string",
       "corridor.distance_m: integer null",
       "corridor.from_run.activity_id: string",

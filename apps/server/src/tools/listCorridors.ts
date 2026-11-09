@@ -1,10 +1,16 @@
 import { z } from "zod";
-import { foundStretches } from "../corridors";
+import { foundStretches, runsThrough } from "../corridors";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
 import { versionTrack } from "../routeBuilder";
 import { lineFollowers } from "../routeScore";
 import { latestVersion, listCorridors } from "../routeStore";
-import { RouteSuggestionError, resolveStart } from "../routeSuggestions";
+import {
+  coarseVia,
+  RouteSuggestionError,
+  resolvePlace,
+  resolveStart,
+  viaTarget,
+} from "../routeSuggestions";
 import { clusterStarts, loadRunStarts } from "../startClusters";
 import { READ_ONLY } from "./_annotations";
 import { corridorEntry, corridorLine } from "./_corridors";
@@ -24,6 +30,8 @@ the office?" or "what do I keep running that I have not named?". Each
 corridor gives its route_id, length, share on paths, how many recent runs
 follow it and how far it is from the search point.
 
+through (one or two places) lists recent runs through them instead.
+
 Then: manage-corridors add to save a found stretch (its activity_id and km
 range), rename, set one-way or delete. view-route-map with a corridor's
 route_id draws it.
@@ -37,6 +45,14 @@ Notes:
 `;
 
 const inputSchema = z.object({
+  through: z
+    .array(placeText)
+    .min(1)
+    .max(2)
+    .optional()
+    .describe(
+      "One or two places (with city, or lat,lng): recent runs through the place, or the part between two",
+    ),
   near: placeText
     .optional()
     .describe(
@@ -76,6 +92,17 @@ export const listCorridorsTool = {
         if (!args.near && error instanceof RouteSuggestionError) return null;
         throw error;
       });
+      let through: ReturnType<typeof runsThrough> | null = null;
+      if (args.through) {
+        const places = [];
+        for (const text of args.through) {
+          const place = await resolvePlace(text, env, near?.point ?? null);
+          const coarse = coarseVia(place, text);
+          if (coarse) throw new RouteSuggestionError(coarse);
+          places.push(viaTarget(place));
+        }
+        through = runsThrough(runs, places);
+      }
       const saved = await listCorridors();
       const followers = lineFollowers(runs.map((r) => r.track));
       const corridors = saved
@@ -119,6 +146,7 @@ export const listCorridorsTool = {
           : null,
         corridors,
         found,
+        through,
         warnings,
       };
       warnOnSchemaDrift(name, CorridorListOutputSchema, structured);
@@ -136,6 +164,14 @@ export const listCorridorsTool = {
         lines.push(
           "Save one with manage-corridors add (activity id and km range).",
         );
+      }
+      if (through) {
+        lines.push("Runs through that:");
+        if (through.length === 0) lines.push("No recent run passes that.");
+        for (const t of through)
+          lines.push(
+            `${t.name} ${t.date} (${t.activity_id}) km ${t.from_km.toFixed(2)}${t.to_km === null ? "" : `-${t.to_km.toFixed(2)}`}${t.to_km !== null && t.from_km > t.to_km ? " (other way)" : ""}`,
+          );
       }
       for (const w of warnings) lines.push(`Warning: ${w}`);
       return {

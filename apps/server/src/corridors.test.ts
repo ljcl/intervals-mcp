@@ -7,7 +7,9 @@ import {
   followsCorridor,
   foundStretches,
   knownStretches,
+  MAX_THROUGH,
   matchCorridor,
+  runsThrough,
 } from "./corridors";
 import {
   cumulativeDistances,
@@ -198,5 +200,41 @@ describe("followsCorridor", () => {
       altitude: detour.map(() => null),
     };
     expect(followsCorridor(track, leg)).toBe(false);
+  });
+});
+
+describe("runsThrough", () => {
+  const at = (m: number): LatLng => [LAT, LNG + m * DLNG];
+  const track = line(0, 2000);
+  const runs = [
+    run("1", track),
+    run("3", track),
+    run("2", reverseTrack(track)),
+  ];
+
+  it("gives the first pass of one place, newest first", () => {
+    const out = runsThrough(runs, [at(500)]);
+    expect(out.map((r) => r.activity_id)).toEqual(["3", "2", "1"]);
+    expect(out[0]).toMatchObject({ from_km: 0.5, to_km: null });
+    expect(out[1]!.from_km).toBeCloseTo(1.5, 1);
+  });
+
+  it("gives the part between two places, from_km above to_km the other way", () => {
+    const out = runsThrough(runs, [at(500), at(1500)]);
+    expect(out[0]).toMatchObject({
+      activity_id: "3",
+      from_km: 0.5,
+      to_km: 1.5,
+    });
+    const back = out.find((r) => r.activity_id === "2")!;
+    expect(back.from_km).toBeGreaterThan(back.to_km!);
+  });
+
+  it("skips runs that miss a place and stops at MAX_THROUGH", () => {
+    expect(runsThrough(runs, [at(500), [LAT + 0.5, LNG]])).toEqual([]);
+    const many = Array.from({ length: 15 }, (_, i) =>
+      run(String(i + 1), track),
+    );
+    expect(runsThrough(many, [at(500)])).toHaveLength(MAX_THROUGH);
   });
 });

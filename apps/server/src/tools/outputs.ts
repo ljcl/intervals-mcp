@@ -2015,11 +2015,30 @@ export const CorridorListOutputSchema = z.object({
       }),
     )
     .describe("Stretches the runs repeat that are not saved"),
+  through: z
+    .array(
+      z.object({
+        activity_id: z.string(),
+        name: z.string(),
+        date: z.string(),
+        from_km: z.number(),
+        to_km: z
+          .number()
+          .nullable()
+          .describe(
+            "Null for one place; below from_km means the run went the other way",
+          ),
+      }),
+    )
+    .nullable()
+    .describe(
+      "Recent runs through the asked places, newest first; null when not asked",
+    ),
   warnings: z.array(z.string()),
 });
 
 export const CorridorResultOutputSchema = z.object({
-  action: z.enum(["add", "rename", "set_one_way", "delete"]),
+  action: z.enum(["add", "rename", "set_one_way", "delete", "recut"]),
   corridor: CorridorEntrySchema.nullable().describe("Null after delete"),
   created: z.boolean().describe("add only: false when it was already saved"),
   deleted: z.boolean(),

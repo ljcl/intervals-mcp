@@ -1,7 +1,11 @@
 import { z } from "zod";
 import { corridorKey } from "../corridors";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
-import { addCorridor, type CorridorSource } from "../routeBuilder";
+import {
+  addCorridor,
+  type CorridorSource,
+  recutCorridor,
+} from "../routeBuilder";
 import {
   CorridorNotFoundError,
   deleteCorridor,
@@ -24,7 +28,7 @@ import { CorridorResultOutputSchema, warnOnSchemaDrift } from "./outputs";
 const name = "manage-corridors";
 
 const description = `
-Saves, renames, flips or deletes a running corridor: a named line the
+Saves, re-cuts, renames, flips or deletes a running corridor: a named line the
 athlete runs again and again, kept as a stored route. For "save km 3-5.4 of
 Sunday's run as Glebe foreshore", "call it the bay run instead", "that one
 is one-way" or "forget that corridor". list-corridors to see them and to
@@ -38,6 +42,8 @@ Actions:
 - rename: needs route_id and name; a name another corridor has is refused.
 - set_one_way: needs route_id and one_way (true when it is only run in one
   direction).
+- recut: needs route_id and one source like add. Replaces the line as a
+  new version; the id, name and one-way stay.
 - delete: needs route_id. Deletes the saved corridor for good; the runs it
   came from stay.
 
@@ -49,14 +55,14 @@ Notes:
 `;
 
 const inputSchema = z.object({
-  action: z.enum(["add", "rename", "set_one_way", "delete"]),
+  action: z.enum(["add", "recut", "rename", "set_one_way", "delete"]),
   route_id: z
     .string()
     .trim()
     .max(40)
     .optional()
     .describe(
-      "The corridor, for rename, set_one_way and delete (starts with c)",
+      "The corridor, for recut, rename, set_one_way and delete (starts with c)",
     ),
   name: z
     .string()
@@ -84,7 +90,7 @@ const inputSchema = z.object({
         .describe("A place the run passes after from, where it ends"),
     })
     .optional()
-    .describe("add: take it from a past run"),
+    .describe("add or recut: take it from a past run"),
   route: z
     .strictObject({
       route_id: z.string().trim().max(40).describe("A stored route"),
@@ -93,7 +99,7 @@ const inputSchema = z.object({
       to_km: kmInput("Its km to end at; default its end").optional(),
     })
     .optional()
-    .describe("add: take it from a stored route"),
+    .describe("add or recut: take it from a stored route"),
 });
 
 type ManageCorridorsInput = z.infer<typeof inputSchema>;
@@ -112,7 +118,12 @@ function missing(a: ManageCorridorsInput): string | null {
     if (a.route && !isRouteId(a.route.route_id))
       return "route.route_id is not a stored route id.";
   } else if (!a.route_id) return `${a.action} needs route_id.`;
-  else if (a.action === "rename" && !a.name) return "rename needs name.";
+  else if (a.action === "recut") {
+    if (!a.activity === !a.route)
+      return "recut needs exactly one of activity and route.";
+    if (a.route && !isRouteId(a.route.route_id))
+      return "route.route_id is not a stored route id.";
+  } else if (a.action === "rename" && !a.name) return "rename needs name.";
   else if (a.action === "set_one_way" && a.one_way === undefined)
     return "set_one_way needs one_way.";
   return null;
@@ -137,10 +148,10 @@ export const manageCorridorsTool = {
       let corridor: ReturnType<typeof corridorEntry> | null = null;
       let created = false;
       let text: string;
+      const source: CorridorSource = args.activity
+        ? { type: "activity", ...args.activity }
+        : { type: "route", ...args.route! };
       if (args.action === "add") {
-        const source: CorridorSource = args.activity
-          ? { type: "activity", ...args.activity }
-          : { type: "route", ...args.route! };
         const added = await addCorridor(
           apiKey,
           { name: args.name!, one_way: args.one_way, source },
@@ -160,6 +171,16 @@ export const manageCorridorsTool = {
         if (args.action === "delete") {
           await deleteCorridor(id);
           text = `Deleted corridor ${id}.`;
+        } else if (args.action === "recut") {
+          const recut = await recutCorridor(
+            apiKey,
+            id,
+            source,
+            routeBuildEnv(),
+            progress,
+          );
+          corridor = corridorEntry(recut, null, null);
+          text = `Re-cut corridor ${corridorLine(corridor)}`;
         } else {
           if (args.action === "rename") {
             const key = corridorKey(args.name!);
