@@ -839,7 +839,7 @@ describe("loadRouteSuggestions", () => {
     vi.mocked(loadRunStarts).mockResolvedValue({ runs: history, skipped: 2 });
     const result = await loadRouteSuggestions("k", {}, ENV);
     expect(result.warnings).toContain(
-      "2 recent runs had no GPS track or could not be read and were left out of the start history.",
+      "2 recent runs had no GPS track and were left out of the start history.",
     );
   });
 

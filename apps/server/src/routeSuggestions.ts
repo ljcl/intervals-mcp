@@ -748,7 +748,7 @@ export async function loadRouteSuggestions(
   }
   if (skipped > 0) {
     warnings.push(
-      `${skipped} recent run${skipped === 1 ? "" : "s"} had no GPS track or could not be read and ${skipped === 1 ? "was" : "were"} left out of the start history.`,
+      `${skipped} recent run${skipped === 1 ? "" : "s"} had no GPS track and ${skipped === 1 ? "was" : "were"} left out of the start history.`,
     );
   }
 
