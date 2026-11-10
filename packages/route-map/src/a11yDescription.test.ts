@@ -189,6 +189,28 @@ describe("buildRouteMapA11yDescription for a stored route", () => {
   });
 });
 
+describe("buildRouteMapA11yDescription for a suggested route", () => {
+  it("names the planned run and the option, not an activity", () => {
+    const description = buildRouteMapA11yDescription({
+      name: "Easy 6 km: New loop",
+      activityType: "Run",
+      distanceKm: 6,
+      elevationGain: 0,
+      coordinates: [],
+      suggestion: {
+        run: "Easy 6 km",
+        date: "2026-10-20",
+        option: 1,
+        count: 2,
+        label: "New loop",
+      },
+    });
+    expect(description).toBe(
+      'Map of suggested route 1 of 2 ("New loop") for planned run "Easy 6 km" on 2026-10-20. No GPS track is available.',
+    );
+  });
+});
+
 describe("buildElevationStripDescription", () => {
   it("narrates the altitude range over the distance", () => {
     expect(buildElevationStripDescription([12.4, 96.2, 40], 8.23)).toBe(

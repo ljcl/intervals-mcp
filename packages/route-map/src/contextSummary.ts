@@ -1,3 +1,5 @@
+import { type SuggestionPosition } from "./types";
+
 export interface RouteMapContextInput {
   name: string | null;
   activityType: string | null;
@@ -22,6 +24,13 @@ export interface RouteMapContextInput {
   } | null;
   /** A line put first, e.g. the edit just made on the map. */
   note?: string | null;
+  /** A suggested route: which option of which planned run. */
+  suggestion?: SuggestionPosition | null;
+}
+
+/** "suggested route 2 of 3 ("New loop 2") for planned run "Easy" on 2026-10-20". */
+export function suggestionPhrase(s: SuggestionPosition): string {
+  return `suggested route ${s.option} of ${s.count} ("${s.label}") for planned run "${s.run}"${s.date ? ` on ${s.date}` : ""}`;
 }
 
 /**
@@ -41,6 +50,7 @@ export function buildRouteMapContextSummary(
     visible,
     route,
     note,
+    suggestion,
   } = input;
   if (!name) return null;
 
@@ -49,7 +59,9 @@ export function buildRouteMapContextSummary(
   parts.push(
     route
       ? `Viewing the map for stored route "${name}" (route_id ${route.routeId}), version ${route.version} of ${route.latestVersion}.`
-      : `Viewing the map for ${kind} "${name}".`,
+      : suggestion
+        ? `Viewing the map for ${suggestionPhrase(suggestion)}.`
+        : `Viewing the map for ${kind} "${name}".`,
   );
 
   if (hasGeometry) {
@@ -62,7 +74,7 @@ export function buildRouteMapContextSummary(
         `It has ${route.sectionCount === 1 ? "1 section" : `${route.sectionCount} sections`}.`,
       );
       if (route.compare) parts.push(route.compare);
-    } else if (colorMetric) {
+    } else if (colorMetric && !suggestion) {
       parts.push(`The track is coloured by ${colorMetric.toLowerCase()}.`);
     }
     if (visible) parts.push(`${visible}.`);

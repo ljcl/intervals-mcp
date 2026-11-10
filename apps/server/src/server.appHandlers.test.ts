@@ -1992,6 +1992,51 @@ describe("route map handlers", () => {
     const parsed = JSON.parse(result.content[0]?.text ?? "");
     expect(parsed.source).toBe("suggestion");
     expect(parsed.candidates[0].map.coordinates).toHaveLength(3);
+    expect(parsed.candidates[0].stats.distance_m).toBeTypeOf("number");
+    expect(parsed.startSource).toBe("inferred from recent runs");
+  });
+
+  it("get-route-suggestions-data gives an argument error as a card message, not an error", async () => {
+    mockedRouteSuggestions.mockRejectedValueOnce(
+      new RouteSuggestionError('No place matched "Nowhere Park".'),
+    );
+
+    const result = await dispatchToolCall("get-route-suggestions-data", {
+      start: "Nowhere Park",
+    });
+
+    expect(result.isError).toBeUndefined();
+    const parsed = JSON.parse(result.content[0]?.text ?? "");
+    expect(parsed.candidates).toEqual([]);
+    expect(parsed.warnings).toEqual(['No place matched "Nowhere Park".']);
+  });
+
+  it("get-route-suggestions-data keeps an upstream fault an error, so the card offers a retry", async () => {
+    mockedRouteSuggestions.mockRejectedValueOnce(
+      new RouteSuggestionError("Could not look up Park: try later.", {
+        retryable: true,
+      }),
+    );
+
+    const result = await dispatchToolCall("get-route-suggestions-data", {
+      start: "Park",
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("try later");
+  });
+
+  it("get-route-suggestions-data says no planned run as a card message", async () => {
+    mockedRouteSuggestions.mockResolvedValueOnce({
+      generation_available: false,
+      warnings: [],
+      runs: [],
+    });
+
+    const result = await dispatchToolCall("get-route-suggestions-data", {});
+
+    const parsed = JSON.parse(result.content[0]?.text ?? "");
+    expect(parsed.warnings).toEqual(["No planned run to map."]);
   });
 
   it("get-route-map-data returns coordinates from the latlng stream with aligned metrics", async () => {

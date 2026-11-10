@@ -78,7 +78,7 @@ import {
   routeWarnings,
   sectionColorRuns,
 } from "./routeLayers";
-import { type RouteMapData } from "./types";
+import { type RouteMapData, type SuggestionPosition } from "./types";
 import { type RouteAmend } from "./useRouteAmend";
 import {
   describeView,
@@ -105,6 +105,8 @@ interface RouteMapProps {
   routeEdit?: RouteAmend | null;
   /** A line the model context starts with, e.g. the edit just applied. */
   contextNote?: string | null;
+  /** A suggested route's place among its planned run's options. */
+  suggestion?: SuggestionPosition | null;
 }
 
 /** Frame geometry per layout. All values are SVG viewBox units. */
@@ -191,6 +193,7 @@ export function RouteMap({
   beforeMap,
   routeEdit = null,
   contextNote = null,
+  suggestion = null,
 }: RouteMapProps) {
   const isMobile = mode === "mobile";
   const dims = isMobile ? DIMS.mobile : DIMS.desktop;
@@ -873,9 +876,11 @@ export function RouteMap({
               warningCount: warnings.length,
             }
           : undefined,
+        suggestion,
       }),
     [
       data,
+      suggestion,
       route,
       sections,
       warnings,
@@ -924,9 +929,11 @@ export function RouteMap({
             }
           : null,
         note: contextNote,
+        suggestion,
       }),
     [
       data.name,
+      suggestion,
       data.source,
       route,
       contextNote,

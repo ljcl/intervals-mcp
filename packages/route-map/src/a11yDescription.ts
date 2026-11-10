@@ -1,3 +1,6 @@
+import { suggestionPhrase } from "./contextSummary";
+import { type SuggestionPosition } from "./types";
+
 /**
  * Screen-reader description of the rendered map. Unlike the one-line
  * `buildRouteMapContextSummary` (which briefs the host's model), this narrates
@@ -31,6 +34,8 @@ export interface RouteMapA11yInput {
     compare: string | null;
     warningCount: number;
   };
+  /** A suggested route: which option of which planned run. */
+  suggestion?: SuggestionPosition | null;
 }
 
 const DEG_TO_RAD = Math.PI / 180;
@@ -221,7 +226,9 @@ export function buildRouteMapA11yDescription(input: RouteMapA11yInput): string {
     ? [
         `Map of stored route "${input.name}", version ${input.route.version} of ${input.route.latestVersion}.`,
       ]
-    : [`Map of ${kind} "${input.name}".`];
+    : input.suggestion
+      ? [`Map of ${suggestionPhrase(input.suggestion)}.`]
+      : [`Map of ${kind} "${input.name}".`];
 
   if (input.coordinates.length < 2) {
     parts.push("No GPS track is available.");

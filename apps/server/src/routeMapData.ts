@@ -46,6 +46,7 @@ import {
   versionTrack,
 } from "./routeBuilder";
 import { mapDistance, trackDiff, trackLength } from "./routeGeometry";
+import { scoreLosses } from "./routeScore";
 import {
   findVersion,
   type StoredRoute,
@@ -66,6 +67,7 @@ import {
   roundColumn,
   STREAM_DECIMALS,
 } from "./streamPrecision";
+import { START_SOURCE, type toStructured } from "./tools/suggestRunRoute";
 
 /** Points after downsampling; matches the other apps' `MAX_CHART_POINTS`. */
 export const MAX_ROUTE_MAP_POINTS = 1000;
@@ -407,18 +409,75 @@ export function buildTrackMapData(
   return roundForWire(attachWaypoints(data, waypoints));
 }
 
+/** suggest-run-route's structured run: the numbers its text gives. */
+type SuggestionText = ReturnType<typeof toStructured>["runs"][number];
+
+/** One candidate's numbers, as suggest-run-route's text gives them. */
+export interface SuggestionStats {
+  distance_m: number;
+  distance_diff_m: number;
+  climb_m: number;
+  climb_per_km: number;
+  path_share: number | null;
+  crossings_per_km: number | null;
+  signals_per_km: number | null;
+  main_road_km: number | null;
+  green_share: number | null;
+  score: number;
+  /** What lost points, rounded as the text rounds them. */
+  losses: Array<{ label: string; points: number }>;
+}
+
 export interface RouteSuggestionsMapData {
   source: "suggestion";
-  date: string;
+  /** Null only when no planned run was found (`suggestionsMessageData`). */
+  date: string | null;
   name: string;
-  startLabel: string;
-  candidates: Array<{ label: string; summary: string; map: RouteMapData }>;
+  startLabel: string | null;
+  /** How the start was chosen: "given", "HOME_START", "inferred from recent runs". */
+  startSource: string | null;
+  endLabel: string | null;
+  /** The planned distance. */
+  distance_m: number | null;
+  /** Why fewer routes than usual came back, as the text's "Note:". */
+  routesNote: string | null;
+  candidates: Array<{
+    label: string;
+    summary: string;
+    /** The candidate's notes, as the text gives them. */
+    notes: string[];
+    stats: SuggestionStats;
+    map: RouteMapData;
+  }>;
   warnings: string[];
 }
 
-/** One planned run's candidates as route-map payloads, with hill and via-point markers. */
+/** A card with no routes and one message: an argument the athlete must change. */
+export function suggestionsMessageData(
+  message: string,
+): RouteSuggestionsMapData {
+  return {
+    source: "suggestion",
+    date: null,
+    name: "Route suggestions",
+    startLabel: null,
+    startSource: null,
+    endLabel: null,
+    distance_m: null,
+    routesNote: null,
+    candidates: [],
+    warnings: [message],
+  };
+}
+
+/**
+ * One planned run's candidates as route-map payloads, with hill and via-point
+ * markers. The numbers come from `text`, suggest-run-route's own structured
+ * run, so the card and the text cannot disagree.
+ */
 export function buildSuggestionsMapData(
   run: RunSuggestion,
+  text: SuggestionText,
   warnings: string[],
 ): RouteSuggestionsMapData {
   const seen = new Map<string, number>();
@@ -449,9 +508,27 @@ export function buildSuggestionsMapData(
         kind: "custom",
       });
     }
+    const t = text.candidates[index]!;
     return {
       label: `${count > 1 ? `${base} ${count}` : base}${c.score === undefined ? "" : `, score ${c.score}`}`,
       summary: c.summary,
+      notes: t.notes,
+      stats: {
+        distance_m: t.distance_m,
+        distance_diff_m: t.distance_diff_m,
+        climb_m: t.climb_m,
+        climb_per_km: t.climb_per_km,
+        path_share: t.path_share,
+        crossings_per_km: t.crossings_per_km,
+        signals_per_km: t.signals_per_km,
+        main_road_km: t.main_road_km,
+        green_share: t.green_share,
+        score: t.score,
+        losses: scoreLosses(t.score_breakdown).map((l) => ({
+          label: l.label,
+          points: Math.round(l.points),
+        })),
+      },
       map: buildTrackMapData(
         `${run.date}-${index}`,
         `${run.name}: ${base}`,
@@ -466,6 +543,10 @@ export function buildSuggestionsMapData(
     date: run.date,
     name: run.name,
     startLabel: run.start.label,
+    startSource: START_SOURCE[run.start.source],
+    endLabel: run.end?.label ?? null,
+    distance_m: text.distance_m,
+    routesNote: text.routes_note,
     candidates,
     warnings: [...warnings, ...run.warnings],
   };

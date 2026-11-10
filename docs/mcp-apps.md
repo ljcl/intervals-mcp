@@ -346,7 +346,21 @@ grid fallback (no Recharts). Calls `get-route-map-data` (app-only) with
   elevation strip and metric colouring work unchanged. A hill for repeats and
   each via point are waypoints (`climb` and `custom` kinds,
   `buildSuggestionsMapData` in `routeMapData.ts`).
-  The feed reads one planned run and reports the call's warnings.
+  The feed reads one planned run and reports the call's warnings. Each
+  candidate's numbers (`stats`: distance and its difference from the plan,
+  climb, score and what lost points, path and green share, crossings,
+  signals, main-road km) come from `suggest-run-route`'s own `toStructured`
+  run, so the card's stat strip (`suggestionStats.ts`) and the text cannot
+  disagree; the run line names the start source, and without ORS_API_KEY
+  the warnings carry the text's `NO_ORS_NOTE`. An argument the athlete must
+  change (a `RouteSuggestionError` that is not `retryable`, or no planned
+  run) comes back as a payload with no candidates and the message in
+  `warnings`, shown under the card header with no retry; an upstream fault
+  stays an error with a retry. The model context and narration name the
+  planned run and the candidate's place ("suggested route 2 of 3"), and
+  the `select-route` view tool (1-based `option`, installed by
+  `SuggestionMap`) switches the candidate; with no candidate the context
+  says why.
 - Route mode: with a `route_id` the app is a stored route
   (`toolArgs.ts` passes `route_id`, `version`, `compare_to_version`,
   `waypoints` and `waypoints_version` to `get-route-map-data`).

@@ -970,8 +970,18 @@ describe("loadRouteSuggestions", () => {
       await expect(failure).rejects.toBeInstanceOf(RouteSuggestionError);
       await expect(failure).rejects.toThrow(wording);
       await expect(failure).rejects.not.toThrow(/37\.8/);
+      await expect(failure).rejects.toMatchObject({ retryable: true });
     },
   );
+
+  it("marks a rejected key as not worth retrying", async () => {
+    vi.mocked(geocode).mockRejectedValue(
+      new OrsApiError("look up", { status: 403, statusText: "", data: "" }),
+    );
+    await expect(
+      loadRouteSuggestions("k", { start: "Embarcadero" }, ENV),
+    ).rejects.toMatchObject({ retryable: false });
+  });
 
   it("names the text when no place matches", async () => {
     vi.mocked(geocode).mockResolvedValue(null);
