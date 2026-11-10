@@ -29,6 +29,7 @@ import {
 import {
   type LegOption,
   legOptions,
+  loopsJoined,
   outAndBacksAlong,
   planStitches,
   STITCH_FILL_CALLS,
@@ -1004,14 +1005,21 @@ export async function loadRouteSuggestions(
         for (const c of routes) planOf.set(c, p);
         joined.push(...routes);
       }
-      // No past run fits and no via: out-and-backs along past runs from this start, with no routing call (#461).
+      // No past run fits and no via: out-and-backs along past runs and joined past loops from this start, with no routing call (#461).
       if (
         pool.length === 0 &&
         viaTexts.length === 0 &&
         cluster &&
         shape !== "point-to-point"
       )
-        joined.push(...outAndBacksAlong(cluster.runs, run.distance_m));
+        joined.push(
+          ...outAndBacksAlong(cluster.runs, run.distance_m),
+          ...loopsJoined(
+            cluster.runs,
+            run.distance_m,
+            run.distance_m * GENERATED_DISTANCE_TOLERANCE,
+          ),
+        );
       const stitched = dedupeRoutes(joined);
       if (corridorVia && stitched.length === 0) {
         runWarnings.push(

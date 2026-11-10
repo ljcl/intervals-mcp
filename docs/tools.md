@@ -196,7 +196,13 @@ otherwise).
   make no ORS call, land on the distance, go out like stitched via routes
   (`kind: "generated"`, `history_share` 1, shape `out-and-back`, no
   `sections`), and share the 2 places past runs have, so a new loop keeps
-  one.
+  one. In the same case `loopsJoined` (`historyLegs.ts`) joins past loops
+  from the start: two that together land within 5% of the distance, then
+  one loop and an out-and-back along another run for the rest. Pieces that
+  overlap by 20% or more (`linesOverlap`) or meet more than 100 m apart are
+  not joined; newest loops first, 6 scored. They go out the same way with
+  shape `loop`, two loops carrying their two run `sections`, and share the
+  same 2 places.
 - A via matched no better than a suburb or city (a Pelias layer other than
   venue, address or street), or to a place lacking a word of the text, is
   refused, naming the match (`coarseVia`), in every tool that takes a via. A

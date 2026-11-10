@@ -5,6 +5,7 @@
  * the shortest foot path; the athlete's runs are the lines they chose.
  * Pure; the engine (routeSuggestions.ts) routes the fills.
  */
+import { linesOverlap } from "./corridors";
 import { haversineMeters, type LatLng, type RouteTrack } from "./mapAnchors";
 import {
   dedupeRoutes,
@@ -14,6 +15,7 @@ import {
   type RouteCandidate,
   type RouteSection,
   type RouteShape,
+  sameRoute,
   thereAndBack,
   trackClimb,
   type Via,
@@ -431,6 +433,89 @@ export function outAndBacksAlong(
         track,
       });
     }
+  }
+  return dedupeRoutes(made).slice(0, PAST_POOL);
+}
+
+/** A loop's end and the next piece's start this close are joined directly (starts from one place wander by tens of metres). */
+const LOOP_JOIN_M = 100;
+
+/**
+ * Plans no past run fits, from loops at the start (#461): two past loops
+ * one after the other, together within `max_miss_m` of the target; then a
+ * loop and an out-and-back along another run ({@link outAndBacksAlong}) for
+ * the rest. Pieces that overlap ({@link linesOverlap}) or do not meet within
+ * {@link LOOP_JOIN_M} are not joined. Newest loops first, at most
+ * {@link PAST_POOL}. No routing call.
+ */
+export function loopsJoined(
+  runs: RunStart[],
+  target_m: number,
+  max_miss_m: number,
+): RouteCandidate[] {
+  const loops: RunStart[] = [];
+  for (const r of runs)
+    if (isLoop(r.track) && !loops.some((l) => sameRoute(l.track, r.track)))
+      loops.push(r);
+  const meets = (a: RouteTrack, b: RouteTrack) =>
+    haversineMeters(a.coordinates.at(-1)!, b.coordinates[0]!) <= LOOP_JOIN_M &&
+    !linesOverlap(a, b);
+  const made: RouteCandidate[] = [];
+  const add = (
+    a: RunStart,
+    next: RouteTrack,
+    climb_m: number,
+    fields: Pick<RouteCandidate, "name" | "summary" | "sections">,
+  ) => {
+    const track = concatTracks([a.track, next]);
+    made.push({
+      kind: "stitched",
+      activity_id: null,
+      date: null,
+      shape: "loop",
+      distance_m: Math.round(trackLength(track)),
+      climb_m: trackClimb(a.track.altitude) + climb_m,
+      path_share: null,
+      // Below 1 only by the seam between the pieces.
+      history_share:
+        (trackLength(a.track) + trackLength(next)) / trackLength(track),
+      crossings_per_km: null,
+      hill: null,
+      track,
+      ...fields,
+    });
+  };
+  const runSection = (r: RunStart): RouteSection => ({
+    kind: "run",
+    track: r.track,
+    run: { id: r.id, name: r.name },
+    from_m: 0,
+    to_m: trackLength(r.track),
+  });
+  for (const [i, a] of loops.entries())
+    for (const b of loops.slice(i + 1)) {
+      const sum = trackLength(a.track) + trackLength(b.track);
+      if (Math.abs(sum - target_m) > max_miss_m || !meets(a.track, b.track))
+        continue;
+      add(a, b.track, trackClimb(b.track.altitude), {
+        name: "Two past loops",
+        summary: `Your loops "${a.name}" ${a.date}, then "${b.name}" ${b.date}`,
+        sections: [runSection(a), runSection(b)],
+      });
+    }
+  for (const a of loops) {
+    if (made.length >= PAST_POOL) break;
+    const rest = target_m - trackLength(a.track);
+    if (rest <= 0) continue;
+    const back = outAndBacksAlong(runs, rest).find((o) =>
+      meets(a.track, o.track),
+    );
+    // shortcut: no sections, as for any out-and-back; add them if the map should list the pieces
+    if (back)
+      add(a, back.track, back.climb_m, {
+        name: "Past loop and out-and-back",
+        summary: `Your loop "${a.name}" ${a.date}, then o${back.summary.slice(1)}`,
+      });
   }
   return dedupeRoutes(made).slice(0, PAST_POOL);
 }
