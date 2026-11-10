@@ -15,6 +15,7 @@ import {
 } from "./routeMapData";
 import { type RunSuggestion } from "./routeSuggestions";
 import { rawUnitDecimals } from "./streamPrecision";
+import { NO_ORS_NOTE, toStructured } from "./tools/suggestRunRoute";
 
 const activity = (
   overrides: Partial<IntervalsActivity> = {},
@@ -492,10 +493,13 @@ describe("suggestion payloads", () => {
       routes_note: null,
       warnings: [],
     };
-    const data = buildSuggestionsMapData(run, []);
+    const text = () =>
+      toStructured({ generation_available: true, warnings: [], runs: [run] })
+        .runs[0]!;
+    const data = buildSuggestionsMapData(run, text(), []);
     expect(data.candidates[0]!.label).toBe("New loop");
     run.candidates[0]!.score = 72;
-    expect(buildSuggestionsMapData(run, []).candidates[0]!.label).toBe(
+    expect(buildSuggestionsMapData(run, text(), []).candidates[0]!.label).toBe(
       "New loop, score 72",
     );
     const kinds = data.candidates[0]!.map.annotations?.waypoints?.map(
@@ -507,5 +511,93 @@ describe("suggestion payloads", () => {
         (w) => w.kind === "custom",
       ).map((w) => w.label),
     ).toEqual(["The hill", "The top"]);
+  });
+
+  it("gives each candidate the numbers suggest-run-route's text gives", () => {
+    const run: RunSuggestion = {
+      event_id: 1,
+      date: "2026-11-05",
+      name: "Easy",
+      description: null,
+      distance_m: 6000,
+      distance_source: "event",
+      start: {
+        label: "Home",
+        point: coordinates[0]!,
+        source: "env",
+        history_runs: 4,
+      },
+      end: { label: "Park", point: coordinates.at(-1)! },
+      via: [],
+      shape: "point-to-point",
+      terrain: "any",
+      routes_note: "Only 1 route: 1 new route was kept.",
+      candidates: [
+        {
+          kind: "generated",
+          activity_id: null,
+          name: "New route",
+          date: null,
+          shape: "point-to-point",
+          distance_m: 6240.4,
+          climb_m: 31.6,
+          path_share: 0.624,
+          crossings_per_km: 1.4,
+          signals_per_km: 0.3,
+          main_road_km: 0.8,
+          green_share: 0.35,
+          score: 81,
+          score_breakdown: {
+            paths: 20,
+            known_lines: null,
+            crossings: 10,
+            main_roads: 12,
+            backtracking: 10,
+            green: 8,
+            fit: 15,
+            recency: 0,
+          },
+          hill: null,
+          notes: ["Crosses a busy road at 2.1 km."],
+          summary: "via A",
+          track,
+        },
+      ],
+      warnings: [],
+    };
+    const structured = toStructured({
+      generation_available: false,
+      warnings: [],
+      runs: [run],
+    });
+    const data = buildSuggestionsMapData(run, structured.runs[0]!, [
+      NO_ORS_NOTE,
+    ]);
+    const [text] = structured.runs[0]!.candidates;
+    expect(data).toMatchObject({
+      startSource: "HOME_START",
+      endLabel: "Park",
+      distance_m: 6000,
+      routesNote: "Only 1 route: 1 new route was kept.",
+      warnings: [NO_ORS_NOTE],
+    });
+    expect(data.candidates[0]!.notes).toEqual([
+      "Crosses a busy road at 2.1 km.",
+    ]);
+    expect(data.candidates[0]!.stats).toMatchObject({
+      distance_m: text!.distance_m,
+      distance_diff_m: 240,
+      climb_m: 32,
+      climb_per_km: text!.climb_per_km,
+      path_share: 0.62,
+      crossings_per_km: 1.4,
+      signals_per_km: 0.3,
+      main_road_km: 0.8,
+      green_share: 0.35,
+      score: 81,
+    });
+    expect(data.candidates[0]!.stats.losses.length).toBeGreaterThan(0);
+    for (const loss of data.candidates[0]!.stats.losses)
+      expect(Number.isInteger(loss.points)).toBe(true);
   });
 });

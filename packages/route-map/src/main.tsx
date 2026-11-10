@@ -79,7 +79,10 @@ function SuggestionContent({
   return (
     <AppShell hostCtx={hostCtx} mode={mode} app={app}>
       {loading ? (
-        <LoadingSkeleton progress={progress} />
+        <LoadingSkeleton
+          label="Loading route suggestions"
+          progress={progress}
+        />
       ) : error || !data ? (
         <ErrorState
           message={error ?? "No route suggestions available"}

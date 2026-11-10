@@ -35,4 +35,20 @@ export const VIEW_TOOLS: ViewToolDefinition[] = [
       })
       .strict(),
   },
+  {
+    name: "select-route",
+    title: "Show a suggested route",
+    description:
+      "On the route suggestions card only: show one of the suggested routes on the map, by its number in the suggestion list (1 is the first). Use it when talking about a route that is not the one on screen.",
+    inputSchema: z
+      .object({
+        option: z
+          .number()
+          .int()
+          .min(1)
+          .nullish()
+          .describe("The route's number in the suggestion list, from 1."),
+      })
+      .strict(),
+  },
 ];

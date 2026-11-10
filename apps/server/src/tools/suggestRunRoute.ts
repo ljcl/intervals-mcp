@@ -117,11 +117,16 @@ const inputSchema = z.object({
 
 type SuggestRunRouteInput = z.infer<typeof inputSchema>;
 
-const START_SOURCE = {
+/** How the start was chosen, as the text and the card say it. */
+export const START_SOURCE = {
   argument: "given",
   env: "HOME_START",
   inferred: "inferred from recent runs",
 } as const;
+
+/** Said wherever suggestions are shown without ORS_API_KEY. */
+export const NO_ORS_NOTE =
+  "New routes need ORS_API_KEY; without it nothing is routed, so only your past runs and saved corridors were offered.";
 
 function km(meters: number): string {
   return (meters / 1000).toFixed(1);
@@ -321,10 +326,7 @@ function lines(structured: ReturnType<typeof toStructured>): string[] {
     out.push("");
   }
   for (const warning of structured.warnings) out.push(`Warning: ${warning}`);
-  if (!structured.generation_available)
-    out.push(
-      "New routes need ORS_API_KEY; without it nothing is routed, so only your past runs and saved corridors were offered.",
-    );
+  if (!structured.generation_available) out.push(NO_ORS_NOTE);
   return out;
 }
 

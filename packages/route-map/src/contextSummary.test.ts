@@ -102,4 +102,25 @@ describe("buildRouteMapContextSummary", () => {
       'Route r1 is now version 4. Viewing the map for stored route "Bay Run (v4)" (route_id r1), version 4 of 4. Distance 13.2 km. Elevation gain 120 m. It has 1 section. Compared with version 3: the line is the same.',
     );
   });
+
+  it("names a suggested route's planned run and place among the options", () => {
+    const summary = buildRouteMapContextSummary({
+      name: "Easy 6 km: New loop",
+      activityType: "Run",
+      distanceKm: 6.12,
+      elevationGain: 25,
+      hasGeometry: true,
+      colorMetric: "Altitude",
+      suggestion: {
+        run: "Easy 6 km",
+        date: "2026-10-20",
+        option: 2,
+        count: 3,
+        label: "New loop, score 79",
+      },
+    });
+    expect(summary).toBe(
+      'Viewing the map for suggested route 2 of 3 ("New loop, score 79") for planned run "Easy 6 km" on 2026-10-20. Distance 6.1 km. Elevation gain 25 m.',
+    );
+  });
 });

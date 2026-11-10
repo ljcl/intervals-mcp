@@ -13,6 +13,10 @@
   line-height: var(--line-height-tight);
 }
 
+.summary {
+  color: var(--color-text-primary);
+}
+
 .context {
   color: var(--color-text-secondary);
 }

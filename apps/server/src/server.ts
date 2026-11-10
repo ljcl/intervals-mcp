@@ -89,6 +89,7 @@ import {
   buildTrackMapData,
   type RouteMapData,
   routeVersionOrNull,
+  suggestionsMessageData,
 } from "./routeMapData";
 import {
   loadRouteSuggestions,
@@ -150,8 +151,10 @@ import { listGearTool } from "./tools/listGear";
 import { manageCorridorsTool } from "./tools/manageCorridors";
 import { stitchRouteTool } from "./tools/stitchRoute";
 import {
+  NO_ORS_NOTE,
   routeSuggestionEnv,
   suggestRunRouteTool,
+  toStructured,
 } from "./tools/suggestRunRoute";
 import { updateActivityTool } from "./tools/updateActivity";
 import { updateGearTool } from "./tools/updateGear";
@@ -1739,16 +1742,31 @@ async function handleGetRouteSuggestionsData(
   token: string,
   progress: ReportProgress,
 ): Promise<ToolCallResult> {
-  const suggestions = await loadRouteSuggestions(
-    token,
-    { ...(args as RouteSuggestionArgs), days: 1 },
-    routeSuggestionEnv(),
-    progress,
-  );
+  const json = (data: unknown): ToolCallResult => ({
+    content: [{ type: "text", text: JSON.stringify(data) }],
+  });
+  let suggestions: Awaited<ReturnType<typeof loadRouteSuggestions>>;
+  try {
+    suggestions = await loadRouteSuggestions(
+      token,
+      { ...(args as RouteSuggestionArgs), days: 1 },
+      routeSuggestionEnv(),
+      progress,
+    );
+  } catch (error) {
+    // Retrying cannot change an argument error, so the card shows it under its header instead of a retry.
+    if (error instanceof RouteSuggestionError && !error.retryable)
+      return json(suggestionsMessageData(error.message));
+    throw error;
+  }
   const run = suggestions.runs[0];
-  if (!run) throw new RouteSuggestionError("No planned run to map.");
-  const data = buildSuggestionsMapData(run, suggestions.warnings);
-  return { content: [{ type: "text", text: JSON.stringify(data) }] };
+  if (!run) return json(suggestionsMessageData("No planned run to map."));
+  const warnings = suggestions.generation_available
+    ? suggestions.warnings
+    : [...suggestions.warnings, NO_ORS_NOTE];
+  return json(
+    buildSuggestionsMapData(run, toStructured(suggestions).runs[0]!, warnings),
+  );
 }
 
 async function handleViewRouteSuggestions(

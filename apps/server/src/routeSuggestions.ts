@@ -165,9 +165,12 @@ export interface RouteSuggestions {
 
 /** A request the engine cannot answer, worded for the athlete. */
 export class RouteSuggestionError extends Error {
-  constructor(message: string) {
+  /** True when the same call may succeed later (an upstream fault, not an argument). */
+  readonly retryable: boolean;
+  constructor(message: string, { retryable = false } = {}) {
     super(message);
     this.name = "RouteSuggestionError";
+    this.retryable = retryable;
   }
 }
 
@@ -412,6 +415,11 @@ export async function resolvePlace(
     ) {
       throw new RouteSuggestionError(
         `Could not look up "${text}": ${orsProblem(error)}.`,
+        {
+          retryable: !(
+            error instanceof OrsApiError && error.response.status < 500
+          ),
+        },
       );
     }
     throw error;

@@ -182,14 +182,53 @@ export interface ToolArgs {
   to_km?: number;
 }
 
+/** One candidate's numbers, as suggest-run-route's text gives them. */
+export interface SuggestionStats {
+  distance_m: number;
+  /** Difference from the planned distance, m. */
+  distance_diff_m: number;
+  climb_m: number;
+  climb_per_km: number;
+  path_share: number | null;
+  crossings_per_km: number | null;
+  signals_per_km: number | null;
+  main_road_km: number | null;
+  green_share: number | null;
+  score: number;
+  losses: Array<{ label: string; points: number }>;
+}
+
 /** Payload of the app-only `get-route-suggestions-data` tool: one planned run's candidates. */
 export interface RouteSuggestionsData {
   source: "suggestion";
-  date: string;
+  /** Null when no planned run was found: `warnings` then says why. */
+  date: string | null;
   name: string;
-  startLabel: string;
-  candidates: Array<{ label: string; summary: string; map: RouteMapData }>;
+  startLabel: string | null;
+  /** How the start was chosen: "given", "HOME_START", "inferred from recent runs". */
+  startSource: string | null;
+  endLabel: string | null;
+  /** The planned distance, m. */
+  distance_m: number | null;
+  /** Why fewer routes than usual came back. */
+  routesNote: string | null;
+  candidates: Array<{
+    label: string;
+    summary: string;
+    notes: string[];
+    stats: SuggestionStats;
+    map: RouteMapData;
+  }>;
   warnings: string[];
+}
+
+/** Which suggested route a map shows, for the model context and narration. */
+export interface SuggestionPosition {
+  run: string;
+  date: string | null;
+  option: number;
+  count: number;
+  label: string;
 }
 
 /** Tool input for `view-route-suggestions`: every field optional, passed through for the server to validate. */

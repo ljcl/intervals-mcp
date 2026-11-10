@@ -14,7 +14,10 @@ describe("route map view tools", () => {
   it("advertise set-viewport with the fields the model has been given", async () => {
     const tools = await advertisedViewTools(VIEW_TOOLS);
 
-    expect(tools.map((tool) => tool.name)).toEqual(["set-viewport"]);
+    expect(tools.map((tool) => tool.name)).toEqual([
+      "set-viewport",
+      "select-route",
+    ]);
     const [tool] = tools;
     expect(tool).toMatchObject({
       title: "Frame part of the route",
@@ -37,6 +40,18 @@ describe("route map view tools", () => {
       reset: {
         type: "boolean",
         description: "Zoom back out to the whole route.",
+      },
+    });
+  });
+
+  it("advertise select-route with a 1-based option", async () => {
+    const [, tool] = await advertisedViewTools(VIEW_TOOLS);
+    expect(viewToolFields(tool!)).toEqual({
+      option: {
+        type: "integer",
+        minimum: 1,
+        maximum: Number.MAX_SAFE_INTEGER,
+        description: "The route's number in the suggestion list, from 1.",
       },
     });
   });
