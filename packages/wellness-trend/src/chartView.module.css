@@ -1,0 +1,37 @@
+.panels {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+  font-family: var(--font-sans);
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0-5);
+}
+
+.panelLabel {
+  display: flex;
+  gap: var(--space-1-5);
+  align-items: center;
+  font-size: var(--font-text-xs-size);
+  color: var(--color-text-secondary);
+}
+
+.swatch {
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: var(--border-radius-full);
+}
+
+.chart {
+  width: 100%;
+  height: var(--panel-height, 96px);
+}
+
+/* The bottom panel also holds the date ticks. */
+.panel[data-dates] .chart {
+  height: calc(var(--panel-height, 96px) + 20px);
+}

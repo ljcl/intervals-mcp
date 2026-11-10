@@ -658,6 +658,17 @@ const CASES: Record<string, SizeCase[]> = {
   "view-training-load": [{ label: "365 days", args: { days: 365 } }],
   "view-fitness-trend": [{ label: "365 days", args: { days: 365 } }],
   "view-activity-zones": [{ label: "default", args: { id: ID } }],
+  "view-wellness": [
+    {
+      label: "90-day range, 600-char comment every day",
+      args: { oldest: "2026-07-01", newest: "2026-09-28" },
+      setup: commentEveryDay,
+    },
+    {
+      label: "366-day range, weekly rows",
+      args: { oldest: "2025-09-28", newest: "2026-09-28" },
+    },
+  ],
   "view-compare-activities": [
     { label: "default", args: { activityId1: ID, activityId2: ID_2 } },
     {

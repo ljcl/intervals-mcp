@@ -144,11 +144,16 @@ import { getRunningDynamicsTool } from "./tools/getRunningDynamics";
 import { getRunningSummaryTool } from "./tools/getRunningSummary";
 import { getSplitAnalysisTool } from "./tools/getSplitAnalysis";
 import { getTrainingLoadTool } from "./tools/getTrainingLoad";
-import { getWellnessTool } from "./tools/getWellness";
+import {
+  getWellnessTool,
+  loadWellness,
+  resolveWellnessRange,
+} from "./tools/getWellness";
 import { listActivitiesTool } from "./tools/listActivities";
 import { listCorridorsTool } from "./tools/listCorridors";
 import { listGearTool } from "./tools/listGear";
 import { manageCorridorsTool } from "./tools/manageCorridors";
+import { WellnessOutputSchema } from "./tools/outputs";
 import { stitchRouteTool } from "./tools/stitchRoute";
 import {
   NO_ORS_NOTE,
@@ -173,6 +178,7 @@ import {
 } from "./utils/localDate";
 import { isPaceActivity } from "./utils/running";
 import { SERVER_VERSION } from "./version";
+import { buildWellnessTrendData } from "./wellnessTrendApp";
 
 const EMPTY_SCHEMA = { type: "object", properties: {}, required: [] } as const;
 
@@ -398,6 +404,21 @@ function routeMapInput(idText: string) {
     );
 }
 
+/** Days a wellness chart covers when the call names no oldest. */
+const WELLNESS_TREND_DEFAULT_DAYS = 30;
+
+/**
+ * Wellness-trend args, shared by the view and data tools: get-wellness's own
+ * range fields, so the view's twin reads the same days. Only oldest's default
+ * differs, since one day charts nothing.
+ */
+const wellnessTrendInput = z.object({
+  oldest: getWellnessTool.inputSchema.shape.oldest.describe(
+    `Inclusive lower bound (YYYY-MM-DD). Defaults to ${WELLNESS_TREND_DEFAULT_DAYS - 1} days before newest. A range can span 366 days; past 90 days the chart shows weekly averages.`,
+  ),
+  newest: getWellnessTool.inputSchema.shape.newest,
+});
+
 const APP_TOOL_INPUT_SCHEMAS: Record<string, z.ZodType> = {
   "view-activity-chart": z.object({
     id: intervalsActivityIdInput("The intervals.icu activity id to visualize."),
@@ -441,6 +462,8 @@ const APP_TOOL_INPUT_SCHEMAS: Record<string, z.ZodType> = {
     activityId1: intervalsActivityIdInput("First activity ID (baseline)."),
     activityId2: intervalsActivityIdInput("Second activity ID (comparison)."),
   }),
+  "view-wellness": wellnessTrendInput,
+  "get-wellness-trend-data": wellnessTrendInput,
 };
 
 /**
@@ -525,6 +548,12 @@ const APP_RESOURCES: AppResource[] = [
     name: "Fitness Trend",
     title: "Fitness trend chart",
     htmlPath: appHtmlRequire.resolve("@intervals-mcp/fitness-trend/app.html"),
+  },
+  {
+    uri: "ui://wellness-trend/app.html",
+    name: "Wellness Trend",
+    title: "Wellness trend chart",
+    htmlPath: appHtmlRequire.resolve("@intervals-mcp/wellness-trend/app.html"),
   },
 ];
 
@@ -867,6 +896,40 @@ function buildToolDefs(): ToolDef[] {
     },
   });
 
+  defs.push({
+    name: "view-wellness",
+    title: "Wellness trend chart",
+    description:
+      "Open an interactive wellness trend chart: HRV, resting heart rate and sleep on a shared date axis, one panel each, with a gap on any day that has no record. " +
+      "Past 90 days it charts weekly averages (Monday start), as get-wellness does. Takes oldest and newest; the default is the last 30 days. " +
+      "Its result carries get-wellness's text and structured data for the same range. " +
+      "Prefer this over the text-only get-wellness when the user wants to see how HRV, resting heart rate or sleep is trending.",
+    inputSchema: toInputSchema(APP_TOOL_INPUT_SCHEMAS["view-wellness"]!),
+    outputSchema: toOutputSchema(WellnessOutputSchema),
+    annotations: READ_ONLY,
+    _meta: {
+      ui: { resourceUri: "ui://wellness-trend/app.html" },
+    },
+  });
+
+  defs.push({
+    name: "get-wellness-trend-data",
+    title: "Wellness trend chart data",
+    description:
+      "Internal data feed for the wellness-trend UI: returns HRV (one measure, rMSSD or SDNN), resting heart rate and sleep for every day of the range, or every week past 90 days, with nulls where nothing was recorded, as JSON. " +
+      "The view-wellness app calls this; not intended for direct model use.",
+    inputSchema: toInputSchema(
+      APP_TOOL_INPUT_SCHEMAS["get-wellness-trend-data"]!,
+    ),
+    annotations: READ_ONLY,
+    _meta: {
+      ui: {
+        resourceUri: "ui://wellness-trend/app.html",
+        visibility: ["app"],
+      },
+    },
+  });
+
   return defs;
 }
 
@@ -1010,6 +1073,11 @@ interface ViewText {
    * error result is the view's result, with its reason.
    */
   failsWithTwin?: boolean;
+  /**
+   * The twin's structuredContent is the view's too: the view publishes the
+   * twin's outputSchema.
+   */
+  structured?: boolean;
 }
 
 /**
@@ -1046,7 +1114,10 @@ async function viewResult(
             twinText,
           ]
         : [header(`The same data from ${view.twin} follows.`), "", twinText];
-      return { content: [{ type: "text", text: text.join("\n") }] };
+      return {
+        content: [{ type: "text", text: text.join("\n") }],
+        ...(view.structured && { structuredContent: twin.structuredContent }),
+      };
     }
   }
   const text = [header("Its data follows."), "", ...(await buildLines())];
@@ -2038,6 +2109,72 @@ interface ToolCallResult {
   attachments?: ToolAttachment[];
 }
 
+/**
+ * The range both wellness-trend tools read: get-wellness's own check
+ * (`resolveWellnessRange`), with oldest defaulting to a 30-day chart.
+ */
+function wellnessTrendRange(
+  args: Record<string, unknown>,
+): { oldest: string; newest: string } | { invalid: ToolCallResult } {
+  const newest =
+    typeof args.newest === "string" ? args.newest : todayLocal(getTimeZone());
+  const oldest =
+    typeof args.oldest === "string"
+      ? args.oldest
+      : addDays(newest, -(WELLNESS_TREND_DEFAULT_DAYS - 1));
+  const range = resolveWellnessRange({ oldest, newest });
+  if ("error" in range)
+    return {
+      invalid: {
+        isError: true,
+        content: [{ type: "text", text: range.error }],
+      },
+    };
+  return range;
+}
+
+async function handleGetWellnessTrendData(
+  args: Record<string, unknown>,
+  token: string,
+  progress: ReportProgress,
+): Promise<ToolCallResult> {
+  const range = wellnessTrendRange(args);
+  if ("invalid" in range) return range.invalid;
+  const { response } = await loadWellness(
+    token,
+    range.oldest,
+    range.newest,
+    progress,
+  );
+  const data = buildWellnessTrendData(response);
+  return { content: [{ type: "text", text: JSON.stringify(data) }] };
+}
+
+async function handleViewWellness(
+  args: Record<string, unknown>,
+  token: string,
+  progress: ReportProgress,
+  context: ToolCallContext,
+): Promise<ToolCallResult> {
+  const range = wellnessTrendRange(args);
+  if ("invalid" in range) return range.invalid;
+  return viewResult(
+    // Not reached: the twin takes the view's own range fields, and its
+    // failure is the view's (failsWithTwin).
+    async () => [`Wellness ${range.oldest} to ${range.newest}`],
+    {
+      kind: "wellness trend chart",
+      twin: getWellnessTool.name,
+      failsWithTwin: true,
+      structured: true,
+    },
+    { oldest: range.oldest, newest: range.newest },
+    token,
+    progress,
+    context,
+  );
+}
+
 /** MCP App tool name to handler (same dispatch path as the text tools). */
 const APP_TOOL_HANDLERS: Record<
   string,
@@ -2064,6 +2201,8 @@ const APP_TOOL_HANDLERS: Record<
   "get-activity-zones-data": handleGetActivityZonesData,
   "view-compare-activities": handleViewCompareActivities,
   "get-compare-activities-data": handleGetCompareActivitiesData,
+  "view-wellness": handleViewWellness,
+  "get-wellness-trend-data": handleGetWellnessTrendData,
 };
 
 /** Per-call hooks the transport layer supplies to {@link dispatchToolCall}. */

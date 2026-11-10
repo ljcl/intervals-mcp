@@ -29,6 +29,7 @@ export default {
         "@intervals-mcp/fitness-trend",
         "@intervals-mcp/route-map",
         "@intervals-mcp/training-load",
+        "@intervals-mcp/wellness-trend",
       ],
     },
     "packages/activity-chart": {
@@ -59,6 +60,10 @@ export default {
       entry: ["src/main.tsx"],
       project: ["src/**/*.{ts,tsx}"],
     },
+    "packages/wellness-trend": {
+      entry: ["src/main.tsx"],
+      project: ["src/**/*.{ts,tsx}"],
+    },
     "packages/design-system": {
       project: ["src/**/*.{ts,tsx}"],
     },
@@ -77,6 +82,7 @@ export default {
           "../../packages/fitness-trend/src/**/*.stories.@(ts|tsx)",
           "../../packages/route-map/src/**/*.stories.@(ts|tsx)",
           "../../packages/training-load/src/**/*.stories.@(ts|tsx)",
+          "../../packages/wellness-trend/src/**/*.stories.@(ts|tsx)",
           "../../packages/design-system/stories/**/*.stories.@(ts|tsx)",
           "../../packages/ui/src/**/*.stories.@(ts|tsx)",
         ],
@@ -94,6 +100,7 @@ export default {
         "@intervals-mcp/route-map",
         "@intervals-mcp/training-load",
         "@intervals-mcp/ui",
+        "@intervals-mcp/wellness-trend",
       ],
     },
   },

@@ -1,7 +1,7 @@
 # MCP App packages
 
-Conventions shared by the seven React MCP App packages
-(`packages/{activity-chart,cadence-trends,route-map,training-load,compare-activities,activity-zones,fitness-trend}`),
+Conventions shared by the eight React MCP App packages
+(`packages/{activity-chart,cadence-trends,route-map,training-load,compare-activities,activity-zones,fitness-trend,wellness-trend}`),
 then per-app details. Read this before adding or substantially changing an app.
 
 ## App shell conventions
@@ -26,7 +26,7 @@ than in each app.
   returning `null` then means "the host spoke and the input is unusable" — an
   `ErrorState` naming the missing id, not an endless skeleton. Omit the message
   only when every argument is optional (cadence-trends, training-load,
-  fitness-trend); omitting it on an app that needs an id puts that app on a
+  fitness-trend, wellness-trend); omitting it on an app that needs an id puts that app on a
   permanent loading skeleton calling the server with `id: undefined`. The
   classification is pure and unit-tested (`classifyToolInput`); the branches
   are storied on `AppRootView`, since a live host is not reachable from
@@ -742,3 +742,29 @@ card's subtitle is `lookbackLabel` (`packages/data`): "Last 90 days", or
   changed, because the legend would still render over an EmptyState. The state
   change is kept while a scope loads or fails. Band-kind toggles are not
   exposed.
+
+### Wellness Trend
+
+HRV, resting heart rate and sleep for a date range. Calls
+`get-wellness-trend-data` on mount with `oldest`/`newest` (`windowToolArgs`,
+so `endDate`/`asOf` reach `newest`); both are optional and the range
+defaults to the last 30 days, so there is no `missingArgsMessage`.
+
+- **No new math.** The feed runs `loadWellness` (`tools/getWellness.ts`), the
+  read get-wellness answers from, and `buildWellnessTrendData`
+  (`wellnessTrendApp.ts`) only renames and lays the rows out. Past 90 days it
+  charts get-wellness's weekly means (Monday start), the same threshold
+  (`DAILY_MAX_DAYS`), so the chart and the text show the same numbers for the
+  same range; `server.appHandlers.test.ts` checks both granularities.
+- **Gaps, not zeros.** The feed puts a point on every calendar day (or
+  week) of the range, all null where nothing was recorded, and the lines run
+  with `connectNulls` off. Small dots keep a day between two gaps visible.
+- **Three units, three panels.** ms, bpm and hours never share a y axis:
+  each series is its own `LineChart`, stacked, with one `syncId` so the
+  cursor and tooltips move together, and date ticks on the bottom panel only.
+  A series with no value in the range has no panel; with none the card shows
+  `EmptyState`.
+- HRV is one measure per chart: rMSSD, or SDNN when more days carry it. The
+  panel label names it, since the two are not comparable.
+- Each panel has its own `title`/`desc` (`a11y.ts`: days recorded, gaps,
+  range, first and latest).

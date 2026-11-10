@@ -228,6 +228,7 @@ const CALLS: Array<[tool: string, args: Record<string, unknown>]> = [
   ["get-activity-streams", { id: activity.id }],
   ["list-gear", {}],
   ["get-wellness", {}],
+  ["view-wellness", {}],
   ["get-athlete-zones", {}],
   // The re-read is the recorded day, so the write echoes a not-applied
   // warning: the larger shape.

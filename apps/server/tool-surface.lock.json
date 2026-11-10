@@ -29,6 +29,7 @@
     "get-training-load": "6a4965120d0be760",
     "get-training-load-data": "72ff2617bce52435",
     "get-wellness": "940e9b3ffdddc640",
+    "get-wellness-trend-data": "0f9b065152c10bb5",
     "list-activities": "379d71f548742cf3",
     "list-corridors": "e55c1e9a15e4acba",
     "list-gear": "5e0547fa4d55675b",
@@ -45,6 +46,7 @@
     "view-fitness-trend": "d9c36ed553027941",
     "view-route-map": "76e205b4617e4eb7",
     "view-route-suggestions": "d8f6bdfc5d0392fe",
-    "view-training-load": "60beef127ffa794a"
+    "view-training-load": "60beef127ffa794a",
+    "view-wellness": "e13b25d4f5ceb120"
   }
 }

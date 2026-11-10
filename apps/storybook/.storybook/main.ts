@@ -55,6 +55,10 @@ export default defineMain({
       directory: "../../../packages/activity-zones/src/",
     },
     {
+      titlePrefix: "Wellness Trend",
+      directory: "../../../packages/wellness-trend/src/",
+    },
+    {
       directory: "../../../packages/design-system/stories/",
     },
     { titlePrefix: "UI", directory: "../../../packages/ui/src/" },

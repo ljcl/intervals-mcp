@@ -104,6 +104,7 @@ same numbers as text use the matching read tool (e.g. `get-fitness-trend`,
 | `view-compare-activities` | `get-compare-activities-data` | Two activities' streams overlaid with a delta summary |
 | `view-activity-zones` | `get-activity-zones-data` | Time-in-zone bar chart for HR and, for a run, pace zones |
 | `view-fitness-trend` | `get-fitness-trend-data` | CTL/ATL/TSB over time with fatigue/freshness bands and a taper plan or a calendar plan projection (`calendarPlan`); toggles whole-body vs runs-only; `newest` for a past block, with no projection |
+| `view-wellness` | `get-wellness-trend-data` | HRV, resting HR and sleep on one date axis, gaps where nothing was recorded; `oldest`/`newest` (default the last 30 days), weekly averages past 90 days |
 
 Once a chart is open, the model can adjust it with that chart's own tool:
 `set-brush-window` (activity chart: zoom to a stretch), `set-viewport` (route

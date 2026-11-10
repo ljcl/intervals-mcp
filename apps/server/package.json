@@ -21,6 +21,7 @@
     "@intervals-mcp/fitness-trend": "workspace:*",
     "@intervals-mcp/route-map": "workspace:*",
     "@intervals-mcp/training-load": "workspace:*",
+    "@intervals-mcp/wellness-trend": "workspace:*",
     "pbf": "5.1.2",
     "zod": "4.6.7"
   },

@@ -1,0 +1,20 @@
+.container {
+  --panel-height: 96px;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  font-family: var(--font-sans);
+}
+
+.container[data-compact] {
+  --panel-height: 88px;
+}
+
+.viewContainer {
+  flex: 1;
+  padding: var(--space-4) 0 0;
+}
+
+.container[data-compact] .viewContainer {
+  padding: var(--space-2) 0 0;
+}
