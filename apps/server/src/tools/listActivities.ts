@@ -31,8 +31,9 @@ const description = `
 Lists intervals.icu activities in a local date range, newest first. Start
 here: each entry carries the activity id that every per-activity tool needs,
 plus distance, time, pace (per km for runs, per 100 m for swims) or speed
-(km/h for other sports), heart rate, training load, and the types of any
-best or threshold rise intervals.icu marked (get-activity has the detail).
+(km/h for other sports), heart rate, training load, interval reps, and the
+types of any best or threshold rise intervals.icu marked (get-activity has
+the detail).
 
 For the most recent run, pass id "latest" to the per-activity tool instead
 of listing first; type "runs" lists runs only.
@@ -113,6 +114,7 @@ export interface ActivitySummaryEntry {
   tags: string[];
   race: boolean;
   achievement_types: string[];
+  interval_summary: string[];
 }
 
 /** Maps one raw intervals.icu activity to the compact list entry. Exported for direct testing. */
@@ -150,6 +152,7 @@ export function mapActivitySummary(a: IntervalsActivity): ActivitySummaryEntry {
     tags: a.tags ?? [],
     race: a.race ?? false,
     achievement_types: achievementTypes(a.icu_achievements),
+    interval_summary: a.interval_summary ?? [],
   };
 }
 
@@ -171,6 +174,12 @@ interface ActivityListResponse {
   activities: ActivitySummaryEntry[];
 }
 
+/** Interval groups of 2 or more reps ("10x 4m57s 175bpm"); a group whose
+ * count does not parse is left out. Exported for direct testing. */
+export function repeatedIntervals(summary: string[]): string[] {
+  return summary.filter((s) => Number(/^\s*(\d+)x\s/.exec(s)?.[1]) >= 2);
+}
+
 function formatActivityLine(entry: ActivitySummaryEntry): string {
   const parts: string[] = [];
   if (entry.distance_km != null)
@@ -184,6 +193,8 @@ function formatActivityLine(entry: ActivitySummaryEntry): string {
     parts.push(`HR ${Math.round(entry.average_hr)}`);
   if (entry.load != null) parts.push(`load ${Math.round(entry.load)}`);
   if (entry.calories != null) parts.push(`${Math.round(entry.calories)} kcal`);
+  const reps = repeatedIntervals(entry.interval_summary);
+  if (reps.length > 0) parts.push(`reps: ${reps.join("; ")}`);
   const types = entry.achievement_types;
   if (types.length > 0)
     parts.push(

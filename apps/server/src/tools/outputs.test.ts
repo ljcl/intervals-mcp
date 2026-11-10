@@ -408,6 +408,7 @@ describe("schemas align with the real tool rawObjects", () => {
           tags: [],
           race: false,
           achievement_types: ["LTHR_UP"],
+          interval_summary: ["10x 4m57s 175bpm"],
         },
       ],
     };

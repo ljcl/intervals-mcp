@@ -112,7 +112,7 @@ const PROMPTS: PromptDefinition[] = [
         "",
         "Work through it in this order:",
         `1. Call get-training-load with days=${days} for volume, trend, any volume-spike warnings (a sharp rise on the recent average, not an injury measure), the easy/moderate/hard split, and each week's long run (id included).`,
-        `2. Call list-activities with oldest=${oldest}, newest=${today} and limit=200 to identify the hardest efforts. The long runs are already in step 1.`,
+        `2. Call list-activities with oldest=${oldest}, newest=${today} and limit=200 to identify the hardest efforts (entries name interval reps). The long runs are already in step 1.`,
         "3. For the 1-2 standout runs (the longest long run, the hardest effort), call get-running-summary (and compare-activities if two are directly comparable).",
         `4. Render view-cadence-trends with days=${days} so I can explore cadence patterns interactively.`,
         "",

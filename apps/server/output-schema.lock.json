@@ -1317,6 +1317,7 @@
       "activities[].distance_km: null number",
       "activities[].gear_id: null string",
       "activities[].id: string",
+      "activities[].interval_summary: array",
       "activities[].is_strava_stub: boolean",
       "activities[].load: null number",
       "activities[].moving_time: string",

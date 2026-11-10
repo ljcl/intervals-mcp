@@ -71,7 +71,7 @@ descriptions.
 
 | Tool | Description |
 | ---- | ----------- |
-| `list-activities` | Compact, date-bounded activity list with units; the entry point for finding activity ids; swim pace per 100 m, speed for other sports, achievement types |
+| `list-activities` | Compact, date-bounded activity list with units; the entry point for finding activity ids; swim pace per 100 m, speed for other sports, interval reps, achievement types |
 | `get-activity` | One activity in detail: metrics, load, HR zones, running dynamics, intervals, gear name, achievements, HR recovery; use after list-activities |
 | `get-activity-streams` | Time-series streams for one activity, downsampled to a bounded number of points, including running dynamics |
 | `list-gear` | The athlete's gear (shoes) with mileage, purchase date, notes, retirement status, reminders and auto-assign rules |
@@ -419,7 +419,12 @@ has none; `get-activity` carries it too, and both texts print "576 kcal").
 It also carries `achievement_types`: the
 intervals.icu achievement types the activity set (`achievements.ts`), empty
 when none; the text names them after the load, a threshold type with the
-activity type ("Swim LTHR up"), because a threshold belongs to one sport. Swim and OpenWaterSwim
+activity type ("Swim LTHR up"), because a threshold belongs to one sport.
+`interval_summary` is intervals.icu's interval groups as it gives them
+(`"10x 4m57s 175bpm"`), empty when it has none; the text prints after the
+calories only the groups whose leading count is 2 or more
+(`reps: 10x 4m57s 175bpm`, several joined by `; `), skipping any whose count
+does not parse (`repeatedIntervals`). Swim and OpenWaterSwim
 entries carry `pace_min_per_100m`, and every other sport that is not a run
 and has a distance carries `speed_kmh`. Both come from `sportSpeed`
 (`utils/running.ts`), from distance over moving time. A page that
