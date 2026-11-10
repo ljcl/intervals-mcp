@@ -299,11 +299,15 @@ export async function loadFitnessTrend(
     if (gapDates.length > 0) {
       const plural = gapDates.length !== 1;
       const willProject = projectDays > 0 && !taper;
+      // A calendar projection is intervals.icu's own rows, with no rest catch-up.
+      const projectionBasis = calendarPlan
+        ? "; the projection is intervals.icu's own, from its calendar plan"
+        : `; the projection assumes rest for ${unsyncedDays === 1 ? "it" : "them"} before continuing forward`;
       const trailingClause =
         unsyncedDays > 0
           ? ` The most recent ${unsyncedDays} ${unsyncedDays === 1 ? "day" : "days"} ` +
             `(${addDays(asOfDate!, 1)} to ${endDate}) ${unsyncedDays === 1 ? "has" : "have"} not ` +
-            `synced yet${willProject ? `; the projection assumes rest for ${unsyncedDays === 1 ? "it" : "them"} before continuing forward` : ""}.`
+            `synced yet${willProject ? projectionBasis : ""}.`
           : "";
       warnings.push(
         `${gapDates.length} of ${days} day${plural ? "s" : ""} in the window ` +
