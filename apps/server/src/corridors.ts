@@ -4,7 +4,7 @@
  * found in history, covering runs, a corridor via's direction and whether
  * a run follows a corridor. Pure; the tools and engine read and store.
  */
-import { passes, sameLine } from "./historyLegs";
+import { legSection, passes, sameLine } from "./historyLegs";
 import {
   haversineMeters,
   type LatLng,
@@ -12,6 +12,7 @@ import {
   type RouteTrack,
 } from "./mapAnchors";
 import { placeWords } from "./orsClient";
+import { type Via } from "./routeCandidates";
 import { sliceTrack, trackLength } from "./routeGeometry";
 import {
   KNOWN_RUNS,
@@ -26,6 +27,23 @@ export const FOUND_GAP_M = 30;
 export const FOUND_MIN_M = 1000;
 /** A stretch this much on a saved corridor or a kept stretch repeats it. */
 export const FOUND_OVERLAP = 0.8;
+
+/** Share of a line that follows another for the two to overlap. */
+export const OVERLAP_MARK = 0.2;
+
+function followedShare(track: RouteTrack, other: RouteTrack): number {
+  const sets = lineFollowers([other])(track, 1);
+  return sets.length === 0
+    ? 0
+    : sets.filter((s) => s.size > 0).length / sets.length;
+}
+
+/** Whether 20% or more of either line follows the other. */
+export function linesOverlap(a: RouteTrack, b: RouteTrack): boolean {
+  return (
+    followedShare(a, b) >= OVERLAP_MARK || followedShare(b, a) >= OVERLAP_MARK
+  );
+}
 export const MAX_FOUND = 10;
 export const FOUND_NEAR_M = 5000;
 /** A run covers a line when it follows this share of its samples. */
@@ -178,24 +196,25 @@ export interface CorridorLeg {
   exit: LatLng;
 }
 
+export const MAX_DIRECTION_TRIES = 4;
+
 /**
- * Per via, whether its corridor is run reversed (false for a point): of
- * every allowed combination (a one-way corridor only stored), the one with
- * the shortest straight lines between the anchors outside corridors. On a
- * tie, stored on the earliest via where they differ. `end` is the start for
- * a loop, the end for point-to-point, null for an out-and-back.
+ * Directions to try for the vias, per combination whether each corridor is
+ * run reversed: cheapest straight-line joins first (a tie keeps stored on the
+ * earliest via that differs), a one-way corridor stored only. A straight line
+ * cannot see water or a dead end, so the engine builds several and the score
+ * chooses.
  */
-export function chooseDirections(
+export function directionCombos(
   start: LatLng,
   items: Array<LatLng | { track: RouteTrack; one_way: boolean }>,
   end: LatLng | null,
-): boolean[] {
+  max = MAX_DIRECTION_TRIES,
+): boolean[][] {
   const corridors = items.flatMap((item, i) =>
     Array.isArray(item) ? [] : [i],
   );
-  let best: boolean[] = items.map(() => false);
-  let bestCost = Number.POSITIVE_INFINITY;
-  // The earliest corridor is the highest bit, so a smaller mask is stored on the earliest via that differs.
+  const combos: Array<{ reversed: boolean[]; cost: number }> = [];
   for (let mask = 0; mask < 2 ** corridors.length; mask++) {
     const reversed = items.map(() => false);
     corridors.forEach((index, k) => {
@@ -222,12 +241,13 @@ export function chooseDirections(
       at = exit;
     });
     if (end) cost += haversineMeters(at, end);
-    if (cost < bestCost) {
-      bestCost = cost;
-      best = reversed;
-    }
+    combos.push({ reversed, cost });
   }
-  return best;
+  // sort is stable, so a tie keeps the smaller mask.
+  return combos
+    .sort((x, y) => x.cost - y.cost)
+    .slice(0, max)
+    .map((c) => c.reversed);
 }
 
 /** Whether a track passes the corridor's entry, then its exit, and runs its line between (sameLine, 30 m). */
@@ -239,4 +259,38 @@ export function followsCorridor(track: RouteTrack, leg: CorridorLeg): boolean {
       out !== undefined && sameLine(sliceTrack(track, into, out), leg.track)
     );
   });
+}
+
+export const MAX_THROUGH = 10;
+
+export interface RunThrough {
+  activity_id: string;
+  name: string;
+  date: string;
+  from_km: number;
+  to_km: number | null;
+}
+
+/** Recent runs through one place, or through two (the shortest part between them), newest first. */
+export function runsThrough(runs: RunStart[], places: Via[]): RunThrough[] {
+  const km = (m: number) => Math.round(m / 10) / 100;
+  const out: RunThrough[] = [];
+  for (const run of [...runs].sort((a, b) => b.date.localeCompare(a.date))) {
+    if (out.length >= MAX_THROUGH) break;
+    const ids = { activity_id: run.id, name: run.name, date: run.date };
+    if (places.length === 1) {
+      const first = passes(run.track, places[0]!)[0];
+      if (first !== undefined)
+        out.push({ ...ids, from_km: km(first), to_km: null });
+      continue;
+    }
+    const section = legSection(run, places[0]!, places[1]!);
+    if (section)
+      out.push({
+        ...ids,
+        from_km: km(section.from_m),
+        to_km: km(section.to_m),
+      });
+  }
+  return out;
 }

@@ -725,6 +725,8 @@ describe("tools/list input naming scheme (#141)", () => {
       "route_id",
       "version",
       "compare_to_version",
+      "from_km",
+      "to_km",
       "waypoints",
       "waypoints_version",
     ]);

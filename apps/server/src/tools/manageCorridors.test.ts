@@ -53,12 +53,21 @@ describe("manage-corridors", () => {
       first as {
         structuredContent: {
           created: boolean;
-          corridor: { route_id: string; runs: null };
+          corridor: {
+            route_id: string;
+            runs: null;
+            from_run: unknown;
+          };
         };
       }
     ).structuredContent;
     expect(out.created).toBe(true);
     expect(out.corridor.runs).toBeNull();
+    expect(out.corridor.from_run).toEqual({
+      activity_id: SUNDAY_ID,
+      from_km: 1,
+      to_km: 3,
+    });
     CorridorResultOutputSchema.parse(
       (first as { structuredContent: unknown }).structuredContent,
     );
@@ -178,5 +187,60 @@ describe("manage-corridors", () => {
     const result = await run({ action: "delete", route_id: "rabcdefghij" });
     expect(isError(result)).toBe(true);
     expect(text(result as never)).toMatch(/^❌.*No saved corridor/);
+  });
+});
+
+describe("manage-corridors recut", () => {
+  const idOf = (r: unknown) =>
+    (r as { structuredContent: { corridor: { route_id: string } } })
+      .structuredContent.corridor.route_id;
+
+  it("adds a version and keeps the id, name and one-way", async () => {
+    const id = idOf(await add("Bay Run"));
+    await run({ action: "set_one_way", route_id: id, one_way: true });
+    const result = await run({
+      action: "recut",
+      route_id: id,
+      activity: { id: SUNDAY_ID, from_km: 4, to_km: 6 },
+    });
+    expect(isError(result)).toBeUndefined();
+    expect(text(result as never)).toMatch(/^Re-cut corridor /);
+    const out = CorridorResultOutputSchema.parse(
+      (result as { structuredContent: unknown }).structuredContent,
+    );
+    expect(out).toMatchObject({ action: "recut", created: false });
+    expect(out.corridor).toMatchObject({
+      route_id: id,
+      name: "Bay Run",
+      one_way: true,
+      from_run: { activity_id: SUNDAY_ID, from_km: 4, to_km: 6 },
+    });
+    const [stored] = await listCorridors();
+    expect(stored!.versions).toHaveLength(2);
+  });
+
+  it("refuses under 200 m and adds no version", async () => {
+    const id = idOf(await add("Bay Run"));
+    const result = await run({
+      action: "recut",
+      route_id: id,
+      activity: { id: SUNDAY_ID, from_km: 4, to_km: 4.1 },
+    });
+    expect(isError(result)).toBe(true);
+    expect((await listCorridors())[0]!.versions).toHaveLength(1);
+  });
+
+  it("refuses a non-corridor id and a missing or doubled source", async () => {
+    const id = idOf(await add("Bay Run"));
+    const bad = await run({
+      action: "recut",
+      route_id: "rabcdefghij",
+      activity: { id: SUNDAY_ID, from_km: 4, to_km: 6 },
+    });
+    expect(isError(bad)).toBe(true);
+    const none = await run({ action: "recut", route_id: id });
+    expect(isError(none)).toBe(true);
+    expect(text(none as never)).toContain("exactly one of activity and route");
+    expect((await listCorridors())[0]!.versions).toHaveLength(1);
   });
 });

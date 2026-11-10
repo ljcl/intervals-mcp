@@ -1829,6 +1829,69 @@ describe("route map handlers", () => {
     expect(text).not.toContain("No GPS track");
   });
 
+  it("view-route-map draws only from_km to to_km of a run, either order", async () => {
+    for (const range of [
+      { from_km: 2, to_km: 6 },
+      { from_km: 6, to_km: 2 },
+    ]) {
+      mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
+      mockedIntervalsStreams.mockResolvedValueOnce(routeMapStreamsFixture());
+      const result = await dispatchToolCall("get-route-map-data", {
+        id: "123",
+        ...range,
+      });
+      expect(result.isError).toBeUndefined();
+      const data = JSON.parse(result.content[0]?.text ?? "{}");
+      expect(data.name).toMatch(/ km 2\.00-6\.00$/);
+      expect(data.source).toBe("activity");
+      expect(data.distance).toBeGreaterThan(3500);
+      expect(data.distance).toBeLessThan(4500);
+    }
+  });
+
+  it("refuses an empty km range on a run map", async () => {
+    for (const range of [
+      { from_km: 50, to_km: 60 },
+      { from_km: 3, to_km: 3 },
+    ]) {
+      mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
+      mockedIntervalsStreams.mockResolvedValueOnce(routeMapStreamsFixture());
+      const result = await dispatchToolCall("get-route-map-data", {
+        id: "123",
+        ...range,
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toMatch(
+        /The run is \d+\.\d\d km long, so km .* is empty\./,
+      );
+    }
+  });
+
+  it("clamps to_km past the end to the finish, in the title too", async () => {
+    mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
+    mockedIntervalsStreams.mockResolvedValueOnce(routeMapStreamsFixture());
+    const result = await dispatchToolCall("get-route-map-data", {
+      id: "123",
+      from_km: 2,
+      to_km: 30,
+    });
+    expect(result.isError).toBeUndefined();
+    const data = JSON.parse(result.content[0]?.text ?? "{}");
+    expect(data.name).not.toContain("30.00");
+    expect(data.name).toMatch(/ km 2\.00-\d+\.\d\d$/);
+  });
+
+  it("refuses from_km with route_id", async () => {
+    const result = await dispatchToolCall("view-route-map", {
+      route_id: "rabcdefghij",
+      from_km: 1,
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain(
+      "from_km and to_km go with id, for part of a past run.",
+    );
+  });
+
   it("view-route-map flags an empty track on a host that renders the map", async () => {
     mockedIntervalsActivity.mockResolvedValueOnce(intervalsActivity());
     // intervals.icu returns no streams for a manual/no-GPS entry.
@@ -1909,6 +1972,7 @@ describe("route map handlers", () => {
               },
             },
           ],
+          routes_note: null,
           warnings: [],
         },
       ],
@@ -2742,5 +2806,31 @@ describe("view tools and hosts that cannot render MCP Apps (#77)", () => {
     const text = result.content[0]?.text ?? "";
     expect(text).not.toContain("GAP");
     expect(text.endsWith("For detail, call get-activity.")).toBe(true);
+  });
+
+  it("gives a part of a run no whole-run climbs, and a whole run its hill twin", async () => {
+    const text = async (args: Record<string, unknown>) => {
+      mockedIntervalsActivity.mockResolvedValue(run());
+      mockedIntervalsStreams.mockImplementation(async () => [
+        ...runStreams(),
+        {
+          type: "latlng",
+          data: Array.from({ length: 701 }, (_, i) => -33.9 + i * 1e-5),
+          data2: Array.from({ length: 701 }, (_, i) => 151.2 + i * 1e-5),
+        },
+        {
+          type: "altitude",
+          data: Array.from({ length: 701 }, (_, i) => 10 + i * 0.06),
+        },
+      ]);
+      const result = await dispatchToolCall("view-route-map", args, {
+        client: { rendersApps: false },
+      });
+      return result.content[0]?.text ?? "";
+    };
+    const part = await text({ id: "123", from_km: 0.5, to_km: 1.5 });
+    expect(part).not.toContain("descents");
+    expect(part.endsWith("For detail, call get-activity.")).toBe(true);
+    expect(await text({ id: "123" })).toContain("descents");
   });
 });

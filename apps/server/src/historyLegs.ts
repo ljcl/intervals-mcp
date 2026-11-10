@@ -9,6 +9,7 @@ import { haversineMeters, type LatLng, type RouteTrack } from "./mapAnchors";
 import {
   nearVia,
   type RouteCandidate,
+  type RouteSection,
   type RouteShape,
   thereAndBack,
   trackClimb,
@@ -46,13 +47,24 @@ interface Section {
   /** In leg direction. */
   track: RouteTrack;
   run: RunRef;
+  /** Distances along the run the section starts and ends at; from_m above to_m when run backwards. */
+  from_m: number;
+  to_m: number;
 }
 
 /** A line between two anchors: its newest run's section, and every run on it, newest first; or a saved corridor (no runs). */
 export interface LegOption {
   track: RouteTrack;
   runs: RunRef[];
-  corridor?: { route_id: string; name: string };
+  /** The newest run's span (from_m above to_m when run backwards); 0 and 0 for a corridor. */
+  from_m: number;
+  to_m: number;
+  corridor?: {
+    route_id: string;
+    name: string;
+    version: number;
+    reversed: boolean;
+  };
 }
 
 export type StitchPiece =
@@ -134,6 +146,8 @@ export function legSection(run: RunStart, a: Via, b: Via): Section | null {
   return {
     track: best.from <= best.to ? part : reverseTrack(part),
     run: { id: run.id, name: run.name, date: run.date },
+    from_m: best.from,
+    to_m: best.to,
   };
 }
 
@@ -165,7 +179,13 @@ export function legOptions(runs: RunStart[], a: Via, b: Via): LegOption[] {
     // Against each group's first section only, so grouping stays linear in runs.
     const group = groups.find((g) => sameLine(g.track, section.track));
     if (group) group.runs.push(section.run);
-    else groups.push({ track: section.track, runs: [section.run] });
+    else
+      groups.push({
+        track: section.track,
+        runs: [section.run],
+        from_m: section.from_m,
+        to_m: section.to_m,
+      });
   }
   return groups
     .sort(
@@ -298,6 +318,7 @@ export function stitchedCandidate(
   shape: RouteShape,
 ): RouteCandidate | null {
   const tracks: RouteTrack[] = [];
+  const sections: RouteSection[] = [];
   // Climb is summed per piece: the seam between two devices' or ORS's altitudes is not climb.
   let climb_m = 0;
   const runs = new Map<string, RunRef>();
@@ -310,6 +331,7 @@ export function stitchedCandidate(
       const fill = fills[next++];
       if (!fill) return null;
       tracks.push(fill);
+      sections.push({ kind: "fill", track: fill });
       climb_m += trackClimb(fill.altitude);
       fill_m += trackLength(fill);
     } else {
@@ -317,8 +339,23 @@ export function stitchedCandidate(
       climb_m += trackClimb(piece.option.track.altitude);
       section_m += trackLength(piece.option.track);
       const run = piece.option.runs[0];
+      const { corridor, from_m, to_m } = piece.option;
       if (run) runs.set(run.id, run);
-      if (piece.option.corridor) corridors.add(piece.option.corridor.name);
+      if (corridor) {
+        corridors.add(corridor.name);
+        sections.push({
+          kind: "corridor",
+          track: piece.option.track,
+          ...corridor,
+        });
+      } else if (run)
+        sections.push({
+          kind: "run",
+          track: piece.option.track,
+          run: { id: run.id, name: run.name },
+          from_m,
+          to_m,
+        });
     }
   }
   const way = concatTracks(tracks);
@@ -350,5 +387,7 @@ export function stitchedCandidate(
     hill: null,
     summary: `${from}${corridorText}${routed}`,
     track,
+    // shortcut: an out-and-back stays one section, split it if its map should list both ways
+    ...(shape === "out-and-back" ? {} : { sections }),
   };
 }

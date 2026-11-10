@@ -16,6 +16,7 @@ import {
   osmIndexInfo,
   osmIndexPath,
   parkReach,
+  placeNear,
   routeOsmStats,
 } from "./osmIndex";
 import { buildOsmIndex } from "./osmIndexBuild";
@@ -242,6 +243,62 @@ describe("routeOsmStats", () => {
     expect(routeOsmStats(track([0, 0], [30_000, 0]))).toBeNull();
     expect(routeOsmStats(track([0, 0], [3, 0]))).toBeNull();
     expect(routeOsmStats(ALONG)).not.toBeNull();
+  });
+});
+
+describe("placeNear", () => {
+  const SQUARE: Array<[number, number]> = [
+    [0, 0],
+    [400, 0],
+    [400, 400],
+    [0, 400],
+  ];
+  const way = (
+    name: string,
+    y: number,
+    highway: string,
+    extra: Record<string, string> = {},
+  ) => ({
+    xy: [
+      [1000, y],
+      [1400, y],
+    ] as Array<[number, number]>,
+    tags: { highway, name, ...extra },
+  });
+
+  it("names the park inside, else the nearest named way within 60 m, else null", async () => {
+    await index({
+      ways: [
+        {
+          xy: SQUARE,
+          closed: true,
+          tags: { leisure: "park", name: "Jubilee Park" },
+        },
+        way("Glebe Path", 0, "footway"),
+        way("Bridge Road", 40, "residential"),
+        way("Western Distributor", 10, "motorway"),
+        way("Private Lane", 5, "service", { foot: "private" }),
+        {
+          xy: [
+            [1000, -20],
+            [1400, -20],
+          ],
+          tags: { highway: "residential" },
+        },
+      ],
+    });
+    expect(placeNear(pt(200, 200))).toBe("Jubilee Park");
+    expect(placeNear(pt(200, -40))).toBe("Jubilee Park");
+    expect(placeNear(pt(1200, 12))).toBe("Glebe Path");
+    expect(placeNear(pt(1200, 30))).toBe("Bridge Road");
+    expect(placeNear(pt(1200, 200))).toBeNull();
+    expect(placeNear(pt(1200, 800))).toBeNull();
+  });
+
+  it("is null outside the index and with no index", async () => {
+    expect(placeNear(pt(0, 0))).toBeNull();
+    await index({ ways: [way("Glebe Path", 0, "footway")] });
+    expect(placeNear([HOME[0] + 1, HOME[1]])).toBeNull();
   });
 });
 

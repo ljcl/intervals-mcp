@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  type LegOption,
   legOptions,
   legSection,
   passes,
@@ -102,6 +103,19 @@ describe("legSection", () => {
       id: "r2",
       name: "Run r2",
       date: "2026-10-01",
+    });
+  });
+
+  it("reports where on the run it cut, from above to when run backwards", () => {
+    const forward = legSection(run("r1", [S, A, B]), S, A)!;
+    expect(forward.from_m).toBeLessThan(forward.to_m);
+    expect(forward.track.distance[0]).toBe(0);
+    const backward = legSection(run("r2", [B, A, S]), S, A)!;
+    expect(backward.from_m).toBeGreaterThan(backward.to_m);
+    expect(backward.track.distance[0]).toBe(0);
+    expect(legOptions([run("r2", [B, A, S])], S, A)[0]).toMatchObject({
+      from_m: backward.from_m,
+      to_m: backward.to_m,
     });
   });
 
@@ -357,7 +371,14 @@ describe("stitchedCandidate", () => {
     const corridor = {
       track: line([A, B]),
       runs: [],
-      corridor: { route_id: "cabcdefghij", name: "Glebe foreshore" },
+      from_m: 0,
+      to_m: 0,
+      corridor: {
+        route_id: "cabcdefghij",
+        name: "Glebe foreshore",
+        version: 1,
+        reversed: false,
+      },
     };
     const [plan] = planStitches(
       [
@@ -381,11 +402,74 @@ describe("stitchedCandidate", () => {
     );
   });
 
+  it("lists a section per run, corridor and fill, each from 0 m; none for an out-and-back", () => {
+    const corridor: LegOption = {
+      track: line([A, B]),
+      runs: [],
+      from_m: 0,
+      to_m: 0,
+      corridor: {
+        route_id: "cabcdefghij",
+        name: "Foreshore",
+        version: 2,
+        reversed: true,
+      },
+    };
+    const [plan] = planStitches(
+      [
+        legOptions([run("r1", [B, A, S])], S, A),
+        [corridor],
+        legOptions([run("r3", [B, S])], B, S),
+      ],
+      [S, A, B, S],
+      3500,
+      "loop",
+    );
+    const c = stitchedCandidate(plan!, [], "loop")!;
+    expect(c.sections!.map((s) => s.kind)).toEqual(["run", "corridor", "run"]);
+    expect(c.sections![0]).toMatchObject({ run: { id: "r1", name: "Run r1" } });
+    expect(c.sections![1]).toMatchObject({
+      route_id: "cabcdefghij",
+      version: 2,
+      reversed: true,
+      name: "Foreshore",
+    });
+    for (const s of c.sections!) expect(s.track.distance[0]).toBe(0);
+    const fillPlan = planStitches(
+      [
+        legOptions([run("r1", [S, A])], S, A),
+        [],
+        legOptions([run("r3", [B, S])], B, S),
+      ],
+      [S, A, B, S],
+      3500,
+      "loop",
+    )[0]!;
+    const withFill = stitchedCandidate(fillPlan, [line([A, B])], "loop")!;
+    expect(withFill.sections!.map((s) => s.kind)).toEqual([
+      "run",
+      "fill",
+      "run",
+    ]);
+    expect(withFill.sections![1]!.track.distance[0]).toBe(0);
+    const [out] = planStitches(
+      [legOptions([run("r1", [S, A])], S, A)],
+      [S, A],
+      2000,
+      "out-and-back",
+    );
+    expect(
+      stitchedCandidate(out!, [], "out-and-back")!.sections,
+    ).toBeUndefined();
+  });
+
   it("needs no fill between two corridors that share an end", () => {
     const corridor = (name: string, points: LatLng[]) => ({
       track: line(points),
       runs: [],
-      corridor: { route_id: `c-${name}`, name },
+      from_m: 0,
+      to_m: 0,
+      corridor: { route_id: `c-${name}`, name, version: 1, reversed: false },
     });
     const [plan] = planStitches(
       [[corridor("First", [S, A])], [], [corridor("Second", [A, B])]],

@@ -6,9 +6,11 @@ import {
   SUNDAY_ACTIVITY,
   SUNDAY_ID,
   SUNDAY_START,
+  sundayPointAt,
   sundayStreams,
 } from "../__fixtures__/sundayRoute";
-import { routeOsmStats } from "../osmIndex";
+import { geocode } from "../orsClient";
+import { placeNear, routeOsmStats } from "../osmIndex";
 import { readActivityTrack } from "../routeBuilder";
 import { loadRunStarts, type RunStart } from "../startClusters";
 import { listCorridorsTool } from "./listCorridors";
@@ -18,11 +20,16 @@ import { CorridorListOutputSchema } from "./outputs";
 vi.mock("../osmIndex", async (o) => ({
   ...(await o<typeof import("../osmIndex")>()),
   routeOsmStats: vi.fn(),
+  placeNear: vi.fn(),
 }));
 vi.mock("../intervalsClient", async (o) => ({
   ...(await o<typeof import("../intervalsClient")>()),
   getActivity: vi.fn(async () => structuredClone(SUNDAY_ACTIVITY)),
   getActivityStreams: vi.fn(async () => sundayStreams()),
+}));
+vi.mock("../orsClient", async (o) => ({
+  ...(await o<typeof import("../orsClient")>()),
+  geocode: vi.fn(),
 }));
 vi.mock("../startClusters", async (o) => ({
   ...(await o<typeof import("../startClusters")>()),
@@ -35,6 +42,7 @@ beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "list-corridors-"));
   vi.stubEnv("DATA_DIR", dir);
   vi.mocked(routeOsmStats).mockReset().mockReturnValue(null);
+  vi.mocked(placeNear).mockReset().mockReturnValue(null);
   const { track } = await readActivityTrack("key", SUNDAY_ID);
   const runs: RunStart[] = ["2026-11-01", "2026-10-25", "2026-10-18"].map(
     (date, i) => ({
@@ -122,5 +130,105 @@ describe("list-corridors", () => {
     expect(after.found.map((f) => `${f.from_km}-${f.to_km}`)).not.toContain(
       `${stretch.from_km}-${stretch.to_km}`,
     );
+  });
+
+  it("numbers found stretches and names what they overlap", async () => {
+    const before = await list();
+    expect(before.found.map((f) => f.n)).toEqual(
+      before.found.map((_, i) => i + 1),
+    );
+    const stretch = before.found[0]!;
+    await manageCorridorsTool.execute(
+      {
+        action: "add",
+        name: "Glebe foreshore",
+        activity: { id: stretch.activity_id, from_km: 8, to_km: 10 },
+      },
+      "key",
+    );
+    const result = await listCorridorsTool.execute({ near }, "key");
+    const out = CorridorListOutputSchema.parse(
+      (result as { structuredContent: unknown }).structuredContent,
+    );
+    const hit = out.found.find((f) => f.overlaps_corridors.length > 0);
+    expect(hit?.overlaps_corridors).toEqual(["Glebe foreshore"]);
+    const text = (result as { content: { text: string }[] }).content[0]!.text;
+    expect(text).toMatch(/^1\. /m);
+    expect(text).toContain("overlaps Glebe foreshore");
+    for (const f of out.found) expect(f.overlaps_found).not.toContain(f.n);
+  });
+
+  it("names the ends of a found stretch when the index knows them", async () => {
+    const quiet = await listCorridorsTool.execute({ near }, "key");
+    expect(
+      (quiet as { content: { text: string }[] }).content[0]!.text,
+    ).not.toMatch(/ to /);
+    vi.mocked(placeNear)
+      .mockReturnValueOnce("Jubilee Park")
+      .mockReturnValueOnce("Bridge Road");
+    const result = await listCorridorsTool.execute({ near }, "key");
+    const out = CorridorListOutputSchema.parse(
+      (result as { structuredContent: unknown }).structuredContent,
+    );
+    expect(out.found[0]).toMatchObject({
+      start_place: "Jubilee Park",
+      end_place: "Bridge Road",
+    });
+    expect(
+      (result as { content: { text: string }[] }).content[0]!.text,
+    ).toContain(": Jubilee Park to Bridge Road");
+  });
+
+  describe("through", () => {
+    const place = (km: number) => sundayPointAt(km).join(",");
+    const through = async (places: string[]) => {
+      const result = await listCorridorsTool.execute(
+        { near, through: places },
+        "key",
+      );
+      return result as {
+        isError?: boolean;
+        content: Array<{ text: string }>;
+        structuredContent: {
+          through: Array<{ from_km: number; to_km: number | null }> | null;
+        };
+      };
+    };
+
+    it("is null when not asked", async () => {
+      expect((await list()).through).toBeNull();
+    });
+
+    it("lists runs through one place, newest first", async () => {
+      const out = await through([place(2)]);
+      expect(out.structuredContent.through).toHaveLength(3);
+      expect(out.structuredContent.through![0]!.to_km).toBeNull();
+      expect(out.structuredContent.through![0]!.from_km).toBeCloseTo(2, 0);
+    });
+
+    it("says other way when the places are in the reverse order", async () => {
+      const fwd = await through([place(1), place(3)]);
+      expect(fwd.content[0]!.text).not.toContain("(other way)");
+      const back = await through([place(3), place(1)]);
+      expect(back.content[0]!.text).toContain("(other way)");
+    });
+
+    it("refuses a place that matched only a suburb", async () => {
+      vi.stubEnv("ORS_API_KEY", "k");
+      vi.mocked(geocode).mockResolvedValue({
+        label: "Glebe, NSW, Australia",
+        point: sundayPointAt(1),
+        match: { query: "Glebe", name: "Glebe", type: "locality" },
+      });
+      const out = await through(["Glebe"]);
+      expect(out.isError).toBe(true);
+      expect(out.content[0]!.text).toContain("matched only Glebe");
+    });
+
+    it("says so when no run passes", async () => {
+      const out = await through(["-33.0,150.0"]);
+      expect(out.structuredContent.through).toEqual([]);
+      expect(out.content[0]!.text).toContain("No recent run passes that.");
+    });
   });
 });

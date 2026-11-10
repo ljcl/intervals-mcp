@@ -110,20 +110,20 @@ breaking them has shipped bugs — do not work around them locally.
   in the text tools: `sportSpeed` in `utils/running.ts`, which wraps it.
   Stream wire precision: `STREAM_DECIMALS` in `streamPrecision.ts`.
   Hill for repeats: `bestRepeatHill` in `hillAnalysis.ts`. Start clusters:
-  `startClusters.ts`. Route candidate rules (past-run matching, terrain
-  bands, generated climb): `routeCandidates.ts`. Stitched via legs
-  (passes, sections, same line, combinations, fills): `historyLegs.ts`.
-  Stored-route track math (cut, join, version diff, carrying a km between
-  versions, the 30 m join gap, dead-end spurs): `routeGeometry.ts`;
-  stored-route rules and the summary the text and the map share:
-  `routeBuilder.ts`. Road crossings,
-  signals, off-road path share, main-road km and green share of a route:
-  `routeOsmStats` in `osmIndex.ts` (built by `osmIndexBuild.ts`, refreshed by
-  `osmIndexRefresh.ts`). Route score, its weights, known lines and route
-  notes: `routeScore.ts`; retraced metres: `retracedM` in `routeGeometry.ts`.
-  Corridor names, found stretches, covering runs and a corridor via's
-  direction: `corridors.ts`; the line-follower index under known lines:
-  `lineFollowers` in `routeScore.ts`.
+  `startClusters.ts`. Route candidate rules (past-run matching, terrain bands,
+  generated climb): `routeCandidates.ts`. Stitched via legs (passes, sections,
+  same line, combinations, fills): `historyLegs.ts`. Stored-route track math
+  (cut, join, version diff, carrying a km between versions, the 30 m join gap,
+  dead-end spurs): `routeGeometry.ts`; stored-route rules and the summary the
+  text and the map share: `routeBuilder.ts`. Road crossings, signals, off-road
+  path share, main-road km and green share of a route: `routeOsmStats` in
+  `osmIndex.ts` (built by `osmIndexBuild.ts`, refreshed by
+  `osmIndexRefresh.ts`). Route score, its weights, known lines and route notes:
+  `routeScore.ts`; retraced metres: `retracedM` in `routeGeometry.ts`. Place
+  names at a point: `placeNear` in `osmIndex.ts`. Corridor names, found
+  stretches, covering runs, runs through a place, overlaps and a corridor via's
+  direction combinations: `corridors.ts`; the line-follower index under known
+  lines: `lineFollowers` in `routeScore.ts`.
   Weather, dew point and the weather note: `activityWeather.ts` (FIT
   humidity read by `fitWeather.ts`). Two runs' per-km difference and its
   drift verdict: `compareKmSplits` in `kmComparison.ts`, on the splits of

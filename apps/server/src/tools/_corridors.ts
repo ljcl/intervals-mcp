@@ -4,7 +4,11 @@ import { haversineMeters, type LatLng } from "../mapAnchors";
 import { routeOsmStats } from "../osmIndex";
 import { versionTrack } from "../routeBuilder";
 import { trackLength } from "../routeGeometry";
-import { latestVersion, type StoredRoute } from "../routeStore";
+import {
+  latestVersion,
+  type StoredRoute,
+  versionSegments,
+} from "../routeStore";
 
 export function corridorEntry(
   route: StoredRoute,
@@ -13,12 +17,23 @@ export function corridorEntry(
 ) {
   const track = versionTrack(route, latestVersion(route));
   const stats = routeOsmStats(track);
+  const segments = versionSegments(route, latestVersion(route));
+  const only = segments.length === 1 ? segments[0]!.source : null;
+  const from_run =
+    only?.type === "activity"
+      ? {
+          activity_id: only.activity_id,
+          from_km: only.from_km,
+          to_km: only.to_km,
+        }
+      : null;
   return {
     route_id: route.route_id,
     name: route.name,
     length_m: Math.round(trackLength(track)),
     path_share: stats ? Math.round(stats.path_share * 100) / 100 : null,
     one_way: route.one_way ?? false,
+    from_run,
     runs: followers ? coveringRuns(track, followers) : null,
     distance_m: near
       ? Math.round(
@@ -41,5 +56,9 @@ export function corridorLine(c: CorridorEntry): string {
   if (c.runs !== null) parts.push(`${c.runs} runs`);
   if (c.distance_m !== null) parts.push(`${km(c.distance_m)} km away`);
   if (c.one_way) parts.push("one-way");
+  if (c.from_run)
+    parts.push(
+      `from run ${c.from_run.activity_id} km ${c.from_run.from_km.toFixed(2)}-${c.from_run.to_km.toFixed(2)}`,
+    );
   return `${c.name} (${c.route_id}): ${parts.join(", ")}`;
 }

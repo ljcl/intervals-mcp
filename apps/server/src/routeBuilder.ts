@@ -46,10 +46,13 @@ import {
   climbPerKm,
   DEFAULT_TERRAIN_BANDS,
   eastNorth,
+  type RouteSection,
   stretchWaypoints,
   thereAndBack,
   trackClimb,
   VIA_MATCH_M,
+  type Via,
+  viaPoint,
 } from "./routeCandidates";
 import {
   concatTracks,
@@ -67,6 +70,7 @@ import {
 } from "./routeGeometry";
 import {
   appendVersion,
+  CorridorNotFoundError,
   createRoute,
   findVersion,
   latestVersion,
@@ -90,6 +94,7 @@ import {
   orsProblem,
   RouteSuggestionError,
   resolvePlace,
+  viaTarget,
 } from "./routeSuggestions";
 
 /** Sections one stitch-route call may join. */
@@ -671,9 +676,9 @@ async function outAndBackSegment(
   };
 }
 
-/** The activity km at `offset` metres into a segment cut from it. */
-function activityKmAt(
-  source: Extract<SegmentSource, { type: "activity" }>,
+/** The source km at `offset` metres into a segment cut from it, running from `from_km` to `to_km` (either way). */
+function sourceKmAt(
+  source: Extract<SegmentSource, { type: "activity" | "route" }>,
   length: number,
   offset: number,
 ): number {
@@ -698,8 +703,8 @@ function clipSegment(
   if (source.type === "activity") {
     source = {
       ...source,
-      from_km: activityKmAt(source, length, from),
-      to_km: activityKmAt(source, length, to),
+      from_km: sourceKmAt(source, length, from),
+      to_km: sourceKmAt(source, length, to),
     };
     label = label.replace(
       / km [\d.]+-[\d.]+$/,
@@ -708,8 +713,8 @@ function clipSegment(
   } else if (source.type === "route") {
     source = {
       ...source,
-      from_km: source.from_km + from / 1000,
-      to_km: source.from_km + to / 1000,
+      from_km: sourceKmAt(source, length, from),
+      to_km: sourceKmAt(source, length, to),
     };
   }
   const climb =
@@ -918,48 +923,7 @@ export async function addCorridor(
   if (!key)
     throw new RouteBuildError("A corridor name needs at least one word.");
   const ctx = newCtx(apiKey, env, progress, 1, null, undefined);
-  let source = input.source;
-  if (
-    source.type === "activity" &&
-    (source.from !== undefined || source.to !== undefined)
-  ) {
-    if (source.from_km !== undefined || source.to_km !== undefined)
-      throw new RouteBuildError(
-        "Give the run's km range or two places it passes, not both.",
-      );
-    if (source.from === undefined || source.to === undefined)
-      throw new RouteBuildError(
-        "Give both from and to, the places the corridor starts and ends at.",
-      );
-    const { track } = await loadActivity(ctx, source.id);
-    ctx.focus = track.coordinates[0] ?? null;
-    const at = async (text: string) => (await viaPlace(ctx, text)).point;
-    const [from, to] = [await at(source.from), await at(source.to)];
-    const into = passes(track, from)[0];
-    if (into === undefined)
-      throw new RouteBuildError(
-        `Activity ${source.id} does not pass "${source.from}" (within ${VIA_MATCH_M} m).`,
-      );
-    const out = passes(track, to).find((d) => d > into);
-    if (out === undefined)
-      throw new RouteBuildError(
-        `Activity ${source.id} does not pass "${source.to}" after "${source.from}".`,
-      );
-    source = {
-      type: "activity",
-      id: source.id,
-      from_km: Math.round(into) / 1000,
-      to_km: Math.round(out) / 1000,
-    };
-  }
-  if (source.type === "route" && source.version === undefined) {
-    const stored = await readRoute(source.route_id);
-    if (!stored)
-      throw new RouteBuildError(
-        new RouteNotFoundError(source.route_id).message,
-      );
-    source = { ...source, version: latestVersion(stored).version };
-  }
+  const source = await normalizeSource(ctx, input.source);
   const routeId = makeRouteId("corridor", JSON.stringify(source));
   const existing = await readRoute(routeId);
   if (existing) {
@@ -976,6 +940,81 @@ export async function addCorridor(
     throw new RouteBuildError(
       `A corridor named "${taken.name}" is already saved (${taken.route_id}); rename or delete it first.`,
     );
+  const segments = await sourceSegments(ctx, source);
+  return createRoute({
+    route_id: routeId,
+    name,
+    kind: "corridor",
+    one_way: input.one_way ?? false,
+    next_id: ctx.nextId,
+    segments,
+    change: corridorChange("Saved as corridor from", source),
+    warnings: [],
+  });
+}
+
+/** Turns a source's places and unpinned route version into km and a version. */
+async function normalizeSource(
+  ctx: Ctx,
+  input: CorridorSource,
+): Promise<CorridorSource> {
+  let source = input;
+  if (
+    source.type === "activity" &&
+    (source.from !== undefined || source.to !== undefined)
+  ) {
+    if (source.from_km !== undefined || source.to_km !== undefined)
+      throw new RouteBuildError(
+        "Give the run's km range or two places it passes, not both.",
+      );
+    if (source.from === undefined || source.to === undefined)
+      throw new RouteBuildError(
+        "Give both from and to, the places the corridor starts and ends at.",
+      );
+    const { track } = await loadActivity(ctx, source.id);
+    ctx.focus = track.coordinates[0] ?? null;
+    const { id, from: fromText, to: toText } = source;
+    const at = async (text: string) => viaTarget(await viaPlace(ctx, text));
+    const [from, to] = [await at(fromText), await at(toText)];
+    const miss = (text: string, via: Via) => {
+      const { distance_m, offset_m } = nearestOnTrack(track, viaPoint(via));
+      return `Activity ${id} does not pass "${text}" (within ${VIA_MATCH_M} m): it comes closest at km ${km(distance_m)}, ${Math.round(offset_m)} m away.`;
+    };
+    const into = passes(track, from)[0];
+    if (into === undefined) throw new RouteBuildError(miss(fromText, from));
+    const toPasses = passes(track, to);
+    const out = toPasses.find((d) => d > into);
+    if (out === undefined) {
+      const before = toPasses[0];
+      throw new RouteBuildError(
+        before === undefined
+          ? miss(toText, to)
+          : `Activity ${id} passes "${toText}" at km ${km(before)}, before "${fromText}" at km ${km(into)}: it ran them the other way, so swap from and to.`,
+      );
+    }
+    source = {
+      type: "activity",
+      id: source.id,
+      from_km: Math.round(into) / 1000,
+      to_km: Math.round(out) / 1000,
+    };
+  }
+  if (source.type === "route" && source.version === undefined) {
+    const stored = await readRoute(source.route_id);
+    if (!stored)
+      throw new RouteBuildError(
+        new RouteNotFoundError(source.route_id).message,
+      );
+    source = { ...source, version: latestVersion(stored).version };
+  }
+  return source;
+}
+
+/** The source's sections; refused under MIN_CORRIDOR_M. */
+async function sourceSegments(
+  ctx: Ctx,
+  source: CorridorSource,
+): Promise<StoredSegment[]> {
   const segments =
     source.type === "activity"
       ? [await activitySegment(ctx, source.id, source.from_km, source.to_km)]
@@ -991,16 +1030,45 @@ export async function addCorridor(
     throw new RouteBuildError(
       `That stretch is ${Math.round(length)} m; a corridor is at least ${MIN_CORRIDOR_M} m.`,
     );
-  return createRoute({
-    route_id: routeId,
-    name,
-    kind: "corridor",
-    one_way: input.one_way ?? false,
-    next_id: ctx.nextId,
-    segments,
-    change: `Saved as corridor from ${source.type === "activity" ? `activity ${source.id}` : `route ${source.route_id}`} km ${km((source.from_km ?? 0) * 1000)}-${source.to_km === undefined ? "end" : km(source.to_km * 1000)}`,
-    warnings: [],
-  });
+  return segments;
+}
+
+const corridorChange = (verb: string, source: CorridorSource) =>
+  `${verb} ${source.type === "activity" ? `activity ${source.id}` : `route ${source.route_id}`} km ${km((source.from_km ?? 0) * 1000)}-${source.to_km === undefined ? "end" : km(source.to_km * 1000)}`;
+
+/** Replaces a corridor's line with a new cut as a new version; id, name and one-way stay. */
+export async function recutCorridor(
+  apiKey: string,
+  routeId: string,
+  input: CorridorSource,
+  env: BuildEnv,
+  progress: ReportProgress = NO_PROGRESS,
+): Promise<StoredRoute> {
+  const current = await readRoute(routeId);
+  if (current?.kind !== "corridor") throw new CorridorNotFoundError(routeId);
+  const { route } = await appendVersion(
+    routeId,
+    latestVersion(current).version,
+    async (stored) => {
+      const ctx = newCtx(
+        apiKey,
+        env,
+        progress,
+        stored.next_id,
+        null,
+        undefined,
+      );
+      const source = await normalizeSource(ctx, input);
+      const segments = await sourceSegments(ctx, source);
+      return {
+        segments,
+        next_id: ctx.nextId,
+        change: corridorChange("Re-cut", source),
+        warnings: [],
+      };
+    },
+  );
+  return route;
 }
 
 // ---------- joining ----------
@@ -1254,6 +1322,55 @@ export async function stitchRoute(
   };
 }
 
+function sectionSegment(section: RouteSection, index: number): StoredSegment {
+  const known = section.track.altitude.some((a) => a !== null);
+  const base = {
+    id: `g${index + 1}`,
+    track: thinTrack(section.track),
+    climb_m: known ? trackClimb(section.track.altitude) : null,
+    path_share: null,
+    vias: [],
+    flexible: false,
+    notes: [],
+  };
+  if (section.kind === "fill")
+    return {
+      ...base,
+      kind: "generated",
+      label: "Routed join",
+      source: { type: "ors", purpose: "route" },
+      climb_source: known ? "elevation_model" : "none",
+    };
+  const climb_source = known ? ("recorded" as const) : ("none" as const);
+  if (section.kind === "run") {
+    const [from_km, to_km] = [
+      Math.round(section.from_m) / 1000,
+      Math.round(section.to_m) / 1000,
+    ];
+    return {
+      ...base,
+      kind: "activity",
+      label: `${section.run.name} km ${from_km.toFixed(2)}-${to_km.toFixed(2)}`,
+      source: { type: "activity", activity_id: section.run.id, from_km, to_km },
+      climb_source,
+    };
+  }
+  const length_km = Math.round(trackLength(section.track)) / 1000;
+  return {
+    ...base,
+    kind: "route",
+    label: section.name,
+    source: {
+      type: "route",
+      route_id: section.route_id,
+      version: section.version,
+      from_km: section.reversed ? length_km : 0,
+      to_km: section.reversed ? 0 : length_km,
+    },
+    climb_source,
+  };
+}
+
 /**
  * Stores a route suggest-run-route generated, so stitch-route,
  * view-route-map and export-route can use it by route_id. Its id comes
@@ -1265,6 +1382,7 @@ export async function storeSuggestedRoute(input: {
   climb_m: number;
   path_share: number | null;
   shape: string;
+  sections?: RouteSection[];
 }): Promise<string> {
   const routeId = makeRouteId(
     "suggestion",
@@ -1279,22 +1397,24 @@ export async function storeSuggestedRoute(input: {
     route_id: routeId,
     name: input.name,
     kind: "suggestion",
-    next_id: 2,
-    segments: [
-      {
-        id: "g1",
-        kind: "generated",
-        label: input.name,
-        source: { type: "ors", purpose: "route" },
-        track: thinTrack(input.track),
-        climb_m: known ? input.climb_m : null,
-        climb_source: known ? "elevation_model" : "none",
-        path_share: input.path_share,
-        vias: [],
-        flexible: false,
-        notes: [],
-      },
-    ],
+    next_id: (input.sections?.length || 1) + 1,
+    segments: input.sections?.length
+      ? input.sections.map(sectionSegment)
+      : [
+          {
+            id: "g1",
+            kind: "generated",
+            label: input.name,
+            source: { type: "ors", purpose: "route" },
+            track: thinTrack(input.track),
+            climb_m: known ? input.climb_m : null,
+            climb_source: known ? "elevation_model" : "none",
+            path_share: input.path_share,
+            vias: [],
+            flexible: false,
+            notes: [],
+          },
+        ],
     change: `Generated by suggest-run-route (${input.shape})`,
     warnings: [],
   });

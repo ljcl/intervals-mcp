@@ -18,6 +18,7 @@ import { listCorridors, type StoredRoute } from "./routeStore";
 import {
   loadRouteSuggestions,
   RouteSuggestionError,
+  routesNote,
   type SuggestionEnv,
 } from "./routeSuggestions";
 import { loadRunStarts, type RunStart } from "./startClusters";
@@ -363,6 +364,30 @@ describe("loadRouteSuggestions", () => {
     });
   });
 
+  it("plans a one-off run today for a distance with no date, without reading the calendar", async () => {
+    vi.mocked(listPlannedWorkouts).mockClear();
+    const result = await loadRouteSuggestions("k", { distanceKm: 6 }, ENV);
+    expect(vi.mocked(listPlannedWorkouts)).not.toHaveBeenCalled();
+    expect(result.runs[0]).toMatchObject({
+      event_id: null,
+      name: "Run",
+      date: ENV.today,
+      distance_source: "argument",
+    });
+  });
+
+  it("reads the calendar for a distance with a date or days above 1", async () => {
+    vi.mocked(listPlannedWorkouts).mockClear();
+    const dated = await loadRouteSuggestions(
+      "k",
+      { distanceKm: 6, date: "2026-11-04" },
+      ENV,
+    );
+    expect(dated.runs[0]!.event_id).toBe(10);
+    await loadRouteSuggestions("k", { distanceKm: 6, days: 2 }, ENV);
+    expect(vi.mocked(listPlannedWorkouts)).toHaveBeenCalledTimes(2);
+  });
+
   describe("planned runs already done (#386)", () => {
     const loop = homeLoop.distance.at(-1)!;
     const doneEvent = (id: number, date: string, name: string) => ({
@@ -415,7 +440,12 @@ describe("loadRouteSuggestions", () => {
       await expect(loadRouteSuggestions("k", {}, ENV)).rejects.toThrow(
         "No planned run from 2026-11-03 to 2026-11-16 is still to do: Easy 6 km (2026-11-03) is already done. Pass distanceKm to plan a route anyway.",
       );
-      const result = await loadRouteSuggestions("k", { distanceKm: 6 }, ENV);
+      // A date makes it read the calendar; distanceKm alone is a one-off.
+      const result = await loadRouteSuggestions(
+        "k",
+        { distanceKm: 6, date: ENV.today },
+        ENV,
+      );
       expect(result.runs[0]).toMatchObject({ event_id: null, name: "Run" });
       expect(result.warnings.some((w) => /already done/.test(w))).toBe(true);
     });
@@ -1667,6 +1697,7 @@ describe("loadRouteSuggestions", () => {
       const run = result.runs[0]!;
       expect(vi.mocked(orsRoute).mock.calls.map(([, r]) => r)).toEqual([
         { waypoints: [NE, SF] },
+        { waypoints: [SF, NE] },
       ]);
       expect(run.candidates.map((c) => c.kind)).toEqual(["stitched"]);
       expect(passesInOrder(run.candidates[0]!.track, [N, NE])).toBe(true);
@@ -1690,7 +1721,8 @@ describe("loadRouteSuggestions", () => {
         ENV,
       );
       expect(result.runs).toHaveLength(2);
-      expect(vi.mocked(orsRoute)).toHaveBeenCalledTimes(1);
+      // One fill per direction, routed once across both runs.
+      expect(vi.mocked(orsRoute)).toHaveBeenCalledTimes(2);
     });
 
     it("says why a corridor run has no route when there is no ORS key", async () => {
@@ -1757,7 +1789,8 @@ describe("loadRouteSuggestions", () => {
           ENV,
         )
       ).runs[0]!;
-      expect(vi.mocked(orsRoute)).toHaveBeenCalledTimes(5);
+      // Five for the stored directions, the rest for the 3 next-cheapest combinations.
+      expect(vi.mocked(orsRoute)).toHaveBeenCalledTimes(11);
       const stitched = run.candidates.find((c) => c.kind === "stitched")!;
       expect(stitched.summary).toBe(
         "From your corridors; corridors: Alpha path, Bravo path, Charlie path, Delta path; 0.6 km routed by OpenRouteService",
@@ -1814,6 +1847,69 @@ describe("loadRouteSuggestions", () => {
       ).toEqual(["full"]);
     });
 
+    it("takes the other direction when the straight-line best one's join retraces the corridor", async () => {
+      // North of the corridor's middle. Out of NE the streets run back along the corridor to N first: a bay the straight line crosses.
+      const P: LatLng = [N[0] + 0.0045, N[1] + 0.0057];
+      vi.mocked(loadRunStarts).mockResolvedValue({ runs: [], skipped: 0 });
+      vi.mocked(orsRoute).mockImplementation(async (_key, { waypoints }) =>
+        straightRoute(
+          haversineMeters(waypoints[0]!, NE) < 1
+            ? [NE, N, ...waypoints.slice(1)]
+            : waypoints,
+        ),
+      );
+      const run = (
+        await loadRouteSuggestions(
+          "k",
+          { distanceKm: 5, start: text(SF), via: ["bay run", text(P)] },
+          ENV,
+        )
+      ).runs[0]!;
+      const [first, second] = run.candidates;
+      expect(run.via[0]).toMatchObject({
+        point: NE,
+        corridor: { reversed: true },
+      });
+      expect(passesInOrder(first!.track, [NE, N, P])).toBe(true);
+      expect(second!.retraced_km).toBeGreaterThan(0.5);
+      expect(first!.retraced_km).toBeLessThan(second!.retraced_km!);
+    });
+
+    it("finds a past run that takes the corridor the other way", async () => {
+      vi.mocked(loadRunStarts).mockResolvedValue({
+        runs: [runOn("rev", [SF, NE, N, SF])],
+        skipped: 0,
+      });
+      const run = (
+        await loadRouteSuggestions("k", args, { ...ENV, orsKey: null })
+      ).runs[0]!;
+      expect(run.candidates.map((c) => c.activity_id)).toEqual(["rev"]);
+      expect(run.via[0]).toMatchObject({ corridor: { reversed: true } });
+    });
+
+    it("reports the likeliest direction when no route comes back", async () => {
+      vi.mocked(loadRunStarts).mockResolvedValue({ runs: [], skipped: 0 });
+      const run = (
+        await loadRouteSuggestions("k", args, { ...ENV, orsKey: null })
+      ).runs[0]!;
+      expect(run.candidates).toEqual([]);
+      expect(run.via[0]).toMatchObject({ corridor: { reversed: false } });
+    });
+
+    it("says why a corridor run has only one route", async () => {
+      vi.mocked(loadRunStarts).mockResolvedValue({
+        runs: [runOn("full", [SF, N, NE, SF])],
+        skipped: 0,
+      });
+      const run = (
+        await loadRouteSuggestions("k", args, { ...ENV, orsKey: null })
+      ).runs[0]!;
+      expect(run.candidates).toHaveLength(1);
+      expect(run.routes_note).toMatch(
+        /^Only 1 route: a corridor is run as saved/,
+      );
+    });
+
     it("returns the same routes for the same call", async () => {
       vi.mocked(loadRunStarts).mockResolvedValue({
         runs: [runOn("a", [SF, N, NORTH_MORE])],
@@ -1862,6 +1958,36 @@ describe("loadRouteSuggestions", () => {
     vi.mocked(orsRoute).mockRejectedValue(new CallCancelledError("Request"));
     await expect(loadRouteSuggestions("k", {}, ENV)).rejects.toBeInstanceOf(
       CallCancelledError,
+    );
+  });
+});
+
+describe("routesNote", () => {
+  const of = (...kinds: string[]) =>
+    kinds.map((kind) => ({ kind })) as unknown as Parameters<
+      typeof routesNote
+    >[0];
+
+  it("is null at none or three", () => {
+    expect(routesNote(of(), false)).toBeNull();
+    expect(routesNote(of("past", "past", "generated"), false)).toBeNull();
+  });
+
+  it("counts each kind that came back, leaving out zeros", () => {
+    expect(routesNote(of("past", "generated"), false)).toBe(
+      "Only 2 routes: 1 past run fit, 1 new route was kept.",
+    );
+    expect(routesNote(of("stitched"), false)).toBe(
+      "Only 1 route: 1 route built from your runs.",
+    );
+    expect(routesNote(of("past", "past"), false)).toBe(
+      "Only 2 routes: 2 past runs fit.",
+    );
+  });
+
+  it("explains a corridor via", () => {
+    expect(routesNote(of("past"), true)).toBe(
+      "Only 1 route: a corridor is run as saved, so no new route is generated; only past runs along it and routes joined from your runs count.",
     );
   });
 });

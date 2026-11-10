@@ -1805,6 +1805,10 @@ export const RouteSuggestionsOutputSchema = z.object({
       shape: z.enum(["loop", "out-and-back", "point-to-point"]),
       terrain: z.enum(["any", "flat", "rolling", "hilly", "hill-repeats"]),
       candidates: z.array(RouteCandidateSchema),
+      routes_note: z
+        .string()
+        .nullable()
+        .describe("Why fewer than 3 routes came back; null otherwise"),
       warnings: z.array(z.string()),
     }),
   ),
@@ -1956,6 +1960,16 @@ const CorridorEntrySchema = z.object({
     .nullable()
     .describe("Share on paths, 0-1; null outside the OpenStreetMap index"),
   one_way: z.boolean(),
+  from_run: z
+    .object({
+      activity_id: z.string(),
+      from_km: z.number(),
+      to_km: z.number(),
+    })
+    .nullable()
+    .describe(
+      "The past run and its km this corridor was cut from; null when it spans several sections",
+    ),
   runs: z
     .number()
     .int()
@@ -1987,6 +2001,7 @@ export const CorridorListOutputSchema = z.object({
   found: z
     .array(
       z.object({
+        n: z.number().int().describe("1-based position in this list"),
         activity_id: z.string(),
         name: z.string(),
         date: z.string(),
@@ -1994,18 +2009,55 @@ export const CorridorListOutputSchema = z.object({
         to_km: z.number(),
         length_m: z.number().int(),
         runs: z.number().int(),
+        overlaps_found: z
+          .array(z.number().int())
+          .describe("The n of other found stretches this shares a line with"),
+        overlaps_corridors: z
+          .array(z.string())
+          .describe("Names of saved corridors this shares a line with"),
         start_lat: z.number(),
         start_lng: z.number(),
         end_lat: z.number(),
         end_lng: z.number(),
+        start_place: z
+          .string()
+          .nullable()
+          .describe(
+            "A park or street at this end; null when the OpenStreetMap index has nothing near",
+          ),
+        end_place: z
+          .string()
+          .nullable()
+          .describe(
+            "A park or street at this end; null when the OpenStreetMap index has nothing near",
+          ),
       }),
     )
     .describe("Stretches the runs repeat that are not saved"),
+  through: z
+    .array(
+      z.object({
+        activity_id: z.string(),
+        name: z.string(),
+        date: z.string(),
+        from_km: z.number(),
+        to_km: z
+          .number()
+          .nullable()
+          .describe(
+            "Null for one place; below from_km means the run went the other way",
+          ),
+      }),
+    )
+    .nullable()
+    .describe(
+      "Recent runs through the asked places, newest first; null when not asked",
+    ),
   warnings: z.array(z.string()),
 });
 
 export const CorridorResultOutputSchema = z.object({
-  action: z.enum(["add", "rename", "set_one_way", "delete"]),
+  action: z.enum(["add", "rename", "set_one_way", "delete", "recut"]),
   corridor: CorridorEntrySchema.nullable().describe("Null after delete"),
   created: z.boolean().describe("add only: false when it was already saved"),
   deleted: z.boolean(),

@@ -48,6 +48,7 @@ export function routeSuggestionsFixture(runCount: number): RouteSuggestions {
           "via Park Road, Foreshore Walk, Iron Cove Bay Run, Callan Park",
         track,
       })),
+      routes_note: null,
       warnings: [
         "No new route was generated: OpenRouteService's rate limit was reached.",
       ],

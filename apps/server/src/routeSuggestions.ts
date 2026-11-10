@@ -9,8 +9,8 @@
 import { CallCancelledError } from "./callScope";
 import {
   type CorridorLeg,
-  chooseDirections,
   corridorHint,
+  directionCombos,
   followsCorridor,
   matchCorridor,
 } from "./corridors";
@@ -150,6 +150,7 @@ export interface RunSuggestion {
   shape: RouteShape;
   terrain: Terrain;
   candidates: RouteCandidate[];
+  routes_note: string | null;
   warnings: string[];
 }
 
@@ -165,6 +166,14 @@ export class RouteSuggestionError extends Error {
     super(message);
     this.name = "RouteSuggestionError";
   }
+}
+
+/** The vias with one choice of direction per corridor, and the anchors and lines that follow from it. */
+interface DirectionPlan {
+  via: SuggestionVia[];
+  targets: Via[];
+  corridorLegs: CorridorLeg[];
+  legs: { anchors: Via[]; options: LegOption[][] };
 }
 
 interface PlannedRun {
@@ -230,6 +239,42 @@ export function orsProblem(error: unknown): string {
 
 const km = (meters: number) => (meters / 1000).toFixed(1);
 
+const oneOff = (date: string, distanceKm: number): PlannedRun => ({
+  event_id: null,
+  date,
+  name: "Run",
+  description: null,
+  distance_m: distanceKm * 1000,
+  distance_source: "argument",
+});
+
+const count = (n: number, one: string, many: string) =>
+  `${n} ${n === 1 ? one : many}`;
+
+/** Why fewer than MAX_ROUTES came back; null at none or the full number. */
+export function routesNote(
+  candidates: RouteCandidate[],
+  corridorVia: boolean,
+): string | null {
+  const n = candidates.length;
+  if (n === 0 || n >= MAX_ROUTES) return null;
+  const only = `Only ${count(n, "route", "routes")}`;
+  if (corridorVia)
+    return `${only}: a corridor is run as saved, so no new route is generated; only past runs along it and routes joined from your runs count.`;
+  const of = (k: RouteCandidate["kind"]) =>
+    candidates.filter((c) => c.kind === k).length;
+  const parts = [
+    of("past") ? `${count(of("past"), "past run", "past runs")} fit` : "",
+    of("stitched")
+      ? `${count(of("stitched"), "route", "routes")} built from your runs`
+      : "",
+    of("generated")
+      ? `${count(of("generated"), "new route was", "new routes were")} kept`
+      : "",
+  ].filter(Boolean);
+  return `${only}: ${parts.join(", ")}.`;
+}
+
 /**
  * The planned runs to route: outdoor runs in the window that are not done
  * yet. intervals.icu pairs a completed workout with its activity
@@ -270,19 +315,7 @@ async function plannedRuns(
           : `No planned run from ${oldest} to ${newest}. Pass distanceKm to plan a route anyway.`,
       );
     }
-    return {
-      runs: [
-        {
-          event_id: null,
-          date: oldest,
-          name: "Run",
-          description: null,
-          distance_m: distanceKm * 1000,
-          distance_source: "argument",
-        },
-      ],
-      done,
-    };
+    return { runs: [oneOff(oldest, distanceKm)], done };
   }
   return {
     runs: chosen.map((e) => ({
@@ -307,6 +340,12 @@ function requireGeocoder(
   throw new RouteSuggestionError(
     `"${text}" is a place name, and looking up place names needs ORS_API_KEY. Pass it as lat,lng instead.`,
   );
+}
+
+/** A looked-up park is passed anywhere near it, not only near its point. */
+export function viaTarget(p: Place): Via {
+  const reaches = p.match && parkReach(p.point, p.match.name, VIA_MATCH_M);
+  return reaches ? { point: p.point, reaches } : p.point;
 }
 
 /** A place from "lat,lng" or a name looked up near `focus`; a lookup failure is a {@link RouteSuggestionError}. */
@@ -520,7 +559,7 @@ function generatedCandidate(
  * Via routes along the athlete's own lines (historyLegs.ts): sections of
  * past runs between the anchors, ORS filling only what no run covers. A fill
  * is missable (a 404 drops that route only); the run's fills spend at most
- * `fillCalls`, and one any two routes share is routed once (`routed`, kept for the whole call).
+ * `fillCalls` (per direction plan when a corridor via is in play), and one any two routes share is routed once (`routed`, kept for the whole call).
  * Without a key, only a route needing no fill is made.
  */
 async function stitch(
@@ -682,12 +721,15 @@ export async function loadRouteSuggestions(
   ]) {
     if (text && !parseLatLng(text)) requireGeocoder(text, env);
   }
-  const { runs: planned, done } = await plannedRuns(
-    apiKey,
-    args.date ?? env.today,
-    args.days ?? 1,
-    args.distanceKm,
-  );
+  const { runs: planned, done } =
+    args.distanceKm !== undefined && !args.date && (args.days ?? 1) <= 1
+      ? { runs: [oneOff(env.today, args.distanceKm)], done: [] }
+      : await plannedRuns(
+          apiKey,
+          args.date ?? env.today,
+          args.days ?? 1,
+          args.distanceKm,
+        );
 
   const { runs: history, skipped } = await loadRunStarts(
     apiKey,
@@ -735,7 +777,60 @@ export async function loadRouteSuggestions(
         : problem,
     );
   });
-  const reversed = chooseDirections(
+  const buildPlan = (reversed: boolean[]): DirectionPlan => {
+    const via: SuggestionVia[] = [];
+    const corridorLegs: CorridorLeg[] = [];
+    const targets: Via[] = [];
+    // Leg index (from anchor i to i+1) of each corridor: its one line.
+    const corridorAt = new Map<number, LegOption>();
+    resolved.forEach((r, i) => {
+      if (r.place) {
+        const p = r.place;
+        via.push(p);
+        targets.push(viaTarget(p));
+        return;
+      }
+      const track = reversed[i] ? reverseTrack(r.track) : r.track;
+      const leg = {
+        track,
+        entry: track.coordinates[0]!,
+        exit: track.coordinates.at(-1)!,
+      };
+      const { route_id, name } = r.route;
+      const version = latestVersion(r.route).version;
+      via.push({
+        label: name,
+        point: leg.entry,
+        corridor: { route_id, name, reversed: reversed[i]! },
+      });
+      corridorLegs.push(leg);
+      // A corridor is two anchors, entry then exit; target j is anchor j+1 (stitchAnchors), so its leg is j+1.
+      corridorAt.set(targets.length + 1, {
+        track,
+        runs: [],
+        from_m: 0,
+        to_m: 0,
+        corridor: { route_id, name, version, reversed: reversed[i]! },
+      });
+      targets.push(leg.entry, leg.exit);
+    });
+    // The lines past runs take between the anchors do not depend on the planned run.
+    const anchors = stitchAnchors(
+      start.point,
+      targets,
+      shape,
+      end?.point ?? null,
+    );
+    const options =
+      via.length > 0
+        ? anchors.slice(1).map((to, i) => {
+            const corridor = corridorAt.get(i);
+            return corridor ? [corridor] : legOptions(history, anchors[i]!, to);
+          })
+        : [];
+    return { via, targets, corridorLegs, legs: { anchors, options } };
+  };
+  const plans = directionCombos(
     start.point,
     resolved.map((r) =>
       r.place
@@ -747,59 +842,8 @@ export async function loadRouteSuggestions(
       : shape === "point-to-point"
         ? (end?.point ?? null)
         : null,
-  );
-  const via: SuggestionVia[] = [];
-  const corridorLegs: CorridorLeg[] = [];
-  const targets: Via[] = [];
-  // Leg index (from anchor i to i+1) of each corridor: its one line.
-  const corridorAt = new Map<number, LegOption>();
-  resolved.forEach((r, i) => {
-    if (r.place) {
-      const p = r.place;
-      via.push(p);
-      // A looked-up park is passed anywhere near it, not only near its point.
-      const reaches = p.match && parkReach(p.point, p.match.name, VIA_MATCH_M);
-      targets.push(reaches ? { point: p.point, reaches } : p.point);
-      return;
-    }
-    const track = reversed[i] ? reverseTrack(r.track) : r.track;
-    const leg = {
-      track,
-      entry: track.coordinates[0]!,
-      exit: track.coordinates.at(-1)!,
-    };
-    const { route_id, name } = r.route;
-    via.push({
-      label: name,
-      point: leg.entry,
-      corridor: { route_id, name, reversed: reversed[i]! },
-    });
-    corridorLegs.push(leg);
-    // A corridor is two anchors, entry then exit; target j is anchor j+1 (stitchAnchors), so its leg is j+1.
-    corridorAt.set(targets.length + 1, {
-      track,
-      runs: [],
-      corridor: { route_id, name },
-    });
-    targets.push(leg.entry, leg.exit);
-  });
-  // The lines past runs take between the anchors do not depend on the planned run.
-  const anchors = stitchAnchors(
-    start.point,
-    targets,
-    shape,
-    end?.point ?? null,
-  );
-  const legs = {
-    anchors,
-    options:
-      via.length > 0
-        ? anchors.slice(1).map((to, i) => {
-            const corridor = corridorAt.get(i);
-            return corridor ? [corridor] : legOptions(history, anchors[i]!, to);
-          })
-        : [],
-  };
+  ).map(buildPlan);
+  const corridorVia = plans[0]!.corridorLegs.length > 0;
 
   const cluster = nearestCluster(clusters, start.point);
   const want = cluster ? GENERATED_AT_HOME : GENERATED_AWAY;
@@ -812,12 +856,16 @@ export async function loadRouteSuggestions(
   for (const [index, run] of planned.entries()) {
     const runWarnings: string[] = [];
     let candidates: RouteCandidate[] = [];
+    const planOf = new Map<RouteCandidate, DirectionPlan>();
     if (run.distance_m <= 0) {
-      runWarnings.push("This planned run has no distance; pass distanceKm.");
+      runWarnings.push(
+        "This planned run has no distance; pass date and distanceKm.",
+      );
     } else {
       // A past run through a corridor's ends counts only when it runs the corridor between them.
-      const matched = (
-        cluster
+      const matched: RouteCandidate[] = [];
+      for (const p of plans) {
+        const found = cluster
           ? matchPastRuns(cluster.runs, {
               target_m: run.distance_m,
               shape,
@@ -825,12 +873,19 @@ export async function loadRouteSuggestions(
               today: env.today,
               exclude: usedPast,
               bands,
-              via: targets,
+              via: p.targets,
             })
-          : []
-      ).filter((c) =>
-        corridorLegs.every((leg) => followsCorridor(c.track, leg)),
-      );
+          : [];
+        for (const c of found) {
+          if (
+            p.corridorLegs.every((leg) => followsCorridor(c.track, leg)) &&
+            !matched.some((m) => m.activity_id === c.activity_id)
+          ) {
+            matched.push(c);
+            planOf.set(c, p);
+          }
+        }
+      }
       if (terrain === "hill-repeats") {
         // Hills are found on every match before the cut, so a hilly loop ranked 7th still makes the pool.
         for (const c of matched)
@@ -841,21 +896,27 @@ export async function loadRouteSuggestions(
       const plan = {
         start: start.point,
         end: end?.point ?? null,
-        via: via.map((p) => p.point),
+        via: plans[0]!.via.map((p) => p.point),
         shape,
         target_m: run.distance_m,
       };
       // Stitched first, so their few fills come out of the budget before the seeds; with a corridor nothing is generated, so fills may spend it all.
-      const stitched = await stitch(
-        env.orsKey,
-        { ...plan, via: targets },
-        legs,
-        budget,
-        progress,
-        corridorLegs.length > 0 ? ORS_CALL_BUDGET : STITCH_FILL_CALLS,
-        fillCache,
-      );
-      if (corridorLegs.length > 0 && stitched.length === 0) {
+      const joined: RouteCandidate[] = [];
+      for (const p of plans) {
+        const routes = await stitch(
+          env.orsKey,
+          { ...plan, via: p.targets },
+          p.legs,
+          budget,
+          progress,
+          corridorVia ? ORS_CALL_BUDGET : STITCH_FILL_CALLS,
+          fillCache,
+        );
+        for (const c of routes) planOf.set(c, p);
+        joined.push(...routes);
+      }
+      const stitched = dedupeRoutes(joined);
+      if (corridorVia && stitched.length === 0) {
         runWarnings.push(
           budget.failure
             ? `No route along the corridor could be joined: ${budget.failure}.`
@@ -869,7 +930,7 @@ export async function loadRouteSuggestions(
       let tried: RouteCandidate[] = [];
       // After an ORS failure (a stitch fill's included), generation is skipped for this and later runs; the call-level warning says why.
       // A corridor is run as saved, so no generated route goes through it.
-      if (env.orsKey && budget.failure === null && corridorLegs.length === 0) {
+      if (env.orsKey && budget.failure === null && !corridorVia) {
         const before = budget.calls;
         tried = await generate(
           env.orsKey,
@@ -902,7 +963,7 @@ export async function loadRouteSuggestions(
         );
         if (near.length > 0) {
           made = near;
-        } else if (via.length > 0) {
+        } else if (viaTexts.length > 0) {
           // A via route is what was asked for: the nearest stays, with why it is off. A tie keeps the stitched one, made first.
           const nearest = made.reduce((a, b) => (miss(b) < miss(a) ? b : a));
           made = [nearest];
@@ -969,7 +1030,8 @@ export async function loadRouteSuggestions(
       const miss = (c: RouteCandidate) =>
         Math.abs(c.distance_m - run.distance_m);
       const off = (c: RouteCandidate) =>
-        via.length === 0 && miss(c) > run.distance_m * PAST_DISTANCE_TOLERANCE;
+        viaTexts.length === 0 &&
+        miss(c) > run.distance_m * PAST_DISTANCE_TOLERANCE;
       const ordered = [...all].sort(
         (a, b) =>
           (terrain === "hill-repeats"
@@ -1015,10 +1077,11 @@ export async function loadRouteSuggestions(
       ...run,
       start: { ...start, history_runs: cluster?.runs.length ?? 0 },
       end,
-      via,
+      via: (candidates[0] && planOf.get(candidates[0]))?.via ?? plans[0]!.via,
       shape,
       terrain,
       candidates,
+      routes_note: routesNote(candidates, corridorVia),
       warnings: runWarnings,
     });
   }

@@ -31,6 +31,9 @@ CREATE INDEX way_cells_cell ON way_cells (cell);
 CREATE TABLE stop_nodes (cell INTEGER NOT NULL, stop_id INTEGER NOT NULL, signal INTEGER NOT NULL, lat REAL NOT NULL, lng REAL NOT NULL);
 CREATE INDEX stop_nodes_cell ON stop_nodes (cell);
 CREATE TABLE parks (id INTEGER PRIMARY KEY, name TEXT NOT NULL, south REAL NOT NULL, west REAL NOT NULL, north REAL NOT NULL, east REAL NOT NULL, lines BLOB NOT NULL);
+CREATE TABLE named_ways (id INTEGER PRIMARY KEY, name TEXT NOT NULL, points BLOB NOT NULL);
+CREATE TABLE named_way_cells (cell INTEGER NOT NULL, way_id INTEGER NOT NULL);
+CREATE INDEX named_way_cells_cell ON named_way_cells (cell);
 `;
 
 const PATH_HIGHWAYS = new Set(["footway", "path", "pedestrian", "track"]);
@@ -42,6 +45,7 @@ const MAIN_ROADS = new Set([
   "primary_link",
   "secondary_link",
 ]);
+const NO_NAME_HIGHWAYS = new Set(["motorway", "motorway_link"]);
 const NO_FOOT = new Set(["no", "private"]);
 
 function isGreen(t: Tags): boolean {
@@ -276,13 +280,14 @@ export async function buildOsmIndex(
     const insertCell = db.prepare(
       "INSERT INTO way_cells (cell, way_id) VALUES (?, ?)",
     );
+    const insertNamedWay = db.prepare(
+      "INSERT INTO named_ways (name, points) VALUES (?, ?)",
+    );
+    const insertNamedCell = db.prepare(
+      "INSERT INTO named_way_cells (cell, way_id) VALUES (?, ?)",
+    );
     let ways = 0;
-    const store = (cls: WayClass, ring: boolean, run: number[]) => {
-      const { lastInsertRowid } = insertWay.run(
-        cls,
-        ring ? 1 : 0,
-        new Uint8Array(new Float64Array(run).buffer),
-      );
+    const bounds = (run: number[]) => {
       let south = Infinity;
       let west = Infinity;
       let north = -Infinity;
@@ -293,9 +298,19 @@ export async function buildOsmIndex(
         west = Math.min(west, run[i + 1]!);
         east = Math.max(east, run[i + 1]!);
       }
-      for (const cell of cellsIn(south, west, north, east))
-        insertCell.run(cell, lastInsertRowid);
+      return cellsIn(south, west, north, east);
+    };
+    const blob = (run: number[]) =>
+      new Uint8Array(new Float64Array(run).buffer);
+    const store = (cls: WayClass, ring: boolean, run: number[]) => {
+      const { lastInsertRowid } = insertWay.run(cls, ring ? 1 : 0, blob(run));
+      for (const cell of bounds(run)) insertCell.run(cell, lastInsertRowid);
       ways++;
+    };
+    const storeNamed = (name: string, run: number[]) => {
+      const { lastInsertRowid } = insertNamedWay.run(name, blob(run));
+      for (const cell of bounds(run))
+        insertNamedCell.run(cell, lastInsertRowid);
     };
 
     const parks: Array<{ name: string; lines: number[][] }> = [];
@@ -324,6 +339,14 @@ export async function buildOsmIndex(
           // A park cut by the area or extract edge has no outline to test inside.
           park.lines = line ? [...park.lines!, line] : null;
         }
+        if (
+          w.tags.highway &&
+          w.tags.name &&
+          !NO_NAME_HIGHWAYS.has(w.tags.highway) &&
+          !NO_FOOT.has(w.tags.foot ?? "")
+        )
+          for (const run of inAreaRuns(w.refs, nodes))
+            storeNamed(w.tags.name, run);
         const cls = wayClass(w.tags);
         const green = greenOuter.has(w.id);
         if (!cls && !green) return;
