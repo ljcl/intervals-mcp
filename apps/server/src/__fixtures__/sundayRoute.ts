@@ -20,7 +20,8 @@ const LEGS: Array<[heading: number, metres: number]> = [
 ];
 const STEP_M = 3;
 
-function sundayPoints(): { points: LatLng[]; along: number[] } {
+// Built once: tests call sundayPointAt per track point (a park's reach), and a rebuild each time cost seconds under coverage.
+const SUNDAY_POINTS = ((): { points: LatLng[]; along: number[] } => {
   const points: LatLng[] = [SUNDAY_START];
   const along: number[] = [0];
   let at = SUNDAY_START;
@@ -35,7 +36,7 @@ function sundayPoints(): { points: LatLng[]; along: number[] } {
     done += metres;
   }
   return { points, along };
-}
+})();
 
 /** Altitude: 10 m, rising 30 m from km 7.8 to 8.4 and down again by km 9. */
 function altitudeAt(m: number): number {
@@ -59,7 +60,7 @@ export const SUNDAY_ACTIVITY = {
 
 /** The activity's streams as intervals.icu returns them. */
 export function sundayStreams() {
-  const { points, along } = sundayPoints();
+  const { points, along } = SUNDAY_POINTS;
   const distance = trackFromPoints(points).distance;
   const stream = (type: string, data: unknown[], data2?: unknown[]) => ({
     type,
@@ -92,7 +93,7 @@ export function sundayStreams() {
 
 /** The Sunday route's point at `km` along it. */
 export function sundayPointAt(km: number): LatLng {
-  const { points, along } = sundayPoints();
+  const { points, along } = SUNDAY_POINTS;
   const i = along.findIndex((m) => m >= km * 1000);
   return points[i < 0 ? points.length - 1 : i]!;
 }

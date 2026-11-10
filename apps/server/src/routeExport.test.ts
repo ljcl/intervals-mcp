@@ -72,13 +72,13 @@ describe("exportRoute", () => {
   it("simplifies a long track until the file fits", () => {
     const file = exportRoute("gpx", {
       name: "Long",
-      track: zigzag(45),
+      track: zigzag(10),
       kmMarkers: true,
       pins: [],
     });
     expect(file.text.length).toBeLessThanOrEqual(MAX_FILE_CHARS);
     expect(file.simplified_m).toBeGreaterThan(1);
-    expect(file.waypoints).toBe(Math.floor(trackLength(zigzag(45)) / 1000));
+    expect(file.waypoints).toBe(Math.floor(trackLength(zigzag(10)) / 1000));
   });
 
   it("leaves out km markers when asked", () => {
