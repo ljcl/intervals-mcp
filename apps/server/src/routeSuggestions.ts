@@ -439,6 +439,23 @@ export function coarseVia(place: Place, text: string): string | null {
   return null;
 }
 
+/**
+ * The warning for a start or end that matched only a suburb or larger area
+ * lacking words of the text ("Iron Cove Bay Run, Sydney" as Sydney): it is
+ * used, unlike such a via, but the routes may be far from the place meant.
+ * Null for a precise or full match, a suburb named as asked, or a lat,lng.
+ */
+export function looseEnd(
+  place: Place,
+  text: string,
+  role: "start" | "end",
+): string | null {
+  const { match } = place;
+  if (!match || PRECISE_LAYERS.has(match.type) || !match.missing?.length)
+    return null;
+  return `The ${role} "${text.trim()}" matched only ${match.name} (a ${match.type}), which has no ${match.missing.map((w) => `"${w}"`).join(" or ")}, so routes ${role} there; check the name, or pass lat,lng.`;
+}
+
 export async function resolveStart(
   text: string | undefined,
   env: SuggestionEnv,
@@ -801,6 +818,11 @@ export async function loadRouteSuggestions(
 
   const start = await resolveStart(args.start, env, clusters);
   const end = args.end ? await resolvePlace(args.end, env, start.point) : null;
+  for (const loose of [
+    args.start ? looseEnd(start, args.start, "start") : null,
+    end && args.end ? looseEnd(end, args.end, "end") : null,
+  ])
+    if (loose) warnings.push(loose);
   const resolved = await Promise.all(
     viaTexts.map(async (text, i) => {
       const route = corridorOf[i];

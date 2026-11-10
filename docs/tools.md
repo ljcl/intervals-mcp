@@ -191,7 +191,9 @@ otherwise).
 - A via matched no better than a suburb or city (a Pelias layer other than
   venue, address or street), or to a place lacking a word of the text, is
   refused, naming the match (`coarseVia`), in every tool that takes a via. A
-  start, end or `toward` may be a suburb. The geocoder asks for venue,
+  start, end or `toward` may be a suburb; a suggest-run-route start or end
+  matched that coarsely and lacking words of the text is used with a
+  warning naming the match (`looseEnd`). The geocoder asks for venue,
   address and street first, reads 10 hits and takes the first with every
   word of the text (in its name or the places it sits in; "Rd" finds Road).
 - A via looked up by name that lands in, or within 100 m of, an
