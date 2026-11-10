@@ -514,6 +514,84 @@ describe("get-training-load execute", () => {
     });
   });
 
+  it("reports weekly efficiency and its trend, naming the basis", async () => {
+    // TODAY is Sunday 2026-06-28. Complete weeks 06-01 to 06-15 have one
+    // steady run each; run(14) is an interval session, left out.
+    mockedListActivities.mockResolvedValueOnce([
+      run(25, { gap: 3, average_heartrate: 150 }),
+      run(14, {
+        gap: 3,
+        average_heartrate: 100,
+        interval_summary: ["5x 4m51s 164bpm"],
+      }),
+      run(10, { gap: 3, average_heartrate: 144 }),
+    ]);
+    mockedWellness.mockResolvedValueOnce([]);
+    const result = await getTrainingLoadTool.execute(
+      DEFAULT_INPUT,
+      "test-token",
+    );
+    const structured = result.structuredContent as {
+      efficiency_trend: unknown;
+      weekly_breakdown: Array<{
+        week_starting: string;
+        efficiency: number | null;
+        efficiency_runs: number;
+      }>;
+    };
+    expect(TrainingLoadOutputSchema.safeParse(structured).success).toBe(true);
+    expect(
+      structured.weekly_breakdown.map((w) => [
+        w.week_starting,
+        w.efficiency,
+        w.efficiency_runs,
+      ]),
+    ).toEqual([
+      ["2026-06-01", 1.2, 1],
+      ["2026-06-08", null, 0],
+      ["2026-06-15", 1.25, 1],
+      ["2026-06-22", null, 0],
+    ]);
+    expect(structured.efficiency_trend).toEqual({
+      earlier: {
+        ef: 1.2,
+        runs: 1,
+        from_week: "2026-06-01",
+        to_week: "2026-06-01",
+      },
+      later: {
+        ef: 1.25,
+        runs: 1,
+        from_week: "2026-06-15",
+        to_week: "2026-06-15",
+      },
+      change_pct: 4.2,
+    });
+
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain(
+      "Efficiency (whole-run grade-adjusted pace over average HR, m/min per beat, steady runs of 20+ min, higher is better): " +
+        "1.2 in weeks 2026-06-01 to 2026-06-01 (1 run), 1.25 in weeks 2026-06-15 to 2026-06-15 (1 run), +4.2%",
+    );
+    expect(text).toContain("load 60, efficiency 1.25 (1 run)");
+  });
+
+  it("says when efficiency has too few weeks for a trend", async () => {
+    mockedListActivities.mockResolvedValueOnce([run(3)]);
+    mockedWellness.mockResolvedValueOnce([]);
+    const result = await getTrainingLoadTool.execute(
+      DEFAULT_INPUT,
+      "test-token",
+    );
+    expect(result.content[0]?.text).toContain(
+      "higher is better): needs 2 complete weeks with a steady run",
+    );
+    expect(
+      (result.structuredContent as { efficiency_trend: unknown })
+        .efficiency_trend,
+    ).toBeNull();
+  });
+
   it("drops the oldest weeks' run lists to stay under the response budget, and says so", async () => {
     // A run a day for a year: the lists alone outgrow the budget.
     mockedListActivities.mockResolvedValueOnce(

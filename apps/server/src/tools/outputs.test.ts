@@ -96,6 +96,21 @@ describe("schemas align with the real tool rawObjects", () => {
         time_hours_per_week: 1.53,
       },
       trend: "stable",
+      efficiency_trend: {
+        earlier: {
+          ef: 1.2,
+          runs: 3,
+          from_week: "2026-04-13",
+          to_week: "2026-04-27",
+        },
+        later: {
+          ef: 1.25,
+          runs: 2,
+          from_week: "2026-05-04",
+          to_week: "2026-05-11",
+        },
+        change_pct: 4.2,
+      },
       weekly_breakdown: [
         {
           week_starting: "2026-05-11",
@@ -112,6 +127,8 @@ describe("schemas align with the real tool rawObjects", () => {
           long_run_km: 12.4,
           long_run_id: "123",
           long_run_pct: 51.5,
+          efficiency: 1.25,
+          efficiency_runs: 1,
           activities: [
             {
               id: "123",
@@ -131,6 +148,7 @@ describe("schemas align with the real tool rawObjects", () => {
         time: "s",
         time_hours: "h",
         elevation: "m",
+        efficiency: "m/min per beat",
       },
     };
     expect(TrainingLoadOutputSchema.safeParse(result).success).toBe(true);

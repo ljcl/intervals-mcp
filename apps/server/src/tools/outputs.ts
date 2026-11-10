@@ -97,6 +97,17 @@ const HrZoneSecondsSchema = z
   .describe(
     "Run seconds in each HR zone, zone 1 first. Only runs recorded under the newest run's zone count are summed. Null when no run has HR zone times",
   );
+const EfficiencySchema = z
+  .number()
+  .describe(
+    "Efficiency factor: whole-run grade-adjusted pace over average HR (m/min per beat), not get-aerobic-analysis's stream figure. Steady runs only: 20+ min moving, at most one work interval",
+  );
+const EfficiencyHalfSchema = z.object({
+  ef: EfficiencySchema,
+  runs: z.number().int(),
+  from_week: z.string().describe("Monday of the first week pooled"),
+  to_week: z.string().describe("Monday of the last week pooled"),
+});
 export const TrainingLoadOutputSchema = z.object({
   period: z.object({
     days: z.number().int(),
@@ -157,6 +168,18 @@ export const TrainingLoadOutputSchema = z.object({
     time_hours_per_week: z.number(),
   }),
   trend: z.string().describe("Human-readable trend label"),
+  efficiency_trend: z
+    .object({
+      earlier: EfficiencyHalfSchema,
+      later: EfficiencyHalfSchema,
+      change_pct: z
+        .number()
+        .describe("later against earlier, %: above 0 is faster at the same HR"),
+    })
+    .nullable()
+    .describe(
+      "Efficiency over the complete weeks with a steady run, the earlier half against the later half. Null with fewer than 2 such weeks",
+    ),
   weekly_breakdown: z.array(
     z.object({
       week_starting: z.string(),
@@ -184,6 +207,13 @@ export const TrainingLoadOutputSchema = z.object({
         .number()
         .nullable()
         .describe("The long run's share of the week's run distance, 0-100"),
+      efficiency: EfficiencySchema.nullable().describe(
+        "Moving-time-weighted efficiency of the week's steady runs; null with none, not 0",
+      ),
+      efficiency_runs: z
+        .number()
+        .int()
+        .describe("Steady runs efficiency is computed from"),
       activities: z.array(TrainingActivitySchema),
     }),
   ),
@@ -194,6 +224,7 @@ export const TrainingLoadOutputSchema = z.object({
     time: z.literal("s"),
     time_hours: z.literal("h"),
     elevation: z.literal("m"),
+    efficiency: z.literal("m/min per beat"),
   }),
 });
 

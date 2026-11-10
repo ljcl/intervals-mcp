@@ -141,6 +141,8 @@ const IntervalsActivitySchema = z
     elapsed_time: z.number().nullable().optional(),
     total_elevation_gain: z.number().nullable().optional(),
     gap: z.number().nullable().optional(),
+    /** Detected work intervals, e.g. ["5x 4m51s 164bpm", "1x 25s 164bpm"]. */
+    interval_summary: z.array(z.string()).nullable().optional(),
     device_name: z.string().nullable().optional(),
     average_heartrate: z.number().nullable().optional(),
     max_heartrate: z.number().nullable().optional(),

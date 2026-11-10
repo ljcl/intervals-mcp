@@ -6,9 +6,12 @@ import { NO_PROGRESS, type ReportProgress } from "../progress";
 import {
   aggregateWeeks,
   baselineWeeks,
+  type EfficiencyHalf,
+  efficiencyTrend,
   getWeekStart,
   hrZoneRunsLeftOut,
   hrZoneSummary,
+  pooledEfficiency,
   selectRunWeeks,
   volumeTrend,
   type WeekBucket,
@@ -32,31 +35,31 @@ const name = "get-training-load";
 const description = `
 Returns weekly running volume (distance, time, elevation, run count) with a
 trend and volume-spike warnings, each week's long run, time in HR zones
-(easy/moderate/hard), weekly intervals.icu training load, and current
-CTL/ATL/TSB. Use it for "how is my volume trending?", "am I running my
-easy days easy?" or "how has my long run built?", or with newest for a past
-block.
+(easy/moderate/hard), efficiency, weekly intervals.icu training load, and
+current CTL/ATL/TSB. Use it for "how is my volume trending?", "am I running
+my easy days easy?", "am I faster at the same HR?" or "how has my long run
+built?", or with newest for a past block.
 
 For the day-by-day CTL/ATL/TSB trend, a projection or a taper, use
 get-fitness-trend. For plain totals (this week, month, year), use
 get-athlete-stats; to show weekly volume as a chart, view-training-load.
 
 Notes:
-- Volume, warnings, long run and HR zones count runs only (Run, TrailRun,
-  VirtualRun).
-- Load and CTL/ATL/TSB are whole-body by default, from intervals.icu.
-  runOnly sums run load only and computes CTL/ATL/TSB locally, labelled
-  "computed"; it will not match intervals.icu.
+- Volume, warnings, long run, HR zones and efficiency count runs only
+  (Run, TrailRun, VirtualRun).
+- Load and CTL/ATL/TSB are whole-body by default, from intervals.icu;
+  runOnly's local "computed" figures will not match it.
 - days is rounded up to whole weeks (Monday start, athlete's time zone), and
   the current week so far is added. Averages and the trend use complete
   weeks only.
-- newest ends the window on a past date; CTL/ATL/TSB are then as of its
-  last day with data, and a partial last week counts like the current one.
-- Weeks with no runs count as zero weeks, a layoff still going on too.
+- With newest, CTL/ATL/TSB are as of its last day with data, and a
+  partial last week counts like the current one.
+- Weeks with no runs count as zero weeks, an ongoing layoff too.
 - Zones 1-2 count as easy, 3 moderate, 4+ hard. Runs with no zone times, or
   a different zone count from the newest run's, are left out and counted; a
-  week with none reports null, not 0%. The long run is the week's longest
-  by distance, with its id and share of the week.
+  week with none reports null, not 0%.
+- Efficiency is whole-run grade-adjusted pace over average HR on steady
+  runs of 20+ min, not get-aerobic-analysis's stream figure.
 - A warning fires when a week's distance is over 1.5 times the average of
   the 4 complete weeks before it (needs 3, and the 4 weeks before the
   window count). It marks a sharp rise, not a measured injury risk. The
@@ -128,6 +131,10 @@ const leftOutText = (n: number) =>
     ? ` (${plural(n, "run")} left out: no HR zone times, or a different zone count)`
     : "";
 
+const EFFICIENCY_UNIT = "m/min per beat";
+/** What the efficiency figure is, so it is never read as get-aerobic-analysis's stream figure. */
+const EFFICIENCY_BASIS = `whole-run grade-adjusted pace over average HR, ${EFFICIENCY_UNIT}, steady runs of 20+ min, higher is better`;
+
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 export const getTrainingLoadTool = {
@@ -197,6 +204,7 @@ export const getTrainingLoadTool = {
 
       const sortedWeeks = buckets.map((bucket) => {
         const longRun = weekLongRun(bucket);
+        const efficiency = pooledEfficiency([bucket]);
         return {
           week_starting: bucket.weekStarting,
           runs: bucket.runs,
@@ -216,6 +224,8 @@ export const getTrainingLoadTool = {
           long_run_km: longRun?.km ?? null,
           long_run_id: longRun?.id ?? null,
           long_run_pct: longRun?.pct ?? null,
+          efficiency: efficiency?.ef ?? null,
+          efficiency_runs: efficiency?.runs ?? 0,
           activities: activitiesByWeek.get(bucket.weekStarting) ?? [],
         };
       });
@@ -262,6 +272,13 @@ export const getTrainingLoadTool = {
         averageRows.reduce((sum, w) => sum + pick(w), 0);
 
       const trend = volumeTrend(runWeeks.complete);
+      const efTrend = efficiencyTrend(runWeeks.complete);
+      const efHalf = (h: EfficiencyHalf) => ({
+        ef: h.ef,
+        runs: h.runs,
+        from_week: h.fromWeek,
+        to_week: h.toWeek,
+      });
       const [earlier1, earlier2, recent1, recent2] = trend.weeks;
       const trendBasis =
         trend.weeks.length === 4
@@ -347,6 +364,11 @@ export const getTrainingLoadTool = {
             Math.round((sumOf((w) => w.time_hours) / numWeeks) * 100) / 100,
         },
         trend: trend.label,
+        efficiency_trend: efTrend && {
+          earlier: efHalf(efTrend.earlier),
+          later: efHalf(efTrend.later),
+          change_pct: efTrend.changePct,
+        },
         weekly_breakdown: sortedWeeks,
         warnings,
         units: {
@@ -355,6 +377,7 @@ export const getTrainingLoadTool = {
           time: "s" as const,
           time_hours: "h" as const,
           elevation: "m" as const,
+          efficiency: EFFICIENCY_UNIT,
         },
       };
 
@@ -405,7 +428,14 @@ export const getTrainingLoadTool = {
         output += `  Distance/week: ${result.averages.distance_km_per_week} km\n`;
         output += `  Time/week: ${result.averages.time_hours_per_week} hours\n\n`;
 
-        output += `Trend: ${result.trend}${trendBasis}\n\n`;
+        output += `Trend: ${result.trend}${trendBasis}\n`;
+        const half = (h: EfficiencyHalf) =>
+          `${h.ef} in weeks ${h.fromWeek} to ${h.toWeek} (${plural(h.runs, "run")})`;
+        output += `Efficiency (${EFFICIENCY_BASIS}): ${
+          efTrend
+            ? `${half(efTrend.earlier)}, ${half(efTrend.later)}, ${formatSigned(efTrend.changePct)}%`
+            : "needs 2 complete weeks with a steady run"
+        }\n\n`;
 
         if (result.warnings.length > 0) {
           output += `Warnings\n`;
@@ -424,6 +454,9 @@ export const getTrainingLoadTool = {
           const longRunDate = dateById.get(week.long_run_id ?? "");
           output += `  Week of ${week.week_starting}${label}: ${week.runs} runs, ${week.distance_km} km, ${week.time_formatted}, load ${week.load}`;
           if (week.intensity) output += `, ${intensityText(week.intensity)}`;
+          if (week.efficiency !== null) {
+            output += `, efficiency ${week.efficiency} (${plural(week.efficiency_runs, "run")})`;
+          }
           if (longRunDate) {
             output += `, long run ${week.long_run_km} km on ${longRunDate} (${week.long_run_pct}% of the week, ${week.long_run_id})`;
           }
