@@ -7,7 +7,10 @@
  */
 import { haversineMeters, type LatLng, type RouteTrack } from "./mapAnchors";
 import {
+  dedupeRoutes,
+  isLoop,
   nearVia,
+  PAST_POOL,
   type RouteCandidate,
   type RouteSection,
   type RouteShape,
@@ -390,4 +393,44 @@ export function stitchedCandidate(
     // shortcut: an out-and-back stays one section, split it if its map should list both ways
     ...(shape === "out-and-back" ? {} : { sections }),
   };
+}
+
+/**
+ * Out-and-backs along past runs from a start, for a plan no past run fits
+ * (#461): the first `target_m / 2` of each run long enough, then back the
+ * same way; a loop also the other way round. Newest run first, duplicates
+ * removed, at most {@link PAST_POOL}. No routing call.
+ */
+export function outAndBacksAlong(
+  runs: RunStart[],
+  target_m: number,
+): RouteCandidate[] {
+  const half = target_m / 2;
+  const made: RouteCandidate[] = [];
+  for (const run of runs) {
+    if (trackLength(run.track) < half) continue;
+    const ways = isLoop(run.track)
+      ? [run.track, reverseTrack(run.track)]
+      : [run.track];
+    for (const way of ways) {
+      const out = sliceTrack(way, 0, half);
+      const track = thereAndBack(out);
+      made.push({
+        kind: "stitched",
+        activity_id: null,
+        name: "Out and back on a past run",
+        date: null,
+        shape: "out-and-back",
+        distance_m: Math.round(trackLength(track)),
+        climb_m: trackClimb(track.altitude),
+        path_share: null,
+        history_share: 1,
+        crossings_per_km: null,
+        hill: null,
+        summary: `Out and back on your run "${run.name}" ${run.date}${way === run.track ? "" : " the other way"}, turning at ${km(half)} km`,
+        track,
+      });
+    }
+  }
+  return dedupeRoutes(made).slice(0, PAST_POOL);
 }
