@@ -17,6 +17,7 @@ import { concatTracks } from "./routeGeometry";
 import { listCorridors, type StoredRoute } from "./routeStore";
 import {
   loadRouteSuggestions,
+  nameDistanceM,
   RouteSuggestionError,
   routesNote,
   type SuggestionEnv,
@@ -408,6 +409,45 @@ describe("loadRouteSuggestions", () => {
     expect(dated.runs[0]!.event_id).toBe(10);
     await loadRouteSuggestions("k", { distanceKm: 6, days: 2 }, ENV);
     expect(vi.mocked(listPlannedWorkouts)).toHaveBeenCalledTimes(2);
+  });
+
+  describe("a planned run's name and stored distance (#457)", () => {
+    it("reads the first run distance a name gives, not a rep's", () => {
+      expect(nameDistanceM("Easy 6.5 km with light fartlek")).toBe(6500);
+      expect(nameDistanceM("10K race")).toBe(10_000);
+      expect(nameDistanceM("Long 5 mi")).toBeCloseTo(8046.7, 1);
+      expect(nameDistanceM("Tempo 8km incl. 3x1km")).toBe(8000);
+      expect(nameDistanceM("6x1km reps")).toBeNull();
+      expect(nameDistanceM("6 x 1 km reps")).toBeNull();
+      expect(nameDistanceM("Intervals 6x800m")).toBeNull();
+      expect(nameDistanceM("Easy run")).toBeNull();
+    });
+
+    const named = (name: string) =>
+      vi
+        .mocked(listPlannedWorkouts)
+        .mockResolvedValue([event(10, "2026-11-04", 3126, name)]);
+    const mismatch =
+      '"Easy 6.5 km with light fartlek" names 6.5 km, but the planned run is stored as 3.1 km, which this plan uses; pass distanceKm to plan for the named distance.';
+
+    it("warns with both distances when they disagree", async () => {
+      named("Easy 6.5 km with light fartlek");
+      const run = (await loadRouteSuggestions("k", {}, ENV)).runs[0]!;
+      expect(run.distance_m).toBe(3126);
+      expect(run.warnings).toContain(mismatch);
+    });
+
+    it("does not warn when the name agrees, has no distance, or distanceKm is passed", async () => {
+      for (const name of ["Easy 3 km", "Easy run"]) {
+        named(name);
+        const run = (await loadRouteSuggestions("k", {}, ENV)).runs[0]!;
+        expect(run.warnings.some((w) => w.includes("names"))).toBe(false);
+      }
+      named("Easy 6.5 km with light fartlek");
+      const run = (await loadRouteSuggestions("k", { distanceKm: 6.5 }, ENV))
+        .runs[0]!;
+      expect(run.warnings).not.toContain(mismatch);
+    });
   });
 
   describe("planned runs already done (#386)", () => {
