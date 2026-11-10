@@ -109,6 +109,8 @@ function route(
   track: RouteTrack,
   distance_m = track.distance.at(-1)!,
 ): OrsRoute {
+  const last = track.coordinates.length - 1;
+  const half = Math.floor(last / 2);
   return {
     track,
     distance_m,
@@ -116,6 +118,15 @@ function route(
     path_share: 0.7,
     ferry_m: 0,
     way_names: ["Foreshore Walk", "Park Road"],
+    // The first half on a path along Foreshore Walk, the second on Park Road.
+    named_spans: [
+      [0, half, "Foreshore Walk"],
+      [half, last, "Park Road"],
+    ],
+    waytype_spans: [
+      [0, half, 7],
+      [half, last, 3],
+    ],
   };
 }
 
@@ -351,6 +362,17 @@ describe("loadRouteSuggestions", () => {
     expect(run.candidates[1]!.summary).toBe("via Foreshore Walk, Park Road");
     expect(run.candidates.every((c) => c.crossings_per_km === 0)).toBe(true);
     expect(result.generation_available).toBe(true);
+  });
+
+  it("describes a new out-and-back by its out leg only", async () => {
+    // Off the OSM index, so path share is ORS's.
+    vi.mocked(routeOsmStats).mockReturnValue(null);
+    const run = (
+      await loadRouteSuggestions("k", { shape: "out-and-back" }, ENV)
+    ).runs[0]!;
+    const made = run.candidates.find((c) => c.kind === "generated")!;
+    expect(made.summary).toBe("via Foreshore Walk");
+    expect(made.path_share).toBe(1);
   });
 
   it("labels an argument distance and plans without an event", async () => {

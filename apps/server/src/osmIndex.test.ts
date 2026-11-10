@@ -203,6 +203,21 @@ describe("routeOsmStats", () => {
     expect(stats.signals_per_km).toBe(1);
   });
 
+  it("counts a stop once per pass, so an out-and-back keeps its leg's rate", async () => {
+    await index({
+      stops: [
+        { xy: [200, 2], tags: { highway: "crossing" } },
+        // At the turn: reached once.
+        { xy: [497, 2], tags: { highway: "traffic_signals" } },
+      ],
+    });
+    const leg = routeOsmStats(track([0, 0], [500, 0]))!;
+    const outAndBack = routeOsmStats(track([0, 0], [500, 0], [0, 0]))!;
+    expect(leg.crossings_per_km).toBe(4);
+    expect(outAndBack.crossings_per_km).toBe(3);
+    expect(outAndBack.signals_per_km).toBe(1);
+  });
+
   it("counts inside a park and near water as green", async () => {
     await index({
       ways: [

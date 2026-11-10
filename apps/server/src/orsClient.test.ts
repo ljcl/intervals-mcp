@@ -10,6 +10,7 @@ import {
   GEOCODE_HITS,
   geocode,
   OrsApiError,
+  orsLegSummary,
   orsRoute,
   parseOrsRoute,
   ROUND_TRIP_POINTS,
@@ -49,6 +50,20 @@ describe("parseOrsRoute", () => {
     expect(route.way_names).not.toContain("-");
     expect(route.way_names).not.toContain("");
     expect(route.ferry_m).toBe(0);
+  });
+
+  it("sums path share and way names up to a track index", () => {
+    const route = parseOrsRoute(JSON.stringify(roundTripFixture));
+    const last = route.track.coordinates.length - 1;
+    expect(orsLegSummary(route, last)).toEqual({
+      path_share: route.path_share,
+      way_names: route.way_names,
+    });
+    const firstStreet = route.named_spans[0]!;
+    expect(orsLegSummary(route, firstStreet[1]).way_names).toEqual([
+      firstStreet[2],
+    ]);
+    expect(orsLegSummary(route, 0)).toEqual({ path_share: 0, way_names: [] });
   });
 
   it("reports the metres on a ferry (waytype 9)", () => {

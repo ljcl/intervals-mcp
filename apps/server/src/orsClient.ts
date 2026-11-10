@@ -117,6 +117,10 @@ export interface OrsRoute {
   ferry_m: number;
   /** The longest named ways, longest first. */
   way_names: string[];
+  /** Named steps as [first, last] track indexes and the way's name. */
+  named_spans: Array<[number, number, string]>;
+  /** ORS waytype as [first, last] track indexes and the waytype. */
+  waytype_spans: Array<[number, number, number]>;
 }
 
 export interface OrsRouteRequest {
@@ -169,6 +173,9 @@ const RouteSchema = z
                               .object({
                                 distance: z.number(),
                                 name: z.string().optional(),
+                                way_points: z
+                                  .tuple([z.number(), z.number()])
+                                  .optional(),
                               })
                               .passthrough(),
                           )
@@ -181,6 +188,9 @@ const RouteSchema = z
                   .object({
                     waytype: z
                       .object({
+                        values: z
+                          .array(z.tuple([z.number(), z.number(), z.number()]))
+                          .optional(),
                         summary: z.array(
                           z
                             .object({ value: z.number(), distance: z.number() })
@@ -362,40 +372,68 @@ export function parseOrsRoute(data: unknown): OrsRoute {
   const altitude = feature.geometry.coordinates.map((c) => c[2] ?? null);
   const props = feature.properties;
 
-  const byName = new Map<string, number>();
+  const named_spans: Array<[number, number, string]> = [];
   for (const segment of props.segments ?? []) {
     for (const step of segment.steps ?? []) {
       const name = step.name?.trim();
-      if (!name || name === "-") continue;
-      byName.set(name, (byName.get(name) ?? 0) + step.distance);
+      if (!name || name === "-" || !step.way_points) continue;
+      named_spans.push([...step.way_points, name]);
     }
   }
+  const waytype_spans = props.extras?.waytype?.values ?? [];
+  const ferry_m = (props.extras?.waytype?.summary ?? [])
+    .filter((w) => w.value === FERRY_WAYTYPE)
+    .reduce((sum, w) => sum + w.distance, 0);
+  const track = {
+    coordinates,
+    distance: cumulativeDistances(coordinates),
+    altitude,
+  };
+  const leg = orsLegSummary(
+    { track, named_spans, waytype_spans },
+    coordinates.length - 1,
+  );
+
+  return {
+    track,
+    distance_m: props.summary.distance,
+    ascent_m: props.ascent ?? 0,
+    path_share: leg.path_share,
+    ferry_m,
+    way_names: leg.way_names,
+    named_spans,
+    waytype_spans,
+  };
+}
+
+/**
+ * Path share and the longest named ways of a route up to track index `end`:
+ * an out-and-back runs only the leg to its turn, so the rest of the loop
+ * must not name its streets.
+ */
+export function orsLegSummary(
+  route: Pick<OrsRoute, "track" | "named_spans" | "waytype_spans">,
+  end: number,
+): { path_share: number; way_names: string[] } {
+  const d = route.track.distance;
+  const metres = (from: number, to: number) =>
+    from >= end ? 0 : (d[Math.min(to, end)] ?? 0) - (d[from] ?? 0);
+  const byName = new Map<string, number>();
+  for (const [from, to, name] of route.named_spans)
+    byName.set(name, (byName.get(name) ?? 0) + metres(from, to));
   const way_names = [...byName.entries()]
+    .filter(([, m]) => m > 0)
     .sort((a, b) => b[1] - a[1])
     .slice(0, WAY_NAME_COUNT)
     .map(([name]) => name);
-
-  const waytypes = props.extras?.waytype?.summary ?? [];
-  const total = waytypes.reduce((sum, w) => sum + w.distance, 0);
-  const onPaths = waytypes
-    .filter((w) => PATH_WAYTYPES.has(w.value))
-    .reduce((sum, w) => sum + w.distance, 0);
-  const ferry_m = waytypes
-    .filter((w) => w.value === FERRY_WAYTYPE)
-    .reduce((sum, w) => sum + w.distance, 0);
-
-  return {
-    track: {
-      coordinates,
-      distance: cumulativeDistances(coordinates),
-      altitude,
-    },
-    distance_m: props.summary.distance,
-    ascent_m: props.ascent ?? 0,
-    path_share: total > 0 ? onPaths / total : 0,
-    ferry_m,
-    way_names,
-  };
+  let total = 0;
+  let onPaths = 0;
+  for (const [from, to, value] of route.waytype_spans) {
+    const m = metres(from, to);
+    total += m;
+    if (PATH_WAYTYPES.has(value)) onPaths += m;
+  }
+  return { path_share: total > 0 ? onPaths / total : 0, way_names };
 }
 
 /** A foot route through `waypoints`, or a loop from one point with `roundTrip`. */
