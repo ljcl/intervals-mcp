@@ -1120,8 +1120,10 @@ over 25,000 tokens: a 61 KB `get-activity-streams` payload and a 150 KB
 - A response that a closed set bounds, not an input, needs no shrink.
   `get-athlete-stats` lists one row per activity type in each of its four
   `by_type` periods (a fifth, last year to date, has `total` only), and the spec's type enum lists 60 (`Activity.type` itself is a plain string). Its "every activity type" size
-  case puts all 60 in every period (about 32,000 characters). If that case
-  goes over the budget, add a measured shrink.
+  case puts all 60 in every period (about 32,800 characters). A date range
+  adds a fifth full `by_type`, which can pass the budget, so that response
+  is measured: over it, the text lists types for the range only and says
+  so, and `structuredContent` keeps every row.
 - `get-training-load` over a year of weeks measures its text plus structured part
   and empties the per-run `activities` lists of the oldest weeks first, with a
   warning. Weekly totals, the long run and the text stay.

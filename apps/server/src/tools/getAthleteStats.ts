@@ -6,10 +6,17 @@ import {
   listActivities as listActivitiesClient,
 } from "../intervalsClient";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
-import { addDays, startOfWeekMonday, todayLocal } from "../utils/localDate";
+import {
+  addDays,
+  dateInputSchema,
+  startOfWeekMonday,
+  todayLocal,
+  validateRange,
+} from "../utils/localDate";
 import { isPaceActivity, paceFromDistanceTime } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
-import { toolErrorText } from "./_errors";
+import { prefixedErrorText, toolErrorText } from "./_errors";
+import { RESPONSE_BUDGET_CHARS, responseSize } from "./_responseBudget";
 import {
   type AthleteStatsOutput,
   AthleteStatsOutputSchema,
@@ -20,13 +27,14 @@ const name = "get-athlete-stats";
 
 const description = `
 Returns training totals for this week, the last 4 weeks, this month, the
-year to date and the same dates last year, in two sets. Run totals: run count, distance, moving time,
-elevation gain, training load and average pace. All-sports totals: count,
-moving time, distance and training load for each activity type, and a
-total for all types together. The text prints the change against last year
-to date. No inputs. Use it for "how much have I been
-running?", "how many strength sessions did I do this month?" or "how far
-have I swum this year?" instead of adding up list-activities.
+year to date and the same dates last year, plus any oldest/newest range (a
+month, a year, a training block), in two sets. Run totals: run count,
+distance, moving time, elevation gain, training load, average pace and the
+longest run. All-sports totals: count, moving time, distance and load for
+each activity type, and a total. The text prints the change against last
+year to date. Use it for "how far did I run in March?", "what was my
+longest run this year?" or "how many strength sessions this month?" instead
+of adding up list-activities.
 
 For weekly volume trends and volume-spike warnings, use get-training-load.
 For fitness, fatigue and form (CTL/ATL/TSB), use get-fitness-trend.
@@ -52,7 +60,18 @@ Notes:
   February counts as 28 February). Its all-sports set has the total only.
 `;
 
-const GetAthleteStatsInputSchema = z.object({});
+const GetAthleteStatsInputSchema = z.object({
+  oldest: dateInputSchema
+    .optional()
+    .describe(
+      "First day (YYYY-MM-DD) of an extra range to total, such as a month, a year or a training block. Any length.",
+    ),
+  newest: dateInputSchema
+    .optional()
+    .describe(
+      "Last day (YYYY-MM-DD) of that range. Defaults to today; needs oldest.",
+    ),
+});
 
 type GetAthleteStatsInput = z.infer<typeof GetAthleteStatsInputSchema>;
 
@@ -64,6 +83,8 @@ export interface RunTotals {
   elevation_gain_m: number;
   load: number;
   average_pace_min_per_km: string | null;
+  /** The period's run with the most distance; null when no run has one. */
+  longest_run: { id: string; date: string; distance_km: number } | null;
 }
 
 /** One activity type's totals in a period (`all_sports.<period>.by_type`). */
@@ -111,6 +132,10 @@ export function sameDateLastYear(ymd: string): string {
  * time and load add up to the run totals. Loads and times are whole numbers,
  * as the spec types them; distance can differ by rounding.
  */
+function localDate(activity: IntervalsActivity): string {
+  return activity.start_date_local.split("T")[0] ?? activity.start_date_local;
+}
+
 function activitiesInPeriod(
   activities: IntervalsActivity[],
   start: string,
@@ -121,8 +146,7 @@ function activitiesInPeriod(
     // this API (see formatters.ts's STRAVA_STUB_NOTE); counting them would
     // silently understate pace and overstate counts.
     if (activity.source === "STRAVA") return false;
-    const date =
-      activity.start_date_local.split("T")[0] ?? activity.start_date_local;
+    const date = localDate(activity);
     return date >= start && date <= end;
   });
 }
@@ -144,9 +168,11 @@ export function aggregateRunTotals(
   let movingTimeS = 0;
   let elevationM = 0;
   let load = 0;
+  let longest: IntervalsActivity | undefined;
 
   for (const activity of activitiesInPeriod(activities, start, end)) {
     if (!isPaceActivity(activity.type ?? "")) continue;
+    if ((activity.distance ?? 0) > (longest?.distance ?? 0)) longest = activity;
 
     runs += 1;
     distanceM += activity.distance ?? 0;
@@ -163,6 +189,13 @@ export function aggregateRunTotals(
     elevation_gain_m: Math.round(elevationM),
     load: Math.round(load),
     average_pace_min_per_km: paceFromDistanceTime(distanceM, movingTimeS),
+    longest_run: longest
+      ? {
+          id: longest.id,
+          date: localDate(longest),
+          distance_km: round((longest.distance ?? 0) / 1000, 2),
+        }
+      : null,
   };
 }
 
@@ -241,6 +274,12 @@ function formatBucketLine(label: string, totals: RunTotals): string {
   }
   parts.push(`+${totals.elevation_gain_m} m`);
   parts.push(`load ${totals.load}`);
+  const longest = totals.longest_run;
+  if (longest) {
+    parts.push(
+      `longest ${longest.distance_km.toFixed(2)} km on ${longest.date} [${longest.id}]`,
+    );
+  }
   return `${label}: ${parts.join(", ")}`;
 }
 
@@ -291,8 +330,21 @@ function formatChangeLine(
   return `YTD change on last year to date: ${parts.join(", ")}`;
 }
 
-/** Builds the tool's text response. Exported for direct testing. */
-export function formatAthleteStatsText(response: AthleteStatsOutput): string {
+const PERIOD_LABELS = {
+  this_week: "This week",
+  last_4_weeks: "Last 4 weeks",
+  this_month: "This month",
+  ytd: "YTD",
+} as const;
+
+/**
+ * Builds the tool's text response. Exported for direct testing. Without
+ * `fixedTypes`, only the range lists its types, so a range fits the budget.
+ */
+export function formatAthleteStatsText(
+  response: AthleteStatsOutput,
+  fixedTypes = true,
+): string {
   const run = (t: RunTotals) => ({
     count: t.runs,
     distanceKm: t.distance_km,
@@ -304,8 +356,11 @@ export function formatAthleteStatsText(response: AthleteStatsOutput): string {
     timeS: t.moving_time_s,
     load: t.load,
   });
+  const range = response.range;
+  const rangeLabel = range && `${range.oldest} to ${range.newest}`;
   return [
     "Run totals (run-only load)",
+    ...(range && rangeLabel ? [formatBucketLine(rangeLabel, range.runs)] : []),
     formatBucketLine("This week", response.this_week),
     formatBucketLine("Last 4 weeks", response.last_4_weeks),
     formatBucketLine("This month", response.this_month),
@@ -318,10 +373,16 @@ export function formatAthleteStatsText(response: AthleteStatsOutput): string {
     ),
     "",
     "All sports (whole-body load)",
-    ...formatSportLines("This week", response.all_sports.this_week),
-    ...formatSportLines("Last 4 weeks", response.all_sports.last_4_weeks),
-    ...formatSportLines("This month", response.all_sports.this_month),
-    ...formatSportLines("YTD", response.all_sports.ytd),
+    ...(range && rangeLabel
+      ? formatSportLines(rangeLabel, range.all_sports)
+      : []),
+    ...(["this_week", "last_4_weeks", "this_month", "ytd"] as const).flatMap(
+      (period) =>
+        formatSportLines(PERIOD_LABELS[period], {
+          ...response.all_sports[period],
+          by_type: fixedTypes ? response.all_sports[period].by_type : {},
+        }),
+    ),
     ...formatSportLines("Last year to date", {
       ...response.all_sports.last_year_to_date,
       by_type: {},
@@ -342,7 +403,7 @@ export const getAthleteStatsTool = {
   outputSchema: AthleteStatsOutputSchema,
   annotations: READ_ONLY,
   execute: async (
-    _input: GetAthleteStatsInput,
+    input: GetAthleteStatsInput,
     apiKey: string,
     progress: ReportProgress = NO_PROGRESS,
   ) => {
@@ -359,6 +420,38 @@ export const getAthleteStatsTool = {
     // rolling 28 days.
     const fetchOldest = lastYearStart;
 
+    if (input.newest && !input.oldest) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: prefixedErrorText(
+              "newest needs oldest: give the range's first day too.",
+            ),
+          },
+        ],
+        isError: true,
+      };
+    }
+    const range = input.oldest
+      ? { oldest: input.oldest, newest: input.newest ?? today }
+      : undefined;
+    // No length cap: a long range is read in 366-day windows.
+    const rangeError =
+      range &&
+      validateRange(range.oldest, range.newest, Number.POSITIVE_INFINITY);
+    if (rangeError) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: prefixedErrorText(rangeError.message),
+          },
+        ],
+        isError: true,
+      };
+    }
+
     try {
       progress(`Fetching activities ${fetchOldest} to ${today}`);
       const activities = await listActivitiesClient(
@@ -366,6 +459,11 @@ export const getAthleteStatsTool = {
         { oldest: fetchOldest, newest: today },
         progress,
       );
+      // A range inside the fixed periods' read reuses its rows.
+      const rangeActivities =
+        range && (range.oldest < fetchOldest || range.newest > today)
+          ? await listActivitiesClient(apiKey, range, progress)
+          : activities;
 
       const response: AthleteStatsOutput = {
         this_week: aggregateRunTotals(activities, weekStart, today),
@@ -394,13 +492,26 @@ export const getAthleteStatsTool = {
         },
         units: { distance: "km", pace: "min/km", time: "s", elevation: "m" },
       };
+      if (range) {
+        response.range = {
+          ...range,
+          runs: aggregateRunTotals(rangeActivities, range.oldest, range.newest),
+          all_sports: aggregateSportTotals(
+            rangeActivities,
+            range.oldest,
+            range.newest,
+          ),
+        };
+      }
 
       warnOnSchemaDrift(name, AthleteStatsOutputSchema, response);
+      let text = formatAthleteStatsText(response);
+      if (responseSize(text, response) > RESPONSE_BUDGET_CHARS) {
+        text = `${formatAthleteStatsText(response, false)}\nType rows for the other periods are left out of this text to fit the response size; structuredContent has them.`;
+      }
 
       return {
-        content: [
-          { type: "text" as const, text: formatAthleteStatsText(response) },
-        ],
+        content: [{ type: "text" as const, text }],
         structuredContent: response,
       };
     } catch (error) {

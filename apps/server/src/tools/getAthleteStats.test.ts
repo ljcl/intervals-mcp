@@ -12,6 +12,7 @@ import {
   startOfMonth,
   startOfYear,
 } from "./getAthleteStats";
+import { listActivitiesTool } from "./listActivities";
 import { AthleteStatsOutputSchema } from "./outputs";
 
 vi.mock("../intervalsClient", async () => {
@@ -141,7 +142,29 @@ describe("aggregateRunTotals", () => {
       elevation_gain_m: 0,
       load: 0,
       average_pace_min_per_km: null,
+      longest_run: null,
     });
+  });
+
+  it("names the run with the most distance as the longest run", () => {
+    const activities = [
+      run({ id: "a", start_date_local: "2026-09-21T07:00:00" }),
+      run({
+        id: "b",
+        start_date_local: "2026-09-22T07:00:00",
+        distance: 21_097,
+      }),
+      run({
+        id: "c",
+        type: "Ride",
+        start_date_local: "2026-09-23T07:00:00",
+        distance: 60_000,
+      }),
+    ];
+
+    expect(
+      aggregateRunTotals(activities, "2026-09-21", "2026-09-24").longest_run,
+    ).toEqual({ id: "b", date: "2026-09-22", distance_km: 21.1 });
   });
 
   it("skips a null training load rather than treating it as zero-valued noise", () => {
@@ -504,6 +527,11 @@ describe("getAthleteStatsTool.execute", () => {
       elevation_gain_m: 156,
       load: 93,
       average_pace_min_per_km: "5:04",
+      longest_run: {
+        id: "i189807578",
+        date: "2026-09-24",
+        distance_km: 8.03,
+      },
     });
     expect(structured?.this_month).toEqual({
       runs: 9,
@@ -513,6 +541,11 @@ describe("getAthleteStatsTool.execute", () => {
       elevation_gain_m: 669,
       load: 406,
       average_pace_min_per_km: "5:07",
+      longest_run: {
+        id: "i189757183",
+        date: "2026-09-19",
+        distance_km: 11.03,
+      },
     });
     expect(structured?.units).toEqual({
       distance: "km",
@@ -643,6 +676,111 @@ describe("getAthleteStatsTool.execute", () => {
       total: { count: 0, moving_time_s: 0, load: 0 },
       by_type: {},
     });
+  });
+
+  it("totals a range to match summing list-activities over the same dates", async () => {
+    vi.setSystemTime(new Date("2026-09-24T12:00:00Z"));
+    mockedListActivities.mockImplementation(async (_key, range) =>
+      fixture.filter((a) => {
+        const date = a.start_date_local.slice(0, 10);
+        return date >= range.oldest && date <= range.newest;
+      }),
+    );
+    const dates = { oldest: "2026-09-08", newest: "2026-09-20" };
+
+    const stats = (await getAthleteStatsTool.execute(dates, "key"))
+      .structuredContent?.range;
+    const listed =
+      (await listActivitiesTool.execute({ ...dates, limit: 200 }, "key"))
+        .structuredContent?.activities ?? [];
+
+    expect(stats?.oldest).toBe(dates.oldest);
+    expect(stats?.newest).toBe(dates.newest);
+    const runs = listed.filter((a) => PACE_ACTIVITY_TYPES.has(a.type));
+    expect(runs.length).toBeGreaterThan(1);
+    expect(stats?.runs.runs).toBe(runs.length);
+    expect(stats?.runs.distance_km).toBeCloseTo(
+      runs.reduce((sum, a) => sum + (a.distance_km ?? 0), 0),
+      1,
+    );
+    expect(stats?.runs.moving_time_s).toBe(
+      runs.reduce((sum, a) => sum + a.moving_time_s, 0),
+    );
+    expect(stats?.all_sports.total.count).toBe(listed.length);
+    expect(stats?.all_sports.total.moving_time_s).toBe(
+      listed.reduce((sum, a) => sum + a.moving_time_s, 0),
+    );
+    const longest = [...runs].sort(
+      (x, y) => (y.distance_km ?? 0) - (x.distance_km ?? 0),
+    )[0];
+    expect(stats?.runs.longest_run).toEqual({
+      id: longest?.id,
+      date: longest?.date,
+      distance_km: longest?.distance_km,
+    });
+    // Inside the fixed periods' read, so no second request.
+    expect(mockedListActivities).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads a range over 366 days outside the fixed periods in its own request", async () => {
+    vi.setSystemTime(new Date("2026-09-24T12:00:00Z"));
+    mockedListActivities.mockResolvedValueOnce([]).mockResolvedValueOnce([
+      run({ id: "a", start_date_local: "2021-12-31T07:00:00" }),
+      run({
+        id: "b",
+        start_date_local: "2020-01-01T07:00:00",
+        distance: 42_195,
+      }),
+      run({ id: "c", type: "Swim", start_date_local: "2020-06-01T07:00:00" }),
+    ] as IntervalsActivity[]);
+
+    const result = await getAthleteStatsTool.execute(
+      { oldest: "2020-01-01", newest: "2021-12-31" },
+      "key",
+    );
+
+    expect(mockedListActivities).toHaveBeenLastCalledWith(
+      "key",
+      { oldest: "2020-01-01", newest: "2021-12-31" },
+      expect.any(Function),
+    );
+    const range = result.structuredContent?.range;
+    expect(range?.runs.runs).toBe(2);
+    expect(range?.runs.longest_run).toEqual({
+      id: "b",
+      date: "2020-01-01",
+      distance_km: 42.2,
+    });
+    expect(range?.all_sports.total.count).toBe(3);
+    expect(result.structuredContent?.ytd.runs).toBe(0);
+    expect(
+      AthleteStatsOutputSchema.safeParse(result.structuredContent).success,
+    ).toBe(true);
+    expect(result.content[0]?.text).toContain(
+      "2020-01-01 to 2021-12-31: 2 runs, 47.20 km, 50:00, 1:04 /km avg, +100 m, load 80, longest 42.20 km on 2020-01-01 [b]",
+    );
+  });
+
+  it("leaves range out without oldest, and refuses newest alone or reversed", async () => {
+    vi.setSystemTime(new Date("2026-09-24T12:00:00Z"));
+    mockedListActivities.mockResolvedValue([]);
+
+    const plain = await getAthleteStatsTool.execute({}, "key");
+    expect(plain.structuredContent).not.toHaveProperty("range");
+
+    const alone = await getAthleteStatsTool.execute(
+      { newest: "2026-03-31" },
+      "key",
+    );
+    expect(alone.isError).toBe(true);
+    expect(alone.content[0]?.text).toContain("newest needs oldest");
+
+    const reversed = await getAthleteStatsTool.execute(
+      { oldest: "2026-03-31", newest: "2026-03-01" },
+      "key",
+    );
+    expect(reversed.isError).toBe(true);
+    expect(mockedListActivities).toHaveBeenCalledTimes(1);
   });
 
   it("renders the rate-limit window on a RateLimitError", async () => {

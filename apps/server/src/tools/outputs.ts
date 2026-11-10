@@ -9,6 +9,10 @@ const RunTotalsSchema = z.object({
   elevation_gain_m: z.number(),
   load: z.number(),
   average_pace_min_per_km: z.string().nullable(),
+  longest_run: z
+    .object({ id: z.string(), date: z.string(), distance_km: z.number() })
+    .nullable()
+    .describe("The period's run with the most distance; null when none"),
 });
 const SportTotalsSchema = z.object({
   count: z.number().int().describe("Activities of this type in the period"),
@@ -64,6 +68,17 @@ export const AthleteStatsOutputSchema = z.object({
     })
     .describe(
       "Totals for every activity type except Strava stubs, for the same periods as the run totals. This load is whole-body and the run totals' load is run-only: say which load a number is",
+    ),
+  range: z
+    .object({
+      oldest: z.string(),
+      newest: z.string(),
+      runs: RunTotalsSchema,
+      all_sports: AllSportsPeriodSchema,
+    })
+    .optional()
+    .describe(
+      "Totals for the oldest/newest range asked for, both days inclusive: run totals and every type. Absent without a range",
     ),
   units: z.object({
     distance: z.literal("km"),
