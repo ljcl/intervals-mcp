@@ -166,6 +166,8 @@ const IntervalsActivitySchema = z
     pace_zone_times: z.array(z.number()).nullable().optional(),
     gap_zone_times: z.array(z.number()).nullable().optional(),
     icu_training_load: z.number().nullable().optional(),
+    /** Energy in kcal, as the device or intervals.icu reports it. */
+    calories: z.number().nullable().optional(),
     hr_load: z.number().nullable().optional(),
     pace_load: z.number().nullable().optional(),
     trimp: z.number().nullable().optional(),

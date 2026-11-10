@@ -106,6 +106,7 @@ export interface ActivitySummaryEntry {
   speed_kmh: number | null;
   average_hr: number | null;
   load: number | null;
+  calories: number | null;
   gear_id: string | null;
   source: string | null;
   is_strava_stub: boolean;
@@ -142,6 +143,7 @@ export function mapActivitySummary(a: IntervalsActivity): ActivitySummaryEntry {
     speed_kmh: speed.speed_kmh,
     average_hr: a.average_heartrate ?? null,
     load: a.icu_training_load ?? null,
+    calories: a.calories ?? null,
     gear_id: a.gear?.id ?? null,
     source: a.source ?? null,
     is_strava_stub: a.source === "STRAVA",
@@ -181,6 +183,7 @@ function formatActivityLine(entry: ActivitySummaryEntry): string {
   if (entry.average_hr != null)
     parts.push(`HR ${Math.round(entry.average_hr)}`);
   if (entry.load != null) parts.push(`load ${Math.round(entry.load)}`);
+  if (entry.calories != null) parts.push(`${Math.round(entry.calories)} kcal`);
   const types = entry.achievement_types;
   if (types.length > 0)
     parts.push(

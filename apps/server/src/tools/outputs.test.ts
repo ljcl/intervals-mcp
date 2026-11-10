@@ -21,10 +21,18 @@ describe("schemas align with the real tool rawObjects", () => {
       elevation_gain_m: 156,
       load: 93,
       average_pace_min_per_km: "5:04",
+      calories: 1030,
+      calories_missing: 0,
       longest_run: { id: "i1", date: "2026-09-24", distance_km: 8.03 },
     };
     const empty = {
-      total: { count: 0, moving_time_s: 0, load: 0 },
+      total: {
+        count: 0,
+        moving_time_s: 0,
+        load: 0,
+        calories: 0,
+        calories_missing: 0,
+      },
       by_type: {},
     };
     const response = {
@@ -35,19 +43,27 @@ describe("schemas align with the real tool rawObjects", () => {
       last_year_to_date: runs,
       all_sports: {
         this_week: {
-          total: { count: 3, moving_time_s: 7627, load: 111 },
+          total: {
+            count: 3,
+            moving_time_s: 7627,
+            load: 111,
+            calories: 1030,
+            calories_missing: 1,
+          },
           by_type: {
             Run: {
               count: 2,
               moving_time_s: 4277,
               distance_km: 14.07,
               load: 93,
+              calories: 1030,
             },
             WeightTraining: {
               count: 1,
               moving_time_s: 3350,
               distance_km: null,
               load: 18,
+              calories: null,
             },
           },
         },
@@ -190,6 +206,7 @@ describe("schemas align with the real tool rawObjects", () => {
         trimp: 100,
         intensity: 90,
       },
+      calories: 576,
       decoupling_pct: 2.1,
       decoupling_source: "intervals.icu",
       efficiency_factor: 1.5,
@@ -306,6 +323,7 @@ describe("schemas align with the real tool rawObjects", () => {
         trimp: 48.9,
         intensity: 82.7,
       },
+      calories: 338,
       decoupling_pct: null,
       efficiency_factor: null,
       rpe: 6,
@@ -383,6 +401,7 @@ describe("schemas align with the real tool rawObjects", () => {
           speed_kmh: null,
           average_hr: 160,
           load: 80,
+          calories: null,
           gear_id: null,
           source: "OAUTH_CLIENT",
           is_strava_stub: false,

@@ -1,6 +1,18 @@
 import { z } from "zod";
 
 // ---------- get-athlete-stats ----------
+function caloriesTotalField() {
+  return z
+    .number()
+    .int()
+    .describe("kcal, summed over the activities that report calories");
+}
+function caloriesMissingField() {
+  return z
+    .number()
+    .int()
+    .describe("Activities left out of calories because they report none");
+}
 const RunTotalsSchema = z.object({
   runs: z.number().int(),
   distance_km: z.number(),
@@ -9,6 +21,8 @@ const RunTotalsSchema = z.object({
   elevation_gain_m: z.number(),
   load: z.number(),
   average_pace_min_per_km: z.string().nullable(),
+  calories: caloriesTotalField(),
+  calories_missing: caloriesMissingField(),
   longest_run: z
     .object({ id: z.string(), date: z.string(), distance_km: z.number() })
     .nullable()
@@ -28,12 +42,21 @@ const SportTotalsSchema = z.object({
     .describe(
       "intervals.icu training load (icu_training_load). An activity with no load adds 0",
     ),
+  calories: z
+    .number()
+    .int()
+    .nullable()
+    .describe(
+      "kcal over the activities that report calories; null when none of this type does",
+    ),
 });
 const AllSportsTotalSchema = z
   .object({
     count: z.number().int(),
     moving_time_s: z.number().int(),
     load: z.number(),
+    calories: caloriesTotalField(),
+    calories_missing: caloriesMissingField(),
   })
   .describe(
     "All types together, so load is the whole-body load. Where the period has by_type, each field is the sum of its rows",
@@ -1235,6 +1258,12 @@ export const IntervalAnalysisOutputSchema = z.object({
 });
 
 // ---------- intervals.icu reads ----------
+function caloriesField() {
+  return z
+    .number()
+    .nullable()
+    .describe("Energy in kcal from intervals.icu; null when it has none");
+}
 const ActivitySummarySchema = z.object({
   id: z.string(),
   date: z
@@ -1257,6 +1286,7 @@ const ActivitySummarySchema = z.object({
   speed_kmh: speedKmhField(),
   average_hr: z.number().nullable(),
   load: z.number().nullable().describe("icu_training_load"),
+  calories: caloriesField(),
   gear_id: z.string().nullable(),
   source: z.string().nullable(),
   is_strava_stub: z
@@ -1473,6 +1503,7 @@ export const ActivityDetailOutputSchema = z.object({
       "Distance over intervals.icu's stroke count (average_cadence × moving_time / 60); swims only",
     ),
   load: ActivityLoadSchema,
+  calories: caloriesField(),
   decoupling_pct: z.number().nullable(),
   efficiency_factor: z.number().nullable(),
   rpe: z.number().nullable(),

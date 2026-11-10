@@ -538,7 +538,7 @@ describe("formatActivityDetailText", () => {
     const lines = text.split("\n");
 
     expect(lines[1]).toBe(
-      "1.50 km, 24:49 moving (intervals.icu), 1:39 /100m, 30 lengths of 50 m, SWOLF 33.8, 2.78 m per stroke, HR 149/165",
+      "1.50 km, 24:49 moving (intervals.icu), 1:39 /100m, 30 lengths of 50 m, SWOLF 33.8, 2.78 m per stroke, HR 149/165, 338 kcal",
     );
     // The interval paces count the rests at the wall; the activity's does
     // not, so the header says so.
