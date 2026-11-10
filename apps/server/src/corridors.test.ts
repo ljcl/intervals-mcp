@@ -17,7 +17,7 @@ import {
   type LatLng,
   type RouteTrack,
 } from "./mapAnchors";
-import { reverseTrack } from "./routeGeometry";
+import { concatTracks, reverseTrack } from "./routeGeometry";
 import { lineFollowers } from "./routeScore";
 import { type RunStart } from "./startClusters";
 
@@ -116,6 +116,32 @@ describe("foundStretches", () => {
     expect(foundStretches(three, [reverseTrack(line(0, 2000))], near)).toEqual(
       [],
     );
+  });
+  it("cuts a stretch where it runs a saved corridor", () => {
+    const long = ["3", "2", "1"].map((id) => run(id, line(0, 4000)));
+    const found = foundStretches(long, [line(1500, 2000)], near);
+    expect(found.map((f) => [f.from_km, f.to_km])).toEqual([
+      [2.01, 3.99],
+      [0, 1.47],
+    ]);
+  });
+  it("puts the line run most often first, then the longest", () => {
+    const runs = [
+      ...["7", "6", "5"].map((id) => run(id, line(0, 3000, 500))),
+      ...["4", "3", "2", "1"].map((id) => run(id, line(0, 1500))),
+    ];
+    expect(
+      foundStretches(runs, [], near).map((f) => [f.runs, f.length_m]),
+    ).toEqual([
+      [4, 1490],
+      [3, 2990],
+    ]);
+  });
+  it("drops a closed loop", () => {
+    // East 600 m, then back west 60 m north of it: its ends 60 m apart.
+    const loop = concatTracks([line(0, 600), reverseTrack(line(0, 600, 60))]);
+    const runs = ["3", "2", "1"].map((id) => run(id, loop));
+    expect(foundStretches(runs, [], near)).toEqual([]);
   });
   it("drops stretches far from near", () => {
     expect(foundStretches(three, [], [LAT + 0.1, LNG])).toEqual([]);

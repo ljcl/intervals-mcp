@@ -12,7 +12,7 @@ import {
   type RouteTrack,
 } from "./mapAnchors";
 import { placeWords } from "./orsClient";
-import { type Via } from "./routeCandidates";
+import { isLoop, type Via } from "./routeCandidates";
 import { sliceTrack, trackLength } from "./routeGeometry";
 import {
   KNOWN_RUNS,
@@ -25,7 +25,7 @@ import { type RunStart } from "./startClusters";
 /** Unknown stretch a found stretch is carried across (GPS noise at a junction). */
 export const FOUND_GAP_M = 30;
 export const FOUND_MIN_M = 1000;
-/** A stretch this much on a saved corridor or a kept stretch repeats it. */
+/** A stretch this much on a kept stretch repeats it. */
 export const FOUND_OVERLAP = 0.8;
 
 /** Share of a line that follows another for the two to overlap. */
@@ -148,10 +148,11 @@ function repeats(track: RouteTrack, others: RouteTrack[]): boolean {
 
 /**
  * Stretches run KNOWN_RUNS or more times and not saved: per loaded run,
- * newest first, its known stretches ({@link knownStretches}); one that
- * repeats a saved corridor or a kept stretch is dropped, so a line comes
- * from its newest run once. Those within FOUND_NEAR_M of `near`, longest
- * first, at most MAX_FOUND.
+ * newest first, its known stretches ({@link knownStretches}) cut where it
+ * runs a saved corridor; a closed loop (a past-run candidate already, and a
+ * poor via end to end) or one that repeats a kept stretch is dropped, so a
+ * line comes from its newest run once. Those within FOUND_NEAR_M of `near`,
+ * most runs first, then longest, at most MAX_FOUND.
  */
 export function foundStretches(
   runs: RunStart[],
@@ -161,12 +162,22 @@ export function foundStretches(
   if (runs.length < KNOWN_RUNS) return [];
   const known = knownSamples(runs);
   const followers = lineFollowers(runs.map((r) => r.track));
+  const onSaved = lineFollowers(saved);
   const kept: FoundStretch[] = [];
   const newest = [...runs].sort((a, b) => b.date.localeCompare(a.date));
   for (const run of newest) {
-    for (const [from_m, to_m] of knownStretches(known(run.track))) {
+    const savedAt = onSaved(run.track, 1);
+    const flags = known(run.track).map((k, i) => k && !savedAt[i]?.size);
+    for (const [from_m, to_m] of knownStretches(flags)) {
       const track = sliceTrack(run.track, from_m, to_m);
-      if (repeats(track, [...saved, ...kept.map((k) => k.track)])) continue;
+      if (
+        isLoop(track) ||
+        repeats(
+          track,
+          kept.map((k) => k.track),
+        )
+      )
+        continue;
       kept.push({
         activity_id: run.id,
         name: run.name,
@@ -185,7 +196,7 @@ export function foundStretches(
     .filter((k) =>
       k.track.coordinates.some((p) => haversineMeters(p, near) <= FOUND_NEAR_M),
     )
-    .sort((a, b) => b.length_m - a.length_m)
+    .sort((a, b) => b.runs - a.runs || b.length_m - a.length_m)
     .slice(0, MAX_FOUND);
 }
 
