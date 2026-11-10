@@ -86,7 +86,7 @@ descriptions.
 | `get-split-analysis` | Even km splits with a two-halves pacing verdict stated on the clock and grade-adjusted |
 | `get-aerobic-analysis` | Aerobic decoupling and efficiency factor on a grade-adjusted, pace or power basis from streams, with intervals.icu's own values labelled apart |
 | `get-interval-analysis` | Interval detection with urban-stop-aware rest classification and rep fade; with findSimilar, earlier sessions with the same reps |
-| `get-best-efforts` | Best times at standard running distances: over your history from intervals.icu's pace curves (optionally by month, quarter or year, with critical speed), or inside one run with where each started |
+| `get-best-efforts` | Best times at standard running distances, or pool swim distances with pace per 100 m: over your history from intervals.icu's pace curves (optionally by month, quarter or year, with critical speed), or inside one run with where each started |
 | `get-race-prediction` | Predicted race times from intervals.icu pace-curve points (Riegel) alongside intervals.icu's own critical-speed model, with confidence, source point, and km goal-pace splits |
 | `get-athlete-stats` | Run totals and totals for every sport (count, moving time, distance, whole-body load and calories per activity type) for this week, the last 4 weeks, this month and YTD, plus last year to date (totals only for all sports) and any `oldest`/`newest` range, each run set naming its longest run, aggregated from list-activities data |
 | `get-fitness-trend` | Fitness/fatigue/form (CTL/ATL/TSB), whole-body from intervals.icu wellness or run-only computed locally, with rest, planned-load or intervals.icu calendar projection and a solved taper to a target form on a target date; `newest` reads a past window, with no projection or taper |
@@ -1077,6 +1077,16 @@ runs". At most the 12 most recent periods are read; older ones are counted in
 (from 1986-01-01) gives the last 12 months, quarters or years, and the default
 `1y` by month gives 12 of its 13 calendar months. `topN` applies to the whole
 window only; each period gives its best.
+
+`sport: "swim"` (not with `id` or `gap`) reads the `type=Swim` curve at the
+pool distances (50m, 100m, 200m, 400m, 800m, 1500m by default), picked from
+the same table; `distances` must be the sport's own. Each swim entry has
+`pace_min_per_100m` (from `sportSpeed`) and a null `pace_min_per_km`, the
+result adds `sport: "swim"`, and the text opens "Swim best efforts" with
+paces per 100 m. Without `sport` the run result is unchanged, so neither
+field appears. `get-race-prediction` never picks the pool distances.
+With `progression` the periods read the swim curve too; their paces and
+critical speed are given per 100 m in the text.
 
 With `id` (an activity id or `"latest"`; not with `window`) it searches that
 one run: two requests, the activity and its streams (time, distance and

@@ -837,14 +837,14 @@ describe("tools/call forgiving arguments (#78)", () => {
     const client = await connectTestClient();
     const { result } = await client.send("tools/call", {
       name: "get-best-efforts",
-      arguments: { distances: ["5km"], sport: "Run" },
+      arguments: { distances: ["5km"], type: "Run" },
     });
 
     expect(result?.isError).toBeFalsy();
     const content = result?.content as Array<{ type: string; text: string }>;
     expect(content.at(-1)).toEqual({
       type: "text",
-      text: 'Ignored argument "sport" (this tool takes: id, distances, window, topN, progression, gap).',
+      text: 'Ignored argument "type" (this tool takes: id, distances, window, topN, progression, gap, sport).',
     });
   });
 

@@ -79,6 +79,7 @@ type Structured = {
   } | null;
   top_n: number;
   grade_adjusted: boolean;
+  sport?: string;
   units: Record<string, string>;
   note: string;
   best_efforts: Record<string, BestEffortEntry[]>;
@@ -205,6 +206,12 @@ describe("matchDistance", () => {
   it("returns null for an empty array", () => {
     expect(matchDistance([], 1000)).toBeNull();
   });
+
+  it("holds swims to 2%, so 1600 yd is not the 1500 m best", () => {
+    expect(matchDistance([1463.04], 1500)).toBe(0);
+    expect(matchDistance([1463.04], 1500, true)).toBeNull();
+    expect(matchDistance([1500], 1500, true)).toBe(0);
+  });
 });
 
 describe("getBestEffortsTool.execute over a window", () => {
@@ -276,6 +283,57 @@ describe("getBestEffortsTool.execute over a window", () => {
     expect(text).toContain("1km:");
     expect(text).toContain("elapsed time across the fastest stretch");
     expect(text).not.toContain("moving-time");
+  });
+
+  it('sport "swim" reads the swim curve, with pace per 100 m', async () => {
+    // The live swim grid mixes metres and yards (docs/api-notes.md); this
+    // curve stops at 1463 m (1600 yd), 37 m short of 1500 m.
+    mockedAthleteCurves.mockResolvedValueOnce({
+      list: [
+        {
+          id: "1y",
+          distance: [45.7, 50, 91.4, 100, 200, 400, 800, 1463],
+          values: [16, 18, 50, 55, 151, 356, 776, 1480],
+          activity_id: ["s1", "s1", "s2", "s2", "s1", "s2", "s2", "s2"],
+        },
+      ],
+      activities: {
+        s1: { name: "Pool Swim", start_date_local: "2026-01-23T19:05:21" },
+        s2: { name: "Long Swim", start_date_local: "2026-03-02T06:10:00" },
+      },
+    } as unknown as IntervalsAthletePaceCurves);
+
+    const result = await getBestEffortsTool.execute(
+      { topN: 1, sport: "swim" },
+      "k",
+    );
+
+    expect(mockedAthleteCurves).toHaveBeenCalledWith("k", {
+      type: "Swim",
+      curves: ["1y"],
+    });
+    const content = structured(result);
+    expect(content.sport).toBe("swim");
+    expect(Object.keys(content.best_efforts)).toEqual([
+      "50m",
+      "100m",
+      "200m",
+      "400m",
+      "800m",
+      "1500m",
+    ]);
+    expect(content.best_efforts["1500m"]).toEqual([]);
+    expect(content.best_efforts["100m"]?.[0]).toMatchObject({
+      time_seconds: 55,
+      pace_min_per_km: null,
+      pace_min_per_100m: "0:55",
+      distance_m: 100,
+    });
+    // The longest point is 1600 yd (1463 m): too far from 1500 m for a swim.
+    expect(content.missing).toEqual(["1500m"]);
+    const text = result.content[0]?.text ?? "";
+    expect(text).toMatch(/^Swim best efforts, /);
+    expect(text).toContain("100m:\n  1. 0:55 (0:55 /100m) - 2026-03-02");
   });
 
   it("gap: true reads the grade-adjusted curve and labels the result", async () => {
@@ -1145,6 +1203,20 @@ describe("inputSchema", () => {
     const parsed = schema.safeParse({ id: "i1", gap: true });
     expect(parsed.success).toBe(false);
     expect(parsed.error?.issues[0]?.path).toEqual(["gap"]);
+  });
+
+  it("refuses sport swim with id or gap, and another sport's distances", () => {
+    const path = (input: object) =>
+      schema.safeParse(input).error?.issues.map((i) => i.path[0]);
+    expect(path({ id: "i1", sport: "swim" })).toEqual(["sport"]);
+    expect(path({ sport: "swim", gap: true })).toEqual(["gap"]);
+    expect(path({ distances: ["50m"] })).toEqual(["distances"]);
+    expect(path({ sport: "swim", distances: ["5km", "1500m"] })).toEqual([
+      "distances",
+    ]);
+    expect(
+      schema.safeParse({ sport: "swim", distances: ["400m", "1500m"] }).success,
+    ).toBe(true);
   });
 
   it("takes either one alone, and applies no window default", () => {
