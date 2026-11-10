@@ -6,6 +6,7 @@
  * prose warnings.
  */
 import { type IntensitySplit, intensitySplit } from "@intervals-mcp/data";
+import { speedEfficiencyFactor } from "./aerobicAnalysis";
 import { RUN_TYPES } from "./fitnessTrend";
 import { addDays, daysBetween, startOfWeekMonday } from "./utils/localDate";
 
@@ -15,6 +16,8 @@ const CHRONIC_WEEKS = 4;
 const MIN_CHRONIC_WEEKS = 3;
 /** Acute:chronic ratio above which a week is a volume spike. */
 const SPIKE_RATIO = 1.5;
+/** Shortest moving time a run needs for its whole-run efficiency to count. */
+const MIN_EFFICIENCY_RUN_S = 20 * 60;
 
 /**
  * The window both training-load surfaces read: `days` rounded up to whole
@@ -181,6 +184,11 @@ export interface TrainingLoadActivity {
   icu_hr_zones?: number[] | null;
   /** Seconds in each HR zone, one per bound. */
   icu_hr_zone_times?: number[] | null;
+  /** Whole-run grade-adjusted speed, m/s. */
+  gap?: number | null;
+  average_heartrate?: number | null;
+  /** intervals.icu's detected work intervals, e.g. "5x 4m51s 164bpm". */
+  interval_summary?: string[] | null;
 }
 
 /**
@@ -231,6 +239,10 @@ export interface TrainingLoadWeek {
   intensity: IntensitySplit | null;
   /** The week's longest run; null for a week with no run distance. */
   longRun: LongRun | null;
+  /** Time-weighted efficiency factor of the week's steady runs; null with none. */
+  efficiency: number | null;
+  /** Steady runs `efficiency` is computed from. */
+  efficiencyRuns: number;
 }
 
 export interface TrainingLoadAppData {
@@ -282,6 +294,10 @@ export interface WeekBucket {
   /** Distance and id of the week's longest run (null before one with distance). */
   longestRunM: number;
   longestRunId: string | null;
+  /** Steady runs' efficiency times moving seconds, their seconds, and their count. */
+  efWeighted: number;
+  efSeconds: number;
+  efRuns: number;
 }
 
 const emptyBucket = (weekStarting: string): WeekBucket => ({
@@ -296,7 +312,83 @@ const emptyBucket = (weekStarting: string): WeekBucket => ({
   hrZoneRuns: 0,
   longestRunM: 0,
   longestRunId: null,
+  efWeighted: 0,
+  efSeconds: 0,
+  efRuns: 0,
 });
+
+/**
+ * The run's efficiency factor from its whole-run GAP and average HR, or null
+ * when it is not a steady run of 20 minutes or more: a rep session (more than
+ * one work interval in intervals.icu's `interval_summary`) averages work and
+ * recovery HR together.
+ */
+function steadyRunEfficiency(activity: TrainingLoadActivity): number | null {
+  const { gap, average_heartrate: hr } = activity;
+  if ((activity.moving_time ?? 0) < MIN_EFFICIENCY_RUN_S) return null;
+  if (!gap || gap <= 0 || !hr || hr <= 0) return null;
+  const reps = (activity.interval_summary ?? []).reduce(
+    (n, entry) => n + (Number.parseInt(entry, 10) || 0),
+    0,
+  );
+  return reps > 1 ? null : speedEfficiencyFactor(gap, hr);
+}
+
+export interface Efficiency {
+  /** Efficiency factor, m/min per beat, 3 decimals. */
+  ef: number;
+  runs: number;
+}
+
+/**
+ * Efficiency factor over the steady runs in `buckets`, weighted by moving
+ * time. Null when none has one: unknown, not 0.
+ */
+export function pooledEfficiency(buckets: WeekBucket[]): Efficiency | null {
+  const runs = buckets.reduce((n, b) => n + b.efRuns, 0);
+  if (runs === 0) return null;
+  const weighted = buckets.reduce((n, b) => n + b.efWeighted, 0);
+  const seconds = buckets.reduce((n, b) => n + b.efSeconds, 0);
+  return { ef: Math.round((weighted / seconds) * 1000) / 1000, runs };
+}
+
+export interface EfficiencyHalf extends Efficiency {
+  /** Mondays of the first and last week pooled. */
+  fromWeek: string;
+  toWeek: string;
+}
+
+export interface EfficiencyTrend {
+  earlier: EfficiencyHalf;
+  later: EfficiencyHalf;
+  /** `later` against `earlier`, %, one decimal: above 0 is faster at the same HR. */
+  changePct: number;
+}
+
+/**
+ * Efficiency across the window: the complete weeks with a steady run, the
+ * earlier half pooled against the later half (an odd count leaves the middle
+ * week out). Null with fewer than 2 such weeks.
+ */
+export function efficiencyTrend(
+  complete: WeekBucket[],
+): EfficiencyTrend | null {
+  const weeks = complete.filter((b) => b.efRuns > 0);
+  const half = Math.floor(weeks.length / 2);
+  if (half === 0) return null;
+  const pool = (slice: WeekBucket[]): EfficiencyHalf => ({
+    ...pooledEfficiency(slice)!,
+    fromWeek: slice[0]!.weekStarting,
+    toWeek: slice[slice.length - 1]!.weekStarting,
+  });
+  const earlier = pool(weeks.slice(0, half));
+  const later = pool(weeks.slice(-half));
+  return {
+    earlier,
+    later,
+    changePct: Math.round(((later.ef - earlier.ef) / earlier.ef) * 1000) / 10,
+  };
+}
 
 /**
  * The run's seconds per HR zone, or null when it has none to use: no zone
@@ -410,6 +502,12 @@ export function aggregateWeeks(
     if (zones && activity.icu_hr_zones!.length === zoneCount) {
       bucket.hrZoneS = sumZones([bucket.hrZoneS, zones]);
       bucket.hrZoneRuns += 1;
+    }
+    const ef = steadyRunEfficiency(activity);
+    if (ef !== null) {
+      bucket.efWeighted += ef * activity.moving_time!;
+      bucket.efSeconds += activity.moving_time!;
+      bucket.efRuns += 1;
     }
     buckets.set(weekKey, bucket);
   }
@@ -674,6 +772,7 @@ export function buildTrainingLoadData(
   const weeks: TrainingLoadWeek[] = buckets.map((bucket, i) => {
     const warningReasons = reasonsByWeek.get(bucket.weekStarting) ?? [];
     const zones = hrZoneSummary([bucket]);
+    const efficiency = pooledEfficiency([bucket]);
     return {
       weekStarting: bucket.weekStarting,
       runs: bucket.runs,
@@ -694,6 +793,8 @@ export function buildTrainingLoadData(
       hrZoneS: zones?.seconds.map(Math.round) ?? null,
       intensity: zones?.intensity ?? null,
       longRun: weekLongRun(bucket),
+      efficiency: efficiency?.ef ?? null,
+      efficiencyRuns: efficiency?.runs ?? 0,
     };
   });
   const zoneTotals = hrZoneSummary(buckets);

@@ -4,9 +4,11 @@ import {
   baselineWeeks,
   buildTrainingLoadData,
   computeWeekWarnings,
+  efficiencyTrend,
   getWeekStart,
   hrZoneRunsLeftOut,
   hrZoneSummary,
+  pooledEfficiency,
   rollingTrend,
   selectRunWeeks,
   type TrainingLoadActivity,
@@ -260,6 +262,9 @@ function bucket(
     hrZoneRuns: 0,
     longestRunM: 0,
     longestRunId: null,
+    efWeighted: 0,
+    efSeconds: 0,
+    efRuns: 0,
   };
 }
 
@@ -542,6 +547,97 @@ describe("aggregateWeeks long run and HR zones", () => {
       "2026-06-08",
     );
     expect(hrZoneSummary([week!])).toBeNull();
+  });
+});
+
+describe("aggregateWeeks efficiency", () => {
+  // 3 m/s at 150 bpm is 1.2 m/min per beat; at 144 bpm, 1.25.
+  const steady = (
+    date: string,
+    overrides: Partial<TrainingLoadActivity> = {},
+  ): TrainingLoadActivity => ({
+    start_date_local: `${date}T08:00:00`,
+    distance: 10000,
+    moving_time: 3600,
+    gap: 3,
+    average_heartrate: 150,
+    interval_summary: ["1x 60m 150bpm"],
+    ...overrides,
+  });
+
+  it("is null, not 0, for a week with no steady run", () => {
+    const weeks = aggregateWeeks(
+      [steady("2026-06-02"), steady("2026-06-09", { gap: null })],
+      [],
+      "2026-06-08",
+    );
+    expect(weeks.map((w) => pooledEfficiency([w]))).toEqual([
+      { ef: 1.2, runs: 1 },
+      null,
+    ]);
+  });
+
+  it("weights each run by its moving time", () => {
+    const [week] = aggregateWeeks(
+      [
+        steady("2026-06-09", { moving_time: 3600 }),
+        steady("2026-06-11", { moving_time: 1200, average_heartrate: 144 }),
+      ],
+      [],
+      "2026-06-08",
+    );
+    // (1.2 * 3600 + 1.25 * 1200) / 4800
+    expect(pooledEfficiency([week!])).toEqual({ ef: 1.213, runs: 2 });
+  });
+
+  it("leaves out runs under 20 minutes and rep sessions", () => {
+    const [week] = aggregateWeeks(
+      [
+        steady("2026-06-09"),
+        steady("2026-06-10", { moving_time: 1199, average_heartrate: 100 }),
+        steady("2026-06-11", {
+          average_heartrate: 100,
+          interval_summary: ["5x 4m51s 164bpm", "1x 25s 164bpm"],
+        }),
+        steady("2026-06-12", {
+          interval_summary: null,
+          average_heartrate: 144,
+        }),
+      ],
+      [],
+      "2026-06-08",
+    );
+    // (1.2 + 1.25) / 2: a null interval_summary is a steady run.
+    expect(pooledEfficiency([week!])).toEqual({ ef: 1.225, runs: 2 });
+  });
+
+  it("compares the earlier half of the weeks with a steady run against the later half", () => {
+    const weeks = aggregateWeeks(
+      [
+        steady("2026-06-01"),
+        steady("2026-06-15", { average_heartrate: 160 }),
+        steady("2026-06-22", { average_heartrate: 144 }),
+      ],
+      [],
+      "2026-06-22",
+    );
+    // 3 weeks with a steady run: the middle one (06-15) is left out.
+    expect(efficiencyTrend(weeks)).toEqual({
+      earlier: {
+        ef: 1.2,
+        runs: 1,
+        fromWeek: "2026-06-01",
+        toWeek: "2026-06-01",
+      },
+      later: {
+        ef: 1.25,
+        runs: 1,
+        fromWeek: "2026-06-22",
+        toWeek: "2026-06-22",
+      },
+      changePct: 4.2,
+    });
+    expect(efficiencyTrend(weeks.slice(0, 2))).toBeNull();
   });
 });
 
