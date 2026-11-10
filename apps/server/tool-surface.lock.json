@@ -2,7 +2,7 @@
   "note": "Permission-relevant identity of every advertised tool (ljcl/strava-mcp#303). Changing an entry invalidates the stored 'Allow always' grant for that tool. See apps/server/src/toolSurface.test.ts for how to regenerate.",
   "tools": {
     "amend-route": "ddc20b1a10fbfeec",
-    "compare-activities": "337bfd8e60926277",
+    "compare-activities": "1c73446b91250ac2",
     "export-route": "cbcee360be18a1db",
     "get-activity": "e044bea8af0eb286",
     "get-activity-laps": "18c65ce32fcb4515",

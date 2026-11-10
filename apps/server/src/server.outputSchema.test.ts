@@ -187,6 +187,7 @@ const CALLS: Array<[tool: string, args: Record<string, unknown>]> = [
     "compare-activities",
     { activityId1: activity.id, activityId2: activitySwim.id },
   ],
+  ["compare-activities", { activityId1: activity.id, sameRoute: true }],
   ["get-best-efforts", {}],
   ["get-best-efforts", { id: activity.id }],
   ["get-race-prediction", { raceDistance: "10k" }],

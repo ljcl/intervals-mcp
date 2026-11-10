@@ -9,7 +9,11 @@ import {
 } from "../activityWeather";
 import { speedEfficiencyFactor } from "../aerobicAnalysis";
 import { formatDuration, formatSigned, round } from "../formatters";
-import { getActivity, type IntervalsActivity } from "../intervalsClient";
+import {
+  getActivity,
+  type IntervalsActivity,
+  listActivities,
+} from "../intervalsClient";
 import { IntervalsStreamsUnavailableError } from "../intervalsStreams";
 import {
   compareKmSplits,
@@ -17,7 +21,10 @@ import {
   type KmComparison,
 } from "../kmComparison";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
+import { sameRoute as isSameRoute } from "../routeCandidates";
 import { type SplitAnalysis, SplitAnalysisError } from "../splitAnalysis";
+import { HISTORY_DAYS, loadRunStarts } from "../startClusters";
+import { addDays } from "../utils/localDate";
 import {
   activityCadenceSpm,
   buildRunningDynamics,
@@ -33,7 +40,11 @@ import { READ_ONLY } from "./_annotations";
 import { toolErrorText } from "./_errors";
 import { intervalsActivityIdInput } from "./_ids";
 import { loadSplitAnalysis } from "./getSplitAnalysis";
-import { CompareActivitiesOutputSchema, warnOnSchemaDrift } from "./outputs";
+import {
+  type CompareActivitiesComparisonSchema,
+  CompareActivitiesOutputSchema,
+  warnOnSchemaDrift,
+} from "./outputs";
 
 const name = "compare-activities";
 
@@ -43,6 +54,12 @@ running dynamics for each, the differences (activity 2 minus activity 1), and
 an efficiency factor per run (metres per minute per heartbeat, higher is
 better, grade-adjusted when both runs have GAP). Use it for the same route on
 two days, progress over time, or two races.
+
+With sameRoute: true and only activityId1, it finds the earlier runs on the
+same route ("am I getting faster on my usual loop?"): the outdoor GPS runs
+in the 180 days before it (at most 40), either direction. It lists them
+newest first with pace, GAP, HR, efficiency and temperature, then compares
+the newest of them (activity 1) with this run (activity 2).
 
 A per-km table pairs the runs at the same distance (pace, HR and
 efficiency difference) with a verdict, fitted after the warm-up km:
@@ -64,14 +81,37 @@ Notes:
   difference, efficiency and per-km table are for runs only.
 `;
 
-const inputSchema = z.object({
-  activityId1: intervalsActivityIdInput(
-    "First activity ID (baseline/older activity)",
-  ),
-  activityId2: intervalsActivityIdInput(
-    "Second activity ID (comparison/newer activity)",
-  ),
-});
+const inputSchema = z
+  .object({
+    activityId1: intervalsActivityIdInput(
+      "First activity ID (baseline/older activity); with sameRoute, the run whose route to match",
+    ),
+    activityId2: intervalsActivityIdInput(
+      "Second activity ID (comparison/newer activity). Required unless sameRoute is true.",
+    ).optional(),
+    sameRoute: z
+      .boolean()
+      .optional()
+      .describe(
+        "Find earlier runs on activityId1's route and compare with the newest of them. Send only activityId1 with it.",
+      ),
+  })
+  .superRefine((data, ctx) => {
+    if (data.sameRoute && data.activityId2 !== undefined)
+      ctx.addIssue({
+        code: "custom",
+        path: ["activityId2"],
+        message:
+          "Send activityId2 or sameRoute: true, not both: sameRoute finds the earlier run itself.",
+      });
+    if (!data.sameRoute && data.activityId2 === undefined)
+      ctx.addIssue({
+        code: "custom",
+        path: ["activityId2"],
+        message:
+          "Send activityId2, or sameRoute: true to compare with the latest earlier run on the same route.",
+      });
+  });
 
 type CompareActivitiesInput = z.infer<typeof inputSchema>;
 
@@ -170,7 +210,9 @@ function rawPaceSecondsPerKm(
   return (movingTimeS / distanceM) * 1000;
 }
 
-export type ComparisonResult = z.infer<typeof CompareActivitiesOutputSchema>;
+export type ComparisonResult = z.infer<
+  typeof CompareActivitiesComparisonSchema
+>;
 
 /**
  * What {@link loadComparison} reads beyond the two activities: each one's
@@ -418,16 +460,7 @@ export function buildComparison(
   }
 
   return {
-    units: {
-      distance: "km",
-      pace: "min/km",
-      swim_pace: "min/100m",
-      speed: "km/h",
-      time: "s",
-      hr: "bpm",
-      elevation: "m",
-      cadence: "spm",
-    },
+    units: UNITS,
     activity_1: summary1,
     activity_2: summary2,
     differences: {
@@ -446,6 +479,110 @@ export function buildComparison(
     efficiency,
     warnings: warnings.length > 0 ? warnings : undefined,
   };
+}
+
+const UNITS = {
+  distance: "km",
+  pace: "min/km",
+  swim_pace: "min/100m",
+  speed: "km/h",
+  time: "s",
+  hr: "bpm",
+  elevation: "m",
+  cadence: "spm",
+} as const;
+
+type SameRoute = NonNullable<
+  z.infer<typeof CompareActivitiesOutputSchema>["same_route"]
+>;
+
+/** One earlier same-route run from its list row. */
+function sameRouteRun(row: IntervalsActivity): SameRoute["runs"][number] {
+  const hr = row.average_heartrate ?? null;
+  const pace = rawPaceSecondsPerKm(row.distance, row.moving_time);
+  // Grade-adjusted when the run has it, as the comparison's efficiency is.
+  const gap = row.gap && row.gap > 0 ? row.gap : null;
+  const speed = gap ?? (pace ? 1000 / pace : null);
+  return {
+    id: row.id,
+    date: row.start_date_local.slice(0, 10),
+    name: row.name ?? "Run",
+    distance_km: round((row.distance ?? 0) / 1000, 2),
+    pace_min_per_km: paceFromDistanceTime(row.distance, row.moving_time),
+    gap_min_per_km: gapPace(row.gap, row.type ?? "Run"),
+    average_hr: hr,
+    efficiency: speed && hr ? round(speedEfficiencyFactor(speed, hr), 3) : null,
+    efficiency_basis: gap ? "gap" : "pace",
+    temperature_c: buildActivityWeather(row, null)?.temperature_c ?? null,
+  };
+}
+
+/**
+ * The runs before `id` on its route, newest first: `sameRoute` over the
+ * cached tracks of `loadRunStarts`, read up to the run's own date, so
+ * "earlier" is everything after it in that newest-first list.
+ */
+async function findSameRouteRuns(
+  apiKey: string,
+  id: string,
+  progress: ReportProgress,
+): Promise<SameRoute> {
+  const activity = await getActivity(apiKey, id);
+  const date = activity.start_date_local.slice(0, 10);
+  // The range loadRunStarts lists, so its own list read is a cache hit.
+  const rows = await listActivities(apiKey, {
+    oldest: addDays(date, -HISTORY_DAYS),
+    newest: date,
+  });
+  const { runs } = await loadRunStarts(apiKey, date, progress);
+  const index = runs.findIndex((run) => run.id === activity.id);
+  const self = runs[index];
+  if (!self)
+    return {
+      activity_id: activity.id,
+      runs: [],
+      compared_with: null,
+      note: `${activity.id} is not an outdoor run with a GPS track, so there is no route to match`,
+    };
+  const earlier = runs.slice(index + 1);
+  const matches = earlier
+    .filter((run) => isSameRoute(self.track, run.track))
+    .flatMap((run) => rows.filter((row) => row.id === run.id))
+    .map(sameRouteRun);
+  return {
+    activity_id: activity.id,
+    runs: matches,
+    compared_with: matches[0]?.id ?? null,
+    note:
+      matches.length > 0
+        ? null
+        : `no earlier run on the same route among ${earlier.length} GPS runs in the ${HISTORY_DAYS} days before ${date}`,
+  };
+}
+
+/** The same-route list as text, ahead of the comparison. */
+function formatSameRoute(found: SameRoute): string[] {
+  if (found.runs.length === 0)
+    return [`Same route as ${found.activity_id}: ${found.note}.`];
+  const lines = [
+    `Earlier runs on the same route as ${found.activity_id}, newest first (efficiency in m/min per beat, from GAP unless marked pace):`,
+  ];
+  for (const run of found.runs) {
+    const parts = [
+      `${run.distance_km} km`,
+      run.pace_min_per_km && `${run.pace_min_per_km} /km`,
+      run.gap_min_per_km && `GAP ${run.gap_min_per_km} /km`,
+      run.average_hr != null && `HR ${run.average_hr}`,
+      run.efficiency != null &&
+        `efficiency ${run.efficiency}${run.efficiency_basis === "pace" ? " (pace)" : ""}`,
+      run.temperature_c != null && `${run.temperature_c} °C`,
+    ].filter(Boolean);
+    lines.push(`  ${run.date} ${run.name} [${run.id}]: ${parts.join(", ")}`);
+  }
+  lines.push(
+    `Compared with the newest, ${found.compared_with}, as activity 1; this run is activity 2.`,
+  );
+  return lines;
 }
 
 /** The weather differences line, or null when no value is on both sides. */
@@ -479,18 +616,33 @@ export const compareActivitiesTool = {
   annotations: READ_ONLY,
   outputSchema: CompareActivitiesOutputSchema,
   execute: async (
-    { activityId1, activityId2 }: CompareActivitiesInput,
+    { activityId1, activityId2, sameRoute }: CompareActivitiesInput,
     apiKey: string,
     progress: ReportProgress = NO_PROGRESS,
   ) => {
     try {
-      progress(`Comparing activities ${activityId1} and ${activityId2}`);
-      const result = await loadComparison(
-        apiKey,
-        activityId1,
-        activityId2,
-        progress,
-      );
+      // The schema refuses a call with neither activityId2 nor sameRoute.
+      let id1 = activityId1;
+      let id2 = activityId2 as string;
+      let found: SameRoute | undefined;
+      const head: string[] = [];
+      if (sameRoute) {
+        progress(`Finding earlier runs on the route of ${activityId1}`);
+        found = await findSameRouteRuns(apiKey, activityId1, progress);
+        head.push(...formatSameRoute(found));
+        if (!found.compared_with) {
+          const structured = { units: UNITS, same_route: found };
+          warnOnSchemaDrift(name, CompareActivitiesOutputSchema, structured);
+          return {
+            content: [{ type: "text" as const, text: head.join("\n") }],
+            structuredContent: structured,
+          };
+        }
+        id1 = found.compared_with;
+        id2 = activityId1;
+      }
+      progress(`Comparing activities ${id1} and ${id2}`);
+      const result = await loadComparison(apiKey, id1, id2, progress);
       const {
         activity_1: summary1,
         activity_2: summary2,
@@ -508,7 +660,7 @@ export const compareActivitiesTool = {
       } = differences;
       const warnings = result.warnings ?? [];
 
-      const lines = [`Activity 1: ${summary1.name} [${summary1.id}]`];
+      const lines = [...head, `Activity 1: ${summary1.name} [${summary1.id}]`];
       lines.push(`  ${summary1.date} | ${summary1.type}`);
       lines.push(
         `  ${summary1.distance_km} km in ${summary1.moving_time} moving (${summary1.moving_time_source})`,
@@ -583,11 +735,12 @@ export const compareActivitiesTool = {
         for (const w of warnings) lines.push(`  - ${w}`);
       }
 
-      warnOnSchemaDrift(name, CompareActivitiesOutputSchema, result);
+      const structured = found ? { ...result, same_route: found } : result;
+      warnOnSchemaDrift(name, CompareActivitiesOutputSchema, structured);
 
       return {
         content: [{ type: "text" as const, text: lines.join("\n") }],
-        structuredContent: result,
+        structuredContent: structured,
       };
     } catch (error) {
       return {
@@ -595,7 +748,7 @@ export const compareActivitiesTool = {
           {
             type: "text" as const,
             text: toolErrorText(error, {
-              context: `compare activities ${activityId1} and ${activityId2}`,
+              context: `compare activities ${activityId1} and ${activityId2 ?? "its earlier runs on the same route"}`,
               notFound:
                 "One or both activities not found. Please verify the activity IDs.",
             }),

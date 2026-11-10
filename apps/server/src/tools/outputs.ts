@@ -351,7 +351,7 @@ const CompareSideSchema = z.object({
     "Temperature, and humidity and dew point from the FIT file; null when the activity has no weather",
   ),
 });
-export const CompareActivitiesOutputSchema = z.object({
+export const CompareActivitiesComparisonSchema = z.object({
   units: z.object({
     distance: z.literal("km"),
     pace: z.literal("min/km"),
@@ -447,6 +447,52 @@ export const CompareActivitiesOutputSchema = z.object({
     .nullable(),
   warnings: z.array(z.string()).optional(),
 });
+const SameRouteRunSchema = z.object({
+  id: z.string(),
+  date: z.string(),
+  name: z.string(),
+  distance_km: z.number(),
+  pace_min_per_km: z.string().nullable(),
+  gap_min_per_km: z.string().nullable().describe("intervals.icu gap"),
+  average_hr: z.number().nullable(),
+  efficiency: z
+    .number()
+    .nullable()
+    .describe(
+      "Metres per minute per beat, on efficiency_basis; higher is better",
+    ),
+  efficiency_basis: z
+    .enum(["gap", "pace"])
+    .describe(
+      "Grade-adjusted pace (intervals.icu gap) when the run has it, else moving pace",
+    ),
+  temperature_c: z.number().nullable(),
+});
+// With sameRoute and no earlier match there is no comparison, so only units
+// stays required; a host with the older list cannot send sameRoute.
+export const CompareActivitiesOutputSchema =
+  CompareActivitiesComparisonSchema.partial()
+    .required({ units: true })
+    .extend({
+      same_route: z
+        .object({
+          activity_id: z.string().describe("The run whose route was matched"),
+          runs: z
+            .array(SameRouteRunSchema)
+            .describe(
+              "Earlier runs on the same route, either direction, newest first: the outdoor GPS runs in the 180 days before it, at most 40",
+            ),
+          compared_with: z
+            .string()
+            .nullable()
+            .describe(
+              "The newest of runs, compared as activity 1 with this run as activity 2; null when there is none",
+            ),
+          note: z.string().nullable().describe("Why runs is empty, when it is"),
+        })
+        .optional()
+        .describe("Set with sameRoute: true"),
+    });
 
 const AerobicHalfSchema = z.object({
   avg_output: z
