@@ -170,6 +170,7 @@ export interface ActivityDetail {
   swolf: number | null;
   distance_per_stroke_m: number | null;
   load: ActivityLoad;
+  calories: number | null;
   decoupling_pct: number | null;
   efficiency_factor: number | null;
   rpe: number | null;
@@ -397,6 +398,7 @@ export function mapActivityDetail(
           ? null
           : round(activity.icu_intensity, 1),
     },
+    calories: activity.calories ?? null,
     decoupling_pct:
       activity.decoupling == null ? null : round(activity.decoupling, 1),
     efficiency_factor:
@@ -453,6 +455,7 @@ export function formatMetricsLine(
     parts.push(`cadence ${d.average_cadence_spm} spm`);
   if (d.elevation_gain_m != null)
     parts.push(`+${Math.round(d.elevation_gain_m)} m`);
+  if (d.calories != null) parts.push(`${Math.round(d.calories)} kcal`);
   return parts.join(", ");
 }
 

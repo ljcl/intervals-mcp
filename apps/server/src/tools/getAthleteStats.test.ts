@@ -142,6 +142,8 @@ describe("aggregateRunTotals", () => {
       elevation_gain_m: 0,
       load: 0,
       average_pace_min_per_km: null,
+      calories: 0,
+      calories_missing: 0,
       longest_run: null,
     });
   });
@@ -275,6 +277,7 @@ describe("aggregateSportTotals", () => {
       moving_time_s: 600,
       distance_km: null,
       load: 10,
+      calories: null,
     });
   });
 
@@ -353,15 +356,21 @@ describe("aggregateSportTotals", () => {
     const rows = Object.values(totals.by_type);
 
     expect(rows.length).toBeGreaterThan(1);
-    for (const key of ["count", "moving_time_s", "load"] as const) {
-      const sum = rows.reduce((acc, row) => acc + row[key], 0);
+    for (const key of ["count", "moving_time_s", "load", "calories"] as const) {
+      const sum = rows.reduce((acc, row) => acc + (row[key] ?? 0), 0);
       expect(sum, key).toBe(totals.total[key]);
     }
   });
 
   it("returns zeroed totals and no types for an empty period", () => {
     expect(aggregateSportTotals([], "2026-09-21", "2026-09-24")).toEqual({
-      total: { count: 0, moving_time_s: 0, load: 0 },
+      total: {
+        count: 0,
+        moving_time_s: 0,
+        load: 0,
+        calories: 0,
+        calories_missing: 0,
+      },
       by_type: {},
     });
   });
@@ -527,6 +536,8 @@ describe("getAthleteStatsTool.execute", () => {
       elevation_gain_m: 156,
       load: 93,
       average_pace_min_per_km: "5:04",
+      calories: 1030,
+      calories_missing: 0,
       longest_run: {
         id: "i189807578",
         date: "2026-09-24",
@@ -541,6 +552,8 @@ describe("getAthleteStatsTool.execute", () => {
       elevation_gain_m: 669,
       load: 406,
       average_pace_min_per_km: "5:07",
+      calories: 4388,
+      calories_missing: 0,
       longest_run: {
         id: "i189757183",
         date: "2026-09-19",
@@ -563,20 +576,34 @@ describe("getAthleteStatsTool.execute", () => {
 
     const structured = result.structuredContent;
     expect(structured?.all_sports.this_week).toEqual({
-      total: { count: 4, moving_time_s: 11071, load: 133 },
+      total: {
+        count: 4,
+        moving_time_s: 11071,
+        load: 133,
+        calories: 1748,
+        calories_missing: 0,
+      },
       by_type: {
-        Run: { count: 2, moving_time_s: 4277, distance_km: 14.07, load: 93 },
+        Run: {
+          count: 2,
+          moving_time_s: 4277,
+          distance_km: 14.07,
+          load: 93,
+          calories: 1030,
+        },
         Pilates: {
           count: 1,
           moving_time_s: 3444,
           distance_km: null,
           load: 22,
+          calories: 359,
         },
         WeightTraining: {
           count: 1,
           moving_time_s: 3350,
           distance_km: null,
           load: 18,
+          calories: 359,
         },
       },
     });
@@ -590,6 +617,8 @@ describe("getAthleteStatsTool.execute", () => {
       count: 16,
       moving_time_s: 38377,
       load: 543,
+      calories: 6671,
+      calories_missing: 0,
     });
     expect(AthleteStatsOutputSchema.safeParse(structured).success).toBe(true);
   });
@@ -633,6 +662,7 @@ describe("getAthleteStatsTool.execute", () => {
       moving_time_s: 1500,
       distance_km: 5,
       load: 40,
+      calories: null,
     });
   });
 
@@ -670,10 +700,16 @@ describe("getAthleteStatsTool.execute", () => {
 
     const text = result.content[0]?.text ?? "";
     expect(text).toContain(
-      "This week: 0 activities, 0:00, load 0\nLast 4 weeks: 0 activities, 0:00, load 0",
+      "This week: 0 activities, 0:00, load 0, 0 kcal\nLast 4 weeks: 0 activities, 0:00, load 0, 0 kcal",
     );
     expect(result.structuredContent?.all_sports.ytd).toEqual({
-      total: { count: 0, moving_time_s: 0, load: 0 },
+      total: {
+        count: 0,
+        moving_time_s: 0,
+        load: 0,
+        calories: 0,
+        calories_missing: 0,
+      },
       by_type: {},
     });
   });
@@ -730,6 +766,7 @@ describe("getAthleteStatsTool.execute", () => {
         id: "b",
         start_date_local: "2020-01-01T07:00:00",
         distance: 42_195,
+        calories: 3000,
       }),
       run({ id: "c", type: "Swim", start_date_local: "2020-06-01T07:00:00" }),
     ] as IntervalsActivity[]);
@@ -752,12 +789,19 @@ describe("getAthleteStatsTool.execute", () => {
       distance_km: 42.2,
     });
     expect(range?.all_sports.total.count).toBe(3);
+    // Only b reports calories: the totals count the other two as missing.
+    expect(range?.runs.calories_missing).toBe(1);
+    expect(range?.all_sports.total).toMatchObject({
+      calories: 3000,
+      calories_missing: 2,
+    });
+    expect(range?.all_sports.by_type.Swim?.calories).toBeNull();
     expect(result.structuredContent?.ytd.runs).toBe(0);
     expect(
       AthleteStatsOutputSchema.safeParse(result.structuredContent).success,
     ).toBe(true);
     expect(result.content[0]?.text).toContain(
-      "2020-01-01 to 2021-12-31: 2 runs, 47.20 km, 50:00, 1:04 /km avg, +100 m, load 80, longest 42.20 km on 2020-01-01 [b]",
+      "2020-01-01 to 2021-12-31: 2 runs, 47.20 km, 50:00, 1:04 /km avg, +100 m, load 80, 3000 kcal (1 missing), longest 42.20 km on 2020-01-01 [b]",
     );
   });
 

@@ -177,7 +177,7 @@ describe("formatActivityListText", () => {
       "Activities 2026-08-28 to 2026-09-24: showing 2 of 2",
     );
     expect(lines[1]).toBe(
-      "2026-09-24 Run Run 1, 8.03 km, 39:32, 4:55 /km, HR 171, load 56 [i189807578]",
+      "2026-09-24 Run Run 1, 8.03 km, 39:32, 4:55 /km, HR 171, load 56, 576 kcal [i189807578]",
     );
     expect(lines.at(-1)).toBe(
       "stub: details unavailable through the API; use the HealthFit copy.",
@@ -226,14 +226,16 @@ describe("formatActivityListText", () => {
       activities: [{ ...run, achievement_types: ["LTHR_UP"] }],
     });
     expect(one.split("\n")[1]).toBe(
-      "2026-09-24 Run Run 1, 8.03 km, 39:32, 4:55 /km, HR 171, load 56, achievement: Run LTHR up [i189807578]",
+      "2026-09-24 Run Run 1, 8.03 km, 39:32, 4:55 /km, HR 171, load 56, 576 kcal, achievement: Run LTHR up [i189807578]",
     );
 
     const two = formatActivityListText({
       ...response,
       activities: [{ ...run, achievement_types: ["BEST_PACE", "LTHR_UP"] }],
     });
-    expect(two).toContain(", load 56, achievements: Best pace, Run LTHR up [");
+    expect(two).toContain(
+      ", load 56, 576 kcal, achievements: Best pace, Run LTHR up [",
+    );
   });
 
   it("marks truncation in the header and omits the stub note when none apply", () => {

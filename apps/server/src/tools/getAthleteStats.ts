@@ -83,6 +83,9 @@ export interface RunTotals {
   elevation_gain_m: number;
   load: number;
   average_pace_min_per_km: string | null;
+  /** kcal over the runs that report calories; calories_missing counts the rest. */
+  calories: number;
+  calories_missing: number;
   /** The period's run with the most distance; null when no run has one. */
   longest_run: { id: string; date: string; distance_km: number } | null;
 }
@@ -94,11 +97,19 @@ export interface SportTotals {
   /** Null when no activity of this type in the period has a distance above 0. */
   distance_km: number | null;
   load: number;
+  /** kcal; null when no activity of this type in the period reports calories. */
+  calories: number | null;
 }
 
 /** Every activity type's totals in a period (`all_sports.<period>`). */
 export interface AllSportsTotals {
-  total: { count: number; moving_time_s: number; load: number };
+  total: {
+    count: number;
+    moving_time_s: number;
+    load: number;
+    calories: number;
+    calories_missing: number;
+  };
   by_type: Record<string, SportTotals>;
 }
 
@@ -168,6 +179,8 @@ export function aggregateRunTotals(
   let movingTimeS = 0;
   let elevationM = 0;
   let load = 0;
+  let calories = 0;
+  let caloriesMissing = 0;
   let longest: IntervalsActivity | undefined;
 
   for (const activity of activitiesInPeriod(activities, start, end)) {
@@ -179,6 +192,8 @@ export function aggregateRunTotals(
     movingTimeS += activity.moving_time ?? 0;
     elevationM += activity.total_elevation_gain ?? 0;
     if (activity.icu_training_load != null) load += activity.icu_training_load;
+    if (activity.calories != null) calories += activity.calories;
+    else caloriesMissing += 1;
   }
 
   return {
@@ -189,6 +204,8 @@ export function aggregateRunTotals(
     elevation_gain_m: Math.round(elevationM),
     load: Math.round(load),
     average_pace_min_per_km: paceFromDistanceTime(distanceM, movingTimeS),
+    calories: Math.round(calories),
+    calories_missing: caloriesMissing,
     longest_run: longest
       ? {
           id: longest.id,
@@ -213,8 +230,16 @@ export function aggregateSportTotals(
 ): AllSportsTotals {
   const sums = new Map<
     string,
-    { count: number; movingTimeS: number; distanceM: number; load: number }
+    {
+      count: number;
+      movingTimeS: number;
+      distanceM: number;
+      load: number;
+      calories: number | null;
+    }
   >();
+  // Counted for the total only: per-type counts would crowd the budget.
+  let caloriesMissing = 0;
   for (const activity of activitiesInPeriod(activities, start, end)) {
     const type = activity.type ?? UNKNOWN_TYPE;
     const sum = sums.get(type) ?? {
@@ -222,6 +247,7 @@ export function aggregateSportTotals(
       movingTimeS: 0,
       distanceM: 0,
       load: 0,
+      calories: null,
     };
     sum.count += 1;
     sum.movingTimeS += activity.moving_time ?? 0;
@@ -233,6 +259,9 @@ export function aggregateSportTotals(
     if (activity.icu_training_load != null) {
       sum.load += activity.icu_training_load;
     }
+    if (activity.calories != null) {
+      sum.calories = (sum.calories ?? 0) + activity.calories;
+    } else caloriesMissing += 1;
     sums.set(type, sum);
   }
 
@@ -243,6 +272,7 @@ export function aggregateSportTotals(
       moving_time_s: Math.round(sum.movingTimeS),
       distance_km: sum.distanceM > 0 ? round(sum.distanceM / 1000, 2) : null,
       load: Math.round(sum.load),
+      calories: sum.calories == null ? null : Math.round(sum.calories),
     },
   ]);
   rows.sort(
@@ -254,11 +284,18 @@ export function aggregateSportTotals(
 
   // Sum the rounded rows, not the raw values, so the rows always add up to
   // the total.
-  const total = { count: 0, moving_time_s: 0, load: 0 };
+  const total = {
+    count: 0,
+    moving_time_s: 0,
+    load: 0,
+    calories: 0,
+    calories_missing: caloriesMissing,
+  };
   for (const [, row] of rows) {
     total.count += row.count;
     total.moving_time_s += row.moving_time_s;
     total.load += row.load;
+    total.calories += row.calories ?? 0;
   }
   return { total, by_type: Object.fromEntries(rows) };
 }
@@ -273,7 +310,7 @@ function formatBucketLine(label: string, totals: RunTotals): string {
     parts.push(`${totals.average_pace_min_per_km} /km avg`);
   }
   parts.push(`+${totals.elevation_gain_m} m`);
-  parts.push(`load ${totals.load}`);
+  parts.push(`load ${totals.load}`, caloriesText(totals, totals.runs));
   const longest = totals.longest_run;
   if (longest) {
     parts.push(
@@ -283,6 +320,17 @@ function formatBucketLine(label: string, totals: RunTotals): string {
   return `${label}: ${parts.join(", ")}`;
 }
 
+/** "576 kcal", plus how many activities lacked calories when any did. */
+function caloriesText(
+  t: { calories: number; calories_missing: number },
+  count: number,
+) {
+  if (count > 0 && t.calories_missing === count) return "no calories";
+  const missing =
+    t.calories_missing > 0 ? ` (${t.calories_missing} missing)` : "";
+  return `${t.calories} kcal${missing}`;
+}
+
 function activityCount(count: number): string {
   return `${count} ${count === 1 ? "activity" : "activities"}`;
 }
@@ -290,7 +338,7 @@ function activityCount(count: number): string {
 /** One line for the period, then one indented line per type, in `by_type` order. */
 function formatSportLines(label: string, totals: AllSportsTotals): string[] {
   const lines = [
-    `${label}: ${activityCount(totals.total.count)}, ${formatDuration(totals.total.moving_time_s)}, load ${totals.total.load}`,
+    `${label}: ${activityCount(totals.total.count)}, ${formatDuration(totals.total.moving_time_s)}, load ${totals.total.load}, ${caloriesText(totals.total, totals.total.count)}`,
   ];
   for (const [type, row] of Object.entries(totals.by_type)) {
     const parts = [activityCount(row.count)];
@@ -298,6 +346,7 @@ function formatSportLines(label: string, totals: AllSportsTotals): string[] {
       parts.push(`${row.distance_km.toFixed(2)} km`);
     }
     parts.push(formatDuration(row.moving_time_s), `load ${row.load}`);
+    if (row.calories != null) parts.push(`${row.calories} kcal`);
     lines.push(`  ${type}: ${parts.join(", ")}`);
   }
   return lines;
