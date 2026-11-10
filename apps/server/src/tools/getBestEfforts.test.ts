@@ -19,6 +19,7 @@ import {
   getBestEffortsTool,
   matchDistance,
   nearestIndex,
+  progressionPeriods,
   resolveWindow,
 } from "./getBestEfforts";
 
@@ -82,6 +83,22 @@ type Structured = {
   best_efforts: Record<string, BestEffortEntry[]>;
   missing: string[];
   warnings: string[];
+  progression?: {
+    unit: string;
+    left_out: number;
+    periods: Array<{
+      id: string;
+      oldest: string;
+      newest: string;
+      has_runs: boolean;
+      best_efforts: Record<string, BestEffortEntry[]>;
+      missing: string[];
+      critical_speed: {
+        meters_per_sec: number;
+        pace_min_per_km: string;
+      } | null;
+    }>;
+  };
 };
 
 const structured = (result: { structuredContent?: unknown }) =>
@@ -500,6 +517,218 @@ describe("getBestEffortsTool.execute over a window", () => {
   });
 });
 
+describe("progressionPeriods", () => {
+  it("splits by month, cutting the first and last to the range", () => {
+    expect(progressionPeriods("2026-01-15", "2026-03-10", "month")).toEqual({
+      periods: [
+        { oldest: "2026-01-15", newest: "2026-01-31" },
+        { oldest: "2026-02-01", newest: "2026-02-28" },
+        { oldest: "2026-03-01", newest: "2026-03-10" },
+      ],
+      total: 3,
+    });
+  });
+
+  it("splits by calendar quarter and year", () => {
+    expect(
+      progressionPeriods("2025-11-11", "2026-11-10", "quarter").periods,
+    ).toEqual([
+      { oldest: "2025-11-11", newest: "2025-12-31" },
+      { oldest: "2026-01-01", newest: "2026-03-31" },
+      { oldest: "2026-04-01", newest: "2026-06-30" },
+      { oldest: "2026-07-01", newest: "2026-09-30" },
+      { oldest: "2026-10-01", newest: "2026-11-10" },
+    ]);
+    expect(progressionPeriods("2024-06-01", "2026-02-01", "year")).toEqual({
+      periods: [
+        { oldest: "2024-06-01", newest: "2024-12-31" },
+        { oldest: "2025-01-01", newest: "2025-12-31" },
+        { oldest: "2026-01-01", newest: "2026-02-01" },
+      ],
+      total: 3,
+    });
+  });
+
+  it("keeps the 12 most recent and counts the rest", () => {
+    const { periods, total } = progressionPeriods(
+      "1986-01-01",
+      "2026-11-10",
+      "month",
+    );
+    expect(periods).toHaveLength(12);
+    expect(periods[0]).toEqual({ oldest: "2025-12-01", newest: "2025-12-31" });
+    expect(periods[11]).toEqual({ oldest: "2026-11-01", newest: "2026-11-10" });
+    expect(total).toBe(491);
+  });
+
+  it("a range inside one period is that period, cut", () => {
+    expect(progressionPeriods("2026-05-03", "2026-05-03", "year")).toEqual({
+      periods: [{ oldest: "2026-05-03", newest: "2026-05-03" }],
+      total: 1,
+    });
+  });
+});
+
+describe("getBestEffortsTool.execute with progression", () => {
+  const cs = { type: "CS", criticalSpeed: 4.0, dPrime: 200, r2: 0.99 };
+  const curve = (
+    id: string,
+    secs: number,
+    activityId: string,
+    models = [cs],
+  ) => ({
+    id,
+    distance: [5000],
+    values: [secs],
+    activity_id: [activityId],
+    paceModels: models,
+  });
+
+  it("reads the window and every period in one request, and says which periods had no runs", async () => {
+    mockedAthleteCurves.mockResolvedValueOnce({
+      list: [
+        curve("r.2026-01-01.2026-09-30", 1300, "i3"),
+        curve("r.2026-01-01.2026-03-31", 1400, "i1"),
+        // No curve for Q2: intervals.icu leaves out a range with no runs.
+        curve("r.2026-07-01.2026-09-30", 1300, "i3", []),
+      ],
+      activities: {
+        i1: {
+          id: "i1",
+          name: "Jan run",
+          start_date_local: "2026-02-01T07:00:00",
+        },
+        i3: {
+          id: "i3",
+          name: "Sept run",
+          start_date_local: "2026-09-01T07:00:00",
+        },
+      },
+    } as unknown as IntervalsAthletePaceCurves);
+
+    const result = await getBestEffortsTool.execute(
+      {
+        distances: ["5km"],
+        window: "2026-01-01..2026-09-30",
+        topN: 1,
+        progression: "quarter",
+      },
+      "k",
+    );
+
+    expect(mockedAthleteCurves).toHaveBeenCalledTimes(1);
+    expect(mockedAthleteCurves).toHaveBeenCalledWith("k", {
+      type: "Run",
+      curves: [
+        "r.2026-01-01.2026-09-30",
+        "r.2026-01-01.2026-03-31",
+        "r.2026-04-01.2026-06-30",
+        "r.2026-07-01.2026-09-30",
+      ],
+    });
+
+    const content = structured(result);
+    expect(content.best_efforts["5km"]?.[0]?.time_seconds).toBe(1300);
+    const periods = content.progression?.periods ?? [];
+    expect(periods.map((p) => [p.id, p.has_runs])).toEqual([
+      ["r.2026-01-01.2026-03-31", true],
+      ["r.2026-04-01.2026-06-30", false],
+      ["r.2026-07-01.2026-09-30", true],
+    ]);
+    expect(periods[0]?.critical_speed).toEqual({
+      meters_per_sec: 4,
+      pace_min_per_km: "4:10",
+    });
+    expect(periods[1]?.missing).toEqual(["5km"]);
+    expect(periods[2]?.critical_speed).toBeNull();
+    expect(content.progression?.left_out).toBe(0);
+
+    expect(result.content[0]?.text).toContain(
+      [
+        "By quarter:",
+        "2026-01-01 to 2026-03-31:",
+        "  5km: 23:20 (4:40 min/km) - 2026-02-01, Jan run (i1)",
+        "  Critical speed: 4:10 min/km (4 m/s)",
+        "2026-04-01 to 2026-06-30: no runs",
+        "2026-07-01 to 2026-09-30:",
+        "  5km: 21:40 (4:20 min/km) - 2026-09-01, Sept run (i3)",
+        "Each time is",
+      ].join("\n"),
+    );
+  });
+
+  it('over "all", reports the last 12 periods and says how many were left out', async () => {
+    mockedAthleteCurves.mockResolvedValueOnce({
+      list: [],
+      activities: {},
+    } as unknown as IntervalsAthletePaceCurves);
+
+    const result = await getBestEffortsTool.execute(
+      { distances: ["5km"], window: "all", topN: 1, progression: "year" },
+      "k",
+    );
+
+    const curves = mockedAthleteCurves.mock.calls[0]?.[1].curves ?? [];
+    expect(curves).toHaveLength(13);
+    expect(curves[0]).toBe("all");
+    const content = structured(result);
+    expect(content.progression?.periods).toHaveLength(12);
+    expect(content.progression?.left_out).toBeGreaterThan(0);
+    expect(content.warnings.at(-1)).toMatch(
+      /only the most recent 12 are shown, from \d{4}-01-01\. Send a narrower window/,
+    );
+  });
+
+  it("gives each period its best only when topN is above 1", async () => {
+    mockedAthleteCurves.mockResolvedValueOnce({
+      list: [
+        {
+          ...curve("r.2026-01-01.2026-01-31", 1300, "i1"),
+          submax_values: [[1310]],
+          submax_activity_id: [["i2"]],
+        },
+      ],
+      activities: {},
+    } as unknown as IntervalsAthletePaceCurves);
+
+    const result = await getBestEffortsTool.execute(
+      {
+        distances: ["5km"],
+        window: "2026-01-01..2026-01-31",
+        topN: 2,
+        progression: "month",
+      },
+      "k",
+    );
+
+    // The window is the one period: one curve id, asked once.
+    expect(mockedAthleteCurves).toHaveBeenCalledWith("k", {
+      type: "Run",
+      curves: ["r.2026-01-01.2026-01-31"],
+      subMaxEfforts: 1,
+    });
+    const content = structured(result);
+    expect(content.best_efforts["5km"]).toHaveLength(2);
+    expect(content.progression?.periods[0]?.best_efforts["5km"]).toHaveLength(
+      1,
+    );
+  });
+
+  it("a rate limit fails the call with the rate-limit text", async () => {
+    mockedAthleteCurves.mockRejectedValueOnce(
+      handledRateLimit("getAthletePaceCurves for 1y"),
+    );
+
+    const result = await getBestEffortsTool.execute(
+      { topN: 1, progression: "month" },
+      "k",
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toMatch(/^❌ .*rate limit/i);
+  });
+});
+
 describe("getBestEffortsTool.execute with an id", () => {
   beforeEach(() => {
     mockedGetActivity.mockResolvedValue(run);
@@ -855,6 +1084,12 @@ describe("inputSchema", () => {
     expect(parsed.error?.issues[0]?.message).toMatch(
       /^Send id or window, not both/,
     );
+  });
+
+  it("refuses id and progression together, at progression", () => {
+    const parsed = schema.safeParse({ id: "i1", progression: "month" });
+    expect(parsed.success).toBe(false);
+    expect(parsed.error?.issues[0]?.path).toEqual(["progression"]);
   });
 
   it("takes either one alone, and applies no window default", () => {

@@ -2210,6 +2210,41 @@ export const BestEffortsOutputSchema = z.object({
       "Requested distances with no result: over a window, no curve point within tolerance (2% of the target or 50m, whichever is larger); with id, longer than the run or only inside parts marked to ignore for pace",
     ),
   warnings: z.array(z.string()),
+  progression: z
+    .object({
+      unit: z.enum(["month", "quarter", "year"]),
+      periods: z
+        .array(
+          z.object({
+            id: z.string().describe('"r.<oldest>.<newest>"'),
+            oldest: z.string().describe("ISO date YYYY-MM-DD"),
+            newest: z.string().describe("ISO date YYYY-MM-DD"),
+            has_runs: z
+              .boolean()
+              .describe("False when the period holds no runs"),
+            best_efforts: z
+              .record(z.string(), z.array(BestEffortEntrySchema))
+              .describe("Each distance's best in the period (rank 1 only)"),
+            missing: z.array(z.string()),
+            critical_speed: z
+              .object({
+                meters_per_sec: z.number(),
+                pace_min_per_km: z.string(),
+              })
+              .nullable()
+              .describe(
+                "intervals.icu's critical-speed model for the period; null when it gives none",
+              ),
+          }),
+        )
+        .describe("Calendar periods of the window, oldest first, at most 12"),
+      left_out: z
+        .number()
+        .int()
+        .describe("Older periods of the window not reported"),
+    })
+    .optional()
+    .describe("Only with progression: the window split by calendar period"),
 });
 
 // ---------- get-race-prediction ----------
