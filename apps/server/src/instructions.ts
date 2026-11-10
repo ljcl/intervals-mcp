@@ -18,7 +18,7 @@ export function serverInstructions(timeZone: string): string {
     "",
     "For one run, call get-running-summary first. Then use get-split-analysis for pacing, get-hill-analysis for climbs, get-interval-analysis for a workout, get-aerobic-analysis for decoupling on a steady run. To compare two runs, use compare-activities. For other sports, use get-activity.",
     "",
-    "For fitness questions, use get-fitness-trend for freshness, fatigue or a taper plan; get-training-load for weekly volume and spike flags; get-athlete-stats for totals this week, month or year; get-wellness for HRV, resting heart rate and sleep (view-wellness for a chart); get-best-efforts and get-race-prediction for race times; get-athlete-zones for zones and thresholds.",
+    "For fitness questions, use get-fitness-trend for freshness, fatigue or a taper plan; get-training-load for weekly volume and spike flags; get-athlete-stats for totals over any dates; get-wellness for HRV, resting heart rate and sleep (view-wellness for a chart); get-best-efforts and get-race-prediction for race times; get-athlete-zones for zones and thresholds.",
     "",
     "For where to run, use suggest-run-route, or view-route-suggestions for a map. To build or change a route: stitch-route, amend-route.",
     "",

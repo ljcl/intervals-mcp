@@ -413,6 +413,23 @@ const CASES: Record<string, SizeCase[]> = {
         ).toBeGreaterThanOrEqual(INTERVALS_ACTIVITY_TYPES.length + 1);
       },
     },
+    {
+      label: "every activity type, with a range",
+      args: { oldest: "2020-01-01", newest: "2021-12-31" },
+      setup: everyActivityType,
+      check: (result) => {
+        const range = (
+          result.structuredContent as {
+            range: { all_sports: { by_type: Record<string, unknown> } };
+          }
+        ).range;
+        expect(Object.keys(range.all_sports.by_type)).toHaveLength(
+          INTERVALS_ACTIVITY_TYPES.length + 1,
+        );
+        // Over budget with every period's types, so the text drops them.
+        expect(result.content[0]?.text).toContain("structuredContent has them");
+      },
+    },
   ],
   "update-activity": [
     {

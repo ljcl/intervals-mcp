@@ -21,6 +21,7 @@ describe("schemas align with the real tool rawObjects", () => {
       elevation_gain_m: 156,
       load: 93,
       average_pace_min_per_km: "5:04",
+      longest_run: { id: "i1", date: "2026-09-24", distance_km: 8.03 },
     };
     const empty = {
       total: { count: 0, moving_time_s: 0, load: 0 },
