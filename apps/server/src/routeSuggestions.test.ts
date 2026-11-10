@@ -368,6 +368,29 @@ describe("loadRouteSuggestions", () => {
       }
     });
 
+    it("joins two past loops for a plan longer than either", async () => {
+      const other = square(SF[0], SF[1], -0.0135, 0, -0.0135);
+      vi.mocked(loadRunStarts).mockResolvedValue({
+        runs: [
+          ...history,
+          { ...history[0]!, id: "i2", name: "South-west loop", track: other },
+        ],
+        skipped: 0,
+      });
+      const total = homeLoop.distance.at(-1)! + other.distance.at(-1)!;
+      const run = (
+        await loadRouteSuggestions(
+          "k",
+          { distanceKm: total / 1000 },
+          { ...ENV, orsKey: null },
+        )
+      ).runs[0]!;
+      expect(orsRoute).not.toHaveBeenCalled();
+      const two = run.candidates.find((c) => c.name === "Two past loops");
+      expect(two?.shape).toBe("loop");
+      expect(Math.abs(two!.distance_m - total)).toBeLessThan(total * 0.05);
+    });
+
     it("keeps a place for a new loop", async () => {
       vi.mocked(orsRoute).mockImplementation(async () =>
         route(square(SF[0] - 0.02, SF[1], 0.007)),

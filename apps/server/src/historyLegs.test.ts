@@ -3,6 +3,7 @@ import {
   type LegOption,
   legOptions,
   legSection,
+  loopsJoined,
   outAndBacksAlong,
   passes,
   planStitches,
@@ -524,5 +525,48 @@ describe("outAndBacksAlong", () => {
     expect(routes.map((r) => r.summary)).toEqual([
       'Out and back on your run "Run out" 2026-10-01, turning at 1.5 km',
     ]);
+  });
+});
+
+describe("loopsJoined", () => {
+  // Two 4 km loops from S, one north-east and one south-west: no line shared.
+  const north = run("n", [S, A, B, east(S, 1000), S]);
+  const south: LatLng = [-33.889, 151.18];
+  const southWest = run("sw", [
+    S,
+    south,
+    east(south, -1000),
+    east(S, -1000),
+    S,
+  ]);
+
+  it("joins two loops that share no line, as two run sections", () => {
+    const [two] = loopsJoined([north, southWest], 8000, 400);
+    expect(two).toMatchObject({
+      kind: "stitched",
+      name: "Two past loops",
+      shape: "loop",
+      summary: 'Your loops "Run n" 2026-10-01, then "Run sw" 2026-10-01',
+    });
+    expect(Math.abs(two!.distance_m - 8000)).toBeLessThan(400);
+    expect(two!.history_share).toBeCloseTo(1, 2);
+    expect(two!.sections?.map((x) => x.kind)).toEqual(["run", "run"]);
+  });
+
+  it("does not pair a loop with one running the same line", () => {
+    // 3 km: S north to A, as the north loop goes, then back another way.
+    const alike = run("alike", [S, A, east(A, 500), east(S, 500), S]);
+    const routes = loopsJoined([north, alike], 7000, 400);
+    expect(routes.some((r) => r.name === "Two past loops")).toBe(false);
+  });
+
+  it("adds an out-and-back along another run for the rest", () => {
+    const out = run("o", [S, [-33.907, 151.18]]);
+    const [route] = loopsJoined([north, out], 6000, 300);
+    expect(route).toMatchObject({ name: "Past loop and out-and-back" });
+    expect(route!.summary).toBe(
+      'Your loop "Run n" 2026-10-01, then out and back on your run "Run o" 2026-10-01, turning at 1.0 km',
+    );
+    expect(Math.abs(route!.distance_m - 6000)).toBeLessThan(50);
   });
 });
