@@ -907,6 +907,22 @@ Base `https://api.openrouteservice.org`, key in `Authorization: <key>` (no
   at most 0.75 to 1.33 times, and a loop more than 25% off is dropped.
 - `options.profile_params.weightings` `green`/`quiet` are accepted but gave
   the identical route in Sydney (green/quiet data covers Germany): not sent.
+- `foot-hiking` against `foot-walking` (#462, 2026-11-10, live): round
+  trips from the athlete's usual start in Sydney, 4, 7.3 and 17.5 km, seeds
+  1-5, one request each, measured and scored as the engine does
+  (`routeOsmStats`, `knownLines` over 40 runs, `scoreRoute`). Hiking gave
+  nearly the same loop for each seed: score difference -4 to +6, mean +0.1
+  over 14 pairs; path share within 0.06 but one (0.12); seed 5 at 17.5 km was a 404 on
+  both. A hiking loop beside the two walking seeds raised the best score by
+  0 to 2 points; a third walking seed raised it by 1 to 4. So only
+  `foot-walking` is requested. The earlier one-seed probe (4.1 against
+  5.5 km of waytype 7) did not hold up in the OpenStreetMap measures.
+
+  | Target | Walking scores (seeds 1-5) | Hiking scores |
+  | --- | --- | --- |
+  | 4 km | 34, 26, 38, 31, 45 | 36, 25, 35, 31, 48 |
+  | 7.3 km | 27, 29, 30, 29, 42 | 26, 30, 30, 29, 41 |
+  | 17.5 km | 27, 26, 30, 32, 404 | 28, 22, 36, 31, 404 |
 - Climb: ORS ascent ran about 25% above the athlete's watch at home
   (14.5 vs a median 11.5 m/km); a 3 m hysteresis on the elevation column
   gives 12.3, so generated climb uses `trackClimb` with that hysteresis.
