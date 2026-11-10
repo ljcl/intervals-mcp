@@ -207,6 +207,9 @@ otherwise).
   generated routes keep the OpenRouteService path share (an out-and-back's
   from its out leg, which its "via" streets name too), and one warning
   says why. An index not refreshed in 14 days adds a warning.
+- Terrain: flat, rolling and hilly order the routes that fit first; when
+  none offered fits, a run warning names the band asked and the climb per
+  km on offer (hill-repeats has its own warning).
 - Score: every candidate (past, stitched and generated) gets 0-100 from
   `routeScore.ts`, and the score orders them, best first. Hill repeats put
   routes with a repeat hill first; then routes that fit the asked terrain,

@@ -60,6 +60,7 @@ import {
 } from "./osmIndex";
 import { NO_PROGRESS, type ReportProgress } from "./progress";
 import {
+  climbPerKm,
   dedupeRoutes,
   MAX_PAST_CANDIDATES,
   matchPastRuns,
@@ -239,6 +240,31 @@ export function orsProblem(error: unknown): string {
 }
 
 const km = (meters: number) => (meters / 1000).toFixed(1);
+
+/** The warning when terrain flat, rolling or hilly was asked and no route offered is; null otherwise. */
+export function terrainMiss(
+  terrain: Terrain,
+  candidates: RouteCandidate[],
+  bands: TerrainBands,
+): string | null {
+  // terrainFits passes every route for any and hill-repeats.
+  if (
+    candidates.length === 0 ||
+    candidates.some((c) => terrainFits(terrain, c.climb_m, c.distance_m, bands))
+  )
+    return null;
+  const perKm = candidates.map((c) => climbPerKm(c.climb_m, c.distance_m));
+  const m = (v: number) => (Math.round(v * 10) / 10).toString();
+  const band =
+    terrain === "flat"
+      ? `at most ${m(bands.flatBelow)}`
+      : terrain === "hilly"
+        ? `over ${m(bands.hillyAbove)}`
+        : `${m(bands.flatBelow)}-${m(bands.hillyAbove)}`;
+  const low = m(Math.min(...perKm));
+  const high = m(Math.max(...perKm));
+  return `No route offered is ${terrain} (${band} m of climb per km); they climb ${low === high ? low : `${low}-${high}`} m per km.`;
+}
 
 /** A planned run's name may give a distance this far from its stored one before a warning. */
 const NAME_DISTANCE_TOLERANCE = 0.15;
@@ -1104,6 +1130,8 @@ export async function loadRouteSuggestions(
           `No candidate has a ${REPEAT_HILL_MIN_M}-${REPEAT_HILL_MAX_M} m stretch at ${REPEAT_HILL_MIN_GRADE_PCT}-${REPEAT_HILL_MAX_GRADE_PCT}% for hill repeats; try terrain hilly, or name a hill with via.`,
         );
       }
+      const missed = terrainMiss(terrain, candidates, bands);
+      if (missed) runWarnings.push(missed);
     }
     runs.push({
       ...run,

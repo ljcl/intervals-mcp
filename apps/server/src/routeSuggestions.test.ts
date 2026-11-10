@@ -12,7 +12,7 @@ import {
 } from "./mapAnchors";
 import { geocode, OrsApiError, type OrsRoute, orsRoute } from "./orsClient";
 import { osmIndexInfo, parkReach, routeOsmStats } from "./osmIndex";
-import { passesInOrder } from "./routeCandidates";
+import { passesInOrder, type RouteCandidate } from "./routeCandidates";
 import { concatTracks } from "./routeGeometry";
 import { listCorridors, type StoredRoute } from "./routeStore";
 import {
@@ -21,6 +21,7 @@ import {
   RouteSuggestionError,
   routesNote,
   type SuggestionEnv,
+  terrainMiss,
 } from "./routeSuggestions";
 import { loadRunStarts, type RunStart } from "./startClusters";
 
@@ -447,6 +448,41 @@ describe("loadRouteSuggestions", () => {
       const run = (await loadRouteSuggestions("k", { distanceKm: 6.5 }, ENV))
         .runs[0]!;
       expect(run.warnings).not.toContain(mismatch);
+    });
+  });
+
+  describe("terrain no route fits (#458)", () => {
+    const bands = { flatBelow: 10, hillyAbove: 20 };
+    const climbing = (...perKm: number[]) =>
+      perKm.map(
+        (c) => ({ climb_m: c * 6, distance_m: 6000 }) as RouteCandidate,
+      );
+
+    it("names the terrain, its band and the climb on offer", () => {
+      expect(terrainMiss("flat", climbing(33.7, 43.3), bands)).toBe(
+        "No route offered is flat (at most 10 m of climb per km); they climb 33.7-43.3 m per km.",
+      );
+      expect(terrainMiss("hilly", climbing(12), bands)).toBe(
+        "No route offered is hilly (over 20 m of climb per km); they climb 12 m per km.",
+      );
+      expect(terrainMiss("rolling", climbing(4, 25), bands)).toBe(
+        "No route offered is rolling (10-20 m of climb per km); they climb 4-25 m per km.",
+      );
+    });
+
+    it("is quiet when one route fits, for any and hill-repeats, and with none offered", () => {
+      expect(terrainMiss("flat", climbing(30, 8), bands)).toBeNull();
+      expect(terrainMiss("any", climbing(30), bands)).toBeNull();
+      expect(terrainMiss("hill-repeats", climbing(2), bands)).toBeNull();
+      expect(terrainMiss("flat", [], bands)).toBeNull();
+    });
+
+    it("warns on the run", async () => {
+      const run = (await loadRouteSuggestions("k", { terrain: "hilly" }, ENV))
+        .runs[0]!;
+      expect(
+        run.warnings.some((w) => w.startsWith("No route offered is hilly")),
+      ).toBe(true);
     });
   });
 
