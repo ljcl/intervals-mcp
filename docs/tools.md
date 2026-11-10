@@ -1198,9 +1198,9 @@ trims the displayed series back to it. Both paths
 report `activity_types_included` (whole-body: the distinct types with
 nonzero load in the window; run-only: the three run types), and whole-body
 notes that some types (e.g. strength) may count toward fatigue (ATL) only,
-per this athlete's intervals.icu settings. `projectDays` (default 0, or when
-`plannedLoads` is given and this is omitted, the days out to its latest date,
-capped at 60) projects TSB forward assuming rest, or `plannedLoads`
+per this athlete's intervals.icu settings. `projectDays` (default 0; 14 with
+`calendarPlan`, as `view-fitness-trend` defaults; or when `plannedLoads` is
+given and this is omitted, the days out to its latest date, capped at 60) projects TSB forward assuming rest, or `plannedLoads`
 (`[{ date: YYYY-MM-DD, load }]`, dates after today; two entries on one date
 add up; unlisted dates in the projection count as rest; an entry on or before
 today, or beyond the projection, is ignored and named in a warning) projects
@@ -1212,8 +1212,11 @@ and never `projectLoads` (the rows carry separate `ctlLoad` and `atlLoad`).
 `projection_source` is then `"intervals.icu calendar"` (null otherwise), the
 text labels the projection as intervals.icu's, and a calendar with no planned
 load decays like rest. It overrides `plannedLoads` (warning), is ignored with
-a warning under `runOnly` or a past `newest`, needs `projectDays` above 0, and
-leaves a `targetDate` taper rest-based. The app pair takes `calendarPlan` too
+a warning under `runOnly` or a past `newest` (and then sets no 14-day
+default), makes no projection with an explicit `projectDays: 0`, and
+leaves a `targetDate` taper rest-based. When wellness has not synced, the gap
+warning says the calendar projection is intervals.icu's own rather than
+assuming rest for the unsynced days. The app pair takes `calendarPlan` too
 (`projectionSource` in its payload). The `race-readiness` prompt asks for it
 alongside the taper. `tsb_positive_date` (only with a projection) is
 today when TSB is already ≥ 0 today, and the text says "already positive

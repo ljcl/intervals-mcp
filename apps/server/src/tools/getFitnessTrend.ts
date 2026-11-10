@@ -47,9 +47,10 @@ Notes:
   would reach.
 - Projections assume rest unless plannedLoads is given. plannedLoads entries
   on or before today, or past the projection, are ignored with a warning.
-- calendarPlan (with projectDays) projects from the athlete's intervals.icu
-  calendar plan, using intervals.icu's own future CTL/ATL: "fresh if I follow
-  my plan?". Whole-body only, overrides plannedLoads; a taper stays rest-based.
+- calendarPlan projects projectDays (default 14) from the athlete's
+  intervals.icu calendar plan, using intervals.icu's own future CTL/ATL:
+  "fresh if I follow my plan?". Whole-body only, overrides plannedLoads; a
+  taper stays rest-based.
 - as_of is the latest date CTL/ATL is known for; it can lag today until
   wellness syncs.
 - newest reviews a past block such as a race build, with no projection or
@@ -147,7 +148,8 @@ function formatTaperWeek(week: TaperWeek): string {
 }
 
 /**
- * `projectDays` when not given explicitly: 0, unless `plannedLoads` is
+ * `projectDays` when not given explicitly: 14 for a calendar projection,
+ * matching view-fitness-trend's default; else 0, unless `plannedLoads` is
  * present, in which case the span from `today` out to its latest date
  * (capped at 60, floored at 0 so an all-past plan doesn't go negative).
  */
@@ -155,8 +157,10 @@ function resolveProjectDays(
   projectDays: number | undefined,
   plannedLoads: PlannedLoad[] | undefined,
   today: string,
+  calendarProjection: boolean,
 ): number {
   if (projectDays !== undefined) return projectDays;
+  if (calendarProjection) return 14;
   if (!plannedLoads || plannedLoads.length === 0) return 0;
   const lastDate = plannedLoads.reduce(
     (max, p) => (p.date > max ? p.date : max),
@@ -244,7 +248,13 @@ export const getFitnessTrendTool = {
         };
       }
       const resolvedProjectDays = endsToday
-        ? resolveProjectDays(projectDays, typedPlannedLoads, endDate)
+        ? resolveProjectDays(
+            projectDays,
+            typedPlannedLoads,
+            endDate,
+            // runOnly ignores calendarPlan, so it gets no rest projection either.
+            !!calendarPlan && !runOnly,
+          )
         : 0;
 
       const loaded = await loadFitnessTrend(

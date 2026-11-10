@@ -1279,4 +1279,80 @@ describe("get-fitness-trend calendarPlan (#303)", () => {
     expect(structured.projection[1]!.ctl).toBe(51.5);
     expect(structured.warnings.join(" ")).toMatch(/plannedLoads is ignored/);
   });
+
+  it("projects 14 days from calendarPlan alone, like view-fitness-trend (#409)", async () => {
+    mockedWellness.mockResolvedValueOnce([
+      wellnessRow(TODAY, { ctl: 50, atl: 60 }),
+      ...Array.from({ length: 14 }, (_, i) =>
+        wellnessRow(inDays(i + 1), { ctl: 50, atl: 59 - i }),
+      ),
+    ]);
+    mockedListActivities.mockResolvedValueOnce([]);
+
+    const result = await getFitnessTrendTool.execute(
+      { ...DEFAULT_INPUT, days: 1, calendarPlan: true },
+      "test-key",
+    );
+
+    expect(mockedWellness.mock.calls[0]![1]).toMatchObject({
+      newest: inDays(14),
+    });
+    const structured = result.structuredContent as Structured;
+    expect(structured.projection).toHaveLength(14);
+    expect(structured.projection_source).toBe("intervals.icu calendar");
+    expect(structured.warnings.join(" ")).not.toMatch(/needs projectDays/);
+  });
+
+  it("still projects nothing for calendarPlan with an explicit projectDays 0", async () => {
+    mockedWellness.mockResolvedValueOnce([
+      wellnessRow(TODAY, { ctl: 50, atl: 60 }),
+    ]);
+    mockedListActivities.mockResolvedValueOnce([]);
+
+    const result = await getFitnessTrendTool.execute(
+      { ...DEFAULT_INPUT, days: 1, projectDays: 0, calendarPlan: true },
+      "test-key",
+    );
+
+    const structured = result.structuredContent as Structured;
+    expect(structured.projection).toEqual([]);
+    expect(structured.warnings.join(" ")).toMatch(/needs projectDays/);
+  });
+
+  it("adds no rest projection for calendarPlan alone under runOnly", async () => {
+    mockedListActivities.mockResolvedValueOnce([run(1)]);
+
+    const result = await getFitnessTrendTool.execute(
+      { ...DEFAULT_INPUT, days: 7, runOnly: true, calendarPlan: true },
+      "test-key",
+    );
+
+    const structured = result.structuredContent as Structured;
+    expect(structured.projection).toEqual([]);
+    expect(structured.warnings.join(" ")).toMatch(/calendarPlan is ignored/);
+  });
+
+  it("names the calendar, not rest, as the projection basis when wellness lags (#409)", async () => {
+    // Synced through yesterday; today is a gap; intervals.icu has 2 plan rows.
+    mockedWellness.mockResolvedValueOnce([
+      wellnessRow(inDays(-1), { ctl: 50, atl: 60 }),
+      wellnessRow(inDays(1), { ctl: 50, atl: 55 }),
+      wellnessRow(inDays(2), { ctl: 50, atl: 50 }),
+    ]);
+    mockedListActivities.mockResolvedValueOnce([]);
+
+    const result = await getFitnessTrendTool.execute(
+      { ...DEFAULT_INPUT, days: 2, projectDays: 2, calendarPlan: true },
+      "test-key",
+    );
+
+    const warnings = (result.structuredContent as Structured).warnings.join(
+      " ",
+    );
+    expect(warnings).toContain("has not synced yet");
+    expect(warnings).toContain(
+      "the projection is intervals.icu's own, from its calendar plan",
+    );
+    expect(warnings).not.toContain("assumes rest");
+  });
 });
