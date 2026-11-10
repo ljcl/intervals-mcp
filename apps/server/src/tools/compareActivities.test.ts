@@ -17,7 +17,14 @@ import {
   getActivityFile,
   getActivityStreams,
   type IntervalsActivity,
+  listActivities,
 } from "../intervalsClient";
+import {
+  cumulativeDistances,
+  type LatLng,
+  type RouteTrack,
+} from "../mapAnchors";
+import { loadRunStarts, type RunStart } from "../startClusters";
 import { buildComparison, compareActivitiesTool } from "./compareActivities";
 import { CompareActivitiesOutputSchema } from "./outputs";
 
@@ -28,8 +35,13 @@ vi.mock("../intervalsClient", async (importOriginal) => {
     getActivity: vi.fn(),
     getActivityStreams: vi.fn(),
     getActivityFile: vi.fn(),
+    listActivities: vi.fn(),
   };
 });
+vi.mock("../startClusters", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../startClusters")>()),
+  loadRunStarts: vi.fn(),
+}));
 
 const mockedGetActivity = vi.mocked(getActivity);
 const mockedGetActivityStreams = vi.mocked(getActivityStreams);
@@ -484,17 +496,17 @@ describe("compare-activities execute", () => {
     const structured = CompareActivitiesOutputSchema.parse(
       result.structuredContent,
     );
-    expect(structured.activity_1.weather).toMatchObject({
+    expect(structured.activity_1?.weather).toMatchObject({
       temperature_c: 12,
       humidity_pct: 60,
       dew_point_c: 4.5,
     });
-    expect(structured.activity_2.weather).toMatchObject({
+    expect(structured.activity_2?.weather).toMatchObject({
       temperature_c: 26,
       humidity_pct: 75,
       dew_point_c: 21.2,
     });
-    expect(structured.differences.weather).toEqual({
+    expect(structured.differences?.weather).toEqual({
       temperature_c: 14,
       humidity_pct: 15,
       dew_point_c: 16.7,
@@ -668,3 +680,165 @@ describe("compare-activities execute", () => {
     );
   });
 });
+
+/** A straight 11-point track from San Francisco, `dLat`/`dLng` degrees long. */
+function line(dLat: number, dLng: number): RouteTrack {
+  const coordinates = Array.from(
+    { length: 11 },
+    (_, k): LatLng => [37.79 + (dLat * k) / 10, -122.39 + (dLng * k) / 10],
+  );
+  return {
+    coordinates,
+    distance: cumulativeDistances(coordinates),
+    altitude: coordinates.map(() => null),
+  };
+}
+
+describe("compare-activities sameRoute", () => {
+  const north = line(0.02, 0);
+  const east = line(0, 0.02);
+  // Newest first, as loadRunStarts lists them: i301 ran after i300.
+  const history: [string, string, RouteTrack][] = [
+    ["i301", "2026-06-21", north],
+    ["i300", "2026-06-20", north],
+    ["i299", "2026-06-18", east],
+    ["i250", "2026-06-10", north],
+    ["i200", "2026-06-01", north],
+  ];
+  const rows = history.map(([id, date]) =>
+    fakeActivity({
+      id,
+      name: `Loop ${id}`,
+      start_date_local: `${date}T07:00:00`,
+      gap: 3.4,
+      average_temp: 18,
+    }),
+  );
+  const runStarts = (ids: string[]): RunStart[] =>
+    history
+      .filter(([id]) => ids.includes(id))
+      .map(([id, date, track]) => ({
+        id,
+        date,
+        name: `Loop ${id}`,
+        distance_m: 2224,
+        climb_m: null,
+        track,
+      }));
+
+  beforeEach(() => {
+    mockedGetActivity.mockReset();
+    mockedGetActivity.mockImplementation(
+      async (_key, id) => rows.find((row) => row.id === id)!,
+    );
+    mockedGetActivityStreams.mockReset();
+    mockedGetActivityStreams.mockResolvedValue([]);
+    mockedGetActivityFile.mockReset();
+    vi.mocked(listActivities).mockReset().mockResolvedValue(rows);
+  });
+
+  it("lists the earlier runs on the route newest first and compares this run with the newest", async () => {
+    vi.mocked(loadRunStarts).mockResolvedValue({
+      runs: runStarts(["i301", "i300", "i299", "i250", "i200"]),
+      skipped: 0,
+    });
+
+    const result = await compareActivitiesTool.execute(
+      { activityId1: "i300", sameRoute: true },
+      "test-token",
+    );
+
+    expect(result.isError).toBeUndefined();
+    // Read up to the run's own date, so "earlier" is relative to it.
+    expect(vi.mocked(loadRunStarts).mock.calls[0]?.[1]).toBe("2026-06-20");
+    const structured = CompareActivitiesOutputSchema.parse(
+      result.structuredContent,
+    );
+    expect(structured.same_route?.runs.map((r) => r.id)).toEqual([
+      "i250",
+      "i200",
+    ]);
+    expect(structured.same_route?.compared_with).toBe("i250");
+    expect(structured.same_route?.runs[0]).toMatchObject({
+      date: "2026-06-10",
+      pace_min_per_km: "5:20",
+      gap_min_per_km: "4:54",
+      average_hr: 150,
+      efficiency: round3(speedEfficiencyFactor(3.4, 150)),
+      efficiency_basis: "gap",
+      temperature_c: 18,
+    });
+    // The listed efficiency is the comparison's, on the same basis.
+    expect(structured.efficiency?.activity_1).toBe(
+      structured.same_route?.runs[0]?.efficiency,
+    );
+    expect(structured.activity_1?.id).toBe("i250");
+    expect(structured.activity_2?.id).toBe("i300");
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain(
+      "  2026-06-10 Loop i250 [i250]: 10 km, 5:20 /km, GAP 4:54 /km, HR 150, efficiency 1.36, 18 °C",
+    );
+    expect(text).toContain("Compared with the newest, i250, as activity 1");
+    expect(text).toContain("Activity 1: Loop i250 [i250]");
+    expect(text).toContain("Activity 2: Loop i300 [i300]");
+  });
+
+  it("says plainly when no earlier run is on the route, without an error", async () => {
+    vi.mocked(loadRunStarts).mockResolvedValue({
+      runs: runStarts(["i300", "i299"]),
+      skipped: 0,
+    });
+
+    const result = await compareActivitiesTool.execute(
+      { activityId1: "i300", sameRoute: true },
+      "test-token",
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0]?.text).toBe(
+      "Same route as i300: no earlier run on the same route among 1 GPS runs in the 180 days before 2026-06-20.",
+    );
+    const structured = CompareActivitiesOutputSchema.parse(
+      result.structuredContent,
+    );
+    expect(structured.same_route).toMatchObject({
+      runs: [],
+      compared_with: null,
+    });
+    expect(structured.activity_1).toBeUndefined();
+    expect(mockedGetActivity).toHaveBeenCalledTimes(1);
+  });
+
+  it("says so when the run has no GPS track to match", async () => {
+    vi.mocked(loadRunStarts).mockResolvedValue({
+      runs: runStarts(["i299", "i250"]),
+      skipped: 1,
+    });
+
+    const result = await compareActivitiesTool.execute(
+      { activityId1: "i300", sameRoute: true },
+      "test-token",
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0]?.text).toBe(
+      "Same route as i300: i300 is not an outdoor run with a GPS track, so there is no route to match.",
+    );
+  });
+
+  it("refuses sameRoute with activityId2, and neither", () => {
+    const parse = (args: object) =>
+      compareActivitiesTool.inputSchema.safeParse(args);
+    expect(
+      parse({ activityId1: "i1", activityId2: "i2", sameRoute: true }).error
+        ?.issues[0]?.message,
+    ).toMatch(/not both/);
+    expect(parse({ activityId1: "i1" }).error?.issues[0]?.message).toMatch(
+      /Send activityId2, or sameRoute: true/,
+    );
+    expect(parse({ activityId1: "i1", sameRoute: true }).success).toBe(true);
+    expect(parse({ activityId1: "i1", activityId2: "i2" }).success).toBe(true);
+  });
+});
+
+const round3 = (value: number) => Math.round(value * 1000) / 1000;

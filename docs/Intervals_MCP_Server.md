@@ -66,7 +66,7 @@ rather than (or alongside) text.
 | `get-split-analysis` | Did I positive-split, or was that the hills? | `id` |
 | `get-aerobic-analysis` | Did I decouple? What's my efficiency factor? | `id`, `basis` (gap, pace or power; gap corrects for hills) |
 | `get-interval-analysis` | Interval workout breakdown: pace/HR per rep, did reps fade? Am I faster than the last times I did this workout? | `id`, `findSimilar` |
-| `compare-activities` | How does this run compare to that one? Was the gap there from km 1 (conditions) or did it grow (fatigue)? Was the weather different? | `activityId1`, `activityId2` |
+| `compare-activities` | How does this run compare to that one? Was the gap there from km 1 (conditions) or did it grow (fatigue)? Was the weather different? Am I getting faster on my usual loop? | `activityId1`, `activityId2`, or `activityId1` with `sameRoute: true` |
 
 ### Fitness, load, and performance
 

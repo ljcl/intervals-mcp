@@ -426,6 +426,19 @@ So curves are matched by id, and an id missing from `list` means no runs in
 that range. get-best-efforts' `progression` reads up to 12 periods plus the
 whole window this way, in one request.
 
+## Activity `route_id` and athlete routes (2026-11-09, #401, live read-only)
+
+- `route_id` is set on 7 of 78 runs in the last 180 days, all since
+  2026-10-27, and no two runs share an id.
+- `GET /athlete/0/routes`: 200, lists each route with `activity_count: 1`,
+  including three "Easy 6 km" runs that look like one loop.
+- `GET /athlete/0/routes/{id}`: 200 with `name`, `tags`, `description` and
+  `latlngs` (null here).
+
+So intervals.icu's routes cannot group runs on one route yet;
+compare-activities' `sameRoute` matches tracks with `sameRoute`
+(`routeCandidates.ts`) instead.
+
 ## Sport settings and HR curves (2026-10-08, #79, live read-only)
 
 Sport settings:

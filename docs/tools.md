@@ -81,7 +81,7 @@ descriptions.
 | `get-running-dynamics` | Ground contact time, vertical oscillation/ratio, step length, and cadence for a run, with VO/GCT target assessments and a per-WORK-interval breakdown |
 | `get-activity-zones` | Time spent in each HR zone and, for a run, each pace zone for an activity, from the activity's own recorded zone bounds |
 | `get-athlete-zones` | The athlete's own LTHR, max HR, HR and pace zones, threshold pace and FTP from sport settings, with a check of LTHR and max HR against recent heart rate bests |
-| `compare-activities` | Compare two activities side-by-side: pace, HR, cadence, load, running dynamics and weather, plus activity2-activity1 differences, an efficiency verdict, and a per-km table with a constant-offset or growing-drift verdict |
+| `compare-activities` | Compare two activities side-by-side: pace, HR, cadence, load, running dynamics and weather, plus activity2-activity1 differences, an efficiency verdict, and a per-km table with a constant-offset or growing-drift verdict; with `sameRoute`, earlier runs on one run's route and a comparison with the newest |
 | `get-hill-analysis` | Climb/descent detection with GAP and early-vs-late climb effort drift |
 | `get-split-analysis` | Even km splits with a two-halves pacing verdict stated on the clock and grade-adjusted |
 | `get-aerobic-analysis` | Aerobic decoupling and efficiency factor on a grade-adjusted, pace or power basis from streams, with intervals.icu's own values labelled apart |
@@ -805,6 +805,24 @@ With fewer than 3 fitted km of heart rate in both runs there is no verdict. A
 side that is not a run or has no streams gives `km_comparison: null` and
 `km_comparison_note` says why; a rate limit fails the call. Two 4-hour runs
 pair about 46 km, inside the response budget (responseSize.test.ts).
+
+`sameRoute: true` with only `activityId1` (the schema refuses it with
+`activityId2`, and refuses neither) finds the earlier runs on that run's
+route: `loadRunStarts` read up to the run's own date (the outdoor GPS runs in
+the 180 days before it, at most 40, cached) and `sameRoute`
+(`routeCandidates.ts`, either direction), so there is no second matching
+rule. Earlier is everything after the run in that newest-first list.
+`same_route.runs` lists them newest first from their list rows: pace, GAP,
+average HR, efficiency (`speedEfficiencyFactor` on GAP when the run has it,
+else moving pace, `efficiency_basis`) and temperature (`buildActivityWeather`
+without the FIT file). The newest is `compared_with`, and the normal
+comparison runs with it as activity 1 and this run as activity 2. A run that
+is not an outdoor run with a track, or has no match, says so in
+`same_route.note` and the text, not as an error; the result then has only
+`units` and `same_route`. That is why every comparison field is optional in
+the published schema (output-schema.lock.json, #401); a host with an older
+list cannot send `sameRoute`, so it never sees such a result. intervals.icu's
+own `route_id` cannot group runs yet (docs/api-notes.md).
 
 `view-activity-chart`/`get-activity-streams-raw` (activity-chart MCP App)
 fetch the activity via `getActivity` and its
