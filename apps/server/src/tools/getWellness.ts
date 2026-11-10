@@ -30,7 +30,8 @@ const name = "get-wellness";
 
 const description = `
 Returns daily wellness from intervals.icu for a day or a date range: HRV
-(rMSSD, SDNN or both), resting HR, sleep, weight, CTL/ATL/TSB, and the
+(rMSSD, SDNN or both), resting HR, sleep, weight, VO2max, steps,
+CTL/ATL/TSB, and the
 subjective scores the athlete or a device logged (readiness, soreness,
 fatigue, stress, mood, motivation, injury, sleep quality, SpO2,
 respiration, comments). Use it to explain how a run felt or to check
@@ -43,7 +44,8 @@ Notes:
 - With no date, oldest or newest, it returns today only. A date after today
   is refused. A range can span 366 days. Past 90 days it returns weekly
   averages (Monday start, with the day count) in weeks instead of daily rows
-  in days. Weeks carry HRV, resting HR, sleep, weight and the scores, but no
+  in days. Weeks carry HRV, resting HR, sleep, weight, VO2max, steps and
+  the scores, but no
   CTL/ATL/TSB, ramp, sleep score, SpO2, respiration or comments; use
   get-fitness-trend for load.
 - A daily range with long comments keeps the newest days that fit the
@@ -71,8 +73,9 @@ const inputSchema = z.object({
 type GetWellnessInput = z.infer<typeof inputSchema>;
 
 const MAX_RANGE_DAYS = 366;
-/** A range longer than this returns weekly averages: 90 daily rows already
- * measure 38,808 of the 40,000 character response budget. */
+/** A range longer than this returns weekly averages: 90 daily rows with
+ * steps and VO2max synced measure about 43,600 characters, so the 40,000
+ * character response budget keeps the newest 78 (with the cut note). */
 export const DAILY_MAX_DAYS = 90;
 
 /** A range line's comments are cut here, so 90 commented days fit the text. */
@@ -86,6 +89,8 @@ export interface WellnessDayEntry {
   sleep_hours: number | null;
   sleep_score: number | null;
   weight_kg: number | null;
+  vo2max: number | null;
+  steps: number | null;
   ctl: number | null;
   atl: number | null;
   tsb: number | null;
@@ -118,6 +123,8 @@ export function mapWellnessDay(w: IntervalsWellness): WellnessDayEntry {
     sleep_hours: w.sleepSecs != null ? round(w.sleepSecs / 3600, 1) : null,
     sleep_score: w.sleepScore ?? null,
     weight_kg: w.weight ?? null,
+    vo2max: w.vo2max ?? null,
+    steps: w.steps ?? null,
     ctl: loads?.ctl ?? (w.ctl != null ? round(w.ctl, 1) : null),
     atl: loads?.atl ?? (w.atl != null ? round(w.atl, 1) : null),
     tsb: loads?.tsb ?? null,
@@ -152,6 +159,8 @@ export type WellnessWeekEntry = {
   resting_hr: number | null;
   sleep_hours: number | null;
   weight_kg: number | null;
+  vo2max: number | null;
+  steps: number | null;
 } & Record<(typeof WEEKLY_SCORE_FIELDS)[number], number | null>;
 
 export interface WellnessResponse {
@@ -210,6 +219,8 @@ export function aggregateWellnessWeeks(
       resting_hr: mean(group, "resting_hr"),
       sleep_hours: mean(group, "sleep_hours"),
       weight_kg: mean(group, "weight_kg"),
+      vo2max: mean(group, "vo2max"),
+      steps: mean(group, "steps"),
       ...(Object.fromEntries(
         WEEKLY_SCORE_FIELDS.map((f) => [f, mean(group, f)]),
       ) as Record<(typeof WEEKLY_SCORE_FIELDS)[number], number | null>),
@@ -261,6 +272,8 @@ function formatWellnessDayBlock(d: WellnessDayEntry): string {
   if (d.resting_hr != null) core.push(`resting HR ${d.resting_hr}`);
   if (d.sleep_hours != null) core.push(`sleep ${d.sleep_hours.toFixed(1)} h`);
   if (d.weight_kg != null) core.push(`weight ${d.weight_kg} kg`);
+  if (d.vo2max != null) core.push(`VO2max ${d.vo2max.toFixed(1)}`);
+  if (d.steps != null) core.push(`steps ${d.steps}`);
   if (core.length > 0) lines.push(core.join(", "));
 
   const load: string[] = [];
@@ -289,6 +302,8 @@ function formatWellnessLine(d: WellnessDayEntry): string {
   if (d.resting_hr != null) parts.push(`RHR ${d.resting_hr}`);
   if (d.sleep_hours != null) parts.push(`sleep ${d.sleep_hours.toFixed(1)}h`);
   if (d.weight_kg != null) parts.push(`wt ${d.weight_kg}kg`);
+  if (d.vo2max != null) parts.push(`VO2max ${d.vo2max.toFixed(1)}`);
+  if (d.steps != null) parts.push(`steps ${d.steps}`);
   if (d.ctl != null && d.atl != null)
     parts.push(`CTL/ATL ${d.ctl.toFixed(1)}/${d.atl.toFixed(1)}`);
   if (d.tsb != null) parts.push(`TSB ${d.tsb.toFixed(1)}`);
@@ -309,6 +324,8 @@ function formatWellnessWeekLine(w: WellnessWeekEntry): string {
   if (w.resting_hr != null) parts.push(`RHR ${w.resting_hr}`);
   if (w.sleep_hours != null) parts.push(`sleep ${w.sleep_hours}h`);
   if (w.weight_kg != null) parts.push(`wt ${w.weight_kg}kg`);
+  if (w.vo2max != null) parts.push(`VO2max ${w.vo2max}`);
+  if (w.steps != null) parts.push(`steps ${Math.round(w.steps)}`);
   for (const f of WEEKLY_SCORE_FIELDS) {
     const v = w[f];
     if (v != null) parts.push(`${f.replace("_", " ")} ${v}`);
@@ -322,12 +339,16 @@ function formatWellnessAverages(days: WellnessDayEntry[]): string {
   const sdnn = average(numbers(days.map((d) => d.hrv_sdnn_ms)));
   const rhr = average(numbers(days.map((d) => d.resting_hr)));
   const sleep = average(numbers(days.map((d) => d.sleep_hours)));
+  const vo2max = average(numbers(days.map((d) => d.vo2max)));
+  const steps = average(numbers(days.map((d) => d.steps)));
 
   const parts: string[] = [];
   if (rmssd != null) parts.push(`HRV rMSSD ${rmssd.toFixed(1)} ms`);
   if (sdnn != null) parts.push(`HRV SDNN ${sdnn.toFixed(1)} ms`);
   if (rhr != null) parts.push(`resting HR ${rhr.toFixed(1)}`);
   if (sleep != null) parts.push(`sleep ${sleep.toFixed(1)} h`);
+  if (vo2max != null) parts.push(`VO2max ${vo2max.toFixed(1)}`);
+  if (steps != null) parts.push(`steps ${Math.round(steps)}`);
 
   return `Averages: ${parts.length > 0 ? parts.join(", ") : "no data"}`;
 }
@@ -485,7 +506,7 @@ export const getWellnessTool = {
 
       warnOnSchemaDrift(name, WellnessOutputSchema, response);
 
-      // Weekly rows always fit (a 366-day range is about 17,400 characters).
+      // Weekly rows always fit (a 366-day range is about 20,400 characters).
       // Days are newest first, so a cut keeps the newest.
       const { text, structured } = weekly
         ? { text: formatWellnessText(response), structured: response }

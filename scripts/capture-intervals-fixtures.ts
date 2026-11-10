@@ -292,6 +292,8 @@ const WELLNESS_SYNTHETIC_RANGES: Record<string, [number, number, number]> = {
   motivation: [1, 5, 0],
   spO2: [94, 99, 0],
   respiration: [12, 20, 0],
+  vo2max: [50, 56, 2],
+  steps: [4000, 25000, 0],
 };
 
 /**
@@ -311,7 +313,7 @@ const WELLNESS_SYNTHETIC_RANGES: Record<string, [number, number, number]> = {
  *   reading there, nudged away from that real value (see
  *   {@link synthesizeAvoiding}) so every day reads as synthetic; a real
  *   `null` (no reading that day) stays `null` rather than fabricating one.
- * - Every other field (steps, calories, macros, vo2max, body composition,
+ * - Every other field (calories, macros, body composition,
  *   blood pressure/glucose/lactate, hydration, menstrual-cycle fields,
  *   avgSleepingHR, baevskySI, tempWeight/tempRestingHR, sportInfo, the sync
  *   `updated` timestamp, etc.) is nulled outright: nothing here is read by

@@ -46,6 +46,8 @@ describe("mapWellnessDay", () => {
     expect(day.sleep_score).toBeNull();
     expect(day.readiness).toBeNull();
     expect(day.spo2).toBe(98);
+    expect(day.vo2max).toBe(54.34);
+    expect(day.steps).toBe(12580);
     expect(day.comments).toBeNull();
   });
 
@@ -486,12 +488,12 @@ describe("getWellnessTool.execute HRV by measure", () => {
     };
   }
 
-  it("keeps an SDNN-only athlete's day and range text as before", async () => {
+  it("prints an SDNN-only athlete's day and range, with VO2max and steps on the days that have them", async () => {
     const day = await run([byId("2026-09-24")], "2026-09-24");
     expect(day.text).toBe(
       [
         "Wellness 2026-09-24",
-        "HRV SDNN 38.1 ms, resting HR 58, sleep 7.1 h, weight 70 kg",
+        "HRV SDNN 38.1 ms, resting HR 58, sleep 7.1 h, weight 70 kg, steps 12093",
         "CTL 41.4, ATL 34.9, TSB 6.5, ramp -2.1",
         "SpO2 95%",
       ].join("\n"),
@@ -505,9 +507,9 @@ describe("getWellnessTool.execute HRV by measure", () => {
     expect(range.text).toBe(
       [
         "Wellness 2026-09-23 to 2026-09-24: 2 days",
-        "2026-09-24: HRV SDNN 38.1, RHR 58, sleep 7.1h, wt 70kg, CTL/ATL 41.4/34.9, TSB 6.5",
-        "2026-09-23: HRV SDNN 47.9, RHR 55, sleep 6.7h, wt 70kg, CTL/ATL 41.4/35.4, TSB 5.9",
-        "Averages: HRV SDNN 43.0 ms, resting HR 56.5, sleep 6.9 h",
+        "2026-09-24: HRV SDNN 38.1, RHR 58, sleep 7.1h, wt 70kg, steps 12093, CTL/ATL 41.4/34.9, TSB 6.5",
+        "2026-09-23: HRV SDNN 47.9, RHR 55, sleep 6.7h, wt 70kg, VO2max 53.2, steps 14415, CTL/ATL 41.4/35.4, TSB 5.9",
+        "Averages: HRV SDNN 43.0 ms, resting HR 56.5, sleep 6.9 h, VO2max 53.2, steps 13254",
       ].join("\n"),
     );
   });
@@ -618,8 +620,21 @@ describe("getWellnessTool.execute weekly averages past 90 days", () => {
     // 2026-09-21 is a Monday: Sun 09-20 belongs to the week of 09-14.
     mockedGetWellness.mockResolvedValueOnce([
       { id: "2026-09-20", restingHR: 50, weight: 70, soreness: 1 },
-      { id: "2026-09-21", restingHR: 52, weight: 70.4, soreness: 2 },
-      { id: "2026-09-23", restingHR: 55, soreness: 3, sleepSecs: 7.5 * 3600 },
+      {
+        id: "2026-09-21",
+        restingHR: 52,
+        weight: 70.4,
+        soreness: 2,
+        vo2max: 54.34,
+        steps: 12580,
+      },
+      {
+        id: "2026-09-23",
+        restingHR: 55,
+        soreness: 3,
+        sleepSecs: 7.5 * 3600,
+        steps: 8421,
+      },
     ] as IntervalsWellness[]);
 
     const result = await getWellnessTool.execute(
@@ -638,6 +653,8 @@ describe("getWellnessTool.execute weekly averages past 90 days", () => {
         resting_hr: 53.5,
         weight_kg: 70.4,
         sleep_hours: 7.5,
+        vo2max: 54.3,
+        steps: 10500.5,
         soreness: 2.5,
         fatigue: null,
       }),
@@ -645,12 +662,17 @@ describe("getWellnessTool.execute weekly averages past 90 days", () => {
         week_start: "2026-09-14",
         days: 1,
         resting_hr: 50,
+        vo2max: null,
+        steps: null,
         soreness: 1,
       }),
     ]);
     const text = result.content[0]?.text ?? "";
     expect(text).toContain("weekly averages (Monday start");
-    expect(text).toContain("2026-09-21 (2 d): RHR 53.5");
+    expect(text).toContain(
+      "2026-09-21 (2 d): RHR 53.5, sleep 7.5h, wt 70.4kg, VO2max 54.3, steps 10501,",
+    );
+    expect(text).toContain("2026-09-14 (1 d): RHR 50, wt 70kg, soreness 1");
   });
 
   it("averages rMSSD and SDNN separately, never together", async () => {

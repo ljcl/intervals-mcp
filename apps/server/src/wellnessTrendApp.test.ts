@@ -70,6 +70,8 @@ describe("buildWellnessTrendData", () => {
             resting_hr: 49,
             sleep_hours: 7,
             weight_kg: null,
+            vo2max: null,
+            steps: null,
             readiness: null,
             soreness: null,
             fatigue: null,
