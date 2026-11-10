@@ -532,6 +532,7 @@ describe("schemas align with the real tool rawObjects", () => {
       window: { id: "1y", oldest: "2025-09-25", newest: "2026-09-25" },
       activity: null,
       top_n: 1,
+      grade_adjusted: false,
       units: { time: "s", pace: "min/km" },
       note: "Each time is the elapsed time across the fastest stretch.",
       best_efforts: { "5km": [entry] },

@@ -610,6 +610,7 @@
       "activity.type: string",
       "activity: null object",
       "best_efforts: object",
+      "grade_adjusted: boolean",
       "missing: array",
       "mode: =\"activity\" =\"window\" string",
       "note: string",

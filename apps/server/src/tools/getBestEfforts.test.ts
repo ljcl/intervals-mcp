@@ -78,6 +78,7 @@ type Structured = {
     covered_km: number;
   } | null;
   top_n: number;
+  grade_adjusted: boolean;
   units: Record<string, string>;
   note: string;
   best_efforts: Record<string, BestEffortEntry[]>;
@@ -229,7 +230,23 @@ describe("getBestEffortsTool.execute over a window", () => {
     expect(content.activity).toBeNull();
     expect(content.window?.id).toBe("1y");
     expect(content.top_n).toBe(1);
+    expect(content.grade_adjusted).toBe(false);
     expect(content.units).toEqual({ time: "s", pace: "min/km" });
+    // The mile, 3 km, 15 km and 10 mile are on the curve's grid (#406).
+    expect(
+      ["1 mile", "3km", "15km", "10 mile"].map((label) => [
+        label,
+        content.best_efforts[label]?.[0]?.distance_m,
+        content.best_efforts[label]?.[0]?.time_seconds,
+      ]),
+    ).toEqual([
+      ["1 mile", 1609.34, 406],
+      ["3km", 3000, 786],
+      ["15km", 15000, 4525],
+      // The grid's point is 16093.399 m, under 1 m off: the text says "10 mile:".
+      ["10 mile", 16093.399, 4897],
+    ]);
+    expect(content.missing).toEqual([]);
 
     const oneKm = content.best_efforts["1km"];
     expect(oneKm).toHaveLength(1);
@@ -259,6 +276,23 @@ describe("getBestEffortsTool.execute over a window", () => {
     expect(text).toContain("1km:");
     expect(text).toContain("elapsed time across the fastest stretch");
     expect(text).not.toContain("moving-time");
+  });
+
+  it("gap: true reads the grade-adjusted curve and labels the result", async () => {
+    mockedAthleteCurves.mockResolvedValueOnce(paceCurves);
+
+    const result = await getBestEffortsTool.execute(
+      { window: "1y", topN: 1, gap: true },
+      "k",
+    );
+
+    expect(mockedAthleteCurves).toHaveBeenCalledWith("k", {
+      type: "Run",
+      curves: ["1y"],
+      gap: true,
+    });
+    expect(structured(result).grade_adjusted).toBe(true);
+    expect(result.content[0]?.text).toMatch(/^Grade-adjusted best efforts, /);
   });
 
   it('defaults to the "1y" curve when neither window nor id is sent', async () => {
@@ -759,7 +793,13 @@ describe("getBestEffortsTool.execute with an id", () => {
       covered_km: 6.11,
     });
     // 10 km and longer do not fit a 6.1 km run and were not asked for.
-    expect(Object.keys(content.best_efforts)).toEqual(["400m", "1km", "5km"]);
+    expect(Object.keys(content.best_efforts)).toEqual([
+      "400m",
+      "1km",
+      "1 mile",
+      "3km",
+      "5km",
+    ]);
     expect(content.missing).toEqual([]);
     expect(content.warnings).toEqual([]);
     expect(content.best_efforts["5km"]?.[0]).toEqual({
@@ -784,6 +824,10 @@ describe("getBestEffortsTool.execute with an id", () => {
         "  1. 1:59 (4:58 min/km) from km 0.26 to 0.66",
         "1km:",
         "  1. 5:12 (5:12 min/km) from km 1.43 to 2.43",
+        "1 mile:",
+        "  1. 8:27 (5:15 min/km) from km 1.26 to 2.87",
+        "3km:",
+        "  1. 16:05 (5:22 min/km) from km 1.43 to 4.43",
         "5km:",
         "  1. 27:05 (5:25 min/km) from km 0.87 to 5.87",
         "Each time is the elapsed time across the fastest stretch, the rule intervals.icu's pace curves use. A stop inside a stretch counts toward its time.",
@@ -1051,7 +1095,12 @@ describe("getBestEffortsTool.execute with an id", () => {
 
     const content = structured(result);
     expect(content.activity?.covered_km).toBe(4.99);
-    expect(Object.keys(content.best_efforts)).toEqual(["400m", "1km"]);
+    expect(Object.keys(content.best_efforts)).toEqual([
+      "400m",
+      "1km",
+      "1 mile",
+      "3km",
+    ]);
     expect(content.missing).toEqual([]);
     expect(content.warnings).toEqual([
       "5km was not searched: this run covers 4.99 km, 3 m short of it.",
@@ -1092,6 +1141,12 @@ describe("inputSchema", () => {
     expect(parsed.error?.issues[0]?.path).toEqual(["progression"]);
   });
 
+  it("refuses gap with id, at gap", () => {
+    const parsed = schema.safeParse({ id: "i1", gap: true });
+    expect(parsed.success).toBe(false);
+    expect(parsed.error?.issues[0]?.path).toEqual(["gap"]);
+  });
+
   it("takes either one alone, and applies no window default", () => {
     expect(schema.parse({})).toEqual({ topN: 1 });
     expect(schema.parse({ id: 12345 })).toEqual({ id: "12345", topN: 1 });
@@ -1108,6 +1163,7 @@ describe("formatBestEffortsText", () => {
     window: { id: "1y", oldest: "2025-09-25", newest: "2026-09-25" },
     activity: null,
     top_n: 1,
+    grade_adjusted: false,
     units: { time: "s", pace: "min/km" },
     note: "note",
     best_efforts: {},

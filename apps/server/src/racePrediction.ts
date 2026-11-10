@@ -60,12 +60,17 @@ export const RECENT_WINDOW_DAYS = 90;
 export const NEGATIVE_SPLIT_PCT = 0.01;
 
 /**
- * Named race distances the tool can predict and split. The labels follow the
- * input naming scheme (lowercase, explicit units, as get-best-efforts spells
- * its distances); the dispatcher's enum matching still accepts "5K" or
- * "Half Marathon".
+ * Standard running distances in metres, the one table get-best-efforts and
+ * get-race-prediction both pick from. The labels are the input naming scheme
+ * (lowercase, explicit units); the dispatcher's enum matching still accepts
+ * "5K" or "Half Marathon". Each is a point on intervals.icu's pace-curve
+ * distance grid (1609.34 m and 16093.4 m included, verified 2026-11-10).
  */
-export const RACE_DISTANCES = {
+const STANDARD_DISTANCES_M = {
+  "400m": 400,
+  "1km": 1000,
+  "1 mile": 1609.34,
+  "3km": 3000,
   "5km": 5000,
   "10km": 10000,
   "15km": 15000,
@@ -74,6 +79,28 @@ export const RACE_DISTANCES = {
   marathon: 42195,
   "50km": 50000,
 } as const;
+
+type StandardDistances = typeof STANDARD_DISTANCES_M;
+
+/** The named subset of {@link STANDARD_DISTANCES_M}, in the order given. */
+export function pickDistances<const K extends keyof StandardDistances>(
+  names: readonly K[],
+): { [P in K]: StandardDistances[P] } {
+  return Object.fromEntries(names.map((n) => [n, STANDARD_DISTANCES_M[n]])) as {
+    [P in K]: StandardDistances[P];
+  };
+}
+
+/** Named race distances the tool can predict and split. */
+export const RACE_DISTANCES = pickDistances([
+  "5km",
+  "10km",
+  "15km",
+  "10 mile",
+  "half marathon",
+  "marathon",
+  "50km",
+]);
 
 export type RaceDistanceName = keyof typeof RACE_DISTANCES;
 

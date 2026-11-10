@@ -92,6 +92,10 @@ at `apps/server/src/__fixtures__/intervals/`.
 | `GET /activity/{id}/time-at-hr` | 200 | `{max_bpm, min_bpm, secs[], cumulative_secs[]}` |
 | `GET /activity/{id}/streams.json` | 200 | `moving` is never returned (silently omitted, not an error); `grade_smooth` (%) and `fixed_altitude` (m) are present; `gap` is not a valid stream type (422 "Invalid stream type") |
 
+- `pace-curves.json?type=Run&curves=1y&gap=true` (2026-11-10, read-only): 200, the same shape as
+  the plain read (same list keys, 148 grid points including 1609.34, 3000, 15000 and 16093.399 m).
+  The values are grade-adjusted: faster than the plain curve at every distance checked, often from
+  a different activity. Nothing in the response marks it as GAP, so the caller labels it.
 - `pace-curves.json` gives each grid distance to the run that is fastest there, so one long run
   owns a long stretch of the grid. In the 2026-09-25 probe (`pace-curves.json` fixture), the 91
   points of 1,500 m and up on each of `all` and `90d` came from 6 runs, and one 42.8 km run held
