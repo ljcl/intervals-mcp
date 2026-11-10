@@ -230,46 +230,72 @@ export function orsProblem(error: unknown): string {
 
 const km = (meters: number) => (meters / 1000).toFixed(1);
 
+/**
+ * The planned runs to route: outdoor runs in the window that are not done
+ * yet. intervals.icu pairs a completed workout with its activity
+ * (`paired_activity_id`), so a run already done today is left out and the
+ * next one is planned (#386). `done` describes the ones left out.
+ */
 async function plannedRuns(
   apiKey: string,
   oldest: string,
   days: number,
   distanceKm: number | undefined,
-): Promise<PlannedRun[]> {
+): Promise<{ runs: PlannedRun[]; done: string[] }> {
   const newest = addDays(
     oldest,
     (days > 1 ? days : PLANNED_RUN_LOOKAHEAD_DAYS) - 1,
   );
-  const events = (await listPlannedWorkouts(apiKey, { oldest, newest })).filter(
-    (e) => OUTDOOR_RUN_TYPES.has(e.type ?? ""),
-  );
+  const outdoor = (
+    await listPlannedWorkouts(apiKey, { oldest, newest })
+  ).filter((e) => OUTDOOR_RUN_TYPES.has(e.type ?? ""));
+  const events = outdoor.filter((e) => e.paired_activity_id == null);
   const chosen = days > 1 ? events : events.slice(0, 1);
+  // Only the done runs the plan passed over: for one run, those up to its day.
+  const last = chosen.at(-1)?.start_date_local;
+  const done = outdoor
+    .filter(
+      (e) =>
+        e.paired_activity_id != null &&
+        (days > 1 || last === undefined || e.start_date_local <= last),
+    )
+    .map(
+      (e) => `${e.name ?? "Planned run"} (${e.start_date_local.slice(0, 10)})`,
+    );
   if (chosen.length === 0) {
     if (distanceKm === undefined) {
       throw new RouteSuggestionError(
-        `No planned run from ${oldest} to ${newest}. Pass distanceKm to plan a route anyway.`,
+        done.length > 0
+          ? `No planned run from ${oldest} to ${newest} is still to do: ${done.join(", ")} ${done.length === 1 ? "is" : "are"} already done. Pass distanceKm to plan a route anyway.`
+          : `No planned run from ${oldest} to ${newest}. Pass distanceKm to plan a route anyway.`,
       );
     }
-    return [
-      {
-        event_id: null,
-        date: oldest,
-        name: "Run",
-        description: null,
-        distance_m: distanceKm * 1000,
-        distance_source: "argument",
-      },
-    ];
+    return {
+      runs: [
+        {
+          event_id: null,
+          date: oldest,
+          name: "Run",
+          description: null,
+          distance_m: distanceKm * 1000,
+          distance_source: "argument",
+        },
+      ],
+      done,
+    };
   }
-  return chosen.map((e) => ({
-    event_id: e.id,
-    date: e.start_date_local.slice(0, 10),
-    name: e.name ?? "Planned run",
-    description: e.description ?? null,
-    distance_m:
-      distanceKm !== undefined ? distanceKm * 1000 : (e.distance ?? 0),
-    distance_source: distanceKm !== undefined ? "argument" : "event",
-  }));
+  return {
+    runs: chosen.map((e) => ({
+      event_id: e.id,
+      date: e.start_date_local.slice(0, 10),
+      name: e.name ?? "Planned run",
+      description: e.description ?? null,
+      distance_m:
+        distanceKm !== undefined ? distanceKm * 1000 : (e.distance ?? 0),
+      distance_source: distanceKm !== undefined ? "argument" : "event",
+    })),
+    done,
+  };
 }
 
 /** The ORS key a place name needs to be looked up. */
@@ -656,7 +682,7 @@ export async function loadRouteSuggestions(
   ]) {
     if (text && !parseLatLng(text)) requireGeocoder(text, env);
   }
-  const planned = await plannedRuns(
+  const { runs: planned, done } = await plannedRuns(
     apiKey,
     args.date ?? env.today,
     args.days ?? 1,
@@ -673,6 +699,11 @@ export async function loadRouteSuggestions(
   // Known lines come from every loaded run, built once for the whole call.
   const knownShare = knownLines(history);
   const warnings: string[] = [];
+  if (done.length > 0) {
+    warnings.push(
+      `Left out ${done.length === 1 ? "a planned run" : `${done.length} planned runs`} already done: ${done.join(", ")}.`,
+    );
+  }
   if (skipped > 0) {
     warnings.push(
       `${skipped} recent run${skipped === 1 ? "" : "s"} had no GPS track or could not be read and ${skipped === 1 ? "was" : "were"} left out of the start history.`,

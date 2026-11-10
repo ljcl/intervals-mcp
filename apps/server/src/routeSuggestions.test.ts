@@ -363,6 +363,64 @@ describe("loadRouteSuggestions", () => {
     });
   });
 
+  describe("planned runs already done (#386)", () => {
+    const loop = homeLoop.distance.at(-1)!;
+    const doneEvent = (id: number, date: string, name: string) => ({
+      ...event(id, date, loop, name),
+      paired_activity_id: `i${id}`,
+    });
+
+    it("plans the next run when today's is already done", async () => {
+      vi.mocked(listPlannedWorkouts).mockResolvedValue([
+        doneEvent(10, "2026-11-03", "Easy 6 km"),
+        event(11, "2026-11-05", loop, "Long run"),
+        doneEvent(12, "2026-11-08", "Later"),
+      ]);
+      const result = await loadRouteSuggestions("k", {}, ENV);
+      expect(result.runs).toHaveLength(1);
+      expect(result.runs[0]).toMatchObject({ event_id: 11, name: "Long run" });
+      // Only the done run the plan passed over is named.
+      expect(result.warnings).toContain(
+        "Left out a planned run already done: Easy 6 km (2026-11-03).",
+      );
+    });
+
+    it("still chooses a run planned for today that is not done", async () => {
+      vi.mocked(listPlannedWorkouts).mockResolvedValue([
+        { ...event(10, "2026-11-03", loop), paired_activity_id: null },
+        event(11, "2026-11-05", loop),
+      ]);
+      const result = await loadRouteSuggestions("k", {}, ENV);
+      expect(result.runs[0]!.event_id).toBe(10);
+      expect(result.warnings.filter((w) => /already done/.test(w))).toEqual([]);
+    });
+
+    it("leaves done runs out of a week and names them", async () => {
+      vi.mocked(listPlannedWorkouts).mockResolvedValue([
+        doneEvent(10, "2026-11-03", "Easy 6 km"),
+        event(11, "2026-11-05", loop),
+        doneEvent(12, "2026-11-06", "Tempo"),
+      ]);
+      const result = await loadRouteSuggestions("k", { days: 7 }, ENV);
+      expect(result.runs.map((r) => r.event_id)).toEqual([11]);
+      expect(result.warnings).toContain(
+        "Left out 2 planned runs already done: Easy 6 km (2026-11-03), Tempo (2026-11-06).",
+      );
+    });
+
+    it("says every planned run is done when none is left", async () => {
+      vi.mocked(listPlannedWorkouts).mockResolvedValue([
+        doneEvent(10, "2026-11-03", "Easy 6 km"),
+      ]);
+      await expect(loadRouteSuggestions("k", {}, ENV)).rejects.toThrow(
+        "No planned run from 2026-11-03 to 2026-11-16 is still to do: Easy 6 km (2026-11-03) is already done. Pass distanceKm to plan a route anyway.",
+      );
+      const result = await loadRouteSuggestions("k", { distanceKm: 6 }, ENV);
+      expect(result.runs[0]).toMatchObject({ event_id: null, name: "Run" });
+      expect(result.warnings.some((w) => /already done/.test(w))).toBe(true);
+    });
+  });
+
   it("says so when nothing is planned and no distance was given", async () => {
     vi.mocked(listPlannedWorkouts).mockResolvedValue([]);
     await expect(loadRouteSuggestions("k", {}, ENV)).rejects.toThrow(

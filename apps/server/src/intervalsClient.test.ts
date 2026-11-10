@@ -1223,6 +1223,7 @@ describe("listPlannedWorkouts", () => {
         description: null,
         distance: 6000,
         moving_time: 2707,
+        paired_activity_id: "i205079877",
       },
     ]);
     const events = await listPlannedWorkouts("k", {
@@ -1230,6 +1231,8 @@ describe("listPlannedWorkouts", () => {
       newest: "2026-11-09",
     });
     expect(events.map((e) => e.id)).toEqual([1, 2]);
+    expect(events[0]?.paired_activity_id).toBe("i205079877");
+    expect(events[1]?.paired_activity_id).toBeUndefined();
     expect(events[1]?.description).toBe("Iron Cove (flat)");
     const url = new URL(calls[0]!.url);
     expect(url.pathname).toBe("/api/v1/athlete/0/events");
