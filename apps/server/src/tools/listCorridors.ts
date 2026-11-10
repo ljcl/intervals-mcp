@@ -43,7 +43,8 @@ Notes:
   athlete's usual start. A place name is sent to OpenRouteService for
   lookup.
 - Reads the athlete's recent runs (up to 180 days); found stretches are the
-  parts of them 1 km or longer that several runs share.
+  parts of them 1 km or longer that several runs share, most-run first, cut
+  at saved corridors; a closed loop is left out.
 `;
 
 const inputSchema = z.object({

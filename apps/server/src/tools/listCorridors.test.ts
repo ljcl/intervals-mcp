@@ -12,6 +12,7 @@ import {
 import { geocode } from "../orsClient";
 import { placeNear, routeOsmStats } from "../osmIndex";
 import { readActivityTrack } from "../routeBuilder";
+import { sliceTrack } from "../routeGeometry";
 import { loadRunStarts, type RunStart } from "../startClusters";
 import { listCorridorsTool } from "./listCorridors";
 import { manageCorridorsTool } from "./manageCorridors";
@@ -44,6 +45,7 @@ beforeEach(async () => {
   vi.mocked(routeOsmStats).mockReset().mockReturnValue(null);
   vi.mocked(placeNear).mockReset().mockReturnValue(null);
   const { track } = await readActivityTrack("key", SUNDAY_ID);
+  // The two older runs stop at 8 km, so the line all three share is not a closed loop (dropped as a found stretch).
   const runs: RunStart[] = ["2026-11-01", "2026-10-25", "2026-10-18"].map(
     (date, i) => ({
       id: `i${i + 1}`,
@@ -51,7 +53,7 @@ beforeEach(async () => {
       name: "Sunday long run",
       distance_m: 12030,
       climb_m: 30,
-      track,
+      track: i === 0 ? track : sliceTrack(track, 0, 8000),
     }),
   );
   vi.mocked(loadRunStarts).mockResolvedValue({ runs, skipped: 0 });
@@ -132,7 +134,7 @@ describe("list-corridors", () => {
     );
   });
 
-  it("numbers found stretches and names what they overlap", async () => {
+  it("numbers found stretches and cuts them at a saved corridor", async () => {
     const before = await list();
     expect(before.found.map((f) => f.n)).toEqual(
       before.found.map((_, i) => i + 1),
@@ -142,7 +144,7 @@ describe("list-corridors", () => {
       {
         action: "add",
         name: "Glebe foreshore",
-        activity: { id: stretch.activity_id, from_km: 8, to_km: 10 },
+        activity: { id: stretch.activity_id, from_km: 4, to_km: 5 },
       },
       "key",
     );
@@ -150,11 +152,12 @@ describe("list-corridors", () => {
     const out = CorridorListOutputSchema.parse(
       (result as { structuredContent: unknown }).structuredContent,
     );
-    const hit = out.found.find((f) => f.overlaps_corridors.length > 0);
-    expect(hit?.overlaps_corridors).toEqual(["Glebe foreshore"]);
+    // The stretch is cut either side of the saved corridor, not offered whole.
+    expect(out.found.length).toBeGreaterThan(1);
+    for (const f of out.found)
+      expect(f.from_km >= 5 || f.to_km <= 4).toBe(true);
     const text = (result as { content: { text: string }[] }).content[0]!.text;
     expect(text).toMatch(/^1\. /m);
-    expect(text).toContain("overlaps Glebe foreshore");
     for (const f of out.found) expect(f.overlaps_found).not.toContain(f.n);
   });
 
