@@ -104,7 +104,9 @@ descriptions.
 `suggest-run-route` plans one planned run, or up to 7 days of them
 (`days`), from the calendar. Only outdoor planned runs count (Run and
 TrailRun; a VirtualRun is skipped), and with none planned `distanceKm`
-plans a route anyway. A cheap argument error (a place name with no
+plans a route anyway. A planned run already done (its event is paired with
+an activity) is left out, so the next one is planned, and a warning names
+the runs left out. A cheap argument error (a place name with no
 `ORS_API_KEY`, point-to-point with no `end`) is reported before the history
 load.
 

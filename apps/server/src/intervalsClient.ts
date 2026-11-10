@@ -339,6 +339,8 @@ const IntervalsEventSchema = z
     description: z.string().nullable().optional(),
     distance: z.number().nullable().optional(),
     moving_time: z.number().nullable().optional(),
+    /** The activity that completed this planned workout ("i206456178"); null until it is done (docs/api-notes.md). */
+    paired_activity_id: z.union([z.string(), z.number()]).nullable().optional(),
   })
   .passthrough();
 
