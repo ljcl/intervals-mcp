@@ -96,6 +96,15 @@ at `apps/server/src/__fixtures__/intervals/`.
   the plain read (same list keys, 148 grid points including 1609.34, 3000, 15000 and 16093.399 m).
   The values are grade-adjusted: faster than the plain curve at every distance checked, often from
   a different activity. Nothing in the response marks it as GAP, so the caller labels it.
+- `pace-curves.json?type=Swim&curves=1y` (and `curves=all`, 2026-11-10, read-only): 200, the
+  same shape as the run curve (`list[0]` with `distance`, `values` in seconds, `activity_id`,
+  `type: "PACE"`; `subMaxEfforts` works too). The 67-point grid mixes metres and yards: 45.7, 50,
+  68.6, 75, 91.4, 100, ... 400, 402.3, 411.5, ... 800, 804.7, ... 1463, 1500, 1554.5, ... 2800 m,
+  so 50, 100, 200, 400, 800 and 1500 m are exact points. The curve stops at the account's longest
+  swim in the window, so 1500 m appears only when one was that long. A rest at the wall inside the
+  stretch counts: the 2,800 m point read 2,895 s from a 2,850 m pool swim with 2,676 s moving and
+  3,473 s elapsed. The `all` curve showed a dubious 5 s at 45.7 m and 50 m (an upstream data
+  glitch); nothing filters it.
 - `pace-curves.json` gives each grid distance to the run that is fastest there, so one long run
   owns a long stretch of the grid. In the 2026-09-25 probe (`pace-curves.json` fixture), the 91
   points of 1,500 m and up on each of `all` and `90d` came from 6 runs, and one 42.8 km run held

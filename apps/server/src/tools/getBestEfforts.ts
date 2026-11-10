@@ -22,6 +22,7 @@ import {
   formatPaceSeconds,
   isPaceActivity,
   paceFromDistanceTime,
+  sportSpeed,
 } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
 import { noteToolFailure, prefixedErrorText, toolErrorText } from "./_errors";
@@ -45,7 +46,8 @@ effort starts and ends: "what was my fastest 5K inside Sunday's half?" or
 it also splits the window into months, quarters or years and gives each
 one's best and critical speed: "how has my 5K best moved this year?". Over
 your history, gap: true reads grade-adjusted bests instead, for hilly or
-trail running.
+trail running. sport "swim" reads your swim pace curve instead: 50 m to
+1500 m, with pace per 100 m.
 
 For predicted race times or goal pacing, use get-race-prediction. For even
 1 km splits of one run, use get-split-analysis.
@@ -79,12 +81,33 @@ const DISTANCE_METERS = pickDistances([
   "marathon",
 ]);
 
-type DistanceLabel = keyof typeof DISTANCE_METERS;
-const DISTANCE_LABELS = Object.keys(DISTANCE_METERS) as [
+/** Pool distances for sport "swim", each on the swim curve's grid
+ * (verified 2026-11-10). */
+const SWIM_DISTANCE_METERS = pickDistances([
+  "50m",
+  "100m",
+  "200m",
+  "400m",
+  "800m",
+  "1500m",
+]);
+
+/** Every label either sport accepts: the run ones first, as before. */
+const METERS = { ...DISTANCE_METERS, ...SWIM_DISTANCE_METERS };
+
+type DistanceLabel = keyof typeof METERS;
+const DISTANCE_LABELS = Object.keys(METERS) as [
   DistanceLabel,
   ...DistanceLabel[],
 ];
-const DEFAULT_DISTANCES: DistanceLabel[] = [...DISTANCE_LABELS];
+
+type Sport = "run" | "swim";
+/** Each sport's distances, which are also its defaults. */
+const SPORT_DISTANCES = {
+  run: Object.keys(DISTANCE_METERS),
+  swim: Object.keys(SWIM_DISTANCE_METERS),
+} as Record<Sport, DistanceLabel[]>;
+const DEFAULT_DISTANCES = SPORT_DISTANCES.run;
 
 /** intervals.icu's own lower bound for its "all" pace curve (verified
  * 2026-09-25: the "all" list item's `start_date_local`). */
@@ -108,7 +131,7 @@ const inputSchema = z
       .min(1)
       .optional()
       .describe(
-        "Which distances to report. Default: all of them; with id, only the ones the run is long enough for.",
+        "Which distances to report, from the sport's own: run 400m to marathon, swim 50m to 1500m. Default: all of the sport's; with id, only the ones the run is long enough for.",
       ),
     // No zod default: a default would make every id call also carry a
     // window, so the refine below could not refuse the pair. The handler
@@ -144,6 +167,14 @@ const inputSchema = z
       .describe(
         "true: grade-adjusted times from intervals.icu's GAP pace curve, progression periods included. Over a window only; do not send it with id.",
       ),
+    // No zod default, like window: an omitted sport leaves the parsed input,
+    // and so the run result, as it was.
+    sport: z
+      .enum(["run", "swim"])
+      .optional()
+      .describe(
+        '"swim": best times from your swim pace curve, over a window only. Default: run.',
+      ),
   })
   .superRefine((data, ctx) => {
     if (data.id !== undefined && data.window !== undefined) {
@@ -170,6 +201,30 @@ const inputSchema = z
           "gap reads grade-adjusted bests over your history only. Send it without id.",
       });
     }
+    if (data.sport === "swim" && data.id !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["sport"],
+        message:
+          "Swim bests read your history only; with id, only runs are searched. Send sport without id.",
+      });
+    }
+    if (data.sport === "swim" && data.gap !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["gap"],
+        message: "gap is for runs only. Send it without sport swim.",
+      });
+    }
+    const allowed = SPORT_DISTANCES[data.sport ?? "run"];
+    const other = data.distances?.filter((d) => !allowed.includes(d)) ?? [];
+    if (other.length > 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["distances"],
+        message: `${other.join(", ")} ${other.length === 1 ? "is not a" : "are not"} ${data.sport ?? "run"} distance${other.length === 1 ? "" : "s"}. Choose from: ${allowed.join(", ")}.`,
+      });
+    }
   });
 
 type GetBestEffortsInput = z.infer<typeof inputSchema>;
@@ -179,6 +234,8 @@ export interface BestEffortEntry {
   time_seconds: number;
   time_formatted: string;
   pace_min_per_km: string | null;
+  /** Swim bests only (null pace_min_per_km): m:ss per 100 m. */
+  pace_min_per_100m?: string | null;
   /** Metres the time covers: the requested distance with an id, the
    * matched curve point over a window. */
   distance_m: number;
@@ -221,6 +278,8 @@ interface BestEffortsResponse {
   top_n: number;
   /** Times and paces are grade-adjusted (`gap: true` over a window). */
   grade_adjusted: boolean;
+  /** Set only for swim bests, so a run result is unchanged. */
+  sport?: "swim";
   units: { time: "s"; pace: "min/km" };
   note: string;
   best_efforts: Record<string, BestEffortEntry[]>;
@@ -344,12 +403,14 @@ export function nearestIndex(
 }
 
 /** How far a curve's nearest point may sit from the requested distance and
- * still count as a match: 2% of the target, or 50 m, whichever is larger. */
+ * still count as a match: 2% of the target, or 50 m, whichever is larger.
+ * Swims take the 2% alone: the swim grid holds every metric pool distance
+ * exactly, and 50 m is a whole length (1600 yd would pass as 1500 m). */
 const TOLERANCE_PCT = 0.02;
 const TOLERANCE_MIN_METERS = 50;
 
-function toleranceMeters(target: number): number {
-  return Math.max(target * TOLERANCE_PCT, TOLERANCE_MIN_METERS);
+function toleranceMeters(target: number, swim = false): number {
+  return Math.max(target * TOLERANCE_PCT, swim ? 0 : TOLERANCE_MIN_METERS);
 }
 
 /** {@link nearestIndex}, bounded: `null` when the closest point is further
@@ -362,11 +423,12 @@ function toleranceMeters(target: number): number {
 export function matchDistance(
   distances: number[],
   target: number,
+  swim = false,
 ): number | null {
   const idx = nearestIndex(distances, target);
   if (idx === null) return null;
   const diff = Math.abs(distances[idx]! - target);
-  return diff <= toleranceMeters(target) ? idx : null;
+  return diff <= toleranceMeters(target, swim) ? idx : null;
 }
 
 /** One rank at one grid index: the time and the activity that set it. */
@@ -411,6 +473,7 @@ function curveEfforts(
   list: IntervalsAthletePaceCurves["list"][number] | undefined,
   distances: DistanceLabel[],
   topN: number,
+  swim: boolean,
 ): EffortsResult {
   const missing: string[] = [];
   const warnings: string[] = [];
@@ -423,8 +486,8 @@ function curveEfforts(
   }
 
   for (const label of distances) {
-    const target = DISTANCE_METERS[label];
-    const idx = list ? matchDistance(list.distance, target) : null;
+    const target = METERS[label];
+    const idx = list ? matchDistance(list.distance, target, swim) : null;
     const ranks = list && idx !== null ? ranksAt(list, idx, topN) : [];
 
     if (!list || idx === null || ranks.length === 0) {
@@ -443,7 +506,13 @@ function curveEfforts(
         rank: k + 1,
         time_seconds: secs,
         time_formatted: formatDuration(secs),
-        pace_min_per_km: paceFromDistanceTime(distanceM, secs),
+        pace_min_per_km: swim ? null : paceFromDistanceTime(distanceM, secs),
+        ...(swim
+          ? {
+              pace_min_per_100m: sportSpeed("Swim", distanceM, secs)
+                .pace_min_per_100m,
+            }
+          : {}),
         distance_m: distanceM,
         date: (ref?.start_date_local ?? "").split("T")[0] ?? "",
         activity_id: activityId,
@@ -474,10 +543,12 @@ async function buildWindowEfforts(
   topN: number,
   resolved: ResolvedWindow,
   gap: boolean,
+  swim: boolean,
   progress: ReportProgress,
   periods: { oldest: string; newest: string }[] = [],
 ): Promise<EffortsResult & { periods: ProgressionPeriodResult[] }> {
-  const curve = `${gap ? "GAP pace" : "pace"} curve (${resolved.curveId})`;
+  const kind = swim ? "swim pace" : gap ? "GAP pace" : "pace";
+  const curve = `${kind} curve (${resolved.curveId})`;
   progress(
     topN > 1
       ? `Fetching ${curve} with the top ${topN} per distance…`
@@ -486,20 +557,33 @@ async function buildWindowEfforts(
   );
   const periodIds = periods.map((p) => `r.${p.oldest}.${p.newest}`);
   const curves = await getAthletePaceCurves(apiKey, {
-    type: "Run",
+    type: swim ? "Swim" : "Run",
     // A window inside one period is the same curve twice: ask once.
     curves: [...new Set([resolved.curveId, ...periodIds])],
     ...(topN > 1 ? { subMaxEfforts: topN - 1 } : {}),
-    // One request, so every progression period reads the same (GAP) curve.
+    // One request, so every progression period reads the same curve type
+    // (swim, or GAP) as the whole window.
     ...(gap ? { gap } : {}),
   });
   const byId = (id: string) => curves.list.find((c) => c.id === id);
 
-  const whole = curveEfforts(curves, byId(resolved.curveId), distances, topN);
+  const whole = curveEfforts(
+    curves,
+    byId(resolved.curveId),
+    distances,
+    topN,
+    swim,
+  );
   const periodResults = periods.map((p, i): ProgressionPeriodResult => {
     const id = periodIds[i]!;
     const list = byId(id);
-    const { best_efforts, missing } = curveEfforts(curves, list, distances, 1);
+    const { best_efforts, missing } = curveEfforts(
+      curves,
+      list,
+      distances,
+      1,
+      swim,
+    );
     const cs = criticalSpeedModel(list);
     return {
       id,
@@ -597,17 +681,15 @@ async function buildActivityEfforts(
   // does not lose it without a word.
   let distances = rawDistances;
   if (!distances) {
-    distances = DEFAULT_DISTANCES.filter(
-      (label) => DISTANCE_METERS[label] <= covered,
-    );
+    distances = DEFAULT_DISTANCES.filter((label) => METERS[label] <= covered);
     if (distances.length === 0) {
       warnings.push(
         `This run covers ${coveredLabel}, shorter than the shortest distance (400m).`,
       );
     } else {
       for (const label of DEFAULT_DISTANCES) {
-        const short = DISTANCE_METERS[label] - covered;
-        if (short > 0 && short <= toleranceMeters(DISTANCE_METERS[label])) {
+        const short = METERS[label] - covered;
+        if (short > 0 && short <= toleranceMeters(METERS[label])) {
           warnings.push(
             `${label} was not searched: this run covers ${coveredLabel}, ${Math.ceil(short)} m short of it.`,
           );
@@ -645,7 +727,7 @@ async function buildActivityEfforts(
   const date = activity.start_date_local.split("T")[0] ?? "";
   const race = activity.race ?? false;
   for (const label of distances) {
-    const target = DISTANCE_METERS[label];
+    const target = METERS[label];
     if (target > covered) {
       best_efforts[label] = [];
       missing.push(label);
@@ -695,16 +777,18 @@ async function buildActivityEfforts(
   };
 }
 
+function paceText(effort: BestEffortEntry): string {
+  if (effort.pace_min_per_100m) return `${effort.pace_min_per_100m} /100m`;
+  return effort.pace_min_per_km ? `${effort.pace_min_per_km} min/km` : "n/a";
+}
+
 /** One effort's lines: where in the run (with an id) or when (over a
  * window). */
 function effortLines(
   effort: BestEffortEntry,
   mode: BestEffortsResponse["mode"],
 ): string[] {
-  const pace = effort.pace_min_per_km
-    ? `${effort.pace_min_per_km} min/km`
-    : "n/a";
-  const head = `  ${effort.rank}. ${effort.time_formatted} (${pace})`;
+  const head = `  ${effort.rank}. ${effort.time_formatted} (${paceText(effort)})`;
   if (mode === "activity") {
     const where =
       effort.start_km != null && effort.end_km != null
@@ -727,10 +811,16 @@ export function formatBestEffortsText(
   distances: DistanceLabel[],
 ): string {
   const { activity, window } = response;
+  const swim = response.sport === "swim";
+  const heading = swim
+    ? "Swim best efforts"
+    : response.grade_adjusted
+      ? "Grade-adjusted best efforts"
+      : "Best efforts";
   const lines = [
     activity
       ? `Best efforts inside ${activity.name} (${activity.id}), ${activity.date}, ${activity.covered_km.toFixed(2)} km`
-      : `${response.grade_adjusted ? "Grade-adjusted best efforts" : "Best efforts"}, ${window?.oldest} to ${window?.newest}`,
+      : `${heading}, ${window?.oldest} to ${window?.newest}`,
   ];
 
   let any = false;
@@ -742,9 +832,11 @@ export function formatBestEffortsText(
     // away from the label: say which distance the times are for.
     const covers = efforts[0]!.distance_m;
     lines.push(
-      Math.abs(covers - DISTANCE_METERS[label]) >= 1
-        ? `${label} (${(covers / 1000).toFixed(2)} km):`
-        : `${label}:`,
+      Math.abs(covers - METERS[label]) < 1
+        ? `${label}:`
+        : swim
+          ? `${label} (${Math.round(covers)} m):`
+          : `${label} (${(covers / 1000).toFixed(2)} km):`,
     );
     for (const effort of efforts) {
       lines.push(...effortLines(effort, response.mode));
@@ -757,7 +849,7 @@ export function formatBestEffortsText(
     for (const period of response.progression.periods) {
       const range = `${period.oldest} to ${period.newest}`;
       if (!period.has_runs) {
-        lines.push(`${range}: no runs`);
+        lines.push(`${range}: no ${swim ? "swims" : "runs"}`);
         continue;
       }
       lines.push(`${range}:`);
@@ -765,14 +857,16 @@ export function formatBestEffortsText(
         const best = period.best_efforts[label]?.[0];
         lines.push(
           best
-            ? `  ${label}: ${best.time_formatted} (${best.pace_min_per_km ?? "n/a"} min/km) - ${best.date}, ${best.activity_name} (${best.activity_id})`
+            ? `  ${label}: ${best.time_formatted} (${paceText(best)}) - ${best.date}, ${best.activity_name} (${best.activity_id})`
             : `  ${label}: none`,
         );
       }
-      if (period.critical_speed) {
-        lines.push(
-          `  Critical speed: ${period.critical_speed.pace_min_per_km} min/km (${period.critical_speed.meters_per_sec} m/s)`,
-        );
+      const cs = period.critical_speed;
+      if (cs) {
+        const pace = swim
+          ? `${formatPaceSeconds(100 / cs.meters_per_sec)} /100m`
+          : `${cs.pace_min_per_km} min/km`;
+        lines.push(`  Critical speed: ${pace} (${cs.meters_per_sec} m/s)`);
       }
     }
   }
@@ -798,6 +892,7 @@ export const getBestEffortsTool = {
       topN,
       progression,
       gap,
+      sport,
     }: GetBestEffortsInput,
     apiKey: string,
     progress: ReportProgress = NO_PROGRESS,
@@ -859,7 +954,8 @@ export const getBestEffortsTool = {
           isError: true,
         };
       }
-      distances = rawDistances ?? DEFAULT_DISTANCES;
+      const swim = sport === "swim";
+      distances = rawDistances ?? SPORT_DISTANCES[sport ?? "run"];
       const split = progression
         ? progressionPeriods(resolved.oldest, resolved.newest, progression)
         : { periods: [], total: 0 };
@@ -871,6 +967,7 @@ export const getBestEffortsTool = {
             topN,
             resolved,
             gap === true,
+            swim,
             progress,
             split.periods,
           );
@@ -890,6 +987,7 @@ export const getBestEffortsTool = {
           activity: null,
           top_n: topN,
           grade_adjusted: gap === true,
+          ...(swim ? { sport: "swim" as const } : {}),
           units: { time: "s", pace: "min/km" },
           note: TIME_BASIS_NOTE,
           best_efforts,

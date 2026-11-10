@@ -149,6 +149,28 @@ describe("get-best-efforts requests", () => {
     );
   });
 
+  it("swim with progression reads every period's swim curve in the one request", async () => {
+    const urls = routeFetch({
+      "/api/v1/athlete/0/pace-curves.json": paceCurvesFixture,
+    });
+
+    await getBestEffortsTool.execute(
+      {
+        window: "2026-01-01..2026-06-30",
+        topN: 1,
+        progression: "quarter",
+        sport: "swim",
+      },
+      "k",
+    );
+
+    expect(urls).toHaveLength(1);
+    expect(urls[0]?.searchParams.get("type")).toBe("Swim");
+    expect(urls[0]?.searchParams.get("curves")).toBe(
+      "r.2026-01-01.2026-06-30,r.2026-01-01.2026-03-31,r.2026-04-01.2026-06-30",
+    );
+  });
+
   it("one run is two requests: the activity and its streams", async () => {
     const urls = routeFetch({
       [`/api/v1/activity/${RUN_ID}`]: { ...activityFixture, id: RUN_ID },

@@ -60,14 +60,20 @@ export const RECENT_WINDOW_DAYS = 90;
 export const NEGATIVE_SPLIT_PCT = 0.01;
 
 /**
- * Standard running distances in metres, the one table get-best-efforts and
+ * Standard distances in metres, the one table get-best-efforts and
  * get-race-prediction both pick from. The labels are the input naming scheme
  * (lowercase, explicit units); the dispatcher's enum matching still accepts
  * "5K" or "Half Marathon". Each is a point on intervals.icu's pace-curve
- * distance grid (1609.34 m and 16093.4 m included, verified 2026-11-10).
+ * distance grid (1609.34 m and 16093.4 m included, verified 2026-11-10). The
+ * pool distances (50m to 1500m) are for swim bests; races never pick them.
  */
 const STANDARD_DISTANCES_M = {
+  "50m": 50,
+  "100m": 100,
+  "200m": 200,
   "400m": 400,
+  "800m": 800,
+  "1500m": 1500,
   "1km": 1000,
   "1 mile": 1609.34,
   "3km": 3000,

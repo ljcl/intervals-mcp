@@ -2227,7 +2227,12 @@ const BestEffortEntrySchema = z.object({
     .number()
     .describe("Elapsed seconds across the stretch; a stop inside it counts"),
   time_formatted: z.string(),
-  pace_min_per_km: z.string().nullable(),
+  pace_min_per_km: z.string().nullable().describe("null for a swim best"),
+  pace_min_per_100m: z
+    .string()
+    .nullable()
+    .optional()
+    .describe('m:ss per 100 m; swim bests only (sport: "swim")'),
   distance_m: z
     .number()
     .describe(
@@ -2290,6 +2295,12 @@ export const BestEffortsOutputSchema = z.object({
     .boolean()
     .describe(
       "true: times and paces are grade-adjusted (gap: true over a window)",
+    ),
+  sport: z
+    .literal("swim")
+    .optional()
+    .describe(
+      'Set for swim bests (sport: "swim"): each pace is pace_min_per_100m, units.pace does not apply. Absent for runs',
     ),
   units: z.object({
     time: z.literal("s"),
