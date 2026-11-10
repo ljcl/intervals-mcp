@@ -143,6 +143,8 @@ export function fakeOrsRoute(_key: string, request: OrsRouteRequest): OrsRoute {
     path_share: 0.6,
     ferry_m: 0,
     way_names: ["Victoria Road"],
+    named_spans: [[0, track.coordinates.length - 1, "Victoria Road"]],
+    waytype_spans: [],
   };
 }
 

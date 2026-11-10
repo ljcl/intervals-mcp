@@ -197,11 +197,12 @@ otherwise).
   looked-up point can sit far from the edge a run follows (`parkReach`,
   `osmIndex.ts`). Live 2026-11-08: "Jubilee Park" took a 14 km route from
   53% to 91% from past runs.
-- Measures: crossings (merged within 25 m), signals, off-road path share,
+- Measures: crossings (merged within 25 m, once per pass), signals, off-road path share,
   main-road km and green share come from the server's OpenStreetMap index
   (`OSM_EXTRACT_URL`, 25 km around `HOME_START`, refreshed weekly) for every
   candidate, past runs included. Outside it, or without it, they are null,
-  generated routes keep the OpenRouteService path share, and one warning
+  generated routes keep the OpenRouteService path share (an out-and-back's
+  from its out leg, which its "via" streets name too), and one warning
   says why. An index not refreshed in 14 days adds a warning.
 - Score: every candidate (past, stitched and generated) gets 0-100 from
   `routeScore.ts`, and the score orders them, best first. Hill repeats put

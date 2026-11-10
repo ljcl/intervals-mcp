@@ -715,7 +715,9 @@ ditches and anything tagged `tunnel=culvert` or `tunnel=yes`). Named parks
 also keep their whole outline (a closed `leisure=park` way, or every outer
 way of a park multipolygon); one cut by the area or extract edge is left out.
 Crossing and signal nodes under 25 m apart merge into one stop, so a
-junction's signal node and its crossings count once.
+junction's signal node and its crossings count once. A stop counts once
+per pass, so an out-and-back that crosses a road on its leg counts it twice
+and keeps the leg's rate per km.
 
 The index is one SQLite file, `DATA_DIR/osm/index.sqlite`, opened with
 `node:sqlite` because the tests run under Node as well as Bun. Tables:

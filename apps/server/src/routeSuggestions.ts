@@ -46,6 +46,7 @@ import {
   OrsApiError,
   type OrsRoute,
   type OrsRouteRequest,
+  orsLegSummary,
   orsRoute,
   type Place,
   PRECISE_LAYERS,
@@ -531,6 +532,11 @@ function generatedCandidate(
     ? outAndBack(route.track)
     : route.track,
 ): RouteCandidate {
+  // An out-and-back runs only to its turn: the track's middle index.
+  const leg =
+    shape === "out-and-back"
+      ? orsLegSummary(route, (track.coordinates.length - 1) / 2)
+      : route;
   return {
     kind: "generated",
     activity_id: null,
@@ -544,12 +550,12 @@ function generatedCandidate(
     shape,
     distance_m: Math.round(track.distance.at(-1) ?? route.distance_m),
     climb_m: trackClimb(track.altitude),
-    path_share: route.path_share,
+    path_share: leg.path_share,
     crossings_per_km: null,
     hill: null,
     summary:
-      route.way_names.length > 0
-        ? `via ${route.way_names.join(", ")}`
+      leg.way_names.length > 0
+        ? `via ${leg.way_names.join(", ")}`
         : "New route",
     track,
   };

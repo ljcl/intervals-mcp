@@ -92,7 +92,7 @@ export function osmIndexPath(): string {
 }
 
 export interface OsmStats {
-  /** Merged crossing stops with a node within STOP_MATCH_M of the track, per km. */
+  /** Merged crossing stops with a node within STOP_MATCH_M of the track, once per pass, per km. */
   crossings_per_km: number;
   /** The signalised stops among them, per km. */
   signals_per_km: number;
@@ -540,16 +540,29 @@ export function routeOsmStats(track: RouteTrack): OsmStats | null {
 
   const routeGrid = new SegmentGrid();
   for (const s of route) routeGrid.add(s);
-  const stops = new Map<number, boolean>();
+  // A stop's samples along the route; an out-and-back reaches its stops twice.
+  const stops = new Map<number, { signal: boolean; at: Set<number> }>();
   for (const n of stopNodes) {
     const [x, y] = project(n.lat, n.lng);
-    if (routeGrid.near(x, y, STOP_MATCH_M))
-      stops.set(n.stop_id, n.signal === 1);
+    if (!routeGrid.near(x, y, STOP_MATCH_M)) continue;
+    const stop = stops.get(n.stop_id) ?? { signal: false, at: new Set() };
+    stop.signal ||= n.signal === 1;
+    samples.forEach((p, i) => {
+      if (Math.hypot(p.x - x, p.y - y) <= STOP_MATCH_M + SAMPLE_M / 2)
+        stop.at.add(i);
+    });
+    stops.set(n.stop_id, stop);
+  }
+  let crossings = 0;
+  let signals = 0;
+  for (const { signal, at } of stops.values()) {
+    const passes = Math.max(1, [...at].filter((i) => !at.has(i - 1)).length);
+    crossings += passes;
+    if (signal) signals += passes;
   }
   const km = walked / 1000;
-  const signals = [...stops.values()].filter(Boolean).length;
   return {
-    crossings_per_km: round(stops.size / km, 1),
+    crossings_per_km: round(crossings / km, 1),
     signals_per_km: round(signals / km, 1),
     path_share: round(onPath / samples.length, 2),
     main_road_km: round((onRoad * SAMPLE_M) / 1000, 1),
