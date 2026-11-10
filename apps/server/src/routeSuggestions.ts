@@ -1083,13 +1083,13 @@ export async function loadRouteSuggestions(
         c.score = score;
         c.score_breakdown = breakdown;
       }
-      // Hill repeats need the hill; asked terrain; without vias the distance band; then the score, the distance and the kind (a tie keeps the athlete's own run first).
+      // Hill repeats need the hill; asked terrain; the distance band (with vias the made routes' wider one, since a past run through them comes at any distance); then the score, the distance and the kind (a tie keeps the athlete's own run first).
       const kindOrder = { past: 0, stitched: 1, generated: 2 } as const;
       const miss = (c: RouteCandidate) =>
         Math.abs(c.distance_m - run.distance_m);
-      const off = (c: RouteCandidate) =>
-        viaTexts.length === 0 &&
-        miss(c) > run.distance_m * PAST_DISTANCE_TOLERANCE;
+      const band =
+        viaTexts.length > 0 ? GENERATED_MAX_MISS : PAST_DISTANCE_TOLERANCE;
+      const off = (c: RouteCandidate) => miss(c) > run.distance_m * band;
       const ordered = [...all].sort(
         (a, b) =>
           (terrain === "hill-repeats"

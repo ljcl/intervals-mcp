@@ -1240,6 +1240,26 @@ describe("loadRouteSuggestions", () => {
       expect(Math.abs(route.distance_m - 6000)).toBeLessThan(300);
     });
 
+    it("orders a route within 25% of the distance before a past run far over it (#459)", async () => {
+      // The 6 km home loop passes the via and scores far better; the plan is 3.2 km.
+      vi.mocked(routeOsmStats).mockImplementation((t) =>
+        t === homeLoop
+          ? STATS
+          : { ...STATS, crossings_per_km: 6, signals_per_km: 2 },
+      );
+      const run = (
+        await loadRouteSuggestions(
+          "k",
+          { distanceKm: 3.2, via: text(VIA) },
+          ENV,
+        )
+      ).runs[0]!;
+      expect(run.candidates.map((c) => c.kind)).toEqual(["generated", "past"]);
+      expect(run.candidates[1]!.score!).toBeGreaterThan(
+        run.candidates[0]!.score!,
+      );
+    });
+
     it("keeps the via route already at the distance without stretching it", async () => {
       vi.mocked(loadRunStarts).mockResolvedValue({
         runs: awayFromVia,

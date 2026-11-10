@@ -213,8 +213,9 @@ otherwise).
 - Score: every candidate (past, stitched and generated) gets 0-100 from
   `routeScore.ts`, and the score orders them, best first. Hill repeats put
   routes with a repeat hill first; then routes that fit the asked terrain,
-  then (without vias) routes within 10% of the distance, come before the
-  score; a tie goes to the closer distance, then to the athlete's own run. At most 3 come back: at most 2 past runs, at
+  then routes within 10% of the distance (25% with vias, so a past run
+  through them at twice the distance comes after the routes made for it,
+  and still fills a place left), come before the score; a tie goes to the closer distance, then to the athlete's own run. At most 3 come back: at most 2 past runs, at
   most `want` generated (1 from the usual start, 3 away from it). Stitched
   routes are capped only by the 3. The spare seed gives the score a choice
   but adds no route.
