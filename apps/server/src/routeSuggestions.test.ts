@@ -17,6 +17,7 @@ import { concatTracks } from "./routeGeometry";
 import { listCorridors, type StoredRoute } from "./routeStore";
 import {
   loadRouteSuggestions,
+  looseEnd,
   nameDistanceM,
   RouteSuggestionError,
   routesNote,
@@ -1076,6 +1077,60 @@ describe("loadRouteSuggestions", () => {
     await expect(
       loadRouteSuggestions("k", { start: "Nowhere Park" }, ENV),
     ).rejects.toThrow(/No place matched "Nowhere Park"/);
+  });
+
+  describe("a start or end that matched only the city (#460)", () => {
+    const city = {
+      label: "Sydney, NSW, Australia",
+      point: [-33.87, 151.21] as LatLng,
+      match: {
+        query: "Iron Cove Bay Run, Sydney",
+        name: "Sydney",
+        type: "locality",
+        missing: ["iron", "cove", "bay", "run"],
+      },
+    };
+    const warning =
+      'The start "Iron Cove Bay Run, Sydney" matched only Sydney (a locality), which has no "iron" or "cove" or "bay" or "run", so routes start there; check the name, or pass lat,lng.';
+
+    it("plans from it with a warning naming the match", async () => {
+      vi.mocked(geocode).mockResolvedValue(city);
+      const result = await loadRouteSuggestions(
+        "k",
+        { start: "Iron Cove Bay Run, Sydney" },
+        ENV,
+      );
+      expect(result.runs[0]!.start.label).toBe("Sydney, NSW, Australia");
+      expect(result.warnings).toContain(warning);
+    });
+
+    it("names an end the same way", () => {
+      expect(looseEnd(city, "Iron Cove Bay Run, Sydney", "end")).toMatch(
+        /^The end "Iron Cove Bay Run, Sydney" matched only Sydney .* so routes end there;/,
+      );
+    });
+
+    it("is quiet for a suburb named as asked, a precise match and a lat,lng", () => {
+      const glebe = {
+        label: "Glebe, NSW, Australia",
+        point: VIA,
+        match: { query: "Glebe, Sydney", name: "Glebe", type: "locality" },
+      };
+      expect(looseEnd(glebe, "Glebe, Sydney", "start")).toBeNull();
+      expect(
+        looseEnd(
+          { ...glebe, match: { ...glebe.match, missing: [] } },
+          "Glebe, Sydney",
+          "start",
+        ),
+      ).toBeNull();
+      const street = {
+        ...city,
+        match: { ...city.match, type: "street", missing: ["iron"] },
+      };
+      expect(looseEnd(street, "Iron Cove", "start")).toBeNull();
+      expect(looseEnd({ label: "x", point: VIA }, "1,2", "start")).toBeNull();
+    });
   });
 
   it("refuses a via that matches only a suburb or city", async () => {
