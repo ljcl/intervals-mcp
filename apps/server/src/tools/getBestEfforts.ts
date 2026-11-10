@@ -16,8 +16,13 @@ import {
   loadIntervalsStreams,
 } from "../intervalsStreams";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
+import { criticalSpeedModel } from "../racePrediction";
 import { addDays, isValidCalendarDate, todayLocal } from "../utils/localDate";
-import { isPaceActivity, paceFromDistanceTime } from "../utils/running";
+import {
+  formatPaceSeconds,
+  isPaceActivity,
+  paceFromDistanceTime,
+} from "../utils/running";
 import { READ_ONLY } from "./_annotations";
 import { noteToolFailure, prefixedErrorText, toolErrorText } from "./_errors";
 import { intervalsActivityIdInput } from "./_ids";
@@ -36,7 +41,9 @@ default). Over your history it reads intervals.icu's pace curves for all
 time, the last year, the last 90 days or a custom range: "what is my
 fastest 5K?". With an id it searches one run instead and says where each
 effort starts and ends: "what was my fastest 5K inside Sunday's half?" or
-"my 3 fastest km today" (id "latest" is your newest run).
+"my 3 fastest km today" (id "latest" is your newest run). With progression
+it also splits the window into months, quarters or years and gives each
+one's best and critical speed: "how has my 5K best moved this year?".
 
 For predicted race times or goal pacing, use get-race-prediction. For even
 1 km splits of one run, use get-split-analysis.
@@ -77,6 +84,11 @@ const DEFAULT_DISTANCES: DistanceLabel[] = [...DISTANCE_LABELS];
  * 2026-09-25: the "all" list item's `start_date_local`). */
 const ALL_TIME_START = "1986-01-01";
 
+const PROGRESSION_UNITS = ["month", "quarter", "year"] as const;
+type ProgressionUnit = (typeof PROGRESSION_UNITS)[number];
+/** Most periods one progression reports, all read in one request. */
+const MAX_PERIODS = 12;
+
 const WINDOW_RE = /^(all|1y|90d|\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2})$/;
 const WINDOW_RANGE_RE = /^(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})$/;
 
@@ -114,6 +126,12 @@ const inputSchema = z
       .describe(
         "How many efforts per distance (1-5, default 1): over a window, the fastest distinct activities; with id, the fastest stretches of that run that do not overlap.",
       ),
+    progression: z
+      .enum(PROGRESSION_UNITS)
+      .optional()
+      .describe(
+        "Also split the window into calendar months, quarters or years (the first and last cut to the window) and give each one's best per distance and intervals.icu's critical speed. At most the 12 most recent; with window \"all\", the last 12. topN applies only to the whole window; each period gives its best. Not with id.",
+      ),
   })
   .superRefine((data, ctx) => {
     if (data.id !== undefined && data.window !== undefined) {
@@ -122,6 +140,14 @@ const inputSchema = z
         path: ["window"],
         message:
           "Send id or window, not both: id searches one run, window searches your history.",
+      });
+    }
+    if (data.id !== undefined && data.progression !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["progression"],
+        message:
+          "progression splits a window of your history; send it without id.",
       });
     }
   });
@@ -149,6 +175,19 @@ export interface BestEffortEntry {
   stopped_seconds: number | null;
 }
 
+/** One calendar period of a progression, read as its own `r.` curve. */
+interface ProgressionPeriodResult {
+  id: string;
+  oldest: string;
+  newest: string;
+  /** False when intervals.icu returned no curve for the period: it holds
+   * no runs (docs/api-notes.md). */
+  has_runs: boolean;
+  best_efforts: Record<string, BestEffortEntry[]>;
+  missing: string[];
+  critical_speed: { meters_per_sec: number; pace_min_per_km: string } | null;
+}
+
 interface BestEffortsResponse {
   mode: "window" | "activity";
   window: { id: string; oldest: string; newest: string } | null;
@@ -169,6 +208,12 @@ interface BestEffortsResponse {
    * ignored parts). Each also has a matching entry in `warnings`. */
   missing: string[];
   warnings: string[];
+  progression?: {
+    unit: ProgressionUnit;
+    periods: ProgressionPeriodResult[];
+    /** Older periods of the window not reported (over {@link MAX_PERIODS}). */
+    left_out: number;
+  };
 }
 
 interface EffortsResult {
@@ -221,6 +266,38 @@ export function resolveWindow(
     };
   }
   return { curveId: `r.${oldest}.${newest}`, oldest, newest };
+}
+
+function periodStart(ymd: string, unit: ProgressionUnit): string {
+  const [year, month] = ymd.split("-");
+  if (unit === "year") return `${year}-01-01`;
+  if (unit === "month") return `${year}-${month}-01`;
+  const q = Math.floor((Number(month) - 1) / 3) * 3 + 1;
+  return `${year}-${String(q).padStart(2, "0")}-01`;
+}
+
+/**
+ * Splits `oldest..newest` into calendar months, quarters or years, the first
+ * and last cut to the range, oldest first. Only the {@link MAX_PERIODS} most
+ * recent are returned; `total` counts them all, so the caller can say how
+ * many were left out.
+ */
+export function progressionPeriods(
+  oldest: string,
+  newest: string,
+  unit: ProgressionUnit,
+): { periods: { oldest: string; newest: string }[]; total: number } {
+  const periods: { oldest: string; newest: string }[] = [];
+  let total = 0;
+  for (let end = newest; end >= oldest; ) {
+    const start = periodStart(end, unit);
+    total += 1;
+    if (periods.length < MAX_PERIODS) {
+      periods.push({ oldest: start < oldest ? oldest : start, newest: end });
+    }
+    end = addDays(start, -1);
+  }
+  return { periods: periods.reverse(), total };
 }
 
 /** Index of the point in `distances` closest to `target`, or `null` for an
@@ -306,33 +383,13 @@ function ranksAt(
   return ranks;
 }
 
-/**
- * Over a window: one `getAthletePaceCurves` call for every `topN`. The
- * `activities` map carries each ranked activity's name, race flag and date,
- * and with `topN` above 1, `subMaxEfforts: topN - 1` adds the next ranks in
- * the same response (#82). Before, ranks below 1 cost a per-activity curve
- * read plus one `getActivity` call per winning activity, up to 30.
- */
-async function buildWindowEfforts(
-  apiKey: string,
+/** Each distance's ranks on one curve, or the distance in `missing`. */
+function curveEfforts(
+  curves: IntervalsAthletePaceCurves,
+  list: IntervalsAthletePaceCurves["list"][number] | undefined,
   distances: DistanceLabel[],
   topN: number,
-  resolved: ResolvedWindow,
-  progress: ReportProgress,
-): Promise<EffortsResult> {
-  progress(
-    topN > 1
-      ? `Fetching pace curve (${resolved.curveId}) with the top ${topN} per distance…`
-      : `Fetching pace curve (${resolved.curveId})…`,
-    { important: true },
-  );
-  const curves = await getAthletePaceCurves(apiKey, {
-    type: "Run",
-    curves: [resolved.curveId],
-    ...(topN > 1 ? { subMaxEfforts: topN - 1 } : {}),
-  });
-  const list = curves.list.find((c) => c.id === resolved.curveId);
-
+): EffortsResult {
   const missing: string[] = [];
   const warnings: string[] = [];
   const best_efforts: Record<string, BestEffortEntry[]> = {};
@@ -378,6 +435,64 @@ async function buildWindowEfforts(
   }
 
   return { best_efforts, missing, warnings };
+}
+
+/**
+ * Over a window: one `getAthletePaceCurves` call for every `topN`. The
+ * `activities` map carries each ranked activity's name, race flag and date,
+ * and with `topN` above 1, `subMaxEfforts: topN - 1` adds the next ranks in
+ * the same response (#82). Before, ranks below 1 cost a per-activity curve
+ * read plus one `getActivity` call per winning activity, up to 30. With
+ * `progression`, each period's `r.` curve rides in the same request (#400);
+ * a period with no runs has no curve in the response.
+ */
+async function buildWindowEfforts(
+  apiKey: string,
+  distances: DistanceLabel[],
+  topN: number,
+  resolved: ResolvedWindow,
+  progress: ReportProgress,
+  periods: { oldest: string; newest: string }[] = [],
+): Promise<EffortsResult & { periods: ProgressionPeriodResult[] }> {
+  progress(
+    topN > 1
+      ? `Fetching pace curve (${resolved.curveId}) with the top ${topN} per distance…`
+      : `Fetching pace curve (${resolved.curveId})…`,
+    { important: true },
+  );
+  const periodIds = periods.map((p) => `r.${p.oldest}.${p.newest}`);
+  const curves = await getAthletePaceCurves(apiKey, {
+    type: "Run",
+    // A window inside one period is the same curve twice: ask once.
+    curves: [...new Set([resolved.curveId, ...periodIds])],
+    ...(topN > 1 ? { subMaxEfforts: topN - 1 } : {}),
+  });
+  const byId = (id: string) => curves.list.find((c) => c.id === id);
+
+  const whole = curveEfforts(curves, byId(resolved.curveId), distances, topN);
+  const periodResults = periods.map((p, i): ProgressionPeriodResult => {
+    const id = periodIds[i]!;
+    const list = byId(id);
+    const { best_efforts, missing } = curveEfforts(curves, list, distances, 1);
+    const cs = criticalSpeedModel(list);
+    return {
+      id,
+      oldest: p.oldest,
+      newest: p.newest,
+      has_runs: list !== undefined,
+      best_efforts,
+      missing,
+      critical_speed: cs
+        ? {
+            meters_per_sec: round(cs.criticalSpeedMetersPerSec, 3),
+            pace_min_per_km: formatPaceSeconds(
+              1000 / cs.criticalSpeedMetersPerSec,
+            ),
+          }
+        : null,
+    };
+  });
+  return { ...whole, periods: periodResults };
 }
 
 /** The searched run, as `BestEffortsResponse.activity` reports it. */
@@ -611,6 +726,31 @@ export function formatBestEffortsText(
   }
   if (!any) lines.push("No best efforts found for the requested distances.");
 
+  if (response.progression) {
+    lines.push(`By ${response.progression.unit}:`);
+    for (const period of response.progression.periods) {
+      const range = `${period.oldest} to ${period.newest}`;
+      if (!period.has_runs) {
+        lines.push(`${range}: no runs`);
+        continue;
+      }
+      lines.push(`${range}:`);
+      for (const label of distances) {
+        const best = period.best_efforts[label]?.[0];
+        lines.push(
+          best
+            ? `  ${label}: ${best.time_formatted} (${best.pace_min_per_km ?? "n/a"} min/km) - ${best.date}, ${best.activity_name} (${best.activity_id})`
+            : `  ${label}: none`,
+        );
+      }
+      if (period.critical_speed) {
+        lines.push(
+          `  Critical speed: ${period.critical_speed.pace_min_per_km} min/km (${period.critical_speed.meters_per_sec} m/s)`,
+        );
+      }
+    }
+  }
+
   for (const warning of response.warnings) lines.push(warning);
   lines.push(response.note);
 
@@ -625,7 +765,13 @@ export const getBestEffortsTool = {
   annotations: READ_ONLY,
   outputSchema: BestEffortsOutputSchema,
   execute: async (
-    { id, distances: rawDistances, window, topN }: GetBestEffortsInput,
+    {
+      id,
+      distances: rawDistances,
+      window,
+      topN,
+      progression,
+    }: GetBestEffortsInput,
     apiKey: string,
     progress: ReportProgress = NO_PROGRESS,
   ) => {
@@ -686,14 +832,25 @@ export const getBestEffortsTool = {
         };
       }
       distances = rawDistances ?? DEFAULT_DISTANCES;
+      const split = progression
+        ? progressionPeriods(resolved.oldest, resolved.newest, progression)
+        : { periods: [], total: 0 };
       try {
-        const { best_efforts, missing, warnings } = await buildWindowEfforts(
-          apiKey,
-          distances,
-          topN,
-          resolved,
-          progress,
-        );
+        const { best_efforts, missing, warnings, periods } =
+          await buildWindowEfforts(
+            apiKey,
+            distances,
+            topN,
+            resolved,
+            progress,
+            split.periods,
+          );
+        const leftOut = split.total - split.periods.length;
+        if (leftOut > 0) {
+          warnings.push(
+            `The window holds ${split.total} ${progression}s; only the most recent ${split.periods.length} are shown, from ${split.periods[0]?.oldest}. Send a narrower window for older ones.`,
+          );
+        }
         response = {
           mode: "window",
           window: {
@@ -708,6 +865,9 @@ export const getBestEffortsTool = {
           best_efforts,
           missing,
           warnings,
+          ...(progression
+            ? { progression: { unit: progression, periods, left_out: leftOut } }
+            : {}),
         };
       } catch (error) {
         return {

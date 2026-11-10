@@ -92,6 +92,28 @@ describe("get-best-efforts requests", () => {
     expect(urls[0]?.searchParams.has("subMaxEfforts")).toBe(false);
   });
 
+  it("progression reads the window and its periods in one request", async () => {
+    const urls = routeFetch({
+      "/api/v1/athlete/0/pace-curves.json": paceCurvesFixture,
+    });
+
+    await getBestEffortsTool.execute(
+      { window: "2026-01-01..2026-12-31", topN: 1, progression: "quarter" },
+      "k",
+    );
+
+    expect(urls).toHaveLength(1);
+    expect(urls[0]?.searchParams.get("curves")).toBe(
+      [
+        "r.2026-01-01.2026-12-31",
+        "r.2026-01-01.2026-03-31",
+        "r.2026-04-01.2026-06-30",
+        "r.2026-07-01.2026-09-30",
+        "r.2026-10-01.2026-12-31",
+      ].join(","),
+    );
+  });
+
   it("one run is two requests: the activity and its streams", async () => {
     const urls = routeFetch({
       [`/api/v1/activity/${RUN_ID}`]: { ...activityFixture, id: RUN_ID },

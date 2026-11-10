@@ -86,7 +86,7 @@ descriptions.
 | `get-split-analysis` | Even km splits with a two-halves pacing verdict stated on the clock and grade-adjusted |
 | `get-aerobic-analysis` | Aerobic decoupling and efficiency factor on a grade-adjusted, pace or power basis from streams, with intervals.icu's own values labelled apart |
 | `get-interval-analysis` | Interval detection with urban-stop-aware rest classification and rep fade; with findSimilar, earlier sessions with the same reps |
-| `get-best-efforts` | Best times at standard running distances: over your history from intervals.icu's pace curves, or inside one run with where each started |
+| `get-best-efforts` | Best times at standard running distances: over your history from intervals.icu's pace curves (optionally by month, quarter or year, with critical speed), or inside one run with where each started |
 | `get-race-prediction` | Predicted race times from intervals.icu pace-curve points (Riegel) alongside intervals.icu's own critical-speed model, with confidence, source point, and km goal-pace splits |
 | `get-athlete-stats` | Run totals and totals for every sport (count, moving time, distance and whole-body load per activity type) for this week, the last 4 weeks, this month and YTD, plus last year to date (totals only for all sports), aggregated from list-activities data |
 | `get-fitness-trend` | Fitness/fatigue/form (CTL/ATL/TSB), whole-body from intervals.icu wellness or run-only computed locally, with rest, planned-load or intervals.icu calendar projection and a solved taper to a target form on a target date; `newest` reads a past window, with no projection or taper |
@@ -1036,6 +1036,19 @@ point that close comes back as an empty list, named in `missing`, with a
 warning; a short window's only 5K is never reported as its marathon time.
 `distance_m` gives the distance each time covers, and the text names the
 curve point when it is not the label's distance.
+
+`progression` (`month`, `quarter` or `year`; not with `id`) also splits the
+window into calendar periods, the first and last cut to the window, and reads
+each as an `r.<oldest>.<newest>` curve in the same request as the whole window
+(#400, docs/api-notes.md). Each period gives every distance's best (time,
+pace, date, activity) and intervals.icu's critical speed (`paceModels` CS, as
+min/km and m/s) when the curve carries one. A period with no runs has no curve
+in the response, so it comes back with `has_runs: false` and the text says "no
+runs". At most the 12 most recent periods are read; older ones are counted in
+`progression.left_out` and a warning names the first period shown. So `all`
+(from 1986-01-01) gives the last 12 months, quarters or years, and the default
+`1y` by month gives 12 of its 13 calendar months. `topN` applies to the whole
+window only; each period gives its best.
 
 With `id` (an activity id or `"latest"`; not with `window`) it searches that
 one run: two requests, the activity and its streams (time, distance and

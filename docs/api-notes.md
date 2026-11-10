@@ -407,6 +407,25 @@ curves for a 90-day window (37 runs) and a 2-month range.
   shifts the indices). No activity has `ignore_pace` set either, so whether
   intervals.icu leaves such a run out of the athlete pace curves is not
   verified; get-best-efforts says only that it may.
+
+## Several custom ranges in one pace-curve read (2026-11-10, live read-only, #400)
+
+`GET /athlete/0/pace-curves.json?type=Run&curves=<ids>` with several
+comma-separated `r.OLDEST.NEWEST` ids:
+
+- 6 ranges (quarters plus one 2020 range with no runs): 200 in 0.83 s, 5
+  curves. The empty range is absent from `list`, with no empty entry.
+- 12 monthly ranges: 200 in 0.30 s, 7 curves. The 5 missing months had no
+  runs (checked against `/activities`).
+- 16 monthly ranges: 200, 11 curves, exactly the months with runs. No cap was
+  seen at 16.
+- Every returned curve had one `paceModels` entry
+  `{type: "CS", criticalSpeed (m/s), dPrime, r2}`.
+
+So curves are matched by id, and an id missing from `list` means no runs in
+that range. get-best-efforts' `progression` reads up to 12 periods plus the
+whole window this way, in one request.
+
 ## Sport settings and HR curves (2026-10-08, #79, live read-only)
 
 Sport settings:
