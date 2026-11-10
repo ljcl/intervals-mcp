@@ -375,6 +375,8 @@ const IntervalsWellnessSchema = z
      * `{type, eftp, wPrime, pMax}` row and is always null on this account. */
     sportInfo: z.array(z.unknown()).nullable().optional(),
     weight: z.number().nullable().optional(),
+    vo2max: z.number().nullable().optional(),
+    steps: z.number().nullable().optional(),
     restingHR: z.number().nullable().optional(),
     hrv: z.number().nullable().optional(),
     hrvSDNN: z.number().nullable().optional(),
