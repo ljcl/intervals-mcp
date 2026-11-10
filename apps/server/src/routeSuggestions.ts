@@ -240,6 +240,21 @@ export function orsProblem(error: unknown): string {
 
 const km = (meters: number) => (meters / 1000).toFixed(1);
 
+/** A planned run's name may give a distance this far from its stored one before a warning. */
+const NAME_DISTANCE_TOLERANCE = 0.15;
+
+/**
+ * The first distance a planned run's name gives ("6.5 km", "10K", "5 mi"),
+ * in m; null with none. A rep's distance ("6x1km") is not the run's.
+ */
+export function nameDistanceM(name: string): number | null {
+  const m = /(?<![\d.]|[x×]\s*)(\d+(?:\.\d+)?)\s*(km|k|mi|miles?)\b/i.exec(
+    name,
+  );
+  if (!m) return null;
+  return Number(m[1]) * (m[2]!.toLowerCase().startsWith("m") ? 1609.344 : 1000);
+}
+
 const oneOff = (date: string, distanceKm: number): PlannedRun => ({
   event_id: null,
   date,
@@ -863,6 +878,17 @@ export async function loadRouteSuggestions(
     const runWarnings: string[] = [];
     let candidates: RouteCandidate[] = [];
     const planOf = new Map<RouteCandidate, DirectionPlan>();
+    // intervals.icu stores only the steps with a distance, so a name can say more.
+    const named =
+      run.distance_source === "event" ? nameDistanceM(run.name) : null;
+    if (
+      named !== null &&
+      run.distance_m > 0 &&
+      Math.abs(named - run.distance_m) > named * NAME_DISTANCE_TOLERANCE
+    )
+      runWarnings.push(
+        `"${run.name}" names ${km(named)} km, but the planned run is stored as ${km(run.distance_m)} km, which this plan uses; pass distanceKm to plan for the named distance.`,
+      );
     if (run.distance_m <= 0) {
       runWarnings.push(
         "This planned run has no distance; pass date and distanceKm.",

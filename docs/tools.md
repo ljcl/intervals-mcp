@@ -160,7 +160,10 @@ otherwise).
   its words. A `via` string holding a JSON list (what a host still holding the
   2.12 string-only schema sends for a list) is read as that list.
   `distance_source` says whether a run's distance came from the event or
-  from `distanceKm`. The first ORS failure other than a cancellation stops
+  from `distanceKm`. intervals.icu stores only the steps that have a
+  distance, so when an event's name gives a distance ("6.5 km", "10K",
+  "5 mi"; not a rep's "6x1km") more than 15% from the stored one, the run
+  warns with both and keeps the stored one. The first ORS failure other than a cancellation stops
   generation for the rest of the call with one warning, keeping the routes
   already made; past runs always come back. ORS allows 200 routes a day,
   and the 12 calls are shared across the runs of a week request.
