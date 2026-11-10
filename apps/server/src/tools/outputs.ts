@@ -1301,6 +1301,11 @@ const ActivitySummarySchema = z.object({
     .describe(
       "intervals.icu achievement types this activity set (BEST_PACE, BEST_POWER, LTHR_UP, FTP_UP); empty when none. get-activity has the detail",
     ),
+  interval_summary: z
+    .array(z.string())
+    .describe(
+      'intervals.icu\'s interval groups as "<reps>x <duration> <avg HR>", e.g. "10x 4m57s 175bpm"; empty when none. The text names only groups of 2 or more reps',
+    ),
 });
 export const ActivityListOutputSchema = z.object({
   oldest: z

@@ -12,6 +12,7 @@ import {
   formatActivityListText,
   listActivitiesTool,
   mapActivitySummary,
+  repeatedIntervals,
 } from "./listActivities";
 
 vi.mock("../intervalsClient", async () => {
@@ -68,6 +69,20 @@ describe("mapActivitySummary", () => {
     // A run has pace_min_per_km, so neither sportSpeed field.
     expect(entry.pace_min_per_100m).toBeNull();
     expect(entry.speed_kmh).toBeNull();
+  });
+
+  it("carries interval_summary, empty when intervals.icu gives null", () => {
+    expect(mapActivitySummary(byId("i189757183")).interval_summary).toEqual([
+      "1x 5m11s 139bpm",
+      "10x 4m57s 175bpm",
+      "1x 12s 179bpm",
+    ]);
+    expect(
+      mapActivitySummary({
+        ...byId("i189807578"),
+        interval_summary: null,
+      } as IntervalsActivity).interval_summary,
+    ).toEqual([]);
   });
 
   it("lists each achievement type the activity set, once", () => {
@@ -150,6 +165,22 @@ describe("mapActivitySummary", () => {
     } as IntervalsActivity;
 
     expect(mapActivitySummary(stub).is_strava_stub).toBe(true);
+  });
+});
+
+describe("repeatedIntervals", () => {
+  it("keeps groups of 2 or more reps and skips counts that do not parse", () => {
+    expect(
+      repeatedIntervals([
+        "1x 5m11s 139bpm",
+        "10x 4m57s 175bpm",
+        "2x 300m 150bpm",
+        "x 4m 170bpm",
+        "0x 1m 150bpm",
+        "",
+        "warm-up",
+      ]),
+    ).toEqual(["10x 4m57s 175bpm", "2x 300m 150bpm"]);
   });
 });
 
@@ -236,6 +267,25 @@ describe("formatActivityListText", () => {
     expect(two).toContain(
       ", load 56, 576 kcal, achievements: Best pace, Run LTHR up [",
     );
+  });
+
+  it("names interval groups of 2 or more reps after the calories", () => {
+    const lines = formatActivityListText({
+      oldest: "2026-08-28",
+      newest: "2026-09-24",
+      count: 2,
+      matched: 2,
+      truncated: false,
+      search: null,
+      units: LIST_UNITS,
+      activities: [
+        mapActivitySummary(byId("i189757183")),
+        mapActivitySummary(byId("i189807578")),
+      ],
+    }).split("\n");
+
+    expect(lines[1]).toMatch(/ kcal, reps: 10x 4m57s 175bpm \[i189757183\]$/);
+    expect(lines[2]).not.toContain("reps");
   });
 
   it("marks truncation in the header and omits the stub note when none apply", () => {
@@ -349,10 +399,20 @@ describe("listActivitiesTool.execute", () => {
 
   it("returns fewer than limit, truncated, when limit would overrun the response budget", async () => {
     // A year of daily activities at limit 200 made a 72 KB response (#40).
+    // Every row a structured session, the most interval text a row carries.
     const year = Array.from({ length: 366 }, (_, i) => ({
       ...fixture[i % fixture.length]!,
       id: `i${300_000_000 + i}`,
       start_date_local: `${addDays("2026-09-28", -i)}T07:00:00`,
+      interval_summary: [
+        "1x 15m2s 141bpm",
+        "4x 3m1s 168bpm",
+        "4x 2m0s 172bpm",
+        "4x 1m0s 176bpm",
+        "4x 30s 179bpm",
+        "8x 1m30s 152bpm",
+        "1x 10m12s 138bpm",
+      ],
     }));
     mockedListActivities.mockResolvedValueOnce(year);
 
