@@ -56,7 +56,7 @@ export {
   type ZoneBucket,
   type ZoneSet,
 } from "./zones";
-export {
-  type WellnessTrendData,
-  type WellnessTrendPoint,
+export type {
+  WellnessTrendData,
+  WellnessTrendPoint,
 } from "./wellness";
