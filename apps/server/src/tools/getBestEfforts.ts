@@ -16,7 +16,7 @@ import {
   loadIntervalsStreams,
 } from "../intervalsStreams";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
-import { criticalSpeedModel } from "../racePrediction";
+import { criticalSpeedModel, pickDistances } from "../racePrediction";
 import { addDays, isValidCalendarDate, todayLocal } from "../utils/localDate";
 import {
   formatPaceSeconds,
@@ -43,7 +43,9 @@ fastest 5K?". With an id it searches one run instead and says where each
 effort starts and ends: "what was my fastest 5K inside Sunday's half?" or
 "my 3 fastest km today" (id "latest" is your newest run). With progression
 it also splits the window into months, quarters or years and gives each
-one's best and critical speed: "how has my 5K best moved this year?".
+one's best and critical speed: "how has my 5K best moved this year?". Over
+your history, gap: true reads grade-adjusted bests instead, for hilly or
+trail running.
 
 For predicted race times or goal pacing, use get-race-prediction. For even
 1 km splits of one run, use get-split-analysis.
@@ -61,17 +63,21 @@ Notes:
   activity with no recorded streams returns an error.
 `;
 
-/** Standard distances, in metres. `half marathon`/`marathon` are matched
- * against the nearest point on intervals.icu's fixed distance grid
- * (21097.5 m and 42195 m are both present on it, verified 2026-09-25). */
-const DISTANCE_METERS = {
-  "400m": 400,
-  "1km": 1000,
-  "5km": 5000,
-  "10km": 10000,
-  "half marathon": 21097.5,
-  marathon: 42195,
-} as const;
+/** Standard distances, in metres, matched against the nearest point on
+ * intervals.icu's fixed distance grid (every one is on it, verified
+ * 2026-09-25 and 2026-11-10). */
+const DISTANCE_METERS = pickDistances([
+  "400m",
+  "1km",
+  "1 mile",
+  "3km",
+  "5km",
+  "10km",
+  "15km",
+  "10 mile",
+  "half marathon",
+  "marathon",
+]);
 
 type DistanceLabel = keyof typeof DISTANCE_METERS;
 const DISTANCE_LABELS = Object.keys(DISTANCE_METERS) as [
@@ -102,7 +108,7 @@ const inputSchema = z
       .min(1)
       .optional()
       .describe(
-        "Which distances to report. Default: 400m, 1km, 5km, 10km, half marathon, marathon; with id, only the ones the run is long enough for.",
+        "Which distances to report. Default: all of them; with id, only the ones the run is long enough for.",
       ),
     // No zod default: a default would make every id call also carry a
     // window, so the refine below could not refuse the pair. The handler
@@ -132,6 +138,12 @@ const inputSchema = z
       .describe(
         "Also split the window into calendar months, quarters or years (the first and last cut to the window) and give each one's best per distance and intervals.icu's critical speed. At most the 12 most recent; with window \"all\", the last 12. topN applies only to the whole window; each period gives its best. Not with id.",
       ),
+    gap: z
+      .boolean()
+      .optional()
+      .describe(
+        "true: grade-adjusted times from intervals.icu's GAP pace curve, progression periods included. Over a window only; do not send it with id.",
+      ),
   })
   .superRefine((data, ctx) => {
     if (data.id !== undefined && data.window !== undefined) {
@@ -148,6 +160,14 @@ const inputSchema = z
         path: ["progression"],
         message:
           "progression splits a window of your history; send it without id.",
+      });
+    }
+    if (data.id !== undefined && data.gap !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["gap"],
+        message:
+          "gap reads grade-adjusted bests over your history only. Send it without id.",
       });
     }
   });
@@ -199,6 +219,8 @@ interface BestEffortsResponse {
     covered_km: number;
   } | null;
   top_n: number;
+  /** Times and paces are grade-adjusted (`gap: true` over a window). */
+  grade_adjusted: boolean;
   units: { time: "s"; pace: "min/km" };
   note: string;
   best_efforts: Record<string, BestEffortEntry[]>;
@@ -451,13 +473,15 @@ async function buildWindowEfforts(
   distances: DistanceLabel[],
   topN: number,
   resolved: ResolvedWindow,
+  gap: boolean,
   progress: ReportProgress,
   periods: { oldest: string; newest: string }[] = [],
 ): Promise<EffortsResult & { periods: ProgressionPeriodResult[] }> {
+  const curve = `${gap ? "GAP pace" : "pace"} curve (${resolved.curveId})`;
   progress(
     topN > 1
-      ? `Fetching pace curve (${resolved.curveId}) with the top ${topN} per distance…`
-      : `Fetching pace curve (${resolved.curveId})…`,
+      ? `Fetching ${curve} with the top ${topN} per distance…`
+      : `Fetching ${curve}…`,
     { important: true },
   );
   const periodIds = periods.map((p) => `r.${p.oldest}.${p.newest}`);
@@ -466,6 +490,8 @@ async function buildWindowEfforts(
     // A window inside one period is the same curve twice: ask once.
     curves: [...new Set([resolved.curveId, ...periodIds])],
     ...(topN > 1 ? { subMaxEfforts: topN - 1 } : {}),
+    // One request, so every progression period reads the same (GAP) curve.
+    ...(gap ? { gap } : {}),
   });
   const byId = (id: string) => curves.list.find((c) => c.id === id);
 
@@ -704,7 +730,7 @@ export function formatBestEffortsText(
   const lines = [
     activity
       ? `Best efforts inside ${activity.name} (${activity.id}), ${activity.date}, ${activity.covered_km.toFixed(2)} km`
-      : `Best efforts, ${window?.oldest} to ${window?.newest}`,
+      : `${response.grade_adjusted ? "Grade-adjusted best efforts" : "Best efforts"}, ${window?.oldest} to ${window?.newest}`,
   ];
 
   let any = false;
@@ -771,6 +797,7 @@ export const getBestEffortsTool = {
       window,
       topN,
       progression,
+      gap,
     }: GetBestEffortsInput,
     apiKey: string,
     progress: ReportProgress = NO_PROGRESS,
@@ -801,6 +828,7 @@ export const getBestEffortsTool = {
           window: null,
           activity: outcome.activity,
           top_n: topN,
+          grade_adjusted: false,
           units: { time: "s", pace: "min/km" },
           note: TIME_BASIS_NOTE,
           best_efforts: outcome.best_efforts,
@@ -842,6 +870,7 @@ export const getBestEffortsTool = {
             distances,
             topN,
             resolved,
+            gap === true,
             progress,
             split.periods,
           );
@@ -860,6 +889,7 @@ export const getBestEffortsTool = {
           },
           activity: null,
           top_n: topN,
+          grade_adjusted: gap === true,
           units: { time: "s", pace: "min/km" },
           note: TIME_BASIS_NOTE,
           best_efforts,

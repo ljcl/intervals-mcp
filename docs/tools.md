@@ -1037,8 +1037,11 @@ never found. If the search or the bulk read fails, the analysis still comes
 back, with `similar.status: "unavailable"` and the cause. The cost is up to two
 more requests.
 
-`get-best-efforts` reports best times at standard distances (400m, 1km, 5km,
-10km, half marathon, marathon by default, or a subset via `distances`).
+`get-best-efforts` reports best times at standard distances (400m, 1km,
+1 mile, 3km, 5km, 10km, 15km, 10 mile, half marathon, marathon by default, or
+a subset via `distances`). The metres come from the one table in
+`racePrediction.ts` (`pickDistances`), which `get-race-prediction` picks its
+own race distances from.
 
 Over your history it reads intervals.icu's athlete pace curve. `window` picks
 `all`, `1y` (default), `90d`, or a custom `YYYY-MM-DD..YYYY-MM-DD` range,
@@ -1056,6 +1059,11 @@ point that close comes back as an empty list, named in `missing`, with a
 warning; a short window's only 5K is never reported as its marathon time.
 `distance_m` gives the distance each time covers, and the text names the
 curve point when it is not the label's distance.
+`gap: true` (not with `id`) adds `gap=true` to the curve read, so the
+grade-adjusted curve has its own cache entry; the result says
+`grade_adjusted: true` and the text opens "Grade-adjusted best efforts".
+With `progression` the periods ride in the same read, so they are
+grade-adjusted too, critical speed included.
 
 `progression` (`month`, `quarter` or `year`; not with `id`) also splits the
 window into calendar periods, the first and last cut to the window, and reads

@@ -75,7 +75,7 @@ rather than (or alongside) text.
 | `get-athlete-stats` | Run totals with the longest run, and totals for every sport (strength sessions, swim distance), this week/month/YTD, last year to date, and any date range | `oldest`, `newest` (optional range) |
 | `get-fitness-trend` | Am I fresh or fatigued? What if I taper for a race? | `days`, `newest`, `runOnly`, `projectDays`/`plannedLoads`/`calendarPlan`, `targetDate`/`targetTsb` |
 | `get-training-load` | Weekly volume, volume-spike flags, long run, HR zone split, weekly load | `days`, `newest`, `runOnly` |
-| `get-best-efforts` | My best 5K/10K/half/marathon times; my fastest 5K inside one run, and where; how my 5K best and critical speed moved by month, quarter or year | `distances`, `window`, `topN`, `id`, `progression` |
+| `get-best-efforts` | My best mile/5K/10K/half/marathon times, or grade-adjusted bests; my fastest 5K inside one run, and where; how my 5K best and critical speed moved by month, quarter or year | `distances`, `window`, `topN`, `gap`, `id`, `progression` |
 | `get-race-prediction` | What could I run for X? What pace do I need for a goal time? | `raceDistance` (`5km`, `10km`, `15km`, `10 mile`, `half marathon`, `marathon`, `50km`), `goalTime` |
 | `get-athlete-zones` | What are my HR zones? Is 150 bpm zone 2? What is my threshold pace? Is my LTHR out of date? | `sport` (default Run) |
 

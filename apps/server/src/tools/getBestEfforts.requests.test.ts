@@ -114,6 +114,41 @@ describe("get-best-efforts requests", () => {
     );
   });
 
+  it("gap is a query param, so gap and plain reads never share a cache entry", async () => {
+    const urls = routeFetch({
+      "/api/v1/athlete/0/pace-curves.json": paceCurvesFixture,
+    });
+
+    await getBestEffortsTool.execute({ topN: 1 }, "k");
+    await getBestEffortsTool.execute({ topN: 1, gap: true }, "k");
+
+    expect(urls).toHaveLength(2);
+    expect(urls[0]?.searchParams.has("gap")).toBe(false);
+    expect(urls[1]?.searchParams.get("gap")).toBe("true");
+  });
+
+  it("gap with progression reads every period's GAP curve in the one request", async () => {
+    const urls = routeFetch({
+      "/api/v1/athlete/0/pace-curves.json": paceCurvesFixture,
+    });
+
+    await getBestEffortsTool.execute(
+      {
+        window: "2026-01-01..2026-06-30",
+        topN: 1,
+        progression: "quarter",
+        gap: true,
+      },
+      "k",
+    );
+
+    expect(urls).toHaveLength(1);
+    expect(urls[0]?.searchParams.get("gap")).toBe("true");
+    expect(urls[0]?.searchParams.get("curves")).toBe(
+      "r.2026-01-01.2026-06-30,r.2026-01-01.2026-03-31,r.2026-04-01.2026-06-30",
+    );
+  });
+
   it("one run is two requests: the activity and its streams", async () => {
     const urls = routeFetch({
       [`/api/v1/activity/${RUN_ID}`]: { ...activityFixture, id: RUN_ID },

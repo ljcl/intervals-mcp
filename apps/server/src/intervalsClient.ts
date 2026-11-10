@@ -1396,7 +1396,13 @@ export async function getAthleteTimeZone(
  */
 export async function getAthletePaceCurves(
   apiKey: string,
-  options: { type: string; curves: string[]; subMaxEfforts?: number },
+  options: {
+    type: string;
+    curves: string[];
+    subMaxEfforts?: number;
+    /** Grade-adjusted curves; a query param, so the cache keys it apart. */
+    gap?: boolean;
+  },
 ): Promise<IntervalsAthletePaceCurves> {
   requireApiKey(apiKey);
   const context = `getAthletePaceCurves for ${options.curves.join(",")}`;
@@ -1407,6 +1413,7 @@ export async function getAthletePaceCurves(
   if (options.subMaxEfforts && options.subMaxEfforts > 0) {
     params.subMaxEfforts = options.subMaxEfforts;
   }
+  if (options.gap) params.gap = "true";
 
   let data: unknown;
   try {

@@ -2286,6 +2286,11 @@ export const BestEffortsOutputSchema = z.object({
     .nullable()
     .describe("The searched run; null over a window"),
   top_n: z.number().int(),
+  grade_adjusted: z
+    .boolean()
+    .describe(
+      "true: times and paces are grade-adjusted (gap: true over a window)",
+    ),
   units: z.object({
     time: z.literal("s"),
     pace: z.literal("min/km"),
