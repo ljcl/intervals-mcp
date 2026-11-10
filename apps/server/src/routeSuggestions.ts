@@ -29,6 +29,7 @@ import {
 import {
   type LegOption,
   legOptions,
+  outAndBacksAlong,
   planStitches,
   STITCH_FILL_CALLS,
   stitchAnchors,
@@ -915,6 +916,14 @@ export async function loadRouteSuggestions(
         for (const c of routes) planOf.set(c, p);
         joined.push(...routes);
       }
+      // No past run fits and no via: out-and-backs along past runs from this start, with no routing call (#461).
+      if (
+        pool.length === 0 &&
+        viaTexts.length === 0 &&
+        cluster &&
+        shape !== "point-to-point"
+      )
+        joined.push(...outAndBacksAlong(cluster.runs, run.distance_m));
       const stitched = dedupeRoutes(joined);
       if (corridorVia && stitched.length === 0) {
         runWarnings.push(
@@ -1015,7 +1024,11 @@ export async function loadRouteSuggestions(
         const retraced_m = retracedM(c.track);
         c.known_share = Math.round(knownShare(c.track) * 100) / 100;
         c.retraced_km = Math.round(retraced_m / 100) / 10;
-        c.notes = routeNotes(c.track, shape);
+        // An out-and-back candidate goes back by design, whatever shape was asked (as in scoreRoute).
+        c.notes = routeNotes(
+          c.track,
+          c.shape === "out-and-back" ? c.shape : shape,
+        );
         const { score, breakdown } = scoreRoute(
           c,
           history.length < KNOWN_RUNS ? null : c.known_share,
@@ -1050,10 +1063,13 @@ export async function loadRouteSuggestions(
       for (const c of ordered) {
         if (candidates.length >= MAX_ROUTES) break;
         if (candidates.some((k) => sameRoute(k.track, c.track))) continue;
-        if (c.kind !== "stitched") {
-          if (taken[c.kind] >= (c.kind === "past" ? MAX_PAST_CANDIDATES : want))
+        // Without a via a stitched route is an out-and-back along a past run, so it shares the past runs' cap and a new loop keeps a place.
+        const kind =
+          c.kind === "stitched" && viaTexts.length === 0 ? "past" : c.kind;
+        if (kind !== "stitched") {
+          if (taken[kind] >= (kind === "past" ? MAX_PAST_CANDIDATES : want))
             continue;
-          taken[c.kind]++;
+          taken[kind]++;
         }
         candidates.push(c);
       }

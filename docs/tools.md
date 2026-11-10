@@ -185,6 +185,15 @@ otherwise).
   `kind: "generated"` with `history_share` set: a new kind would break hosts
   holding the old tool list. Without ORS_API_KEY, one needing no join is
   still offered.
+- Out-and-backs along past runs (`outAndBacksAlong`, `historyLegs.ts`):
+  without `via`, when no past run from the start fits (none in the 10%
+  band and asked terrain), each run from the start at least half the
+  distance gives its first half-distance and the same way back, a loop
+  also its other way round; newest first, duplicates removed, 6 scored. They
+  make no ORS call, land on the distance, go out like stitched via routes
+  (`kind: "generated"`, `history_share` 1, shape `out-and-back`, no
+  `sections`), and share the 2 places past runs have, so a new loop keeps
+  one.
 - A via matched no better than a suburb or city (a Pelias layer other than
   venue, address or street), or to a place lacking a word of the text, is
   refused, naming the match (`coarseVia`), in every tool that takes a via. A

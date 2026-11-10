@@ -332,6 +332,52 @@ describe("loadRouteSuggestions", () => {
     });
   });
 
+  describe("no past run fits (#461)", () => {
+    it("offers out-and-backs along a longer past run, with no routing call", async () => {
+      const result = await loadRouteSuggestions(
+        "k",
+        { distanceKm: 3 },
+        { ...ENV, orsKey: null },
+      );
+      const run = result.runs[0]!;
+      expect(orsRoute).not.toHaveBeenCalled();
+      expect(run.candidates.map((c) => c.kind)).toEqual([
+        "stitched",
+        "stitched",
+      ]);
+      for (const c of run.candidates) {
+        expect(c.shape).toBe("out-and-back");
+        expect(c.history_share).toBe(1);
+        expect(Math.abs(c.distance_m - 3000)).toBeLessThan(5);
+        expect(c.score).toEqual(expect.any(Number));
+        expect(c.notes).toEqual([]);
+      }
+    });
+
+    it("keeps a place for a new loop", async () => {
+      vi.mocked(orsRoute).mockImplementation(async () =>
+        route(square(SF[0] - 0.02, SF[1], 0.007)),
+      );
+      const run = (await loadRouteSuggestions("k", { distanceKm: 3 }, ENV))
+        .runs[0]!;
+      expect(run.candidates.map((c) => c.kind).sort()).toEqual([
+        "generated",
+        "stitched",
+        "stitched",
+      ]);
+    });
+
+    it("offers none when a past run fits, or with no history", async () => {
+      const fits = (await loadRouteSuggestions("k", {}, ENV)).runs[0]!;
+      expect(fits.candidates.some((c) => c.kind === "stitched")).toBe(false);
+      vi.mocked(loadRunStarts).mockResolvedValue({ runs: [], skipped: 0 });
+      const none = (
+        await loadRouteSuggestions("k", { distanceKm: 3, start: text(SF) }, ENV)
+      ).runs[0]!;
+      expect(none.candidates.some((c) => c.kind === "stitched")).toBe(false);
+    });
+  });
+
   it("offers a past run and one new loop from the usual start", async () => {
     const result = await loadRouteSuggestions("k", {}, ENV);
     const run = result.runs[0]!;

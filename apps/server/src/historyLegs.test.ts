@@ -3,6 +3,7 @@ import {
   type LegOption,
   legOptions,
   legSection,
+  outAndBacksAlong,
   passes,
   planStitches,
   sameLine,
@@ -490,5 +491,38 @@ describe("stitchedCandidate", () => {
     expect(c.summary).toBe(
       "From 1 past run: Run r1 2026-10-01; 2.0 km routed by OpenRouteService",
     );
+  });
+});
+
+describe("outAndBacksAlong", () => {
+  // About 1 km north, 1 km east, 1 km south and back west: a 4 km loop.
+  const loop = run("loop", [S, A, B, east(S, 1000), S]);
+
+  it("turns each way round a loop at half the target and comes back", () => {
+    const routes = outAndBacksAlong([loop], 2000);
+    expect(routes).toHaveLength(2);
+    for (const r of routes) {
+      expect(r).toMatchObject({
+        kind: "stitched",
+        shape: "out-and-back",
+        history_share: 1,
+      });
+      expect(Math.abs(r.distance_m - 2000)).toBeLessThan(5);
+      expect(haversineMeters(r.track.coordinates.at(-1)!, S)).toBeLessThan(1);
+    }
+    // One goes north first, the other east.
+    expect(haversineMeters(routes[0]!.track.coordinates[50]!, A)).toBeLessThan(
+      haversineMeters(routes[1]!.track.coordinates[50]!, A),
+    );
+    expect(routes[1]!.summary).toContain("the other way");
+  });
+
+  it("runs a one-way run only from its start and skips a run too short", () => {
+    const oneWay = run("out", [S, FAR]);
+    const short = run("short", [S, east(S, 300), S]);
+    const routes = outAndBacksAlong([oneWay, short], 3000);
+    expect(routes.map((r) => r.summary)).toEqual([
+      'Out and back on your run "Run out" 2026-10-01, turning at 1.5 km',
+    ]);
   });
 });
