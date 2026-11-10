@@ -17,7 +17,8 @@
     "@intervals-mcp/route-map": "workspace:*",
     "@intervals-mcp/training-load": "workspace:*",
     "@intervals-mcp/ui": "workspace:*",
-    "@intervals-mcp/vite-config": "workspace:*"
+    "@intervals-mcp/vite-config": "workspace:*",
+    "@intervals-mcp/wellness-trend": "workspace:*"
   },
   "devDependencies": {
     "@storybook/addon-a11y": "10.6.5",

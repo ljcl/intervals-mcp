@@ -31,6 +31,7 @@
         "@intervals-mcp/fitness-trend": "workspace:*",
         "@intervals-mcp/route-map": "workspace:*",
         "@intervals-mcp/training-load": "workspace:*",
+        "@intervals-mcp/wellness-trend": "workspace:*",
         "@modelcontextprotocol/server": "2.4.0",
         "pbf": "5.1.2",
         "zod": "4.6.7",
@@ -56,6 +57,7 @@
         "@intervals-mcp/training-load": "workspace:*",
         "@intervals-mcp/ui": "workspace:*",
         "@intervals-mcp/vite-config": "workspace:*",
+        "@intervals-mcp/wellness-trend": "workspace:*",
       },
       "devDependencies": {
         "@intervals-mcp/tsconfig": "workspace:*",
@@ -307,6 +309,29 @@
         "vite": "^8.0.0",
       },
     },
+    "packages/wellness-trend": {
+      "name": "@intervals-mcp/wellness-trend",
+      "version": "1.0.0",
+      "dependencies": {
+        "@intervals-mcp/data": "workspace:*",
+        "@intervals-mcp/design-system": "workspace:*",
+        "@intervals-mcp/ui": "workspace:*",
+        "@modelcontextprotocol/ext-apps": "2.0.4",
+        "react": "19.3.1",
+        "react-dom": "19.3.1",
+        "recharts": "3.10.1",
+      },
+      "devDependencies": {
+        "@intervals-mcp/tsconfig": "workspace:*",
+        "@intervals-mcp/vite-config": "workspace:*",
+        "@types/react": "19.3.0",
+        "@types/react-dom": "19.3.0",
+        "storybook": "10.6.5",
+        "typescript": "7.0.2",
+        "vite": "8.3.5",
+        "vitest": "5.0.5",
+      },
+    },
   },
   "overrides": {
     "react-is": "19.3.0",
@@ -471,6 +496,8 @@
     "@intervals-mcp/ui": ["@intervals-mcp/ui@workspace:packages/ui"],
 
     "@intervals-mcp/vite-config": ["@intervals-mcp/vite-config@workspace:packages/vite-config"],
+
+    "@intervals-mcp/wellness-trend": ["@intervals-mcp/wellness-trend@workspace:packages/wellness-trend"],
 
     "@joshwooding/vite-plugin-react-docgen-typescript": ["@joshwooding/vite-plugin-react-docgen-typescript@0.7.0", "", { "dependencies": { "glob": "^13.0.1", "react-docgen-typescript": "^2.2.2" }, "peerDependencies": { "typescript": ">= 4.3.x", "vite": "^3.0.0 || ^4.0.0 || ^5.0.0 || ^6.0.0 || ^7.0.0 || ^8.0.0" }, "optionalPeers": ["typescript"] }, "sha512-qvsTEwEFefhdirGOPnu9Wp6ChfIwy2dBCRuETU3uE+4cC+PFoxMSiiEhxk4lOluA34eARHA0OxqsEUYDqRMgeQ=="],
 

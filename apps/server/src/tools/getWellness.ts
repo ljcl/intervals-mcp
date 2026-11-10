@@ -73,7 +73,7 @@ type GetWellnessInput = z.infer<typeof inputSchema>;
 const MAX_RANGE_DAYS = 366;
 /** A range longer than this returns weekly averages: 90 daily rows already
  * measure 38,808 of the 40,000 character response budget. */
-const DAILY_MAX_DAYS = 90;
+export const DAILY_MAX_DAYS = 90;
 
 /** A range line's comments are cut here, so 90 commented days fit the text. */
 const COMMENT_MAX_CHARS = 80;
@@ -154,7 +154,7 @@ export type WellnessWeekEntry = {
   weight_kg: number | null;
 } & Record<(typeof WEEKLY_SCORE_FIELDS)[number], number | null>;
 
-interface WellnessResponse {
+export interface WellnessResponse {
   oldest: string;
   newest: string;
   count: number;
@@ -371,6 +371,84 @@ export function formatWellnessText(
   return lines.join("\n");
 }
 
+/**
+ * The range a call reads: one day, or oldest/newest (each defaulting to the
+ * other, newest to today). Refuses date with a range, a newest after today
+ * and a range past 366 days, with the isError text. The one home get-wellness
+ * and the wellness-trend app check a range through.
+ */
+export function resolveWellnessRange({
+  date,
+  oldest: rawOldest,
+  newest: rawNewest,
+}: {
+  date?: string;
+  oldest?: string;
+  newest?: string;
+}): { oldest: string; newest: string } | { error: string } {
+  if (date && (rawOldest || rawNewest))
+    return {
+      error:
+        "❌ date cannot be combined with oldest/newest. Use a single date, or an oldest/newest range.",
+    };
+
+  const today = todayLocal(getTimeZone());
+  const newest = date ?? rawNewest ?? today;
+  const oldest = date ?? rawOldest ?? newest;
+
+  // intervals.icu's rows past today hold a projection from planned
+  // workouts, not records (docs/api-notes.md).
+  if (newest > today)
+    return {
+      error: `❌ ${date ? "date" : "newest"} ${newest} is after today (${today}). Days after today hold intervals.icu's projection, not recorded wellness. Use today or an earlier date; for projected CTL/ATL/TSB, use get-fitness-trend with projectDays.`,
+    };
+
+  const rangeError = validateRange(oldest, newest, MAX_RANGE_DAYS);
+  if (rangeError) return { error: `❌ ${rangeError.message}` };
+  return { oldest, newest };
+}
+
+/**
+ * Reads and maps one range: `days` is every day read, newest first, and
+ * `response` the whole get-wellness payload (weekly past 90 days), before
+ * any response-budget cut. The one home get-wellness and the wellness-trend
+ * app build their numbers from, so the chart and the text cannot disagree.
+ */
+export async function loadWellness(
+  apiKey: string,
+  oldest: string,
+  newest: string,
+  progress: ReportProgress = NO_PROGRESS,
+): Promise<{ response: WellnessResponse; days: WellnessDayEntry[] }> {
+  progress(`Fetching wellness ${oldest} to ${newest}`);
+  const records = await getWellnessClient(apiKey, { oldest, newest });
+  const days = records
+    .map(mapWellnessDay)
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+
+  const weekly = daysBetween(oldest, newest) + 1 > DAILY_MAX_DAYS;
+  const response: WellnessResponse = {
+    oldest,
+    newest,
+    count: days.length,
+    units: {
+      hrv: "ms",
+      resting_hr: "bpm",
+      sleep: "hours",
+      weight: "kg",
+      spo2: "%",
+      respiration: "breaths/min",
+    },
+    hrv_note: buildHrvNote(days),
+    days: weekly ? [] : days,
+    ...(weekly && {
+      granularity: "weekly" as const,
+      weeks: aggregateWellnessWeeks(days),
+    }),
+  };
+  return { response, days };
+}
+
 export const getWellnessTool = {
   name,
   title: "Wellness",
@@ -383,71 +461,27 @@ export const getWellnessTool = {
     apiKey: string,
     progress: ReportProgress = NO_PROGRESS,
   ) => {
-    if (date && (rawOldest || rawNewest)) {
+    const range = resolveWellnessRange({
+      date,
+      oldest: rawOldest,
+      newest: rawNewest,
+    });
+    if ("error" in range) {
       return {
-        content: [
-          {
-            type: "text" as const,
-            text: "❌ date cannot be combined with oldest/newest. Use a single date, or an oldest/newest range.",
-          },
-        ],
+        content: [{ type: "text" as const, text: range.error }],
         isError: true,
       };
     }
-
-    const today = todayLocal(getTimeZone());
-    const newest = date ?? rawNewest ?? today;
-    const oldest = date ?? rawOldest ?? newest;
-
-    // intervals.icu's rows past today hold a projection from planned
-    // workouts, not records (docs/api-notes.md).
-    if (newest > today) {
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `❌ ${date ? "date" : "newest"} ${newest} is after today (${today}). Days after today hold intervals.icu's projection, not recorded wellness. Use today or an earlier date; for projected CTL/ATL/TSB, use get-fitness-trend with projectDays.`,
-          },
-        ],
-        isError: true,
-      };
-    }
-
-    const rangeError = validateRange(oldest, newest, MAX_RANGE_DAYS);
-    if (rangeError) {
-      return {
-        content: [{ type: "text" as const, text: `❌ ${rangeError.message}` }],
-        isError: true,
-      };
-    }
+    const { oldest, newest } = range;
 
     try {
-      progress(`Fetching wellness ${oldest} to ${newest}`);
-      const records = await getWellnessClient(apiKey, { oldest, newest });
-      const days = records
-        .map(mapWellnessDay)
-        .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
-
-      const weekly = daysBetween(oldest, newest) + 1 > DAILY_MAX_DAYS;
-      const response: WellnessResponse = {
+      const { response, days } = await loadWellness(
+        apiKey,
         oldest,
         newest,
-        count: days.length,
-        units: {
-          hrv: "ms",
-          resting_hr: "bpm",
-          sleep: "hours",
-          weight: "kg",
-          spo2: "%",
-          respiration: "breaths/min",
-        },
-        hrv_note: buildHrvNote(days),
-        days: weekly ? [] : days,
-        ...(weekly && {
-          granularity: "weekly" as const,
-          weeks: aggregateWellnessWeeks(days),
-        }),
-      };
+        progress,
+      );
+      const weekly = response.granularity === "weekly";
 
       warnOnSchemaDrift(name, WellnessOutputSchema, response);
 

@@ -1469,8 +1469,8 @@ the UI renders. `view-compare-activities`/`get-compare-activities-data`,
 `view-training-load`/`get-training-load-data`, `view-activity-chart`/
 `get-activity-streams-raw`, `view-cadence-trends`/`get-cadence-trend-data`,
 `view-route-map`/`get-route-map-data` and
-`view-route-suggestions`/`get-route-suggestions-data` are all ported to
-intervals.icu.
+`view-route-suggestions`/`get-route-suggestions-data` and
+`view-wellness`/`get-wellness-trend-data` are all ported to intervals.icu.
 
 App tool inputs follow the one scheme (docs/architecture.md, Input validation):
 `id` for a single activity (`view-activity-chart`, `view-route-map`,
@@ -1481,7 +1481,8 @@ default 42) for `view-cadence-trends` and `get-cadence-trend-data`.
 optional `newest`, the same field as the text tool. The old
 `activity_id`, `activity_id_1`/`activity_id_2` and `weeks` are still accepted
 through the alias layer, and so are `endDate`, `end_date`, `asOf` and `as_of`
-for `newest`.
+for `newest`. `view-wellness` and its feed take get-wellness's `oldest` and
+`newest`, with `oldest` defaulting to 29 days before `newest` (a 30-day chart).
 
 | Tool | Description |
 | ---- | ----------- |
@@ -1501,6 +1502,8 @@ for `newest`.
 | `get-activity-zones-data` | Per-zone time distributions (bucket bounds, seconds, percentages) for the activity-zones UI (app-only) |
 | `view-fitness-trend` | CTL/ATL/TSB over time with shaded fatigue/freshness/ramp bands and a dashed taper plan, calendar plan projection (`calendarPlan`) or rest projection past today; a Whole body/Runs only toggle switches scope, caching each side; `newest` charts a past block with no projection (MCP App) |
 | `get-fitness-trend-data` | Per-day CTL/ATL/TSB, the projection, the solved taper, and the dated warning bands for the fitness-trend UI; `runOnly` switches between whole-body (intervals.icu wellness) and run-only (computed) (app-only) |
+| `view-wellness` | HRV, resting HR and sleep, one panel each on a shared date axis, with a gap on a day with no record; weekly averages past 90 days, as get-wellness. Publishes get-wellness's `outputSchema`, and its `structuredContent` is get-wellness's for the same range (MCP App) |
+| `get-wellness-trend-data` | get-wellness's days (or weeks) for the range, laid on every calendar day or Monday-start week with nulls where nothing was recorded; HRV is one measure (rMSSD, or SDNN when more days carry it) (app-only) |
 
 Every `view-*` result carries the chart's data, so the model has the numbers
 in the same call whether or not the athlete sees the chart. Only its first
@@ -1526,7 +1529,12 @@ Then the data:
   the twin's text. The view's defaults reach the twin, so
   `view-fitness-trend`'s text projects 14 days and `view-training-load`'s
   covers 84 days, as the charts do. The twin's `structuredContent` is not
-  passed on: the views have no `outputSchema`.
+  passed on, since those views have no `outputSchema`; `view-wellness` is the
+  exception (`structured` on its `ViewText`): it publishes get-wellness's
+  `outputSchema` and passes its `structuredContent` on. Its twin reads the
+  view's resolved range, so the default 30 days reach get-wellness too, and
+  a failed twin is the view's error (`failsWithTwin`), as the data is the
+  same read.
 - `view-route-map` keeps its own lines ahead of its twin's text (`Its data
   follows, then the text of get-hill-analysis.`): the distance, the
   elevation gain and each waypoint with its km, label and kind, which only
@@ -1575,6 +1583,7 @@ than calling the map empty, and lists waypoints without the map legend.
 | `view-route-map` | `route map` | `get-hill-analysis`, after its own lines | `get-activity` |
 | `view-route-suggestions` | `route suggestions map` | `suggest-run-route` | `suggest-run-route` |
 | `view-compare-activities` | `activity comparison` | `compare-activities` | `compare-activities` |
+| `view-wellness` | `wellness trend chart` | `get-wellness` | none: the twin's error is the view's |
 
 Every `*-data` app-only tool reads intervals.icu streams through
 `loadIntervalsStreams` (see docs/architecture.md#streams) and downsamples to

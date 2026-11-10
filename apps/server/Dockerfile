@@ -80,6 +80,7 @@ COPY --from=builder  --chown=65534:65534 /app/packages/training-load/dist ./pack
 COPY --from=builder  --chown=65534:65534 /app/packages/compare-activities/dist ./packages/compare-activities/dist
 COPY --from=builder  --chown=65534:65534 /app/packages/activity-zones/dist ./packages/activity-zones/dist
 COPY --from=builder  --chown=65534:65534 /app/packages/fitness-trend/dist ./packages/fitness-trend/dist
+COPY --from=builder  --chown=65534:65534 /app/packages/wellness-trend/dist ./packages/wellness-trend/dist
 COPY --from=builder  --chown=65534:65534 /data /data
 
 USER 65534:65534

@@ -6,6 +6,7 @@
  * content.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { handledNotFound } from "./__fixtures__/errors";
 import sportSettingsFixture from "./__fixtures__/intervals/sport-settings.json";
 import { routeSuggestionsFixture } from "./__fixtures__/routeSuggestions";
 import { viewHeader } from "./clientCapabilities";
@@ -111,6 +112,8 @@ const APP_TOOL_CALLS: Array<[string, Record<string, unknown>]> = [
   ["get-activity-zones-data", { id: "123" }],
   ["view-compare-activities", { activityId1: "1", activityId2: "2" }],
   ["get-compare-activities-data", { activityId1: "1", activityId2: "2" }],
+  ["view-wellness", {}],
+  ["get-wellness-trend-data", {}],
 ];
 
 describe("app handlers with no key configured", () => {
@@ -2317,6 +2320,172 @@ describe("compare activities handlers", () => {
   });
 });
 
+describe("wellness trend handlers (#402)", () => {
+  const TODAY = "2026-11-10";
+
+  /**
+   * One record a day from `oldest` for `days` days, skipping `missing` day
+   * offsets, with rMSSD on even days and SDNN on every day.
+   */
+  function wellnessRecords(
+    oldest: string,
+    days: number,
+    missing: number[] = [],
+  ): IntervalsWellness[] {
+    return Array.from({ length: days }, (_, i) => i)
+      .filter((i) => !missing.includes(i))
+      .map((i) => ({
+        id: addDays(oldest, i),
+        hrv: i % 5 === 0 ? null : 50 + (i % 7),
+        hrvSDNN: i % 3 === 0 ? 40 + (i % 5) : null,
+        restingHR: 50 + (i % 4),
+        sleepSecs: i % 6 === 0 ? null : 25200 + i * 60,
+      })) as IntervalsWellness[];
+  }
+
+  async function feed(args: Record<string, unknown>) {
+    const result = await dispatchToolCall("get-wellness-trend-data", args);
+    expect(result.isError).toBeFalsy();
+    return JSON.parse(result.content[0]!.text);
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(`${TODAY}T12:00:00Z`));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("the feed's daily numbers match get-wellness for the same range", async () => {
+    const oldest = "2026-10-12";
+    const newest = "2026-11-10";
+    mockedWellness.mockImplementation(async () =>
+      wellnessRecords(oldest, 30, [3, 4, 20]),
+    );
+
+    const text = await dispatchToolCall("get-wellness", { oldest, newest });
+    const days = (
+      text.structuredContent as {
+        days: {
+          date: string;
+          hrv_rmssd_ms: number | null;
+          resting_hr: number | null;
+          sleep_hours: number | null;
+        }[];
+      }
+    ).days;
+    const data = await feed({ oldest, newest });
+
+    expect(data.granularity).toBe("daily");
+    expect(data.hrvMeasure).toBe("rmssd");
+    // Every calendar day is a point; the three missing days are all null.
+    expect(data.points).toHaveLength(30);
+    expect(data.points[3]).toEqual({
+      date: "2026-10-15",
+      hrv: null,
+      restingHr: null,
+      sleepHours: null,
+    });
+    const byDate = new Map(days.map((d) => [d.date, d]));
+    for (const point of data.points) {
+      const day = byDate.get(point.date);
+      expect(point).toEqual({
+        date: point.date,
+        hrv: day?.hrv_rmssd_ms ?? null,
+        restingHr: day?.resting_hr ?? null,
+        sleepHours: day?.sleep_hours ?? null,
+      });
+    }
+  });
+
+  it("past 90 days the feed charts get-wellness's weekly averages", async () => {
+    const oldest = "2026-06-01";
+    const newest = "2026-11-10";
+    mockedWellness.mockImplementation(async () =>
+      wellnessRecords(oldest, 163, [70, 71, 72, 73, 74, 75, 76]),
+    );
+
+    const text = await dispatchToolCall("get-wellness", { oldest, newest });
+    const weeks = (
+      text.structuredContent as {
+        weeks: {
+          week_start: string;
+          days: number;
+          hrv_rmssd_ms: number | null;
+          resting_hr: number | null;
+          sleep_hours: number | null;
+        }[];
+      }
+    ).weeks;
+    const data = await feed({ oldest, newest });
+
+    expect(data.granularity).toBe("weekly");
+    const byWeek = new Map(weeks.map((w) => [w.week_start, w]));
+    // Monday 1 Jun to Monday 9 Nov; the week of 10 Aug has no record.
+    expect(data.points).toHaveLength(24);
+    expect(data.points[10]).toEqual({
+      date: "2026-08-10",
+      hrv: null,
+      restingHr: null,
+      sleepHours: null,
+      days: 0,
+    });
+    for (const point of data.points.filter(
+      (p: { days: number }) => p.days > 0,
+    )) {
+      const week = byWeek.get(point.date)!;
+      expect(point).toEqual({
+        date: week.week_start,
+        hrv: week.hrv_rmssd_ms,
+        restingHr: week.resting_hr,
+        sleepHours: week.sleep_hours,
+        days: week.days,
+      });
+    }
+  });
+
+  it("defaults to the last 30 days, and the view's text and structured data are get-wellness's for that range", async () => {
+    mockedWellness.mockImplementation(async () =>
+      wellnessRecords("2026-10-12", 30),
+    );
+
+    const data = await feed({});
+    expect(data.oldest).toBe("2026-10-12");
+    expect(data.newest).toBe(TODAY);
+
+    const view = await dispatchToolCall("view-wellness", {});
+    const twin = await dispatchToolCall("get-wellness", {
+      oldest: "2026-10-12",
+      newest: TODAY,
+    });
+    expect(view.isError).toBeFalsy();
+    expect(view.structuredContent).toEqual(twin.structuredContent);
+    expect(view.content[0]!.text).toContain(twin.content[0]!.text);
+    expect(view.content[0]!.text).toContain("get-wellness");
+  });
+
+  it.each(["view-wellness", "get-wellness-trend-data"])(
+    "%s refuses a newest after today before any fetch",
+    async (name) => {
+      const result = await dispatchToolCall(name, { newest: "2026-11-11" });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]!.text).toMatch(
+        /^❌ newest 2026-11-11 is after today/,
+      );
+      expect(mockedWellness).not.toHaveBeenCalled();
+    },
+  );
+
+  it("view-wellness returns get-wellness's error when the read fails", async () => {
+    mockedWellness.mockRejectedValueOnce(handledNotFound("fetch wellness"));
+    const result = await dispatchToolCall("view-wellness", {});
+    expect(result.isError).toBe(true);
+    expect(result.content[0]!.text).toMatch(/^❌/);
+  });
+});
+
 describe("activity zones handlers", () => {
   function intervalsActivity(
     overrides: Partial<IntervalsActivity> = {},
@@ -2654,6 +2823,22 @@ describe("view tools and hosts that cannot render MCP Apps (#77)", () => {
       twin: {
         name: "compare-activities",
         args: { activityId1: "i1", activityId2: "i2" },
+      },
+    },
+    {
+      name: "view-wellness",
+      args: {},
+      arrange: () => {
+        mockedWellness.mockResolvedValue([
+          { id: TODAY, hrv: 55, restingHR: 50, sleepSecs: 27000 },
+        ] as IntervalsWellness[]);
+      },
+      // Its data is get-wellness's, whose failure is the view's: no footer.
+      kind: "wellness trend chart",
+      // The view's default range is 30 days; the twin's own is today only.
+      twin: {
+        name: "get-wellness",
+        args: { oldest: addDays(TODAY, -29), newest: TODAY },
       },
     },
   ];
