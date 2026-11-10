@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { handledRateLimit } from "./__fixtures__/errors";
 import { CallCancelledError } from "./callScope";
+import { HttpError } from "./fetchClient";
 import { type IntervalsActivity, listActivities } from "./intervalsClient";
 import {
   type IntervalsStreams,
@@ -116,8 +118,7 @@ describe("loadRunStarts", () => {
     vi.mocked(listActivities).mockResolvedValue(activities);
     vi.mocked(loadIntervalsStreams).mockImplementation(async (_key, id) => {
       if (id === "i3") return streams;
-      if (id === "i2") throw new IntervalsStreamsUnavailableError(id);
-      throw new Error("network down");
+      throw new IntervalsStreamsUnavailableError(id);
     });
   });
 
@@ -146,6 +147,23 @@ describe("loadRunStarts", () => {
     vi.mocked(loadIntervalsStreams).mockResolvedValue(streams);
     const { runs } = await loadRunStarts("k", "2026-11-03");
     expect(runs.find((r) => r.id === "i0")?.climb_m).toBeNull();
+  });
+
+  it("fails on a rate limit and starts no further reads", async () => {
+    const rateLimit = handledRateLimit("loadIntervalsStreams");
+    vi.mocked(loadIntervalsStreams).mockRejectedValue(rateLimit);
+    await expect(loadRunStarts("k", "2026-11-03")).rejects.toBe(rateLimit);
+    expect(vi.mocked(loadIntervalsStreams)).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails on an upstream outage instead of counting the run skipped", async () => {
+    const outage = new HttpError("intervals.icu API Error (502)", {
+      status: 502,
+      statusText: "Bad Gateway",
+      data: "",
+    });
+    vi.mocked(loadIntervalsStreams).mockRejectedValue(outage);
+    await expect(loadRunStarts("k", "2026-11-03")).rejects.toBe(outage);
   });
 
   it("rethrows a cancelled call instead of counting it skipped", async () => {

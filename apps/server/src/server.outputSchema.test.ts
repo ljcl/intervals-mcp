@@ -99,8 +99,9 @@ vi.mock("./intervalsClient", async (importOriginal) => {
     getActivityIntervals: vi.fn(async (_key: string, id: string) =>
       structuredClone(recorded(id).intervals ?? { id, icu_intervals: [] }),
     ),
+    // A run with no recording reads as one with no streams, as a manual entry does.
     getActivityStreams: vi.fn(async (_key: string, id: string) =>
-      structuredClone(recorded(id).streams ?? []),
+      structuredClone(RECORDED[id]?.streams ?? []),
     ),
     getActivityFile: vi.fn(async (_key: string, id: string) =>
       id === activity.id ? HEALTHFIT_FILE : new Uint8Array(),

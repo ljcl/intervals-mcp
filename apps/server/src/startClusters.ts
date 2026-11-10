@@ -3,10 +3,11 @@
  * tracks, grouped by start point. The heaviest cluster is the usual start;
  * a cluster's runs are the past-run candidates from that start.
  */
-import { CallCancelledError } from "./callScope";
-import { isAbortError } from "./fetchClient";
 import { listActivities } from "./intervalsClient";
-import { loadIntervalsStreams } from "./intervalsStreams";
+import {
+  IntervalsStreamsUnavailableError,
+  loadIntervalsStreams,
+} from "./intervalsStreams";
 import {
   cumulativeDistances,
   haversineMeters,
@@ -116,9 +117,8 @@ export async function loadRunStarts(
         streams.altitude,
       );
     } catch (error) {
-      // A cancelled call must stop, not read on and count every run skipped.
-      if (error instanceof CallCancelledError || isAbortError(error))
-        throw error;
+      // Only a run with no streams is skipped; a rate limit, outage or cancel fails the call.
+      if (!(error instanceof IntervalsStreamsUnavailableError)) throw error;
       track = null;
     }
     if (!track) {

@@ -149,7 +149,7 @@ export const listCorridorsTool = {
       const warnings =
         skipped > 0
           ? [
-              `${skipped} recent run${skipped === 1 ? "" : "s"} could not be read and left out.`,
+              `${skipped} recent run${skipped === 1 ? "" : "s"} had no GPS track and ${skipped === 1 ? "was" : "were"} left out.`,
             ]
           : [];
       const structured = {
