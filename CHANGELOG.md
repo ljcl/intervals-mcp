@@ -1,5 +1,38 @@
 # Changelog
 
+## [2.19.0](https://github.com/ljcl/intervals-mcp/compare/v2.18.0...v2.19.0) (2026-11-10)
+
+
+### Features
+
+* **activities:** report calories burned, per activity and in totals ([#484](https://github.com/ljcl/intervals-mcp/issues/484)) ([420193f](https://github.com/ljcl/intervals-mcp/commit/420193facf821c125764561bdba9e8235b67c52d))
+* **athlete-stats:** totals for any date range, with the longest run ([#483](https://github.com/ljcl/intervals-mcp/issues/483)) ([0f22a7f](https://github.com/ljcl/intervals-mcp/commit/0f22a7f6aee965ca89a5ad8ff7b736ca1d776960))
+* **best-efforts:** progression shows how each best and critical speed moved by month, quarter or year ([#478](https://github.com/ljcl/intervals-mcp/issues/478)) ([2086e1c](https://github.com/ljcl/intervals-mcp/commit/2086e1ca16777100b49d0c3549554a28d46703b6))
+* **best-efforts:** swim bests with pace per 100 m ([#486](https://github.com/ljcl/intervals-mcp/issues/486)) ([8fce341](https://github.com/ljcl/intervals-mcp/commit/8fce341f191d67765d3638295c96a0574af737b5))
+* **best-efforts:** the mile, 3 km, 15 km and 10 mile, and grade-adjusted bests ([#485](https://github.com/ljcl/intervals-mcp/issues/485)) ([1afd8b7](https://github.com/ljcl/intervals-mcp/commit/1afd8b78653e71cb6db5294a040d7f6a34922a33))
+* **compare-activities:** sameRoute lists earlier runs on the same route and compares with the latest ([#479](https://github.com/ljcl/intervals-mcp/issues/479)) ([e17fb49](https://github.com/ljcl/intervals-mcp/commit/e17fb491033a8f5f85464895685ce6554f9132d2))
+* **list-activities:** name each session's interval structure ([#487](https://github.com/ljcl/intervals-mcp/issues/487)) ([03a652e](https://github.com/ljcl/intervals-mcp/commit/03a652e5a830af7eda883f5a06cb0d43b536026b))
+* **route-map:** the route suggestions card shows what its text says ([#475](https://github.com/ljcl/intervals-mcp/issues/475)) ([11e8c8c](https://github.com/ljcl/intervals-mcp/commit/11e8c8c4d9580a268e58d06504dc9b7d1a9b6be7))
+* **routes:** easier corridor saving, scored directions and stitched sections ([#455](https://github.com/ljcl/intervals-mcp/issues/455)) ([d6a4443](https://github.com/ljcl/intervals-mcp/commit/d6a4443825b3453b267ee7c9ae498d3dc8aabb4f))
+* **routes:** join past loops for plans no past run fits ([#476](https://github.com/ljcl/intervals-mcp/issues/476)) ([1974446](https://github.com/ljcl/intervals-mcp/commit/1974446158bbc959fcf2a960f4b95e4ee28fd823))
+* **routes:** list-corridors puts the most-run stretches first, cut at saved corridors ([#474](https://github.com/ljcl/intervals-mcp/issues/474)) ([a2998d4](https://github.com/ljcl/intervals-mcp/commit/a2998d42422323f650d4a38585ad55e080eb57b3))
+* **routes:** out-and-backs along past runs when no past run fits the distance ([#473](https://github.com/ljcl/intervals-mcp/issues/473)) ([f4733ff](https://github.com/ljcl/intervals-mcp/commit/f4733ff1a26d77337e08ce3a8a2ccd36afed23db))
+* **training-load:** weekly efficiency factor shows whether easy pace at the same HR is improving ([#477](https://github.com/ljcl/intervals-mcp/issues/477)) ([9f0ea28](https://github.com/ljcl/intervals-mcp/commit/9f0ea28c165bdadd050ced328c3b58a97585694b))
+* **wellness-trend:** view-wellness charts HRV, resting HR and sleep ([#480](https://github.com/ljcl/intervals-mcp/issues/480)) ([72600df](https://github.com/ljcl/intervals-mcp/commit/72600dfaba33dc95a9e113143fcb7c8c25de8c57))
+* **wellness:** report VO2max and steps when synced ([#488](https://github.com/ljcl/intervals-mcp/issues/488)) ([b2f7705](https://github.com/ljcl/intervals-mcp/commit/b2f770531a85fb5602f1a3add59ad39b6ef9db0d))
+
+
+### Bug Fixes
+
+* **fitness-trend:** calendarPlan alone projects 14 days ([#482](https://github.com/ljcl/intervals-mcp/issues/482)) ([cc5acd3](https://github.com/ljcl/intervals-mcp/commit/cc5acd3866cc1449718834ccb5333fcb1f089fbe))
+* **routes:** order via routes near the distance before far-off past runs ([#470](https://github.com/ljcl/intervals-mcp/issues/470)) ([6659bd3](https://github.com/ljcl/intervals-mcp/commit/6659bd3a66f92738e2efaf89d9ec051dadf4cea5))
+* **routes:** plan the next run when today's planned run is already done ([#464](https://github.com/ljcl/intervals-mcp/issues/464)) ([05d0d16](https://github.com/ljcl/intervals-mcp/commit/05d0d16cf5991626da96ee6529b1309a8a5356b2))
+* **routes:** rate an out-and-back by the leg actually run ([#467](https://github.com/ljcl/intervals-mcp/issues/467)) ([68dd158](https://github.com/ljcl/intervals-mcp/commit/68dd1585eaa6bad7375a0e319e8510758243dbde))
+* **routes:** report a stream rate limit or outage instead of counting runs without GPS ([#466](https://github.com/ljcl/intervals-mcp/issues/466)) ([4fa8456](https://github.com/ljcl/intervals-mcp/commit/4fa845617bb2f3ee3b23df31c8d8ce3dfa35a93f))
+* **routes:** warn when a planned run's name gives another distance ([#468](https://github.com/ljcl/intervals-mcp/issues/468)) ([b1d74f3](https://github.com/ljcl/intervals-mcp/commit/b1d74f32b56bb041832abfb59ef067c2b7647342))
+* **routes:** warn when a start or end matched only a coarse place ([#471](https://github.com/ljcl/intervals-mcp/issues/471)) ([4f73c61](https://github.com/ljcl/intervals-mcp/commit/4f73c6132e54445d238fd294468dfb5d8c63815d))
+* **routes:** warn when no route offered fits the asked terrain ([#469](https://github.com/ljcl/intervals-mcp/issues/469)) ([c85dff1](https://github.com/ljcl/intervals-mcp/commit/c85dff181094843a7a1e8808af86901969ddefb6))
+
 ## [2.18.0](https://github.com/ljcl/intervals-mcp/compare/v2.17.1...v2.18.0) (2026-11-08)
 
 
