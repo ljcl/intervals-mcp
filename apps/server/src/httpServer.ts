@@ -47,7 +47,7 @@ export function routeRequest(
   }
 
   if (url.pathname === "/health") {
-    return handleHealth(req, url);
+    return handleHealth(req);
   }
 
   return new Response("Not found", { status: 404 });

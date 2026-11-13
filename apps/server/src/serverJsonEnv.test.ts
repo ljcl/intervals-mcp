@@ -26,6 +26,9 @@ const EXEMPT: Record<string, string> = {
   // Dev/test-only: gates warnOnSchemaDrift (tools/outputs.ts) off in
   // production; never something a deployer sets to configure the server.
   NODE_ENV: "dev/test-only schema-drift gate",
+  // Build metadata: the Dockerfile sets it from docker.yml's GIT_SHA build
+  // arg so /health can name the commit (#414); a deployer never sets it.
+  GIT_SHA: "image build metadata, set by the Dockerfile",
   // Dev-only: regenerates tool-surface.lock.json inside toolSurface.test.ts;
   // meaningless outside a test run.
   UPDATE_TOOL_SURFACE_LOCK: "dev-only lock regeneration flag",

@@ -32,19 +32,18 @@ export function authTokenConfigured(): boolean {
 }
 
 /**
- * Checks the configured secret against a `Authorization: Bearer` header or,
- * for browser-driven routes like /health that cannot set headers, a
- * `?token=` query parameter. False when no secret is configured — callers
- * gate on authTokenConfigured() first.
+ * Checks the configured secret against an `Authorization: Bearer` header.
+ * Never a URL: a `?token=` query parameter lands in tunnel and proxy logs and
+ * browser history, and the same secret authorises the write tools (#413).
+ * False when no secret is configured — callers gate on
+ * authTokenConfigured() first.
  */
-export function requestHasValidSecret(req: Request, url?: URL): boolean {
+export function requestHasValidSecret(req: Request): boolean {
   const expected = process.env.MCP_AUTH_TOKEN;
   if (!expected) return false;
-  const header = req.headers.get("authorization");
-  const presented =
-    header?.match(/^Bearer\s+(.+)$/i)?.[1] ??
-    url?.searchParams.get("token") ??
-    undefined;
+  const presented = req.headers
+    .get("authorization")
+    ?.match(/^Bearer\s+(.+)$/i)?.[1];
   return presented !== undefined && constantTimeEquals(presented, expected);
 }
 

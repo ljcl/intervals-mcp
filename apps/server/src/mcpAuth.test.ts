@@ -58,29 +58,40 @@ describe("requestHasValidSecret", () => {
     delete process.env.MCP_AUTH_TOKEN;
   });
 
-  it("accepts a valid ?token= query parameter", () => {
+  it("accepts the secret in an Authorization: Bearer header", () => {
     process.env.MCP_AUTH_TOKEN = "s3cret";
 
-    const url = new URL("http://localhost:3000/health?token=s3cret");
-    const req = new Request(url);
+    const req = new Request("http://localhost:3000/health", {
+      headers: { authorization: "Bearer s3cret" },
+    });
 
-    expect(requestHasValidSecret(req, url)).toBe(true);
+    expect(requestHasValidSecret(req)).toBe(true);
   });
 
-  it("rejects a wrong ?token= query parameter", () => {
+  it("rejects a wrong bearer token", () => {
     process.env.MCP_AUTH_TOKEN = "s3cret";
 
-    const url = new URL("http://localhost:3000/health?token=nope");
-    const req = new Request(url);
+    const req = new Request("http://localhost:3000/health", {
+      headers: { authorization: "Bearer nope" },
+    });
 
-    expect(requestHasValidSecret(req, url)).toBe(false);
+    expect(requestHasValidSecret(req)).toBe(false);
+  });
+
+  it("never accepts the secret from the URL (#413)", () => {
+    process.env.MCP_AUTH_TOKEN = "s3cret";
+
+    const req = new Request("http://localhost:3000/health?token=s3cret");
+
+    expect(requestHasValidSecret(req)).toBe(false);
   });
 
   it("returns false when no secret is configured", () => {
-    const url = new URL("http://localhost:3000/health?token=anything");
-    const req = new Request(url);
+    const req = new Request("http://localhost:3000/health", {
+      headers: { authorization: "Bearer anything" },
+    });
 
-    expect(requestHasValidSecret(req, url)).toBe(false);
+    expect(requestHasValidSecret(req)).toBe(false);
   });
 });
 

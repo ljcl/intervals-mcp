@@ -9,8 +9,12 @@ services:
     # in-flight calls for up to 8 s (SHUTDOWN_GRACE_MS in
     # apps/server/src/httpServer.ts), so keep this above that.
     stop_grace_period: 10s
+    # Published on loopback only: both documented tunnels (Tailscale Funnel,
+    # cloudflared) reach the server through localhost, and MCP_AUTH_TOKEN is
+    # optional. BIND_ADDR=0.0.0.0 in .env publishes it to the LAN again. The
+    # container itself still listens on every interface.
     ports:
-      - "3000:3000"
+      - "${BIND_ADDR:-127.0.0.1}:3000:3000"
     environment:
       - INTERVALS_API_KEY=${INTERVALS_API_KEY}
       - INTERVALS_ATHLETE_ID=${INTERVALS_ATHLETE_ID:-0}

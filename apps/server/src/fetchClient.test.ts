@@ -4,7 +4,9 @@ import {
   describeRateLimit,
   FetchClient,
   HttpError,
+  intervalsApi,
   intervalsCacheTtl,
+  orsApi,
   orsCacheTtl,
   parseJsonWithLargeInts,
   parseRateLimitHeaders,
@@ -2296,6 +2298,181 @@ describe("FetchClient upstream attempt counters (#69)", () => {
     expect(client.getAttemptCounts().last15Minutes).toBe(1);
     clock.wall += 15 * MIN;
     expect(client.getAttemptCounts().last15Minutes).toBe(0);
+  });
+});
+
+describe("a call's upstream_requests counts intervals.icu only (#410)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("notes an attempt on the call scope only with countsForCall", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => makeResponse("{}")),
+    );
+    const counted = new FetchClient("https://a.test", { countsForCall: true });
+    const uncounted = new FetchClient("https://b.test");
+    const scope: { upstreamRequests?: number } = {};
+
+    await runInCallScope(scope, async () => {
+      await counted.get("/one");
+      await uncounted.get("/two");
+      await uncounted.get("/three");
+    });
+
+    expect(scope.upstreamRequests).toBe(1);
+    // /health's per-client counters still see every attempt.
+    expect(uncounted.getAttemptCounts().utcDay).toBe(2);
+  });
+
+  it("counts intervalsApi's attempts and none of orsApi's, as a route tool makes them", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(async () => makeResponse("{}"));
+    vi.stubGlobal("fetch", fetchMock);
+    const scope: { upstreamRequests?: number } = {};
+
+    // suggest-run-route, stitch-route and amend-route all route through
+    // orsApi (orsClient.ts) and read runs through intervalsApi.
+    await runInCallScope(scope, async () => {
+      await intervalsApi.get("/__test/410/activities");
+      await orsApi.get("/__test/410/directions");
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(scope.upstreamRequests).toBe(1);
+  });
+});
+
+describe("FetchClient upstream health (#412)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  const at = Date.parse("2026-11-13T01:02:03.000Z");
+  const newClient = (options: ConstructorParameters<typeof FetchClient>[1]) =>
+    new FetchClient("https://example.test", {
+      maxRetries: 0,
+      sleep: async () => {},
+      wallNow: () => at,
+      ...options,
+    });
+
+  it("reports nothing before the first attempt", () => {
+    expect(newClient({}).getUpstreamHealth()).toEqual({
+      lastSuccessAt: null,
+      lastFailure: null,
+    });
+  });
+
+  it("records a 401 as the last failure, with its status and time only", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(makeResponse("bad key", { status: 401 })),
+    );
+    const client = newClient({});
+
+    await client.get("/athlete/0?key=secret").catch(() => {});
+
+    expect(client.getUpstreamHealth()).toEqual({
+      lastSuccessAt: null,
+      lastFailure: {
+        status: 401,
+        kind: "http",
+        at: "2026-11-13T01:02:03.000Z",
+      },
+    });
+  });
+
+  it("records the time of a 2xx and keeps an earlier failure", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(makeResponse("boom", { status: 503 }))
+        .mockResolvedValueOnce(makeResponse("{}")),
+    );
+    const client = newClient({ maxRetries: 1 });
+
+    await client.get("/thing");
+
+    expect(client.getUpstreamHealth()).toEqual({
+      lastSuccessAt: "2026-11-13T01:02:03.000Z",
+      lastFailure: {
+        status: 503,
+        kind: "http",
+        at: "2026-11-13T01:02:03.000Z",
+      },
+    });
+  });
+
+  it("does not record a 404, which answers one request", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(makeResponse("nope", { status: 404 })),
+    );
+    const client = newClient({});
+
+    await client.get("/activity/i1").catch(() => {});
+
+    expect(client.getUpstreamHealth().lastFailure).toBeNull();
+  });
+
+  it("records a timeout and a network fault with a null status", async () => {
+    const timeout = Object.assign(new Error("timed out"), {
+      name: "TimeoutError",
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockRejectedValueOnce(timeout)
+        .mockRejectedValueOnce(new TypeError("fetch failed")),
+    );
+    const client = newClient({});
+
+    await client.get("/one").catch(() => {});
+    expect(client.getUpstreamHealth().lastFailure).toMatchObject({
+      status: null,
+      kind: "timeout",
+    });
+
+    await client.get("/two").catch(() => {});
+    expect(client.getUpstreamHealth().lastFailure).toMatchObject({
+      status: null,
+      kind: "network",
+    });
+  });
+
+  it("records nothing for an attempt the call cancelled", async () => {
+    const ac = new AbortController();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(
+        (_url: string, init: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            init.signal?.addEventListener("abort", () =>
+              reject(
+                Object.assign(new Error("aborted"), { name: "AbortError" }),
+              ),
+            );
+          }),
+      ),
+    );
+    const client = newClient({});
+
+    const read = runInCallScope({ signal: ac.signal }, () =>
+      client.get("/slow"),
+    );
+    read.catch(() => {});
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    ac.abort();
+
+    await expect(read).rejects.toBeInstanceOf(CallCancelledError);
+    expect(client.getUpstreamHealth().lastFailure).toBeNull();
   });
 });
 
