@@ -83,7 +83,7 @@ describe("SuggestionMap", () => {
   it("shows one pill per candidate and switches the summary and map", async () => {
     await mount({ ...awaySuggestions, warnings: ["Elevation unavailable"] });
     expect(container.querySelectorAll("button")).toHaveLength(2);
-    expect(button(PILL_1).getAttribute("aria-pressed")).toBe("true");
+    expect(button(PILL_1).getAttribute("aria-checked")).toBe("true");
     expect(container.textContent).toContain(
       "via The Embarcadero, Marina Green",
     );
@@ -129,7 +129,7 @@ describe("SuggestionMap", () => {
 
     expect(result).toEqual({ text: `Showing route 2 of 2: ${PILL_2}.` });
     expect(position()).toBe("2 of 2");
-    expect(button(PILL_2).getAttribute("aria-pressed")).toBe("true");
+    expect(button(PILL_2).getAttribute("aria-checked")).toBe("true");
   });
 
   it("refuses a select-route option that is not on the list", async () => {
