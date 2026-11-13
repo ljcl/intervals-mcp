@@ -53,6 +53,11 @@ Docker:
 docker compose up -d
 ```
 
+Compose publishes the port on `127.0.0.1` only, which is all a tunnel needs.
+To reach the server from other machines on your LAN, set `BIND_ADDR=0.0.0.0`
+in `.env`, and set `MCP_AUTH_TOKEN` too
+([operations.md](docs/operations.md#docker-notes)).
+
 Prefer the prebuilt image? Pull `ghcr.io/ljcl/intervals-mcp:latest`, the
 newest release (also on the
 [MCP registry](https://registry.modelcontextprotocol.io) as
@@ -99,7 +104,8 @@ use the intervals.icu API key configured on the server (the key itself is
 never exposed to them). Set `MCP_AUTH_TOKEN` to a
 long random secret (`openssl rand -hex 32`) and every `/mcp` request requires
 `Authorization: Bearer <token>`; each client snippet below shows where the
-header goes. The secret also gates the detailed half of `/health`. Full
+header goes. The secret also gates the detailed half of `/health`, again only as that
+header, never as a URL parameter. Full
 details: [operations.md](docs/operations.md#securing-the-endpoint).
 
 Set it in `.env` alongside your API key; `docker-compose.yml` forwards it
@@ -211,7 +217,7 @@ PRs are squash-merged and the **PR title becomes the commit on `main`**, so writ
 
 **AI tool can't reach the server** — MCP requires an HTTPS URL. Use a tunnel (Tailscale Funnel or Cloudflare Tunnel) to expose your local server. See [Connecting to AI Tools](#connecting-to-ai-tools).
 
-**API key errors:** Check `/health` first: `api_key_configured` tells you whether the server has a key set at all. If `api_key_configured` is `true` but calls still fail, the key may be wrong or revoked; generate a new one at intervals.icu, Settings, Developer Settings, and update `INTERVALS_API_KEY`. See [operations.md](docs/operations.md#intervalsicu-api-key).
+**API key errors:** Check `/health` first: `api_key_configured` tells you whether the server has a key set at all. If it is `true` but calls still fail, read `upstream.intervals.last_failure`: a `401` or `403` there means the key is wrong or revoked; generate a new one at intervals.icu, Settings, Developer Settings, and update `INTERVALS_API_KEY`. See [operations.md](docs/operations.md#intervalsicu-api-key).
 
 **Today's run is missing, or dates are a day off:** Check `time_zone` and `time_zone_source` on `/health`. With `TZ` unset (or `UTC`), the server uses your intervals.icu time zone; set `TZ` to choose one. See [operations.md](docs/operations.md#time-zone).
 

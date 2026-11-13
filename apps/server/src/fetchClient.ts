@@ -259,6 +259,40 @@ export interface UpstreamAttemptCounts {
   utcDate: string;
 }
 
+/**
+ * The most recent attempt that shows the upstream service, or the key, is
+ * not serving this process. `status` is null for a timeout or a network
+ * fault. It holds no URL, body or header.
+ */
+export interface UpstreamFailure {
+  status: number | null;
+  kind: "http" | "timeout" | "network";
+  /** When the attempt failed, as an ISO 8601 UTC time. */
+  at: string;
+}
+
+/** What {@link FetchClient.getUpstreamHealth} reports. */
+export interface UpstreamHealth {
+  /** When an attempt last got a 2xx response, as an ISO 8601 UTC time. */
+  lastSuccessAt: string | null;
+  lastFailure: UpstreamFailure | null;
+}
+
+/**
+ * True for a status that says the service or the key is not working: 401,
+ * 402, 403, 429 and any 5xx. Another 4xx (a 404 for an id that does not
+ * exist, a 422 for a bad value) answers one request and is not recorded.
+ */
+function isServiceFailure(status: number): boolean {
+  return (
+    status >= 500 ||
+    status === 401 ||
+    status === 402 ||
+    status === 403 ||
+    status === 429
+  );
+}
+
 /** Tunable backoff/retry behaviour for {@link FetchClient}. */
 export interface RetryOptions {
   /** Max retry attempts beyond the initial request (default 2). */
@@ -302,6 +336,13 @@ export interface RetryOptions {
    * `Date.now`. Separate from the monotonic pacing clock `now`.
    */
   wallNow?: () => number;
+  /**
+   * Counts each attempt on the current call's scope too (`noteUpstreamAttempt`,
+   * the `upstream_requests` of its log line), which is documented as
+   * intervals.icu requests. Only `intervalsApi` sets it, so OpenRouteService
+   * attempts never inflate a route tool's count (#410). Default false.
+   */
+  countsForCall?: boolean;
   /**
    * Opt-in response cache for immutable-ish GETs. Omit to disable caching
    * entirely (the default for ad-hoc clients and most tests).
@@ -456,6 +497,9 @@ export class FetchClient {
   /** The UTC day number {@link dayAttempts} counts. */
   private attemptDay = -1;
   private dayAttempts = 0;
+  private readonly countsForCall: boolean;
+  private lastSuccessAt: number | null = null;
+  private lastFailure: UpstreamFailure | null = null;
 
   private readonly minIntervalMs: number;
   /** The earliest time (per {@link now}) the next request attempt may start. */
@@ -498,6 +542,7 @@ export class FetchClient {
     this.now = options.now ?? performance.now.bind(performance);
     this.wallNow = options.wallNow ?? Date.now;
     this.minIntervalMs = options.minIntervalMs ?? 0;
+    this.countsForCall = options.countsForCall ?? false;
 
     if (options.cache) {
       this.responseCache = new TtlLruCache<unknown>({
@@ -592,9 +637,38 @@ export class FetchClient {
     }
   }
 
-  /** Records one request attempt that is about to go on the wire, for `/health` and the current call's log line. */
+  /**
+   * When an attempt last got a 2xx response, and the last attempt that failed
+   * with a timeout, a network fault, or a status that {@link isServiceFailure}
+   * accepts. A cancelled attempt records nothing. Both reset on restart.
+   */
+  getUpstreamHealth(): UpstreamHealth {
+    return {
+      lastSuccessAt:
+        this.lastSuccessAt === null
+          ? null
+          : new Date(this.lastSuccessAt).toISOString(),
+      lastFailure: this.lastFailure,
+    };
+  }
+
+  private recordFailure(
+    status: number | null,
+    kind: UpstreamFailure["kind"],
+  ): void {
+    this.lastFailure = {
+      status,
+      kind,
+      at: new Date(this.wallNow()).toISOString(),
+    };
+  }
+
+  /**
+   * Records one request attempt that is about to go on the wire, for `/health`
+   * and, with `countsForCall`, the current call's log line.
+   */
   private countAttempt(): void {
-    noteUpstreamAttempt();
+    if (this.countsForCall) noteUpstreamAttempt();
     const now = this.wallNow();
     this.pruneAttempts(now);
     this.attemptStarts.push(now);
@@ -921,6 +995,10 @@ export class FetchClient {
         if (cancel?.interruptAttempt && signal?.aborted) {
           throw new CallCancelledError(what, { cause: signal.reason });
         }
+        this.recordFailure(
+          null,
+          isAbortError(networkError) ? "timeout" : "network",
+        );
         // fetch and the body read reject on network faults (ECONNRESET, DNS,
         // etc.) and on our own timeout. Both are transient, so safe reads
         // back off and retry.
@@ -945,6 +1023,11 @@ export class FetchClient {
       // response without one must not overwrite an earlier snapshot.
       const snapshot = parseRateLimitHeaders(response.headers);
       if (snapshot.retryAfterSeconds !== undefined) this.rateLimit = snapshot;
+
+      if (response.ok) this.lastSuccessAt = this.wallNow();
+      else if (isServiceFailure(response.status)) {
+        this.recordFailure(response.status, "http");
+      }
 
       if (!response.ok) {
         const status = response.status;
@@ -1125,10 +1208,12 @@ const RESPONSE_CACHE_MAX_BYTES = 32 * 1024 * 1024;
  * With no headers to react to, the client spaces requests 200ms apart instead
  * of reacting after the fact. Sustained, that spacing allows 4,500 requests
  * per 15 minutes, more than the 2,500 draft limit, so /health's
- * `upstream_requests` shows how much of it this process uses.
+ * `upstream_requests` shows how much of it this process uses. It is the only
+ * client whose attempts count in a call's `upstream_requests`.
  */
 export const intervalsApi = new FetchClient("https://intervals.icu/api/v1", {
   minIntervalMs: 200,
+  countsForCall: true,
   cache: { ttlForPath: intervalsCacheTtl, maxBytes: RESPONSE_CACHE_MAX_BYTES },
 });
 

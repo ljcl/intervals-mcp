@@ -100,11 +100,14 @@ jobs:
           ref: ${{ inputs.tag }}
           persist-credentials: false
 
+      # The commit is the checked-out one, not github.sha: a backfill
+      # dispatch runs on main's ref but checks out an old release tag.
       - name: Prepare platform pair
         id: prep
         run: |
           platform="${{ matrix.platform }}"
           echo "pair=${platform//\//-}" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       # The base images, the buildkit builder image and the SBOM scanner are
       # Docker Hub images. Docker Hub failed the 2.5.0 release builds with 429
@@ -177,12 +180,15 @@ jobs:
           platforms: ${{ matrix.platform }}
           load: true
           tags: intervals-mcp:smoke
+          build-args: GIT_SHA=${{ steps.prep.outputs.sha }}
           provenance: false
           sbom: false
           cache-from: type=gha,scope=${{ steps.prep.outputs.pair }}
 
       # A backfill checks out an old release tag, which may predate the script.
       - name: Smoke test
+        env:
+          EXPECTED_COMMIT: ${{ steps.prep.outputs.sha }}
         run: |
           if [ -x scripts/docker-smoke.sh ]; then
             scripts/docker-smoke.sh intervals-mcp:smoke
@@ -201,6 +207,7 @@ jobs:
           file: apps/server/Dockerfile
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: GIT_SHA=${{ steps.prep.outputs.sha }}
           outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
           # Verified against the published v2.8.0 index rather than assumed:
           # push-by-digest does NOT strip attestations here — BuildKit's default
@@ -212,7 +219,7 @@ jobs:
           # that index's digest, which is what the merge job feeds to
           # `imagetools create`.
           # mode=max records the full build definition; safe here because the
-          # build takes no build-args and no secrets.
+          # build takes no secrets and its one build-arg is the public commit.
           provenance: mode=max
           sbom: true
           cache-from: type=gha,scope=${{ steps.prep.outputs.pair }}

@@ -24,6 +24,7 @@ vi.mock("./fetchClient", async (importOriginal) => {
     ...actual,
     intervalsApi: new actual.FetchClient("https://intervals.icu/api/v1", {
       sleep: async () => {},
+      countsForCall: true,
       cache: { ttlForPath: actual.intervalsCacheTtl },
     }),
   };

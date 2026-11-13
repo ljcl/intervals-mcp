@@ -91,9 +91,19 @@ never per-tool.
   full 15-minute window). The 429 path reads that response's own snapshot, so
   a header-less 429 still gets a `RateLimitError` ("wait a few minutes").
 - Counts every request attempt it starts (`getAttemptCounts()`, shown as
-  `upstream_requests` in `/health`). The count sits in the same closure that
-  puts the attempt on the wire, so retries and writes count, and cache hits,
-  joined reads and attempts cancelled in the queue do not.
+  `upstream_requests` in `/health` for `intervalsApi` and as
+  `upstream.ors.requests` for `orsApi`). The count sits in the same closure
+  that puts the attempt on the wire, so retries and writes count, and cache
+  hits, joined reads and attempts cancelled in the queue do not. Only a client
+  built with `countsForCall` (`intervalsApi`) also notes the attempt on the
+  call scope (`noteUpstreamAttempt`), because a call's `upstream_requests` is
+  documented as intervals.icu requests and a route call can make 12
+  OpenRouteService requests (#410).
+- Records when an attempt last got a 2xx and the last attempt that failed
+  (`getUpstreamHealth()`, `upstream` in `/health`, #412): a 401, 402, 403,
+  429 or 5xx status, a timeout or a network fault. Another 4xx answers one
+  request, and a cancelled attempt is no failure. The record holds a status,
+  a kind and a time, never the URL.
 - Retries transient 5xx and network faults with bounded exponential backoff —
   GET/HEAD only, never writes. Transient includes Cloudflare's 520-524
   (intervals.icu sits behind Cloudflare; these mean Cloudflare got no answer
@@ -873,7 +883,9 @@ from a clone of the response. It describes the request from the parsed body
 `mcpAuth.ts` writes the line for a 401, because that answer never reaches the
 endpoint. It does not parse the body, so that line has header-derived fields
 only. `/health` and the HEALTHCHECK use `requestHasValidSecret`, which does not
-log.
+log. It reads the `Authorization: Bearer` header only, never a `?token=`
+parameter (#413): a URL lands in tunnel logs and browser history, and the
+same secret authorises the write tools.
 
 ## Progress notifications
 

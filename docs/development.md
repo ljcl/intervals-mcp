@@ -435,7 +435,9 @@ anything is published: `scripts/docker-smoke.sh` runs it on `PORT=8080`
 with `TZ` set, so it never calls intervals.icu, not even for the athlete's
 time zone. It waits for the image's own `HEALTHCHECK` to report healthy
 (which proves the check reads `PORT`). It then checks `/health` against
-`package.json` and that `time_zone_source` is `env`, and checks
+`package.json`, that its `commit` is the `EXPECTED_COMMIT` docker.yml passes
+(null when unset, as for a local build), that `?token=` in the URL gets the
+liveness half only, and that `time_zone_source` is `env`, and checks
 that the image carries no `node_modules` install tree, the bearer gate, that
 `tools/list` matches `tool-surface.lock.json`, that every `ui://` app resource
 returns HTML, that a bad-argument `tools/call` comes back as `isError` and

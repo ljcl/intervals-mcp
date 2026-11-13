@@ -11,6 +11,7 @@ import { createMcpEndpoint } from "./mcpEndpoint";
 import { startOsmIndexRefresh } from "./osmIndexRefresh";
 import { routeStoreInfo } from "./routeStore";
 import { createServer } from "./server";
+import { SERVER_COMMIT, SERVER_VERSION } from "./version";
 
 // Every bad variable gets its own line, then the process stops.
 const { errors, warnings } = checkConfig();
@@ -48,7 +49,10 @@ const mcp = createMcpEndpoint(createServer);
 
 // --- Server Startup ---
 
-console.error("Starting Intervals Extra MCP server...");
+// The commit tells an :edge or :main-<sha> image from the release it reports.
+console.error(
+  `Starting Intervals Extra MCP server ${SERVER_VERSION} (commit ${SERVER_COMMIT ?? "unknown"})...`,
+);
 warnIfMcpUnprotected();
 
 const httpServer = Bun.serve(serveOptions(mcp, { port: PORT, hostname: HOST }));

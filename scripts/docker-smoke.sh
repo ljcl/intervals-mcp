@@ -7,7 +7,9 @@
 # HEALTHCHECK, or a permission problem under uid 65534. The container listens
 # on a non-default PORT, which proves the image's HEALTHCHECK reads PORT.
 #
-# Usage: scripts/docker-smoke.sh <image-ref>
+# Usage: [EXPECTED_COMMIT=<sha>] scripts/docker-smoke.sh <image-ref>
+# EXPECTED_COMMIT is the GIT_SHA the image was built with (docker.yml passes
+# it); unset, /health's commit must be null, as for a local build.
 # Needs docker, curl and jq. Run from the repo root (it reads package.json and
 # the tool-surface lock).
 set -euo pipefail
@@ -97,6 +99,23 @@ if [ "$version" = "$expected_version" ]; then
   pass "/health version $version"
 else
   fail "/health version is '$version', package.json says '$expected_version'"
+fi
+
+# The commit is in the liveness half, so an uptime check sees which build runs.
+expected_commit="${EXPECTED_COMMIT:-}"
+commit="$(curl -fsS "$BASE/health" | jq -r '.commit // empty')"
+if [ "$commit" = "$expected_commit" ]; then
+  pass "/health commit '${commit:-null}'"
+else
+  fail "/health commit is '${commit:-null}', expected '${expected_commit:-null}'"
+fi
+
+# The secret is never read from the URL: ?token= gets the liveness half only.
+leaked="$(curl -fsS "$BASE/health?token=$TOKEN" | jq -r '.time_zone_source // empty')"
+if [ -z "$leaked" ]; then
+  pass "/health?token= serves liveness only"
+else
+  fail "/health accepted the secret from the URL"
 fi
 
 # The zone's source sits behind the token, with the rest of the detail.

@@ -90,6 +90,11 @@ ENV NODE_ENV=production
 ENV DATA_DIR=/data
 # The default PORT.
 EXPOSE 3000
+# The commit this image was built from, shown as `commit` in /health and the
+# startup log. docker.yml passes it; a local build leaves it blank, which the
+# server reports as null. Last, so a new commit rebuilds no earlier layer.
+ARG GIT_SHA=""
+ENV GIT_SHA=$GIT_SHA
 
 # Exec-form healthcheck: no shell, no wget. Full bun path because HEALTHCHECK
 # does not route through ENTRYPOINT. It reads PORT the way the server does

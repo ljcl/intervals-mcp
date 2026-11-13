@@ -11,8 +11,9 @@ rate limits, and endpoint security. For the code behind these see
 | `INTERVALS_API_KEY` | Yes | intervals.icu personal API key (Settings, Developer Settings) |
 | `INTERVALS_ATHLETE_ID` | No | Athlete id: `0` (default, the API key's own athlete), a number, or i-prefixed such as `i12345` |
 | `TZ` | No | IANA zone for today and default date ranges, e.g. `Australia/Sydney`. Unset, blank or exactly `UTC` (compose's default) means the athlete's intervals.icu time zone ([Time zone](#time-zone)); `Etc/UTC` pins UTC; an unknown zone stops startup |
-| `MCP_AUTH_TOKEN` | No | Shared secret; when set, `/mcp` and the detailed half of `/health` require `Authorization: Bearer <token>` (or `?token=` for `/health`). Use at least 32 characters; a shorter one logs a startup `WARNING`, and surrounding whitespace stops startup |
+| `MCP_AUTH_TOKEN` | No | Shared secret; when set, `/mcp` and the detailed half of `/health` require `Authorization: Bearer <token>`, never a `?token=` URL parameter. Use at least 32 characters; a shorter one logs a startup `WARNING`, and surrounding whitespace stops startup |
 | `PORT` | No | Server port, 1-65535; blank or unset means `3000`. The image's `HEALTHCHECK` reads it |
+| `BIND_ADDR` | No | `docker-compose.yml` only: the host address port 3000 is published on. Default `127.0.0.1`, this machine only, which the tunnels need; `0.0.0.0` publishes it to the LAN ([Docker notes](#docker-notes)) |
 | `ORS_API_KEY` | No | OpenRouteService key (free Standard plan, 200 routes a day) for generated routes in `suggest-run-route`. Unset, it offers past runs and stitched routes only and place names cannot be looked up |
 | `HOME_START` | No | Usual run start as `lat,lng`, e.g. `37.79,-122.39`. Unset, the start is inferred from recent GPS runs; a malformed value stops startup |
 | `OSM_EXTRACT_URL` | No | URL of an `.osm.pbf` for the local OpenStreetMap index that ranks route suggestions (crossings, signals, off-road paths, main roads, parks). Needs `HOME_START`; the index keeps 25 km around it. A city extract is smallest, e.g. `https://download.bbbike.org/osm/bbbike/Sydney/Sydney.osm.pbf` (55 MB, weekly); a Geofabrik region also works (Australia is 973 MB). Unset: crossings are not counted. A value that is not an http(s) URL stops startup |
@@ -70,7 +71,9 @@ Every tool call and every MCP App data fetch uses this key: `dispatchToolCall`
 resolves it once per call via `getIntervalsApiKey()` and passes it to the
 handler, which sends it as the Basic auth password on every intervals.icu
 request. `/health` reports whether it is set (`api_key_configured`); it does
-not check the key against intervals.icu.
+not check the key against intervals.icu itself, but
+`upstream.intervals.last_failure` shows a `401` or `403` once a call has met
+one.
 
 The key grants full read/write access on the account it belongs to, with no
 scoping. Keep `MCP_AUTH_TOKEN` set whenever the server is reachable from
@@ -85,17 +88,23 @@ request: served entirely from local state, safe to poll. The container's
 Unauthenticated callers get liveness only:
 
 ```json
-{ "status": "ok", "version": "<release>", "uptime_seconds": 5 }
+{ "status": "ok", "version": "<release>", "commit": "<sha>", "uptime_seconds": 5 }
 ```
 
-With `MCP_AUTH_TOKEN` (`Authorization: Bearer <token>` or `?token=<token>`),
-or on any server with no secret configured, it also reports config and
-rate-limit state:
+With `MCP_AUTH_TOKEN` sent as `Authorization: Bearer <token>`, or on any
+server with no secret configured, it also reports config, rate-limit and
+upstream state. The secret is never read from the URL: `/health?token=…`
+gets the liveness half.
+
+```bash
+curl -H "Authorization: Bearer $MCP_AUTH_TOKEN" http://localhost:3000/health
+```
 
 ```json
 {
   "status": "ok",
   "version": "<release>",
+  "commit": "<sha>",
   "uptime_seconds": 5,
   "api_key_configured": true,
   "athlete_id": "0",
@@ -106,6 +115,18 @@ rate-limit state:
     "last_15_min": 42,
     "utc_day": 310,
     "utc_date": "2026-10-05"
+  },
+  "upstream": {
+    "intervals": {
+      "last_success_at": "2026-10-05T01:02:03.000Z",
+      "last_failure": { "status": 401, "kind": "http", "at": "2026-10-05T00:58:10.000Z" }
+    },
+    "ors": {
+      "api_key_configured": true,
+      "requests": { "last_15_min": 6, "utc_day": 37, "utc_date": "2026-10-05" },
+      "last_success_at": "2026-10-05T00:40:00.000Z",
+      "last_failure": null
+    }
   },
   "tools": {
     "list-activities": {
@@ -123,7 +144,11 @@ rate-limit state:
 
 `version` is `SERVER_VERSION`, resolved from the root `package.json` that
 release-please bumps, so it tracks the release you are running. An `:edge` or
-`:main-<sha>` image runs unreleased code and still reports the last release.
+`:main-<sha>` image runs unreleased code and still reports the last release,
+so `commit` names the git commit the image was built from (the `GIT_SHA`
+build arg `docker.yml` passes). It is `null` for an image you build yourself
+and for a run from a checkout. The startup log names both:
+`Starting Intervals Extra MCP server <version> (commit <sha>)...`.
 `time_zone` is the zone local dates use. `time_zone_source` says where it came
 from: `env` (`TZ`), `intervals.icu` (the athlete's setting) or `fallback` (the
 process zone); see [Time zone](#time-zone).
@@ -138,11 +163,28 @@ nothing. The two windows are a rolling 15 minutes and the UTC day, both on the
 wall clock, and both reset when the process restarts. Compare them with the
 draft per-key limits (2,500 per 15 minutes, 5,000 per day). Other servers that
 share the key are not counted.
+`upstream` holds, for intervals.icu and for OpenRouteService, when a request
+last got a 2xx answer (`last_success_at`) and the last request that failed
+(`last_failure`). A failure is a `401`, `402`, `403` or `429`, any `5xx`
+(`kind: "http"`), a timeout (`kind: "timeout"`) or a network fault
+(`kind: "network"`); `status` is `null` for the last two. Another `4xx`, such
+as a `404` for an id that does not exist, answers one request and is not
+recorded. Both fields are `null` until a request has been made, reset on
+restart, and hold no URL, coordinate or key. A `last_failure` newer than
+`last_success_at` means the service is failing now: a `401` or `403` from
+intervals.icu usually means a revoked key (or a Cloudflare challenge, see
+[Rate limits](#rate-limits-and-resilience)), and a `429` from
+OpenRouteService a spent daily quota. `upstream.ors.requests` counts the
+requests this process sent to OpenRouteService in the same two windows as
+`upstream_requests`; compare `utc_day` with the 200 routes a day of the free
+plan (geocoding counts there too). `status` stays `ok` whatever `upstream`
+says, so an upstream failure never marks the container unhealthy.
 `tools` holds per-tool counters since the process started, busiest first.
 Each tool's `upstream_requests` sums its calls' log-line field of that name,
 so it shows which tools spend the quota.
 Wiring monitoring: point an uptime check at the unauthenticated shape; send
-the secret only when you want the config and quota detail.
+the secret, as the header, only when you want the config, quota and upstream
+detail.
 
 ## Per-call log line
 
@@ -191,7 +233,8 @@ A failed call adds the failure and, when the client sent a trace, its ids:
 `/health` counts it in `cancelled`, not in `errors`.
 
 `upstream_requests` is how many requests the call sent to intervals.icu,
-retries included. A call served from the cache logs 0, and so does one that
+retries included. OpenRouteService requests from the route tools are not
+counted here; `/health` counts them in `upstream.ors.requests`. A call served from the cache logs 0, and so does one that
 joined a read another call had already started: that read counts for the
 call that started it. A 365-day run-only scan is a handful; a cache hit is
 nothing.
@@ -324,9 +367,15 @@ every client, deny `Mcp-Name` values `update-activity`, `update-wellness` and
 envelope naming any revision other than 2026-07-28 gets HTTP 400 with
 JSON-RPC error `-32022` naming `2026-07-28` as the supported revision.
 
-The secret also gates the detailed half of `/health` (open it with
-`?token=<MCP_AUTH_TOKEN>` in a browser), so a stranger cannot read your
-athlete id or quota state.
+The secret also gates the detailed half of `/health`, so a stranger cannot
+read your athlete id or quota state. Send it as the same header
+(`curl -H "Authorization: Bearer $MCP_AUTH_TOKEN" …/health`). The server
+never reads it from a URL: a `?token=` parameter lands in tunnel and proxy
+logs and in browser history, and the secret also authorises the write tools.
+
+`docker-compose.yml` publishes the port on `127.0.0.1` only (`BIND_ADDR`),
+so a fresh install is not reachable from the LAN even without a token. See
+[Docker notes](#docker-notes).
 
 ## Rate limits and resilience
 
@@ -470,6 +519,14 @@ container and go with it. A bind mount goes at `/data` (not `/app/data`) and
 must be writable by UID 65534, e.g. `./data:/data`. At startup the server
 logs `Route store <dir>: <n> stored routes`, and on Linux warns when that
 directory is on the root filesystem, i.e. no volume is mounted there.
+
+`docker-compose.yml` publishes port 3000 on `127.0.0.1` only, so only this
+machine (and a tunnel running on it) reaches the server. Earlier releases
+published it on every interface. To reach the server from other machines on the
+LAN, set `BIND_ADDR=0.0.0.0` in `.env` and set `MCP_AUTH_TOKEN` as well:
+anyone who reaches an open `/mcp` can call the write tools, write stored
+routes and spend the OpenRouteService quota. Inside the container the server
+still listens on `0.0.0.0`; `BIND_ADDR` only picks where Docker publishes it.
 
 The image's `HEALTHCHECK` reads `PORT`, so a non-default port stays healthy:
 `docker run -e PORT=8080 -p 8080:8080 …`. `docker-compose.yml` pins
