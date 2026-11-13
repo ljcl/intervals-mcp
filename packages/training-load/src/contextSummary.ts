@@ -1,8 +1,10 @@
 import {
   countWarningWeeks,
   describeLoadScope,
+  describeWindowIntensity,
   formatCurrentFitness,
   isPastWindow,
+  longestRun,
 } from "./normalize";
 import { type TrainingLoadData } from "./types";
 
@@ -28,7 +30,15 @@ export function buildTrainingLoadContextSummary(
       ? `Total training load ${data.totals.load}, ${describeLoadScope(data)}.`
       : // Load covers every sport; volume and warnings never do, so say so.
         `Total training load ${data.totals.load}, ${describeLoadScope(data)}; runs, distance and volume-spike warnings count runs only.`,
+    describeWindowIntensity(data.totals),
   ];
+
+  const longest = longestRun(data.weeks);
+  if (longest) {
+    parts.push(
+      `Longest run ${longest.longRun.km} km (${longest.longRun.id}), week of ${longest.weekStarting}, ${longest.longRun.pct}% of that week.`,
+    );
+  }
 
   if (data.current) {
     parts.push(

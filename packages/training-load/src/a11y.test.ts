@@ -17,6 +17,8 @@ const week = (
   warningReasons: [],
   load: distanceKm * 10,
   loadByType: { Run: distanceKm * 10 },
+  intensity: null,
+  longRun: null,
   ...overrides,
 });
 
@@ -31,6 +33,8 @@ const data = (
     timeHours: 5,
     elevationM: 200,
     load: weeks.reduce((sum, w) => sum + w.load, 0),
+    intensity: null,
+    hrZoneRunsLeftOut: 0,
   },
   weeks,
   activityTypesIncluded: ["Run"],
@@ -58,6 +62,7 @@ describe("buildLoadA11y", () => {
         "Weekly distance ranges from 20 to 30 km; a line shows the 3-week rolling average. " +
         "A second line shows weekly training load on the right axis, from 200 to 300. " +
         "Total training load 500, whole body (Run). " +
+        "No run has HR zone times. " +
         "As of 10 Jun 2026: CTL 52, ATL 61, TSB -9 (from intervals.icu). " +
         "No weeks are flagged as a volume spike.",
     );
@@ -166,5 +171,33 @@ describe("buildLoadA11y", () => {
       data([week("2026-06-01", 20)], { current: null }),
     );
     expect(a11y.desc).not.toContain("CTL");
+  });
+
+  it("narrates the window's HR split and its longest run", () => {
+    const a11y = buildLoadA11y(
+      data(
+        [
+          week("2026-06-01", 20, {
+            longRun: { km: 9.5, id: "i1", pct: 47.5 },
+          }),
+          week("2026-06-08", 30, {
+            longRun: { km: 14.2, id: "i2", pct: 47.3 },
+          }),
+        ],
+        {
+          totals: {
+            ...data([]).totals,
+            intensity: { easyPct: 80, moderatePct: 15, hardPct: 5 },
+            hrZoneRunsLeftOut: 1,
+          },
+        },
+      ),
+    );
+    expect(a11y.desc).toContain(
+      "Run HR zones: 80% easy, 15% moderate, 5% hard (1 run left out: no HR zone times, or a different zone count).",
+    );
+    expect(a11y.desc).toContain(
+      "The longest run is 14.2 km, in the week of 8 Jun 2026.",
+    );
   });
 });

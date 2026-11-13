@@ -1,7 +1,11 @@
+import { intensitySplit } from "@intervals-mcp/data";
 import { type TrainingLoadData, type WeekSummary } from "../types";
 
-/** A week's run volume, before any load is attached to it. */
-type VolumeWeek = Omit<WeekSummary, "load" | "loadByType">;
+/** A week's run volume, before any load, HR split or long run is attached to it. */
+type VolumeWeek = Omit<
+  WeekSummary,
+  "load" | "loadByType" | "intensity" | "longRun"
+>;
 
 /**
  * 12 weeks of build with one skipped week and one volume-spike week (over
@@ -162,6 +166,67 @@ const RUN_LOAD = [
  */
 const RIDE_LOAD = [60, 0, 80, 0, 150, 70, 0, 90, 0, 100, 0, 75, 40];
 
+/**
+ * Run seconds per HR zone (Z1-Z5) per week, aligned with `volumeWeeks`. The
+ * week of 6 Apr has runs but no HR zone times (the strap was left at home),
+ * and the skipped week has no runs: both are null, so the card shows no
+ * split for them rather than 0%.
+ */
+const HR_ZONE_S: (number[] | null)[] = [
+  [1800, 5200, 1100, 500, 200],
+  null,
+  [2000, 6100, 1700, 800, 380],
+  [1900, 6300, 1600, 900, 460],
+  null,
+  [2100, 6200, 1500, 1000, 360],
+  [2300, 6600, 1800, 1100, 260],
+  [2400, 6800, 1700, 1100, 240],
+  [3500, 10400, 3100, 1900, 540],
+  [2600, 8300, 2000, 1200, 480],
+  [2200, 6000, 1400, 800, 400],
+  [2300, 6600, 1600, 900, 480],
+  [1000, 2900, 700, 400, 220],
+];
+
+/** Each week's longest run in km, aligned with `volumeWeeks`; 0 for a week with no run. */
+const LONG_RUN_KM = [
+  10.2, 11.5, 12.4, 12.8, 0, 13.6, 14.1, 15.2, 21.1, 16.4, 12, 14.5, 8.1,
+];
+
+/** A week's split and long run, from the arrays above, as the server sends them. */
+const effortFields = (
+  week: VolumeWeek,
+  i: number,
+): Pick<WeekSummary, "intensity" | "longRun"> => {
+  const zones = HR_ZONE_S[i];
+  const km = LONG_RUN_KM[i]!;
+  return {
+    intensity: zones ? intensitySplit(zones) : null,
+    longRun:
+      km > 0
+        ? {
+            km,
+            id: `i10000${i + 10}`,
+            pct: Math.round((km / week.distanceKm) * 1000) / 10,
+          }
+        : null,
+  };
+};
+
+/** The window's split over every week with HR data, and the runs left out of it. */
+const windowIntensity = (): Pick<
+  TrainingLoadData["totals"],
+  "intensity" | "hrZoneRunsLeftOut"
+> => {
+  const summed = [0, 0, 0, 0, 0];
+  let leftOut = 0;
+  HR_ZONE_S.forEach((zones, i) => {
+    if (zones) zones.forEach((s, z) => (summed[z]! += s));
+    else leftOut += volumeWeeks[i]!.runs;
+  });
+  return { intensity: intensitySplit(summed), hrZoneRunsLeftOut: leftOut };
+};
+
 /** `loadByType` for the given type loads; a type with no load is absent, as the server omits it. */
 const byType = (loads: Record<string, number>): Record<string, number> =>
   Object.fromEntries(Object.entries(loads).filter(([, load]) => load > 0));
@@ -169,6 +234,7 @@ const byType = (loads: Record<string, number>): Record<string, number> =>
 /** Whole-body weeks: runs plus rides, load split by type. */
 export const mockWeeks: WeekSummary[] = volumeWeeks.map((week, i) => ({
   ...week,
+  ...effortFields(week, i),
   load: RUN_LOAD[i]! + RIDE_LOAD[i]!,
   loadByType: byType({ Run: RUN_LOAD[i]!, Ride: RIDE_LOAD[i]! }),
 }));
@@ -176,6 +242,7 @@ export const mockWeeks: WeekSummary[] = volumeWeeks.map((week, i) => ({
 /** The same weeks counting runs only: the rides drop out of load. */
 export const mockRunOnlyWeeks: WeekSummary[] = volumeWeeks.map((week, i) => ({
   ...week,
+  ...effortFields(week, i),
   load: RUN_LOAD[i]!,
   loadByType: byType({ Run: RUN_LOAD[i]! }),
 }));
@@ -196,6 +263,12 @@ const layoffWeek = (
   warningReasons: [],
   load: distanceKm * 5,
   loadByType: distanceKm > 0 ? { Run: distanceKm * 5 } : {},
+  intensity:
+    distanceKm > 0 ? { easyPct: 80, moderatePct: 15, hardPct: 5 } : null,
+  longRun:
+    distanceKm > 0
+      ? { km: 16, id: `i2000${weekStarting.slice(8)}`, pct: 32 }
+      : null,
 });
 
 /**
@@ -231,6 +304,9 @@ const payloadFor = (
       Math.round(weeks.reduce((sum, w) => sum + w.timeHours, 0) * 100) / 100,
     elevationM: weeks.reduce((sum, w) => sum + w.elevationM, 0),
     load: weeks.reduce((sum, w) => sum + w.load, 0),
+    // Every caller passes weeks built from `volumeWeeks`, whose zone
+    // seconds the window's split is summed from.
+    ...windowIntensity(),
   },
   weeks,
   ...scope,

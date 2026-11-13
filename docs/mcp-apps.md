@@ -524,8 +524,9 @@ CTL/ATL/TSB follow `runOnly`.
   weeks before it, #60) are shared with the `get-training-load` text tool, so
   chart and prose cannot drift (#43). The feed also carries each week's
   `hrZoneS`/`intensity` and `longRun`, and the totals' `hrZoneS`/`intensity`
-  and `hrZoneRunsLeftOut`, from the same `aggregateWeeks` buckets; the app
-  does not draw them yet. The tooltip shows the reason as the
+  and `hrZoneRunsLeftOut`, from the same `aggregateWeeks` buckets (#395): the
+  app shows the payload's split as it is (the server computed it with
+  `intensitySplit`) and never re-derives it. The tooltip shows the reason as the
   server wrote it; the narration and model context call the weeks volume
   spikes, not injury risk.
 - The current week carries `inProgress: true` and `trendKm: null`: it draws
@@ -556,8 +557,14 @@ CTL/ATL/TSB follow `runOnly`.
   title needs a gutter past the widest tick (sized from the axis font for four
   digits, so a 1,000+ load clears it). The `LoadChart` stories assert that no
   axis title's box meets a tick label's, including a four-digit story.
-- The `SummaryBar` reads Runs, Distance, Load, Fitness, Fatigue, Form; the
-  three fitness tiles are dashes when `current` is null. A scope note under it
+- The `SummaryBar` reads Runs, Distance, Load, Easy/Mod/Hard (the window's
+  run HR split, "74/14/12%"), Fitness, Fatigue, Form; the split tile is a dash
+  when no run has HR zone times, and the three fitness tiles are dashes when
+  `current` is null. Each week's tooltip adds its split and long run
+  ("21.1 km long run (39% of week)"); a week with no run HR data has no split
+  row, never 0%. The narration and model context give the window's split
+  (`describeWindowIntensity`, with the runs left out, in the text tool's
+  words) and its longest run (`longestRun`). A scope note under it
   (`buildScopeNote`: "Whole-body load (Run, Ride) · from intervals.icu as of 5
   Oct" or "Run-only load · computed locally as of 5 Oct") says what the load
   and the tiles add up. The narration and model context carry the total load,

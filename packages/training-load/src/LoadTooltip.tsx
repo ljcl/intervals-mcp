@@ -1,6 +1,12 @@
+import { type IntensitySplit } from "@intervals-mcp/data";
 import { Tooltip, TooltipEntry } from "@intervals-mcp/ui";
 import styles from "./LoadTooltip.module.css";
-import { buildLoadBreakdown, formatHours } from "./normalize";
+import {
+  buildLoadBreakdown,
+  formatHours,
+  formatIntensityShort,
+} from "./normalize";
+import { type LongRun } from "./types";
 
 interface WeekTooltipPayloadItem {
   payload?: {
@@ -16,6 +22,9 @@ interface WeekTooltipPayloadItem {
     partialLabel?: string | null;
     warning?: boolean;
     warningReasons?: string[];
+    /** Null for a week with no run HR data: the row is left out, never 0%. */
+    intensity?: IntensitySplit | null;
+    longRun?: LongRun | null;
   };
 }
 
@@ -93,6 +102,22 @@ export function LoadTooltip({ active, payload }: LoadTooltipProps) {
           label="Elevation"
           value={`${week.elevationM}`}
           unit="m"
+        />
+      )}
+      {week.intensity && (
+        <TooltipEntry
+          color="var(--color-text-tertiary)"
+          label="easy/mod/hard"
+          value={formatIntensityShort(week.intensity)}
+          unit=""
+        />
+      )}
+      {week.longRun && (
+        <TooltipEntry
+          color="var(--color-text-tertiary)"
+          label={`long run (${week.longRun.pct}% of week)`}
+          value={`${week.longRun.km}`}
+          unit="km"
         />
       )}
       {week.warningReasons?.map((reason) => (

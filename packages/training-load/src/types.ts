@@ -1,3 +1,14 @@
+import { type IntensitySplit } from "@intervals-mcp/data";
+
+/** A week's longest run, as get-training-load reports it. */
+export interface LongRun {
+  km: number;
+  /** Activity id, e.g. "i189807578". */
+  id: string;
+  /** Its share of the week's run distance, 0-100 with one decimal. */
+  pct: number;
+}
+
 /** One week of training volume, returned by get-training-load-data. */
 export interface WeekSummary {
   /** Monday-start week key, YYYY-MM-DD. */
@@ -22,6 +33,13 @@ export interface WeekSummary {
   load: number;
   /** `load` split by activity type. */
   loadByType: Record<string, number>;
+  /**
+   * Easy/moderate/hard share of the week's run HR zone time
+   * (`intensitySplit`). Null with no run HR data: unknown, not 0% easy.
+   */
+  intensity: IntensitySplit | null;
+  /** The week's longest run; null for a week with no run distance. */
+  longRun: LongRun | null;
 }
 
 /** Most recent CTL/ATL/TSB, from get-training-load-data. */
@@ -50,6 +68,10 @@ export interface TrainingLoadData {
     timeHours: number;
     elevationM: number;
     load: number;
+    /** Easy/moderate/hard share of the window's run HR zone time; null with no run HR data. */
+    intensity: IntensitySplit | null;
+    /** Runs left out of `intensity`: no HR zone times, or a different zone count. */
+    hrZoneRunsLeftOut: number;
   };
   weeks: WeekSummary[];
   /** Activity types load/loadByType are summed over. */

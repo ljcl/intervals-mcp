@@ -40,7 +40,15 @@ const runOnlyNote = buildScopeNote(mockRunOnlyTrainingLoadData);
 const noRunsData: TrainingLoadData = {
   ...mockTrainingLoadData,
   weeks: [],
-  totals: { runs: 0, distanceKm: 0, timeHours: 0, elevationM: 0, load: 0 },
+  totals: {
+    runs: 0,
+    distanceKm: 0,
+    timeHours: 0,
+    elevationM: 0,
+    load: 0,
+    intensity: null,
+    hrZoneRunsLeftOut: 0,
+  },
 };
 
 type HostApp = ReturnType<typeof useApp>["app"];
@@ -227,6 +235,62 @@ export const SwitchingFromRunOnly = meta.story({
     await waitFor(() => expect(canvas.getByText(wholeBodyNote)).toBeVisible());
     await expect(canvas.queryByText(runOnlyNote)).toBeNull();
   },
+});
+
+/**
+ * The run HR split and the long run the text has carried since 2.10 (#395).
+ * The tiles give the window's split; each week's tooltip gives its own split
+ * and long run. A week with runs but no HR zone times (6 Apr) shows no split,
+ * not 0%, and still shows its long run. The tooltip is stepped with the
+ * arrow keys, as `accessibilityLayer` lets a keyboard user do.
+ */
+export const IntensityAndLongRun = meta.story({
+  args: { app: null, data: mockTrainingLoadData, dataArgs: wholeBodyArgs },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const { intensity } = mockTrainingLoadData.totals;
+    await expect(canvas.getByText("Easy/Mod/Hard")).toBeVisible();
+    await expect(
+      canvas.getByText(
+        `${intensity!.easyPct}/${intensity!.moderatePct}/${intensity!.hardPct}%`,
+      ),
+    ).toBeVisible();
+
+    const surface = () =>
+      canvasElement.querySelector<SVGElement>(".recharts-surface");
+    const tooltip = () =>
+      canvasElement.querySelector(".recharts-tooltip-wrapper");
+    // ResponsiveContainer needs a resize tick before the chart mounts.
+    await waitFor(() => expect(surface()).not.toBeNull());
+    surface()!.focus();
+    /** Step right until the tooltip names `heading`. */
+    const stepTo = async (heading: string) => {
+      for (const _ of mockTrainingLoadData.weeks) {
+        if (tooltip()?.textContent?.includes(heading)) return;
+        await userEvent.keyboard("{ArrowRight}");
+      }
+      await waitFor(() => expect(tooltip()).toHaveTextContent(heading));
+    };
+
+    // The week of 6 Apr ran with no HR strap: no split row at all.
+    await stepTo("Week of 6 Apr");
+    await expect(tooltip()).not.toHaveTextContent("easy/mod/hard");
+    await expect(tooltip()).toHaveTextContent("11.5 km long run");
+
+    // The spike week: 21.1 km long run, 39.4% of its 53.5 km.
+    const spike = mockTrainingLoadData.weeks[8]!;
+    await stepTo("Week of 25 May");
+    await expect(tooltip()).toHaveTextContent(
+      `${spike.intensity!.easyPct}/${spike.intensity!.moderatePct}/${spike.intensity!.hardPct}% easy/mod/hard`,
+    );
+    await expect(tooltip()).toHaveTextContent(
+      "21.1 km long run (39.4% of week)",
+    );
+  },
+});
+
+export const IntensityAndLongRunMobile = IntensityAndLongRun.extend({
+  args: { mode: "mobile" },
+  ...mobile,
 });
 
 export const SwitchingMobile = Switching.extend({

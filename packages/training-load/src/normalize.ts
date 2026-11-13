@@ -1,5 +1,6 @@
 import {
   fitnessSourceLabel,
+  type IntensitySplit,
   formatDurationShort,
   formatShortDate,
   formatSignedTsb,
@@ -8,6 +9,7 @@ import {
 } from "@intervals-mcp/data";
 import { type SummaryStat } from "@intervals-mcp/ui";
 import {
+  type LongRun,
   type TrainingLoadCurrent,
   type TrainingLoadData,
   type WeekSummary,
@@ -71,9 +73,63 @@ export function partialWeekWord(
 }
 
 /**
- * SummaryBar row: runs, distance and load for the window, then fitness,
- * fatigue and form as of `current`. The three fitness tiles are dashes when
- * there is no wellness to read, so the row keeps its shape.
+ * An easy/moderate/hard split in short form, for a tile or a tooltip row:
+ * "78/15/7%". The label beside it says which share is which.
+ */
+export function formatIntensityShort(split: IntensitySplit): string {
+  return `${split.easyPct}/${split.moderatePct}/${split.hardPct}%`;
+}
+
+/** The label `formatIntensityShort` goes with: easy, moderate and hard, in that order. */
+export const INTENSITY_LABEL = "Easy/Mod/Hard";
+
+/**
+ * An easy/moderate/hard split in words, for the narration and the model
+ * context: "78% easy, 15% moderate, 7% hard".
+ */
+export function describeIntensity(split: IntensitySplit): string {
+  return `${split.easyPct}% easy, ${split.moderatePct}% moderate, ${split.hardPct}% hard`;
+}
+
+/**
+ * The window's run HR split in a sentence, as the text tool words it: zones
+ * 1-2 easy, 3 moderate, 4 and above hard. Says so when no run has HR zone
+ * times, rather than giving 0%, and counts the runs left out.
+ */
+export function describeWindowIntensity(
+  totals: Pick<TrainingLoadData["totals"], "intensity" | "hrZoneRunsLeftOut">,
+): string {
+  if (!totals.intensity) return "No run has HR zone times.";
+  const leftOut = totals.hrZoneRunsLeftOut;
+  const leftOutText =
+    leftOut > 0
+      ? ` (${leftOut} run${leftOut === 1 ? "" : "s"} left out: no HR zone times, or a different zone count)`
+      : "";
+  return `Run HR zones: ${describeIntensity(totals.intensity)}${leftOutText}.`;
+}
+
+/**
+ * The window's longest run and the week it falls in: the longest of the
+ * weeks' long runs, the earliest week winning a tie. Null when no week has
+ * one.
+ */
+export function longestRun(
+  weeks: WeekSummary[],
+): { weekStarting: string; longRun: LongRun } | null {
+  let best: { weekStarting: string; longRun: LongRun } | null = null;
+  for (const week of weeks) {
+    if (week.longRun && (!best || week.longRun.km > best.longRun.km)) {
+      best = { weekStarting: week.weekStarting, longRun: week.longRun };
+    }
+  }
+  return best;
+}
+
+/**
+ * SummaryBar row: runs, distance and load for the window, the run HR split,
+ * then fitness, fatigue and form as of `current`. A tile with nothing to
+ * read is a dash (the split with no run HR data, the fitness tiles with no
+ * wellness), so the row keeps its shape and never shows a false 0%.
  */
 export function buildTotalsStats(
   totals: TrainingLoadData["totals"],
@@ -83,6 +139,10 @@ export function buildTotalsStats(
     { label: "Runs", value: `${totals.runs}` },
     { label: "Distance", value: `${totals.distanceKm.toLocaleString()} km` },
     { label: "Load", value: totals.load.toLocaleString() },
+    {
+      label: INTENSITY_LABEL,
+      value: totals.intensity ? formatIntensityShort(totals.intensity) : "—",
+    },
     { label: "Fitness", value: current ? `${current.ctl}` : "—" },
     { label: "Fatigue", value: current ? `${current.atl}` : "—" },
     { label: "Form", value: current ? formatSignedTsb(current.tsb) : "—" },
