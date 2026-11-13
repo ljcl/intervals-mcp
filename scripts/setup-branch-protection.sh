@@ -103,4 +103,24 @@ upsert_ruleset "Release tags" '{
 }'
 echo "  - release tag ruleset applied (admins only)"
 
+# 7. The live-check environment (live-check.yml, #418). It holds the
+#    INTERVALS_API_KEY secret. The key can write, so only main may deploy to
+#    it: a branch pushed by anyone with write access cannot read it. The
+#    secret itself is set once by hand:
+#      gh secret set INTERVALS_API_KEY --env live-check
+gh api -X PUT "repos/${REPO}/environments/live-check" --input - >/dev/null <<'JSON'
+{
+  "deployment_branch_policy": {
+    "protected_branches": false,
+    "custom_branch_policies": true
+  }
+}
+JSON
+if ! gh api "repos/${REPO}/environments/live-check/deployment-branch-policies" \
+  --jq '.branch_policies[].name' | grep -qx main; then
+  gh api -X POST "repos/${REPO}/environments/live-check/deployment-branch-policies" \
+    -f name=main -f type=branch >/dev/null
+fi
+echo "  - live-check environment: deploys from main only"
+
 echo "Done. Verify: gh api repos/${REPO}/branches/main/protection --jq '.required_status_checks'"

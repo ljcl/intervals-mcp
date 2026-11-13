@@ -227,6 +227,26 @@ one PR:
 - The Dockerfile pins every image by digest (`dockerRuntime.test.ts` checks)
   and has no `# syntax=` line.
 
+## Weekly live check
+
+`live-check.yml` runs `scripts/live-check.ts` (every intervals.icu read tool,
+against the real account) each Sunday at 20:37 UTC, and by hand through
+`workflow_dispatch` (#418). A failing tool turns the run red, so a change in
+intervals.icu's response shapes, or a script that broke unseen (#384), shows
+up within a week.
+
+- It has no `pull_request` trigger, so a fork's code never runs beside the
+  key.
+- `INTERVALS_API_KEY` is a secret of the `live-check` environment, which only
+  `main` may deploy to (`scripts/setup-branch-protection.sh` sets the rule;
+  set the secret once with `gh secret set INTERVALS_API_KEY --env
+  live-check`). The script makes no writes, but the key can write.
+- The log is public. The script prints a short summary per tool to stdout and
+  never a payload or an error's own message. The workflow drops stderr, which
+  is the server's own logging and can quote an upstream error body. To see
+  why a tool failed, run the script locally:
+  `bun scripts/live-check.ts [activityId]`.
+
 ## Refreshing the intervals.icu API spec
 
 `docs/intervals-openapi.json` is a vendored, pretty-printed copy of
