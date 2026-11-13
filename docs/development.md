@@ -92,7 +92,7 @@ Run before declaring a task complete, opening a PR, or cutting a release. Each
 step is a hard requirement.
 
 ```bash
-bun run check             # Lint + knip + test + typecheck + build + boundaries (cached)
+bun run check             # Lint + knip + test:coverage + typecheck + build + boundaries (cached)
 bun run check:affected    # Same, only packages changed since main (root lint, knip and typecheck:root always run)
 bun run test:stories      # Every story renders in headless Chromium (needs Playwright browsers)
 docker compose build      # Server container builds from current sources
@@ -134,6 +134,12 @@ the committed value whenever coverage drops by less than the cushion (#62).
 snapshots thresholds before the run and restores any key vitest wrote below
 that snapshot, so a run can raise a threshold but never lower one. Commit a
 dirtied vitest.config.ts; never hand-edit the numbers.
+
+`bun run check` and `check:affected` run `test:coverage`, not `test` (#419),
+so a drop below a floor fails locally, as it does in CI's Coverage step,
+rather than first in CI. A plain `vitest run` applies no threshold. Cold, the
+coverage pass took about 30 s against 24 s for `test` (2026-11-13); turbo
+caches either one when nothing changed.
 
 `scripts/check-coverage-thresholds.ts` is the CI half, run after the Story
 tests step on pull requests. It fails the build if a committed threshold is
