@@ -223,7 +223,7 @@ function PresetSelector({
 }: PresetSelectorProps) {
   if (presets.length <= 1) return null;
   return (
-    <PillGroup>
+    <PillGroup label="Chart view">
       {presets.map((preset) => (
         <Pill
           key={preset.id}
@@ -1064,7 +1064,7 @@ export function ActivityChart({
           {/* Smooth toggle only on desktop — mobile defaults to smoothed
               and hides the control to save footer width */}
           {!isMobile && (
-            <PillGroup>
+            <PillGroup label="Smoothing" multiple>
               <Pill active={smooth} onClick={() => setSmooth((s) => !s)}>
                 Smooth
               </Pill>

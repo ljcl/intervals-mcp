@@ -64,19 +64,19 @@ export const SwitchMetricAndAxis = meta.story({
     // ResponsiveContainer needs a resize tick before the chart mounts.
     await waitFor(() => expect(descText()).toContain("min/km"));
 
-    const hrPill = canvas.getByRole("button", { name: "Heart Rate" });
+    const hrPill = canvas.getByRole("radio", { name: "Heart Rate" });
     await userEvent.click(hrPill);
-    await expect(hrPill).toHaveAttribute("aria-pressed", "true");
+    await expect(hrPill).toHaveAttribute("aria-checked", "true");
     await waitFor(() => expect(descText()).toContain("bpm"));
 
     // Both fixtures record distance, so the axis defaults to Distance.
-    const timePill = canvas.getByRole("button", { name: "Time" });
-    await expect(timePill).toHaveAttribute("aria-pressed", "false");
+    const timePill = canvas.getByRole("radio", { name: "Time" });
+    await expect(timePill).toHaveAttribute("aria-checked", "false");
     await userEvent.click(timePill);
-    await expect(timePill).toHaveAttribute("aria-pressed", "true");
+    await expect(timePill).toHaveAttribute("aria-checked", "true");
     await expect(
-      canvas.getByRole("button", { name: "Distance" }),
-    ).toHaveAttribute("aria-pressed", "false");
+      canvas.getByRole("radio", { name: "Distance" }),
+    ).toHaveAttribute("aria-checked", "false");
   },
 });
 
@@ -294,17 +294,17 @@ export const ModelDrivenMetric = meta.story({
   ),
   play: async ({ canvas, canvasElement, userEvent }) => {
     const { said, summary, isError, button } = modelDrivenProbes(canvasElement);
-    const pressed = (name: string) => canvas.getByRole("button", { name });
+    const pressed = (name: string) => canvas.getByRole("radio", { name });
 
-    await expect(pressed("Pace")).toHaveAttribute("aria-pressed", "true");
-    await expect(pressed("Distance")).toHaveAttribute("aria-pressed", "true");
+    await expect(pressed("Pace")).toHaveAttribute("aria-checked", "true");
+    await expect(pressed("Distance")).toHaveAttribute("aria-checked", "true");
 
     await userEvent.click(button("call-heart-rate-by-time"));
     await waitFor(() => expect(said()).toBe("Comparing heart rate by time."));
     expect(isError()).toBe(false);
-    await expect(pressed("Heart Rate")).toHaveAttribute("aria-pressed", "true");
-    await expect(pressed("Pace")).toHaveAttribute("aria-pressed", "false");
-    await expect(pressed("Time")).toHaveAttribute("aria-pressed", "true");
+    await expect(pressed("Heart Rate")).toHaveAttribute("aria-checked", "true");
+    await expect(pressed("Pace")).toHaveAttribute("aria-checked", "false");
+    await expect(pressed("Time")).toHaveAttribute("aria-checked", "true");
     // The model is told what the card now shows once the debounce fires.
     await waitFor(
       () => expect(summary()).toContain("Overlay: heart rate vs time."),
@@ -314,8 +314,8 @@ export const ModelDrivenMetric = meta.story({
     // A metric alone leaves the axis where it was.
     await userEvent.click(button("call-cadence"));
     await waitFor(() => expect(said()).toBe("Comparing cadence by time."));
-    await expect(pressed("Cadence")).toHaveAttribute("aria-pressed", "true");
-    await expect(pressed("Time")).toHaveAttribute("aria-pressed", "true");
+    await expect(pressed("Cadence")).toHaveAttribute("aria-checked", "true");
+    await expect(pressed("Time")).toHaveAttribute("aria-checked", "true");
 
     // Power was not recorded by both: refused, and the card stays put.
     await userEvent.click(button("call-power"));
@@ -325,8 +325,8 @@ export const ModelDrivenMetric = meta.story({
       ),
     );
     expect(isError()).toBe(true);
-    expect(canvas.queryByRole("button", { name: "Power" })).toBeNull();
-    await expect(pressed("Cadence")).toHaveAttribute("aria-pressed", "true");
+    expect(canvas.queryByRole("radio", { name: "Power" })).toBeNull();
+    await expect(pressed("Cadence")).toHaveAttribute("aria-checked", "true");
   },
 });
 
@@ -343,14 +343,14 @@ export const ModelDrivenMetricMixedSport = meta.story({
   ),
   play: async ({ canvas, canvasElement, userEvent }) => {
     const { said, summary, isError, button } = modelDrivenProbes(canvasElement);
-    const pressed = (name: string) => canvas.getByRole("button", { name });
+    const pressed = (name: string) => canvas.getByRole("radio", { name });
 
     await userEvent.click(button("call-heart-rate-by-time"));
     await waitFor(() => expect(said()).toBe("Comparing heart rate by time."));
 
     await userEvent.click(button("call-pace"));
     await waitFor(() => expect(said()).toBe("Comparing speed by time."));
-    await expect(pressed("Speed")).toHaveAttribute("aria-pressed", "true");
+    await expect(pressed("Speed")).toHaveAttribute("aria-checked", "true");
     await waitFor(
       () => expect(summary()).toContain("Overlay: speed vs time."),
       { timeout: 3000 },

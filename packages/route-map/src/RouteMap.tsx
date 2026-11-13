@@ -1492,7 +1492,7 @@ export function RouteMap({
       {projected && series.length > 0 && !route && (
         <div className={styles.controls}>
           {series.length > 1 && (
-            <PillGroup>
+            <PillGroup label="Colour track by">
               {series.map((s) => (
                 <Pill
                   key={s.key}

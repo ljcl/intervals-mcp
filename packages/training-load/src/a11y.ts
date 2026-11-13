@@ -1,8 +1,10 @@
 import { formatShortDate } from "@intervals-mcp/data";
 import {
   describeLoadScope,
+  describeWindowIntensity,
   formatCurrentFitness,
   isPastWindow,
+  longestRun,
 } from "./normalize";
 import { type TrainingLoadData } from "./types";
 
@@ -97,6 +99,15 @@ export function buildLoadA11y(
   parts.push(
     `Total training load ${data.totals.load}, ${describeLoadScope(data)}.`,
   );
+  // The split and the long run are in each week's tooltip, which the
+  // arrow keys step through; the window's own are here.
+  parts.push(describeWindowIntensity(data.totals));
+  const longest = longestRun(weeks);
+  if (longest) {
+    parts.push(
+      `The longest run is ${longest.longRun.km} km, in the week of ${fullDate(longest.weekStarting)}.`,
+    );
+  }
   if (data.current) {
     parts.push(
       `As of ${fullDate(data.current.date)}: ${formatCurrentFitness(data.current, data.source)}.`,

@@ -16,6 +16,8 @@ const week = (
   warningReasons: [],
   load: 150,
   loadByType: { Run: 150 },
+  intensity: null,
+  longRun: null,
   ...overrides,
 });
 
@@ -27,6 +29,8 @@ const data = (weeks: WeekSummary[]): TrainingLoadData => ({
     timeHours: 12,
     elevationM: 800,
     load: 900,
+    intensity: null,
+    hrZoneRunsLeftOut: 0,
   },
   weeks,
   activityTypesIncluded: ["Ride", "Run"],
@@ -43,6 +47,7 @@ describe("buildTrainingLoadContextSummary", () => {
     expect(summary).toBe(
       "Training load, last 84 days. 12 runs, 120 km over 2 weeks. " +
         "Total training load 900, whole body (Ride, Run); runs, distance and volume-spike warnings count runs only. " +
+        "No run has HR zone times. " +
         "As of 2026-06-10: CTL 52, ATL 61, TSB -9 (from intervals.icu). " +
         "No volume-spike warnings.",
     );
@@ -60,6 +65,7 @@ describe("buildTrainingLoadContextSummary", () => {
     expect(summary).toBe(
       "Training load from 2026-03-16 to 2026-06-10. 12 runs, 120 km over 2 weeks. " +
         "Total training load 900, whole body (Ride, Run); runs, distance and volume-spike warnings count runs only. " +
+        "No run has HR zone times. " +
         "As of 2026-06-10: CTL 52, ATL 61, TSB -9 (from intervals.icu). " +
         "The week of 2026-06-08 is still in progress, so its volume and load are only the days so far. " +
         "No volume-spike warnings.",
@@ -138,5 +144,22 @@ describe("buildTrainingLoadContextSummary", () => {
     expect(
       buildTrainingLoadContextSummary({ ...data([]), days: 0 }),
     ).toBeNull();
+  });
+
+  it("gives the window's HR split and its longest run", () => {
+    const base = data([
+      week("2026-06-01", { longRun: { km: 12, id: "i11", pct: 40 } }),
+      week("2026-06-08", { longRun: { km: 18.4, id: "i22", pct: 52.1 } }),
+    ]);
+    const summary = buildTrainingLoadContextSummary({
+      ...base,
+      totals: {
+        ...base.totals,
+        intensity: { easyPct: 78.2, moderatePct: 14.6, hardPct: 7.2 },
+      },
+    });
+    expect(summary).toContain(
+      "Run HR zones: 78.2% easy, 14.6% moderate, 7.2% hard. Longest run 18.4 km (i22), week of 2026-06-08, 52.1% of that week.",
+    );
   });
 });

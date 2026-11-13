@@ -110,8 +110,9 @@ Once a chart is open, the model can adjust it with that chart's own tool:
 `set-brush-window` (activity chart: zoom to a stretch), `set-viewport` (route
 map: frame a stretch by km), `set-view` (cadence trends: view, runs to
 overlay by `list-activities` id, axis), `set-metric` (compare activities:
-metric and axis) and `set-scope` (fitness trend and training load: whole body
-or runs only, and which series show). Each reply says what the card now draws.
+metric and axis), `set-scope` (fitness trend and training load: whole body
+or runs only, and which series show) and `set-zone-type` (activity zones:
+heart rate or pace). Each reply says what the card now draws.
 
 Every view tool's text carries the chart's numbers, so there is no need to
 call another tool for them: the matching text tool's own text (for example

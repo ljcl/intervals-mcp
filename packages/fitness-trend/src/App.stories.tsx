@@ -102,8 +102,8 @@ export const WholeBody = meta.story({
     await expect(canvas.getByText("Week 1")).toBeVisible();
     // Scope toggle: whole body is active, and it says where the numbers came from.
     await expect(
-      canvas.getByRole("button", { name: "Whole body" }),
-    ).toHaveAttribute("aria-pressed", "true");
+      canvas.getByRole("radio", { name: "Whole body" }),
+    ).toHaveAttribute("aria-checked", "true");
     await expect(canvas.getByText(/From intervals.icu/)).toBeVisible();
   },
 });
@@ -121,8 +121,8 @@ export const RunsOnly = meta.story({
   },
   play: async ({ canvas }) => {
     await expect(
-      canvas.getByRole("button", { name: "Runs only" }),
-    ).toHaveAttribute("aria-pressed", "true");
+      canvas.getByRole("radio", { name: "Runs only" }),
+    ).toHaveAttribute("aria-checked", "true");
     await expect(canvas.getByText(/Computed locally/)).toBeVisible();
     // Run-only has no taper solved in this fixture, only a rest projection.
     await expect(canvas.queryByText(/Plan to/)).toBeNull();
@@ -145,7 +145,7 @@ export const Switching = meta.story({
     await expect(canvas.getByText(/From intervals.icu/)).toBeVisible();
     await expect(canvas.getByText(/Plan to/)).toBeVisible();
 
-    const runsOnly = canvas.getByRole("button", { name: "Runs only" });
+    const runsOnly = canvas.getByRole("radio", { name: "Runs only" });
     runsOnly.click();
 
     await waitFor(() =>
@@ -155,7 +155,7 @@ export const Switching = meta.story({
 
     // Switching back to whole body is instant: the mount data is cached,
     // not re-fetched, and the taper plan reappears.
-    const wholeBody = canvas.getByRole("button", { name: "Whole body" });
+    const wholeBody = canvas.getByRole("radio", { name: "Whole body" });
     wholeBody.click();
     await waitFor(() =>
       expect(canvas.getByText(/From intervals.icu/)).toBeVisible(),
@@ -179,7 +179,7 @@ export const SwitchingFails = meta.story({
     flakyCalls = 0;
   },
   play: async ({ canvas, userEvent }) => {
-    await userEvent.click(canvas.getByRole("button", { name: "Runs only" }));
+    await userEvent.click(canvas.getByRole("radio", { name: "Runs only" }));
 
     await waitFor(() =>
       expect(canvas.getByRole("alert")).toHaveTextContent(/Request timed out/),
@@ -221,7 +221,7 @@ export const SwitchingSlow = meta.story({
     initialRunOnly: false,
   },
   play: async ({ canvas, userEvent }) => {
-    await userEvent.click(canvas.getByRole("button", { name: "Runs only" }));
+    await userEvent.click(canvas.getByRole("radio", { name: "Runs only" }));
 
     await waitFor(() =>
       expect(canvas.getByRole("status")).toHaveTextContent(
@@ -386,11 +386,11 @@ export const ModelDrivenScope = meta.story({
   play: async ({ canvas, canvasElement, userEvent }) => {
     const { said, summary, isError, button, curveCount } =
       modelDrivenProbes(canvasElement);
-    const pill = (name: string) => canvas.getByRole("button", { name });
+    const pill = (name: string) => canvas.getByRole("radio", { name });
     const fatigue = () =>
       canvas.getByRole("button", { name: "Toggle Fatigue" });
 
-    await expect(pill("Whole body")).toHaveAttribute("aria-pressed", "true");
+    await expect(pill("Whole body")).toHaveAttribute("aria-checked", "true");
     await expect(fatigue()).toHaveAttribute("aria-pressed", "true");
     // ResponsiveContainer needs a resize tick before the chart mounts.
     await waitFor(() => expect(curveCount()).toBe(5));
@@ -406,7 +406,7 @@ export const ModelDrivenScope = meta.story({
       ),
     );
     expect(isError()).toBe(false);
-    await expect(pill("Runs only")).toHaveAttribute("aria-pressed", "true");
+    await expect(pill("Runs only")).toHaveAttribute("aria-checked", "true");
     await waitFor(() =>
       expect(canvas.getByText(/Computed locally/)).toBeVisible(),
     );
@@ -428,7 +428,7 @@ export const ModelDrivenScope = meta.story({
     await expect(
       canvas.getByRole("button", { name: "Toggle Form" }),
     ).toHaveAttribute("aria-pressed", "true");
-    await expect(pill("Runs only")).toHaveAttribute("aria-pressed", "true");
+    await expect(pill("Runs only")).toHaveAttribute("aria-checked", "true");
 
     // Back to whole body with fatigue shown: the mount data is held, so the
     // chart is on screen and the reply may say it is showing.
@@ -436,7 +436,7 @@ export const ModelDrivenScope = meta.story({
     await waitFor(() =>
       expect(said()).toBe("Showing whole body. Nothing hidden."),
     );
-    await expect(pill("Whole body")).toHaveAttribute("aria-pressed", "true");
+    await expect(pill("Whole body")).toHaveAttribute("aria-checked", "true");
     await expect(fatigue()).toHaveAttribute("aria-pressed", "true");
     await expect(canvas.getByText(/From intervals.icu/)).toBeVisible();
     await waitFor(() => expect(curveCount()).toBe(5));
@@ -605,8 +605,8 @@ export const ModelDrivenScopeEmpty = meta.story({
     );
     expect(isError()).toBe(true);
     await expect(
-      canvas.getByRole("button", { name: "Whole body" }),
-    ).toHaveAttribute("aria-pressed", "true");
+      canvas.getByRole("radio", { name: "Whole body" }),
+    ).toHaveAttribute("aria-checked", "true");
 
     // The run-only scope has load, so it is not refused and arrives as a chart.
     await userEvent.click(button("call-runs-only"));
@@ -805,7 +805,7 @@ export const PastWindow = meta.story({
     ).toBeNull();
     await expect(canvas.queryByText(/Plan to/)).toBeNull();
 
-    await userEvent.click(canvas.getByRole("button", { name: "Runs only" }));
+    await userEvent.click(canvas.getByRole("radio", { name: "Runs only" }));
     await waitFor(() => expect(recordedCalls).toHaveLength(1));
     await expect(recordedCalls[0]).toEqual({ ...pastBaseArgs, runOnly: true });
   },

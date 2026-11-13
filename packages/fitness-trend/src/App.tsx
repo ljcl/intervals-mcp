@@ -204,7 +204,7 @@ export function App({
         compact={isMobile}
       />
       <div className={styles.scopeRow}>
-        <PillGroup>
+        <PillGroup label="Load scope">
           <Pill
             active={scope === "wholeBody"}
             onClick={() => setScope("wholeBody")}

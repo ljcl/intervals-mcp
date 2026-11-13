@@ -53,14 +53,14 @@ export const SwitchColorMetric = meta.story({
   args: { data: streamLoopActivity, basemapEnabled: false },
   play: async ({ canvas, canvasElement, userEvent }) => {
     // The default active metric for a run is pace; its scale reads "/km".
-    const pacePill = await canvas.findByRole("button", { name: "Pace" });
-    await expect(pacePill).toHaveAttribute("aria-pressed", "true");
+    const pacePill = await canvas.findByRole("radio", { name: "Pace" });
+    await expect(pacePill).toHaveAttribute("aria-checked", "true");
 
-    const hrPill = canvas.getByRole("button", { name: "Heart rate" });
+    const hrPill = canvas.getByRole("radio", { name: "Heart rate" });
     await userEvent.click(hrPill);
 
-    await expect(hrPill).toHaveAttribute("aria-pressed", "true");
-    await expect(pacePill).toHaveAttribute("aria-pressed", "false");
+    await expect(hrPill).toHaveAttribute("aria-checked", "true");
+    await expect(pacePill).toHaveAttribute("aria-checked", "false");
     await waitFor(() => {
       const scaleLabels = [...canvasElement.querySelectorAll("span")]
         .map((el) => el.textContent ?? "")

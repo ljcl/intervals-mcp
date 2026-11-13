@@ -100,3 +100,12 @@ export const hrZoneMismatchData: ActivityZonesData = {
   hrZoneWarning:
     "Heart rate zones omitted: recorded bounds (5 zones) do not match the recorded zone times (6 zones).",
 };
+
+// The case the server sends since pace zones arrived (#308): a run whose
+// heart rate zones were dropped (bounds and zone times disagree) still has
+// pace zones, so the card charts pace and must still say why heart rate is
+// missing (#396).
+export const paceWithHrZoneWarningData: ActivityZonesData = {
+  ...hrZoneMismatchData,
+  zoneSets: [paceZoneSet],
+};

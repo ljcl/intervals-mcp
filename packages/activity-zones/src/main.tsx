@@ -9,12 +9,14 @@ import {
   parseIdToolArgs,
   Skeleton,
   useServerToolData,
+  type ViewToolRegistry,
 } from "@intervals-mcp/ui";
 import { type useApp } from "@modelcontextprotocol/ext-apps/react";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { type ActivityZonesData } from "./types";
+import { VIEW_TOOLS } from "./viewToolDeclarations";
 import "./global.css";
 
 const LoadingSkeleton = () => (
@@ -29,9 +31,16 @@ interface AppContentProps {
   toolArgs: IdToolArgs;
   hostCtx: HostCtx;
   mode: AppMode;
+  viewToolRegistry: ViewToolRegistry | null;
 }
 
-function AppContent({ app, toolArgs, hostCtx, mode }: AppContentProps) {
+function AppContent({
+  app,
+  toolArgs,
+  hostCtx,
+  mode,
+  viewToolRegistry,
+}: AppContentProps) {
   const { data, loading, error, retry } = useServerToolData<ActivityZonesData>(
     app,
     "get-activity-zones-data",
@@ -48,7 +57,12 @@ function AppContent({ app, toolArgs, hostCtx, mode }: AppContentProps) {
           onRetry={retry}
         />
       ) : (
-        <App app={app} data={data} mode={mode} />
+        <App
+          app={app}
+          data={data}
+          mode={mode}
+          viewToolRegistry={viewToolRegistry}
+        />
       )}
     </AppShell>
   );
@@ -60,14 +74,16 @@ function Root() {
       appInfo={{ name: "Activity Zones", version: "1.0.0" }}
       parseToolInput={parseIdToolArgs}
       missingArgsMessage="No activity id was provided to the zones view."
+      viewTools={VIEW_TOOLS}
       loading={<LoadingSkeleton />}
     >
-      {({ app, toolArgs, hostCtx, mode }) => (
+      {({ app, toolArgs, hostCtx, mode, viewToolRegistry }) => (
         <AppContent
           app={app}
           toolArgs={toolArgs}
           hostCtx={hostCtx}
           mode={mode}
+          viewToolRegistry={viewToolRegistry}
         />
       )}
     </AppRoot>

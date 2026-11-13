@@ -112,7 +112,7 @@ export const OverlayRunWithoutStreams = meta.story({
     await userEvent.click(
       within(group).getByRole("button", { name: /Intervals 5x1k/ }),
     );
-    await userEvent.click(canvas.getByRole("button", { name: "Overlay" }));
+    await userEvent.click(canvas.getByRole("radio", { name: "Overlay" }));
 
     await expect(
       await canvas.findByText("No recorded streams for Intervals 5x1k."),
@@ -236,8 +236,8 @@ export const ModelDrivenView = meta.story({
         )!,
       );
 
-    await expect(canvas.getByRole("button", { name: "Trend" })).toHaveAttribute(
-      "aria-pressed",
+    await expect(canvas.getByRole("radio", { name: "Trend" })).toHaveAttribute(
+      "aria-checked",
       "true",
     );
 
@@ -255,8 +255,8 @@ export const ModelDrivenView = meta.story({
       ),
     );
     await expect(
-      canvas.getByRole("button", { name: "Overlay" }),
-    ).toHaveAttribute("aria-pressed", "true");
+      canvas.getByRole("radio", { name: "Overlay" }),
+    ).toHaveAttribute("aria-checked", "true");
     await expect(
       await canvas.findByRole("button", { name: /Toggle Intervals 5x1k/ }),
     ).toBeVisible();
@@ -282,8 +282,8 @@ export const ModelDrivenView = meta.story({
         "Showing the overlay of Intervals 5x1k and Tempo Intervals by time.",
       ),
     );
-    await expect(canvas.getByRole("button", { name: "min" })).toHaveAttribute(
-      "aria-pressed",
+    await expect(canvas.getByRole("radio", { name: "min" })).toHaveAttribute(
+      "aria-checked",
       "true",
     );
     await waitFor(() => expect(summary()).toContain("Overlay x-axis: time."));

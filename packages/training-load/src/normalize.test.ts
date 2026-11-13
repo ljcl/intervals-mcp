@@ -13,9 +13,13 @@ import {
   buildScopeNote,
   buildTotalsStats,
   countWarningWeeks,
+  describeIntensity,
+  describeWindowIntensity,
   formatCurrentFitness,
   formatHours,
+  formatIntensityShort,
   isPastWindow,
+  longestRun,
   partialWeekWord,
 } from "./normalize";
 import { type WeekSummary } from "./types";
@@ -93,39 +97,36 @@ describe("buildTotalsStats", () => {
     timeHours: 27.75,
     elevationM: 2810,
     load: 1850,
+    intensity: { easyPct: 78.2, moderatePct: 14.6, hardPct: 7.2 },
+    hrZoneRunsLeftOut: 0,
   };
   const current = { date: "2026-06-24", ctl: 52, atl: 61, tsb: 4.2 };
+  const tile = (stats: { label: string; value: string }[], label: string) =>
+    stats.find((s) => s.label === label)?.value;
 
-  it("shows runs, distance, load, then fitness, fatigue and form", () => {
+  it("shows runs, distance, load, the HR split, then fitness, fatigue and form", () => {
     const stats = buildTotalsStats(totals, current);
-    expect(stats.map((s) => s.label)).toEqual([
-      "Runs",
-      "Distance",
-      "Load",
-      "Fitness",
-      "Fatigue",
-      "Form",
-    ]);
-    expect(stats.map((s) => s.value)).toEqual([
-      "34",
-      "312.4 km",
-      "1,850",
-      "52",
-      "61",
-      "+4.2",
+    expect(stats.map((s) => [s.label, s.value])).toEqual([
+      ["Runs", "34"],
+      ["Distance", "312.4 km"],
+      ["Load", "1,850"],
+      ["Easy/Mod/Hard", "78.2/14.6/7.2%"],
+      ["Fitness", "52"],
+      ["Fatigue", "61"],
+      ["Form", "+4.2"],
     ]);
   });
 
   it("signs form the way the fitness trend card prints it", () => {
     const form = (tsb: number) =>
-      buildTotalsStats(totals, { ...current, tsb })[5]!.value;
+      tile(buildTotalsStats(totals, { ...current, tsb }), "Form");
     expect(form(-9)).toBe("-9");
     expect(form(0)).toBe("0");
   });
 
   it("shows a dash for the three fitness tiles when there is no current", () => {
     const stats = buildTotalsStats(totals, null);
-    expect(stats.slice(3).map((s) => [s.label, s.value])).toEqual([
+    expect(stats.slice(4).map((s) => [s.label, s.value])).toEqual([
       ["Fitness", "—"],
       ["Fatigue", "—"],
       ["Form", "—"],
@@ -135,6 +136,84 @@ describe("buildTotalsStats", () => {
       "312.4 km",
       "1,850",
     ]);
+  });
+
+  it("shows a dash, not 0%, for the split when no run has HR data", () => {
+    const stats = buildTotalsStats({ ...totals, intensity: null }, current);
+    expect(tile(stats, "Easy/Mod/Hard")).toBe("—");
+  });
+});
+
+describe("formatIntensityShort and describeIntensity", () => {
+  const split = { easyPct: 80, moderatePct: 15, hardPct: 5 };
+
+  it("gives easy, moderate and hard in that order", () => {
+    expect(formatIntensityShort(split)).toBe("80/15/5%");
+    expect(describeIntensity(split)).toBe("80% easy, 15% moderate, 5% hard");
+  });
+});
+
+describe("describeWindowIntensity", () => {
+  const intensity = { easyPct: 80, moderatePct: 15, hardPct: 5 };
+
+  it("words the window's split as the text tool does", () => {
+    expect(describeWindowIntensity({ intensity, hrZoneRunsLeftOut: 0 })).toBe(
+      "Run HR zones: 80% easy, 15% moderate, 5% hard.",
+    );
+  });
+
+  it("counts the runs left out of the split", () => {
+    expect(describeWindowIntensity({ intensity, hrZoneRunsLeftOut: 1 })).toBe(
+      "Run HR zones: 80% easy, 15% moderate, 5% hard (1 run left out: no HR zone times, or a different zone count).",
+    );
+    expect(
+      describeWindowIntensity({ intensity, hrZoneRunsLeftOut: 4 }),
+    ).toContain("(4 runs left out");
+  });
+
+  it("says no run has HR zone times rather than giving 0%", () => {
+    expect(
+      describeWindowIntensity({ intensity: null, hrZoneRunsLeftOut: 3 }),
+    ).toBe("No run has HR zone times.");
+  });
+});
+
+describe("longestRun", () => {
+  const week = (weekStarting: string, km: number | null): WeekSummary => ({
+    ...mockTrainingLoadData.weeks[0]!,
+    weekStarting,
+    longRun: km === null ? null : { km, id: `i${km}`, pct: 30 },
+  });
+
+  it("picks the longest of the weeks' long runs", () => {
+    expect(
+      longestRun([
+        week("2026-06-01", 12),
+        week("2026-06-08", 21.1),
+        week("2026-06-15", null),
+      ]),
+    ).toEqual({
+      weekStarting: "2026-06-08",
+      longRun: { km: 21.1, id: "i21.1", pct: 30 },
+    });
+  });
+
+  it("keeps the earliest week on a tie", () => {
+    expect(
+      longestRun([week("2026-06-01", 15), week("2026-06-08", 15)])
+        ?.weekStarting,
+    ).toBe("2026-06-01");
+  });
+
+  it("is null when no week has a long run", () => {
+    expect(longestRun([week("2026-06-01", null)])).toBeNull();
+    expect(longestRun([])).toBeNull();
+  });
+
+  it("finds the spike week's 21.1 km in the fixture", () => {
+    expect(longestRun(mockTrainingLoadData.weeks)?.weekStarting).toBe(
+      "2026-05-25",
+    );
   });
 });
 
@@ -234,6 +313,8 @@ describe("buildLoadRows", () => {
     warningReasons: ["spike"],
     load: 240,
     loadByType: { Run: 240 },
+    intensity: null,
+    longRun: null,
   };
   const partial: WeekSummary = {
     ...complete,
@@ -324,6 +405,8 @@ describe("countWarningWeeks", () => {
     warningReasons: warning ? ["reason"] : [],
     load: 60,
     loadByType: { Run: 60 },
+    intensity: null,
+    longRun: null,
   });
 
   it("counts only flagged weeks", () => {

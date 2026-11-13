@@ -372,7 +372,7 @@ export function OverlayView({
         </ResponsiveContainer>
       </div>
       <div className={styles.footer}>
-        <PillGroup>
+        <PillGroup label="X-axis">
           <Pill
             active={xMode === "distance"}
             onClick={() => onXModeChange("distance")}

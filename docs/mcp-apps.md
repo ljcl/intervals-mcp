@@ -185,9 +185,17 @@ before hand-rolling these. Keep styling in CSS Modules with `data-*` selectors
 not the frozen `@base-ui-components/react`.
 
 - `Pill` / `PillGroup` and `Legend` / `LegendItem` are built on Base UI
-  `Toggle` / `ToggleGroup`: the group provides `role="group"`, arrow-key roving
-  focus, one Tab stop; pressed values derive from children props so public APIs
-  stay unchanged.
+  `Toggle` / `ToggleGroup`: arrow-key roving focus, one Tab stop; pressed
+  values derive from children props.
+- Every `PillGroup` takes a required `label` (its `aria-label`), so a screen
+  reader names what the pills choose (#398). A one-of-N picker (the default)
+  is a `radiogroup` of `radio` pills with `aria-checked`: ToggleGroup's single
+  mode changes only value handling, not ARIA, so `PillGroup` sets the roles
+  itself. Arrow keys move focus and Space or Enter selects. Pass `multiple`
+  only for pills that turn on and off on their own (activity-chart's Smooth,
+  route-map's Add point): those stay toggle buttons with `aria-pressed`.
+  Stories query a picker's pills by `role: "radio"` and check
+  `aria-checked`; legend toggles stay buttons.
 - Not everything needs a primitive: `Tooltip` (inside Recharts' tooltip, which
   owns positioning), `Skeleton`, and `AppShell` are presentational and stay
   hand-rolled.
@@ -524,8 +532,9 @@ CTL/ATL/TSB follow `runOnly`.
   weeks before it, #60) are shared with the `get-training-load` text tool, so
   chart and prose cannot drift (#43). The feed also carries each week's
   `hrZoneS`/`intensity` and `longRun`, and the totals' `hrZoneS`/`intensity`
-  and `hrZoneRunsLeftOut`, from the same `aggregateWeeks` buckets; the app
-  does not draw them yet. The tooltip shows the reason as the
+  and `hrZoneRunsLeftOut`, from the same `aggregateWeeks` buckets (#395): the
+  app shows the payload's split as it is (the server computed it with
+  `intensitySplit`) and never re-derives it. The tooltip shows the reason as the
   server wrote it; the narration and model context call the weeks volume
   spikes, not injury risk.
 - The current week carries `inProgress: true` and `trendKm: null`: it draws
@@ -556,8 +565,14 @@ CTL/ATL/TSB follow `runOnly`.
   title needs a gutter past the widest tick (sized from the axis font for four
   digits, so a 1,000+ load clears it). The `LoadChart` stories assert that no
   axis title's box meets a tick label's, including a four-digit story.
-- The `SummaryBar` reads Runs, Distance, Load, Fitness, Fatigue, Form; the
-  three fitness tiles are dashes when `current` is null. A scope note under it
+- The `SummaryBar` reads Runs, Distance, Load, Easy/Mod/Hard (the window's
+  run HR split, "74/14/12%"), Fitness, Fatigue, Form; the split tile is a dash
+  when no run has HR zone times, and the three fitness tiles are dashes when
+  `current` is null. Each week's tooltip adds its split and long run
+  ("21.1 km long run (39% of week)"); a week with no run HR data has no split
+  row, never 0%. The narration and model context give the window's split
+  (`describeWindowIntensity`, with the runs left out, in the text tool's
+  words) and its longest run (`longestRun`). A scope note under it
   (`buildScopeNote`: "Whole-body load (Run, Ride) · from intervals.icu as of 5
   Oct" or "Run-only load · computed locally as of 5 Oct") says what the load
   and the tiles add up. The narration and model context carry the total load,
@@ -664,7 +679,18 @@ One activity's time-in-zone distribution (ljcl/strava-mcp#34). Calls
 - With no zone set to chart, `EmptyState` shows `buildEmptyMessage`: the
   payload's `hrZoneWarning` when the server dropped heart rate zones for a
   known reason (the same line the text tools print), else a neutral line
-  that names no cause.
+  that names no cause. When sets remain (a run with pace zones, #396), the
+  warning is a footer line under the chart instead, so a pace-only card never
+  reads as a run without heart rate. The context summary closes with it in
+  both cases.
+- `set-zone-type` (`type`: `heartrate` or `pace`; power is left out while the
+  server drops it) lets the model switch the set pills (#397), setting the same
+  state they do. `resolveSetZoneType` (`src/setZoneType.ts`, unit-tested)
+  refuses a set the activity lacks with nothing changed, naming the values it
+  can send, and a heart rate request on a card whose heart rate zones were
+  dropped carries `hrZoneWarning`. The reply names the set as the subtitle
+  does ("Showing Pace zones (GAP)."). The context summary's `On screen:` line
+  names the set on screen, the pills' choice included.
 
 ### Fitness Trend
 
