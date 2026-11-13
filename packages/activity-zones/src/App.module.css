@@ -32,3 +32,10 @@
   font-size: var(--font-text-xs-size);
   color: var(--color-text-tertiary);
 }
+
+/* The server's reason for dropped heart rate zones is a sentence, not a
+ * label: it takes its own line under the pills and footnotes. */
+.footnote[data-warning] {
+  flex-basis: 100%;
+  line-height: var(--line-height-tight);
+}

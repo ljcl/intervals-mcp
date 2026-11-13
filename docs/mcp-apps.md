@@ -671,7 +671,18 @@ One activity's time-in-zone distribution (ljcl/strava-mcp#34). Calls
 - With no zone set to chart, `EmptyState` shows `buildEmptyMessage`: the
   payload's `hrZoneWarning` when the server dropped heart rate zones for a
   known reason (the same line the text tools print), else a neutral line
-  that names no cause.
+  that names no cause. When sets remain (a run with pace zones, #396), the
+  warning is a footer line under the chart instead, so a pace-only card never
+  reads as a run without heart rate. The context summary closes with it in
+  both cases.
+- `set-zone-type` (`type`: `heartrate` or `pace`; power is left out while the
+  server drops it) lets the model switch the set pills (#397), setting the same
+  state they do. `resolveSetZoneType` (`src/setZoneType.ts`, unit-tested)
+  refuses a set the activity lacks with nothing changed, naming the values it
+  can send, and a heart rate request on a card whose heart rate zones were
+  dropped carries `hrZoneWarning`. The reply names the set as the subtitle
+  does ("Showing Pace zones (GAP)."). The context summary's `On screen:` line
+  names the set on screen, the pills' choice included.
 
 ### Fitness Trend
 

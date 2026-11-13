@@ -59,6 +59,11 @@ export function zoneSetLabel(set: ZoneSet): string {
   return ZONE_SET_NAMES[set.type] + basisSuffix(set);
 }
 
+/** What the card is charting: "Heart rate zones", "Pace zones (GAP)". */
+export function zoneSetTitle(set: ZoneSet): string {
+  return `${ZONE_SET_NAMES[set.type]} zones${basisSuffix(set)}`;
+}
+
 /**
  * "Run · 12 Jul · Heart rate zones" — the header subtitle. Names the set on
  * screen because the pill row only appears when both sets exist, so a
@@ -68,8 +73,7 @@ export function buildZonesSubtitle(
   data: Pick<ActivityZonesData, "type" | "date">,
   set: ZoneSet,
 ): string {
-  const setLabel = `${ZONE_SET_NAMES[set.type]} zones${basisSuffix(set)}`;
-  return [data.type, formatShortDate(data.date), setLabel]
+  return [data.type, formatShortDate(data.date), zoneSetTitle(set)]
     .filter(Boolean)
     .join(" · ");
 }
