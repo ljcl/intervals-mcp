@@ -74,6 +74,20 @@ Related docs: [mcp-apps.md](mcp-apps.md) for the UI packages,
   process exits. A second signal exits at once. The grace period must stay
   below the time between SIGTERM and SIGKILL (`stop_grace_period` in
   `docker-compose.yml`, 10 s; also Docker's default).
+- gzip (`httpCompression.ts`, #415). `Bun.serve` compresses nothing, and an
+  MCP App's `app.html` is about 0.9 MB (route-map 2.2 MB) in a
+  `resources/read` answer; gzip cuts it to under a third. The endpoint gzips
+  an answer of 8 KB or more (`GZIP_MIN_BYTES`) when `Accept-Encoding` allows
+  gzip and the body is complete before it is sent: a JSON body, or an SSE
+  body for a request whose methods all answer once (`ONE_ANSWER_METHODS`,
+  `mcpEndpoint.ts`). The second case matters most: the 2025-era path answers
+  every POST as SSE, and claude.ai loads its cards over it. A `tools/call`
+  or `subscriptions/listen` stream is never compressed, because gzip holds
+  bytes back and a progress message or keep-alive would arrive late. A
+  2025-era `tools/call` (an app's data tool) therefore goes out plain even
+  when large. Without the header, nothing changes. Compressing route-map's
+  HTML takes about 35 ms; `docker-smoke.sh` checks both eras decode
+  byte-equal.
 
 ## HTTP layer (`fetchClient.ts`)
 

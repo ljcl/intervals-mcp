@@ -176,6 +176,43 @@ for uri in $uris; do
   fi
 done
 
+# A client that accepts gzip gets the app HTML gzipped (#415), and it decodes
+# to the same bytes as the plain answer. Both eras: claude.ai loads its cards
+# over the 2025-era path, which answers as SSE.
+first_uri="$(head -1 <<<"$uris")"
+gzip_check() {
+  local era="$1" body="$2"
+  shift 2
+  local plain zipped headers
+  plain="$(mktemp)"
+  zipped="$(mktemp)"
+  headers="$(mktemp)"
+  local args=(-sS -X POST "$BASE/mcp" -H "Authorization: Bearer $TOKEN"
+    -H 'Content-Type: application/json'
+    -H 'Accept: application/json, text/event-stream' "$@" -d "$body")
+  curl "${args[@]}" -o "$plain"
+  curl "${args[@]}" -H 'Accept-Encoding: gzip' -D "$headers" -o "$zipped"
+  if grep -qi '^content-encoding: gzip' "$headers" &&
+    gunzip -c "$zipped" | cmp -s - "$plain"; then
+    pass "$era resources/read $first_uri gzipped ($(wc -c <"$zipped" | tr -d ' ') of $(wc -c <"$plain" | tr -d ' ') bytes)"
+  else
+    fail "$era resources/read $first_uri: no gzip answer that decodes to the plain one"
+  fi
+  rm -f "$plain" "$zipped" "$headers"
+}
+gzip_check 2026-07-28 "$(jq -cn --arg uri "$first_uri" '{
+  jsonrpc: "2.0", id: 1, method: "resources/read",
+  params: {uri: $uri, _meta: {
+    "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+    "io.modelcontextprotocol/clientInfo": {name: "docker-smoke", version: "1.0"},
+    "io.modelcontextprotocol/clientCapabilities": {}
+  }}
+}')" -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: resources/read' \
+  -H "Mcp-Name: $first_uri"
+gzip_check 2025-11-25 "$(jq -cn --arg uri "$first_uri" '{
+  jsonrpc: "2.0", id: 1, method: "resources/read", params: {uri: $uri}
+}')" -H 'MCP-Protocol-Version: 2025-11-25'
+
 # A tool call with bad arguments runs the dispatcher and schema validation
 # without reaching intervals.icu, and must come back as an isError result.
 call="$(mcp tools/call '{"name":"get-activity","arguments":{}}')"
