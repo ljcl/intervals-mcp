@@ -33,7 +33,7 @@
     "shots": "bun scripts/story-shots.ts"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.6.3",
+    "@biomejs/biome": "2.6.4",
     "@intervals-mcp/tsconfig": "workspace:*",
     "@storybook/addon-vitest": "10.6.5",
     "@types/bun": "1.4.4",
