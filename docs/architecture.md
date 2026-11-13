@@ -789,7 +789,8 @@ sections. A section's own share stays as stored.
 `dispatchToolCall` is timed end to end and emits one structured JSON line per
 call via `telemetry.ts`: the finish time (`ts`), tool name, duration, outcome,
 the failure (`error_class`, `http_status`), the rate-limit snapshot, which
-client made the call (`client_apps`, `client_name`, `client_version`) and the
+client made the call (`client_apps`, `client_elicitation`, `client_name`,
+`client_version`) and the
 W3C trace ids (`trace_id`, `parent_id`). The timer starts **before token
 resolution**, so a not-connected call is recorded too — it cost the caller a round trip. A
 handler returning `isError` counts as an error alongside a throw, or the
@@ -841,6 +842,16 @@ the view's own lines when it has no twin or the twin fails (docs/tools.md
 lists the pairs). A call dispatched without client information records
 `client_apps: false`. The log field is how an operator sees how many calls
 come from clients that do not advertise MCP Apps.
+
+`client_elicitation` is `clientSupportsFormElicitation(capabilities)`: the
+client advertised `elicitation` with form mode, or with no mode named, which
+the spec reads as form only (#417). It is logged only. A replace-mode
+`update-activity` or `update-wellness` could ask the host to confirm the
+before and after through `inputRequired.elicit()` in place of relying on the
+model to show it, and this field shows whether the hosts that call the
+server could answer. A 2025-era request has no envelope, so like
+`client_apps` it logs `false` there; the write tools do not run on that path
+anyway.
 
 The reverse also happens: a host can render the app for a client that did
 not advertise it. On 2026-10-10 (Sydney) the Claude iOS app showed its

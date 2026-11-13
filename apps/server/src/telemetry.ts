@@ -121,6 +121,11 @@ export interface ToolCallRecord {
   rate_limit?: RateLimitSnapshot | null;
   /** Whether the request's client advertised MCP Apps (#77). */
   client_apps?: boolean;
+  /**
+   * Whether the request's client advertised form-mode elicitation (#417):
+   * whether hosts could confirm a replace-mode write themselves.
+   */
+  client_elicitation?: boolean;
   /** clientInfo.name from the request envelope, when sent. Bounded when logged. */
   client_name?: string;
   /** clientInfo.version from the request envelope, when sent. Bounded when logged. */
@@ -211,6 +216,9 @@ function buildLine(
     rate_limit: record.rate_limit ?? rateLimitSnapshot(),
     ...(record.client_apps !== undefined
       ? { client_apps: record.client_apps }
+      : {}),
+    ...(record.client_elicitation !== undefined
+      ? { client_elicitation: record.client_elicitation }
       : {}),
     ...(clientName ? { client_name: clientName } : {}),
     ...(clientVersion ? { client_version: clientVersion } : {}),

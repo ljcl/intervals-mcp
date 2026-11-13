@@ -147,7 +147,8 @@ breaking them has shipped bugs — do not work around them locally.
   before token resolution (not-connected calls count); a returned `isError`
   counts as an error unless the call was cancelled (`cancelled`);
   `recordToolCall` can never fail the call it describes; each line records
-  `client_apps` and `client_name` from the request envelope; each line also
+  `client_apps`, `client_elicitation` and `client_name` from the request
+  envelope; each line also
   records `ts`, bounded client strings and tool name, W3C trace ids and
   `error_class`/`http_status` noted in the call scope; every refused /mcp
   request (HTTP 400+ except 499 and a GET/DELETE 405, and 401) writes one

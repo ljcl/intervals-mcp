@@ -159,6 +159,7 @@ shown wrapped here:
   "upstream_requests": 2,
   "rate_limit": null,
   "client_apps": true,
+  "client_elicitation": false,
   "client_name": "claude-ai",
   "client_version": "1.4.0"
 }
@@ -178,6 +179,7 @@ A failed call adds the failure and, when the client sent a trace, its ids:
   "upstream_requests": 1,
   "rate_limit": null,
   "client_apps": false,
+  "client_elicitation": false,
   "client_name": "claude-ai",
   "client_version": "1.4.0",
   "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
@@ -213,6 +215,11 @@ They show which hosts advertise MCP Apps, and so which ones render a `view-*`
 call as a chart rather than only its text. For example,
 `grep '"event":"tool_call"' | grep '"client_apps":false'` lists the calls from
 hosts that get the text alone.
+
+`client_elicitation` is true when the request's client capabilities
+advertised form-mode elicitation (#417). It decides whether a write's
+confirmation could move from the model to the host. To count by host:
+`grep '"event":"tool_call"' | jq -r '[.client_name, .client_elicitation] | @tsv' | sort | uniq -c`.
 
 `trace_id` and `parent_id` appear only when the request's `_meta.traceparent`
 is a valid W3C trace context value. Use them to match a line to the client's

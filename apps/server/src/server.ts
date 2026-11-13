@@ -39,6 +39,7 @@ import {
 } from "./cadenceTrendData";
 import { type CallFailure, type CallScope, runInCallScope } from "./callScope";
 import {
+  clientSupportsFormElicitation,
   clientSupportsMcpApps,
   MCP_APP_MIME_TYPE,
   viewHeader,
@@ -2221,6 +2222,11 @@ export interface DispatchOptions {
   client?: {
     /** The client advertised the MCP Apps extension with the app MIME type. */
     rendersApps: boolean;
+    /**
+     * The client advertised form-mode elicitation (#417). Only logged for
+     * now, to learn whether hosts support it.
+     */
+    elicitation?: boolean;
     /** `clientInfo.name`, when the client sent one. */
     name?: string;
     /** `clientInfo.version`, when the client sent one. */
@@ -2297,6 +2303,7 @@ async function runToolCall(
         http_status: failure?.http_status,
         upstream_requests: scope.upstreamRequests ?? 0,
         client_apps: context.clientRendersApps,
+        client_elicitation: client?.elicitation ?? false,
         // recordToolCall bounds both before they reach the log.
         client_name: client?.name,
         client_version: client?.version,
@@ -2547,6 +2554,9 @@ export function createServer({
       ),
       client: {
         rendersApps: clientSupportsMcpApps(
+          envelope?.[CLIENT_CAPABILITIES_META_KEY],
+        ),
+        elicitation: clientSupportsFormElicitation(
           envelope?.[CLIENT_CAPABILITIES_META_KEY],
         ),
         name:

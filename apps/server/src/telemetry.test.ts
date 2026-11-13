@@ -106,6 +106,29 @@ describe("recordToolCall", () => {
     expect(record).not.toHaveProperty("client_name");
   });
 
+  it("serialises client_elicitation either way, after client_apps (#417)", () => {
+    for (const client_elicitation of [true, false]) {
+      recordToolCall({
+        tool: "update-activity",
+        duration_ms: 7,
+        outcome: "ok",
+        client_apps: true,
+        client_elicitation,
+      });
+      const record = lastRecord();
+      expect(record.client_elicitation).toBe(client_elicitation);
+      const keys = Object.keys(record);
+      expect(keys.indexOf("client_elicitation")).toBe(
+        keys.indexOf("client_apps") + 1,
+      );
+    }
+  });
+
+  it("leaves client_elicitation out when the caller does", () => {
+    recordToolCall({ tool: "list-gear", duration_ms: 7, outcome: "ok" });
+    expect(lastRecord()).not.toHaveProperty("client_elicitation");
+  });
+
   it("stamps the finish time, and last_called_at is the same instant", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     try {

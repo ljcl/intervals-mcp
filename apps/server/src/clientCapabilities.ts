@@ -28,6 +28,28 @@ export function clientSupportsMcpApps(capabilities: unknown): boolean {
 }
 
 /**
+ * True when the client advertised form-mode elicitation: an `elicitation`
+ * capability that names `form`, or names no mode at all, which the spec
+ * reads as form only. URL mode alone does not count: a host-rendered
+ * confirmation of a write needs a form (#417). Takes `unknown` like
+ * {@link clientSupportsMcpApps}.
+ */
+export function clientSupportsFormElicitation(capabilities: unknown): boolean {
+  const elicitation = (
+    capabilities as { elicitation?: unknown } | null | undefined
+  )?.elicitation;
+  if (
+    typeof elicitation !== "object" ||
+    elicitation === null ||
+    Array.isArray(elicitation)
+  ) {
+    return false;
+  }
+  const modes = elicitation as { form?: unknown; url?: unknown };
+  return modes.form !== undefined || modes.url === undefined;
+}
+
+/**
  * The first line of every view-* text. A chart is claimed as shown only to
  * a client that advertised MCP Apps. Any other client gets a line that is
  * true either way: a host can render the card for a client that did not
