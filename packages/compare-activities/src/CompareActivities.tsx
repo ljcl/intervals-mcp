@@ -642,7 +642,7 @@ export function CompareActivities({
       <div className={styles.footer}>
         <div className={styles.footerControls}>
           {metrics.length > 1 && (
-            <PillGroup>
+            <PillGroup label="Metric">
               {metrics.map((key) => (
                 <Pill
                   key={key}
@@ -655,7 +655,7 @@ export function CompareActivities({
             </PillGroup>
           )}
           {axes.length > 1 && (
-            <PillGroup>
+            <PillGroup label="X-axis">
               {axes.map((key) => (
                 <Pill
                   key={key}

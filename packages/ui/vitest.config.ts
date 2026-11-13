@@ -6,7 +6,8 @@ export default defineConfig({
     // and they only exist in a rendered tree — the story tests never reach
     // them because no app's `main.tsx` has a story. Component and
     // view rendering stays in the browser-mode story tests; this environment
-    // is here for the hooks.
+    // is here for the hooks, and for `Pill.test.tsx`, which pins the ARIA
+    // roles and names `PillGroup` renders (#398).
     environment: "happy-dom",
     coverage: {
       provider: "v8",

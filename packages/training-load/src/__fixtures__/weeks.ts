@@ -221,8 +221,13 @@ const windowIntensity = (): Pick<
   const summed = [0, 0, 0, 0, 0];
   let leftOut = 0;
   HR_ZONE_S.forEach((zones, i) => {
-    if (zones) zones.forEach((s, z) => (summed[z]! += s));
-    else leftOut += volumeWeeks[i]!.runs;
+    if (!zones) {
+      leftOut += volumeWeeks[i]!.runs;
+      return;
+    }
+    zones.forEach((seconds, z) => {
+      summed[z]! += seconds;
+    });
   });
   return { intensity: intensitySplit(summed), hrZoneRunsLeftOut: leftOut };
 };

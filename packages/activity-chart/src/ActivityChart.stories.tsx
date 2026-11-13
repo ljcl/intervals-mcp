@@ -342,7 +342,7 @@ export const NoStreams = meta.story({
     ).toBeVisible();
     // No axis frame, and none of the controls that imply plottable series.
     expect(canvasElement.querySelector(".recharts-surface")).toBeNull();
-    expect(canvas.queryByRole("button", { name: "Form" })).toBeNull();
+    expect(canvas.queryByRole("radio", { name: "Form" })).toBeNull();
     // The ErrorState's retry control is what a dead retry looked like.
     expect(canvas.queryByRole("button", { name: "Try again" })).toBeNull();
     expect(canvas.queryByRole("alert")).toBeNull();
@@ -411,7 +411,7 @@ export const BrushZoom = meta.story({
     ).toHaveLength(2);
 
     // Switching presets rebuilds the memoized tree; the brush must survive.
-    const formPill = canvas.getByRole("button", { name: "Form" });
+    const formPill = canvas.getByRole("radio", { name: "Form" });
     await userEvent.click(formPill);
     await waitFor(() =>
       expect(canvasElement.querySelector(".recharts-brush")).not.toBeNull(),
@@ -436,9 +436,9 @@ export const RunningDynamicsForm = meta.story({
   },
   play: async ({ canvas, canvasElement, userEvent }) => {
     await waitFor(() =>
-      expect(canvas.getByRole("button", { name: "Form" })).toBeInTheDocument(),
+      expect(canvas.getByRole("radio", { name: "Form" })).toBeInTheDocument(),
     );
-    await userEvent.click(canvas.getByRole("button", { name: "Form" }));
+    await userEvent.click(canvas.getByRole("radio", { name: "Form" }));
 
     const descText = () =>
       canvasElement.querySelector("desc")?.textContent ?? "";
@@ -490,9 +490,9 @@ export const RunningDynamicsFormMobile = meta.story({
   ],
   play: async ({ canvas, canvasElement, userEvent }) => {
     await waitFor(() =>
-      expect(canvas.getByRole("button", { name: "Form" })).toBeInTheDocument(),
+      expect(canvas.getByRole("radio", { name: "Form" })).toBeInTheDocument(),
     );
-    await userEvent.click(canvas.getByRole("button", { name: "Form" }));
+    await userEvent.click(canvas.getByRole("radio", { name: "Form" }));
 
     const descText = () =>
       canvasElement.querySelector("desc")?.textContent ?? "";

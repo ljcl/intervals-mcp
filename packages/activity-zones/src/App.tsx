@@ -97,7 +97,7 @@ export function App({
       </div>
       <div className={styles.footer}>
         {data.zoneSets.length > 1 && (
-          <PillGroup>
+          <PillGroup label="Zone set">
             {data.zoneSets.map((set) => (
               <Pill
                 key={set.type}

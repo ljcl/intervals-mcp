@@ -185,9 +185,17 @@ before hand-rolling these. Keep styling in CSS Modules with `data-*` selectors
 not the frozen `@base-ui-components/react`.
 
 - `Pill` / `PillGroup` and `Legend` / `LegendItem` are built on Base UI
-  `Toggle` / `ToggleGroup`: the group provides `role="group"`, arrow-key roving
-  focus, one Tab stop; pressed values derive from children props so public APIs
-  stay unchanged.
+  `Toggle` / `ToggleGroup`: arrow-key roving focus, one Tab stop; pressed
+  values derive from children props.
+- Every `PillGroup` takes a required `label` (its `aria-label`), so a screen
+  reader names what the pills choose (#398). A one-of-N picker (the default)
+  is a `radiogroup` of `radio` pills with `aria-checked`: ToggleGroup's single
+  mode changes only value handling, not ARIA, so `PillGroup` sets the roles
+  itself. Arrow keys move focus and Space or Enter selects. Pass `multiple`
+  only for pills that turn on and off on their own (activity-chart's Smooth,
+  route-map's Add point): those stay toggle buttons with `aria-pressed`.
+  Stories query a picker's pills by `role: "radio"` and check
+  `aria-checked`; legend toggles stay buttons.
 - Not everything needs a primitive: `Tooltip` (inside Recharts' tooltip, which
   owns positioning), `Skeleton`, and `AppShell` are presentational and stay
   hand-rolled.

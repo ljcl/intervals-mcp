@@ -1,9 +1,9 @@
 import {
   fitnessSourceLabel,
-  type IntensitySplit,
   formatDurationShort,
   formatShortDate,
   formatSignedTsb,
+  type IntensitySplit,
   isPastWindow,
   lookbackLabel,
 } from "@intervals-mcp/data";

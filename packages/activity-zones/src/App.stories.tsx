@@ -49,10 +49,10 @@ export const SwitchToPower = meta.story({
     // ResponsiveContainer needs a resize tick before the chart mounts.
     await waitFor(() => expect(barCount()).toBe(5));
 
-    const powerPill = canvas.getByRole("button", { name: "Power" });
+    const powerPill = canvas.getByRole("radio", { name: "Power" });
     await userEvent.click(powerPill);
 
-    await expect(powerPill).toHaveAttribute("aria-pressed", "true");
+    await expect(powerPill).toHaveAttribute("aria-checked", "true");
     await waitFor(() => expect(barCount()).toBe(6));
   },
 });
@@ -69,10 +69,10 @@ export const SwitchToPace = meta.story({
       canvasElement.querySelectorAll(".recharts-bar-rectangle").length;
     await waitFor(() => expect(barCount()).toBe(5));
 
-    const pacePill = canvas.getByRole("button", { name: "Pace" });
+    const pacePill = canvas.getByRole("radio", { name: "Pace" });
     await userEvent.click(pacePill);
 
-    await expect(pacePill).toHaveAttribute("aria-pressed", "true");
+    await expect(pacePill).toHaveAttribute("aria-checked", "true");
     await waitFor(() => expect(barCount()).toBe(7));
     await expect(
       canvas.getByText(buildZonesSubtitle(hrAndPaceData, paceZoneSet)),
@@ -282,7 +282,7 @@ export const ModelDrivenZoneType = meta.story({
   play: async ({ canvas, canvasElement, userEvent }) => {
     const { said, summary, isError, button, bars } =
       modelDrivenProbes(canvasElement);
-    const pill = (name: string) => canvas.getByRole("button", { name });
+    const pill = (name: string) => canvas.getByRole("radio", { name });
 
     await waitFor(() => expect(bars()).toBe(5));
     await waitFor(
@@ -293,7 +293,7 @@ export const ModelDrivenZoneType = meta.story({
     await userEvent.click(button("call-pace"));
     await waitFor(() => expect(said()).toBe("Showing Pace zones (GAP)."));
     expect(isError()).toBe(false);
-    await expect(pill("Pace")).toHaveAttribute("aria-pressed", "true");
+    await expect(pill("Pace")).toHaveAttribute("aria-checked", "true");
     await waitFor(() => expect(bars()).toBe(7));
     await waitFor(
       () => expect(summary()).toContain("On screen: Pace zones (GAP)."),

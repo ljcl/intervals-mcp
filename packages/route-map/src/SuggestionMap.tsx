@@ -105,7 +105,7 @@ export function SuggestionMap({
   const picker = (
     <div className={styles.suggestions}>
       {context}
-      <PillGroup>
+      <PillGroup label="Route suggestion">
         {candidates.map((c, i) => (
           <Pill
             key={c.map.id}

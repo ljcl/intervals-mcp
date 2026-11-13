@@ -106,11 +106,11 @@ export const SwitchAxisAndHideRun = meta.story({
     // ResponsiveContainer needs a resize tick before the lines mount.
     await waitFor(() => expect(curveCount()).toBe(2));
 
-    const minPill = canvas.getByRole("button", { name: "min" });
+    const minPill = canvas.getByRole("radio", { name: "min" });
     await userEvent.click(minPill);
-    await expect(minPill).toHaveAttribute("aria-pressed", "true");
-    await expect(canvas.getByRole("button", { name: "km" })).toHaveAttribute(
-      "aria-pressed",
+    await expect(minPill).toHaveAttribute("aria-checked", "true");
+    await expect(canvas.getByRole("radio", { name: "km" })).toHaveAttribute(
+      "aria-checked",
       "false",
     );
 

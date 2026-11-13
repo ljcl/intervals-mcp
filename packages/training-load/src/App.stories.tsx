@@ -148,8 +148,8 @@ export const WholeBody = meta.story({
     // The pills open on the scope the data was summed over, and the scope
     // note says what the load and the fitness tiles add up.
     await expect(
-      canvas.getByRole("button", { name: "Whole body" }),
-    ).toHaveAttribute("aria-pressed", "true");
+      canvas.getByRole("radio", { name: "Whole body" }),
+    ).toHaveAttribute("aria-checked", "true");
     await expect(canvas.getByText(wholeBodyNote)).toBeVisible();
 
     // The legend's Load toggle removes the load line. Recharts drops a hidden
@@ -181,8 +181,8 @@ export const RunOnly = meta.story({
   },
   play: async ({ canvas }) => {
     await expect(
-      canvas.getByRole("button", { name: "Runs only" }),
-    ).toHaveAttribute("aria-pressed", "true");
+      canvas.getByRole("radio", { name: "Runs only" }),
+    ).toHaveAttribute("aria-checked", "true");
     await expect(canvas.getByText(runOnlyNote)).toBeVisible();
   },
 });
@@ -203,12 +203,12 @@ export const Switching = meta.story({
     toggleCalls = [];
   },
   play: async ({ canvas, userEvent }) => {
-    const pill = (name: string) => canvas.getByRole("button", { name });
+    const pill = (name: string) => canvas.getByRole("radio", { name });
     await expect(canvas.getByText(wholeBodyNote)).toBeVisible();
 
     await userEvent.click(pill("Runs only"));
     await waitFor(() => expect(canvas.getByText(runOnlyNote)).toBeVisible());
-    await expect(pill("Runs only")).toHaveAttribute("aria-pressed", "true");
+    await expect(pill("Runs only")).toHaveAttribute("aria-checked", "true");
     await expect(canvas.queryByText(wholeBodyNote)).toBeNull();
     await expect(toggleCalls).toEqual([{ days: 84, runOnly: true }]);
 
@@ -231,7 +231,7 @@ export const SwitchingFromRunOnly = meta.story({
   },
   play: async ({ canvas, userEvent }) => {
     await expect(canvas.getByText(runOnlyNote)).toBeVisible();
-    await userEvent.click(canvas.getByRole("button", { name: "Whole body" }));
+    await userEvent.click(canvas.getByRole("radio", { name: "Whole body" }));
     await waitFor(() => expect(canvas.getByText(wholeBodyNote)).toBeVisible());
     await expect(canvas.queryByText(runOnlyNote)).toBeNull();
   },
@@ -309,7 +309,7 @@ export const SwitchingFails = meta.story({
     flakyCalls = 0;
   },
   play: async ({ canvas, userEvent }) => {
-    await userEvent.click(canvas.getByRole("button", { name: "Runs only" }));
+    await userEvent.click(canvas.getByRole("radio", { name: "Runs only" }));
 
     await waitFor(() =>
       expect(canvas.getByRole("alert")).toHaveTextContent(/Request timed out/),
@@ -338,7 +338,7 @@ export const SwitchingFailsMobile = SwitchingFails.extend({
 export const SwitchingSlow = meta.story({
   args: { app: slowApp, data: mockTrainingLoadData, dataArgs: wholeBodyArgs },
   play: async ({ canvas, userEvent }) => {
-    await userEvent.click(canvas.getByRole("button", { name: "Runs only" }));
+    await userEvent.click(canvas.getByRole("radio", { name: "Runs only" }));
 
     await waitFor(() =>
       expect(canvas.getByRole("status")).toHaveTextContent(
@@ -497,14 +497,14 @@ export const ModelDrivenScope = meta.story({
   play: async ({ canvas, canvasElement, userEvent }) => {
     const { said, summary, isError, button, curves } =
       modelDrivenProbes(canvasElement);
-    const pill = (name: string) => canvas.getByRole("button", { name });
+    const pill = (name: string) => canvas.getByRole("radio", { name });
     const load = () => canvas.getByRole("button", { name: "Toggle Load" });
     const warningBars = () =>
       canvasElement.querySelectorAll(
         '.recharts-bar-rectangle path[fill="var(--chart-heartrate)"]',
       ).length;
 
-    await expect(pill("Whole body")).toHaveAttribute("aria-pressed", "true");
+    await expect(pill("Whole body")).toHaveAttribute("aria-checked", "true");
     // ResponsiveContainer needs a resize tick before the chart mounts.
     await waitFor(() => expect(curves("var(--chart-power)")).toBe(1));
 
@@ -519,7 +519,7 @@ export const ModelDrivenScope = meta.story({
       ),
     );
     expect(isError()).toBe(false);
-    await expect(pill("Runs only")).toHaveAttribute("aria-pressed", "true");
+    await expect(pill("Runs only")).toHaveAttribute("aria-checked", "true");
     await waitFor(() => expect(canvas.getByText(runOnlyNote)).toBeVisible());
     await expect(load()).toHaveAttribute("aria-pressed", "false");
     await waitFor(() => expect(curves("var(--chart-power)")).toBe(0));
@@ -541,7 +541,7 @@ export const ModelDrivenScope = meta.story({
     await expect(
       canvas.getByRole("button", { name: "Toggle Trend" }),
     ).toHaveAttribute("aria-pressed", "true");
-    await expect(pill("Runs only")).toHaveAttribute("aria-pressed", "true");
+    await expect(pill("Runs only")).toHaveAttribute("aria-checked", "true");
 
     // Back to whole body with load shown: the mount data is held, so the
     // chart is on screen and the reply may say it is showing.
@@ -549,7 +549,7 @@ export const ModelDrivenScope = meta.story({
     await waitFor(() =>
       expect(said()).toBe("Showing whole body. Nothing hidden."),
     );
-    await expect(pill("Whole body")).toHaveAttribute("aria-pressed", "true");
+    await expect(pill("Whole body")).toHaveAttribute("aria-checked", "true");
     await expect(load()).toHaveAttribute("aria-pressed", "true");
     await expect(canvas.getByText(wholeBodyNote)).toBeVisible();
     await waitFor(() => expect(curves("var(--chart-power)")).toBe(1));
@@ -761,7 +761,7 @@ export const PastWindow = meta.story({
     ).toBeVisible();
     await expect(canvas.getByText(/– 24 Jun 2026$/)).toBeVisible();
 
-    await userEvent.click(canvas.getByRole("button", { name: "Runs only" }));
+    await userEvent.click(canvas.getByRole("radio", { name: "Runs only" }));
     await waitFor(() => expect(canvas.getByText(runOnlyNote)).toBeVisible());
     await expect(toggleCalls).toEqual([
       { days: 84, runOnly: true, newest: "2026-06-24" },

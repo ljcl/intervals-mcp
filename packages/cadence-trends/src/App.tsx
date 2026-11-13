@@ -273,7 +273,7 @@ export function App({
         ]}
       />
       <div className={styles.nav}>
-        <PillGroup>
+        <PillGroup label="Chart view">
           {VIEWS.map((v) => (
             <Pill
               key={v.id}

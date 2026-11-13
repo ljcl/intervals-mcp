@@ -106,7 +106,7 @@ export function RouteEditPanel({
       >
         <div className={styles.row}>
           {/* In a group for the pill track behind it, as the other toggles. */}
-          <PillGroup>
+          <PillGroup label="Map editing" multiple>
             <Pill active={addMode} onClick={() => onAddModeChange(!addMode)}>
               Add point
             </Pill>
@@ -122,7 +122,7 @@ export function RouteEditPanel({
           <div className={styles.group}>
             <fieldset className={styles.fieldset}>
               <legend className={styles.groupLabel}>Points</legend>
-              <PillGroup>
+              <PillGroup label="Points">
                 {route.vias.map((via) => (
                   <Pill
                     key={via.id}

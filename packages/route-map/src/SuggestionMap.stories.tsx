@@ -19,12 +19,12 @@ export const AwayCandidates = meta.story({
   play: async ({ canvas, userEvent }) => {
     // The card header comes before the picker.
     const title = canvas.getByText("SF: New loop");
-    const pill = canvas.getByRole("button", { name: first!.label });
+    const pill = canvas.getByRole("radio", { name: first!.label });
     await expect(
       title.compareDocumentPosition(pill) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     await expect(canvas.getByText("6.1 km (+0.1)")).toBeVisible();
-    await userEvent.click(canvas.getByRole("button", { name: second!.label }));
+    await userEvent.click(canvas.getByRole("radio", { name: second!.label }));
     await expect(canvas.getByText("via Bay Trail, Crissy Field")).toBeVisible();
     await expect(canvas.getByText("5.8 km (-0.2)")).toBeVisible();
   },
@@ -56,7 +56,7 @@ export const WarningsBesideRoutes = meta.story({
   args: { data: warnedSuggestions, basemapEnabled: false },
   play: async ({ canvas }) => {
     await expect(
-      canvas.getByRole("button", { name: first!.label }),
+      canvas.getByRole("radio", { name: first!.label }),
     ).toBeVisible();
     for (const warning of warnedSuggestions.warnings)
       await expect(canvas.getByText(warning)).toBeVisible();
@@ -128,6 +128,8 @@ export const ArgumentError = meta.story({
       canvas.getByRole("heading", { name: "Route suggestions" }),
     ).toBeVisible();
     await expect(canvas.getByText(/No place matched/)).toBeVisible();
+    // No candidate, so no picker: neither a radio nor any other control.
+    await expect(canvas.queryByRole("radio")).toBeNull();
     await expect(canvas.queryByRole("button")).toBeNull();
   },
 });

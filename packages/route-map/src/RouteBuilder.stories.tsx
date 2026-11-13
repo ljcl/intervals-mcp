@@ -130,9 +130,9 @@ export const RemoveViaPoint = meta.story({
   args: { data: storedRouteMap, basemapEnabled: false },
   render: ({ data }) => <EditableRoute data={data} />,
   play: async ({ canvas, userEvent }) => {
-    const v2 = await canvas.findByRole("button", { name: /^v2 · / });
+    const v2 = await canvas.findByRole("radio", { name: /^v2 · / });
     await userEvent.click(v2);
-    await expect(v2).toHaveAttribute("aria-pressed", "true");
+    await expect(v2).toHaveAttribute("aria-checked", "true");
     await userEvent.click(canvas.getByRole("button", { name: "Remove v2" }));
     await waitFor(() =>
       expect(canvas.getByRole("status")).toHaveTextContent("Remove point v2…"),
