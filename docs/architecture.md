@@ -1362,6 +1362,15 @@ the time zone. docs/Intervals_MCP_Server.md stays the long form. The
 integration suite checks the 1,800-character cap and that every tool the
 text names exists.
 
+**Server icon and website.** `SERVER_INFO` (`serverInfo.ts`) is what
+`createServer` passes as the implementation info (#416). Besides the name,
+title and version it has `websiteUrl` (the README, the same as
+`server.json`) and one icon, an SVG as a `data:` URI, so a host that draws
+connector icons shows it in place of a placeholder. It is inline because the
+server often has no public address. Every result's `_meta` repeats the
+server info, so `serverInfo.test.ts` keeps the icon under 600 characters.
+None of this is inside the tool-surface lock.
+
 ## Protocol-surface testing
 
 Protocol-surface tests go over the wire. `mcpTestClient.ts`

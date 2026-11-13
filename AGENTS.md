@@ -218,7 +218,8 @@ breaking them has shipped bugs — do not work around them locally.
   (`instructions.ts`).** Sent in `server/discover` to every chat, so they
   stay under 1,800 characters and name only tools that exist; the
   integration test checks both. Every tool, prompt and app resource has a
-  display `title`, and so does `serverInfo`.
+  display `title`, and so does `serverInfo` (`serverInfo.ts`, which also
+  holds the icon and `websiteUrl`).
 - **Protocol-surface tests go over the wire**
   (`server.integration.test.ts` via `mcpTestClient.ts`): capabilities, object inputSchemas (no `$ref`), string
   ids, `structuredContent`, `isError` not JSON-RPC errors, app resources,
