@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.0.0](https://github.com/ljcl/intervals-mcp/compare/v2.19.0...v3.0.0) (2026-11-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* safer defaults and operator visibility ([#492](https://github.com/ljcl/intervals-mcp/issues/492))
+
+### Features
+
+* **apps:** show what the text says, third pass ([#494](https://github.com/ljcl/intervals-mcp/issues/494)) ([a308871](https://github.com/ljcl/intervals-mcp/commit/a308871a6fcd1f510db026b50650e8de04b1e24d))
+* safer defaults and operator visibility ([#492](https://github.com/ljcl/intervals-mcp/issues/492)) ([b0c150c](https://github.com/ljcl/intervals-mcp/commit/b0c150cf42d05abaee1d6c0d75eb5d05e1c375c8))
+
 ## [2.19.0](https://github.com/ljcl/intervals-mcp/compare/v2.18.0...v2.19.0) (2026-11-10)
 
 
