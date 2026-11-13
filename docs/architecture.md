@@ -74,6 +74,20 @@ Related docs: [mcp-apps.md](mcp-apps.md) for the UI packages,
   process exits. A second signal exits at once. The grace period must stay
   below the time between SIGTERM and SIGKILL (`stop_grace_period` in
   `docker-compose.yml`, 10 s; also Docker's default).
+- gzip (`httpCompression.ts`, #415). `Bun.serve` compresses nothing, and an
+  MCP App's `app.html` is about 0.9 MB (route-map 2.2 MB) in a
+  `resources/read` answer; gzip cuts it to under a third. The endpoint gzips
+  an answer of 8 KB or more (`GZIP_MIN_BYTES`) when `Accept-Encoding` allows
+  gzip and the body is complete before it is sent: a JSON body, or an SSE
+  body for a request whose methods all answer once (`ONE_ANSWER_METHODS`,
+  `mcpEndpoint.ts`). The second case matters most: the 2025-era path answers
+  every POST as SSE, and claude.ai loads its cards over it. A `tools/call`
+  or `subscriptions/listen` stream is never compressed, because gzip holds
+  bytes back and a progress message or keep-alive would arrive late. A
+  2025-era `tools/call` (an app's data tool) therefore goes out plain even
+  when large. Without the header, nothing changes. Compressing route-map's
+  HTML takes about 35 ms; `docker-smoke.sh` checks both eras decode
+  byte-equal.
 
 ## HTTP layer (`fetchClient.ts`)
 
@@ -785,7 +799,8 @@ sections. A section's own share stays as stored.
 `dispatchToolCall` is timed end to end and emits one structured JSON line per
 call via `telemetry.ts`: the finish time (`ts`), tool name, duration, outcome,
 the failure (`error_class`, `http_status`), the rate-limit snapshot, which
-client made the call (`client_apps`, `client_name`, `client_version`) and the
+client made the call (`client_apps`, `client_elicitation`, `client_name`,
+`client_version`) and the
 W3C trace ids (`trace_id`, `parent_id`). The timer starts **before token
 resolution**, so a not-connected call is recorded too — it cost the caller a round trip. A
 handler returning `isError` counts as an error alongside a throw, or the
@@ -837,6 +852,16 @@ the view's own lines when it has no twin or the twin fails (docs/tools.md
 lists the pairs). A call dispatched without client information records
 `client_apps: false`. The log field is how an operator sees how many calls
 come from clients that do not advertise MCP Apps.
+
+`client_elicitation` is `clientSupportsFormElicitation(capabilities)`: the
+client advertised `elicitation` with form mode, or with no mode named, which
+the spec reads as form only (#417). It is logged only. A replace-mode
+`update-activity` or `update-wellness` could ask the host to confirm the
+before and after through `inputRequired.elicit()` in place of relying on the
+model to show it, and this field shows whether the hosts that call the
+server could answer. A 2025-era request has no envelope, so like
+`client_apps` it logs `false` there; the write tools do not run on that path
+anyway.
 
 The reverse also happens: a host can render the app for a client that did
 not advertise it. On 2026-10-10 (Sydney) the Claude iOS app showed its
@@ -1359,6 +1384,15 @@ to use the write tools safely. `createServer` builds it so that it can name
 the time zone. docs/Intervals_MCP_Server.md stays the long form. The
 integration suite checks the 1,800-character cap and that every tool the
 text names exists.
+
+**Server icon and website.** `SERVER_INFO` (`serverInfo.ts`) is what
+`createServer` passes as the implementation info (#416). Besides the name,
+title and version it has `websiteUrl` (the README, the same as
+`server.json`) and one icon, an SVG as a `data:` URI, so a host that draws
+connector icons shows it in place of a placeholder. It is inline because the
+server often has no public address. Every result's `_meta` repeats the
+server info, so `serverInfo.test.ts` keeps the icon under 600 characters.
+None of this is inside the tool-surface lock.
 
 ## Protocol-surface testing
 

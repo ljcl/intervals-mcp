@@ -39,6 +39,7 @@ import {
 } from "./cadenceTrendData";
 import { type CallFailure, type CallScope, runInCallScope } from "./callScope";
 import {
+  clientSupportsFormElicitation,
   clientSupportsMcpApps,
   MCP_APP_MIME_TYPE,
   viewHeader,
@@ -96,6 +97,7 @@ import {
   type RouteSuggestionArgs,
   RouteSuggestionError,
 } from "./routeSuggestions";
+import { SERVER_INFO } from "./serverInfo";
 import { renderRoutePng, SECTION_COLOUR_NAMES } from "./staticMap";
 import {
   ERROR_RESULT_CLASS,
@@ -177,7 +179,6 @@ import {
   type WindowEnd,
 } from "./utils/localDate";
 import { isPaceActivity } from "./utils/running";
-import { SERVER_VERSION } from "./version";
 import { buildWellnessTrendData } from "./wellnessTrendApp";
 
 const EMPTY_SCHEMA = { type: "object", properties: {}, required: [] } as const;
@@ -2221,6 +2222,11 @@ export interface DispatchOptions {
   client?: {
     /** The client advertised the MCP Apps extension with the app MIME type. */
     rendersApps: boolean;
+    /**
+     * The client advertised form-mode elicitation (#417). Only logged for
+     * now, to learn whether hosts support it.
+     */
+    elicitation?: boolean;
     /** `clientInfo.name`, when the client sent one. */
     name?: string;
     /** `clientInfo.version`, when the client sent one. */
@@ -2297,6 +2303,7 @@ async function runToolCall(
         http_status: failure?.http_status,
         upstream_requests: scope.upstreamRequests ?? 0,
         client_apps: context.clientRendersApps,
+        client_elicitation: client?.elicitation ?? false,
         // recordToolCall bounds both before they reach the log.
         client_name: client?.name,
         client_version: client?.version,
@@ -2475,38 +2482,31 @@ export function createServer({
   era?: "legacy" | "modern";
 } = {}): Server {
   const legacy = era === "legacy";
-  const server = new Server(
-    {
-      name: "Intervals Extra",
-      title: "Intervals Extra (intervals.icu)",
-      version: SERVER_VERSION,
+  const server = new Server(SERVER_INFO, {
+    // Built here rather than as a constant: the text names the configured
+    // time zone, which is read at serve time like every other tool's.
+    // createServer runs per HTTP request, so a zone resolved after startup
+    // (athleteTimeZone.ts) reaches the next server/discover.
+    instructions: serverInstructions(getTimeZone()),
+    capabilities: {
+      tools: {},
+      resources: {},
+      prompts: {},
+      // Static argument suggestions for prompts (race distance, review
+      // length); see completePromptArgument.
+      completions: {},
+      // No `logging`: the 2026-07-28 revision deprecates it (SEP-2577), and
+      // the per-call record it carried is the operator's stderr line, with
+      // nothing in it the caller does not already know (#72).
     },
-    {
-      // Built here rather than as a constant: the text names the configured
-      // time zone, which is read at serve time like every other tool's.
-      // createServer runs per HTTP request, so a zone resolved after startup
-      // (athleteTimeZone.ts) reaches the next server/discover.
-      instructions: serverInstructions(getTimeZone()),
-      capabilities: {
-        tools: {},
-        resources: {},
-        prompts: {},
-        // Static argument suggestions for prompts (race distance, review
-        // length); see completePromptArgument.
-        completions: {},
-        // No `logging`: the 2026-07-28 revision deprecates it (SEP-2577), and
-        // the per-call record it carried is the operator's stderr line, with
-        // nothing in it the caller does not already know (#72).
-      },
-      cacheHints: {
-        "tools/list": { ttlMs: STATIC_SURFACE_TTL_MS },
-        "prompts/list": { ttlMs: STATIC_SURFACE_TTL_MS },
-        "resources/list": { ttlMs: STATIC_SURFACE_TTL_MS },
-        "resources/read": { ttlMs: STATIC_SURFACE_TTL_MS },
-        "server/discover": { ttlMs: STATIC_SURFACE_TTL_MS },
-      },
+    cacheHints: {
+      "tools/list": { ttlMs: STATIC_SURFACE_TTL_MS },
+      "prompts/list": { ttlMs: STATIC_SURFACE_TTL_MS },
+      "resources/list": { ttlMs: STATIC_SURFACE_TTL_MS },
+      "resources/read": { ttlMs: STATIC_SURFACE_TTL_MS },
+      "server/discover": { ttlMs: STATIC_SURFACE_TTL_MS },
     },
-  );
+  });
 
   // The SDK's result types spell out every reserved `_meta` envelope key,
   // which the Record-typed schema/meta tables here cannot satisfy
@@ -2554,6 +2554,9 @@ export function createServer({
       ),
       client: {
         rendersApps: clientSupportsMcpApps(
+          envelope?.[CLIENT_CAPABILITIES_META_KEY],
+        ),
+        elicitation: clientSupportsFormElicitation(
           envelope?.[CLIENT_CAPABILITIES_META_KEY],
         ),
         name:

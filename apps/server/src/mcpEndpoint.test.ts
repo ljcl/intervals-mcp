@@ -6,6 +6,7 @@
  * error, malformed JSON returns a JSON-RPC parse error instead of throwing
  * out of `req.json()`, and 64-bit ids survive the body parse.
  */
+import { gunzipSync } from "node:zlib";
 import { Server } from "@modelcontextprotocol/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -312,6 +313,138 @@ describe("createMcpEndpoint", () => {
     await endpoint.handleRequest(post(INITIALIZE_BODY)).then((r) => r.text());
 
     await expect(endpoint.close()).resolves.toBeUndefined();
+  });
+});
+
+describe("gzip (#415)", () => {
+  /** Larger than GZIP_MIN_BYTES in every answer below. */
+  const BIG = "<html>".concat("chart ".repeat(20_000), "</html>");
+  const URI = "ui://test/app.html";
+
+  /** A server whose app resource and tool result are both large. */
+  function makeBigEndpoint(): McpEndpoint {
+    return createMcpEndpoint(() => {
+      const server = new Server(
+        { name: "test", version: "0.0.0" },
+        { capabilities: { tools: {}, resources: {} } },
+      );
+      server.setRequestHandler("tools/list", async () => ({ tools: [] }));
+      server.setRequestHandler("tools/call", async () => ({
+        content: [{ type: "text", text: BIG }],
+      }));
+      server.setRequestHandler("resources/list", async () => ({
+        resources: [],
+      }));
+      server.setRequestHandler("resources/read", async ({ params }) => ({
+        contents: [{ uri: params.uri, mimeType: "text/html", text: BIG }],
+      }));
+      return server;
+    });
+  }
+
+  const gunzip = async (response: Response) =>
+    gunzipSync(Buffer.from(await response.arrayBuffer())).toString("utf8");
+
+  const modernRead = (headers: Record<string, string> = {}) =>
+    post(
+      {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "resources/read",
+        params: { uri: URI, _meta: MODERN_META },
+      },
+      {
+        ...MODERN_HEADERS,
+        "Mcp-Method": "resources/read",
+        "Mcp-Name": URI,
+        ...headers,
+      },
+    );
+
+  const legacy = (
+    method: string,
+    params: Record<string, unknown>,
+    headers: Record<string, string> = {},
+  ) =>
+    post(
+      { jsonrpc: "2.0", id: 1, method, params },
+      { "MCP-Protocol-Version": "2025-11-25", ...headers },
+    );
+
+  it("gzips a 2026-07-28 resources/read, which decodes byte-equal", async () => {
+    const endpoint = makeBigEndpoint();
+    const plain = await endpoint.handleRequest(modernRead());
+    const zipped = await endpoint.handleRequest(
+      modernRead({ "Accept-Encoding": "gzip, deflate" }),
+    );
+
+    expect(plain.headers.get("content-encoding")).toBeNull();
+    expect(zipped.headers.get("content-encoding")).toBe("gzip");
+    expect(zipped.headers.get("content-type")).toContain("application/json");
+    expect(await gunzip(zipped)).toBe(await plain.text());
+  });
+
+  it("gzips a 2025-era resources/read, which that path answers as SSE", async () => {
+    // claude.ai loads its chart cards over this path.
+    const endpoint = makeBigEndpoint();
+    const params = { uri: URI };
+    const plain = await endpoint.handleRequest(
+      legacy("resources/read", params),
+    );
+    const zipped = await endpoint.handleRequest(
+      legacy("resources/read", params, { "Accept-Encoding": "gzip" }),
+    );
+
+    expect(plain.headers.get("content-type")).toBe("text/event-stream");
+    expect(zipped.headers.get("content-encoding")).toBe("gzip");
+    const text = await gunzip(zipped);
+    expect(text).toBe(await plain.text());
+    expect(parseResponse(text)?.result?.contents).toEqual([
+      { uri: URI, mimeType: "text/html", text: BIG },
+    ]);
+  });
+
+  it("never gzips a tools/call stream, which can carry progress", async () => {
+    const endpoint = makeBigEndpoint();
+    const response = await endpoint.handleRequest(
+      legacy(
+        "tools/call",
+        { name: "anything", arguments: {} },
+        { "Accept-Encoding": "gzip" },
+      ),
+    );
+
+    expect(response.headers.get("content-type")).toBe("text/event-stream");
+    expect(response.headers.get("content-encoding")).toBeNull();
+    expect(parseResponse(await response.text())?.result?.content).toEqual([
+      { type: "text", text: BIG },
+    ]);
+  });
+
+  it("never gzips a batch that holds a tools/call", async () => {
+    const endpoint = makeBigEndpoint();
+    const response = await endpoint.handleRequest(
+      post(
+        JSON.stringify([
+          {
+            jsonrpc: "2.0",
+            id: 1,
+            method: "resources/read",
+            params: { uri: URI },
+          },
+          {
+            jsonrpc: "2.0",
+            id: 2,
+            method: "tools/call",
+            params: { name: "anything", arguments: {} },
+          },
+        ]),
+        { "MCP-Protocol-Version": "2025-11-25", "Accept-Encoding": "gzip" },
+      ),
+    );
+
+    expect(response.headers.get("content-encoding")).toBeNull();
+    await response.text();
   });
 });
 

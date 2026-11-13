@@ -128,6 +128,36 @@ describe("server/discover", () => {
     });
   });
 
+  it("gives hosts an icon and a website (#416)", async () => {
+    const { discover } = await connectTestClient("discover-icon-test");
+    const meta = discover._meta as Record<string, unknown> | undefined;
+
+    expect(meta?.["io.modelcontextprotocol/serverInfo"]).toMatchObject({
+      websiteUrl: "https://github.com/ljcl/intervals-mcp#readme",
+      icons: [
+        {
+          src: expect.stringMatching(/^data:image\/svg\+xml;base64,/),
+          mimeType: "image/svg+xml",
+          sizes: ["any"],
+        },
+      ],
+    });
+  });
+
+  it("gives a 2025-era initialize the same icon and website (#416)", async () => {
+    const client = await connectTestClient("legacy-icon-test");
+    const { result } = await client.sendLegacy("initialize", {
+      protocolVersion: "2025-11-25",
+      capabilities: {},
+      clientInfo: { name: "claude-ai", version: "0.1.0" },
+    });
+    const meta = client.discover._meta as Record<string, unknown>;
+
+    expect(result?.serverInfo).toEqual(
+      meta["io.modelcontextprotocol/serverInfo"],
+    );
+  });
+
   it("sends instructions that fit the budget and route only to real tools", async () => {
     const client = await connectTestClient("discover-instructions-test");
     const { result } = await client.send("tools/list");

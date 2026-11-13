@@ -210,6 +210,34 @@ describe("dispatch telemetry", () => {
     ]);
   });
 
+  it("records whether the client advertised form elicitation (#417)", async () => {
+    const eliciting = await connectTestClient("eliciting-host");
+    await eliciting.send("tools/call", {
+      name: "no-such-tool",
+      arguments: {},
+      _meta: { [CLIENT_CAPABILITIES_META_KEY]: { elicitation: { form: {} } } },
+    });
+    const urlOnly = await connectTestClient("url-only-host");
+    await urlOnly.send("tools/call", {
+      name: "no-such-tool",
+      arguments: {},
+      _meta: { [CLIENT_CAPABILITIES_META_KEY]: { elicitation: { url: {} } } },
+    });
+    await dispatchToolCall("no-such-tool", {});
+
+    expect(loggedRecords()).toEqual([
+      expect.objectContaining({
+        client_name: "eliciting-host",
+        client_elicitation: true,
+      }),
+      expect.objectContaining({
+        client_name: "url-only-host",
+        client_elicitation: false,
+      }),
+      expect.objectContaining({ client_elicitation: false }),
+    ]);
+  });
+
   it("times the call, including the work before the handler runs", async () => {
     await dispatchToolCall("get-activity-laps", { id: "not-an-id" });
 
