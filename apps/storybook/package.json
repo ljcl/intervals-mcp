@@ -21,21 +21,21 @@
     "@intervals-mcp/wellness-trend": "workspace:*"
   },
   "devDependencies": {
-    "@storybook/addon-a11y": "10.6.5",
-    "@storybook/addon-docs": "10.6.5",
-    "@storybook/addon-mcp": "10.6.5",
-    "@storybook/addon-vitest": "10.6.5",
-    "@storybook/react-vite": "10.6.5",
+    "@storybook/addon-a11y": "10.6.6",
+    "@storybook/addon-docs": "10.6.6",
+    "@storybook/addon-mcp": "10.6.6",
+    "@storybook/addon-vitest": "10.6.6",
+    "@storybook/react-vite": "10.6.6",
     "@intervals-mcp/tsconfig": "workspace:*",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
-    "@vitest/browser-playwright": "5.0.5",
-    "playwright": "1.64.1",
+    "@vitest/browser-playwright": "5.1.0",
+    "playwright": "1.65.0",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "storybook": "10.6.5",
     "typescript": "7.0.2",
-    "vite": "8.3.5",
+    "vite": "8.3.6",
     "vitest": "5.0.5"
   }
 }
