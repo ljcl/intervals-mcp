@@ -1,5 +1,25 @@
 # Changelog
 
+## [3.0.0](https://github.com/ljcl/intervals-mcp/compare/v2.19.0...v3.0.0) (2026-11-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* safer defaults and operator visibility ([#492](https://github.com/ljcl/intervals-mcp/issues/492))
+
+### Features
+
+* **apps:** show what the text says, third pass ([#494](https://github.com/ljcl/intervals-mcp/issues/494)) ([a308871](https://github.com/ljcl/intervals-mcp/commit/a308871a6fcd1f510db026b50650e8de04b1e24d))
+* safer defaults and operator visibility ([#492](https://github.com/ljcl/intervals-mcp/issues/492)) ([b0c150c](https://github.com/ljcl/intervals-mcp/commit/b0c150cf42d05abaee1d6c0d75eb5d05e1c375c8))
+* **server:** gzip large answers, server icon, elicitation telemetry ([#426](https://github.com/ljcl/intervals-mcp/issues/426)) ([#495](https://github.com/ljcl/intervals-mcp/issues/495)) ([b098f0f](https://github.com/ljcl/intervals-mcp/commit/b098f0fa979e74258aaa8db8c1be4c41b19527a9))
+* **server:** use corrected elevation when the activity has it ([#505](https://github.com/ljcl/intervals-mcp/issues/505)) ([87a36c1](https://github.com/ljcl/intervals-mcp/commit/87a36c18f9e2560a7f98c9efb3d3ce62f601a47a))
+
+
+### Bug Fixes
+
+* **deps:** bump node from `e4db4c9` to `5adad64` in /apps/server ([#496](https://github.com/ljcl/intervals-mcp/issues/496)) ([99c4ef0](https://github.com/ljcl/intervals-mcp/commit/99c4ef05a117f987175d82cbd9bc4e3112d4dbce))
+* **deps:** bump the production-minor-patch group with 2 updates ([#500](https://github.com/ljcl/intervals-mcp/issues/500)) ([b75f325](https://github.com/ljcl/intervals-mcp/commit/b75f3257db5d530f27de87d5fe9c660c873830e1))
+
 ## [2.19.0](https://github.com/ljcl/intervals-mcp/compare/v2.18.0...v2.19.0) (2026-11-10)
 
 
