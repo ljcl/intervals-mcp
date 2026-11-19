@@ -252,6 +252,11 @@ up within a week.
   is the server's own logging and can quote an upstream error body. To see
   why a tool failed, run the script locally:
   `bun scripts/live-check.ts [activityId]`.
+- The job builds the MCP Apps first. `server.ts` resolves each app's
+  `dist/app.html` when it loads, so in an unbuilt checkout the script
+  stopped at import with no output, and the first run failed that way
+  (2026-11-19). Output that does not end in the summary line now fails the
+  step with an error line that says the script stopped early.
 
 ## Refreshing the intervals.icu API spec
 
