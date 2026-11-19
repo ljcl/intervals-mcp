@@ -18,7 +18,9 @@ export type ToolOutcome =
   | "error"
   | "not_connected"
   | "invalid_args"
-  | "cancelled";
+  | "cancelled"
+  /** A write asked the host to confirm it; the client calls again (#417). */
+  | "input_required";
 
 /** The `error_class` of an `isError` answer that no exception explains, such as a refused argument. */
 export const ERROR_RESULT_CLASS = "ToolErrorResult";
@@ -261,7 +263,11 @@ export function recordToolCall(
     calls: existing.calls + 1,
     errors:
       existing.errors +
-      (record.outcome === "ok" || record.outcome === "cancelled" ? 0 : 1),
+      (record.outcome === "ok" ||
+      record.outcome === "cancelled" ||
+      record.outcome === "input_required"
+        ? 0
+        : 1),
     cancelled: existing.cancelled + (record.outcome === "cancelled" ? 1 : 0),
     total_ms: existing.total_ms + record.duration_ms,
     upstream_requests:

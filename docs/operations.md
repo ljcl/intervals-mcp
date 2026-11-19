@@ -230,9 +230,13 @@ A failed call adds the failure and, when the client sent a trace, its ids:
 ```
 
 `ts` is when the call finished. The call started at `ts` minus `duration_ms`.
-`outcome` is `ok`, `error`, `not_connected`, `invalid_args` or `cancelled`.
+`outcome` is `ok`, `error`, `not_connected`, `invalid_args`, `cancelled` or
+`input_required`.
 `cancelled` means the client cancelled or disconnected before the answer.
-`/health` counts it in `cancelled`, not in `errors`.
+`/health` counts it in `cancelled`, not in `errors`. `input_required` means a
+write asked the host to confirm a replace that drops text (#417); the
+client calls again with the athlete's answer, which logs a second line.
+`/health` counts it as a call, not as an error.
 
 `upstream_requests` is how many requests the call sent to intervals.icu,
 retries included. OpenRouteService requests from the route tools are not
@@ -260,8 +264,9 @@ call as a chart rather than only its text. For example,
 hosts that get the text alone.
 
 `client_elicitation` is true when the request's client capabilities
-advertised form-mode elicitation (#417). It decides whether a write's
-confirmation could move from the model to the host. To count by host:
+advertised form-mode elicitation (#417). When it is true, a replace-mode
+`update-activity` or `update-wellness` that drops text asks the host to
+confirm it, rather than relying on the model. To count by host:
 `grep '"event":"tool_call"' | jq -r '[.client_name, .client_elicitation] | @tsv' | sort | uniq -c`.
 
 `trace_id` and `parent_id` appear only when the request's `_meta.traceparent`

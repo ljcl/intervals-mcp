@@ -1444,7 +1444,14 @@ description's length and first 120 characters, and asks for `append` or
 `replace`. When an explicit `replace` drops existing text, the text reply
 also quotes the removed text (length and first 120 characters), because
 some hosts drop `structuredContent`, where `changes[].before` has it in
-full. `gearId` is validated against `list-gear`: an unknown id fails
+full. When the client advertised form-mode elicitation, an explicit
+`replace` that would drop text first asks the host to confirm it: the call
+returns an `input_required` result whose form quotes the current and new
+description (up to 1,500 characters each) and any other field the write
+changes, and the PUT goes out only when the retried call carries an accept
+for that same change. A decline sends nothing and answers with "was not
+updated", `changes: []` and a warning (docs/architecture.md, "Confirming a
+replace through the host"). `gearId` is validated against `list-gear`: an unknown id fails
 and lists the available gear ids and names; a retired gear id is accepted
 with a warning. `gear_name` names the gear the re-read activity shows on
 every write, from that fresh gear list when `gearId` was sent, else from
@@ -1472,8 +1479,9 @@ null), a single unretried `PUT` of only the fields that differ, a fresh
 re-read, `changes: [{ field, before, after }]` under get-wellness's field
 names, and a warning for any value the re-read does not show.
 `commentsMode` works as `descriptionMode` does: with no mode, comments that
-would drop the day's comments are refused with no PUT, and an explicit
-`replace` quotes the removed text. It never sends `locked` or a device field
+would drop the day's comments are refused with no PUT, an explicit
+`replace` quotes the removed text, and a client with form-mode elicitation
+confirms a `replace` that drops comments first, as `update-activity` does. It never sends `locked` or a device field
 (HRV, resting HR, sleep time, weight, readiness). A day the athlete locked in
 intervals.icu stops API changes, so a value it did not take gets a warning
 that names the lock. `structuredContent.day` is the re-read day in

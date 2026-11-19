@@ -560,6 +560,111 @@ describe("tools/call", () => {
   });
 });
 
+describe("tools/call replace confirmation (#417)", () => {
+  const ELICITING = { elicitation: { form: {} } };
+
+  function replaceCall(extra: Record<string, unknown> = {}) {
+    return {
+      name: "update-activity",
+      arguments: {
+        id: "555",
+        description: "New notes",
+        descriptionMode: "replace",
+      },
+      ...extra,
+    };
+  }
+
+  beforeEach(() => {
+    mockedIntervalsActivity.mockResolvedValue({
+      id: "555",
+      name: "Morning Run",
+      description: "Race notes from the coach",
+      gear: null,
+    } as never);
+    vi.mocked(updateActivity).mockResolvedValue(undefined as never);
+  });
+
+  it("asks the host to confirm the before and after, and writes nothing yet", async () => {
+    const client = await connectTestClient();
+    const { result, error } = await client.send(
+      "tools/call",
+      replaceCall({
+        _meta: { [CLIENT_CAPABILITIES_META_KEY]: ELICITING },
+      }),
+    );
+
+    expect(error).toBeUndefined();
+    expect(result?.resultType).toBe("input_required");
+    expect(typeof result?.requestState).toBe("string");
+    const request = (
+      (result?.inputRequests ?? {}) as Record<
+        string,
+        {
+          method: string;
+          params: { message: string; requestedSchema: unknown };
+        }
+      >
+    ).confirm_write;
+    expect(request?.method).toBe("elicitation/create");
+    expect(request?.params.message).toContain("Race notes from the coach");
+    expect(request?.params.message).toContain("New notes");
+    expect(request?.params.requestedSchema).toMatchObject({
+      properties: { confirm: { type: "boolean" } },
+    });
+    expect(updateActivity).not.toHaveBeenCalled();
+  });
+
+  it("writes once the retry carries an accept for the same change", async () => {
+    const client = await connectTestClient();
+    const meta = { _meta: { [CLIENT_CAPABILITIES_META_KEY]: ELICITING } };
+    const first = await client.send("tools/call", replaceCall(meta));
+    const { result } = await client.send(
+      "tools/call",
+      replaceCall({
+        ...meta,
+        inputResponses: {
+          confirm_write: { action: "accept", content: { confirm: true } },
+        },
+        requestState: first.result?.requestState,
+      }),
+    );
+
+    expect(result?.isError).toBeUndefined();
+    expect(updateActivity).toHaveBeenCalledOnce();
+    expect(updateActivity).toHaveBeenCalledWith("test-token", "555", {
+      description: "New notes",
+    });
+  });
+
+  it("writes nothing on a decline", async () => {
+    const client = await connectTestClient();
+    const meta = { _meta: { [CLIENT_CAPABILITIES_META_KEY]: ELICITING } };
+    const first = await client.send("tools/call", replaceCall(meta));
+    const { result } = await client.send(
+      "tools/call",
+      replaceCall({
+        ...meta,
+        inputResponses: { confirm_write: { action: "decline" } },
+        requestState: first.result?.requestState,
+      }),
+    );
+
+    expect(updateActivity).not.toHaveBeenCalled();
+    const content = result?.content as Array<{ text: string }>;
+    expect(content[0]?.text).toContain("was not updated");
+    expect(result?.structuredContent).toMatchObject({ changes: [] });
+  });
+
+  it("keeps today's behaviour for a client without elicitation", async () => {
+    const client = await connectTestClient();
+    const { result } = await client.send("tools/call", replaceCall());
+
+    expect(result?.resultType).toBe("complete");
+    expect(updateActivity).toHaveBeenCalledOnce();
+  });
+});
+
 describe("tools/call on a view-* tool", () => {
   const MCP_APPS_CAPABILITIES = {
     extensions: {

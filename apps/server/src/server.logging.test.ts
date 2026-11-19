@@ -238,6 +238,34 @@ describe("dispatch telemetry", () => {
     ]);
   });
 
+  it("records a write that asks the host to confirm as input_required, not an error (#417)", async () => {
+    vi.mocked(getActivity).mockResolvedValueOnce({
+      id: "555",
+      name: "Morning Run",
+      description: "Coach notes",
+      gear: null,
+    } as never);
+
+    const result = await dispatchToolCall(
+      "update-activity",
+      { id: "555", description: "New", descriptionMode: "replace" },
+      { client: { rendersApps: false, elicitation: true } },
+    );
+
+    expect(result.inputRequired?.resultType).toBe("input_required");
+    expect(loggedRecords()).toEqual([
+      expect.objectContaining({
+        tool: "update-activity",
+        outcome: "input_required",
+        client_elicitation: true,
+      }),
+    ]);
+    expect(toolCallStats()["update-activity"]).toMatchObject({
+      calls: 1,
+      errors: 0,
+    });
+  });
+
   it("times the call, including the work before the handler runs", async () => {
     await dispatchToolCall("get-activity-laps", { id: "not-an-id" });
 

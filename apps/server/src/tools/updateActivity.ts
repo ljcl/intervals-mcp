@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   getActivity as fetchActivity,
   type IntervalsActivity,
+  type IntervalsActivityUpdate,
   type IntervalsGear,
   listGear,
   updateActivity as putActivity,
@@ -18,6 +19,11 @@ import {
   isGearRetired,
 } from "../utils/activityWrite";
 import { WRITE_DESTRUCTIVE } from "./_annotations";
+import {
+  confirmWrite,
+  quoteForConfirmation,
+  type WriteConfirmContext,
+} from "./_confirm";
 import {
   isDefiniteWriteRejection,
   noteToolFailure,
@@ -46,6 +52,9 @@ Notes:
   description fails and writes nothing.
 - It reads the activity fresh, sends only the fields that differ in one PUT
   (never retried), then re-reads and echoes before and after values.
+- With descriptionMode "replace", a host that supports elicitation asks the
+  athlete to confirm the old and new text before any text is dropped. A
+  decline writes nothing; do not resend unless the athlete asks.
 - gearId is checked against the current gear list: an unknown id fails and
   lists the valid ones, a retired id is accepted with a warning. Gear can be
   switched but not cleared.
@@ -209,6 +218,36 @@ async function withGearNames(
   );
 }
 
+/** The warning a declined confirmation leaves (#417). */
+const DECLINED_WARNING =
+  "The athlete declined the change when the host asked to confirm it, so nothing was sent.";
+
+/** The other fields a confirmed replace also writes, one line each. */
+function otherChangeLines(patch: IntervalsActivityUpdate): string[] {
+  const lines: string[] = [];
+  if (patch.name !== undefined) lines.push(`Name: "${patch.name}"`);
+  if (patch.gear !== undefined) lines.push(`Gear: ${patch.gear.id}`);
+  if (patch.icu_rpe !== undefined) lines.push(`RPE: ${patch.icu_rpe}`);
+  if (patch.feel !== undefined) lines.push(`Feel: ${patch.feel}`);
+  return lines;
+}
+
+/** The confirmation's text: the description lost, its replacement, and
+ * anything else the same write changes. */
+function replaceMessage(
+  id: string,
+  before: IntervalsActivity,
+  patch: IntervalsActivityUpdate,
+): string {
+  const others = otherChangeLines(patch);
+  return [
+    `Replace the description of activity ${id} ("${before.name ?? id}")? The current description will be removed.`,
+    `Current description:\n${quoteForConfirmation(before.description)}`,
+    `New description:\n${quoteForConfirmation(patch.description)}`,
+    ...(others.length > 0 ? [`Also changes:\n${others.join("\n")}`] : []),
+  ].join("\n\n");
+}
+
 export const updateActivityTool = {
   name,
   title: "Update activity",
@@ -216,7 +255,12 @@ export const updateActivityTool = {
   inputSchema,
   annotations: WRITE_DESTRUCTIVE,
   outputSchema: ActivityWriteOutputSchema,
-  execute: async (input: UpdateActivityInput, apiKey: string) => {
+  execute: async (
+    input: UpdateActivityInput,
+    apiKey: string,
+    _progress?: unknown,
+    context?: WriteConfirmContext,
+  ) => {
     const {
       id,
       name: newName,
@@ -337,6 +381,41 @@ export const updateActivityTool = {
           ],
           structuredContent: structured,
         };
+      }
+
+      // An explicit replace that drops text: a host that can show a form
+      // confirms the before and after with the athlete first (#417).
+      const replaced =
+        descriptionMode === "replace" && patch.description !== undefined
+          ? discardedDescription(beforeFields.description, patch.description)
+          : null;
+      if (replaced !== null) {
+        const confirmation = confirmWrite(context, {
+          message: replaceMessage(id, before, patch),
+          label: "Replace the description",
+          change: { tool: name, id, before: replaced, patch },
+        });
+        if (confirmation.status === "ask") {
+          return { content: [], inputRequired: confirmation.result };
+        }
+        if (confirmation.status === "declined") {
+          const structured = toActivityWriteOutput(
+            before,
+            [],
+            [DECLINED_WARNING],
+            await gearNameOf(apiKey, before, gearList),
+          );
+          warnOnSchemaDrift(name, ActivityWriteOutputSchema, structured);
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Activity ${id} was not updated: ${DECLINED_WARNING} Do not send it again unless the athlete asks.`,
+              },
+            ],
+            structuredContent: structured,
+          };
+        }
       }
 
       try {
