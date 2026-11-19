@@ -247,11 +247,15 @@ up within a week.
   `main` may deploy to (`scripts/setup-branch-protection.sh` sets the rule;
   set the secret once with `gh secret set INTERVALS_API_KEY --env
   live-check`). The script makes no writes, but the key can write.
-- The log is public. The script prints a short summary per tool to stdout and
-  never a payload or an error's own message. The workflow drops stderr, which
-  is the server's own logging and can quote an upstream error body. To see
-  why a tool failed, run the script locally:
-  `bun scripts/live-check.ts [activityId]`.
+- The log is public, so the workflow passes `--names-only`: each check
+  prints its name and `ok` or `error`, an over-budget answer still says
+  `OVER BUDGET`, and a failure keeps its category (an error class,
+  `auth/config error`, the fields of an unexpected shape). None of the
+  athlete's numbers (resting HR, best efforts, CTL/ATL/TSB, year-to-date
+  totals) reach the log; the first runs printed them. The workflow also
+  drops stderr, which is the server's own logging and can quote an upstream
+  error body. To see the numbers, or why a tool failed, run the script
+  locally: `bun scripts/live-check.ts [activityId]`.
 - The job builds the MCP Apps first. `server.ts` resolves each app's
   `dist/app.html` when it loads, so in an unbuilt checkout the script
   stopped at import with no output, and the first run failed that way
