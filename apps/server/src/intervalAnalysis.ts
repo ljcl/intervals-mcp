@@ -350,10 +350,15 @@ export function detectRests(streams: IntervalStreams): RawRest[] {
  * - fast preceding effort and ≤ 3 min → genuine interval recovery
  * - under 60 s with no fast preceding effort → traffic light, excluded
  * - anything else → unclassified stop, excluded
+ *
+ * `indoor` changes the words only: a treadmill has no traffic light, so the
+ * reason says "short stop" (#517). The kind stays `traffic_light`, which is
+ * a published value.
  */
 export function classifyRest(
   durationS: number,
   precedingFast: boolean,
+  indoor = false,
 ): { kind: RestKind; reason: string } {
   if (durationS > REST_LONG_STOP_MIN_SECONDS) {
     return {
@@ -370,12 +375,12 @@ export function classifyRest(
   if (durationS < REST_URBAN_MAX_SECONDS) {
     return {
       kind: "traffic_light",
-      reason: `${Math.round(durationS)} s stop with no fast effort before it: traffic light, excluded`,
+      reason: `${Math.round(durationS)} s stop with no fast effort before it: ${indoor ? "short stop" : "traffic light"}, excluded`,
     };
   }
   return {
     kind: "other_stop",
-    reason: `${Math.round(durationS)} s stop that fits neither recovery nor traffic-light patterns: excluded`,
+    reason: `${Math.round(durationS)} s stop that fits neither recovery nor ${indoor ? "short-stop" : "traffic-light"} patterns: excluded`,
   };
 }
 
@@ -723,7 +728,9 @@ export function computeIntervalAnalysis(
   streams: IntervalStreams,
   laps: IntervalLap[] = [],
   athlete: AthleteHr = {},
+  options: { indoor?: boolean } = {},
 ): IntervalAnalysis {
+  const indoor = options.indoor === true;
   if (
     !streams.time ||
     streams.time.length < 2 ||
@@ -796,7 +803,11 @@ export function computeIntervalAnalysis(
   const classified = rawRests.map((rest, r) => {
     const before = restSegmentBefore[r];
     const precedingFast = before != null && isFast(segments[before]!);
-    const { kind, reason } = classifyRest(rest.durationS, precedingFast);
+    const { kind, reason } = classifyRest(
+      rest.durationS,
+      precedingFast,
+      indoor,
+    );
     return {
       startTimeS: Math.round(rest.startTimeS),
       durationS: Math.round(rest.durationS),
@@ -876,7 +887,7 @@ export function computeIntervalAnalysis(
   const reasonBits = [
     `${rests.length} rests detected` +
       (rests.length > 0
-        ? ` (${counts.traffic_light} traffic lights, ${counts.recovery} interval recoveries, ${counts.long_stop} long stops, ${counts.other_stop} unclassified)`
+        ? ` (${counts.traffic_light} ${indoor ? "short stops" : "traffic lights"}, ${counts.recovery} interval recoveries, ${counts.long_stop} long stops, ${counts.other_stop} unclassified)`
         : ""),
   ];
   if (standingStart) {

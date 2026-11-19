@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ignoreWarnings } from "../activityIgnore";
 import {
   ELEVATION_SOURCE_CHOICES,
   type ElevationSource,
@@ -475,9 +476,13 @@ export const getSplitAnalysisTool = {
           cadence_label: cadenceLabel(type),
           power: "W" as const,
         },
-        warnings: comparison?.sensitivity_warning
-          ? [...analysis.warnings, comparison.sensitivity_warning]
-          : analysis.warnings,
+        warnings: [
+          ...analysis.warnings,
+          ...(comparison?.sensitivity_warning
+            ? [comparison.sensitivity_warning]
+            : []),
+          ...ignoreWarnings(activity, { hr: true, pace: true }),
+        ],
       };
       warnOnSchemaDrift(name, SplitAnalysisOutputSchema, structured);
 

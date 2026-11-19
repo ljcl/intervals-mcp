@@ -17,6 +17,7 @@ import {
 } from "./mapAnchors";
 import { NO_PROGRESS, type ReportProgress } from "./progress";
 import { addDays, daysBetween } from "./utils/localDate";
+import { isIndoor } from "./utils/running";
 
 export const CLUSTER_RADIUS_M = 300;
 export const RECENCY_HALF_LIFE_DAYS = 60;
@@ -100,7 +101,13 @@ export async function loadRunStarts(
     newest: today,
   });
   const candidates = activities
-    .filter((a) => OUTDOOR_RUN_TYPES.has(a.type ?? "") && (a.distance ?? 0) > 0)
+    // An indoor run has no GPS track, so it gets no stream read (#517).
+    .filter(
+      (a) =>
+        OUTDOOR_RUN_TYPES.has(a.type ?? "") &&
+        (a.distance ?? 0) > 0 &&
+        !isIndoor(a),
+    )
     .slice(0, MAX_HISTORY_RUNS);
 
   const runs: RunStart[] = [];

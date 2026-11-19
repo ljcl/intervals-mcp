@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ignoreWarnings } from "../activityIgnore";
 import {
   type ActivityWeather,
   buildActivityWeather,
@@ -421,6 +422,14 @@ export function buildComparison(
     warnings.push(
       `Activity 2 (${activity2.name ?? type2}) is not a running activity (${type2})`,
     );
+  }
+  for (const [label, activity] of [
+    ["Activity 1", activity1],
+    ["Activity 2", activity2],
+  ] as const) {
+    for (const warning of ignoreWarnings(activity, { hr: true, pace: true })) {
+      warnings.push(`${label}: ${warning}`);
+    }
   }
 
   const summary1 = extractActivitySummary(

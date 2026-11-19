@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ignoreWarnings } from "../activityIgnore";
 import {
   activityDisplayName,
   formatDuration,
@@ -40,6 +41,7 @@ import { NO_PROGRESS, type ReportProgress } from "../progress";
 import {
   cadenceSpm,
   formatPaceSeconds,
+  isIndoor,
   isPaceActivity,
   sportSpeed,
 } from "../utils/running";
@@ -500,10 +502,15 @@ export const getIntervalAnalysisTool = {
         watts: streams.watts,
       };
       const laps = (activity.icu_intervals ?? []).map(toIntervalLap);
-      const analysis = computeIntervalAnalysis(intervalStreams, laps, {
-        athleteMaxHr: activity.athlete_max_hr,
-        hrZones: activity.icu_hr_zones,
-      });
+      const analysis = computeIntervalAnalysis(
+        intervalStreams,
+        laps,
+        {
+          athleteMaxHr: activity.athlete_max_hr,
+          hrZones: activity.icu_hr_zones,
+        },
+        { indoor: isIndoor(activity) },
+      );
       const cadenceUnitLabel = cadenceLabel(type);
       const similar = findSimilar
         ? await findSimilarSessions(
@@ -574,7 +581,10 @@ export const getIntervalAnalysisTool = {
           cadence_label: cadenceUnitLabel,
           power: "W" as const,
         },
-        warnings: analysis.warnings,
+        warnings: [
+          ...analysis.warnings,
+          ...ignoreWarnings(activity, { hr: true, pace: true }),
+        ],
         ...(similar ? { similar } : {}),
       };
       warnOnSchemaDrift(name, IntervalAnalysisOutputSchema, structured);

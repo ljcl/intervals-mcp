@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ignoreWarnings } from "../activityIgnore";
 import {
   type AerobicAnalysis,
   AerobicAnalysisError,
@@ -432,7 +433,10 @@ export const getAerobicAnalysisTool = {
       let basis: Basis | null = useApiValues
         ? null
         : (requestedBasis ?? defaultBasis);
-      const warnings: string[] = [];
+      const warnings: string[] = ignoreWarnings(activity, {
+        hr: true,
+        pace: basis !== "power",
+      });
       if (basis === "gap" && !isRun) {
         basis = "pace";
         warnings.push(

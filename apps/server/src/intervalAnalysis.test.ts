@@ -105,6 +105,14 @@ describe("detectRests", () => {
 describe("classifyRest", () => {
   it("matches the documented heuristic table", () => {
     expect(classifyRest(30, false).kind).toBe("traffic_light");
+    // Indoors the kind stays, and the words name no traffic light (#517).
+    expect(classifyRest(30, false, true)).toEqual({
+      kind: "traffic_light",
+      reason: "30 s stop with no fast effort before it: short stop, excluded",
+    });
+    expect(classifyRest(200, false, true).reason).toContain(
+      "neither recovery nor short-stop patterns",
+    );
     expect(classifyRest(30, true).kind).toBe("recovery");
     expect(classifyRest(90, true).kind).toBe("recovery");
     expect(classifyRest(REST_RECOVERY_MAX_SECONDS, true).kind).toBe("recovery");

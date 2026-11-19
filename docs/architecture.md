@@ -417,6 +417,24 @@ Elevation gain is the activity's own `total_elevation_gain` when it has one,
 so `get-split-analysis` and `get-activity` agree; `ascentFromAltitude`
 (valley-to-peak climbs with a 3 m hysteresis) is the fallback.
 
+**An indoor activity has no elevation source and no grade-adjusted pace
+(#517).** intervals.icu marks it with `trainer: true` and sends no altitude,
+no `ga_velocity`, no `gap` and no `total_elevation_gain`
+(docs/api-notes.md). `isIndoor` (`utils/running.ts`) is the one test. The
+rules that follow from it each have their own home: `resolveElevation`
+returns no source without an altitude stream and `gapBasis` returns null, so
+the split tool is clock-only and the hill tool refuses (its text adds that
+the run is indoors); `buildActivityWeather` returns null, because the
+weather on the record is the weather outdoors; `classifyRest` names no
+traffic light; `loadRunStarts` reads no streams for it.
+
+**The athlete's ignore marks do not remove data (#510).** intervals.icu
+keeps marked heart rate, pace and time in the activity's own numbers and
+streams, and leaves an ignored part out of the activity's curves only. A
+tool that removed the data would not agree with intervals.icu for the same
+activity, so the stream tools warn instead: `ignoreWarnings`
+(`activityIgnore.ts`) is the one home of those sentences.
+
 **Running efficiency has one definition.** `speedEfficiencyFactor` in
 `aerobicAnalysis.ts`: metres per minute per heartbeat, so higher is better
 and a slower pace at a proportionally lower heart rate scores the same.

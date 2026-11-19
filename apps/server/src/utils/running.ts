@@ -100,6 +100,16 @@ export function metersPerSecToPace(
  */
 export { PACE_ACTIVITY_TYPES };
 
+/**
+ * True for an indoor activity (intervals.icu's `trainer` flag, #517): the
+ * one home of that test. An indoor run has no elevation source and no
+ * grade-adjusted pace, the weather on its record is the weather outdoors,
+ * and it has no start for the route tools.
+ */
+export function isIndoor(activity: { trainer?: boolean | null }): boolean {
+  return activity.trainer === true;
+}
+
 /** True when `type` gets a pace string (Run/TrailRun/VirtualRun only). */
 export function isPaceActivity(type: string): boolean {
   return PACE_ACTIVITY_TYPES.has(type);

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ignoreWarnings } from "../activityIgnore";
 import {
   type BothElevations,
   climbGainSensitivity,
@@ -32,6 +33,7 @@ import { NO_PROGRESS, type ReportProgress } from "../progress";
 import {
   cadenceSpm,
   formatPaceSeconds,
+  isIndoor,
   isPaceActivity,
 } from "../utils/running";
 import { READ_ONLY } from "./_annotations";
@@ -253,9 +255,12 @@ export const getHillAnalysisTool = {
     apiKey: string,
     progress: ReportProgress = NO_PROGRESS,
   ) => {
+    // Known after the activity read; the error text below names it.
+    let indoor = false;
     try {
       progress(`Fetching activity ${id}`);
       const activity = await getActivity(apiKey, id);
+      indoor = isIndoor(activity);
       const type = activity.type ?? "Workout";
       const displayName = activity.name ?? type;
       if (!isPaceActivity(type)) {
@@ -307,9 +312,13 @@ export const getHillAnalysisTool = {
               analysis,
             })
           : null;
-      const warnings = comparison?.sensitivity_warning
-        ? [...analysis.warnings, comparison.sensitivity_warning]
-        : analysis.warnings;
+      const warnings = [
+        ...analysis.warnings,
+        ...(comparison?.sensitivity_warning
+          ? [comparison.sensitivity_warning]
+          : []),
+        ...ignoreWarnings(activity, { hr: true, pace: true }),
+      ];
 
       const structured = {
         activity_id: id,
@@ -429,7 +438,12 @@ export const getHillAnalysisTool = {
       if (error instanceof HillAnalysisError) {
         noteToolFailure(error);
         return {
-          content: [{ type: "text" as const, text: `❌ ${error.message}` }],
+          content: [
+            {
+              type: "text" as const,
+              text: `❌ ${error.message}${indoor ? " This run is indoors (intervals.icu's trainer flag), so it has no elevation data." : ""}`,
+            },
+          ],
           isError: true,
         };
       }

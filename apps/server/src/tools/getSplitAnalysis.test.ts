@@ -638,3 +638,39 @@ describe("get-split-analysis GAP model (#508)", () => {
     expect(SplitAnalysisOutputSchema.safeParse(structured).success).toBe(true);
   });
 });
+
+describe("get-split-analysis ignore marks (#510)", () => {
+  it("warns, and keeps the numbers, for an activity the athlete marked to ignore heart rate", async () => {
+    mockedGetActivityStreams.mockResolvedValue(hillyStreams);
+    mockedGetActivity.mockResolvedValue(hillyActivity);
+    const plain = await getSplitAnalysisTool.execute(
+      { id: "i189757207" },
+      "test-key",
+    );
+    mockedGetActivity.mockResolvedValue({
+      ...hillyActivity,
+      icu_ignore_hr: true,
+    } as IntervalsActivity);
+
+    const marked = await getSplitAnalysisTool.execute(
+      { id: "i189757207" },
+      "test-key",
+    );
+
+    const before = plain.structuredContent as {
+      splits: Array<{ avg_hr: number | null }>;
+      warnings: string[];
+    };
+    const after = marked.structuredContent as typeof before;
+    expect(before.warnings.join(" ")).not.toContain("to ignore");
+    expect(after.warnings.at(-1)).toContain(
+      "You marked this activity's heart rate to ignore in intervals.icu.",
+    );
+    // intervals.icu keeps the data in the activity's own numbers, so the
+    // splits do too.
+    expect(after.splits).toEqual(before.splits);
+    expect(marked.content[0]?.text).toContain(
+      "Warning: You marked this activity's heart rate to ignore",
+    );
+  });
+});

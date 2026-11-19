@@ -424,7 +424,8 @@ curves for a 90-day window (37 runs) and a 2-month range.
   `fields=` is ignored here. Not used by get-best-efforts.
 - No activity on this account has `ignore_parts` set (0 of 610 over two
   years; the spec's `Ignore` is `{start_index, end_index, power, pace, hr}`),
-  so how a part ignored for pace changes a curve is not verified.
+  so how a part ignored for pace changes a curve was not verified here. A
+  later check did verify it: see "Ignore marks on an activity" below.
   get-best-efforts leaves out the `pace: true` parts, both ends included, and
   only when the stream loader dropped no sample (a sample with no time
   shifts the indices). No activity has `ignore_pace` set either, so whether
@@ -1001,6 +1002,41 @@ intervals.icu serves two stream pairs: `heartrate`/`fixed_heartrate` and
   when they differ. An account with power-meter rides and a power spike threshold
   is needed to see `fixed_watts`.
 
+## Ignore marks on an activity (2026-11-19, #510, live write check, user-approved, one run)
+
+One old run (5.3 km, 2025-06-04) got each mark in turn through `PUT /activity/{id}`, with a read
+of the activity (with intervals), its streams, its HR curve and its pace curve 20 s after each
+write. Each mark was then set back, and the last read shows all marks off.
+
+- `PUT /activity/{id}` accepts `icu_ignore_hr`, `icu_ignore_time`, `ignore_pace`,
+  `ignore_velocity` (booleans) and `ignore_parts` (a list of
+  `{start_index, end_index, hr, pace, power}`); the response has the new value. `ignore_parts: []`
+  reads back as `null`.
+- **No mark changes the activity's own numbers.** With `icu_ignore_hr: true`, with
+  `icu_ignore_time: true`, with `ignore_pace: true`, and with an ignored part of 300 samples
+  for `hr` or for `pace`, these stay equal: `average_heartrate`, `max_heartrate`,
+  `icu_hr_zone_times`, `hr_load`, `pace_load`, `icu_training_load`, `trimp`, `pace`, `gap`,
+  `average_speed`, `pace_zone_times`, `gap_zone_times`, the first intervals (indices, average
+  heart rate, `gap`) and the `time`, `heartrate`, `fixed_heartrate`, `velocity_smooth`,
+  `ga_velocity` and `distance` streams (same length, same nulls, same values).
+- What does change: an ignored part with `hr: true` changes `GET /activity/{id}/hr-curve`, and
+  one with `pace: true` changes `GET /activity/{id}/pace-curve`. `icu_ignore_hr: true` changed
+  `polarization_index` from null to 1.55 and changed no curve of the activity. So the marks
+  are for the curves (and, probably, for the athlete's curves and models, which were not
+  read), not for the activity's summary.
+- Result for the server: the stream tools keep the data, because a number computed without it
+  would not agree with intervals.icu's number for the same activity. They add a warning
+  (`ignoreWarnings` in `activityIgnore.ts`). `get-best-efforts` leaves an ignored pace part
+  out, which agrees with the pace curve.
+- Side effects of a write to an old activity, which stayed after the marks were set back:
+  intervals.icu analysed the run again with its current rules. It added weather fields
+  (`has_weather: true`, temperatures, wind), a `route_id`, a `submax_fatigue_test` and the tag
+  `SFT`. With `ignore_velocity: true`, `moving_time` went from 1822 s to 1827 s (and `pace`,
+  `trimp`, `average_stride` with it) and did not go back. So a write of any field to an old
+  activity can change numbers that the write did not name.
+- Not checked: `icu_ignore_power` (the account has no power meter data), the athlete's own
+  HR and pace curves, and eFTP or threshold models.
+
 ## Indoor and treadmill runs (2026-11-19, #513, live read-only)
 
 The account has one indoor run. A scan of every activity from 2018-01-01 to
@@ -1061,7 +1097,7 @@ Tool results on i50548661 (tool handlers called directly with the live key):
   short for decoupling.
 - get-interval-analysis: verdict correct ("not an interval session"). It
   calls the two stops at the end of the run "traffic light". That label is
-  wrong for an indoor run (follow-up: #517).
+  wrong for an indoor run. Fixed with #517: the reason says "short stop".
 - get-running-dynamics: correct. It says that the device did not report
   ground contact time or vertical oscillation.
 - get-activity-streams: correct. It lists `altitude`, `fixed_altitude` and
@@ -1076,8 +1112,9 @@ Tool results on i50548661 (tool handlers called directly with the live key):
   (`startClusters.ts`) keeps type `Run`, so it reads the indoor run's
   streams. With no `latlng`, `trackFromStreams` returns null and the run is
   left out with the warning "had no GPS track". The result is correct, but
-  it costs one stream read per indoor run in the 180-day window (follow-up:
-  #517, which also covers that no tool says the run is indoors).
+  it costs one stream read per indoor run in the 180-day window (fixed
+  with #517: an indoor run gets no stream read, and `get-activity` and
+  `get-running-summary` say that the run is indoors and report no weather).
 
 ## OpenRouteService (route suggestions, verified 2026-11-03)
 

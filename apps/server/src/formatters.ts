@@ -10,6 +10,14 @@ export function round(value: number, dp = 0): number {
 }
 
 /**
+ * The line a text tool prints for an indoor activity (`isIndoor`,
+ * `utils/running.ts`), so the reader knows why there is no elevation, no
+ * grade-adjusted pace and no weather (#517).
+ */
+export const INDOOR_NOTE =
+  "Indoor activity (treadmill or trainer): no GPS, elevation, grade-adjusted pace or weather.";
+
+/**
  * Note appended when an activity's `source` is `"STRAVA"`: intervals.icu has
  * no further detail for it through this API (see docs/api-notes.md's Strava
  * stub spike). Shared by list-activities and get-activity so the wording
