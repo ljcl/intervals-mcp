@@ -1,0 +1,53 @@
+name: Live check
+
+# Runs scripts/live-check.ts, every intervals.icu read tool against the real
+# account, once a week (#418). intervals.icu changes its response shapes
+# without notice, and the script itself can break unseen: #384 fixed a
+# TypeError in checkGetAthleteStats that had sat broken until a manual run.
+# A failing tool turns the run red.
+#
+# No pull_request trigger, so a fork's code never runs beside the key. The
+# key sits in the `live-check` environment, whose deployment branches are
+# main only (scripts/setup-branch-protection.sh): the script makes no writes,
+# but the key can write. workflow_dispatch runs it by hand from main.
+
+on:
+  schedule:
+    - cron: "37 20 * * 0" # Sunday 20:37 UTC, Monday morning in Sydney
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  live-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: live-check
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: $/.github/actions/setup
+        with:
+          # No turbo task runs here, so this job has nothing to add to the
+          # cache (see the input's description).
+          turbo-cache: "false"
+
+      # The log of a public repo is public. The script prints only a short
+      # summary per tool to stdout and never a payload or an error's own
+      # message (its header says why). stderr is the server's own logging,
+      # which can quote an upstream error body, so it is dropped.
+      - name: Live check
+        env:
+          INTERVALS_API_KEY: ${{ secrets.INTERVALS_API_KEY }}
+          # The route store's default is ./data; keep it out of the checkout.
+          DATA_DIR: ${{ runner.temp }}/data
+        run: bun scripts/live-check.ts 2>/dev/null

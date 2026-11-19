@@ -9,6 +9,7 @@ import {
   TRACEPARENT_META_KEY,
 } from "@modelcontextprotocol/server";
 import { parseJsonWithLargeInts } from "./fetchClient";
+import { gzipResponse } from "./httpCompression";
 import {
   parseTraceparent,
   type RejectedRequestRecord,
@@ -93,6 +94,10 @@ export interface McpEndpoint {
  * sends one per chart card (#325). Errors the SDK reports while it builds the answer
  * go into that line, not into a second one. The `Authorization` header is
  * never read here.
+ *
+ * A large answer that is complete before it is sent goes out gzipped when the
+ * client accepts it (`httpCompression.ts`, #415); a stream that can carry
+ * progress never does.
  */
 export function createMcpEndpoint(
   createServer: (ctx: McpRequestContext) => Server,
@@ -163,7 +168,9 @@ export function createMcpEndpoint(
         report.answered = true;
       }
       await reportExchange(req, body, response, report.errors);
-      return response;
+      return gzipResponse(req, response, {
+        completeStream: req.method === "POST" && answersOnce(body),
+      });
     },
     close: () => handler.close(),
   };
@@ -209,6 +216,39 @@ async function reportExchange(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Methods whose answer is one message and nothing before it. The 2025-era
+ * path still answers them as SSE, so `gzipResponse` may read such a stream to
+ * its end and compress it (#415). `tools/call` is not here: its stream can
+ * carry progress. Neither is `subscriptions/listen`, which stays open.
+ */
+const ONE_ANSWER_METHODS: ReadonlySet<string> = new Set([
+  "initialize",
+  "ping",
+  "server/discover",
+  "tools/list",
+  "prompts/list",
+  "prompts/get",
+  "resources/list",
+  "resources/templates/list",
+  "resources/read",
+  "completion/complete",
+]);
+
+/** True when every message in the body is a request for a {@link ONE_ANSWER_METHODS} method. */
+function answersOnce(body: unknown): boolean {
+  const messages = Array.isArray(body) ? body : [body];
+  return (
+    messages.length > 0 &&
+    messages.every(
+      (message) =>
+        isRecord(message) &&
+        typeof message.method === "string" &&
+        ONE_ANSWER_METHODS.has(message.method),
+    )
+  );
 }
 
 /** The code and message of the JSON-RPC error in a JSON answer, if it has one. */

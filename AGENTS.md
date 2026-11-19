@@ -150,7 +150,8 @@ breaking them has shipped bugs — do not work around them locally.
   before token resolution (not-connected calls count); a returned `isError`
   counts as an error unless the call was cancelled (`cancelled`);
   `recordToolCall` can never fail the call it describes; each line records
-  `client_apps` and `client_name` from the request envelope; each line also
+  `client_apps`, `client_elicitation` and `client_name` from the request
+  envelope; each line also
   records `ts`, bounded client strings and tool name, W3C trace ids and
   `error_class`/`http_status` noted in the call scope; every refused /mcp
   request (HTTP 400+ except 499 and a GET/DELETE 405, and 401) writes one
@@ -221,7 +222,8 @@ breaking them has shipped bugs — do not work around them locally.
   (`instructions.ts`).** Sent in `server/discover` to every chat, so they
   stay under 1,800 characters and name only tools that exist; the
   integration test checks both. Every tool, prompt and app resource has a
-  display `title`, and so does `serverInfo`.
+  display `title`, and so does `serverInfo` (`serverInfo.ts`, which also
+  holds the icon and `websiteUrl`).
 - **Protocol-surface tests go over the wire**
   (`server.integration.test.ts` via `mcpTestClient.ts`): capabilities, object inputSchemas (no `$ref`), string
   ids, `structuredContent`, `isError` not JSON-RPC errors, app resources,
@@ -356,7 +358,7 @@ Non-negotiables:
 
 ```bash
 bun install               # Install all deps (workspace-aware)
-bun run check             # Full verification: lint + knip + test + typecheck + build + boundaries
+bun run check             # Full verification: lint + knip + test (with coverage thresholds) + typecheck + build + boundaries
 bun run check:affected    # Same, but only packages changed since main (root lint, knip and typecheck:root always run)
 bun run build             # Build all packages (via Turborepo)
 bun run build:affected    # Build only changed packages

@@ -4,12 +4,38 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  clientSupportsFormElicitation,
   clientSupportsMcpApps,
   MCP_APP_MIME_TYPE,
   viewHeader,
 } from "./clientCapabilities";
 
 const UI = "io.modelcontextprotocol/ui";
+
+describe("clientSupportsFormElicitation (#417)", () => {
+  it("is true for an elicitation capability with form mode, or no mode named", () => {
+    // An empty object is form mode only, by the spec.
+    expect(clientSupportsFormElicitation({ elicitation: {} })).toBe(true);
+    expect(clientSupportsFormElicitation({ elicitation: { form: {} } })).toBe(
+      true,
+    );
+    expect(
+      clientSupportsFormElicitation({ elicitation: { form: {}, url: {} } }),
+    ).toBe(true);
+  });
+
+  it("is false for URL mode alone, or no elicitation", () => {
+    expect(clientSupportsFormElicitation({ elicitation: { url: {} } })).toBe(
+      false,
+    );
+    expect(clientSupportsFormElicitation(undefined)).toBe(false);
+    expect(clientSupportsFormElicitation(null)).toBe(false);
+    expect(clientSupportsFormElicitation({})).toBe(false);
+    expect(clientSupportsFormElicitation({ elicitation: true })).toBe(false);
+    expect(clientSupportsFormElicitation({ elicitation: null })).toBe(false);
+    expect(clientSupportsFormElicitation({ elicitation: [] })).toBe(false);
+  });
+});
 
 describe("clientSupportsMcpApps", () => {
   it("needs the ui extension with the MCP App mime type", () => {

@@ -22,6 +22,8 @@
  * text, which can interpolate an activity name. No write calls are made.
  *
  * Usage: `bun scripts/live-check.ts [activityId]` (default i189807578).
+ * `.github/workflows/live-check.yml` runs it weekly with stderr dropped, so
+ * only what this script prints to stdout reaches the public log.
  */
 
 import path from "node:path";
