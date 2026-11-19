@@ -148,10 +148,19 @@ at `apps/server/src/__fixtures__/intervals/`.
   `altitude` (119-220 m). Per-km mean grade from all three agrees within about 1 point; they
   disagree locally (in `streams-hilly.json`, a km reported flat got a GAP 13% slower than its
   pace). Hill and split analysis
-  (and `get-aerobic-analysis`'s GAP basis) derive grade from `altitude`, the stream their
-  reported grade and elevation change read, and use `grade_smooth` only without altitude
-  (#297). What `fixed_altitude` itself is (a corrected track or a terrain-model lookup) is
-  still not known: `docs/intervals-openapi.json` does not mention it.
+  (and `get-aerobic-analysis`'s GAP basis) derive grade from one altitude stream, the stream
+  their reported grade and elevation change read, and use `grade_smooth` only without
+  altitude (#297). That stream is `fixed_altitude` when the activity has correction on, else
+  `altitude` (`resolveElevation` in `elevationSource.ts`).
+- `fixed_altitude` is the "Use elevation correction" stream, and the activity field
+  `use_elevation_correction` (boolean, in `docs/intervals-openapi.json`) says whether
+  correction is on (2026-11-19, read-only, 40 activities from 2026-10-01): all 24 with
+  `use_elevation_correction: true` list `fixed_altitude` in `stream_types`, and all 16 with
+  `false` do not. `streams.json?types=fixed_altitude` returns it as a `Float` stream, the
+  same length as `altitude`, no nulls on the run checked. On that run the raw summed ascent
+  was 282 m from `altitude` and 377 m from `fixed_altitude`, against a
+  `total_elevation_gain` of 331 m. The OpenAPI document does not name the stream type; the
+  sport-settings field `elevation_correction` (`NO`/`AUTO`/`YES`) is the athlete default.
 - A stream that is entirely null (`allNull: true`) reaches the analysis modules as an array of
   nulls. Hill and split analysis treat an all-null `altitude` as no altitude, not as flat
   ground (#45).

@@ -140,6 +140,10 @@ const IntervalsActivitySchema = z
     moving_time: z.number().nullable().optional(),
     elapsed_time: z.number().nullable().optional(),
     total_elevation_gain: z.number().nullable().optional(),
+    /** True when the athlete has "Use elevation correction" on for the
+     * activity; `total_elevation_gain` and `grade_smooth` then follow the
+     * `fixed_altitude` stream (docs/api-notes.md). */
+    use_elevation_correction: z.boolean().nullable().optional(),
     gap: z.number().nullable().optional(),
     /** Detected work intervals, e.g. ["5x 4m51s 164bpm", "1x 25s 164bpm"];
      * null when none. `.catch(null)`, like `icu_achievements`: a malformed

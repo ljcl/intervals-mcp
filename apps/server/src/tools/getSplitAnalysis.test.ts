@@ -9,6 +9,7 @@ import {
   handledNotFound,
   handledRateLimit,
   syntheticStreams,
+  withCorrectedAltitude,
 } from "../__fixtures__";
 import activityFixture from "../__fixtures__/intervals/activity.json";
 import activityHilly from "../__fixtures__/intervals/activity-hilly.json";
@@ -371,5 +372,75 @@ describe("get-split-analysis", () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain("not found");
+  });
+
+  describe("elevation source", () => {
+    type Structured = {
+      elevation_source: string | null;
+      elevation_note: string | null;
+      splits: Array<{ elevation_change_m: number | null }>;
+      totals: {
+        elevation_gain_m: number | null;
+        elevation_gain_source: string | null;
+      };
+    };
+    const run = async (
+      streams: IntervalsStream[],
+      args: { useCorrectedElevation?: boolean } = {},
+    ) => {
+      mockedGetActivity.mockResolvedValue(hillyActivity);
+      mockedGetActivityStreams.mockResolvedValue(streams);
+      const result = await getSplitAnalysisTool.execute(
+        { id: "i189757207", ...args },
+        "test-key",
+      );
+      expect(result.isError).toBeUndefined();
+      const structured = result.structuredContent as Structured;
+      expect(SplitAnalysisOutputSchema.safeParse(structured).success).toBe(
+        true,
+      );
+      return { structured, text: result.content[0]?.text ?? "" };
+    };
+    const firstChange = (s: Structured) => s.splits[0]?.elevation_change_m ?? 0;
+
+    it("reads the corrected stream by default and keeps intervals.icu's gain", async () => {
+      const corrected = await run(withCorrectedAltitude(hillyStreams));
+      const recorded = await run(withCorrectedAltitude(hillyStreams), {
+        useCorrectedElevation: false,
+      });
+
+      expect(corrected.structured.elevation_source).toBe("corrected");
+      expect(corrected.structured.elevation_note).toBeNull();
+      expect(corrected.text).toContain("Elevation source: corrected");
+      expect(corrected.structured.totals.elevation_gain_source).toBe(
+        "intervals.icu",
+      );
+      // The corrected fixture doubles every altitude change.
+      expect(firstChange(corrected.structured)).toBeCloseTo(
+        firstChange(recorded.structured) * 2,
+        0,
+      );
+    });
+
+    it("sums the gain from the recorded altitude when asked for it on a corrected activity", async () => {
+      const { structured } = await run(withCorrectedAltitude(hillyStreams), {
+        useCorrectedElevation: false,
+      });
+
+      expect(structured.elevation_source).toBe("barometric");
+      expect(structured.elevation_note).toBeNull();
+      expect(structured.totals.elevation_gain_source).toBe("computed");
+    });
+
+    it("falls back to the recorded altitude, and says so, without a corrected stream", async () => {
+      const { structured, text } = await run(hillyStreams);
+
+      expect(structured.elevation_source).toBe("barometric");
+      expect(structured.elevation_note).toContain(
+        "no corrected altitude stream",
+      );
+      expect(structured.totals.elevation_gain_source).toBe("intervals.icu");
+      expect(text).toContain("Elevation source: barometric");
+    });
   });
 });

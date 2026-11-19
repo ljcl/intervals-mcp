@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { elevationLines, resolveElevation } from "../elevationSource";
 import { formatSigned } from "../formatters";
 import {
   computeHillAnalysis,
@@ -41,6 +42,10 @@ Notes:
   segment's grade and gain are read from, else from intervals.icu's smoothed
   grade stream; grade_source says which. Grade-adjusted pace uses grade
   averaged over 100 m, and a noisy elevation track adds a warning.
+- The altitude is intervals.icu's corrected elevation when the activity has
+  elevation correction on, else the recorded (barometric) altitude;
+  elevation_source says which, and elevation_note says why a fallback
+  happened. useCorrectedElevation: false forces the recorded altitude.
 - With no elevation data (no grade and no real altitude samples), it
   returns an error rather than treating the run as flat.
 - Works without power, and without HR (the drift then uses grade-adjusted
@@ -53,13 +58,25 @@ Notes:
 
 const inputSchema = z.object({
   id: intervalsActivityIdInput("The intervals.icu activity id."),
+  useCorrectedElevation: z
+    .boolean()
+    .default(true)
+    .describe(
+      "Use intervals.icu's corrected elevation when the activity has elevation correction on. Set false to use the recorded (barometric) altitude, for example to compare the two sources on one run.",
+    ),
 });
 
-type GetHillAnalysisInput = z.infer<typeof inputSchema>;
+/** `useCorrectedElevation` is optional for a direct caller; the dispatcher
+ * always sends the schema default. */
+type GetHillAnalysisInput = Omit<
+  z.infer<typeof inputSchema>,
+  "useCorrectedElevation"
+> & { useCorrectedElevation?: boolean };
 
 const STREAM_TYPES = [
   "distance",
   "altitude",
+  "fixed_altitude",
   "grade_smooth",
   "heartrate",
   // Not read for GAP (#298); the loader derives `moving` from it.
@@ -113,7 +130,7 @@ export const getHillAnalysisTool = {
   annotations: READ_ONLY,
   outputSchema: HillAnalysisOutputSchema,
   execute: async (
-    { id }: GetHillAnalysisInput,
+    { id, useCorrectedElevation = true }: GetHillAnalysisInput,
     apiKey: string,
     progress: ReportProgress = NO_PROGRESS,
   ) => {
@@ -155,10 +172,15 @@ export const getHillAnalysisTool = {
       }
 
       progress("Computing hill analysis", { important: true });
+      const elevation = resolveElevation(
+        activity,
+        streams,
+        useCorrectedElevation,
+      );
       const hillStreams: HillStreams = {
         time: streams.time,
         distance: streams.distance ?? [],
-        altitude: streams.altitude,
+        altitude: elevation.altitude,
         grade_smooth: streams.grade_smooth,
         heartrate: streams.heartrate,
         cadence: streams.cadence,
@@ -173,6 +195,8 @@ export const getHillAnalysisTool = {
         date: activity.start_date_local,
         type,
         grade_source: analysis.gradeSource,
+        elevation_source: elevation.source,
+        elevation_note: elevation.note,
         // GAP throughout this response is locally modelled from grade
         // (Minetti metabolic-cost curve, hillAnalysis.ts's gapFactor), not
         // intervals.icu's own gap field (see get-activity/compare-activities/
@@ -215,6 +239,7 @@ export const getHillAnalysisTool = {
       const lines = [
         `Hill Analysis: ${structured.name} (${structured.date})`,
         `Grade source: ${structured.grade_source}`,
+        ...elevationLines(elevation),
         `${structured.totals.climb_count} climbs (${structured.totals.climb_distance_m} m, +${structured.totals.climb_gain_m} m), ${structured.totals.descent_count} descents`,
         "",
       ];

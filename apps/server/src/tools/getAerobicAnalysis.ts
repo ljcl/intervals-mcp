@@ -6,6 +6,12 @@ import {
   computeAerobicAnalysis,
   interpretDecoupling,
 } from "../aerobicAnalysis";
+import {
+  type ElevationSource,
+  elevationLines,
+  type ResolvedElevation,
+  resolveElevation,
+} from "../elevationSource";
 import { formatSigned, round } from "../formatters";
 import { gradeAdjustedSpeeds } from "../hillAnalysis";
 import {
@@ -92,6 +98,12 @@ const inputSchema = z.object({
     .describe(
       "Threshold power (FTP) in watts for the intensity factor, power basis only. Defaults to the activity's icu_ftp, then the athlete's sport-settings ftp for its sport.",
     ),
+  useCorrectedElevation: z
+    .boolean()
+    .default(true)
+    .describe(
+      "Gap basis only. Use intervals.icu's corrected elevation when the activity has elevation correction on. Set false to use the recorded (barometric) altitude, for example to compare the two sources on one run.",
+    ),
   includeBreakdown: z
     .boolean()
     .default(false)
@@ -100,7 +112,12 @@ const inputSchema = z.object({
     ),
 });
 
-type GetAerobicAnalysisInput = z.infer<typeof inputSchema>;
+/** `useCorrectedElevation` is optional for a direct caller; the dispatcher
+ * always sends the schema default. */
+type GetAerobicAnalysisInput = Omit<
+  z.infer<typeof inputSchema>,
+  "useCorrectedElevation"
+> & { useCorrectedElevation?: boolean };
 type Basis = "gap" | "pace" | "power";
 
 const BASE_STREAM_TYPES: IntervalsStreamType[] = [
@@ -113,6 +130,7 @@ const BASE_STREAM_TYPES: IntervalsStreamType[] = [
 const GRADE_STREAM_TYPES: IntervalsStreamType[] = [
   "distance",
   "altitude",
+  "fixed_altitude",
   "grade_smooth",
 ];
 
@@ -152,6 +170,11 @@ export interface StreamAerobicResult {
   basis: Basis;
   /** The fallback and noisy-elevation warnings; the analysis has its own. */
   warnings: string[];
+  /** The elevation stream the gap basis read; null on any other basis, and
+   * when grade came from intervals.icu's grade stream (no altitude). */
+  elevationSource: ElevationSource | null;
+  /** Why a request for corrected elevation got the recorded one; else null. */
+  elevationNote: string | null;
 }
 
 /**
@@ -159,7 +182,9 @@ export interface StreamAerobicResult {
  * `basis`. The warm-up is excluded as this tool does by default (the
  * activity's `icu_warmup_time`, then `sportSettings`' `warmup_time`, then 5
  * minutes) unless `excludeWarmupSeconds` is set; the cool-down the
- * same way from `icu_cooldown_time` and `cooldown_time` (#296). The one home of the
+ * same way from `icu_cooldown_time` and `cooldown_time` (#296). The gap basis
+ * reads corrected elevation when the activity has it, unless
+ * `useCorrectedElevation` is false (`resolveElevation`). The one home of the
  * stream path, shared with get-running-summary, which fills intervals.icu's
  * missing values from it on the gap basis. Throws
  * `IntervalsStreamsUnavailableError` for an activity with no streams and
@@ -175,6 +200,7 @@ export async function streamAerobicAnalysis(
     excludeWarmupSeconds?: number;
     excludeCooldownSeconds?: number;
     thresholdPower?: number | null;
+    useCorrectedElevation?: boolean;
   },
 ): Promise<StreamAerobicResult> {
   let basis = options.basis;
@@ -187,17 +213,28 @@ export async function streamAerobicAnalysis(
   );
   const warnings: string[] = [];
   let speed = streams.velocity_smooth;
+  let elevationSource: ElevationSource | null = null;
+  let elevationNote: string | null = null;
   if (basis === "gap") {
+    const elevation = resolveElevation(
+      activity,
+      streams,
+      options.useCorrectedElevation ?? true,
+    );
     const gap = gradeAdjustedSpeeds({
       time: streams.time,
       distance: streams.distance ?? [],
-      altitude: streams.altitude,
+      altitude: elevation.altitude,
       grade_smooth: streams.grade_smooth,
       velocity_smooth: streams.velocity_smooth,
     });
     if (gap) {
       speed = gap.speeds;
       if (gap.warning) warnings.push(gap.warning);
+      if (gap.gradeSource === "computed") {
+        elevationSource = elevation.source;
+        elevationNote = elevation.note;
+      }
     } else {
       basis = "pace";
       warnings.push(
@@ -225,7 +262,7 @@ export async function streamAerobicAnalysis(
       300,
     thresholdPower: options.thresholdPower ?? null,
   });
-  return { analysis, basis, warnings };
+  return { analysis, basis, warnings, elevationSource, elevationNote };
 }
 
 export const getAerobicAnalysisTool = {
@@ -242,6 +279,7 @@ export const getAerobicAnalysisTool = {
       excludeWarmupMinutes,
       excludeCooldownMinutes,
       thresholdPower,
+      useCorrectedElevation = true,
       includeBreakdown,
     }: GetAerobicAnalysisInput,
     apiKey: string,
@@ -293,6 +331,10 @@ export const getAerobicAnalysisTool = {
           ? (thresholdPower ?? activity.icu_ftp ?? sportSettings?.ftp ?? null)
           : null;
       let analysis: AerobicAnalysis | null = null;
+      let elevation: Pick<ResolvedElevation, "source" | "note"> = {
+        source: null,
+        note: null,
+      };
 
       if (basis != null) {
         progress(`Fetching streams for "${displayName}"`);
@@ -314,6 +356,7 @@ export const getAerobicAnalysisTool = {
                   ? excludeCooldownMinutes * 60
                   : undefined,
               thresholdPower: resolvedThresholdPower,
+              useCorrectedElevation,
             },
           );
         } catch (error) {
@@ -335,6 +378,10 @@ export const getAerobicAnalysisTool = {
         analysis = result.analysis;
         basis = result.basis;
         warnings.push(...result.warnings);
+        elevation = {
+          source: result.elevationSource,
+          note: result.elevationNote,
+        };
       }
 
       if (basis === "power" && resolvedThresholdPower == null) {
@@ -364,6 +411,8 @@ export const getAerobicAnalysisTool = {
         date: activity.start_date_local,
         type,
         basis,
+        elevation_source: elevation.source,
+        elevation_note: elevation.note,
         decoupling_pct: round(decouplingPct, 1),
         decoupling_source: source,
         interpretation,
@@ -423,6 +472,7 @@ export const getAerobicAnalysisTool = {
         basis
           ? `Basis: ${BASIS_LABELS[basis]}`
           : "Basis: not reported (intervals.icu's own values)",
+        ...elevationLines(elevation),
         "",
         `Decoupling: ${formatSigned(structured.decoupling_pct, 1)}%: ${interpretation} [${source}]`,
       ];

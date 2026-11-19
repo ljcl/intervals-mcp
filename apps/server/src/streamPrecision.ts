@@ -19,6 +19,7 @@ export const STREAM_DECIMALS: Readonly<Record<ScalarStreamType, number>> = {
   altitude: 1,
   cadence: 0,
   distance: 1,
+  fixed_altitude: 1,
   grade_smooth: 1,
   heartrate: 0,
   stance_time: 1,

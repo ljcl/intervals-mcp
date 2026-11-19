@@ -30,6 +30,7 @@ const STREAM_TYPES = [
   "cadence",
   "velocity_smooth",
   "altitude",
+  "fixed_altitude",
   "latlng",
   "watts",
   "stance_time",
@@ -67,6 +68,9 @@ Notes:
   latlng, which take the bucket's last sample.
 - A missing sample is null. A heart-rate dropout (the sensor lost contact)
   is null too, never 0 bpm, and a bucket mean skips it.
+- altitude is the recorded (barometric) elevation; fixed_altitude is
+  intervals.icu's corrected elevation, present when the activity has
+  elevation correction on.
 - time is always fetched but only returned when requested.
 - A requested type the activity lacks is listed in missing, not an error.
 - Cadence is steps per minute (spm) for Run, TrailRun, VirtualRun, Walk and
@@ -105,6 +109,7 @@ const UNITS: Record<StreamType, string> = {
   cadence: "spm",
   velocity_smooth: "m/s",
   altitude: "m",
+  fixed_altitude: "m",
   latlng: "deg",
   watts: "W",
   stance_time: "ms",

@@ -9,6 +9,7 @@ import {
   handledNotFound,
   handledRateLimit,
   syntheticStreams,
+  withCorrectedAltitude,
 } from "../__fixtures__";
 import activityFixture from "../__fixtures__/intervals/activity.json";
 import sportSettingsRunFixture from "../__fixtures__/intervals/sport-settings-run.json";
@@ -619,5 +620,84 @@ describe("get-aerobic-analysis", () => {
     expect(parse(120).success).toBe(true);
     expect(parse(-1).success).toBe(false);
     expect(parse(121).success).toBe(false);
+  });
+
+  describe("elevation source on the gap basis", () => {
+    // Uphill first at a steady 150 bpm: about 0% on the true grade. The
+    // corrected stream here is flat (scale 0), so reading it leaves the
+    // raw-pace drift in place.
+    const streams = withCorrectedAltitude(
+      syntheticStreams([
+        { metres: 5000, speed: 2.8, gradePct: 1.8, hr: 150 },
+        { metres: 5000, speed: 3.4, gradePct: -1.8, hr: 150 },
+      ]),
+      0,
+    );
+    type Structured = {
+      basis: string;
+      decoupling_pct: number;
+      elevation_source: string | null;
+      elevation_note: string | null;
+    };
+    const run = async (
+      args: { basis?: "gap" | "pace"; useCorrectedElevation?: boolean },
+      activity: IntervalsActivity = baseActivity,
+    ) => {
+      mockedGetActivity.mockResolvedValue(activity);
+      mockedGetActivityStreams.mockResolvedValue(streams);
+      const result = await getAerobicAnalysisTool.execute(
+        {
+          id: "i189807578",
+          basis: "gap",
+          excludeWarmupMinutes: 0,
+          includeBreakdown: false,
+          ...args,
+        },
+        "test-key",
+      );
+      expect(result.isError).toBeUndefined();
+      const structured = result.structuredContent as Structured;
+      expect(AerobicAnalysisOutputSchema.safeParse(structured).success).toBe(
+        true,
+      );
+      return { structured, text: result.content[0]?.text ?? "" };
+    };
+
+    it("reads the corrected stream by default", async () => {
+      const { structured, text } = await run({});
+
+      expect(structured.elevation_source).toBe("corrected");
+      expect(structured.elevation_note).toBeNull();
+      expect(Math.abs(structured.decoupling_pct)).toBeGreaterThan(10);
+      expect(text).toContain("Elevation source: corrected");
+    });
+
+    it("reads the recorded altitude when useCorrectedElevation is false", async () => {
+      const { structured } = await run({ useCorrectedElevation: false });
+
+      expect(structured.elevation_source).toBe("barometric");
+      expect(structured.elevation_note).toBeNull();
+      expect(Math.abs(structured.decoupling_pct)).toBeLessThan(1);
+    });
+
+    it("falls back, and says so, when the activity has correction off", async () => {
+      const { structured, text } = await run(
+        {},
+        { ...baseActivity, use_elevation_correction: false },
+      );
+
+      expect(structured.elevation_source).toBe("barometric");
+      expect(structured.elevation_note).toContain("correction is off");
+      expect(Math.abs(structured.decoupling_pct)).toBeLessThan(1);
+      expect(text).toContain("correction is off");
+    });
+
+    it("reports no elevation source on the pace basis", async () => {
+      const { structured, text } = await run({ basis: "pace" });
+
+      expect(structured.basis).toBe("pace");
+      expect(structured.elevation_source).toBeNull();
+      expect(text).not.toContain("Elevation source");
+    });
   });
 });
