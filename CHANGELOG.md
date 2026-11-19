@@ -1,5 +1,15 @@
 # Changelog
 
+## [3.1.0](https://github.com/ljcl/intervals-mcp/compare/v3.0.0...v3.1.0) (2026-11-19)
+
+
+### Features
+
+* **server:** compare corrected and barometric elevation in one call ([#516](https://github.com/ljcl/intervals-mcp/issues/516)) ([8abf1c8](https://github.com/ljcl/intervals-mcp/commit/8abf1c844ddb016ac48d593f01e008cb088b309d))
+* **server:** confirm replace-mode writes through the host ([#514](https://github.com/ljcl/intervals-mcp/issues/514)) ([f461ece](https://github.com/ljcl/intervals-mcp/commit/f461ece2c25d16fc0367c2240efe697403cc405e))
+* **server:** follow the intervals.icu settings that change its own numbers ([#518](https://github.com/ljcl/intervals-mcp/issues/518)) ([fda6276](https://github.com/ljcl/intervals-mcp/commit/fda6276a3dc10bee030e32dd39b4c607d13a870b))
+* **server:** say that a run is indoors, and warn on the athlete's ignore marks ([#519](https://github.com/ljcl/intervals-mcp/issues/519)) ([1c7fc38](https://github.com/ljcl/intervals-mcp/commit/1c7fc3829ce701fed16ba325cd1371c555e3b278))
+
 ## [3.0.0](https://github.com/ljcl/intervals-mcp/compare/v2.19.0...v3.0.0) (2026-11-19)
 
 
