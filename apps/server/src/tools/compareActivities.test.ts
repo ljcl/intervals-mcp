@@ -4,6 +4,8 @@ import {
   handledRateLimit,
   type SyntheticLeg,
   syntheticStreams,
+  withCorrectedAltitude,
+  withGaVelocity,
 } from "../__fixtures__";
 import {
   buildFitFile,
@@ -842,3 +844,119 @@ describe("compare-activities sameRoute", () => {
 });
 
 const round3 = (value: number) => Math.round(value * 1000) / 1000;
+
+describe("compare-activities elevation and GAP sources (#509, #513)", () => {
+  beforeEach(() => {
+    mockedGetActivity.mockReset();
+    mockedGetActivityStreams.mockReset();
+    mockedGetActivityStreams.mockResolvedValue([]);
+    mockedGetActivityFile.mockReset();
+  });
+
+  it("names the source of each side's elevation gain, with no note when they agree", () => {
+    const result = buildComparison(
+      fakeActivity({ use_elevation_correction: true }),
+      { ...faster, use_elevation_correction: true } as IntervalsActivity,
+    );
+    expect(result.activity_1.elevation_source).toBe("corrected");
+    expect(result.activity_2.elevation_source).toBe("corrected");
+    expect(result.elevation_note).toBeNull();
+  });
+
+  it("says so when one gain is corrected and the other barometric", () => {
+    const result = buildComparison(
+      fakeActivity({ use_elevation_correction: true }),
+      faster,
+    );
+    expect(result.activity_2.elevation_source).toBe("barometric");
+    expect(result.elevation_note).toBe(
+      "Activity 1's elevation gain is from corrected elevation and activity 2's from the recorded (barometric) altitude, so the two are not like for like.",
+    );
+  });
+
+  it("reports no elevation gain, not 0 m, for an activity without elevation data", async () => {
+    mockedGetActivity.mockResolvedValueOnce(
+      fakeActivity({ total_elevation_gain: null, trainer: true }),
+    );
+    mockedGetActivity.mockResolvedValueOnce(faster);
+
+    const result = await compareActivitiesTool.execute(
+      { activityId1: "i100", activityId2: "i200" },
+      "test-token",
+    );
+
+    const structured = CompareActivitiesOutputSchema.parse(
+      result.structuredContent,
+    );
+    expect(structured.activity_1?.elevation_gain_m).toBeNull();
+    expect(structured.activity_1?.elevation_source).toBeNull();
+    expect(structured.differences?.elevation_gain_m).toBeNull();
+    expect(structured.elevation_note).toBeNull();
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain("  Elevation: no elevation data");
+    expect(text).toContain("  Elevation: 78 m (barometric)");
+    // No difference line for elevation: only the two per-side lines.
+    expect(text.match(/Elevation:/g)).toHaveLength(2);
+  });
+
+  it("names what each side's splits read, and notes a mixed pair", async () => {
+    mockedGetActivity.mockResolvedValueOnce(
+      fakeActivity({ use_elevation_correction: true, gap_model: "STRAVA_RUN" }),
+    );
+    mockedGetActivity.mockResolvedValueOnce(faster);
+    mockedGetActivityStreams.mockImplementation(async (_key, id) => {
+      const streams = syntheticStreams(kmLegs(6, () => 150));
+      return id === "i100"
+        ? withGaVelocity(withCorrectedAltitude(streams), 3.4)
+        : streams;
+    });
+
+    const result = await compareActivitiesTool.execute(
+      { activityId1: "i100", activityId2: "i200" },
+      "test-token",
+    );
+
+    const km = CompareActivitiesOutputSchema.parse(
+      result.structuredContent,
+    ).km_comparison;
+    expect(km).toMatchObject({
+      basis: "gap",
+      elevation_source_1: "corrected",
+      elevation_source_2: "barometric",
+      gap_model_1: "strava",
+      gap_model_2: "minetti",
+    });
+    expect(km?.basis_note).toContain(
+      "Activity 1's per-km elevation is from corrected elevation and activity 2's from the recorded (barometric) altitude",
+    );
+    expect(km?.basis_note).toContain(
+      "Activity 1's grade-adjusted pace uses the Strava model and activity 2's the Minetti model",
+    );
+    expect(result.content[0]?.text).toContain(`Per-km note: ${km?.basis_note}`);
+  });
+
+  it("has no per-km note when both sides read the same source and model", async () => {
+    mockedGetActivity.mockResolvedValueOnce(fakeActivity({}));
+    mockedGetActivity.mockResolvedValueOnce(faster);
+    mockedGetActivityStreams.mockImplementation(async () =>
+      syntheticStreams(kmLegs(6, () => 150)),
+    );
+
+    const result = await compareActivitiesTool.execute(
+      { activityId1: "i100", activityId2: "i200" },
+      "test-token",
+    );
+
+    const km = CompareActivitiesOutputSchema.parse(
+      result.structuredContent,
+    ).km_comparison;
+    expect(km).toMatchObject({
+      elevation_source_1: "barometric",
+      elevation_source_2: "barometric",
+      gap_model_1: "minetti",
+      gap_model_2: "minetti",
+      basis_note: null,
+    });
+    expect(result.content[0]?.text).not.toContain("Per-km note:");
+  });
+});

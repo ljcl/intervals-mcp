@@ -319,8 +319,10 @@ export const getFitnessTrendTool = {
               ctl: current.ctl,
               atl: current.atl,
               tsb: current.tsb,
+              form_percent: current.form_percent,
             }
           : null,
+        form_display: loaded.formDisplay,
         trend: trendSummary,
         flags,
         bands,
@@ -348,7 +350,12 @@ export const getFitnessTrendTool = {
         output += `**${pastWindow ? "End of window" : "Current"} (as of ${current.date})**\n`;
         output += `  Fitness (CTL): ${current.ctl}\n`;
         output += `  Fatigue (ATL): ${current.atl}\n`;
-        output += `  Form (TSB): ${formatSigned(current.tsb)}\n\n`;
+        output += `  Form (TSB): ${formatSigned(current.tsb)}\n`;
+        // Only for an athlete whose intervals.icu shows the percentage, so
+        // the number they see there is the number they read here.
+        if (loaded.formDisplay === "percent" && current.form_percent !== null)
+          output += `  Form as a percentage of fitness: ${formatSigned(Math.round(current.form_percent))}% (the number intervals.icu shows for this athlete)\n`;
+        output += "\n";
       }
 
       if (trendSummary) {

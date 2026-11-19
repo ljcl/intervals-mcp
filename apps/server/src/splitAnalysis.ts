@@ -10,18 +10,19 @@
  * fade, and a course that flattens out hides fade; reporting both is what
  * separates the two.
  *
- * Grade handling, null-sample handling, and the Minetti GAP factor are
- * `hillAnalysis.ts`'s (`computeGrades`, `normalizeHillStreams`, `gapGrades`,
- * `gapFactor`): there is one definition of grade-adjusted pace in this
+ * Grade handling, null-sample handling, and grade-adjusted distance are
+ * `hillAnalysis.ts`'s (`computeGrades`, `normalizeHillStreams`,
+ * `gapBasis`): there is one definition of grade-adjusted pace in this
  * server, and the climb tool and this one share it.
  */
 
 import { round } from "./formatters";
 import {
   computeGrades,
+  type GapBasis,
+  type GapModel,
   type GradeSource,
-  gapFactor,
-  gapGrades,
+  gapBasis,
   type HillStreams,
   hasRealSample,
   MAX_SAMPLE_GAP_SECONDS,
@@ -128,6 +129,8 @@ export interface SplitAnalysis {
   splits: Split[];
   verdict: SplitVerdict | null;
   gradeSource: SplitGradeSource;
+  /** The model behind the grade-adjusted paces; null when there are none. */
+  gapModel: GapModel | null;
   fastestSplitIndex: number | null;
   slowestSplitIndex: number | null;
   totals: {
@@ -158,8 +161,10 @@ export interface Bin {
   cadW: number;
   wattsSum: number;
   wattsW: number;
-  /** Metres weighted by gapFactor: grade-adjusted distance. */
+  /** Grade-adjusted distance: the sum of `gapBasis`' metres. */
   gapDistanceM: number;
+  /** The seconds that distance is divided by: the sum of its seconds. */
+  gapTimeS: number;
   startAlt: number | null;
   endAlt: number | null;
 }
@@ -179,6 +184,7 @@ function emptyBin(startM: number, endM: number): Bin {
     wattsSum: 0,
     wattsW: 0,
     gapDistanceM: 0,
+    gapTimeS: 0,
     startAlt: null,
     endAlt: null,
   };
@@ -190,12 +196,13 @@ function emptyBin(startM: number, endM: number): Bin {
  * buckets in proportion to the distance falling in each, so a coarse stream
  * does not dump a whole 40 m interval into whichever split it happened to end
  * in — and so the same core can bin per-km splits and exact halves alike.
- * `gapGrade` is `gapGrades`' averaged grade; null (no elevation data) leaves
- * every bucket without a grade-adjusted pace rather than calling it flat.
+ * `gap` is `gapBasis`' grade-adjusted metres and seconds per sample; null
+ * (no GAP data) leaves every bucket without a grade-adjusted pace rather
+ * than calling it flat.
  */
 export function binByDistance(
   streams: NormalizedHillStreams,
-  gapGrade: number[] | null,
+  gap: Pick<GapBasis, "metres" | "seconds"> | null,
   edges: number[],
 ): Bin[] {
   const bins: Bin[] = [];
@@ -245,12 +252,17 @@ export function binByDistance(
       if (isMoving) {
         bin.movingTimeS += dt;
         bin.weightS += weight;
+        // intervals.icu's GAP speed can be above zero on a sample that
+        // added no distance; Minetti's metres are zero here.
+        if (gap) {
+          bin.gapDistanceM += Math.max(0, gap.metres[i]!);
+          bin.gapTimeS += gap.seconds[i]!;
+        }
       }
       observeAltitude(bin, altitude?.[i]);
       continue;
     }
 
-    const gapSpeedFactor = gapGrade ? gapFactor(gapGrade[i]! / 100) : null;
     const hr = heartrate?.[i];
     const cad = cadence?.[i];
     // Run power of exactly 0 while moving is a stream dropout, not a real
@@ -265,8 +277,9 @@ export function binByDistance(
       const share = Math.min(overlap / dd, 1);
 
       bin.distanceM += dd * share;
-      if (gapSpeedFactor != null) {
-        bin.gapDistanceM += dd * share * gapSpeedFactor;
+      if (gap) {
+        bin.gapDistanceM += gap.metres[i]! * share;
+        bin.gapTimeS += gap.seconds[i]! * share;
       }
       bin.elapsedTimeS += dt * share;
       if (!isMoving) continue;
@@ -307,8 +320,8 @@ function paceFromBin(bin: Bin): number | null {
  * bin's GAP is its pace (#298).
  */
 function gapPaceFromBin(bin: Bin): number | null {
-  if (bin.movingTimeS <= 0 || bin.gapDistanceM <= 0) return null;
-  return bin.movingTimeS / (bin.gapDistanceM / SPLIT_LENGTH_M);
+  if (bin.gapTimeS <= 0 || bin.gapDistanceM <= 0) return null;
+  return bin.gapTimeS / (bin.gapDistanceM / SPLIT_LENGTH_M);
 }
 
 function shapeOf(deltaPct: number): SplitShape {
@@ -456,18 +469,21 @@ export function computeSplitAnalysis(
   // up as corrected.
   const hasElevation = Boolean(normalized.altitude || normalized.grade_smooth);
   let gradeSource: SplitGradeSource = "none";
-  let gapGrade: number[] | null = null;
-  let noisyElevation = false;
+  let grades: number[] | null = null;
   if (hasElevation) {
-    const { grades, source } = computeGrades(normalized);
-    const gap = gapGrades(grades, distance);
-    gradeSource = source;
-    gapGrade = gap.grades;
-    if (gap.warning) {
-      warnings.push(gap.warning);
-      noisyElevation = true;
-    }
-  } else {
+    const computed = computeGrades(normalized);
+    gradeSource = computed.source;
+    grades = computed.grades;
+  }
+  // intervals.icu's own GAP speed needs no grade from here, so an activity
+  // can have a grade-adjusted pace without an elevation stream.
+  const gap = gapBasis(normalized, grades);
+  let noisyElevation = false;
+  if (gap?.warning) {
+    warnings.push(gap.warning);
+    noisyElevation = true;
+  }
+  if (!gap) {
     warnings.push(
       "No elevation or grade stream: there is no grade-adjusted pace, so the verdict is on the clock only.",
     );
@@ -489,7 +505,7 @@ export function computeSplitAnalysis(
     splitEdges.splice(splitEdges.length - 2, 1);
   }
 
-  const splitBins = binByDistance(normalized, gapGrade, splitEdges);
+  const splitBins = binByDistance(normalized, gap, splitEdges);
   const splits: Split[] = splitBins.map((bin, i) => {
     const partial = bin.endM - bin.startM < SPLIT_LENGTH_M - 1;
     const change = elevationChange(bin);
@@ -533,11 +549,8 @@ export function computeSplitAnalysis(
     .filter((split) => split.paceSecPerKm != null)
     .sort((a, b) => a.paceSecPerKm! - b.paceSecPerKm!);
 
-  const totalBin = binByDistance(normalized, gapGrade, [
-    base,
-    base + totalM,
-  ])[0]!;
-  const halfBins = binByDistance(normalized, gapGrade, [
+  const totalBin = binByDistance(normalized, gap, [base, base + totalM])[0]!;
+  const halfBins = binByDistance(normalized, gap, [
     base,
     base + totalM / 2,
     base + totalM,
@@ -570,6 +583,7 @@ export function computeSplitAnalysis(
     splits,
     verdict,
     gradeSource,
+    gapModel: gap?.model ?? null,
     fastestSplitIndex: ranked[0]?.index ?? null,
     slowestSplitIndex: ranked[ranked.length - 1]?.index ?? null,
     totals: {

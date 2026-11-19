@@ -359,7 +359,7 @@ strongest feeling and 5 the weakest, as `update-activity`'s tool description say
   - A type's data does not depend on the other types in the request. On the GPS run, every tool reported the same numbers on main (per-tool type lists) and on the branch (the superset).
   - An activity without GPS or a sensor answers 200 with the missing types left out. The pool swim returned 6 stream keys and the strength session 2; the route map got 0 points, and no stream read failed.
   - Every tool gave the same ok or error result on main and on the branch for both no-GPS activities. The errors are the run-only tools declining a swim or a strength session, as before #71.
-- This account has no run without GPS since March 2026, so a treadmill run is not checked directly.
+- This account has no run without GPS since March 2026. The one indoor run (2024) is checked in "Indoor and treadmill runs" below.
 
 ## Best efforts and pace curves (2026-10-08, live read-only, #82)
 
@@ -895,6 +895,189 @@ not wanted.
 - Not verified live: that a reset moves `starting_distance` to the item's
   current distance (no run was logged between the add and the reset), and
   what `snoozed_until` holds.
+
+## GAP model and the `ga_velocity` stream (2026-11-19, #508, live read-only)
+
+- The activity field `gap_model` names the model behind `activity.gap` and `interval.gap`. All 193
+  runs from 2025-01-01 have `STRAVA_RUN`; rides, swims, walks, strength and Pilates have `NONE`.
+  The Run sport settings have the same field. The OpenAPI enum has only these two values.
+- `GET /activity/{id}/streams.json?types=ga_velocity` returns intervals.icu's own grade-adjusted
+  speed in m/s, one sample per `time` sample. The activity's `stream_types` never lists it. A
+  sample is null where `velocity_smooth` is null (12 of 6178, 157 of 11114 and 27 of 7434 on
+  three runs; these are around stops). JSON size: 60 KB, 72 KB and 107 KB for runs of 17, 22
+  and 34 km.
+- A request that names `ga_velocity` for a ride, a swim, a walk or a strength session answers
+  200 and leaves the stream out. The indoor run (see the indoor section) has no `ga_velocity`
+  and `gap: null`, with `gap_model: "STRAVA_RUN"`.
+- `activity.gap` is the plain mean of the non-null `ga_velocity` samples: 2.9686 against
+  2.9691 m/s, 3.2100 against 3.2103, 3.1163 against 3.1163. `interval.gap` is the same mean
+  over the interval's samples (mean absolute difference 0.0001 to 0.002 m/s on laps longer
+  than 60 samples; 0.015 m/s with 30-sample laps included). The sum of `ga_velocity` times
+  the sample's seconds, divided by `interval.moving_time`, is wrong by up to 0.5 m/s on a lap
+  with stops.
+- `ga_velocity` follows the corrected elevation. On three runs with
+  `use_elevation_correction: true`, the factor `ga_velocity / velocity_smooth` correlates with
+  100 m grade from `fixed_altitude` at r 0.72 to 0.76, with `grade_smooth` at r 0.80 to 0.89,
+  and with 100 m grade from `altitude` at r 0.04 to 0.46. Not verified: a GPS run with
+  correction off (this account has none; the only run with `false` is the indoor run).
+- The factor by `grade_smooth` (mean of the samples in a 3-point band, sd 0.00 to 0.07), the
+  same on all three runs:
+
+  | Grade % | -18 | -15 | -12 | -9 | -6 | -3 | 0 | 3 | 6 | 9 | 12 | 15 | 18 |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | Factor | 1.02 | 0.95 | 0.90 | 0.88 | 0.88 | 0.92 | 0.99 | 1.09 | 1.23 | 1.40 | 1.61 | 1.85 | 2.10 |
+
+  The smallest factor is 0.874. The Minetti curve gives 0.64 at -9% and 1.35 at 6%, so the
+  two models differ most on a descent.
+- `distance` times `ga_velocity / velocity_smooth` does not give `activity.gap`: it was 4 to
+  7 s/km slow on the three runs, because the two speed streams are smoothed differently.
+- What the server does (`resolveGapModel`, `gapBasis` in `hillAnalysis.ts`): when the activity
+  has `gap_model: "STRAVA_RUN"` and a `ga_velocity` stream, and the analysis reads the
+  elevation intervals.icu used, every grade-adjusted pace is the moving-time mean of
+  `ga_velocity` over the samples that have one. On five runs (17 to 42 km, 318 to 693 m of
+  gain) the whole-run GAP from `get-split-analysis` is equal to `get-activity`'s
+  `gap_min_per_km` to the second. The Minetti numbers for the same runs on the recorded
+  altitude were 10 to 25 s/km slower. Other cases use Minetti and say so (`gap_model`,
+  `gap_note`).
+
+## Form as a percentage of fitness (2026-11-19, #512, live read-only and forum)
+
+- `GET /athlete/0` has `icu_form_as_percent` (boolean). On this account it is `false`
+  (2026-11-19), so the web app shows absolute form and nothing was compared with a percent view.
+- The formula is from the intervals.icu forum guide to the fitness page, not from the API:
+  form as a percentage is (Fitness − Fatigue) × 100 / Fitness. Its example: fitness 100 and
+  fatigue 130 give -30 in the two views; fitness 15 and fatigue 19.5 give -4.5 absolute and
+  -30%. The guide puts -30 "right at the Green/Red zone limit", so -30% is the limit of the
+  "high risk" zone. The forum says percent is the default for new athletes.
+- Not verified: the limits of the other zones in the percent view (a common statement is
+  transition above 20%, fresh 5% to 20%, grey -10% to 5%, optimal -30% to -10%), and whether
+  the web app rounds the percentage. The server does not use those limits: its fresh band is
+  its own rule (`FRESH_FORM_PCT` in `fitnessTrend.ts`).
+- Not verified live: that `get-fitness-trend`'s `form_percent` for a day is equal to the web
+  app's number with the setting on. To check it, an athlete must turn the setting on, which is
+  a change to the athlete's settings.
+- The athlete record is never cached by `FetchClient` (it has `icu_api_key`), so
+  `loadFormDisplay` (`formDisplay.ts`) keeps only this boolean, for one hour.
+
+## fixed_heartrate and raw_watts streams (2026-11-19, #511, live read-only)
+
+intervals.icu serves two stream pairs: `heartrate`/`fixed_heartrate` and
+`watts`/`raw_watts`. On this account, the two sides of each pair are always equal.
+
+- Scan: every activity from 2025-11-02 to 2026-11-19 with heart rate or power,
+  332 activities (155 runs, 77 strength, 41 Pilates, 37 swims, 9 rides, 9 walks,
+  4 other). One request per activity, `types=heartrate,fixed_heartrate,watts,raw_watts`.
+  All 332 answered 200. All data comes from one device (`Watch7,5`, HealthFit upload).
+- `fixed_heartrate` came back on 331 activities. On all 331 it has the same length
+  as `heartrate` and the same value at every index.
+- `fixed_heartrate` does not fill dropouts. 73 activities have 0 samples in
+  `heartrate` (see "Heart-rate dropouts"). `fixed_heartrate` has the same 0 samples
+  at the same indices. Example: run i189757825 has 292 zeros in both.
+- `raw_watts` came back on 155 runs (all runs with `watts`). On all 155 it is equal
+  to `watts` at every index. The 9 rides have no power stream.
+- The OpenAPI description of `GET /activity/{id}/streams{ext}` says: "this endpoint
+  will return 'fixed_watts' as 'watts'. If 'raw_watts' is asked for or types is null
+  then the 'watts' stream is renamed to 'raw_watts'." So `watts` is the
+  spike-corrected stream when a `fixed_watts` exists, and `raw_watts` is the device
+  power. On this account `fixed_watts` is always empty and `icu_power_spike_threshold`
+  is null on all 333 activities, so no correction was applied and the two are equal.
+  With `types` left out, the response named the stream `watts`, not `raw_watts`
+  (run i211944335). That agrees with the description only if the rename happens
+  when a `fixed_watts` exists. This is not verified.
+- The OpenAPI document does not describe `fixed_heartrate`. It is not in any
+  activity's `stream_types`, and a request with `types` left out does not return it.
+- intervals.icu's own heart-rate numbers leave out the zero samples. Run i189757825:
+  `average_heartrate` 161; the mean of the positive samples is 160.8, the mean
+  with zeros is 154.5. `max_heartrate` 180 is the stream maximum. `icu_hr_zone_times`
+  `[483, 2843, 2661, 1177, 20]` (sum 7,184 s) is exactly the count of positive
+  1 s samples per zone, with each `icu_hr_zones` bound inclusive at the top
+  (7,476 samples less 292 zeros). `max_heartrate` equals the `heartrate` maximum on
+  all 331 activities. This matches `loadIntervalsStreams`, which maps 0 to `null`.
+- Power numbers cannot be checked here: `icu_average_watts`,
+  `icu_weighted_avg_watts`, `power_load` and `icu_ftp` are null on every activity,
+  because the account has no FTP for Run.
+- Not verified: what makes `fixed_heartrate` differ from `heartrate` (probably an
+  edit or a fix in the intervals.icu web app), and which side intervals.icu uses
+  when they differ. An account with power-meter rides and a power spike threshold
+  is needed to see `fixed_watts`.
+
+## Indoor and treadmill runs (2026-11-19, #513, live read-only)
+
+The account has one indoor run. A scan of every activity from 2018-01-01 to
+2026-11-19 (928 activities; the first is from 2023) found one run with
+`trainer: true` and no `latlng`: i50548661, 2024-09-26, 1.70 km. It is
+also the oldest run on the account. No activity has type `VirtualRun`. The
+other `trainer: true` activities are 5 `VirtualRide`s from 2024. All other
+runs have `trainer: null` and a `latlng` stream. The list endpoint never
+fills `start_latlng`, so a filter must use `trainer` or `stream_types`.
+
+Activity record (`GET /activity/i50548661?intervals=true`):
+
+- Apple Watch (`device_name` `Watch7,5`) through HealthFit: `source`
+  `OAUTH_CLIENT`, `file_type` `fit`, the file name says "Indoor Running".
+  Type is `Run`, not `VirtualRun`. Only this one device is checked.
+- `trainer: true`. `stream_types` is `time, cadence, heartrate, distance,
+  velocity_smooth`: no `latlng`, `altitude` or `fixed_altitude`.
+- `use_elevation_correction: false`. `total_elevation_gain`,
+  `total_elevation_loss`, `average_altitude`, `min_altitude` and
+  `max_altitude` are all null. They are null on both laps too.
+- `gap` is null (not equal to `average_speed`). `gap_model` is still
+  `STRAVA_RUN`, `use_gap_zone_times` is `true` and `gap_zone_times` is null.
+  `pace_zone_times` is filled.
+- `start_latlng`, `end_latlng`, `route_id` and `timezone` are null.
+  `has_weather` is false. `average_temp` is 14 °C from the file, and
+  HealthFit's humidity field is in the file too.
+- `distance` 1700.94 m, `moving_time` 550 s, `elapsed_time` 609 s,
+  `average_speed` 3.06 m/s, `pace` 3.0926 m/s (distance over
+  `moving_time`). `recording_stops` is `[541, 581]`.
+
+Streams (the 13-type superset, then `ga_velocity` and `fixed_altitude`):
+
+- The response is 200 with 6 types: `time`, `cadence`, `heartrate`,
+  `distance`, `velocity_smooth`, `step_length`, all 559 samples.
+  `step_length` comes back although `stream_types` does not list it.
+- `altitude`, `fixed_altitude`, `latlng`, `grade_smooth`, `watts` and the
+  other dynamics types are left out. On a GPS run `grade_smooth` is computed
+  on request; here it is not.
+- `ga_velocity` is left out (a GPS run, i195596014, returns it).
+  `types=gap` answers 422 `Invalid stream type [gap]`.
+- 169 of 559 `heartrate` samples are 0 (dropouts, mapped to `null`).
+- `GET /activity/{id}/map` answers 200 with `latlngs: []` and `bounds: null`.
+
+Tool results on i50548661 (tool handlers called directly with the live key):
+
+- get-activity, get-activity-laps, get-activity-zones: correct. HR and pace
+  zones come out; pace zones say "not grade-adjusted". No text says that
+  the run is indoors.
+- get-running-summary: correct. The aerobic line says "raw pace, no
+  elevation data; intervals.icu has none". The weather line shows 14 °C,
+  humidity 84% and a dew point from the file. For an indoor run this is
+  probably the outdoor weather (not verified).
+- get-split-analysis: correct. "Grade source: none", and the verdict is
+  "on the clock only".
+- get-hill-analysis: refused, clear: "❌ Neither a grade nor an altitude
+  stream is available: hill analysis needs elevation data." No false climbs.
+- get-aerobic-analysis: correct, on raw pace. It warns that 6 minutes is too
+  short for decoupling.
+- get-interval-analysis: verdict correct ("not an interval session"). It
+  calls the two stops at the end of the run "traffic light". That label is
+  wrong for an indoor run (follow-up: #517).
+- get-running-dynamics: correct. It says that the device did not report
+  ground contact time or vertical oscillation.
+- get-activity-streams: correct. It lists `altitude`, `fixed_altitude` and
+  `latlng` as missing.
+- compare-activities (against outdoor run i195596014): pace, HR, efficiency
+  and per-km rows are correct, on moving pace. Wrong at the time of the
+  check: the indoor run showed "Elevation: 0 m" and the difference "+132 m",
+  because a null `total_elevation_gain` became 0. Fixed with #509: the tool
+  now prints "Elevation: no elevation data", `elevation_gain_m` is null, and
+  there is no elevation difference.
+- Route tools (code read, not called live): `loadRunStarts`
+  (`startClusters.ts`) keeps type `Run`, so it reads the indoor run's
+  streams. With no `latlng`, `trackFromStreams` returns null and the run is
+  left out with the warning "had no GPS track". The result is correct, but
+  it costs one stream read per indoor run in the 180-day window (follow-up:
+  #517, which also covers that no tool says the run is indoors).
 
 ## OpenRouteService (route suggestions, verified 2026-11-03)
 

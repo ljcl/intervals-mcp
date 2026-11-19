@@ -351,6 +351,25 @@ const cadenceUnitFields = () => ({
     ),
 });
 
+/** `elevationSource.ts`'s choice, shared by the hill, split and aerobic tools. */
+const ElevationSourceSchema = z.enum(["corrected", "barometric"]).nullable();
+const ElevationNoteSchema = z
+  .string()
+  .nullable()
+  .describe(
+    "Why corrected elevation was wanted but the recorded altitude was used (correction off, or no corrected stream); null otherwise",
+  );
+/** `hillAnalysis.ts`'s `resolveGapModel`, shared by the same three tools. */
+const GapModelSchema = z.enum(["strava", "minetti"]);
+const GAP_MODEL_TEXT =
+  "The model behind every grade-adjusted pace here: strava is intervals.icu's own number for an activity with the Strava GAP model (from its grade-adjusted speed stream), minetti is computed here from grade";
+const GapNoteSchema = z
+  .string()
+  .nullable()
+  .describe(
+    "Why the activity's own GAP model was not used (no grade-adjusted speed stream, or the analysis reads the recorded altitude); null otherwise",
+  );
+
 // ---------- compare-activities ----------
 const CompareRunningDynamicsSchema = z.object({
   stance_time_ms: z.number().nullable(),
@@ -380,7 +399,15 @@ const CompareSideSchema = z.object({
   average_hr: z.number().nullable(),
   max_hr: z.number().nullable(),
   cadence_spm: z.number().nullable(),
-  elevation_gain_m: z.number(),
+  elevation_gain_m: z
+    .number()
+    .nullable()
+    .describe(
+      "The activity's own total ascent; null when it has no elevation data (an indoor run)",
+    ),
+  elevation_source: ElevationSourceSchema.describe(
+    "What elevation_gain_m was computed from: corrected is intervals.icu's corrected elevation (the activity has elevation correction on), barometric the recorded altitude. Null when elevation_gain_m is null",
+  ),
   load: z.number().nullable().describe("icu_training_load"),
   decoupling_pct: z.number().nullable(),
   efficiency_factor: z.number().nullable(),
@@ -409,7 +436,10 @@ export const CompareActivitiesComparisonSchema = z.object({
     pace_delta_interpretation: z.string().nullable(),
     avg_hr: z.number().nullable(),
     cadence_spm: z.number().nullable(),
-    elevation_gain_m: z.number(),
+    elevation_gain_m: z
+      .number()
+      .nullable()
+      .describe("Null when either activity has no elevation data"),
     weather: z
       .object({
         temperature_c: z.number().nullable(),
@@ -423,6 +453,12 @@ export const CompareActivitiesComparisonSchema = z.object({
     .nullable()
     .describe(
       "Set when the dew point differs by more than 5 °C (or, without a dew point on both sides, the temperature): the weather can explain part of the HR difference",
+    ),
+  elevation_note: z
+    .string()
+    .nullable()
+    .describe(
+      "Set when the two activities' elevation gain comes from different sources (one corrected, one barometric): the elevation difference is then not like for like",
     ),
   km_comparison: z
     .object({
@@ -465,6 +501,20 @@ export const CompareActivitiesComparisonSchema = z.object({
       hr_gap_first_km_bpm: z.number().nullable(),
       hr_gap_last_km_bpm: z.number().nullable(),
       interpretation: z.string(),
+      elevation_source_1: ElevationSourceSchema.describe(
+        "The altitude stream activity 1's splits read, as get-split-analysis reports it; null without one",
+      ),
+      elevation_source_2: ElevationSourceSchema,
+      gap_model_1: GapModelSchema.nullable().describe(
+        `${GAP_MODEL_TEXT}. For activity 1's splits; null without a grade-adjusted pace`,
+      ),
+      gap_model_2: GapModelSchema.nullable(),
+      basis_note: z
+        .string()
+        .nullable()
+        .describe(
+          "Set when the two runs' splits read different elevation sources, or on the gap basis use different GAP models: the per-km efficiency is then not like for like",
+        ),
     })
     .nullable()
     .describe(
@@ -553,14 +603,6 @@ const AerobicHalfSchema = z.object({
   minutes: z.number(),
 });
 
-/** `elevationSource.ts`'s choice, shared by the hill, split and aerobic tools. */
-const ElevationSourceSchema = z.enum(["corrected", "barometric"]).nullable();
-const ElevationNoteSchema = z
-  .string()
-  .nullable()
-  .describe(
-    "Why corrected elevation was wanted but the recorded altitude was used (correction off, or no corrected stream); null otherwise",
-  );
 const AerobicSourceEnum = z.enum(["intervals.icu", "computed"]);
 
 /** Fields every `elevation_comparison` shares (elevationSource: "both"). */
@@ -610,6 +652,10 @@ export const AerobicAnalysisOutputSchema = z.object({
     "The altitude stream grade and elevation were read from: corrected is intervals.icu's corrected elevation (the activity has elevation correction on), barometric the recorded altitude. Null unless basis is gap with grade computed from altitude",
   ),
   elevation_note: ElevationNoteSchema,
+  gap_model: GapModelSchema.nullable().describe(
+    `${GAP_MODEL_TEXT}. Null unless basis is gap`,
+  ),
+  gap_note: GapNoteSchema,
   decoupling_pct: z.number(),
   decoupling_source: AerobicSourceEnum,
   interpretation: z.string(),
@@ -671,6 +717,12 @@ const FitnessTrendDaySchema = z.object({
   ctl: z.number().describe("Chronic training load ('fitness'), 42-day EWA"),
   atl: z.number().describe("Acute training load ('fatigue'), 7-day EWA"),
   tsb: z.number().describe("Training stress balance ('form'): CTL − ATL"),
+  form_percent: z
+    .number()
+    .nullable()
+    .describe(
+      "Form as a percentage of fitness: (CTL − ATL) × 100 / CTL, the number intervals.icu shows when form_display is percent. Null when CTL is 0",
+    ),
 });
 const TaperWeekSchema = z.object({
   week: z.number().int().describe("1-based week of the plan"),
@@ -727,6 +779,11 @@ export const FitnessTrendOutputSchema = z.object({
       "Date current/the projection seed are known for. For whole-body this can trail end_date when wellness has not synced yet; null when no data is available",
     ),
   current: FitnessTrendDaySchema.omit({ load: true }).nullable(),
+  form_display: z
+    .enum(["absolute", "percent"])
+    .describe(
+      "How the athlete's intervals.icu shows form: absolute is TSB; percent is form_percent (the athlete setting 'form as percent'). On percent, the deep-fatigue and fresh bands and flags use percent limits (-30%, +15%), else the TSB limits (-25, +15)",
+    ),
   trend: z
     .object({
       ctl_7d_delta: z.number(),
@@ -848,10 +905,12 @@ export const HillAnalysisOutputSchema = z.object({
   ),
   elevation_note: ElevationNoteSchema,
   gap_source: z
-    .literal("model")
+    .enum(["model", "intervals.icu"])
     .describe(
-      "GAP here is locally modelled from grade, distinct from get-activity/compare-activities/get-activity-laps' gap_source: 'intervals.icu'",
+      "intervals.icu when grade-adjusted pace here is intervals.icu's own, as in get-activity and get-activity-laps; model when it is computed here from grade. gap_model names the model",
     ),
+  gap_model: GapModelSchema.describe(GAP_MODEL_TEXT),
+  gap_note: GapNoteSchema,
   drift: z
     .object({
       basis: z.enum(["hr_per_gap", "gap_pace"]),
@@ -1085,10 +1144,14 @@ export const SplitAnalysisOutputSchema = z.object({
   ),
   elevation_note: ElevationNoteSchema,
   gap_source: z
-    .literal("model")
+    .enum(["model", "intervals.icu"])
     .describe(
-      "GAP here is locally modelled from grade, distinct from get-activity/compare-activities/get-activity-laps' gap_source: 'intervals.icu'",
+      "intervals.icu when grade-adjusted pace here is intervals.icu's own, as in get-activity and get-activity-laps; model when it is computed here from grade. gap_model names the model",
     ),
+  gap_model: GapModelSchema.nullable().describe(
+    `${GAP_MODEL_TEXT}. Null when there is no grade-adjusted pace`,
+  ),
+  gap_note: GapNoteSchema,
   verdict: z
     .object({
       shape: SplitShapeSchema.describe(
@@ -2724,6 +2787,14 @@ export const RunningSummaryOutputSchema = ActivityDetailOutputSchema.omit({
     .describe(
       "Why a missing value was not computed (no streams, no heart rate), or a warning on the computed values",
     ),
+  elevation_source: ElevationSourceSchema.describe(
+    "The altitude stream the computed values read on the gap basis: corrected is intervals.icu's corrected elevation, barometric the recorded altitude. Null when nothing was computed on the gap basis",
+  ),
+  elevation_note: ElevationNoteSchema,
+  gap_model: GapModelSchema.nullable().describe(
+    `${GAP_MODEL_TEXT}. For the computed values; null when nothing was computed on the gap basis`,
+  ),
+  gap_note: GapNoteSchema,
   cadence_assessment: z
     .string()
     .nullable()

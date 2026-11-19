@@ -44,8 +44,22 @@ describe("loadWellnessFitnessSeries", () => {
     });
 
     expect(result.series).toEqual([
-      { date: "2026-06-27", load: 500, ctl: 20, atl: 90, tsb: -70 },
-      { date: "2026-06-28", load: 10, ctl: 77.3, atl: 12.1, tsb: 65.2 },
+      {
+        date: "2026-06-27",
+        load: 500,
+        ctl: 20,
+        atl: 90,
+        tsb: -70,
+        form_percent: -350,
+      },
+      {
+        date: "2026-06-28",
+        load: 10,
+        ctl: 77.3,
+        atl: 12.1,
+        tsb: 65.2,
+        form_percent: 84.3,
+      },
     ]);
     expect(result.seed).toEqual({ ctl: 77.3, atl: 12.1 });
     expect(result.asOfDate).toBe("2026-06-28");

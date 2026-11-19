@@ -10,6 +10,7 @@ import {
   handledRateLimit,
   syntheticStreams,
   withCorrectedAltitude,
+  withGaVelocity,
 } from "../__fixtures__";
 import activityFixture from "../__fixtures__/intervals/activity.json";
 import activityHilly from "../__fixtures__/intervals/activity-hilly.json";
@@ -535,5 +536,105 @@ describe("get-split-analysis", () => {
       expect(structured.totals.elevation_gain_source).toBe("intervals.icu");
       expect(text).toContain("Elevation source: barometric");
     });
+  });
+});
+
+describe("get-split-analysis GAP model (#508)", () => {
+  type Structured = {
+    gap_model: string | null;
+    gap_source: string;
+    gap_note: string | null;
+    totals: { avg_gap_pace_sec_per_km: number | null };
+    splits: Array<{ gap_pace_sec_per_km: number | null }>;
+  };
+  const run = async (args: Record<string, unknown> = {}) => {
+    const result = await getSplitAnalysisTool.execute(
+      { id: "i189757207", ...args },
+      "test-key",
+    );
+    return {
+      text: result.content[0]?.text ?? "",
+      structured: result.structuredContent as Structured,
+    };
+  };
+
+  it("uses intervals.icu's GAP speed, so the whole-run GAP is the activity's own", async () => {
+    mockedGetActivity.mockResolvedValue(hillyActivity);
+    // activity-hilly.json's gap is 3.2872841 m/s, 5:04 /km.
+    mockedGetActivityStreams.mockResolvedValue(
+      withGaVelocity(withCorrectedAltitude(hillyStreams), 3.2872841),
+    );
+
+    const { text, structured } = await run();
+
+    expect(structured.gap_model).toBe("strava");
+    expect(structured.gap_source).toBe("intervals.icu");
+    expect(structured.gap_note).toBeNull();
+    expect(structured.totals.avg_gap_pace_sec_per_km).toBe(304);
+    expect(structured.splits.every((s) => s.gap_pace_sec_per_km === 304)).toBe(
+      true,
+    );
+    expect(text).toContain(
+      "GAP model: Strava (the intervals.icu number for this activity)",
+    );
+    expect(SplitAnalysisOutputSchema.safeParse(structured).success).toBe(true);
+  });
+
+  it("uses Minetti, and says why, on the recorded altitude of a corrected activity", async () => {
+    mockedGetActivity.mockResolvedValue(hillyActivity);
+    mockedGetActivityStreams.mockResolvedValue(
+      withGaVelocity(withCorrectedAltitude(hillyStreams), 3.2872841),
+    );
+
+    const { text, structured } = await run({ elevationSource: "barometric" });
+
+    expect(structured.gap_model).toBe("minetti");
+    expect(structured.gap_source).toBe("model");
+    expect(structured.gap_note).toContain("corrected elevation");
+    expect(structured.totals.avg_gap_pace_sec_per_km).not.toBe(304);
+    expect(text).toContain("GAP model: Minetti (computed here from grade).");
+  });
+
+  it("uses Minetti, and says why, when the activity has no GAP stream", async () => {
+    mockedGetActivity.mockResolvedValue(hillyActivity);
+    mockedGetActivityStreams.mockResolvedValue(hillyStreams);
+
+    const { structured } = await run();
+
+    expect(structured.gap_model).toBe("minetti");
+    expect(structured.gap_note).toContain(
+      "no intervals.icu grade-adjusted speed",
+    );
+  });
+
+  it("uses Minetti with no note when the activity's gap_model is NONE", async () => {
+    mockedGetActivity.mockResolvedValue({
+      ...hillyActivity,
+      gap_model: "NONE",
+    } as IntervalsActivity);
+    mockedGetActivityStreams.mockResolvedValue(
+      withGaVelocity(hillyStreams, 3.2872841),
+    );
+
+    const { structured } = await run();
+
+    expect(structured.gap_model).toBe("minetti");
+    expect(structured.gap_note).toBeNull();
+  });
+
+  it("has no model and no note when there is no grade-adjusted pace", async () => {
+    mockedGetActivity.mockResolvedValue(hillyActivity);
+    mockedGetActivityStreams.mockResolvedValue(
+      hillyStreams.filter(
+        (s) => s.type !== "altitude" && s.type !== "grade_smooth",
+      ),
+    );
+
+    const { text, structured } = await run();
+
+    expect(structured.gap_model).toBeNull();
+    expect(structured.gap_note).toBeNull();
+    expect(text).not.toContain("GAP model:");
+    expect(SplitAnalysisOutputSchema.safeParse(structured).success).toBe(true);
   });
 });

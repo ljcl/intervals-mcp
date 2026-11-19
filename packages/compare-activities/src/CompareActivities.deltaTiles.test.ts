@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { compareData, compareDataWalks } from "./__fixtures__/runs";
+import {
+  compareData,
+  compareDataManualSide,
+  compareDataWalks,
+} from "./__fixtures__/runs";
 import { buildDeltaTiles } from "./CompareActivities";
 import { type CompareData } from "./types";
 
@@ -58,5 +62,21 @@ describe("buildDeltaTiles speed for non-run pairs (#315)", () => {
   it("keeps two runs on the pace tile alone", () => {
     expect(tile(compareData, "pace")).toBeDefined();
     expect(tile(compareData, "speed")).toBeUndefined();
+  });
+});
+
+describe("buildDeltaTiles elevation (#513)", () => {
+  it("shows both gains and the difference when both sides have one", () => {
+    expect(tile(compareData, "elevation")).toEqual({
+      key: "elevation",
+      label: "Elevation",
+      a: "84m",
+      b: "82m",
+      delta: "-2m",
+    });
+  });
+
+  it("has no tile when a side has no elevation data, not a 0 m one", () => {
+    expect(tile(compareDataManualSide, "elevation")).toBeUndefined();
   });
 });

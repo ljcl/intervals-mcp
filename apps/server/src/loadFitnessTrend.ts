@@ -18,6 +18,7 @@ import {
   computeFlags,
   ctlDelta,
   type FitnessTrendDay,
+  type FormDisplay,
   type PlannedLoad,
   projectFromWellness,
   RECENT_LOAD_DAYS,
@@ -30,6 +31,7 @@ import {
   tsbDelta,
 } from "./fitnessTrend";
 import { loadWellnessFitnessSeries } from "./fitnessTrendWellness";
+import { loadFormDisplay } from "./formDisplay";
 import { listActivities } from "./intervalsClient";
 import { NO_PROGRESS, type ReportProgress } from "./progress";
 import { typesWithLoad } from "./trainingLoad";
@@ -95,6 +97,12 @@ export interface FitnessTrendLoadResult {
   /** CTL/TSB change over the 7 days to the series' last day; null without that prior day. */
   ctl7dDelta: number | null;
   tsb7dDelta: number | null;
+  /**
+   * How the athlete's intervals.icu shows form (`icu_form_as_percent`). On
+   * `percent`, the deep-fatigue and fresh bands and flags use the percent
+   * limits (#512).
+   */
+  formDisplay: FormDisplay;
 }
 
 /**
@@ -118,6 +126,7 @@ export async function loadFitnessTrend(
   let plannedLoads = endsToday ? options.plannedLoads : undefined;
   const taper = endsToday ? options.taper : undefined;
   const windowStart = addDays(endDate, -(days - 1));
+  const formDisplay: FormDisplay = await loadFormDisplay(apiKey);
 
   // Calendar projection is whole-body and forward only; say so when it is not.
   const calendarPlan = !!options.calendarPlan && !runOnly && endsToday;
@@ -241,6 +250,7 @@ export async function loadFitnessTrend(
             ctl: series[series.length - 1]!.ctl,
             atl: series[series.length - 1]!.atl,
             tsb: series[series.length - 1]!.tsb,
+            form_percent: series[series.length - 1]!.form_percent,
           }
         : null;
 
@@ -373,9 +383,20 @@ export async function loadFitnessTrend(
     activitiesIncluded,
     activitiesMissingLoad,
     warnings,
-    bands: trendBands(displaySeries, { endsToday, endDate, lookback }),
-    flags: computeFlags(displaySeries, { endsToday, endDate, lookback }),
+    bands: trendBands(displaySeries, {
+      endsToday,
+      endDate,
+      lookback,
+      formDisplay,
+    }),
+    flags: computeFlags(displaySeries, {
+      endsToday,
+      endDate,
+      lookback,
+      formDisplay,
+    }),
     ctl7dDelta: ctlDelta(displaySeries, 7, lookback),
     tsb7dDelta: tsbDelta(displaySeries, 7, lookback),
+    formDisplay,
   };
 }

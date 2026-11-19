@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetFormDisplay } from "../formDisplay";
 import {
+  getAthleteFormAsPercent,
   getWellness,
   type IntervalsActivity,
   type IntervalsWellness,
@@ -14,7 +16,14 @@ vi.mock("../intervalsClient", async () => {
     await vi.importActual<typeof import("../intervalsClient")>(
       "../intervalsClient",
     );
-  return { ...actual, getWellness: vi.fn(), listActivities: vi.fn() };
+  return {
+    ...actual,
+    getWellness: vi.fn(),
+    listActivities: vi.fn(),
+    // The athlete's "form as percent" setting (#512): off unless a test
+    // turns it on.
+    getAthleteFormAsPercent: vi.fn(async () => false),
+  };
 });
 vi.mock("../config", async () => {
   const actual = await vi.importActual<typeof import("../config")>("../config");
@@ -178,15 +187,37 @@ describe("get-fitness-trend execute (whole-body, default)", () => {
     expect(structured.units.load).toContain("training load");
 
     expect(structured.daily).toEqual([
-      { date: addDays(TODAY, -2), load: 95, ctl: 38.4, atl: 60.1, tsb: -21.7 },
-      { date: addDays(TODAY, -1), load: 0, ctl: 39.9, atl: 25, tsb: 14.9 },
-      { date: TODAY, load: 110, ctl: 91.2, atl: 84.7, tsb: 6.5 },
+      {
+        date: addDays(TODAY, -2),
+        load: 95,
+        ctl: 38.4,
+        atl: 60.1,
+        tsb: -21.7,
+        form_percent: -56.5,
+      },
+      {
+        date: addDays(TODAY, -1),
+        load: 0,
+        ctl: 39.9,
+        atl: 25,
+        tsb: 14.9,
+        form_percent: 37.3,
+      },
+      {
+        date: TODAY,
+        load: 110,
+        ctl: 91.2,
+        atl: 84.7,
+        tsb: 6.5,
+        form_percent: 7.1,
+      },
     ]);
     expect(structured.current).toEqual({
       date: TODAY,
       ctl: 91.2,
       atl: 84.7,
       tsb: 6.5,
+      form_percent: 7.1,
     });
 
     expect(structured.activity_types_included).toEqual(["Run"]);
@@ -1354,5 +1385,73 @@ describe("get-fitness-trend calendarPlan (#303)", () => {
       "the projection is intervals.icu's own, from its calendar plan",
     );
     expect(warnings).not.toContain("assumes rest");
+  });
+});
+
+describe("get-fitness-trend form as percent (#512)", () => {
+  // A low-CTL athlete: TSB -14 at CTL 40 is -35% of fitness.
+  const rows = () =>
+    wellnessWindow(TODAY, 20, () => ({ ctl: 40, atl: 54, atlLoad: 60 }));
+  const run = async () => {
+    const result = await getFitnessTrendTool.execute(
+      { ...DEFAULT_INPUT, days: 14 },
+      "test-key",
+    );
+    return {
+      text: result.content[0]?.text ?? "",
+      structured: result.structuredContent as {
+        form_display: string;
+        current: { tsb: number; form_percent: number | null } | null;
+        flags: string[];
+        daily: Array<{ form_percent: number | null }>;
+      },
+    };
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(`${TODAY}T12:00:00Z`));
+    resetFormDisplay();
+    mockedWellness.mockReset();
+    mockedListActivities.mockReset();
+    mockedWellness.mockResolvedValue(rows());
+    mockedListActivities.mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    resetFormDisplay();
+  });
+
+  it("keeps TSB and its limits with the setting off, and adds form_percent to each day", async () => {
+    const { text, structured } = await run();
+
+    expect(structured.form_display).toBe("absolute");
+    expect(structured.current).toMatchObject({ tsb: -14, form_percent: -35 });
+    expect(structured.daily.every((day) => day.form_percent === -35)).toBe(
+      true,
+    );
+    // -14 is above the -25 TSB limit.
+    expect(structured.flags).toEqual([]);
+    expect(text).toContain("Form (TSB): -14");
+    expect(text).not.toContain("percentage of fitness");
+    expect(FitnessTrendOutputSchema.safeParse(structured).success).toBe(true);
+  });
+
+  it("prints the percentage and uses the percent limits with the setting on", async () => {
+    vi.mocked(getAthleteFormAsPercent).mockResolvedValueOnce(true);
+
+    const { text, structured } = await run();
+
+    expect(structured.form_display).toBe("percent");
+    expect(structured.current).toMatchObject({ tsb: -14, form_percent: -35 });
+    expect(structured.flags).toEqual([
+      "Form at or below -30% of fitness for 14 consecutive days: deep fatigue; an easy block or rest is overdue.",
+    ]);
+    expect(text).toContain("Form (TSB): -14");
+    expect(text).toContain(
+      "Form as a percentage of fitness: -35% (the number intervals.icu shows for this athlete)",
+    );
+    expect(FitnessTrendOutputSchema.safeParse(structured).success).toBe(true);
   });
 });

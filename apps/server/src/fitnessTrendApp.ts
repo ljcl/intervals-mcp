@@ -28,6 +28,18 @@ export interface TaperWeekData {
   pctOfRecent: number | null;
 }
 
+/**
+ * A trend day on the app's wire: the chart plots load, CTL, ATL and TSB.
+ * `form_percent` stays out: the app does not read it, and a year of days
+ * would carry it for nothing (the text tool has it, #512).
+ */
+export type FitnessTrendAppDay = Omit<FitnessTrendDay, "form_percent">;
+
+const appDay = ({
+  form_percent: _formPercent,
+  ...day
+}: FitnessTrendDay): FitnessTrendAppDay => day;
+
 export interface TaperPlanData {
   targetDate: string;
   targetTsb: number;
@@ -35,17 +47,17 @@ export interface TaperPlanData {
   feasible: boolean;
   note: string | null;
   weeks: TaperWeekData[];
-  days: FitnessTrendDay[];
+  days: FitnessTrendAppDay[];
   totalLoad: number;
   recentDailyLoad: number;
 }
 
 export interface FitnessTrendAppData {
   days: number;
-  series: FitnessTrendDay[];
-  projection: FitnessTrendDay[];
+  series: FitnessTrendAppDay[];
+  projection: FitnessTrendAppDay[];
   taper: TaperPlanData | null;
-  current: FitnessTrendDay | null;
+  current: FitnessTrendAppDay | null;
   tsbPositiveDate: string | null;
   /**
    * CTL change over the 7 calendar days to the last series day, from
@@ -124,8 +136,8 @@ export function mapFitnessTrendApp(
 ): FitnessTrendAppData {
   return {
     days: meta.days,
-    series: trend.days,
-    projection: trend.projection,
+    series: trend.days.map(appDay),
+    projection: trend.projection.map(appDay),
     taper: trend.taper
       ? {
           targetDate: trend.taper.target_date,
@@ -142,12 +154,12 @@ export function mapFitnessTrendApp(
             weekLoad: week.week_load,
             pctOfRecent: week.pct_of_recent,
           })),
-          days: trend.taper.days,
+          days: trend.taper.days.map(appDay),
           totalLoad: trend.taper.total_load,
           recentDailyLoad: trend.taper.recent_daily_load,
         }
       : null,
-    current: trend.current,
+    current: trend.current ? appDay(trend.current) : null,
     tsbPositiveDate: trend.tsbPositiveDate,
     ctl7dDelta: meta.ctl7dDelta,
     bands: trend.bands.map((band) => ({

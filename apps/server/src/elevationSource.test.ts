@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  activityGainSource,
   climbGainSensitivity,
   decouplingSensitivity,
   ELEVATION_SENSITIVITY,
   elevationGainLine,
   elevationLines,
+  elevationSourcePhrase,
   gapDeltaSensitivity,
+  mixedElevationNote,
   recordedGainFor,
   resolveBothElevations,
   resolveElevation,
@@ -114,6 +117,53 @@ describe("elevationLines", () => {
 
   it("is empty without a source", () => {
     expect(elevationLines({ source: null, note: null })).toEqual([]);
+  });
+});
+
+describe("activityGainSource (#509)", () => {
+  it("names the source of the activity's own total", () => {
+    expect(
+      activityGainSource({
+        use_elevation_correction: true,
+        total_elevation_gain: 120,
+      }),
+    ).toBe("corrected");
+    expect(
+      activityGainSource({
+        use_elevation_correction: false,
+        total_elevation_gain: 120,
+      }),
+    ).toBe("barometric");
+    expect(activityGainSource({ total_elevation_gain: 0 })).toBe("barometric");
+  });
+
+  it("is null when the activity has no total", () => {
+    expect(
+      activityGainSource({
+        use_elevation_correction: true,
+        total_elevation_gain: null,
+      }),
+    ).toBeNull();
+    expect(activityGainSource({})).toBeNull();
+  });
+});
+
+describe("mixedElevationNote (#509)", () => {
+  it("is null when the sources agree or one is missing", () => {
+    expect(mixedElevationNote("corrected", "corrected", "gain")).toBeNull();
+    expect(mixedElevationNote("barometric", null, "gain")).toBeNull();
+    expect(mixedElevationNote(null, null, "gain")).toBeNull();
+  });
+
+  it("names each side's source when they differ", () => {
+    expect(
+      mixedElevationNote("corrected", "barometric", "elevation gain"),
+    ).toBe(
+      "Activity 1's elevation gain is from corrected elevation and activity 2's from the recorded (barometric) altitude, so the two are not like for like.",
+    );
+    expect(elevationSourcePhrase("barometric")).toBe(
+      "the recorded (barometric) altitude",
+    );
   });
 });
 

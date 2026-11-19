@@ -33,6 +33,12 @@ export interface HillStreams {
   heartrate?: (number | null)[];
   /** Smoothed speed in m/s. */
   velocity_smooth?: (number | null)[];
+  /**
+   * intervals.icu's own grade-adjusted speed in m/s. Pass it only when
+   * {@link resolveGapModel} chose the activity's model: its presence is what
+   * makes every GAP number here follow intervals.icu and not Minetti.
+   */
+  ga_velocity?: (number | null)[];
   watts?: (number | null)[];
   /** Run cadence in strides-per-minute (one leg, as intervals.icu records it). */
   cadence?: (number | null)[];
@@ -129,6 +135,8 @@ export interface HillAnalysis {
   descents: HillSegment[];
   drift: HillDrift | null;
   gradeSource: GradeSource;
+  /** The model behind every grade-adjusted pace in this analysis. */
+  gapModel: GapModel;
   totals: {
     climbCount: number;
     descentCount: number;
@@ -136,6 +144,81 @@ export interface HillAnalysis {
     climbGainM: number;
   };
   warnings: string[];
+}
+
+/**
+ * Which model a grade-adjusted pace came from. `strava` is intervals.icu's
+ * own GAP for an activity with `gap_model: "STRAVA_RUN"`, read from its
+ * `ga_velocity` stream, so it agrees with the web app. `minetti` is this
+ * server's {@link gapFactor} on {@link gapGrades}: the model for an activity
+ * without that stream, and for a route that is not an activity.
+ */
+export type GapModel = "strava" | "minetti";
+
+export interface ResolvedGapModel {
+  model: GapModel;
+  /** The stream to put in {@link HillStreams}; undefined for Minetti. */
+  gaVelocity: (number | null)[] | undefined;
+  /** Why the activity's own model was not used; else null. */
+  note: string | null;
+}
+
+/**
+ * Picks the GAP model for one activity: the one home of that choice, as
+ * `resolveElevation` is for altitude. intervals.icu's GAP needs all three:
+ * the activity names the Strava model, `ga_velocity` has a recorded sample,
+ * and the analysis reads the elevation intervals.icu computed it from (the
+ * corrected stream when the activity has correction on, docs/api-notes.md).
+ * Otherwise the model is Minetti, with a note when the activity has a model
+ * that could not be followed.
+ */
+export function resolveGapModel(
+  activity: {
+    gap_model?: string | null;
+    use_elevation_correction?: boolean | null;
+  },
+  streams: { ga_velocity?: (number | null)[] },
+  elevationSource: "corrected" | "barometric" | null,
+): ResolvedGapModel {
+  const minetti = (note: string | null): ResolvedGapModel => ({
+    model: "minetti",
+    gaVelocity: undefined,
+    note,
+  });
+  if (activity.gap_model !== "STRAVA_RUN") return minetti(null);
+  if (!hasRealSample(streams.ga_velocity)) {
+    return minetti(
+      "The activity has no intervals.icu grade-adjusted speed stream, so grade-adjusted pace uses the Minetti model and can be different from the intervals.icu number.",
+    );
+  }
+  if (
+    activity.use_elevation_correction === true &&
+    elevationSource === "barometric"
+  ) {
+    return minetti(
+      "intervals.icu computes its grade-adjusted pace from the corrected elevation. This analysis reads the recorded altitude, so it uses the Minetti model and can be different from the intervals.icu number.",
+    );
+  }
+  return { model: "strava", gaVelocity: streams.ga_velocity, note: null };
+}
+
+/**
+ * The legacy `gap_source` value for a model: `intervals.icu` when the number
+ * is its own, as in get-activity and get-activity-laps, else `model`.
+ */
+export function gapSourceOf(model: GapModel | null): "intervals.icu" | "model" {
+  return model === "strava" ? "intervals.icu" : "model";
+}
+
+/** The text tools' line for the GAP model in use. */
+export function gapModelLine(
+  gap: Pick<ResolvedGapModel, "model" | "note">,
+): string {
+  const label =
+    gap.model === "strava"
+      ? "Strava (the intervals.icu number for this activity)"
+      : "Minetti (computed here from grade)";
+  return `GAP model: ${label}${gap.note ? `. ${gap.note}` : ""}`;
 }
 
 /**
@@ -231,6 +314,8 @@ export interface NormalizedHillStreams {
   watts?: (number | null)[];
   cadence?: (number | null)[];
   moving?: boolean[];
+  /** Kept only with a matching length and a recorded sample; nulls stay. */
+  ga_velocity?: (number | null)[];
 }
 
 /**
@@ -261,6 +346,7 @@ export function normalizeHillStreams(
     watts: streams.watts,
     cadence: streams.cadence,
     moving: streams.moving,
+    ga_velocity: usable(streams.ga_velocity) ? streams.ga_velocity : undefined,
   };
 }
 
@@ -367,27 +453,109 @@ export function gapGrades(grades: number[], distance: number[]): GapGrades {
   };
 }
 
+/** What every segment, split and half sums its grade-adjusted pace from. */
+export interface GapBasis {
+  model: GapModel;
+  /**
+   * Grade-adjusted metres of the stretch that ends at each sample. A range's
+   * sum of these over its sum of {@link seconds} is its GAP speed (#298).
+   */
+  metres: number[];
+  /**
+   * Seconds each sample adds to the GAP denominator: its moving time, or 0
+   * for a sample of the Strava model that has no GAP speed.
+   */
+  seconds: number[];
+  /** The noisy-elevation warning; Minetti only, the one that reads grade. */
+  warning: string | null;
+}
+
+/**
+ * The one place a range's grade-adjusted distance comes from.
+ *
+ * With `ga_velocity` (the caller followed {@link resolveGapModel}) a
+ * stretch's metres are that speed times its moving time, so a range's GAP
+ * is the moving-time mean of intervals.icu's own samples. That agrees with
+ * `activity.gap` and `interval.gap`, which are the mean of the samples
+ * (docs/api-notes.md). A sample without a GAP speed (intervals.icu sends
+ * null where speed is null, around a stop) adds no metres and no seconds:
+ * to count its time made a run with many stops 3 s/km slow. Multiplying
+ * distance by `ga_velocity / velocity_smooth` is also wrong: the two streams
+ * are smoothed differently and the result was 4 to 7 s/km slow.
+ *
+ * Without it, each metre is weighted by {@link gapFactor} of `gapGrade`
+ * ({@link gapGrades}' averaged grade). Null with neither.
+ */
+export function gapBasis(
+  streams: NormalizedHillStreams,
+  grades: number[] | null,
+): GapBasis | null {
+  const { time, distance, moving } = streams;
+  const n = distance.length;
+  const metres = new Array<number>(n).fill(0);
+  const seconds = new Array<number>(n).fill(0);
+  const movingSeconds = (i: number) => {
+    const dt = time[i]! - time[i - 1]!;
+    return dt > 0 && moving?.[i] !== false ? dt : 0;
+  };
+  const ga = streams.ga_velocity;
+  if (ga) {
+    for (let i = 1; i < n; i++) {
+      const speed = ga[i];
+      if (speed == null) continue;
+      seconds[i] = movingSeconds(i);
+      metres[i] = speed * seconds[i]!;
+    }
+    return { model: "strava", metres, seconds, warning: null };
+  }
+  if (!grades) return null;
+  const gap = gapGrades(grades, distance);
+  for (let i = 1; i < n; i++) {
+    seconds[i] = movingSeconds(i);
+    // Every metre counts, also one covered while the sample is not moving.
+    metres[i] =
+      (distance[i]! - distance[i - 1]!) * gapFactor(gap.grades[i]! / 100);
+  }
+  return { model: "minetti", metres, seconds, warning: gap.warning };
+}
+
 /**
  * Per-sample grade-adjusted speed (m/s) for a caller that needs a GAP stream
- * rather than segment averages (`get-aerobic-analysis`): `velocity_smooth`
+ * rather than segment averages (`get-aerobic-analysis`). With `ga_velocity`
+ * it is that stream, intervals.icu's own. Otherwise it is `velocity_smooth`
  * times {@link gapFactor} of {@link gapGrades}' averaged grade, the same
  * grade and factor the hill and split tools use (they sum grade-adjusted
  * distance over moving time instead, #298). Null without a distance stream, a speed
- * stream, or any elevation data; a null speed sample stays null.
+ * stream, or (for Minetti) any elevation data; a null speed sample stays null.
  */
 export function gradeAdjustedSpeeds(
   streams: Pick<
     HillStreams,
-    "time" | "distance" | "altitude" | "grade_smooth" | "velocity_smooth"
+    | "time"
+    | "distance"
+    | "altitude"
+    | "grade_smooth"
+    | "velocity_smooth"
+    | "ga_velocity"
   >,
 ): {
   speeds: (number | null)[];
-  gradeSource: GradeSource;
+  model: GapModel;
+  /** Null for the Strava model, which reads no grade here. */
+  gradeSource: GradeSource | null;
   warning: string | null;
 } | null {
   const velocity = streams.velocity_smooth;
   if (!velocity || !hasRealSample(streams.distance)) return null;
   const normalized = normalizeHillStreams(streams);
+  if (normalized.ga_velocity) {
+    return {
+      speeds: normalized.ga_velocity,
+      model: "strava",
+      gradeSource: null,
+      warning: null,
+    };
+  }
   if (!normalized.altitude && !normalized.grade_smooth) return null;
   const { grades, source } = computeGrades(normalized);
   const gap = gapGrades(grades, normalized.distance);
@@ -395,6 +563,7 @@ export function gradeAdjustedSpeeds(
     speeds: velocity.map((v, i) =>
       v == null ? null : v * gapFactor(gap.grades[i]! / 100),
     ),
+    model: "minetti",
     gradeSource: source,
     warning: gap.warning,
   };
@@ -472,12 +641,12 @@ function averageGrade(
 
 /**
  * `grades` is the detection grade (drives the average when there is no
- * altitude); `gapGrade` is {@link gapGrades}' averaged grade for GAP.
+ * altitude); `gap` is {@link gapBasis}' grade-adjusted metres and seconds.
  */
 function summarizeSegment(
   streams: NormalizedHillStreams,
   grades: number[],
-  gapGrade: number[],
+  gap: Pick<GapBasis, "metres" | "seconds">,
   range: IndexRange,
 ): HillSegment {
   const { time, distance, altitude, heartrate, watts } = streams;
@@ -499,10 +668,11 @@ function summarizeSegment(
   // Grade-adjusted metres over the same moving time pace uses (#298); every
   // metre of the range counts, as it does in `lengthM`.
   let gapDistanceM = 0;
+  let gapTimeS = 0;
 
   for (let i = start + 1; i <= end; i++) {
-    gapDistanceM +=
-      (distance[i]! - distance[i - 1]!) * gapFactor(gapGrade[i]! / 100);
+    gapDistanceM += gap.metres[i]!;
+    gapTimeS += gap.seconds[i]!;
     const dt = time[i]! - time[i - 1]!;
     if (dt <= 0) continue;
     if (moving && moving[i] === false) continue;
@@ -531,7 +701,7 @@ function summarizeSegment(
     }
   }
 
-  const gapSpeed = movingTimeS > 0 ? gapDistanceM / movingTimeS : 0;
+  const gapSpeed = gapTimeS > 0 ? gapDistanceM / gapTimeS : 0;
   const avgHr = hrW > 0 ? hrSum / hrW : null;
   const paceSecPerKm =
     movingTimeS > 0 && lengthM > 0 ? movingTimeS / (lengthM / 1000) : null;
@@ -688,7 +858,8 @@ export function computeHillAnalysis(streams: HillStreams): HillAnalysis {
   const normalized = normalizeHillStreams(streams);
   const warnings: string[] = [];
   const { grades, source: gradeSource } = computeGrades(normalized);
-  const gap = gapGrades(grades, normalized.distance);
+  // computeGrades threw without elevation data, so there is always a basis.
+  const gap = gapBasis(normalized, grades)!;
   if (gap.warning) warnings.push(gap.warning);
   if (!normalized.heartrate) {
     warnings.push(
@@ -710,10 +881,10 @@ export function computeHillAnalysis(streams: HillStreams): HillAnalysis {
   );
 
   const climbs = climbRanges.map((r) =>
-    summarizeSegment(normalized, grades, gap.grades, r),
+    summarizeSegment(normalized, grades, gap, r),
   );
   const descents = descentRanges.map((r) =>
-    summarizeSegment(normalized, grades, gap.grades, r),
+    summarizeSegment(normalized, grades, gap, r),
   );
 
   const totalDistanceM = normalized.distance[normalized.distance.length - 1]!;
@@ -733,6 +904,7 @@ export function computeHillAnalysis(streams: HillStreams): HillAnalysis {
     descents,
     drift,
     gradeSource,
+    gapModel: gap.model,
     totals: {
       climbCount: climbs.length,
       descentCount: descents.length,

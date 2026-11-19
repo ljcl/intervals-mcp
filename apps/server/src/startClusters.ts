@@ -3,6 +3,7 @@
  * tracks, grouped by start point. The heaviest cluster is the usual start;
  * a cluster's runs are the past-run candidates from that start.
  */
+import { resolveElevation } from "./elevationSource";
 import { listActivities } from "./intervalsClient";
 import {
   IntervalsStreamsUnavailableError,
@@ -83,7 +84,11 @@ export function nearestCluster(
 /**
  * Recent outdoor runs with GPS as tracks, newest first. One stream read per
  * run (cached by FetchClient). A run that cannot be read is left out and
- * counted, never fatal: the history is a hint, not the answer.
+ * counted, never fatal: the history is a hint, not the answer. A track's
+ * altitude is the stream `resolveElevation` chooses, corrected when the
+ * activity has correction on, so the climb the route tools sum from a past
+ * run reads the elevation that its `total_elevation_gain` and
+ * get-split-analysis read (#509).
  */
 export async function loadRunStarts(
   apiKey: string,
@@ -110,11 +115,12 @@ export async function loadRunStarts(
         "latlng",
         "distance",
         "altitude",
+        "fixed_altitude",
       ]);
       track = trackFromStreams(
         streams.latlng,
         streams.distance,
-        streams.altitude,
+        resolveElevation(activity, streams).altitude,
       );
     } catch (error) {
       // Only a run with no streams is skipped; a rate limit, outage or cancel fails the call.

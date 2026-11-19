@@ -18,7 +18,12 @@ import {
   streamGainM,
 } from "../elevationSource";
 import { formatSigned, round } from "../formatters";
-import { gradeAdjustedSpeeds } from "../hillAnalysis";
+import {
+  type GapModel,
+  gapModelLine,
+  gradeAdjustedSpeeds,
+  resolveGapModel,
+} from "../hillAnalysis";
 import {
   getActivity,
   getSportSettings,
@@ -132,6 +137,7 @@ const GRADE_STREAM_TYPES: IntervalsStreamType[] = [
   "altitude",
   "fixed_altitude",
   "grade_smooth",
+  "ga_velocity",
 ];
 
 const BASIS_LABELS: Record<Basis, string> = {
@@ -175,6 +181,10 @@ export interface StreamAerobicResult {
   elevationSource: ElevationSource | null;
   /** Why a request for corrected elevation got the recorded one; else null. */
   elevationNote: string | null;
+  /** The model behind the gap basis's speeds; null on any other basis. */
+  gapModel: GapModel | null;
+  /** Why the activity's own GAP model was not used; else null. */
+  gapNote: string | null;
 }
 
 /**
@@ -184,7 +194,8 @@ export interface StreamAerobicResult {
  * minutes) unless `excludeWarmupSeconds` is set; the cool-down the
  * same way from `icu_cooldown_time` and `cooldown_time` (#296). The gap basis
  * reads corrected elevation when the activity has it, unless
- * `useCorrectedElevation` is false (`resolveElevation`). The one home of the
+ * `useCorrectedElevation` is false (`resolveElevation`), and intervals.icu's
+ * own grade-adjusted speed when the activity has it (`resolveGapModel`). The one home of the
  * stream path, shared with get-running-summary, which fills intervals.icu's
  * missing values from it on the gap basis. Throws
  * `IntervalsStreamsUnavailableError` for an activity with no streams and
@@ -215,23 +226,31 @@ export async function streamAerobicAnalysis(
   let speed = streams.velocity_smooth;
   let elevationSource: ElevationSource | null = null;
   let elevationNote: string | null = null;
+  let gapModel: GapModel | null = null;
+  let gapNote: string | null = null;
   if (basis === "gap") {
     const elevation = resolveElevation(
       activity,
       streams,
       options.useCorrectedElevation ?? true,
     );
+    const resolved = resolveGapModel(activity, streams, elevation.source);
     const gap = gradeAdjustedSpeeds({
       time: streams.time,
       distance: streams.distance ?? [],
       altitude: elevation.altitude,
       grade_smooth: streams.grade_smooth,
       velocity_smooth: streams.velocity_smooth,
+      ga_velocity: resolved.gaVelocity,
     });
     if (gap) {
       speed = gap.speeds;
+      gapModel = gap.model;
+      gapNote = resolved.note;
       if (gap.warning) warnings.push(gap.warning);
-      if (gap.gradeSource === "computed") {
+      // intervals.icu's own speeds follow the elevation `resolveGapModel`
+      // checked, so the source is named for them too.
+      if (gap.gradeSource === "computed" || gap.model === "strava") {
         elevationSource = elevation.source;
         elevationNote = elevation.note;
       }
@@ -262,7 +281,15 @@ export async function streamAerobicAnalysis(
       300,
     thresholdPower: options.thresholdPower ?? null,
   });
-  return { analysis, basis, warnings, elevationSource, elevationNote };
+  return {
+    analysis,
+    basis,
+    warnings,
+    elevationSource,
+    elevationNote,
+    gapModel,
+    gapNote,
+  };
 }
 
 /** One source's gap-basis result for `elevation_comparison`. */
@@ -422,6 +449,8 @@ export const getAerobicAnalysisTool = {
         source: null,
         note: null,
       };
+      let gapModel: GapModel | null = null;
+      let gapNote: string | null = null;
       let comparison: AerobicComparison | null = null;
 
       if (basis != null) {
@@ -471,6 +500,8 @@ export const getAerobicAnalysisTool = {
           source: result.elevationSource,
           note: result.elevationNote,
         };
+        gapModel = result.gapModel;
+        gapNote = result.gapNote;
         if (elevationSource === "both" && basis === "gap") {
           comparison = await aerobicComparison(
             apiKey,
@@ -520,6 +551,8 @@ export const getAerobicAnalysisTool = {
         basis,
         elevation_source: elevation.source,
         elevation_note: elevation.note,
+        gap_model: gapModel,
+        gap_note: gapNote,
         decoupling_pct: round(decouplingPct, 1),
         decoupling_source: source,
         interpretation,
@@ -581,6 +614,7 @@ export const getAerobicAnalysisTool = {
           ? `Basis: ${BASIS_LABELS[basis]}`
           : "Basis: not reported (intervals.icu's own values)",
         ...elevationLines(elevation),
+        ...(gapModel ? [gapModelLine({ model: gapModel, note: gapNote })] : []),
         ...(comparison
           ? [
               elevationGainLine({

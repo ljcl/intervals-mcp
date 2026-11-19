@@ -78,14 +78,18 @@ breaking them has shipped bugs — do not work around them locally.
   requests `distance` (#73). It always requests the one superset
   `INTERVALS_STREAM_TYPES` and returns only the requested columns.
 - **Derived numbers have exactly one home.** GAP: `hillAnalysis.ts`
-  (`gapFactor`, `computeGrades`, and `gapGrades`, the 100 m averaged grade
-  every GAP number uses; `gradeAdjustedSpeeds` for a GAP stream);
+  (`resolveGapModel` picks intervals.icu's own `ga_velocity` or Minetti,
+  and `gapBasis` is the metres and seconds every GAP number sums;
+  `gapFactor`, `computeGrades`, and `gapGrades`, the 100 m averaged grade,
+  are the Minetti parts; `gradeAdjustedSpeeds` for a GAP stream);
   `splitAnalysis.ts` and `get-aerobic-analysis` import, never re-derive.
   Best-effort stretches inside one activity: `bestEffortWindows` in
   `activityBestEfforts.ts` (the pace-curve rule).
   CTL/ATL/TSB and any projection/taper math: `fitnessTrend.ts` (TSB from
   wellness: `ctlAtlTsb`; 7-day change: `ctlDelta`, sent to the app in its
-  payload). HR-zone bounds: `resolveHrZones` in `activityZones.ts`; zone
+  payload; form as a percentage of fitness: `formPercent`, and the band
+  limits for each `FormDisplay` in `trendBands`; the athlete's setting is
+  read by `loadFormDisplay` in `formDisplay.ts`, kept for an hour). HR-zone bounds: `resolveHrZones` in `activityZones.ts`; zone
   ranges from bounds: `zoneRanges` there (shared by `buildZoneSet` and
   `athleteZones.ts`, which holds the settings zones and the LTHR/max HR
   checks). Run types: `PACE_ACTIVITY_TYPES` in `packages/data`
@@ -129,7 +133,9 @@ breaking them has shipped bugs — do not work around them locally.
   lines: `lineFollowers` in `routeScore.ts`.
   Which altitude stream an analysis reads (corrected `fixed_altitude` or the
   recorded `altitude`), `elevation_source` and its note: `resolveElevation`
-  in `elevationSource.ts`; for `elevationSource: "both"`, each source
+  in `elevationSource.ts` (the route tools' past-run tracks use it too; the
+  source of an activity's own total: `activityGainSource` there); for
+  `elevationSource: "both"`, each source
   (`resolveBothElevations`), its summed gain (`streamGainM`) and the
   sensitivity warnings, whose thresholds are `ELEVATION_SENSITIVITY` there.
   Weather, dew point and the weather note: `activityWeather.ts` (FIT

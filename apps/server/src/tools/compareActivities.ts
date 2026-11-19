@@ -8,6 +8,11 @@ import {
   weatherNote,
 } from "../activityWeather";
 import { speedEfficiencyFactor } from "../aerobicAnalysis";
+import {
+  activityGainSource,
+  type ElevationSource,
+  mixedElevationNote,
+} from "../elevationSource";
 import { formatDuration, formatSigned, round } from "../formatters";
 import {
   getActivity,
@@ -22,7 +27,7 @@ import {
 } from "../kmComparison";
 import { NO_PROGRESS, type ReportProgress } from "../progress";
 import { sameRoute as isSameRoute } from "../routeCandidates";
-import { type SplitAnalysis, SplitAnalysisError } from "../splitAnalysis";
+import { SplitAnalysisError } from "../splitAnalysis";
 import { HISTORY_DAYS, loadRunStarts } from "../startClusters";
 import { addDays } from "../utils/localDate";
 import {
@@ -39,7 +44,10 @@ import {
 import { READ_ONLY } from "./_annotations";
 import { toolErrorText } from "./_errors";
 import { intervalsActivityIdInput } from "./_ids";
-import { loadSplitAnalysis } from "./getSplitAnalysis";
+import {
+  type LoadedSplitAnalysis,
+  loadSplitAnalysis,
+} from "./getSplitAnalysis";
 import {
   type CompareActivitiesComparisonSchema,
   CompareActivitiesOutputSchema,
@@ -131,13 +139,15 @@ interface ActivitySummary {
   /** From `sportSpeed`: every type that is neither a run nor a swim. */
   speed_kmh: number | null;
   gap_min_per_km: string | null;
-  /** GAP here is always intervals.icu's own `gap` field, distinct from
-   * get-hill-analysis/get-split-analysis's locally-modelled GAP. */
+  /** GAP here is always intervals.icu's own `gap` field. */
   gap_source: "intervals.icu";
   average_hr: number | null;
   max_hr: number | null;
   cadence_spm: number | null;
-  elevation_gain_m: number;
+  /** Null without elevation data (an indoor run), never 0 (#513). */
+  elevation_gain_m: number | null;
+  /** What `elevation_gain_m` was computed from (`activityGainSource`). */
+  elevation_source: ElevationSource | null;
   load: number | null;
   decoupling_pct: number | null;
   efficiency_factor: number | null;
@@ -174,7 +184,11 @@ function extractActivitySummary(
     average_hr: activity.average_heartrate ?? null,
     max_hr: activity.max_heartrate ?? null,
     cadence_spm: activityCadenceSpm(activity.average_cadence, type),
-    elevation_gain_m: round(activity.total_elevation_gain ?? 0),
+    elevation_gain_m:
+      activity.total_elevation_gain == null
+        ? null
+        : round(activity.total_elevation_gain),
+    elevation_source: activityGainSource(activity),
     load: activity.icu_training_load ?? null,
     decoupling_pct:
       activity.decoupling == null ? null : round(activity.decoupling, 1),
@@ -185,6 +199,15 @@ function extractActivitySummary(
     running_dynamics: buildRunningDynamics(activity, type),
     weather,
   };
+}
+
+/** One side's elevation text line, with the source of the gain. */
+function elevationLine(summary: ActivitySummary): string {
+  if (summary.elevation_gain_m == null) return "  Elevation: no elevation data";
+  const source = summary.elevation_source
+    ? ` (${summary.elevation_source})`
+    : "";
+  return `  Elevation: ${summary.elevation_gain_m} m${source}`;
 }
 
 /** One side's HR text line: the average, plus the max only when the activity recorded one. */
@@ -228,8 +251,21 @@ export interface ComparisonExtras {
 
 /** One side's splits, or why it has none. */
 export type SideSplits =
-  | { analysis: SplitAnalysis; note?: undefined }
+  | { analysis: LoadedSplitAnalysis; note?: undefined }
   | { analysis: null; note: string };
+
+/** The per-km table with what each side's splits read (#509). */
+type KmComparisonWithSources = KmComparison &
+  Pick<
+    NonNullable<ComparisonResult["km_comparison"]>,
+    | "elevation_source_1"
+    | "elevation_source_2"
+    | "gap_model_1"
+    | "gap_model_2"
+    | "basis_note"
+  >;
+
+const GAP_MODEL_NAMES = { strava: "Strava", minetti: "Minetti" } as const;
 
 /**
  * The per-km table, or why there is none. Both sides need splits; the
@@ -239,7 +275,7 @@ function kmComparisonOf(
   splits1: SideSplits | undefined,
   splits2: SideSplits | undefined,
   warmupSeconds: number,
-): { comparison: KmComparison | null; note: string | null } {
+): { comparison: KmComparisonWithSources | null; note: string | null } {
   if (!splits1 || !splits2)
     return { comparison: null, note: "the streams were not read" };
   // A side that is not a run is the reason, ahead of the run beside it.
@@ -251,16 +287,42 @@ function kmComparisonOf(
     return { comparison: null, note: `activity 1 ${splits1.note}` };
   if (!splits2.analysis)
     return { comparison: null, note: `activity 2 ${splits2.note}` };
+  const a = splits1.analysis;
+  const b = splits2.analysis;
   const comparison = compareKmSplits(
-    splits1.analysis.splits,
-    splits2.analysis.splits,
-    splits1.analysis.gradeSource !== "none" &&
-      splits2.analysis.gradeSource !== "none",
+    a.splits,
+    b.splits,
+    // A side has a grade-adjusted pace when it has a GAP model, which the
+    // Strava model can give without an elevation stream.
+    a.gapModel != null && b.gapModel != null,
     warmupSeconds,
   );
-  return comparison
-    ? { comparison, note: null }
-    : { comparison: null, note: "the runs share no full km" };
+  if (!comparison)
+    return { comparison: null, note: "the runs share no full km" };
+  const notes = [
+    mixedElevationNote(
+      a.elevationSource,
+      b.elevationSource,
+      "per-km elevation",
+    ),
+    comparison.basis === "gap" &&
+    a.gapModel != null &&
+    b.gapModel != null &&
+    a.gapModel !== b.gapModel
+      ? `Activity 1's grade-adjusted pace uses the ${GAP_MODEL_NAMES[a.gapModel]} model and activity 2's the ${GAP_MODEL_NAMES[b.gapModel]} model, so the per-km efficiency is not like for like.`
+      : null,
+  ].filter((text) => text != null);
+  return {
+    comparison: {
+      ...comparison,
+      elevation_source_1: a.elevationSource,
+      elevation_source_2: b.elevationSource,
+      gap_model_1: a.gapModel,
+      gap_model_2: b.gapModel,
+      basis_note: notes.length > 0 ? notes.join(" ") : null,
+    },
+    note: null,
+  };
 }
 
 const NOT_A_RUN = "is not a run";
@@ -410,9 +472,10 @@ export function buildComparison(
       ? Math.round(summary2.cadence_spm - summary1.cadence_spm)
       : null;
 
-  const elevationDiff = Math.round(
-    summary2.elevation_gain_m - summary1.elevation_gain_m,
-  );
+  const elevationDiff =
+    summary1.elevation_gain_m != null && summary2.elevation_gain_m != null
+      ? Math.round(summary2.elevation_gain_m - summary1.elevation_gain_m)
+      : null;
 
   // Efficiency factor, the same speedEfficiencyFactor get-aerobic-analysis
   // reports: metres per minute per beat, higher is better. Grade-adjusted
@@ -474,6 +537,11 @@ export function buildComparison(
       weather: weatherDiff,
     },
     weather_note: weatherNote(weatherDiff),
+    elevation_note: mixedElevationNote(
+      summary1.elevation_source,
+      summary2.elevation_source,
+      "elevation gain",
+    ),
     km_comparison: km.comparison,
     km_comparison_note: km.note,
     efficiency,
@@ -675,7 +743,7 @@ export const compareActivitiesTool = {
       if (hrLine1) lines.push(hrLine1);
       if (summary1.cadence_spm != null)
         lines.push(`  Cadence: ${summary1.cadence_spm} spm`);
-      lines.push(`  Elevation: ${summary1.elevation_gain_m} m`);
+      lines.push(elevationLine(summary1));
       const weatherLine1 = formatWeatherLine(summary1.weather);
       if (weatherLine1) lines.push(`  ${weatherLine1}`);
 
@@ -694,7 +762,7 @@ export const compareActivitiesTool = {
       if (hrLine2) lines.push(hrLine2);
       if (summary2.cadence_spm != null)
         lines.push(`  Cadence: ${summary2.cadence_spm} spm`);
-      lines.push(`  Elevation: ${summary2.elevation_gain_m} m`);
+      lines.push(elevationLine(summary2));
       const weatherLine2 = formatWeatherLine(summary2.weather);
       if (weatherLine2) lines.push(`  ${weatherLine2}`);
 
@@ -708,7 +776,10 @@ export const compareActivitiesTool = {
       if (hrDiff !== null) lines.push(`  Avg HR: ${formatSigned(hrDiff)} bpm`);
       if (cadenceDiff !== null)
         lines.push(`  Cadence: ${formatSigned(cadenceDiff)} spm`);
-      lines.push(`  Elevation: ${formatSigned(elevationDiff)} m`);
+      if (elevationDiff !== null)
+        lines.push(`  Elevation: ${formatSigned(elevationDiff)} m`);
+      if (result.elevation_note)
+        lines.push(`Elevation note: ${result.elevation_note}`);
       const weatherDiffLine = formatWeatherDifferenceLine(result);
       if (weatherDiffLine) lines.push(weatherDiffLine);
       if (result.weather_note)
@@ -726,6 +797,8 @@ export const compareActivitiesTool = {
 
       if (result.km_comparison) {
         lines.push(...formatKmComparison(result.km_comparison));
+        if (result.km_comparison.basis_note)
+          lines.push(`Per-km note: ${result.km_comparison.basis_note}`);
       } else if (result.km_comparison_note) {
         lines.push(`No per-km table: ${result.km_comparison_note}.`);
       }

@@ -13,10 +13,13 @@ import {
 import { formatSigned } from "../formatters";
 import {
   computeHillAnalysis,
+  gapModelLine,
+  gapSourceOf,
   type HillAnalysis,
   HillAnalysisError,
   type HillSegment,
   type HillStreams,
+  resolveGapModel,
 } from "../hillAnalysis";
 import { cadenceLabel, cadenceUnit } from "../intervalLaps";
 import { getActivity } from "../intervalsClient";
@@ -52,8 +55,12 @@ aerobic durability, get-aerobic-analysis.
 Notes:
 - Grade comes from altitude over about 30 m, the same altitude each
   segment's grade and gain are read from, else from intervals.icu's smoothed
-  grade stream; grade_source says which. Grade-adjusted pace uses grade
-  averaged over 100 m, and a noisy elevation track adds a warning.
+  grade stream; grade_source says which.
+- Grade-adjusted pace is intervals.icu's own (the Strava model, as
+  get-activity shows it) when the activity has it; gap_model says which
+  model, and gap_note why a fallback happened. The fallback is the Minetti
+  model on grade averaged over 100 m, where a noisy elevation track adds a
+  warning.
 - The altitude is intervals.icu's corrected elevation when the activity has
   elevation correction on, else the recorded (barometric) altitude;
   elevation_source says which, and elevation_note says why a fallback
@@ -86,6 +93,7 @@ const STREAM_TYPES = [
   "altitude",
   "fixed_altitude",
   "grade_smooth",
+  "ga_velocity",
   "heartrate",
   // Not read for GAP (#298); the loader derives `moving` from it.
   "velocity_smooth",
@@ -117,15 +125,21 @@ function segmentOut(segment: HillSegment, type: string) {
   };
 }
 
+/**
+ * `gaVelocity` is `resolveGapModel`'s choice for this altitude. The source
+ * comparison leaves it out: it reports climbs and gain, no GAP.
+ */
 function hillStreamsFor(
   streams: IntervalsStreams,
   altitude: ResolvedElevation["altitude"],
+  gaVelocity?: HillStreams["ga_velocity"],
 ): HillStreams {
   return {
     time: streams.time,
     distance: streams.distance ?? [],
     altitude,
     grade_smooth: streams.grade_smooth,
+    ga_velocity: gaVelocity,
     heartrate: streams.heartrate,
     cadence: streams.cadence,
     watts: streams.watts,
@@ -282,8 +296,9 @@ export const getHillAnalysisTool = {
         streams,
         elevationSource !== "barometric",
       );
+      const gapModel = resolveGapModel(activity, streams, elevation.source);
       const analysis = computeHillAnalysis(
-        hillStreamsFor(streams, elevation.altitude),
+        hillStreamsFor(streams, elevation.altitude, gapModel.gaVelocity),
       );
       const comparison =
         elevationSource === "both"
@@ -304,11 +319,12 @@ export const getHillAnalysisTool = {
         grade_source: analysis.gradeSource,
         elevation_source: elevation.source,
         elevation_note: elevation.note,
-        // GAP throughout this response is locally modelled from grade
-        // (Minetti metabolic-cost curve, hillAnalysis.ts's gapFactor), not
-        // intervals.icu's own gap field (see get-activity/compare-activities/
-        // get-activity-laps' gap_source: "intervals.icu").
-        gap_source: "model" as const,
+        // One model for every GAP in this response (hillAnalysis.ts's
+        // gapBasis): intervals.icu's own when the activity has it, the one
+        // get-activity and get-activity-laps print, else Minetti from grade.
+        gap_source: gapSourceOf(analysis.gapModel),
+        gap_model: analysis.gapModel,
+        gap_note: gapModel.note,
         drift: analysis.drift
           ? {
               basis: analysis.drift.basis,
@@ -348,6 +364,7 @@ export const getHillAnalysisTool = {
         `Hill Analysis: ${structured.name} (${structured.date})`,
         `Grade source: ${structured.grade_source}`,
         ...elevationLines(elevation),
+        gapModelLine({ model: analysis.gapModel, note: gapModel.note }),
         ...(comparison
           ? [
               elevationGainLine({

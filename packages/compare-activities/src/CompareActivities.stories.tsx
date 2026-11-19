@@ -176,7 +176,8 @@ export const OneSideNoStreams = meta.story({
   play: async ({ canvas }) => {
     // The summary tiles survive.
     await expect(canvas.getByText("Distance")).toBeVisible();
-    await expect(canvas.getByText("Elevation")).toBeVisible();
+    // A manual entry has no elevation data, so there is no "0 m" tile.
+    await expect(canvas.queryByText("Elevation")).not.toBeInTheDocument();
     // The overlay explains itself instead of drawing one lonely line.
     await expect(
       canvas.getByText(

@@ -560,3 +560,57 @@ describe("interpretSplit", () => {
     expect(interpretSplit("even", "even", 0.5, null)).toContain("even split");
   });
 });
+
+describe("the Strava GAP model (#508)", () => {
+  it("names Minetti when it computes GAP from grade, and no model without GAP", () => {
+    expect(computeSplitAnalysis(flat5k()).gapModel).toBe("minetti");
+    const noElevation = computeSplitAnalysis(
+      streams([{ metres: 5000, secPerKm: 300 }], { withAltitude: false }),
+    );
+    expect(noElevation.gapModel).toBeNull();
+    expect(noElevation.totals.avgGapPaceSecPerKm).toBeNull();
+  });
+
+  it("takes every grade-adjusted pace from intervals.icu's GAP speed", () => {
+    const input = flat5k();
+    // 4 m/s for the first half of the samples, 5 m/s for the second.
+    const half = Math.floor(input.time.length / 2);
+    const analysis = computeSplitAnalysis({
+      ...input,
+      ga_velocity: input.time.map((_, i) => (i <= half ? 4 : 5)),
+    });
+    expect(analysis.gapModel).toBe("strava");
+    expect(analysis.splits[0]!.gapPaceSecPerKm).toBe(250);
+    expect(analysis.splits[4]!.gapPaceSecPerKm).toBe(200);
+    expect(analysis.verdict!.firstHalfGapPaceSecPerKm).toBe(250);
+    expect(analysis.verdict!.secondHalfGapPaceSecPerKm).toBe(200);
+    // Raw pace did not change, so the clock verdict is still even.
+    expect(analysis.verdict!.shape).toBe("even");
+    expect(analysis.verdict!.gapShape).toBe("negative");
+  });
+
+  it("gives a grade-adjusted pace without any elevation stream", () => {
+    const input = streams([{ metres: 3000, secPerKm: 300 }], {
+      withAltitude: false,
+    });
+    const analysis = computeSplitAnalysis({
+      ...input,
+      ga_velocity: input.time.map(() => 3.5),
+    });
+    expect(analysis.gradeSource).toBe("none");
+    expect(analysis.gapModel).toBe("strava");
+    expect(analysis.totals.avgGapPaceSecPerKm).toBe(286);
+    expect(analysis.warnings.join(" ")).not.toContain("No elevation");
+  });
+
+  it("leaves samples with no GAP speed out of the mean", () => {
+    const input = flat5k();
+    const analysis = computeSplitAnalysis({
+      ...input,
+      // A fifth of the samples have no GAP speed, as around a stop.
+      ga_velocity: input.time.map((_, i) => (i % 5 === 0 ? null : 4)),
+    });
+    expect(analysis.totals.avgGapPaceSecPerKm).toBe(250);
+    expect(analysis.splits.every((s) => s.gapPaceSecPerKm === 250)).toBe(true);
+  });
+});

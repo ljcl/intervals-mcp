@@ -4,13 +4,18 @@ import {
   computeGrades,
   computeHillAnalysis,
   GAP_MAX_GRADE_PCT,
+  gapBasis,
   gapFactor,
   gapGrades,
+  gapModelLine,
+  gapSourceOf,
+  gradeAdjustedSpeeds,
   HillAnalysisError,
   type HillStreams,
   interpolateNulls,
   NOISY_GRADE_RMS_PCT,
   normalizeHillStreams,
+  resolveGapModel,
 } from "./hillAnalysis";
 
 /**
@@ -613,5 +618,210 @@ describe("bestRepeatHill", () => {
         distance.map(() => null),
       ),
     ).toBeNull();
+  });
+});
+
+describe("resolveGapModel (#508)", () => {
+  const ga = [null, 3.1, 3.2];
+
+  it("follows the activity's Strava model when its stream has a sample", () => {
+    expect(
+      resolveGapModel(
+        { gap_model: "STRAVA_RUN", use_elevation_correction: true },
+        { ga_velocity: ga },
+        "corrected",
+      ),
+    ).toEqual({ model: "strava", gaVelocity: ga, note: null });
+  });
+
+  it("follows it on the recorded altitude when the activity has no correction", () => {
+    const result = resolveGapModel(
+      { gap_model: "STRAVA_RUN", use_elevation_correction: false },
+      { ga_velocity: ga },
+      "barometric",
+    );
+    expect(result.model).toBe("strava");
+  });
+
+  it.each([
+    ["NONE", "NONE"],
+    ["missing", undefined],
+    ["null", null],
+    ["a model added later", "SOMETHING_NEW"],
+  ])("uses Minetti with no note when gap_model is %s", (_, gap_model) => {
+    expect(
+      resolveGapModel({ gap_model }, { ga_velocity: ga }, "corrected"),
+    ).toEqual({ model: "minetti", gaVelocity: undefined, note: null });
+  });
+
+  it.each([
+    ["missing", undefined],
+    ["all null", [null, null, null]],
+  ])("uses Minetti with a note when the stream is %s", (_, stream) => {
+    const result = resolveGapModel(
+      { gap_model: "STRAVA_RUN" },
+      { ga_velocity: stream },
+      "corrected",
+    );
+    expect(result.model).toBe("minetti");
+    expect(result.gaVelocity).toBeUndefined();
+    expect(result.note).toContain("no intervals.icu grade-adjusted speed");
+  });
+
+  it("uses Minetti with a note when the analysis reads the recorded altitude of a corrected activity", () => {
+    const result = resolveGapModel(
+      { gap_model: "STRAVA_RUN", use_elevation_correction: true },
+      { ga_velocity: ga },
+      "barometric",
+    );
+    expect(result.model).toBe("minetti");
+    expect(result.gaVelocity).toBeUndefined();
+    expect(result.note).toContain("corrected elevation");
+  });
+});
+
+describe("gapSourceOf and gapModelLine (#508)", () => {
+  it("maps the model to the legacy gap_source value", () => {
+    expect(gapSourceOf("strava")).toBe("intervals.icu");
+    expect(gapSourceOf("minetti")).toBe("model");
+    expect(gapSourceOf(null)).toBe("model");
+  });
+
+  it("names the model and adds the note", () => {
+    expect(gapModelLine({ model: "strava", note: null })).toBe(
+      "GAP model: Strava (the intervals.icu number for this activity)",
+    );
+    expect(gapModelLine({ model: "minetti", note: "Because." })).toBe(
+      "GAP model: Minetti (computed here from grade). Because.",
+    );
+  });
+});
+
+describe("gapBasis (#508)", () => {
+  const base = {
+    time: [0, 1, 2, 3, 4],
+    distance: [0, 3, 6, 9, 12],
+  };
+
+  it("is null with no GAP speed and no grade", () => {
+    expect(gapBasis(base, null)).toBeNull();
+  });
+
+  it("weights each metre by the Minetti factor of the averaged grade", () => {
+    const flatBasis = gapBasis(base, [0, 0, 0, 0, 0])!;
+    expect(flatBasis.model).toBe("minetti");
+    expect(flatBasis.metres).toEqual([0, 3, 3, 3, 3]);
+    expect(flatBasis.seconds).toEqual([0, 1, 1, 1, 1]);
+
+    const uphill = gapBasis(base, [6, 6, 6, 6, 6])!;
+    expect(uphill.metres[1]).toBeCloseTo(3 * gapFactor(0.06), 6);
+  });
+
+  it("keeps a stopped sample's metres but not its seconds for Minetti", () => {
+    const basis = gapBasis(
+      { ...base, moving: [true, true, false, true, true] },
+      [0, 0, 0, 0, 0],
+    )!;
+    expect(basis.metres[2]).toBe(3);
+    expect(basis.seconds).toEqual([0, 1, 0, 1, 1]);
+  });
+
+  it("uses the GAP speed times moving time, whatever the grade says", () => {
+    const basis = gapBasis(
+      { ...base, ga_velocity: [3.3, 3.3, 3.6, 3.3, 3.3] },
+      [20, 20, 20, 20, 20],
+    )!;
+    expect(basis.model).toBe("strava");
+    expect(basis.warning).toBeNull();
+    expect(basis.metres).toEqual([0, 3.3, 3.6, 3.3, 3.3]);
+    expect(basis.seconds).toEqual([0, 1, 1, 1, 1]);
+  });
+
+  it("leaves a sample with no GAP speed, and a stopped one, out of both sums", () => {
+    const basis = gapBasis(
+      {
+        ...base,
+        ga_velocity: [3, null, 3, 3, 3],
+        moving: [true, true, true, false, true],
+      },
+      null,
+    )!;
+    expect(basis.metres).toEqual([0, 0, 3, 0, 3]);
+    expect(basis.seconds).toEqual([0, 0, 1, 0, 1]);
+  });
+
+  it("scales a long moving gap by its real seconds", () => {
+    const basis = gapBasis(
+      { time: [0, 1, 21], distance: [0, 3, 63], ga_velocity: [3, 3, 3.5] },
+      null,
+    )!;
+    expect(basis.metres[2]).toBe(70);
+    expect(basis.seconds[2]).toBe(20);
+  });
+});
+
+describe("the Strava model through the analysis (#508)", () => {
+  // A 6% climb at 2.5 m/s: Minetti says about 3.4 m/s flat-equivalent.
+  const course = () => buildStreams([flat(600), climb(600), flat(600)]);
+  const withGa = (speed: number): HillStreams => {
+    const streams = course();
+    return { ...streams, ga_velocity: streams.time.map(() => speed) };
+  };
+
+  it("normalizeHillStreams drops an all-null or misaligned GAP stream", () => {
+    const streams = course();
+    expect(normalizeHillStreams(streams).ga_velocity).toBeUndefined();
+    expect(
+      normalizeHillStreams({
+        ...streams,
+        ga_velocity: streams.time.map(() => null),
+      }).ga_velocity,
+    ).toBeUndefined();
+    expect(
+      normalizeHillStreams({ ...streams, ga_velocity: [3, 3] }).ga_velocity,
+    ).toBeUndefined();
+    expect(normalizeHillStreams(withGa(3)).ga_velocity).toHaveLength(
+      streams.time.length,
+    );
+  });
+
+  it("reports Minetti without the stream, as before", () => {
+    const analysis = computeHillAnalysis(course());
+    expect(analysis.gapModel).toBe("minetti");
+    const gap = analysis.climbs[0]!.gapPaceSecPerKm!;
+    expect(gap).toBeGreaterThan(280);
+    expect(gap).toBeLessThan(310);
+  });
+
+  it("gives each climb the mean of intervals.icu's GAP speed", () => {
+    const analysis = computeHillAnalysis(withGa(4));
+    expect(analysis.gapModel).toBe("strava");
+    expect(analysis.climbs[0]!.gapPaceSecPerKm).toBe(250);
+    // The segment edge takes in a flat sample, so HR is just under 155.
+    expect(analysis.climbs[0]!.hrPerGapSpeed).toBeCloseTo(155 / 4, 0);
+  });
+
+  it("gradeAdjustedSpeeds returns the stream itself for the Strava model", () => {
+    const streams = withGa(4);
+    streams.ga_velocity![5] = null;
+    const result = gradeAdjustedSpeeds(streams)!;
+    expect(result.model).toBe("strava");
+    expect(result.gradeSource).toBeNull();
+    expect(result.warning).toBeNull();
+    expect(result.speeds[4]).toBe(4);
+    expect(result.speeds[5]).toBeNull();
+  });
+
+  it("gradeAdjustedSpeeds needs no elevation for the Strava model", () => {
+    const { altitude: _a, grade_smooth: _g, ...noElevation } = withGa(4);
+    expect(gradeAdjustedSpeeds(noElevation)?.model).toBe("strava");
+    const { ga_velocity: _ga, ...neither } = noElevation;
+    expect(gradeAdjustedSpeeds(neither)).toBeNull();
+  });
+
+  it("gradeAdjustedSpeeds names Minetti and its grade source without the stream", () => {
+    const result = gradeAdjustedSpeeds(course())!;
+    expect(result.model).toBe("minetti");
+    expect(result.gradeSource).toBe("computed");
   });
 });

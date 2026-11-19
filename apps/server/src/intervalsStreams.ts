@@ -26,6 +26,7 @@ export const INTERVALS_STREAM_TYPES = [
   "cadence",
   "distance",
   "fixed_altitude",
+  "ga_velocity",
   "grade_smooth",
   "heartrate",
   "latlng",
@@ -54,6 +55,11 @@ export interface IntervalsStreams {
    * between this and `altitude` with `resolveElevation` only. */
   fixed_altitude?: (number | null)[];
   grade_smooth?: (number | null)[];
+  /** intervals.icu's own grade-adjusted speed, m/s: the stream behind
+   * `activity.gap` and `interval.gap`. Sent for a run with GPS; an activity's
+   * `stream_types` never lists it (docs/api-notes.md). Analysis callers use
+   * it through `resolveGapModel` (`hillAnalysis.ts`) only. */
+  ga_velocity?: (number | null)[];
   cadence?: (number | null)[];
   watts?: (number | null)[];
   /** `[lat, lng]` pairs; intervals.icu stores lat in `data`, lng in `data2`. */
@@ -172,6 +178,7 @@ export const OPTIONAL_STREAM_TYPES: readonly OptionalStreamType[] = [
   "altitude",
   "fixed_altitude",
   "grade_smooth",
+  "ga_velocity",
   "cadence",
   "watts",
   "stance_time",

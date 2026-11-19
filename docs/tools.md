@@ -598,7 +598,8 @@ list, and `icu_intervals` usually mirrors the device's own laps (typically
 one WORK interval per lap, sometimes with a short RECOVERY inserted between
 them), for any sport. Runs report `pace_min_per_km` and grade-adjusted
 `gap_min_per_km` (`gap_source: "intervals.icu"`, from the lap's own `gap`
-field, not the locally-modelled GAP hill/split analysis compute); swims
+field, the number the hill and split analysis follow when the activity has
+intervals.icu's GAP stream, #508); swims
 report `pace_min_per_100m` and other distance sports `speed_kmh`, both from
 `sportSpeed` (distance over moving time), so they match `get-activity`'s
 intervals. A swim lap's moving time includes its rests at the wall, so the
@@ -893,9 +894,10 @@ trailing gap) rather than treated as zero; a null HR/cadence sample
 is simply excluded from whatever average it would have fed. Pace is a bare
 `m:ss` string in `pace_min_per_km`/`gap_pace_min_per_km`, the `/km` suffix
 added only in the text output; splits are kilometres only. GAP here is
-locally modelled from grade (`gap_source: "model"`), distinct from
-get-activity/compare-activities/get-activity-laps/get-running-summary's
-`gap_source: "intervals.icu"` (their own recorded `gap` field). An activity
+intervals.icu's own (`gap_source: "intervals.icu"`, `gap_model: "strava"`),
+as in get-activity/compare-activities/get-activity-laps/get-running-summary,
+when the activity has its GAP stream; else it is modelled from grade
+(`gap_source: "model"`, `gap_model: "minetti"`). An activity
 with no recorded
 streams at all (e.g. Pilates, or a manual entry) fails with a message naming
 the activity rather than an empty analysis.
@@ -906,7 +908,12 @@ grade, elevation change, moving and grade-adjusted pace, HR, cadence, and
 power. The headline is early-vs-late climb drift: HR per unit of
 grade-adjusted speed compared between climbs in the first and second half of
 the activity, or GAP pace alone without HR, positive meaning the same
-climbing cost more late in the run. With no elevation data (no grade stream
+climbing cost more late in the run. Grade-adjusted pace is intervals.icu's
+own when the activity has it (`gap_model: "strava"`, the number
+`get-activity` and `get-activity-laps` show), else the Minetti model
+(`gap_model: "minetti"`, with `gap_note` when the activity has a model the
+analysis could not follow); `get-split-analysis` and `get-aerobic-analysis`
+carry the same pair (#508). With no elevation data (no grade stream
 and no real altitude samples) it returns an error. Climb detection still
 reads the per-sample grade, not the 100 m average.
 
@@ -916,7 +923,8 @@ grade-adjusted, cut at the exact midpoint of recorded distance rather than
 by grouping splits. `terrain_pct` names how many percentage points of the
 raw change the terrain accounts for, so a hilly back half is not misread as
 fade and a course that flattens out does not hide real fade. With no
-elevation data, `grade_source` is `none`, every grade-adjusted field
+elevation data and no intervals.icu GAP stream, `grade_source` is `none`,
+`gap_model` is null, every grade-adjusted field
 (`gap_pace_*`, `gap_shape`, `gap_delta_pct`, `terrain_pct`) is null, and the
 verdict is on the clock only. On a noisy elevation track the interpretation
 also says the grade-adjusted part is approximate. `totals.elevation_gain_m`
@@ -941,8 +949,27 @@ or no corrected stream). The `elevationSource` input picks the source:
 recorded altitude), or `both`. With `barometric` on an activity that has
 correction on, `get-split-analysis` sums `totals.elevation_gain_m` from the
 recorded altitude (`computed`), because the activity's own total follows
-the corrected stream. compare-activities' per-km table and
-get-running-summary's computed decoupling take the default.
+the corrected stream. compare-activities' per-km table and get-running-summary's computed decoupling take the default,
+and say what they read (#509). get-running-summary has `elevation_source`,
+`elevation_note`, `gap_model` and `gap_note` for the values it computed (all
+null when the values are intervals.icu's own). compare-activities has, on
+each side, `elevation_source` for `elevation_gain_m` (the activity's own
+total: `corrected` when the activity has correction on), and an
+`elevation_note` when the two sides differ: a corrected run against a
+barometric run is not a like-for-like climb comparison (331 m against 230 m
+on one run). Its `km_comparison` has `elevation_source_1`/`_2` and
+`gap_model_1`/`_2` from each side's splits, with a `basis_note` when they
+differ. An activity with no elevation data (an indoor run, a manual entry)
+has `elevation_gain_m: null` and no elevation difference, not 0 m (#513).
+
+The route tools read the same stream. `loadRunStarts` (`startClusters.ts`)
+builds each past run's track from the altitude `resolveElevation` chooses,
+so the climb that `suggest-run-route` and `stitch-route` sum along a past
+run, and the hill for repeats, come from the elevation that the run's own
+total and `get-split-analysis` use (#509). A stitched route can join pieces
+from runs with different sources, and ORS fills with a third; `historyLegs.ts`
+sums climb per piece, so no sum crosses a join between two sources. A stored
+route keeps the altitude it was built with.
 
 **Both sources.** The source can swing a result a lot: on one flat 6 km run,
 decoupling was +1.7% on the barometric altitude and −8.2% on the corrected
@@ -972,6 +999,13 @@ change 3 points, climb gain 25% of the larger total and at least 10 m.
 Without a corrected stream, `both` returns the barometric result with
 `corrected: null` and a `note`, never an error. The second source costs no
 request: the stream read is the cached superset.
+
+The comparison is between elevation sources, and since #508 it can also be
+between GAP models. On an activity with intervals.icu's GAP stream, the
+corrected result uses the Strava model (`gap_model: "strava"`), and the
+barometric result uses Minetti, because intervals.icu computes its GAP from
+the corrected elevation only. So a part of the difference between the two
+results can come from the model.
 
 Every row of the split table has the same columns: a column (GAP, elevation
 change, HR, power) is printed on every row when any split has it, with
@@ -1330,6 +1364,23 @@ present-tense one: deep fatigue "… to DATE, the end of the window", fresh
 "… on DATE, the end of the window", and a steep ramp "in the 7 days to
 DATE". When wellness stops before the window's end, the reason calls that
 day "the last day with data in the window". The band is still in `flags`.
+
+**Form as a percentage of fitness (#512).** intervals.icu has an athlete
+setting, "form as percent" (`icu_form_as_percent`), that shows form as
+(CTL − ATL) × 100 / CTL in place of the absolute TSB. Every day in `daily`,
+`projection`, the taper and `current` has `form_percent` (null when CTL is
+0), and `form_display` is `percent` when the setting is on, else `absolute`.
+`tsb` does not change. With the setting on, the text prints the percentage
+beside TSB, and the deep-fatigue and fresh bands and flags use percent
+limits: deep fatigue at or below -30% of fitness (the limit of
+intervals.icu's "high risk" zone) for 5 days, fresh from +15% down to +12%.
+A TSB of -14 at a CTL of 40 is -35% and is deep fatigue on that rule; -30 at
+a CTL of 120 is -25% and is not. With the setting off, the bands are the
+TSB bands above. `loadFormDisplay` (`formDisplay.ts`) reads the setting and
+keeps it for an hour, so a change in intervals.icu shows within that time
+and the tool makes one more request per hour, not one per call. The
+fitness-trend chart still plots absolute TSB; its bands come from the
+server, so they follow the same rule as the text.
 `get-fitness-trend` and the
 `view-fitness-trend`/`get-fitness-trend-data` MCP App pair (below) share one
 loader (`loadFitnessTrend` in `loadFitnessTrend.ts`) for both the whole-body
