@@ -10,6 +10,7 @@ import {
   handledRateLimit,
   syntheticStreams,
   withCorrectedAltitude,
+  withGaVelocity,
 } from "../__fixtures__";
 import activityFixture from "../__fixtures__/intervals/activity.json";
 import activityHilly from "../__fixtures__/intervals/activity-hilly.json";
@@ -440,5 +441,59 @@ describe("get-hill-analysis", () => {
       expect(text).toContain("Gain: corrected n/a, barometric +");
       expect(text).toContain("corrected: not available");
     });
+  });
+});
+
+describe("get-hill-analysis GAP model (#508)", () => {
+  type Structured = {
+    gap_model: string;
+    gap_source: string;
+    gap_note: string | null;
+    climbs: Array<{ gap_pace_min_per_km: string | null }>;
+  };
+
+  it("gives every climb intervals.icu's GAP when the activity has its stream", async () => {
+    mockedGetActivity.mockResolvedValue(hillyActivity);
+    mockedGetActivityStreams.mockResolvedValue(
+      withGaVelocity(withCorrectedAltitude(hillyStreams), 4),
+    );
+
+    const result = await getHillAnalysisTool.execute(
+      { id: "i189757207" },
+      "test-key",
+    );
+
+    const structured = result.structuredContent as Structured;
+    expect(structured.gap_model).toBe("strava");
+    expect(structured.gap_source).toBe("intervals.icu");
+    expect(structured.gap_note).toBeNull();
+    expect(structured.climbs.length).toBeGreaterThan(0);
+    expect(
+      structured.climbs.every((c) => c.gap_pace_min_per_km === "4:10"),
+    ).toBe(true);
+    expect(result.content[0]?.text).toContain(
+      "GAP model: Strava (the intervals.icu number for this activity)",
+    );
+    expect(HillAnalysisOutputSchema.safeParse(structured).success).toBe(true);
+  });
+
+  it("names Minetti and the reason without the stream", async () => {
+    mockedGetActivity.mockResolvedValue(hillyActivity);
+    mockedGetActivityStreams.mockResolvedValue(hillyStreams);
+
+    const result = await getHillAnalysisTool.execute(
+      { id: "i189757207" },
+      "test-key",
+    );
+
+    const structured = result.structuredContent as Structured;
+    expect(structured.gap_model).toBe("minetti");
+    expect(structured.gap_source).toBe("model");
+    expect(structured.gap_note).toContain(
+      "no intervals.icu grade-adjusted speed",
+    );
+    expect(result.content[0]?.text).toContain(
+      "GAP model: Minetti (computed here from grade).",
+    );
   });
 });

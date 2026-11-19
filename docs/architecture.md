@@ -359,7 +359,30 @@ applies those parts only when `droppedSamples` is 0 (#82).
 
 ## Analysis math: one home per definition
 
-**Grade-adjusted pace has one definition.** `hillAnalysis.ts`'s `gapFactor`
+**Grade-adjusted pace has one definition, and it follows the activity's GAP
+model (#508).** intervals.icu computes its own GAP with the Strava model
+(`gap_model: "STRAVA_RUN"`) and serves it per sample as the `ga_velocity`
+stream. `resolveGapModel` (`hillAnalysis.ts`) selects the model once per
+activity, the way `resolveElevation` selects the altitude: the Strava model
+needs the activity to name it, the stream to have a sample, and the analysis
+to read the elevation intervals.icu used (so `elevationSource: "barometric"`
+on a corrected activity gets Minetti). The tool passes `ga_velocity` into
+`HillStreams` only then, and `gapBasis` turns it into per-sample
+grade-adjusted metres and seconds: speed times the sample's moving time, and
+nothing for a sample without a GAP speed. Every split, half, climb and
+descent sums those two arrays, so its GAP is the moving-time mean of
+intervals.icu's own samples, which is how intervals.icu computes
+`activity.gap` and `interval.gap` (docs/api-notes.md). Before this, the split,
+hill and aerobic tools printed a Minetti number beside the Strava number
+that `get-activity` and `get-activity-laps` print for the same run, 10 to
+25 s/km apart on a hilly run. Each response names the model (`gap_model`:
+`strava` or `minetti`) and says why when it could not follow the activity
+(`gap_note`); `gap_source` stays for older hosts (`intervals.icu` for
+`strava`, else `model`). The aerobic gap basis reads the same choice through
+`gradeAdjustedSpeeds`, which returns `ga_velocity` itself.
+
+Minetti is the model for an activity without that stream, and for a route
+that is not an activity. Its parts are `gapFactor`
 (Minetti), `computeGrades` (an altitude window, else intervals.icu's
 `grade_smooth`; the altitude the splits and climbs report, #297) and `gapGrades` (that grade averaged over a centred 100 m
 window, clamped to ±30%, plus a noise measure). `splitAnalysis.ts` imports
@@ -385,9 +408,9 @@ caller-supplied edge list, dividing a sample interval that straddles a boundary
 in proportion — which is why the per-km splits and the exact-midpoint halves
 behind the verdict come from one function. Halves are cut at half the recorded
 distance, never by grouping splits, so an odd split count or trailing partial
-cannot skew the verdict. With no elevation data there is no grade, not a
-flat one: `binByDistance` gets no grade, every grade-adjusted figure is
-null, and the verdict is on the clock only. `normalizeHillStreams` drops an
+cannot skew the verdict. With no elevation data and no `ga_velocity` there
+is no GAP basis, not a flat one: `binByDistance` gets none, every
+grade-adjusted figure is null, and the verdict is on the clock only. `normalizeHillStreams` drops an
 altitude stream with no real samples (an `allNull` stream) for the same
 reason, and `interpolateNulls` throws on one rather than fill it with 0.
 Elevation gain is the activity's own `total_elevation_gain` when it has one,
@@ -400,7 +423,8 @@ and a slower pace at a proportionally lower heart rate scores the same.
 `get-aerobic-analysis` applies it to stream averages, `compare-activities`
 to each run's grade-adjusted speed (or moving speed, on both sides, when
 either run has no `gap`). The aerobic tool's default `gap` basis reads
-`gradeAdjustedSpeeds` (`hillAnalysis.ts`): `velocity_smooth` times the same
+`gradeAdjustedSpeeds` (`hillAnalysis.ts`): intervals.icu's `ga_velocity`
+when `resolveGapModel` chose it, else `velocity_smooth` times the same
 averaged-grade GAP factor the hill and split tools use, so it never builds a
 second GAP. (The hill and split tools sum grade-adjusted distance over the
 moving time their pace uses instead, #298; the aerobic basis stays
@@ -500,7 +524,9 @@ best 20-minute heart rate, both of the last 90 days.
 **Route suggestion rules have one home each.** `bestRepeatHill`
 (`hillAnalysis.ts`) finds the 60-200 m stretch at 5-12% for hill repeats,
 reusing the GAP grades. `startClusters.ts` groups recent run starts (300 m,
-recency weighted) into the athlete's usual start. `routeCandidates.ts` holds
+recency weighted) into the athlete's usual start; a past run's track carries
+the altitude `resolveElevation` chooses, corrected when the activity has
+correction on, so its climb agrees with the activity's own total (#509). `routeCandidates.ts` holds
 the candidate rules: past-run matching, the terrain bands (the
 athlete's own thirds of climb per km, 8 and 20 m/km under 10 runs) and the
 3 m climb hysteresis for generated routes. `routeOsmStats` (`osmIndex.ts`)

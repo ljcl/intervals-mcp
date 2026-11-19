@@ -135,3 +135,24 @@ export function withCorrectedAltitude(
     },
   ];
 }
+
+/**
+ * A stream set with intervals.icu's own grade-adjusted speed added
+ * (`ga_velocity`, #508): `speed` m/s on every sample that has a
+ * `velocity_smooth` value, null elsewhere, as intervals.icu sends it.
+ */
+export function withGaVelocity(
+  streams: IntervalsStream[],
+  speed: number,
+): IntervalsStream[] {
+  const velocity = streams.find((s) => s.type === "velocity_smooth");
+  if (!velocity) throw new Error("The fixture has no velocity_smooth stream.");
+  return [
+    ...streams,
+    {
+      ...velocity,
+      type: "ga_velocity",
+      data: velocity.data.map((v) => (v == null ? null : speed)),
+    },
+  ];
+}

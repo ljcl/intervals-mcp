@@ -48,6 +48,7 @@ vi.mock("./intervalsClient", async (importOriginal) => {
     // them, so the fixed zones apply.
     getSportSettings: vi.fn(async () => null),
     getWellness: vi.fn(),
+    getAthleteFormAsPercent: vi.fn(async () => false),
     listActivities: vi.fn(),
   };
 });

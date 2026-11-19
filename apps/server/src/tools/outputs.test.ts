@@ -213,6 +213,10 @@ describe("schemas align with the real tool rawObjects", () => {
       efficiency_factor_source: "computed",
       aerobic_basis: "gap",
       aerobic_note: null,
+      elevation_source: "corrected",
+      elevation_note: null,
+      gap_model: "strava",
+      gap_note: null,
       rpe: 5,
       feel: 4,
       achievements: [],
@@ -434,6 +438,7 @@ describe("schemas align with the real tool rawObjects", () => {
       max_hr: 172,
       cadence_spm: 176,
       elevation_gain_m: 100,
+      elevation_source: "corrected",
       load: 60,
       decoupling_pct: 3.5,
       efficiency_factor: 1.3,
@@ -476,6 +481,7 @@ describe("schemas align with the real tool rawObjects", () => {
         weather: { temperature_c: 2, humidity_pct: null, dew_point_c: null },
       },
       weather_note: null,
+      elevation_note: null,
       km_comparison: {
         basis: "gap",
         rows: [
@@ -499,6 +505,11 @@ describe("schemas align with the real tool rawObjects", () => {
         hr_gap_last_km_bpm: null,
         interpretation:
           "No verdict: fewer than 3 full km have heart rate in both runs.",
+        elevation_source_1: "corrected",
+        elevation_source_2: "barometric",
+        gap_model_1: "strava",
+        gap_model_2: "minetti",
+        basis_note: null,
       },
       km_comparison_note: null,
       efficiency: {

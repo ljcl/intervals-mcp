@@ -38,6 +38,7 @@ vi.mock("../intervalsClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../intervalsClient")>();
   return {
     ...actual,
+    getAthleteFormAsPercent: vi.fn(async () => false),
     listActivities: vi.fn(),
     searchActivities: vi.fn(),
     searchActivitiesByIntervals: vi.fn(),

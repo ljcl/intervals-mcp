@@ -145,6 +145,11 @@ const IntervalsActivitySchema = z
      * `fixed_altitude` stream (docs/api-notes.md). */
     use_elevation_correction: z.boolean().nullable().optional(),
     gap: z.number().nullable().optional(),
+    /** The GAP model behind `gap` and the `ga_velocity` stream:
+     * `STRAVA_RUN` on a run, `NONE` on other sports (docs/api-notes.md).
+     * A plain string, so a model intervals.icu adds later does not fail the
+     * read; `resolveGapModel` follows only the one it knows. */
+    gap_model: z.string().nullable().optional().catch(null),
     /** Detected work intervals, e.g. ["5x 4m51s 164bpm", "1x 25s 164bpm"];
      * null when none. `.catch(null)`, like `icu_achievements`: a malformed
      * value must not fail every activity read. */
@@ -559,6 +564,10 @@ export type IntervalsAthletePaceCurves = z.infer<
  * `icu_api_key`, and parsing strips it. */
 const IntervalsAthleteTimeZoneSchema = z.object({
   timezone: z.string().nullable().optional(),
+  /** "Form as percent" on the fitness page; read by
+   * {@link getAthleteFormAsPercent}. `.catch`: a malformed value must not
+   * fail the time-zone read at startup. */
+  icu_form_as_percent: z.boolean().nullable().optional().catch(null),
 });
 
 /**
@@ -1379,8 +1388,28 @@ export async function getAthleteHrCurves(
 export async function getAthleteTimeZone(
   apiKey: string,
 ): Promise<string | null> {
+  const athlete = await getAthleteSelf(apiKey, "getAthleteTimeZone");
+  return athlete.timezone?.trim() || null;
+}
+
+/**
+ * True when the athlete's intervals.icu shows form as a percentage of
+ * fitness (`icu_form_as_percent` on `GET /athlete/{id}`, #512); false when
+ * it is off or unset. The same uncached read as {@link getAthleteTimeZone}.
+ */
+export async function getAthleteFormAsPercent(
+  apiKey: string,
+): Promise<boolean> {
+  const athlete = await getAthleteSelf(apiKey, "getAthleteFormAsPercent");
+  return athlete.icu_form_as_percent === true;
+}
+
+/** The two settings read off the athlete's own record; see the schema. */
+async function getAthleteSelf(
+  apiKey: string,
+  context: string,
+): Promise<z.infer<typeof IntervalsAthleteTimeZoneSchema>> {
   requireApiKey(apiKey);
-  const context = "getAthleteTimeZone";
   let data: unknown;
   try {
     const response = await intervalsApi.get<unknown>(athletePath(""), {
@@ -1390,8 +1419,7 @@ export async function getAthleteTimeZone(
   } catch (error) {
     handleApiError(error, context);
   }
-  const athlete = parseOrThrow(IntervalsAthleteTimeZoneSchema, data, context);
-  return athlete.timezone?.trim() || null;
+  return parseOrThrow(IntervalsAthleteTimeZoneSchema, data, context);
 }
 
 /**

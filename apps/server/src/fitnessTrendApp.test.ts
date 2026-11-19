@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildFitnessTrend, type FitnessTrendLoadDay } from "./fitnessTrend";
+import {
+  buildFitnessTrend,
+  type FitnessTrendDay,
+  type FitnessTrendLoadDay,
+} from "./fitnessTrend";
 import { mapFitnessTrendApp } from "./fitnessTrendApp";
 import { addDays } from "./utils/localDate";
 
@@ -28,9 +32,11 @@ describe("mapFitnessTrendApp", () => {
     const data = mapFitnessTrendApp(trend, META);
 
     expect(data.days).toBe(90);
-    expect(data.series).toBe(trend.days);
-    expect(data.projection).toBe(trend.projection);
-    expect(data.current).toBe(trend.current);
+    // The days go over without form_percent, which the app does not read.
+    const wire = ({ form_percent: _, ...day }: FitnessTrendDay) => day;
+    expect(data.series).toEqual(trend.days.map(wire));
+    expect(data.projection).toEqual(trend.projection.map(wire));
+    expect(data.current).toEqual(wire(trend.current!));
     expect(data.tsbPositiveDate).toBe(trend.tsbPositiveDate);
     expect(data.flags).toBe(trend.flags);
     expect(data.activitiesIncluded).toBe(21);
@@ -106,7 +112,9 @@ describe("mapFitnessTrendApp", () => {
     expect(taper.note).toBe(source.note);
     expect(taper.totalLoad).toBe(source.total_load);
     expect(taper.recentDailyLoad).toBe(source.recent_daily_load);
-    expect(taper.days).toBe(source.days);
+    expect(taper.days).toEqual(
+      source.days.map(({ form_percent: _, ...day }) => day),
+    );
     expect(taper.weeks).toHaveLength(3);
     expect(taper.weeks[0]).toEqual({
       week: source.weeks[0]!.week,

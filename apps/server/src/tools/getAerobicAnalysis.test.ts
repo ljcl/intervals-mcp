@@ -10,6 +10,7 @@ import {
   handledRateLimit,
   syntheticStreams,
   withCorrectedAltitude,
+  withGaVelocity,
 } from "../__fixtures__";
 import activityFixture from "../__fixtures__/intervals/activity.json";
 import sportSettingsRunFixture from "../__fixtures__/intervals/sport-settings-run.json";
@@ -798,5 +799,85 @@ describe("get-aerobic-analysis", () => {
       expect(structured.elevation_source).toBeNull();
       expect(text).not.toContain("Elevation source");
     });
+  });
+});
+
+describe("get-aerobic-analysis GAP model (#508)", () => {
+  type Structured = {
+    basis: string | null;
+    gap_model: string | null;
+    gap_note: string | null;
+    elevation_source: string | null;
+    efficiency_factor: number | null;
+  };
+  // A steady course: constant speed and HR, so the efficiency factor on the
+  // gap basis is the GAP speed in m/min over HR.
+  const steady = () =>
+    withCorrectedAltitude(
+      syntheticStreams([{ metres: 8000, speed: 3.2, gradePct: 2, hr: 150 }]),
+    );
+  const run = async (args: Record<string, unknown> = {}) => {
+    const result = await getAerobicAnalysisTool.execute(
+      {
+        id: "i189807578",
+        basis: "gap",
+        excludeWarmupMinutes: 0,
+        includeBreakdown: false,
+        ...args,
+      },
+      "test-key",
+    );
+    return {
+      text: result.content[0]?.text ?? "",
+      structured: result.structuredContent as Structured,
+    };
+  };
+
+  beforeEach(() => {
+    mockedGetActivity.mockResolvedValue({
+      ...(activityFixture as unknown as IntervalsActivity),
+      gap_model: "STRAVA_RUN",
+      use_elevation_correction: true,
+    } as IntervalsActivity);
+  });
+
+  it("computes the gap basis from intervals.icu's GAP speed", async () => {
+    mockedGetActivityStreams.mockResolvedValue(withGaVelocity(steady(), 4));
+
+    const { text, structured } = await run();
+
+    expect(structured.basis).toBe("gap");
+    expect(structured.gap_model).toBe("strava");
+    expect(structured.gap_note).toBeNull();
+    expect(structured.elevation_source).toBe("corrected");
+    expect(structured.efficiency_factor).toBeCloseTo((4 * 60) / 150, 2);
+    expect(text).toContain(
+      "GAP model: Strava (the intervals.icu number for this activity)",
+    );
+    expect(AerobicAnalysisOutputSchema.safeParse(structured).success).toBe(
+      true,
+    );
+  });
+
+  it("names Minetti and the reason on the recorded altitude", async () => {
+    mockedGetActivityStreams.mockResolvedValue(withGaVelocity(steady(), 4));
+
+    const { text, structured } = await run({ elevationSource: "barometric" });
+
+    expect(structured.gap_model).toBe("minetti");
+    expect(structured.gap_note).toContain("corrected elevation");
+    expect(structured.efficiency_factor).not.toBeCloseTo((4 * 60) / 150, 2);
+    expect(text).toContain("GAP model: Minetti (computed here from grade).");
+  });
+
+  it("has no model on the pace basis", async () => {
+    mockedGetActivityStreams.mockResolvedValue(withGaVelocity(steady(), 4));
+
+    const { text, structured } = await run({ basis: "pace" });
+
+    expect(structured.basis).toBe("pace");
+    expect(structured.gap_model).toBeNull();
+    expect(structured.gap_note).toBeNull();
+    expect(text).not.toContain("GAP model:");
   });
 });

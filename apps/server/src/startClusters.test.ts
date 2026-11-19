@@ -143,6 +143,45 @@ describe("loadRunStarts", () => {
     });
   });
 
+  it("builds the track from corrected elevation when the activity has correction on (#509)", async () => {
+    vi.mocked(listActivities).mockResolvedValue([
+      { ...activities[0]!, use_elevation_correction: true },
+    ] as IntervalsActivity[]);
+    vi.mocked(loadIntervalsStreams).mockResolvedValue({
+      ...streams,
+      fixed_altitude: [50, 60, 70],
+    } as IntervalsStreams);
+
+    const { runs } = await loadRunStarts("k", "2026-11-03");
+
+    expect(runs[0]!.track.altitude).toEqual([60, 70]);
+    expect(vi.mocked(loadIntervalsStreams).mock.calls[0]![2]).toEqual([
+      "latlng",
+      "distance",
+      "altitude",
+      "fixed_altitude",
+    ]);
+  });
+
+  it("keeps the recorded altitude when correction is off, or the corrected stream is missing (#509)", async () => {
+    vi.mocked(listActivities).mockResolvedValue([
+      { ...activities[0]!, use_elevation_correction: false },
+      { ...activities[3]!, use_elevation_correction: true },
+    ] as IntervalsActivity[]);
+    vi.mocked(loadIntervalsStreams).mockImplementation(async (_key, id) =>
+      id === "i3"
+        ? ({ ...streams, fixed_altitude: [50, 60, 70] } as IntervalsStreams)
+        : streams,
+    );
+
+    const { runs } = await loadRunStarts("k", "2026-11-03");
+
+    expect(runs.map((r) => r.track.altitude)).toEqual([
+      [6, null],
+      [6, null],
+    ]);
+  });
+
   it("carries a missing climb as null, not 0", async () => {
     vi.mocked(loadIntervalsStreams).mockResolvedValue(streams);
     const { runs } = await loadRunStarts("k", "2026-11-03");

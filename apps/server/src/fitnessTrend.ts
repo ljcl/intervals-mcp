@@ -54,7 +54,18 @@ export interface FitnessTrendDay {
   ctl: number;
   atl: number;
   tsb: number;
+  /**
+   * Form as a percentage of fitness ({@link formPercent}): what intervals.icu
+   * shows for an athlete with "form as percent" on. Null when CTL is 0.
+   */
+  form_percent: number | null;
 }
+
+/**
+ * How the athlete's intervals.icu shows form: the absolute TSB, or TSB as a
+ * percentage of CTL (the athlete setting `icu_form_as_percent`, #512).
+ */
+export type FormDisplay = "absolute" | "percent";
 
 /** A day of planned (not yet recorded) training load. */
 export interface PlannedLoad {
@@ -165,6 +176,17 @@ export const FRESH_TSB = 15;
  * spell into many 1-day bands (#44).
  */
 export const FRESH_EXIT_TSB = 12;
+/**
+ * The percent limits, for an athlete whose intervals.icu shows form as a
+ * percentage of fitness. A TSB of -25 is a different state at a CTL of 40
+ * than at 120, which is why the setting exists; the bands then use these in
+ * place of the absolute limits. -30% is the limit of intervals.icu's own
+ * "high risk" zone (docs/api-notes.md). The fresh limits keep the absolute
+ * numbers, which are the same state at a CTL of 100.
+ */
+export const DEEP_FATIGUE_FORM_PCT = -30;
+export const FRESH_FORM_PCT = 15;
+export const FRESH_EXIT_FORM_PCT = 12;
 /** Fewest days a fresh band needs, unless it runs to the last day. */
 export const FRESH_MIN_DAYS = 3;
 /** Fresh bands with this many days or fewer between them merge into one. */
@@ -209,16 +231,32 @@ const CTL_DECAY = Math.exp(-1 / CTL_TIME_CONSTANT_DAYS);
 const ATL_DECAY = Math.exp(-1 / ATL_TIME_CONSTANT_DAYS);
 
 /**
+ * Form as a percentage of fitness, from raw CTL and ATL: (CTL − ATL) × 100 /
+ * CTL, to 0.1. This is intervals.icu's formula for its "form as percent"
+ * view (docs/api-notes.md). Null when CTL is 0 or below: there is no
+ * fitness to be a percentage of.
+ */
+export function formPercent(ctl: number, atl: number): number | null {
+  return ctl > 0 ? round(((ctl - atl) * 100) / ctl, 1) : null;
+}
+
+/**
  * Display CTL/ATL/TSB from raw (unrounded) CTL and ATL: TSB is CTL − ATL of
- * the raw values, then each is rounded to 0.1. The one home for this, used by
+ * the raw values, then each is rounded to 0.1; `form_percent` is
+ * {@link formPercent} of the same raw values. The one home for this, used by
  * the recurrence here, the wellness series (`fitnessTrendWellness.ts`) and
  * `get-wellness`, so a day's TSB is the same number on every surface.
  */
 export function ctlAtlTsb(
   ctl: number,
   atl: number,
-): { ctl: number; atl: number; tsb: number } {
-  return { ctl: round(ctl, 1), atl: round(atl, 1), tsb: round(ctl - atl, 1) };
+): { ctl: number; atl: number; tsb: number; form_percent: number | null } {
+  return {
+    ctl: round(ctl, 1),
+    atl: round(atl, 1),
+    tsb: round(ctl - atl, 1),
+    form_percent: formPercent(ctl, atl),
+  };
 }
 
 /**
@@ -789,6 +827,12 @@ interface TrendBandOptions {
    * banded themselves.
    */
   lookback?: FitnessTrendDay[];
+  /**
+   * `percent` bands deep fatigue and freshness on `form_percent` with the
+   * percent limits, for an athlete whose intervals.icu shows form that way.
+   * Default `absolute`: TSB with the absolute limits.
+   */
+  formDisplay?: FormDisplay;
 }
 
 /**
@@ -816,6 +860,11 @@ interface TrendBandOptions {
  * window's last day: when the series stops before it (a trailing wellness
  * gap), the reason calls the series' last day "the last day with data in
  * the window", not "the end of the window".
+ *
+ * `options.formDisplay: "percent"` reads form as a percentage of fitness
+ * with {@link DEEP_FATIGUE_FORM_PCT}, {@link FRESH_FORM_PCT} and
+ * {@link FRESH_EXIT_FORM_PCT}, and the reasons name that percentage. A day
+ * with no percentage (CTL 0) is in neither band.
  */
 export function trendBands(
   series: FitnessTrendDay[],
@@ -877,8 +926,30 @@ export function trendBands(
     reason,
   });
 
+  // The one scale the fatigue and fresh bands read: TSB, or form as a
+  // percentage of fitness when the athlete's intervals.icu shows that.
+  const percent = options.formDisplay === "percent";
+  const formOf = (day: FitnessTrendDay) =>
+    percent ? day.form_percent : day.tsb;
+  const deepLimit = percent ? DEEP_FATIGUE_FORM_PCT : DEEP_FATIGUE_TSB;
+  const freshLimit = percent ? FRESH_FORM_PCT : FRESH_TSB;
+  const freshExit = percent ? FRESH_EXIT_FORM_PCT : FRESH_EXIT_TSB;
+  const formName = percent ? "Form" : "TSB";
+  const deepText = percent ? `${deepLimit}% of fitness` : `${deepLimit}`;
+  const formText = (value: number) =>
+    percent
+      ? `${formatSigned(Math.round(value))}%`
+      : formatSigned(round(value, 1));
+  const atOrAbove = (limit: number) => (day: FitnessTrendDay) => {
+    const form = formOf(day);
+    return form !== null && form >= limit;
+  };
+
   // Kind order is the flag order: fatigue first, then freshness, then ramp.
-  for (const { start, end } of runs((day) => day.tsb <= DEEP_FATIGUE_TSB)) {
+  for (const { start, end } of runs((day) => {
+    const form = formOf(day);
+    return form !== null && form <= deepLimit;
+  })) {
     const days = end - start + 1;
     if (days < DEEP_FATIGUE_DAYS) continue;
     bands.push(
@@ -887,19 +958,16 @@ export function trendBands(
         start,
         end,
         isNow(end)
-          ? `TSB at or below ${DEEP_FATIGUE_TSB} for ${days} consecutive days: deep fatigue; an easy block or rest is overdue.`
+          ? `${formName} at or below ${deepText} for ${days} consecutive days: deep fatigue; an easy block or rest is overdue.`
           : toPastEnd(end)
-            ? `TSB at or below ${DEEP_FATIGUE_TSB} for ${days} consecutive days to ${lastDate}, ${lastDateIs}: deep fatigue.`
-            : `TSB was at or below ${DEEP_FATIGUE_TSB} for ${days} consecutive days (${series[start]!.date} to ${series[end]!.date}): deep fatigue, since eased.`,
+            ? `${formName} at or below ${deepText} for ${days} consecutive days to ${lastDate}, ${lastDateIs}: deep fatigue.`
+            : `${formName} was at or below ${deepText} for ${days} consecutive days (${series[start]!.date} to ${series[end]!.date}): deep fatigue, since eased.`,
       ),
     );
   }
 
   const freshRuns: { start: number; end: number }[] = [];
-  for (const run of runs(
-    (day) => day.tsb >= FRESH_TSB,
-    (day) => day.tsb >= FRESH_EXIT_TSB,
-  )) {
+  for (const run of runs(atOrAbove(freshLimit), atOrAbove(freshExit))) {
     const prev = freshRuns[freshRuns.length - 1];
     const daysApart = prev
       ? daysBetween(series[prev.end]!.date, series[run.start]!.date) - 1
@@ -913,10 +981,12 @@ export function trendBands(
   for (const { start, end } of freshRuns) {
     const days = calendarDays(start, end);
     if (end !== lastIndex && days < FRESH_MIN_DAYS) continue;
-    let peak = series[start]!.tsb;
+    // Every day of a fresh run has a form value: `atOrAbove` required one.
+    let peak = formOf(series[start]!)!;
     for (let i = start + 1; i <= end; i++) {
-      peak = Math.max(peak, series[i]!.tsb);
+      peak = Math.max(peak, formOf(series[i]!)!);
     }
+    const endForm = formOf(series[end]!)!;
     const startDate = series[start]!.date;
     bands.push(
       band(
@@ -924,10 +994,10 @@ export function trendBands(
         start,
         end,
         isNow(end)
-          ? `TSB at ${formatSigned(round(series[end]!.tsb, 1))} (fresh since ${startDate}, peak ${formatSigned(round(peak, 1))}): fresh and race-ready now, but fitness decays if this holds for long.`
+          ? `${formName} at ${formText(endForm)} (fresh since ${startDate}, peak ${formText(peak)}): fresh and race-ready now, but fitness decays if this holds for long.`
           : toPastEnd(end)
-            ? `TSB at ${formatSigned(round(series[end]!.tsb, 1))} on ${lastDate}, ${lastDateIs} (fresh since ${startDate}, peak ${formatSigned(round(peak, 1))}).`
-            : `Fresh from ${startDate} to ${series[end]!.date} (${days} days, TSB peak ${formatSigned(round(peak, 1))}).`,
+            ? `${formName} at ${formText(endForm)} on ${lastDate}, ${lastDateIs} (fresh since ${startDate}, peak ${formText(peak)}).`
+            : `Fresh from ${startDate} to ${series[end]!.date} (${days} days, ${formName} peak ${formText(peak)}).`,
       ),
     );
   }

@@ -411,11 +411,55 @@ describe("getRunningSummaryTool.execute", () => {
     expect(structured.efficiency_factor).toBeLessThan(2);
     const text = result.content[0]?.text ?? "";
     expect(text).toMatch(
-      /^Aerobic \(computed from the streams, (grade-adjusted|raw pace, no elevation data); intervals\.icu has none\): decoupling [+-]?\d+(\.\d)?% \(\w+\), EF \d\.\d+ m\/min per beat\./m,
+      /^Aerobic \(computed from the streams, (grade-adjusted|raw pace, no elevation data)[^;]*; intervals\.icu has none\): decoupling [+-]?\d+(\.\d)?% \(\w+\), EF \d\.\d+ m\/min per beat\./m,
     );
     // Not on the load line, which is intervals.icu's.
     const loadLine = text.split("\n").find((line) => line.startsWith("Load:"));
     expect(loadLine).not.toContain("decoupling");
+  });
+
+  it("names the elevation source and GAP model of the values it computed (#509)", async () => {
+    mockedGetActivity.mockResolvedValueOnce(runActivityWithIntervals);
+    mockedGetSportSettings.mockResolvedValueOnce(sportSettingsRun);
+
+    const result = await getRunningSummaryTool.execute(
+      { id: "i189807578" },
+      "key",
+    );
+
+    const structured = RunningSummaryOutputSchema.parse(
+      result.structuredContent,
+    );
+    expect(structured.aerobic_basis).toBe("gap");
+    // The fixture's streams have no GAP speed and no corrected altitude.
+    expect(structured.gap_model).toBe("minetti");
+    expect(structured.elevation_source).toBe("barometric");
+    const text = result.content[0]?.text ?? "";
+    expect(text).toContain(
+      "grade-adjusted, Minetti GAP model, the recorded (barometric) altitude; intervals.icu has none",
+    );
+  });
+
+  it("names no source when the values are intervals.icu's own (#509)", async () => {
+    mockedGetActivity.mockResolvedValueOnce({
+      ...runActivityWithIntervals,
+      decoupling: 3.1,
+      icu_efficiency_factor: 1.4,
+    } as IntervalsActivity);
+    mockedGetSportSettings.mockResolvedValueOnce(sportSettingsRun);
+
+    const result = await getRunningSummaryTool.execute(
+      { id: "i189807578" },
+      "key",
+    );
+
+    const structured = RunningSummaryOutputSchema.parse(
+      result.structuredContent,
+    );
+    expect(structured.elevation_source).toBeNull();
+    expect(structured.elevation_note).toBeNull();
+    expect(structured.gap_model).toBeNull();
+    expect(structured.gap_note).toBeNull();
   });
 
   it("keeps intervals.icu's own decoupling and efficiency factor and reads no streams when it has both", async () => {

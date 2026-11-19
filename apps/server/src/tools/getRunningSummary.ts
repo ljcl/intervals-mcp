@@ -7,11 +7,16 @@ import {
 import { hrZoneRangeText, resolveHrZones } from "../activityZones";
 import { AerobicAnalysisError, interpretDecoupling } from "../aerobicAnalysis";
 import {
+  type ElevationSource,
+  elevationSourcePhrase,
+} from "../elevationSource";
+import {
   formatDuration,
   formatSigned,
   round,
   STRAVA_STUB_NOTE,
 } from "../formatters";
+import { type GapModel } from "../hillAnalysis";
 import {
   formatLapLine,
   LAP_MOVING_TIME_NOTE,
@@ -122,6 +127,12 @@ export interface RunningSummary extends Omit<ActivityDetail, "intervals"> {
   aerobic_basis: "gap" | "pace" | null;
   /** Why a missing value was not computed, or a warning on a computed one. */
   aerobic_note: string | null;
+  /** The altitude stream the computed values read; null when none did. */
+  elevation_source: ElevationSource | null;
+  elevation_note: string | null;
+  /** The GAP model of the computed values; null off the gap basis. */
+  gap_model: GapModel | null;
+  gap_note: string | null;
   cadence_assessment: string | null;
   hr_zone_summary: HrZoneSummary | null;
   hr_zone_note: string | null;
@@ -188,6 +199,10 @@ function aerobicFields(
   | "efficiency_factor_source"
   | "aerobic_basis"
   | "aerobic_note"
+  | "elevation_source"
+  | "elevation_note"
+  | "gap_model"
+  | "gap_note"
 > {
   const result = computed?.result ?? null;
   const decoupling =
@@ -221,6 +236,12 @@ function aerobicFields(
       usedComputed && result && result.basis !== "power" ? result.basis : null,
     aerobic_note:
       computed?.note ?? (warnings.length > 0 ? warnings.join(" ") : null),
+    // Named only for values this tool computed: intervals.icu does not say
+    // what its own decoupling and efficiency factor read.
+    elevation_source: usedComputed ? result.elevationSource : null,
+    elevation_note: usedComputed ? result.elevationNote : null,
+    gap_model: usedComputed ? result.gapModel : null,
+    gap_note: usedComputed ? result.gapNote : null,
   };
 }
 
@@ -337,6 +358,11 @@ const BASIS_TEXT: Record<"gap" | "pace", string> = {
   pace: "raw pace, no elevation data",
 };
 
+const GAP_MODEL_TEXT: Record<GapModel, string> = {
+  strava: "Strava",
+  minetti: "Minetti",
+};
+
 /**
  * The computed decoupling and efficiency factor, on their own line so they
  * never read as intervals.icu's (the load line has those), or why a missing
@@ -354,7 +380,16 @@ function formatComputedAerobicLine(d: RunningSummary): string | null {
   if (parts.length === 0)
     return d.aerobic_note ? `Aerobic: ${d.aerobic_note}` : null;
   const basis = d.aerobic_basis ? `, ${BASIS_TEXT[d.aerobic_basis]}` : "";
-  return `Aerobic (computed from the streams${basis}; intervals.icu has none): ${parts.join(", ")}.${note}`;
+  const sources = [
+    d.gap_model ? `${GAP_MODEL_TEXT[d.gap_model]} GAP model` : null,
+    d.elevation_source ? elevationSourcePhrase(d.elevation_source) : null,
+  ].filter((part) => part != null);
+  const sourceText = sources.length > 0 ? `, ${sources.join(", ")}` : "";
+  const sourceNotes = [d.gap_note, d.elevation_note]
+    .filter((text) => text != null)
+    .map((text) => ` ${text}`)
+    .join("");
+  return `Aerobic (computed from the streams${basis}${sourceText}; intervals.icu has none): ${parts.join(", ")}.${note}${sourceNotes}`;
 }
 
 function formatDynamicsAssessmentLine(d: RunningSummary): string | null {

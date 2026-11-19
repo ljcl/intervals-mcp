@@ -53,7 +53,8 @@ export interface CompareSide {
   average_hr: number | null;
   max_hr: number | null;
   cadence_spm: number | null;
-  elevation_gain_m: number;
+  /** Null when the activity has no elevation data (an indoor run). */
+  elevation_gain_m: number | null;
   /** icu_training_load. */
   load: number | null;
   decoupling_pct: number | null;
@@ -80,7 +81,8 @@ export interface CompareData {
     pace_delta_interpretation: string | null;
     avg_hr: number | null;
     cadence_spm: number | null;
-    elevation_gain_m: number;
+    /** Null when either activity has no elevation data. */
+    elevation_gain_m: number | null;
   };
   efficiency: {
     activity_1: number;

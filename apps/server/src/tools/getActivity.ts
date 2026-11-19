@@ -155,9 +155,9 @@ export interface ActivityDetail {
   /** From `sportSpeed`: every type that is neither a run nor a swim. */
   speed_kmh: number | null;
   gap_min_per_km: string | null;
-  /** GAP here always comes from intervals.icu's own recorded `gap` field,
-   * distinct from get-hill-analysis/get-split-analysis's locally-modelled
-   * GAP (their `gap_source: "model"`). */
+  /** GAP here always comes from intervals.icu's own recorded `gap` field.
+   * get-hill-analysis and get-split-analysis follow the same model when the
+   * activity has intervals.icu's GAP stream (`resolveGapModel`, #508). */
   gap_source: "intervals.icu";
   average_hr: number | null;
   max_hr: number | null;

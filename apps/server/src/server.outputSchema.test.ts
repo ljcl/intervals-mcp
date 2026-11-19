@@ -123,6 +123,7 @@ vi.mock("./intervalsClient", async (importOriginal) => {
     createGearReminder: vi.fn(async () => structuredClone(gear[0])),
     resetGearReminder: vi.fn(async () => structuredClone(gear[0])),
     getWellness: vi.fn(async () => structuredClone(wellness)),
+    getAthleteFormAsPercent: vi.fn(async () => false),
     getWellnessDay: vi.fn(async (_key: string, date: string) => ({
       ...structuredClone(wellness[0]),
       id: date,

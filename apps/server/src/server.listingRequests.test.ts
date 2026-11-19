@@ -38,6 +38,8 @@ function json(body: unknown): Response {
 async function router(input: RequestInfo | URL): Promise<Response> {
   const url = new URL(String(input));
   wire.push(url);
+  // The athlete's own record (get-fitness-trend reads one setting from it).
+  if (url.pathname === "/api/v1/athlete/0") return json({});
   return json(url.pathname.endsWith("/activities") ? activities : []);
 }
 

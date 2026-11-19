@@ -100,6 +100,46 @@ export function recordedGainFor(
   return activity.total_elevation_gain ?? null;
 }
 
+/**
+ * The source of the activity's own `total_elevation_gain`, for a tool that
+ * prints that total and reads no stream: intervals.icu's total follows the
+ * corrected stream when the activity has correction on (docs/api-notes.md).
+ * Null when the activity has no total.
+ */
+export function activityGainSource(
+  activity: Pick<
+    IntervalsActivity,
+    "use_elevation_correction" | "total_elevation_gain"
+  >,
+): ElevationSource | null {
+  if (activity.total_elevation_gain == null) return null;
+  return activity.use_elevation_correction === true
+    ? "corrected"
+    : "barometric";
+}
+
+/** A source in a sentence: "corrected elevation" or "the recorded altitude". */
+export function elevationSourcePhrase(source: ElevationSource): string {
+  return source === "corrected"
+    ? "corrected elevation"
+    : "the recorded (barometric) altitude";
+}
+
+/**
+ * The sentence for two runs whose elevation comes from different sources: a
+ * corrected run against a barometric run is not a like-for-like climb
+ * comparison (on one run the two sources gave 331 m and 230 m). Null when
+ * they agree or either has none.
+ */
+export function mixedElevationNote(
+  source1: ElevationSource | null,
+  source2: ElevationSource | null,
+  what: string,
+): string | null {
+  if (source1 == null || source2 == null || source1 === source2) return null;
+  return `Activity 1's ${what} is from ${elevationSourcePhrase(source1)} and activity 2's from ${elevationSourcePhrase(source2)}, so the two are not like for like.`;
+}
+
 /** The text tools' line for the elevation stream in use; none without one. */
 export function elevationLines(
   elevation: Pick<ResolvedElevation, "source" | "note">,

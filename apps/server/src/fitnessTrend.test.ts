@@ -7,13 +7,17 @@ import {
   ctlAtlTsb,
   ctlDelta,
   DEEP_FATIGUE_DAYS,
+  DEEP_FATIGUE_FORM_PCT,
   DEEP_FATIGUE_TSB,
   type FitnessTrendDay,
   type FitnessTrendLoadDay,
+  FRESH_EXIT_FORM_PCT,
   FRESH_EXIT_TSB,
+  FRESH_FORM_PCT,
   FRESH_MERGE_GAP_DAYS,
   FRESH_MIN_DAYS,
   FRESH_TSB,
+  formPercent,
   MAX_TAPER_DAILY_LOAD,
   MAX_TAPER_DAYS,
   projectFromWellness,
@@ -398,6 +402,7 @@ describe("recentDailyLoad", () => {
       ctl: 0,
       atl: 0,
       tsb: 0,
+      form_percent: null,
     }));
     // The two 999 days fall outside the trailing 28.
     expect(recentDailyLoad(series, RECENT_LOAD_DAYS)).toBe(10);
@@ -631,13 +636,25 @@ describe("solveTaperPlan", () => {
 describe("ctlAtlTsb", () => {
   it("takes TSB from the raw values, then rounds each", () => {
     // Rounding first would give 40.1 - 30.1 = 10; raw gives 9.9.
-    expect(ctlAtlTsb(40.05, 30.14)).toEqual({ ctl: 40.1, atl: 30.1, tsb: 9.9 });
+    expect(ctlAtlTsb(40.05, 30.14)).toEqual({
+      ctl: 40.1,
+      atl: 30.1,
+      tsb: 9.9,
+      form_percent: 24.7,
+    });
   });
 });
 
 describe("ctlDelta / tsbDelta", () => {
   function day(date: string, ctl: number, tsb = 0): FitnessTrendDay {
-    return { date, load: 0, ctl, atl: ctl - tsb, tsb };
+    return {
+      date,
+      load: 0,
+      ctl,
+      atl: ctl - tsb,
+      tsb,
+      form_percent: formPercent(ctl, ctl - tsb),
+    };
   }
 
   it("compares with the day exactly N calendar days back, by date", () => {
@@ -709,7 +726,14 @@ describe("taperTargetDateError", () => {
 
 describe("trendBands", () => {
   function day(date: string, tsb: number, ctl = 50): FitnessTrendDay {
-    return { date, load: 0, ctl, atl: ctl - tsb, tsb };
+    return {
+      date,
+      load: 0,
+      ctl,
+      atl: ctl - tsb,
+      tsb,
+      form_percent: formPercent(ctl, ctl - tsb),
+    };
   }
 
   it("dates a resolved deep-fatigue block the flags no longer raise", () => {
@@ -1029,7 +1053,14 @@ describe("trendBands", () => {
 
 describe("computeFlags", () => {
   function day(date: string, tsb: number, ctl = 50): FitnessTrendDay {
-    return { date, load: 0, ctl, atl: ctl - tsb, tsb };
+    return {
+      date,
+      load: 0,
+      ctl,
+      atl: ctl - tsb,
+      tsb,
+      form_percent: formPercent(ctl, ctl - tsb),
+    };
   }
 
   it("flags deep fatigue only when the streak reaches the window end", () => {
@@ -1083,6 +1114,7 @@ describe("projectFromWellness", () => {
       ctl: SEED.ctl,
       atl: SEED.atl,
       tsb: SEED.ctl - SEED.atl,
+      form_percent: formPercent(SEED.ctl, SEED.atl),
     },
   ];
 
@@ -1215,5 +1247,106 @@ describe("projectFromWellness", () => {
     );
     expect(result.tsbPositiveDate).not.toBeNull();
     expect(result.tsbPositiveDate! > ENDDATE).toBe(true);
+  });
+});
+
+describe("form as a percentage of fitness (#512)", () => {
+  /** A day with the given CTL and TSB, as `ctlAtlTsb` builds it. */
+  function day(date: string, ctl: number, tsb: number): FitnessTrendDay {
+    return { date, load: 0, ...ctlAtlTsb(ctl, ctl - tsb) };
+  }
+  const dates = (n: number, from = 1) =>
+    Array.from(
+      { length: n },
+      (_, i) => `2026-07-${String(from + i).padStart(2, "0")}`,
+    );
+
+  it("is TSB times 100 over CTL, from the raw values", () => {
+    expect(formPercent(100, 130)).toBe(-30);
+    expect(formPercent(15, 19.5)).toBe(-30);
+    expect(formPercent(40, 49)).toBe(-22.5);
+    expect(formPercent(50, 40)).toBe(20);
+    expect(ctlAtlTsb(40.04, 49.04)).toEqual({
+      ctl: 40,
+      atl: 49,
+      tsb: -9,
+      form_percent: -22.5,
+    });
+  });
+
+  it("is null when there is no fitness to be a percentage of", () => {
+    expect(formPercent(0, 5)).toBeNull();
+    expect(formPercent(-1, 5)).toBeNull();
+    expect(ctlAtlTsb(0, 0).form_percent).toBeNull();
+  });
+
+  it("keeps the absolute rule by default: a low-CTL athlete at -35% is not in deep fatigue", () => {
+    // CTL 40, TSB -14: -35% of fitness, but well above the -25 TSB limit.
+    const series = dates(DEEP_FATIGUE_DAYS).map((d) => day(d, 40, -14));
+    expect(trendBands(series)).toEqual([]);
+    expect(trendBands(series, { formDisplay: "absolute" })).toEqual([]);
+  });
+
+  it("bands deep fatigue at -30% of fitness in percent mode", () => {
+    const series = dates(DEEP_FATIGUE_DAYS).map((d) => day(d, 40, -14));
+    const bands = trendBands(series, { formDisplay: "percent" });
+    expect(bands).toHaveLength(1);
+    expect(bands[0]).toMatchObject({ kind: "deep-fatigue", days: 5 });
+    expect(bands[0]!.reason).toBe(
+      `Form at or below ${DEEP_FATIGUE_FORM_PCT}% of fitness for 5 consecutive days: deep fatigue; an easy block or rest is overdue.`,
+    );
+    expect(computeFlags(series, { formDisplay: "percent" })).toEqual([
+      bands[0]!.reason,
+    ]);
+  });
+
+  it("does not band a high-CTL athlete below -25 TSB but above -30% in percent mode", () => {
+    // CTL 120, TSB -30: deep fatigue on the absolute rule, -25% in percent.
+    const series = dates(DEEP_FATIGUE_DAYS).map((d) => day(d, 120, -30));
+    expect(trendBands(series).map((b) => b.kind)).toEqual(["deep-fatigue"]);
+    expect(trendBands(series, { formDisplay: "percent" })).toEqual([]);
+  });
+
+  it("bands freshness on the percent limits, with the percent in the reason", () => {
+    // CTL 40, TSB +7: +17.5%, fresh in percent mode and not on the +15 TSB rule.
+    const series = dates(4).map((d) => day(d, 40, 7));
+    expect(trendBands(series)).toEqual([]);
+    const bands = trendBands(series, { formDisplay: "percent" });
+    expect(bands.map((b) => b.kind)).toEqual(["fresh"]);
+    expect(bands[0]!.reason).toBe(
+      "Form at +18% (fresh since 2026-07-01, peak +18%): fresh and race-ready now, but fitness decays if this holds for long.",
+    );
+  });
+
+  it("holds a fresh band down to the percent exit limit, then ends it", () => {
+    const enter = (FRESH_FORM_PCT / 100) * 40 + 0.4; // just above +15%
+    const hold = (FRESH_EXIT_FORM_PCT / 100) * 40 + 0.2; // above +12%
+    const [d1, d2, d3, d4, d5] = dates(5) as [
+      string,
+      string,
+      string,
+      string,
+      string,
+    ];
+    const series = [
+      day(d1, 40, enter),
+      day(d2, 40, hold),
+      day(d3, 40, hold),
+      day(d4, 40, 2),
+      day(d5, 40, 2),
+    ];
+    const bands = trendBands(series, { formDisplay: "percent" });
+    expect(bands).toHaveLength(1);
+    expect(bands[0]).toMatchObject({
+      kind: "fresh",
+      start_date: d1,
+      end_date: d3,
+    });
+    expect(bands[0]!.reason).toContain("Form peak +16%");
+  });
+
+  it("puts a day with no fitness in neither band in percent mode", () => {
+    const series = dates(DEEP_FATIGUE_DAYS).map((d) => day(d, 0, -40));
+    expect(trendBands(series, { formDisplay: "percent" })).toEqual([]);
   });
 });

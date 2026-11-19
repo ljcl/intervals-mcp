@@ -24,6 +24,7 @@ import {
   getActivity,
   getActivityIntervals,
   getActivityStreams,
+  getAthleteFormAsPercent,
   getAthleteHrCurves,
   getAthletePaceCurves,
   getAthleteTimeZone,
@@ -1059,6 +1060,24 @@ describe("intervalsClient", () => {
     expect(new URL(plain[0]?.url ?? "").searchParams.has("subMaxEfforts")).toBe(
       false,
     );
+  });
+
+  describe("getAthleteFormAsPercent (#512)", () => {
+    it("reads icu_form_as_percent from GET /athlete/0", async () => {
+      const calls = mockJson({ icu_form_as_percent: true, icu_api_key: "x" });
+      expect(await getAthleteFormAsPercent("k")).toBe(true);
+      expect(new URL(calls[0]!.url).pathname).toBe("/api/v1/athlete/0");
+    });
+
+    it.each([
+      ["false", { icu_form_as_percent: false }],
+      ["null", { icu_form_as_percent: null }],
+      ["missing", {}],
+      ["not a boolean", { icu_form_as_percent: "yes" }],
+    ])("is false when the setting is %s", async (_, body) => {
+      mockJson(body);
+      expect(await getAthleteFormAsPercent("k")).toBe(false);
+    });
   });
 
   describe("getAthleteTimeZone", () => {

@@ -282,8 +282,9 @@ export const manualRun: ActivityStreamData = {
 
 /**
  * The summary the server builds for `baselineRun` against `manualRun`: totals
- * only, because a manual entry has no heart rate, pace or cadence to compare.
- * Distance, time and elevation tiles remain.
+ * only, because a manual entry has no heart rate, pace, cadence or elevation
+ * to compare (its elevation gain is null, not 0). Distance and time tiles
+ * remain.
  */
 export const compareDataManualSide: CompareData = {
   ...compareData,
@@ -299,7 +300,7 @@ export const compareDataManualSide: CompareData = {
     average_hr: null,
     max_hr: null,
     cadence_spm: null,
-    elevation_gain_m: 0,
+    elevation_gain_m: null,
     load: null,
     decoupling_pct: null,
     efficiency_factor: null,
@@ -312,7 +313,7 @@ export const compareDataManualSide: CompareData = {
     pace_delta_interpretation: null,
     avg_hr: null,
     cadence_spm: null,
-    elevation_gain_m: -84,
+    elevation_gain_m: null,
   },
   efficiency: null,
 };

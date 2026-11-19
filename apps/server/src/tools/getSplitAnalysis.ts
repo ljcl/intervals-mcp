@@ -11,6 +11,7 @@ import {
   streamGainM,
 } from "../elevationSource";
 import { formatDuration, formatSigned } from "../formatters";
+import { gapModelLine, gapSourceOf, resolveGapModel } from "../hillAnalysis";
 import { cadenceLabel, cadenceUnit } from "../intervalLaps";
 import { getActivity, type IntervalsActivity } from "../intervalsClient";
 import {
@@ -54,10 +55,11 @@ Notes:
 - Halves are cut at the exact midpoint of recorded distance.
 - Stopped time is excluded from pace. A trailing partial split is marked and
   left out of fastest and slowest.
-- Grade comes from altitude, else intervals.icu's smoothed grade, averaged
-  over 100 m for the grade adjustment. A noisy elevation track adds a
-  warning. With no elevation data, the grade-adjusted figures are null and
-  the verdict is on the clock only.
+- Grade-adjusted pace is intervals.icu's own (as get-activity shows it)
+  when the activity has it, else the Minetti model on grade averaged over
+  100 m, where a noisy elevation track adds a warning; gap_model says
+  which, gap_note why. With neither, grade-adjusted figures are null and
+  the verdict is on the clock.
 - The altitude is intervals.icu's corrected elevation when the activity has
   elevation correction on, else the recorded (barometric) one;
   elevation_source says which and elevation_note why. elevationSource
@@ -87,6 +89,7 @@ const STREAM_TYPES = [
   "altitude",
   "fixed_altitude",
   "grade_smooth",
+  "ga_velocity",
   "heartrate",
   // Not read for GAP (#298); the loader derives `moving` from it.
   "velocity_smooth",
@@ -192,6 +195,9 @@ function splitLine(s: SplitOut, columns: SplitColumns): string {
 export interface LoadedSplitAnalysis extends SplitAnalysis {
   elevationSource: ElevationSource | null;
   elevationNote: string | null;
+  /** Why the activity's own GAP model was not used; null when it was, and
+   * when there is no grade-adjusted pace at all. */
+  gapNote: string | null;
 }
 
 /** One source's splits and verdict for `elevation_comparison`. */
@@ -230,7 +236,7 @@ async function splitComparison(
   id: string,
   activity: Pick<
     IntervalsActivity,
-    "total_elevation_gain" | "use_elevation_correction"
+    "total_elevation_gain" | "use_elevation_correction" | "gap_model"
   >,
   primary: LoadedSplitAnalysis,
 ) {
@@ -302,7 +308,8 @@ function comparisonLines(comparison: SplitComparison): string[] {
  * adapter, binned by `computeSplitAnalysis`. The one stream path for 1 km
  * splits, shared with compare-activities' per-km table. Elevation is the
  * corrected stream when the activity has one, unless `useCorrectedElevation`
- * is false (`resolveElevation`). Throws
+ * is false (`resolveElevation`). Grade-adjusted pace follows the activity's
+ * own GAP model when it can (`resolveGapModel`). Throws
  * `IntervalsStreamsUnavailableError` for an activity with no streams and
  * `SplitAnalysisError` for streams it cannot split.
  */
@@ -311,17 +318,19 @@ export async function loadSplitAnalysis(
   id: string,
   activity: Pick<
     IntervalsActivity,
-    "total_elevation_gain" | "use_elevation_correction"
+    "total_elevation_gain" | "use_elevation_correction" | "gap_model"
   >,
   useCorrectedElevation = true,
 ): Promise<LoadedSplitAnalysis> {
   const streams = await loadIntervalsStreams(apiKey, id, [...STREAM_TYPES]);
   const elevation = resolveElevation(activity, streams, useCorrectedElevation);
+  const gapModel = resolveGapModel(activity, streams, elevation.source);
   const splitStreams: SplitStreams = {
     time: streams.time,
     distance: streams.distance ?? [],
     altitude: elevation.altitude,
     grade_smooth: streams.grade_smooth,
+    ga_velocity: gapModel.gaVelocity,
     heartrate: streams.heartrate,
     cadence: streams.cadence,
     watts: streams.watts,
@@ -334,6 +343,7 @@ export async function loadSplitAnalysis(
     ...analysis,
     elevationSource: elevation.source,
     elevationNote: elevation.note,
+    gapNote: analysis.gapModel ? gapModel.note : null,
   };
 }
 
@@ -404,11 +414,12 @@ export const getSplitAnalysisTool = {
         grade_source: analysis.gradeSource,
         elevation_source: analysis.elevationSource,
         elevation_note: analysis.elevationNote,
-        // GAP throughout this response is locally modelled from grade
-        // (hillAnalysis.ts's gapFactor, imported by splitAnalysis.ts), not
-        // intervals.icu's own gap field (see get-activity/compare-activities/
-        // get-activity-laps' gap_source: "intervals.icu").
-        gap_source: "model" as const,
+        // One model for every GAP in this response (hillAnalysis.ts's
+        // gapBasis): intervals.icu's own when the activity has it, the one
+        // get-activity and get-activity-laps print, else Minetti from grade.
+        gap_source: gapSourceOf(analysis.gapModel),
+        gap_model: analysis.gapModel,
+        gap_note: analysis.gapNote,
         verdict: analysis.verdict
           ? {
               shape: analysis.verdict.shape,
@@ -479,6 +490,9 @@ export const getSplitAnalysisTool = {
           source: analysis.elevationSource,
           note: analysis.elevationNote,
         }),
+        ...(analysis.gapModel
+          ? [gapModelLine({ model: analysis.gapModel, note: analysis.gapNote })]
+          : []),
         ...(comparison
           ? [
               elevationGainLine({

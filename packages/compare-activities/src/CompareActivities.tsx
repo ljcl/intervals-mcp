@@ -315,13 +315,20 @@ export function buildDeltaTiles(compare: CompareData): DeltaTile[] {
       delta: `${signed(differences.cadence_spm)}spm`,
     });
   }
-  tiles.push({
-    key: "elevation",
-    label: "Elevation",
-    a: `${Math.round(a1.elevation_gain_m)}m`,
-    b: `${Math.round(a2.elevation_gain_m)}m`,
-    delta: `${signed(differences.elevation_gain_m)}m`,
-  });
+  // An activity with no elevation data (an indoor run) has no gain, not 0 m.
+  if (
+    a1.elevation_gain_m != null &&
+    a2.elevation_gain_m != null &&
+    differences.elevation_gain_m != null
+  ) {
+    tiles.push({
+      key: "elevation",
+      label: "Elevation",
+      a: `${Math.round(a1.elevation_gain_m)}m`,
+      b: `${Math.round(a2.elevation_gain_m)}m`,
+      delta: `${signed(differences.elevation_gain_m)}m`,
+    });
+  }
   if (efficiency) {
     tiles.push({
       key: "efficiency",
