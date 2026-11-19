@@ -21,9 +21,10 @@
  * (`errorSummary`/`throwSummary` below), never the error's own message
  * text, which can interpolate an activity name. No write calls are made.
  *
- * Usage: `bun scripts/live-check.ts [activityId]` (default i189807578).
- * `.github/workflows/live-check.yml` runs it weekly with stderr dropped, so
- * only what this script prints to stdout reaches the public log.
+ * Usage: `bun scripts/live-check.ts [--names-only] [activityId]` (default
+ * i189807578). `.github/workflows/live-check.yml` runs it weekly with
+ * `--names-only` and stderr dropped, so the public log gets each check's name
+ * and outcome and none of the athlete's numbers.
  */
 
 import path from "node:path";
@@ -160,24 +161,50 @@ const dispatchToolCall: typeof dispatchUnmeasured = async (...args) => {
   return result;
 };
 
-const activityId = process.argv[2] ?? "i189807578";
+/**
+ * `--names-only` prints each check's name and outcome but none of the
+ * numbers: what the weekly workflow runs, because its log is public. A
+ * failure still shows its category (an error class, "auth/config error",
+ * the field names of an unexpected shape), which carries no athlete data;
+ * the two failures that quote athlete numbers say "detail hidden" instead.
+ */
+const namesOnly = process.argv.includes("--names-only");
+const activityId =
+  process.argv.slice(2).find((arg) => !arg.startsWith("--")) ?? "i189807578";
 const apiKey = getIntervalsApiKey();
 
 let failures = 0;
 
 function ok(name: string, detail: string): void {
   let size = "";
+  let over = false;
   if (lastSize) {
-    const over = lastSize.budgeted && lastSize.chars > RESPONSE_BUDGET_CHARS;
+    over = lastSize.budgeted && lastSize.chars > RESPONSE_BUDGET_CHARS;
     size = ` size_kb=${(lastSize.chars / 1000).toFixed(1)}${over ? " OVER BUDGET" : ""}`;
     lastSize = null;
+  }
+  if (namesOnly) {
+    console.log(`${name}: ok${over ? " - OVER BUDGET" : ""}`);
+    return;
   }
   console.log(`${name}: ok - ${detail}${size}`);
 }
 
-function fail(name: string, detail: string): void {
+/**
+ * `athleteData` marks a detail that quotes the athlete's own numbers;
+ * `--names-only` hides it.
+ */
+function fail(
+  name: string,
+  detail: string,
+  { athleteData = false }: { athleteData?: boolean } = {},
+): void {
   failures += 1;
-  console.log(`${name}: error - ${detail}`);
+  const shown =
+    namesOnly && athleteData
+      ? "detail hidden (athlete numbers); run the script locally"
+      : detail;
+  console.log(`${name}: error - ${shown}`);
 }
 
 /**
@@ -837,6 +864,7 @@ async function checkGetAthleteStats(): Promise<void> {
           fail(
             name,
             `${period} ${key}: by_type sum ${sum} != total ${totals.total[key]}`,
+            { athleteData: true },
           );
           return;
         }
@@ -1041,6 +1069,7 @@ async function checkFitnessTrendMatchesWellness(
       fail(
         name,
         `mismatch: fitness-trend ctl=${current.ctl} atl=${current.atl} tsb=${current.tsb} vs wellness ctl=${day?.ctl} atl=${day?.atl} tsb=${day?.tsb}`,
+        { athleteData: true },
       );
       return;
     }
@@ -1304,7 +1333,6 @@ async function checkGetCadenceTrendData(): Promise<void> {
       return;
     }
     const data = parseDispatchJson<{
-      weeks: number;
       activities: unknown[];
       excludedNoCadence: number;
     }>(result);
@@ -1314,7 +1342,7 @@ async function checkGetCadenceTrendData(): Promise<void> {
     }
     ok(
       name,
-      `weeks=${data.weeks} runs=${data.activities.length} excluded_no_cadence=${data.excludedNoCadence}`,
+      `runs=${data.activities.length} excluded_no_cadence=${data.excludedNoCadence}`,
     );
   } catch (error) {
     fail(name, throwSummary(error));
