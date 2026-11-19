@@ -36,18 +36,31 @@ jobs:
           persist-credentials: false
 
       - uses: $/.github/actions/setup
-        with:
-          # No turbo task runs here, so this job has nothing to add to the
-          # cache (see the input's description).
-          turbo-cache: "false"
+
+      # server.ts resolves each MCP App's dist/app.html when it loads, so an
+      # unbuilt checkout fails at import. The first run failed that way.
+      # Same filter as the Dockerfile: what the server depends on.
+      - name: Build the MCP Apps
+        run: bun run turbo run build --filter=@intervals-mcp/server^...
 
       # The log of a public repo is public. The script prints only a short
       # summary per tool to stdout and never a payload or an error's own
       # message (its header says why). stderr is the server's own logging,
-      # which can quote an upstream error body, so it is dropped.
+      # which can quote an upstream error body, so it is dropped. Its last
+      # line is always the summary, so output without one means the script
+      # stopped early, and the step says so in place of the hidden error.
       - name: Live check
         env:
           INTERVALS_API_KEY: ${{ secrets.INTERVALS_API_KEY }}
           # The route store's default is ./data; keep it out of the checkout.
           DATA_DIR: ${{ runner.temp }}/data
-        run: bun scripts/live-check.ts 2>/dev/null
+          OUT: ${{ runner.temp }}/live-check.txt
+        run: |
+          status=0
+          bun scripts/live-check.ts 2>/dev/null >"$OUT" || status=$?
+          cat "$OUT"
+          if ! tail -1 "$OUT" | grep -qE '^(All tools ok\.|[0-9]+ tool\(s\) failed\.)$'; then
+            echo "::error::live-check.ts stopped before its summary (exit $status). stderr is hidden here; run bun scripts/live-check.ts locally to see why."
+            exit 1
+          fi
+          exit "$status"
