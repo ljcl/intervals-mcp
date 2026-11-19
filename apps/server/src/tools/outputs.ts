@@ -563,6 +563,38 @@ const ElevationNoteSchema = z
   );
 const AerobicSourceEnum = z.enum(["intervals.icu", "computed"]);
 
+/** Fields every `elevation_comparison` shares (elevationSource: "both"). */
+const elevationComparisonFields = () => ({
+  note: z
+    .string()
+    .nullable()
+    .describe(
+      "Why a source is null (correction off, or no corrected stream); null when both sources are present",
+    ),
+  sensitivity_warning: z
+    .string()
+    .nullable()
+    .describe(
+      "Set when the two sources disagree by more than the tool's threshold, so the result depends on the elevation source; also in warnings",
+    ),
+});
+const SourceGainField = z
+  .number()
+  .nullable()
+  .describe(
+    "Total ascent of this source's altitude stream in whole metres, summed by the same rule for both sources",
+  );
+const comparisonDescription = (scope: string) =>
+  `Set only when elevationSource is both${scope}: each source's result side by side, null for a source the activity does not have. The other fields are the corrected source's result, else the barometric one's. Null otherwise`;
+
+const AerobicElevationResultSchema = z.object({
+  elevation_gain_m: SourceGainField,
+  decoupling_pct: z.number(),
+  first_half_gap_pace_min_per_km: z.string().nullable(),
+  second_half_gap_pace_min_per_km: z.string().nullable(),
+  efficiency_factor: z.number().describe("m/min per beat, grade-adjusted"),
+});
+
 export const AerobicAnalysisOutputSchema = z.object({
   activity_id: z.union([z.string(), z.number()]),
   name: z.string(),
@@ -612,6 +644,18 @@ export const AerobicAnalysisOutputSchema = z.object({
     })
     .nullable()
     .describe("Null when both values are intervals.icu's own (basis is null)"),
+  elevation_comparison: z
+    .object({
+      corrected: AerobicElevationResultSchema.nullable(),
+      barometric: AerobicElevationResultSchema.nullable(),
+      decoupling_difference_pts: z
+        .number()
+        .nullable()
+        .describe("Absolute decoupling difference; null without both sources"),
+      ...elevationComparisonFields(),
+    })
+    .nullable()
+    .describe(comparisonDescription(" and the basis is gap")),
   units: z.object({
     pace: z.literal("min/km"),
     power: z.literal("W"),
@@ -775,6 +819,20 @@ const HillSegmentSchema = z.object({
     .nullable()
     .describe("Normalised climb cost: HR per m/s of grade-adjusted speed"),
 });
+const HillElevationResultSchema = z.object({
+  elevation_gain_m: SourceGainField,
+  climb_count: z.number().int(),
+  climb_gain_m: z.number(),
+  climbs: z.array(
+    HillSegmentSchema.pick({
+      start_km: true,
+      end_km: true,
+      length_m: true,
+      avg_grade_pct: true,
+      elevation_change_m: true,
+    }),
+  ),
+});
 export const HillAnalysisOutputSchema = z.object({
   activity_id: z.union([z.string(), z.number()]),
   name: z.string(),
@@ -814,6 +872,20 @@ export const HillAnalysisOutputSchema = z.object({
     climb_distance_m: z.number(),
     climb_gain_m: z.number(),
   }),
+  elevation_comparison: z
+    .object({
+      corrected: HillElevationResultSchema.nullable(),
+      barometric: HillElevationResultSchema.nullable(),
+      climb_gain_difference_pct: z
+        .number()
+        .nullable()
+        .describe(
+          "Climb gain difference as a percent of the larger total; null without both sources",
+        ),
+      ...elevationComparisonFields(),
+    })
+    .nullable()
+    .describe(comparisonDescription("")),
   units: z.object({
     distance: z.literal("km"),
     length: z.literal("m"),
@@ -977,6 +1049,27 @@ const SplitSchema = z.object({
     .describe("spm (doubled) for runs, rpm for rides"),
   avg_watts: z.number().nullable(),
 });
+const SplitElevationResultSchema = z.object({
+  elevation_gain_m: SourceGainField,
+  verdict: z
+    .object({
+      gap_shape: SplitShapeSchema.nullable(),
+      gap_delta_pct: z.number().nullable(),
+      terrain_pct: z.number().nullable(),
+      interpretation: z.string(),
+    })
+    .nullable(),
+  splits: z.array(
+    SplitSchema.pick({
+      split: true,
+      partial: true,
+      gap_pace_sec_per_km: true,
+      gap_pace_min_per_km: true,
+      elevation_change_m: true,
+      avg_grade_pct: true,
+    }),
+  ),
+});
 export const SplitAnalysisOutputSchema = z.object({
   activity_id: z.union([z.string(), z.number()]),
   name: z.string(),
@@ -1061,6 +1154,20 @@ export const SplitAnalysisOutputSchema = z.object({
     avg_pace_min_per_km: z.string().nullable(),
     avg_gap_pace_sec_per_km: z.number().nullable(),
   }),
+  elevation_comparison: z
+    .object({
+      corrected: SplitElevationResultSchema.nullable(),
+      barometric: SplitElevationResultSchema.nullable(),
+      gap_delta_difference_pts: z
+        .number()
+        .nullable()
+        .describe(
+          "Absolute difference of the grade-adjusted second-half change; null without both sources' verdicts",
+        ),
+      ...elevationComparisonFields(),
+    })
+    .nullable()
+    .describe(comparisonDescription("")),
   units: z.object({
     distance: z.literal("km"),
     elevation: z.literal("m"),

@@ -15,6 +15,7 @@ import activityFixture from "../__fixtures__/intervals/activity.json";
 import activityHilly from "../__fixtures__/intervals/activity-hilly.json";
 import streamsFixture from "../__fixtures__/intervals/streams.json";
 import streamsHilly from "../__fixtures__/intervals/streams-hilly.json";
+import { ELEVATION_SENSITIVITY } from "../elevationSource";
 import {
   getActivity,
   getActivityStreams,
@@ -375,18 +376,39 @@ describe("get-split-analysis", () => {
   });
 
   describe("elevation source", () => {
+    type SourceResult = {
+      elevation_gain_m: number | null;
+      verdict: { gap_delta_pct: number | null } | null;
+      splits: Array<{
+        split: number;
+        gap_pace_min_per_km: string | null;
+        elevation_change_m: number | null;
+      }>;
+    };
     type Structured = {
       elevation_source: string | null;
       elevation_note: string | null;
-      splits: Array<{ elevation_change_m: number | null }>;
+      splits: Array<{
+        elevation_change_m: number | null;
+        gap_pace_min_per_km: string | null;
+      }>;
+      verdict: { gap_delta_pct: number | null } | null;
       totals: {
         elevation_gain_m: number | null;
         elevation_gain_source: string | null;
       };
+      warnings: string[];
+      elevation_comparison: {
+        corrected: SourceResult | null;
+        barometric: SourceResult | null;
+        gap_delta_difference_pts: number | null;
+        note: string | null;
+        sensitivity_warning: string | null;
+      } | null;
     };
     const run = async (
       streams: IntervalsStream[],
-      args: { useCorrectedElevation?: boolean } = {},
+      args: { elevationSource?: "corrected" | "barometric" | "both" } = {},
     ) => {
       mockedGetActivity.mockResolvedValue(hillyActivity);
       mockedGetActivityStreams.mockResolvedValue(streams);
@@ -406,7 +428,7 @@ describe("get-split-analysis", () => {
     it("reads the corrected stream by default and keeps intervals.icu's gain", async () => {
       const corrected = await run(withCorrectedAltitude(hillyStreams));
       const recorded = await run(withCorrectedAltitude(hillyStreams), {
-        useCorrectedElevation: false,
+        elevationSource: "barometric",
       });
 
       expect(corrected.structured.elevation_source).toBe("corrected");
@@ -424,12 +446,83 @@ describe("get-split-analysis", () => {
 
     it("sums the gain from the recorded altitude when asked for it on a corrected activity", async () => {
       const { structured } = await run(withCorrectedAltitude(hillyStreams), {
-        useCorrectedElevation: false,
+        elevationSource: "barometric",
       });
 
       expect(structured.elevation_source).toBe("barometric");
       expect(structured.elevation_note).toBeNull();
       expect(structured.totals.elevation_gain_source).toBe("computed");
+    });
+
+    it("puts both sources' splits and verdicts side by side", async () => {
+      const { structured, text } = await run(
+        withCorrectedAltitude(hillyStreams, 4),
+        { elevationSource: "both" },
+      );
+      const barometricOnly = await run(withCorrectedAltitude(hillyStreams, 4), {
+        elevationSource: "barometric",
+      });
+      const comparison = structured.elevation_comparison;
+      const corrected = comparison?.corrected;
+      const barometric = comparison?.barometric;
+
+      // The headline is the corrected source's; the barometric column is
+      // what a barometric call reports.
+      expect(structured.elevation_source).toBe("corrected");
+      expect(corrected?.verdict?.gap_delta_pct).toBe(
+        structured.verdict?.gap_delta_pct,
+      );
+      expect(corrected?.splits.map((s) => s.elevation_change_m)).toEqual(
+        structured.splits.map((s) => s.elevation_change_m),
+      );
+      expect(barometric?.verdict?.gap_delta_pct).toBe(
+        barometricOnly.structured.verdict?.gap_delta_pct,
+      );
+      expect(barometric?.splits.map((s) => s.gap_pace_min_per_km)).toEqual(
+        barometricOnly.structured.splits.map((s) => s.gap_pace_min_per_km),
+      );
+      expect(corrected?.elevation_gain_m).toBeGreaterThan(
+        barometric?.elevation_gain_m ?? Infinity,
+      );
+      const difference = Math.abs(
+        (corrected?.verdict?.gap_delta_pct ?? 0) -
+          (barometric?.verdict?.gap_delta_pct ?? 0),
+      );
+      expect(comparison?.gap_delta_difference_pts).toBeCloseTo(difference, 1);
+      expect(difference).toBeGreaterThan(ELEVATION_SENSITIVITY.gapDeltaPts);
+      expect(comparison?.sensitivity_warning).toContain(
+        "Do not trust the grade-adjusted verdict",
+      );
+      expect(structured.warnings).toContain(comparison?.sensitivity_warning);
+      expect(text).toMatch(/Gain: corrected \+\d+ m, barometric \+\d+ m/);
+      expect(text).toContain("By elevation source (corrected | barometric):");
+      expect(text).toMatch(/ {2}1\. +GAP \d+:\d\d \| \d+:\d\d \/km/);
+    });
+
+    it("gives the barometric result, not an error, when both is asked without a corrected stream", async () => {
+      const { structured, text } = await run(hillyStreams, {
+        elevationSource: "both",
+      });
+      const comparison = structured.elevation_comparison;
+
+      expect(structured.elevation_source).toBe("barometric");
+      expect(comparison?.corrected).toBeNull();
+      expect(comparison?.barometric?.verdict?.gap_delta_pct).toBe(
+        structured.verdict?.gap_delta_pct,
+      );
+      expect(comparison?.gap_delta_difference_pts).toBeNull();
+      expect(comparison?.sensitivity_warning).toBeNull();
+      expect(comparison?.note).toContain(
+        "corrected elevation stream is not available",
+      );
+      expect(text).toContain("Gain: corrected n/a, barometric +");
+      expect(text).toContain("Grade-adjusted verdict: n/a |");
+    });
+
+    it("leaves elevation_comparison null for one source", async () => {
+      const { structured } = await run(withCorrectedAltitude(hillyStreams));
+
+      expect(structured.elevation_comparison).toBeNull();
     });
 
     it("falls back to the recorded altitude, and says so, without a corrected stream", async () => {

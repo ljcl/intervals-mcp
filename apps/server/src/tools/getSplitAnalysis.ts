@@ -1,9 +1,14 @@
 import { z } from "zod";
 import {
+  ELEVATION_SOURCE_CHOICES,
   type ElevationSource,
+  elevationGainLine,
   elevationLines,
+  gapDeltaSensitivity,
   recordedGainFor,
+  resolveBothElevations,
   resolveElevation,
+  streamGainM,
 } from "../elevationSource";
 import { formatDuration, formatSigned } from "../formatters";
 import { cadenceLabel, cadenceUnit } from "../intervalLaps";
@@ -49,19 +54,17 @@ Notes:
 - Halves are cut at the exact midpoint of recorded distance.
 - Stopped time is excluded from pace. A trailing partial split is marked and
   left out of fastest and slowest.
-- Grade comes from altitude, the same altitude each split's grade is read
-  from, else intervals.icu's smoothed grade, and is averaged over 100 m
-  before the grade adjustment. A noisy elevation track
-  adds a warning. With no elevation data, the grade-adjusted figures are
-  null and the verdict is on the clock only.
+- Grade comes from altitude, else intervals.icu's smoothed grade, averaged
+  over 100 m for the grade adjustment. A noisy elevation track adds a
+  warning. With no elevation data, the grade-adjusted figures are null and
+  the verdict is on the clock only.
 - The altitude is intervals.icu's corrected elevation when the activity has
-  elevation correction on, else the recorded (barometric) altitude;
-  elevation_source says which, and elevation_note says why a fallback
-  happened. useCorrectedElevation: false forces the recorded altitude.
-- Elevation gain is intervals.icu's own total (as get-activity reports it)
-  when the activity has one, else summed from the altitude samples. That
-  total follows corrected elevation, so with useCorrectedElevation: false on
-  a corrected activity the gain is summed from the recorded altitude.
+  elevation correction on, else the recorded (barometric) one;
+  elevation_source says which and elevation_note why. elevationSource
+  "both" adds elevation_comparison and warns when the sources disagree.
+- Elevation gain is intervals.icu's own total (as get-activity reports it),
+  else summed from the altitude samples. That total follows corrected
+  elevation, so a barometric call on a corrected activity sums the samples.
 - An activity with no recorded streams (a manual entry) returns an error.
 - Runs only (Run, TrailRun, VirtualRun): any other type returns an error
   pointing at get-activity.
@@ -69,20 +72,15 @@ Notes:
 
 const inputSchema = z.object({
   id: intervalsActivityIdInput("The intervals.icu activity id."),
-  useCorrectedElevation: z
-    .boolean()
-    .default(true)
+  elevationSource: z
+    .enum(ELEVATION_SOURCE_CHOICES)
+    .optional()
     .describe(
-      "Use intervals.icu's corrected elevation when the activity has elevation correction on. Set false to use the recorded (barometric) altitude, for example to compare the two sources on one run.",
+      'Altitude for grade, GAP and elevation. "corrected" (default) is intervals.icu\'s corrected elevation when the activity has elevation correction on, else the recorded altitude; "barometric" the recorded altitude; "both" each source\'s splits and verdict side by side, or the barometric result with a note when there is no corrected stream.',
     ),
 });
 
-/** `useCorrectedElevation` is optional for a direct caller; the dispatcher
- * always sends the schema default. */
-type GetSplitAnalysisInput = Omit<
-  z.infer<typeof inputSchema>,
-  "useCorrectedElevation"
-> & { useCorrectedElevation?: boolean };
+type GetSplitAnalysisInput = z.infer<typeof inputSchema>;
 
 const STREAM_TYPES = [
   "distance",
@@ -196,6 +194,109 @@ export interface LoadedSplitAnalysis extends SplitAnalysis {
   elevationNote: string | null;
 }
 
+/** One source's splits and verdict for `elevation_comparison`. */
+function sourceOut(analysis: SplitAnalysis, gainM: number | null) {
+  return {
+    elevation_gain_m: gainM,
+    verdict: analysis.verdict
+      ? {
+          gap_shape: analysis.verdict.gapShape,
+          gap_delta_pct: analysis.verdict.gapDeltaPct,
+          terrain_pct: analysis.verdict.terrainPct,
+          interpretation: analysis.verdict.interpretation,
+        }
+      : null,
+    splits: analysis.splits.map((split) => ({
+      split: split.index,
+      partial: split.partial,
+      gap_pace_sec_per_km: split.gapPaceSecPerKm,
+      gap_pace_min_per_km: paceMinPerKm(split.gapPaceSecPerKm),
+      elevation_change_m: split.elevationChangeM,
+      avg_grade_pct: split.avgGradePct,
+    })),
+  };
+}
+
+type SplitSourceOut = ReturnType<typeof sourceOut>;
+
+/**
+ * Each source's splits side by side (elevationSource: "both"). The source
+ * the headline used reuses its analysis; the stream read is the cached
+ * superset, so the other source costs no request. A source the activity
+ * does not have is null, with the note.
+ */
+async function splitComparison(
+  apiKey: string,
+  id: string,
+  activity: Pick<
+    IntervalsActivity,
+    "total_elevation_gain" | "use_elevation_correction"
+  >,
+  primary: LoadedSplitAnalysis,
+) {
+  const streams = await loadIntervalsStreams(apiKey, id, [...STREAM_TYPES]);
+  const both = resolveBothElevations(activity, streams);
+  const forSource = async (source: ElevationSource) => {
+    const resolved = both[source];
+    if (!resolved) return null;
+    const analysis =
+      primary.elevationSource === source
+        ? primary
+        : await loadSplitAnalysis(apiKey, id, activity, source === "corrected");
+    return sourceOut(analysis, streamGainM(resolved.altitude));
+  };
+  const corrected = await forSource("corrected");
+  const barometric = await forSource("barometric");
+  const sensitivity = gapDeltaSensitivity(
+    corrected?.verdict?.gap_delta_pct ?? null,
+    barometric?.verdict?.gap_delta_pct ?? null,
+  );
+  return {
+    corrected,
+    barometric,
+    gap_delta_difference_pts: sensitivity?.difference ?? null,
+    note: both.note,
+    sensitivity_warning: sensitivity?.warning ?? null,
+  };
+}
+
+type SplitComparison = Awaited<ReturnType<typeof splitComparison>>;
+
+const verdictText = (result: SplitSourceOut | null) =>
+  result?.verdict?.gap_shape
+    ? `${result.verdict.gap_shape} (${formatSigned(result.verdict.gap_delta_pct ?? 0)}%)`
+    : "n/a";
+
+/** The text of `elevation_comparison`: one line per km, corrected first. */
+function comparisonLines(comparison: SplitComparison): string[] {
+  const { corrected, barometric } = comparison;
+  const lines = [
+    "By elevation source (corrected | barometric):",
+    `  Grade-adjusted verdict: ${verdictText(corrected)} | ${verdictText(barometric)}`,
+  ];
+  const rows = Math.max(
+    corrected?.splits.length ?? 0,
+    barometric?.splits.length ?? 0,
+  );
+  const gap = (s: SplitSourceOut["splits"][number] | undefined) =>
+    s?.gap_pace_min_per_km ?? "n/a";
+  const elevation = (s: SplitSourceOut["splits"][number] | undefined) =>
+    s?.elevation_change_m != null
+      ? `${formatSigned(s.elevation_change_m)} m`
+      : "n/a";
+  for (let i = 0; i < rows; i++) {
+    const c = corrected?.splits[i];
+    const b = barometric?.splits[i];
+    const label = (c ?? b)?.partial ? "end" : `${i + 1}.`;
+    lines.push(
+      `  ${label.padEnd(4)} GAP ${gap(c)} | ${gap(b)} /km, ${elevation(c)} | ${elevation(b)}`,
+    );
+  }
+  if (comparison.note) lines.push(`  ${comparison.note}`);
+  lines.push("");
+  return lines;
+}
+
 /**
  * The split analysis of one activity: its streams through the shared
  * adapter, binned by `computeSplitAnalysis`. The one stream path for 1 km
@@ -244,7 +345,7 @@ export const getSplitAnalysisTool = {
   annotations: READ_ONLY,
   outputSchema: SplitAnalysisOutputSchema,
   execute: async (
-    { id, useCorrectedElevation = true }: GetSplitAnalysisInput,
+    { id, elevationSource = "corrected" }: GetSplitAnalysisInput,
     apiKey: string,
     progress: ReportProgress = NO_PROGRESS,
   ) => {
@@ -272,7 +373,7 @@ export const getSplitAnalysisTool = {
           apiKey,
           id,
           activity,
-          useCorrectedElevation,
+          elevationSource !== "barometric",
         );
       } catch (error) {
         if (error instanceof IntervalsStreamsUnavailableError) {
@@ -290,6 +391,10 @@ export const getSplitAnalysisTool = {
         throw error;
       }
       progress("Computing split analysis", { important: true });
+      const comparison =
+        elevationSource === "both"
+          ? await splitComparison(apiKey, id, activity, analysis)
+          : null;
 
       const structured = {
         activity_id: id,
@@ -347,6 +452,7 @@ export const getSplitAnalysisTool = {
           avg_pace_min_per_km: paceMinPerKm(analysis.totals.avgPaceSecPerKm),
           avg_gap_pace_sec_per_km: analysis.totals.avgGapPaceSecPerKm,
         },
+        elevation_comparison: comparison,
         units: {
           distance: "km" as const,
           elevation: "m" as const,
@@ -358,7 +464,9 @@ export const getSplitAnalysisTool = {
           cadence_label: cadenceLabel(type),
           power: "W" as const,
         },
-        warnings: analysis.warnings,
+        warnings: comparison?.sensitivity_warning
+          ? [...analysis.warnings, comparison.sensitivity_warning]
+          : analysis.warnings,
       };
       warnOnSchemaDrift(name, SplitAnalysisOutputSchema, structured);
 
@@ -371,6 +479,14 @@ export const getSplitAnalysisTool = {
           source: analysis.elevationSource,
           note: analysis.elevationNote,
         }),
+        ...(comparison
+          ? [
+              elevationGainLine({
+                corrected: comparison.corrected?.elevation_gain_m ?? null,
+                barometric: comparison.barometric?.elevation_gain_m ?? null,
+              }),
+            ]
+          : []),
         `${distanceLabel} km, ${analysis.splits.length} splits, average ${structured.totals.avg_pace_min_per_km ? `${structured.totals.avg_pace_min_per_km} min/km` : "n/a"}${gain != null ? `, +${Math.round(gain)} m gain (${structured.totals.elevation_gain_source})` : ""}`,
         movingTimeLine(
           structured.totals.moving_time_s,
@@ -408,7 +524,8 @@ export const getSplitAnalysisTool = {
         );
       }
 
-      if (structured.warnings.length > 0) lines.push("");
+      if (comparison) lines.push("", ...comparisonLines(comparison));
+      if (structured.warnings.length > 0 && !comparison) lines.push("");
       for (const warning of structured.warnings) {
         lines.push(`Warning: ${warning}`);
       }

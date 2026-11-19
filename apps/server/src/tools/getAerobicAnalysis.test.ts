@@ -14,6 +14,7 @@ import {
 import activityFixture from "../__fixtures__/intervals/activity.json";
 import sportSettingsRunFixture from "../__fixtures__/intervals/sport-settings-run.json";
 import streamsFixture from "../__fixtures__/intervals/streams.json";
+import { ELEVATION_SENSITIVITY } from "../elevationSource";
 import {
   getActivity,
   getActivityStreams,
@@ -633,14 +634,34 @@ describe("get-aerobic-analysis", () => {
       ]),
       0,
     );
+    type SourceResult = {
+      elevation_gain_m: number | null;
+      decoupling_pct: number;
+      first_half_gap_pace_min_per_km: string | null;
+      second_half_gap_pace_min_per_km: string | null;
+      efficiency_factor: number;
+    };
     type Structured = {
       basis: string;
       decoupling_pct: number;
+      decoupling_source: string;
+      efficiency_factor: number;
       elevation_source: string | null;
       elevation_note: string | null;
+      warnings: string[];
+      elevation_comparison: {
+        corrected: SourceResult | null;
+        barometric: SourceResult | null;
+        decoupling_difference_pts: number | null;
+        note: string | null;
+        sensitivity_warning: string | null;
+      } | null;
     };
     const run = async (
-      args: { basis?: "gap" | "pace"; useCorrectedElevation?: boolean },
+      args: {
+        basis?: "gap" | "pace";
+        elevationSource?: "corrected" | "barometric" | "both";
+      },
       activity: IntervalsActivity = baseActivity,
     ) => {
       mockedGetActivity.mockResolvedValue(activity);
@@ -672,8 +693,8 @@ describe("get-aerobic-analysis", () => {
       expect(text).toContain("Elevation source: corrected");
     });
 
-    it("reads the recorded altitude when useCorrectedElevation is false", async () => {
-      const { structured } = await run({ useCorrectedElevation: false });
+    it("reads the recorded altitude when elevationSource is barometric", async () => {
+      const { structured } = await run({ elevationSource: "barometric" });
 
       expect(structured.elevation_source).toBe("barometric");
       expect(structured.elevation_note).toBeNull();
@@ -690,6 +711,84 @@ describe("get-aerobic-analysis", () => {
       expect(structured.elevation_note).toContain("correction is off");
       expect(Math.abs(structured.decoupling_pct)).toBeLessThan(1);
       expect(text).toContain("correction is off");
+    });
+
+    it("puts both sources side by side and warns when decoupling differs a lot", async () => {
+      const { structured, text } = await run({ elevationSource: "both" });
+      const barometricOnly = await run({ elevationSource: "barometric" });
+      const comparison = structured.elevation_comparison;
+
+      expect(structured.elevation_source).toBe("corrected");
+      expect(comparison?.corrected).toEqual({
+        elevation_gain_m: 0,
+        decoupling_pct: structured.decoupling_pct,
+        first_half_gap_pace_min_per_km: expect.stringMatching(/^\d+:\d\d$/),
+        second_half_gap_pace_min_per_km: expect.stringMatching(/^\d+:\d\d$/),
+        efficiency_factor: structured.efficiency_factor,
+      });
+      expect(comparison?.barometric?.decoupling_pct).toBe(
+        barometricOnly.structured.decoupling_pct,
+      );
+      expect(comparison?.barometric?.elevation_gain_m).toBeGreaterThan(0);
+      expect(comparison?.decoupling_difference_pts).toBeGreaterThan(
+        ELEVATION_SENSITIVITY.decouplingPts,
+      );
+      expect(comparison?.note).toBeNull();
+      expect(comparison?.sensitivity_warning).toMatch(
+        /^Decoupling differs by [\d.]+ points between elevation sources .*Do not trust the GAP-based result for this run\.$/,
+      );
+      expect(structured.warnings).toContain(comparison?.sensitivity_warning);
+      expect(text).toMatch(/Gain: corrected \+0 m, barometric \+\d+ m/);
+      expect(text).toContain("By elevation source (gap basis):");
+      expect(text).toMatch(/corrected: +decoupling [+-]?[\d.]+%, GAP /);
+    });
+
+    it("computes from streams for both even when intervals.icu has its own values", async () => {
+      const activity = {
+        ...baseActivity,
+        decoupling: 3.1,
+        icu_efficiency_factor: 1.2,
+      } as IntervalsActivity;
+      const { structured } = await run(
+        { basis: undefined, elevationSource: "both" },
+        activity,
+      );
+
+      expect(structured.basis).toBe("gap");
+      expect(structured.decoupling_source).toBe("computed");
+      expect(structured.elevation_comparison?.corrected).not.toBeNull();
+    });
+
+    it("gives the barometric result, not an error, when both is asked without a corrected stream", async () => {
+      const { structured, text } = await run(
+        { elevationSource: "both" },
+        { ...baseActivity, use_elevation_correction: false },
+      );
+      const comparison = structured.elevation_comparison;
+
+      expect(structured.elevation_source).toBe("barometric");
+      expect(comparison?.corrected).toBeNull();
+      expect(comparison?.barometric?.decoupling_pct).toBe(
+        structured.decoupling_pct,
+      );
+      expect(comparison?.decoupling_difference_pts).toBeNull();
+      expect(comparison?.sensitivity_warning).toBeNull();
+      expect(comparison?.note).toContain(
+        "corrected elevation stream is not available (elevation correction is off",
+      );
+      expect(text).toContain("corrected:  not available");
+    });
+
+    it("says both has nothing to compare off the gap basis", async () => {
+      const { structured } = await run({
+        basis: "pace",
+        elevationSource: "both",
+      });
+
+      expect(structured.elevation_comparison).toBeNull();
+      expect(structured.warnings).toContain(
+        'elevationSource "both" compares the gap basis only; this uses the pace basis, which read no elevation.',
+      );
     });
 
     it("reports no elevation source on the pace basis", async () => {

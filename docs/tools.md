@@ -936,12 +936,42 @@ gain, grade and GAP do; otherwise they read the recorded `altitude`.
 `elevation_source` in the response is `corrected` or `barometric` (null
 when grade did not come from altitude), and `elevation_note` says why a
 call that wanted corrected elevation got the recorded one (correction off,
-or no corrected stream). `useCorrectedElevation: false` (default true)
-forces the recorded altitude, so two calls compare the sources on one run.
-With it, on an activity that has correction on, `get-split-analysis` sums
-`totals.elevation_gain_m` from the recorded altitude (`computed`), because
-the activity's own total follows the corrected stream. compare-activities'
-per-km table and get-running-summary's computed decoupling take the default.
+or no corrected stream). The `elevationSource` input picks the source:
+`corrected` (the default, with the fallback above), `barometric` (the
+recorded altitude), or `both`. With `barometric` on an activity that has
+correction on, `get-split-analysis` sums `totals.elevation_gain_m` from the
+recorded altitude (`computed`), because the activity's own total follows
+the corrected stream. compare-activities' per-km table and
+get-running-summary's computed decoupling take the default.
+
+**Both sources.** The source can swing a result a lot: on one flat 6 km run,
+decoupling was +1.7% on the barometric altitude and −8.2% on the corrected
+one. `elevationSource: "both"` keeps the usual response (on the corrected
+source, else the barometric) and adds `elevation_comparison`, with one
+result per source (`corrected`, `barometric`; null for a source the
+activity does not have) and each source's `elevation_gain_m`, summed from
+its own stream by the split totals' 3 m hysteresis rule so the two compare
+like with like. The text adds a header line (`Gain: corrected +83 m,
+barometric +61 m (summed from each altitude stream)`) and a side-by-side
+section:
+
+- `get-aerobic-analysis` (gap basis only): each source's decoupling, first-
+  and second-half GAP and efficiency factor. Setting `elevationSource`
+  computes from streams, as `basis` does; on another basis `both` adds a
+  warning and no comparison.
+- `get-split-analysis`: each source's per-km GAP, elevation change and
+  grade, and its grade-adjusted verdict.
+- `get-hill-analysis`: each source's climbs (start km, end km, length,
+  grade, gain).
+
+When the sources disagree by more than a threshold, `sensitivity_warning`
+(also in `warnings`) says not to trust the GAP-based result for this run.
+The thresholds are one constant, `ELEVATION_SENSITIVITY` in
+`elevationSource.ts`: decoupling 5 points, grade-adjusted half-to-half
+change 3 points, climb gain 25% of the larger total and at least 10 m.
+Without a corrected stream, `both` returns the barometric result with
+`corrected: null` and a `note`, never an error. The second source costs no
+request: the stream read is the cached superset.
 
 Every row of the split table has the same columns: a column (GAP, elevation
 change, HR, power) is printed on every row when any split has it, with

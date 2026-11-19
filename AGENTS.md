@@ -129,7 +129,9 @@ breaking them has shipped bugs — do not work around them locally.
   lines: `lineFollowers` in `routeScore.ts`.
   Which altitude stream an analysis reads (corrected `fixed_altitude` or the
   recorded `altitude`), `elevation_source` and its note: `resolveElevation`
-  in `elevationSource.ts`.
+  in `elevationSource.ts`; for `elevationSource: "both"`, each source
+  (`resolveBothElevations`), its summed gain (`streamGainM`) and the
+  sensitivity warnings, whose thresholds are `ELEVATION_SENSITIVITY` there.
   Weather, dew point and the weather note: `activityWeather.ts` (FIT
   humidity read by `fitWeather.ts`). Two runs' per-km difference and its
   drift verdict: `compareKmSplits` in `kmComparison.ts`, on the splits of

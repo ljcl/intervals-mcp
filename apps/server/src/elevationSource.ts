@@ -7,12 +7,38 @@
  * (docs/api-notes.md), so hill, split and aerobic analysis read it too,
  * unless the caller asks for the recorded one.
  */
+import { formatSigned } from "./formatters";
 import { hasRealSample } from "./hillAnalysis";
 import { type IntervalsActivity } from "./intervalsClient";
 import { type IntervalsStreams } from "./intervalsStreams";
+import { ascentFromAltitude } from "./splitAnalysis";
 
 /** `corrected` is `fixed_altitude`; `barometric` is the recorded `altitude`. */
 export type ElevationSource = "corrected" | "barometric";
+
+/** The `elevationSource` input of the hill, split and aerobic tools:
+ * one source, or `both` side by side. */
+export const ELEVATION_SOURCE_CHOICES = [
+  "corrected",
+  "barometric",
+  "both",
+] as const;
+
+/**
+ * When a `both` call says the two sources disagree too much to trust the
+ * result: the one place to tune the sensitivity warning. Each tool compares
+ * the number its headline rests on.
+ */
+export const ELEVATION_SENSITIVITY = {
+  /** get-aerobic-analysis: decoupling, percentage points. */
+  decouplingPts: 5,
+  /** get-split-analysis: the grade-adjusted second-half change, points. */
+  gapDeltaPts: 3,
+  /** get-hill-analysis: total climb gain, percent of the larger total... */
+  climbGainPct: 25,
+  /** ...and metres, so a few metres on a flat run do not warn. */
+  climbGainMinM: 10,
+} as const;
 
 export interface ResolvedElevation {
   /** The stream to analyse; undefined when the activity has no altitude. */
@@ -86,4 +112,132 @@ export function elevationLines(
   return [
     `Elevation source: ${label}${elevation.note ? `. ${elevation.note}` : ""}`,
   ];
+}
+
+/** Both elevation streams for a `both` call. A source is null when the
+ * activity cannot give it; `note` says why, else it is null. */
+export interface BothElevations {
+  corrected: ResolvedElevation | null;
+  barometric: ResolvedElevation | null;
+  note: string | null;
+}
+
+/**
+ * Resolves each source on its own (`resolveElevation`). Corrected is null
+ * when the activity cannot give it (correction off, or no corrected
+ * stream); barometric when the recorded altitude has no sample. A call
+ * then reports the one source it has, with the note, and no error.
+ */
+export function resolveBothElevations(
+  activity: Pick<IntervalsActivity, "use_elevation_correction">,
+  streams: Pick<IntervalsStreams, "altitude" | "fixed_altitude">,
+): BothElevations {
+  const wanted = resolveElevation(activity, streams, true);
+  const recorded = resolveElevation(activity, streams, false);
+  const corrected = wanted.source === "corrected" ? wanted : null;
+  const barometric = recorded.source === "barometric" ? recorded : null;
+  let note: string | null = null;
+  if (!corrected) {
+    const why =
+      activity.use_elevation_correction === true
+        ? "the activity has no corrected altitude stream"
+        : "elevation correction is off for this activity in intervals.icu";
+    note = barometric
+      ? `The corrected elevation stream is not available (${why}), so this shows the barometric result only.`
+      : `The activity has no altitude stream (${why}, and no recorded altitude), so there is no elevation source to compare.`;
+  }
+  return { corrected, barometric, note };
+}
+
+/**
+ * Total ascent of one altitude stream, in whole metres, by the rule the
+ * split totals use (`ascentFromAltitude`). Both sources are summed the same
+ * way, so a `both` call compares like with like. Null with no sample.
+ */
+export function streamGainM(
+  altitude: (number | null)[] | undefined,
+): number | null {
+  const samples = (altitude ?? []).filter(
+    (a): a is number => a != null && Number.isFinite(a),
+  );
+  return samples.length > 0 ? Math.round(ascentFromAltitude(samples)) : null;
+}
+
+/** The `both` header line, e.g. `Gain: corrected +78 m, barometric +79 m`. */
+export function elevationGainLine(
+  gains: Record<ElevationSource, number | null>,
+): string {
+  const part = (source: ElevationSource) => {
+    const gain = gains[source];
+    return gain == null ? `${source} n/a` : `${source} +${gain} m`;
+  };
+  return `Gain: ${part("corrected")}, ${part("barometric")} (summed from each altitude stream)`;
+}
+
+/** How far apart the two sources are, and the warning when too far. */
+export interface ElevationSensitivity {
+  difference: number;
+  warning: string | null;
+}
+
+const distrust = (subject: string) =>
+  `Do not trust the ${subject} for this run.`;
+
+/** get-aerobic-analysis: decoupling under each source. */
+export function decouplingSensitivity(
+  correctedPct: number,
+  barometricPct: number,
+): ElevationSensitivity {
+  const difference =
+    Math.round(Math.abs(correctedPct - barometricPct) * 10) / 10;
+  const limit = ELEVATION_SENSITIVITY.decouplingPts;
+  return {
+    difference,
+    warning:
+      difference > limit
+        ? `Decoupling differs by ${difference} points between elevation sources (${formatSigned(correctedPct, 1)}% corrected, ${formatSigned(barometricPct, 1)}% barometric), more than ${limit}. ${distrust("GAP-based result")}`
+        : null,
+  };
+}
+
+/** get-split-analysis: the grade-adjusted half-to-half change under each
+ * source. Null when either source has no grade-adjusted verdict. */
+export function gapDeltaSensitivity(
+  correctedPct: number | null,
+  barometricPct: number | null,
+): ElevationSensitivity | null {
+  if (correctedPct == null || barometricPct == null) return null;
+  const difference =
+    Math.round(Math.abs(correctedPct - barometricPct) * 10) / 10;
+  const limit = ELEVATION_SENSITIVITY.gapDeltaPts;
+  return {
+    difference,
+    warning:
+      difference > limit
+        ? `The grade-adjusted second-half change differs by ${difference} points between elevation sources (${formatSigned(correctedPct, 1)}% corrected, ${formatSigned(barometricPct, 1)}% barometric), more than ${limit}. ${distrust("grade-adjusted verdict")}`
+        : null,
+  };
+}
+
+/** get-hill-analysis: total climb gain under each source, as a percent of
+ * the larger total; it warns only when the metres apart also pass the
+ * floor. */
+export function climbGainSensitivity(
+  correctedM: number,
+  barometricM: number,
+): ElevationSensitivity {
+  const larger = Math.max(correctedM, barometricM);
+  const difference =
+    larger > 0
+      ? Math.round((Math.abs(correctedM - barometricM) / larger) * 100)
+      : 0;
+  const limit = ELEVATION_SENSITIVITY.climbGainPct;
+  const metres = Math.abs(correctedM - barometricM);
+  return {
+    difference,
+    warning:
+      difference > limit && metres >= ELEVATION_SENSITIVITY.climbGainMinM
+        ? `Climb gain differs by ${difference}% between elevation sources (+${correctedM} m corrected, +${barometricM} m barometric), more than ${limit}%. ${distrust("climb list")}`
+        : null,
+  };
 }

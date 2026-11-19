@@ -1,8 +1,19 @@
 import { z } from "zod";
-import { elevationLines, resolveElevation } from "../elevationSource";
+import {
+  type BothElevations,
+  climbGainSensitivity,
+  ELEVATION_SOURCE_CHOICES,
+  elevationGainLine,
+  elevationLines,
+  type ResolvedElevation,
+  resolveBothElevations,
+  resolveElevation,
+  streamGainM,
+} from "../elevationSource";
 import { formatSigned } from "../formatters";
 import {
   computeHillAnalysis,
+  type HillAnalysis,
   HillAnalysisError,
   type HillSegment,
   type HillStreams,
@@ -10,6 +21,7 @@ import {
 import { cadenceLabel, cadenceUnit } from "../intervalLaps";
 import { getActivity } from "../intervalsClient";
 import {
+  type IntervalsStreams,
   IntervalsStreamsUnavailableError,
   loadIntervalsStreams,
 } from "../intervalsStreams";
@@ -45,7 +57,8 @@ Notes:
 - The altitude is intervals.icu's corrected elevation when the activity has
   elevation correction on, else the recorded (barometric) altitude;
   elevation_source says which, and elevation_note says why a fallback
-  happened. useCorrectedElevation: false forces the recorded altitude.
+  happened. elevationSource "both" adds elevation_comparison, each source's
+  climbs, and warns when the sources disagree.
 - With no elevation data (no grade and no real altitude samples), it
   returns an error rather than treating the run as flat.
 - Works without power, and without HR (the drift then uses grade-adjusted
@@ -58,20 +71,15 @@ Notes:
 
 const inputSchema = z.object({
   id: intervalsActivityIdInput("The intervals.icu activity id."),
-  useCorrectedElevation: z
-    .boolean()
-    .default(true)
+  elevationSource: z
+    .enum(ELEVATION_SOURCE_CHOICES)
+    .optional()
     .describe(
-      "Use intervals.icu's corrected elevation when the activity has elevation correction on. Set false to use the recorded (barometric) altitude, for example to compare the two sources on one run.",
+      'Altitude to find climbs on. "corrected" (default) is intervals.icu\'s corrected elevation when the activity has elevation correction on, else the recorded altitude; "barometric" the recorded altitude; "both" each source\'s climbs side by side, or the barometric result with a note when there is no corrected stream.',
     ),
 });
 
-/** `useCorrectedElevation` is optional for a direct caller; the dispatcher
- * always sends the schema default. */
-type GetHillAnalysisInput = Omit<
-  z.infer<typeof inputSchema>,
-  "useCorrectedElevation"
-> & { useCorrectedElevation?: boolean };
+type GetHillAnalysisInput = z.infer<typeof inputSchema>;
 
 const STREAM_TYPES = [
   "distance",
@@ -109,6 +117,103 @@ function segmentOut(segment: HillSegment, type: string) {
   };
 }
 
+function hillStreamsFor(
+  streams: IntervalsStreams,
+  altitude: ResolvedElevation["altitude"],
+): HillStreams {
+  return {
+    time: streams.time,
+    distance: streams.distance ?? [],
+    altitude,
+    grade_smooth: streams.grade_smooth,
+    heartrate: streams.heartrate,
+    cadence: streams.cadence,
+    watts: streams.watts,
+    moving: streams.moving,
+  };
+}
+
+/** One source's climbs for `elevation_comparison`. */
+function sourceOut(analysis: HillAnalysis, gainM: number | null) {
+  return {
+    elevation_gain_m: gainM,
+    climb_count: analysis.totals.climbCount,
+    climb_gain_m: analysis.totals.climbGainM,
+    climbs: analysis.climbs.map((c) => ({
+      start_km: c.startKm,
+      end_km: c.endKm,
+      length_m: c.lengthM,
+      avg_grade_pct: c.avgGradePct,
+      elevation_change_m: c.elevationChangeM,
+    })),
+  };
+}
+
+/**
+ * Each source's climbs side by side (elevationSource: "both"). The source
+ * the headline used reuses its analysis; a source whose stream cannot be
+ * analysed is null, as a missing one is.
+ */
+function hillComparison(
+  both: BothElevations,
+  streams: IntervalsStreams,
+  primary: { altitude: ResolvedElevation["altitude"]; analysis: HillAnalysis },
+) {
+  const forSource = (resolved: ResolvedElevation | null) => {
+    if (!resolved) return null;
+    let analysis = primary.analysis;
+    if (resolved.altitude !== primary.altitude) {
+      try {
+        analysis = computeHillAnalysis(
+          hillStreamsFor(streams, resolved.altitude),
+        );
+      } catch (error) {
+        if (error instanceof HillAnalysisError) return null;
+        throw error;
+      }
+    }
+    return sourceOut(analysis, streamGainM(resolved.altitude));
+  };
+  const corrected = forSource(both.corrected);
+  const barometric = forSource(both.barometric);
+  const sensitivity =
+    corrected && barometric
+      ? climbGainSensitivity(corrected.climb_gain_m, barometric.climb_gain_m)
+      : null;
+  return {
+    corrected,
+    barometric,
+    climb_gain_difference_pct: sensitivity?.difference ?? null,
+    note: both.note,
+    sensitivity_warning: sensitivity?.warning ?? null,
+  };
+}
+
+type HillComparison = ReturnType<typeof hillComparison>;
+
+/** The text of `elevation_comparison`: each source's climbs. */
+function comparisonLines(comparison: HillComparison): string[] {
+  const lines = ["Climbs by elevation source:"];
+  for (const source of ["corrected", "barometric"] as const) {
+    const result = comparison[source];
+    if (!result) {
+      lines.push(`  ${source}: not available`);
+      continue;
+    }
+    lines.push(
+      `  ${source}: ${result.climb_count} ${result.climb_count === 1 ? "climb" : "climbs"}, +${result.climb_gain_m} m`,
+    );
+    for (const c of result.climbs) {
+      lines.push(
+        `    km ${c.start_km}-${c.end_km}, ${c.length_m} m @ ${c.avg_grade_pct}%, ${formatSigned(c.elevation_change_m)} m`,
+      );
+    }
+  }
+  if (comparison.note) lines.push(`  ${comparison.note}`);
+  lines.push("");
+  return lines;
+}
+
 function segmentLine(s: ReturnType<typeof segmentOut>): string {
   const parts = [
     `km ${s.start_km}-${s.end_km}`,
@@ -130,7 +235,7 @@ export const getHillAnalysisTool = {
   annotations: READ_ONLY,
   outputSchema: HillAnalysisOutputSchema,
   execute: async (
-    { id, useCorrectedElevation = true }: GetHillAnalysisInput,
+    { id, elevationSource = "corrected" }: GetHillAnalysisInput,
     apiKey: string,
     progress: ReportProgress = NO_PROGRESS,
   ) => {
@@ -175,19 +280,21 @@ export const getHillAnalysisTool = {
       const elevation = resolveElevation(
         activity,
         streams,
-        useCorrectedElevation,
+        elevationSource !== "barometric",
       );
-      const hillStreams: HillStreams = {
-        time: streams.time,
-        distance: streams.distance ?? [],
-        altitude: elevation.altitude,
-        grade_smooth: streams.grade_smooth,
-        heartrate: streams.heartrate,
-        cadence: streams.cadence,
-        watts: streams.watts,
-        moving: streams.moving,
-      };
-      const analysis = computeHillAnalysis(hillStreams);
+      const analysis = computeHillAnalysis(
+        hillStreamsFor(streams, elevation.altitude),
+      );
+      const comparison =
+        elevationSource === "both"
+          ? hillComparison(resolveBothElevations(activity, streams), streams, {
+              altitude: elevation.altitude,
+              analysis,
+            })
+          : null;
+      const warnings = comparison?.sensitivity_warning
+        ? [...analysis.warnings, comparison.sensitivity_warning]
+        : analysis.warnings;
 
       const structured = {
         activity_id: id,
@@ -220,6 +327,7 @@ export const getHillAnalysisTool = {
           climb_distance_m: analysis.totals.climbDistanceM,
           climb_gain_m: analysis.totals.climbGainM,
         },
+        elevation_comparison: comparison,
         units: {
           distance: "km" as const,
           length: "m" as const,
@@ -232,7 +340,7 @@ export const getHillAnalysisTool = {
           cadence_label: cadenceLabel(type),
           power: "W" as const,
         },
-        warnings: analysis.warnings,
+        warnings,
       };
       warnOnSchemaDrift(name, HillAnalysisOutputSchema, structured);
 
@@ -240,6 +348,14 @@ export const getHillAnalysisTool = {
         `Hill Analysis: ${structured.name} (${structured.date})`,
         `Grade source: ${structured.grade_source}`,
         ...elevationLines(elevation),
+        ...(comparison
+          ? [
+              elevationGainLine({
+                corrected: comparison.corrected?.elevation_gain_m ?? null,
+                barometric: comparison.barometric?.elevation_gain_m ?? null,
+              }),
+            ]
+          : []),
         `${structured.totals.climb_count} climbs (${structured.totals.climb_distance_m} m, +${structured.totals.climb_gain_m} m), ${structured.totals.descent_count} descents`,
         "",
       ];
@@ -269,6 +385,8 @@ export const getHillAnalysisTool = {
         }
         lines.push("");
       }
+
+      if (comparison) lines.push(...comparisonLines(comparison));
 
       if (structured.descents.length > 0) {
         lines.push(`Descents:`);

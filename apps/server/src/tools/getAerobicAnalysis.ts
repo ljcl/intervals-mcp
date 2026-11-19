@@ -7,10 +7,15 @@ import {
   interpretDecoupling,
 } from "../aerobicAnalysis";
 import {
+  decouplingSensitivity,
+  ELEVATION_SOURCE_CHOICES,
   type ElevationSource,
+  elevationGainLine,
   elevationLines,
   type ResolvedElevation,
+  resolveBothElevations,
   resolveElevation,
+  streamGainM,
 } from "../elevationSource";
 import { formatSigned, round } from "../formatters";
 import { gradeAdjustedSpeeds } from "../hillAnalysis";
@@ -49,16 +54,16 @@ Notes:
 - Decoupling under +5% is excellent, +5 to +10% moderate, over +10% beyond
   current capacity for the duration; negative means the second half was
   more efficient.
-- The gap basis corrects speed for grade the way get-split-analysis does,
-  so an uphill-out, downhill-back course does not read as drift. With no
-  elevation data it falls back to raw pace and warns.
-- Without basis or includeBreakdown, an activity that carries intervals.icu's
-  own decoupling and efficiency factor reports those, and basis is null:
-  intervals.icu does not say which basis it used. Otherwise both numbers are
-  computed from streams, and intervals.icu's values, if any, are in
-  intervals_icu, apart from the computed ones.
-- Stopped time (traffic lights, café stops) is excluded before the halves
-  are split.
+- The gap basis corrects speed for grade, from corrected elevation when
+  the activity has it, so an out-uphill, back-downhill course is not drift.
+  With no elevation data it uses raw pace and warns. The elevation source
+  can swing decoupling a lot: elevationSource "both" adds
+  elevation_comparison and warns when the sources disagree.
+- Without basis, includeBreakdown or elevationSource, intervals.icu's own
+  decoupling and efficiency factor are reported when the activity has
+  both, and basis is null: it does not say which basis it used. Otherwise
+  both are computed from streams, with intervals.icu's in intervals_icu.
+- Stopped time is excluded before the halves are split.
 - On the power basis, an Apple Watch power stream is Apple's estimate, not a
   power meter reading; the response warns.
 - Works for any endurance activity with heart rate. The default basis is gap
@@ -98,11 +103,11 @@ const inputSchema = z.object({
     .describe(
       "Threshold power (FTP) in watts for the intensity factor, power basis only. Defaults to the activity's icu_ftp, then the athlete's sport-settings ftp for its sport.",
     ),
-  useCorrectedElevation: z
-    .boolean()
-    .default(true)
+  elevationSource: z
+    .enum(ELEVATION_SOURCE_CHOICES)
+    .optional()
     .describe(
-      "Gap basis only. Use intervals.icu's corrected elevation when the activity has elevation correction on. Set false to use the recorded (barometric) altitude, for example to compare the two sources on one run.",
+      'Gap basis only: the altitude grade comes from. "corrected" (default) is intervals.icu\'s corrected elevation when the activity has elevation correction on, else the recorded altitude; "barometric" the recorded altitude; "both" each source\'s result side by side, or the barometric result with a note when there is no corrected stream. Setting it computes from streams.',
     ),
   includeBreakdown: z
     .boolean()
@@ -112,12 +117,7 @@ const inputSchema = z.object({
     ),
 });
 
-/** `useCorrectedElevation` is optional for a direct caller; the dispatcher
- * always sends the schema default. */
-type GetAerobicAnalysisInput = Omit<
-  z.infer<typeof inputSchema>,
-  "useCorrectedElevation"
-> & { useCorrectedElevation?: boolean };
+type GetAerobicAnalysisInput = z.infer<typeof inputSchema>;
 type Basis = "gap" | "pace" | "power";
 
 const BASE_STREAM_TYPES: IntervalsStreamType[] = [
@@ -265,6 +265,91 @@ export async function streamAerobicAnalysis(
   return { analysis, basis, warnings, elevationSource, elevationNote };
 }
 
+/** One source's gap-basis result for `elevation_comparison`. */
+function sourceOut(analysis: AerobicAnalysis, gainM: number | null) {
+  return {
+    elevation_gain_m: gainM,
+    decoupling_pct: round(analysis.decouplingPct, 1),
+    first_half_gap_pace_min_per_km: paceMinPerKm(analysis.firstHalf.avgOutput),
+    second_half_gap_pace_min_per_km: paceMinPerKm(
+      analysis.secondHalf.avgOutput,
+    ),
+    efficiency_factor: round(analysis.efficiencyFactor, 3),
+  };
+}
+
+type AerobicSourceOut = ReturnType<typeof sourceOut>;
+
+/**
+ * Each source's gap-basis result side by side (elevationSource: "both").
+ * The source the headline used reuses its result; the stream read is the
+ * cached superset, so the other source costs no request. A source the
+ * activity does not have is null, with the note.
+ */
+async function aerobicComparison(
+  apiKey: string,
+  id: string,
+  activity: IntervalsActivity,
+  sportSettings: IntervalsSportSettings | null,
+  options: Parameters<typeof streamAerobicAnalysis>[4],
+  primary: StreamAerobicResult,
+) {
+  const streams = await loadIntervalsStreams(apiKey, id, [
+    ...BASE_STREAM_TYPES,
+    ...GRADE_STREAM_TYPES,
+  ]);
+  const both = resolveBothElevations(activity, streams);
+  const forSource = async (source: ElevationSource) => {
+    const resolved = both[source];
+    if (!resolved) return null;
+    const result =
+      primary.elevationSource === source
+        ? primary
+        : await streamAerobicAnalysis(apiKey, id, activity, sportSettings, {
+            ...options,
+            useCorrectedElevation: source === "corrected",
+          });
+    // Grade from intervals.icu's grade stream has no source to compare.
+    if (result.basis !== "gap" || result.elevationSource !== source) {
+      return null;
+    }
+    return sourceOut(result.analysis, streamGainM(resolved.altitude));
+  };
+  const corrected = await forSource("corrected");
+  const barometric = await forSource("barometric");
+  const sensitivity =
+    corrected && barometric
+      ? decouplingSensitivity(
+          corrected.decoupling_pct,
+          barometric.decoupling_pct,
+        )
+      : null;
+  return {
+    corrected,
+    barometric,
+    decoupling_difference_pts: sensitivity?.difference ?? null,
+    note: both.note,
+    sensitivity_warning: sensitivity?.warning ?? null,
+  };
+}
+
+type AerobicComparison = Awaited<ReturnType<typeof aerobicComparison>>;
+
+/** The text of `elevation_comparison`: one line per source. */
+function comparisonLines(comparison: AerobicComparison): string[] {
+  const lines = ["By elevation source (gap basis):"];
+  const line = (source: ElevationSource, r: AerobicSourceOut | null) =>
+    r
+      ? `  ${`${source}:`.padEnd(11)} decoupling ${formatSigned(r.decoupling_pct, 1)}%, GAP ${r.first_half_gap_pace_min_per_km ?? "n/a"} then ${r.second_half_gap_pace_min_per_km ?? "n/a"} /km, EF ${r.efficiency_factor}`
+      : `  ${`${source}:`.padEnd(11)} not available`;
+  lines.push(
+    line("corrected", comparison.corrected),
+    line("barometric", comparison.barometric),
+  );
+  if (comparison.note) lines.push(`  ${comparison.note}`);
+  return lines;
+}
+
 export const getAerobicAnalysisTool = {
   name,
   title: "Aerobic analysis",
@@ -279,7 +364,7 @@ export const getAerobicAnalysisTool = {
       excludeWarmupMinutes,
       excludeCooldownMinutes,
       thresholdPower,
-      useCorrectedElevation = true,
+      elevationSource,
       includeBreakdown,
     }: GetAerobicAnalysisInput,
     apiKey: string,
@@ -300,11 +385,13 @@ export const getAerobicAnalysisTool = {
       const decouplingFromApi = activity.decoupling ?? null;
       const efficiencyFromApi = activity.icu_efficiency_factor ?? null;
       // intervals.icu's own pair is the headline only when the caller asked
-      // for no basis and no breakdown: it never says which basis it used,
-      // so it cannot answer a request for a specific one (#74).
+      // for no basis, no breakdown and no elevation source: it never says
+      // which basis or elevation it used, so it cannot answer a request for
+      // a specific one (#74).
       const useApiValues =
         requestedBasis == null &&
         !includeBreakdown &&
+        elevationSource == null &&
         decouplingFromApi != null &&
         efficiencyFromApi != null;
 
@@ -335,9 +422,23 @@ export const getAerobicAnalysisTool = {
         source: null,
         note: null,
       };
+      let comparison: AerobicComparison | null = null;
 
       if (basis != null) {
         progress(`Fetching streams for "${displayName}"`);
+        const options = {
+          basis,
+          excludeWarmupSeconds:
+            excludeWarmupMinutes != null
+              ? excludeWarmupMinutes * 60
+              : undefined,
+          excludeCooldownSeconds:
+            excludeCooldownMinutes != null
+              ? excludeCooldownMinutes * 60
+              : undefined,
+          thresholdPower: resolvedThresholdPower,
+          useCorrectedElevation: elevationSource !== "barometric",
+        };
         let result: StreamAerobicResult;
         try {
           result = await streamAerobicAnalysis(
@@ -345,19 +446,7 @@ export const getAerobicAnalysisTool = {
             id,
             activity,
             sportSettings,
-            {
-              basis,
-              excludeWarmupSeconds:
-                excludeWarmupMinutes != null
-                  ? excludeWarmupMinutes * 60
-                  : undefined,
-              excludeCooldownSeconds:
-                excludeCooldownMinutes != null
-                  ? excludeCooldownMinutes * 60
-                  : undefined,
-              thresholdPower: resolvedThresholdPower,
-              useCorrectedElevation,
-            },
+            options,
           );
         } catch (error) {
           if (error instanceof IntervalsStreamsUnavailableError) {
@@ -382,6 +471,24 @@ export const getAerobicAnalysisTool = {
           source: result.elevationSource,
           note: result.elevationNote,
         };
+        if (elevationSource === "both" && basis === "gap") {
+          comparison = await aerobicComparison(
+            apiKey,
+            id,
+            activity,
+            sportSettings,
+            options,
+            result,
+          );
+          if (comparison.sensitivity_warning) {
+            warnings.push(comparison.sensitivity_warning);
+          }
+        }
+      }
+      if (elevationSource === "both" && basis !== "gap") {
+        warnings.push(
+          `elevationSource "both" compares the gap basis only; this ${basis ? `uses the ${basis} basis` : "reports intervals.icu's own values"}, which read no elevation.`,
+        );
       }
 
       if (basis === "power" && resolvedThresholdPower == null) {
@@ -458,6 +565,7 @@ export const getAerobicAnalysisTool = {
                 ),
               }
             : null,
+        elevation_comparison: comparison,
         units: {
           pace: "min/km" as const,
           power: "W" as const,
@@ -473,6 +581,14 @@ export const getAerobicAnalysisTool = {
           ? `Basis: ${BASIS_LABELS[basis]}`
           : "Basis: not reported (intervals.icu's own values)",
         ...elevationLines(elevation),
+        ...(comparison
+          ? [
+              elevationGainLine({
+                corrected: comparison.corrected?.elevation_gain_m ?? null,
+                barometric: comparison.barometric?.elevation_gain_m ?? null,
+              }),
+            ]
+          : []),
         "",
         `Decoupling: ${formatSigned(structured.decoupling_pct, 1)}%: ${interpretation} [${source}]`,
       ];
@@ -503,6 +619,7 @@ export const getAerobicAnalysisTool = {
           `Intensity factor: ${structured.intensity_factor} (threshold ${structured.threshold_power_w} W)`,
         );
       }
+      if (comparison) lines.push("", ...comparisonLines(comparison), "");
       if (structured.breakdown) {
         const b = structured.breakdown;
         const exclusions = [
