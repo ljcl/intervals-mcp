@@ -45,7 +45,7 @@ rather than (or alongside) text.
 | `get-running-summary` | One-shot run readout: metrics, HR zones, cadence, dynamics, laps, weather (with humidity and dew point when the FIT file has them), and decoupling and efficiency factor (computed from the streams when intervals.icu has none) | `id` |
 | `get-running-dynamics` | Ground contact time, vertical oscillation/ratio, step length | `id`, `includeIntervals`, `fromLap` |
 | `get-activity-zones` | Time in each HR zone and, for a run, each pace zone (GAP when the activity uses it); power zones are not reported yet | `id` |
-| `get-activity-streams` | Raw time-series (HR, pace, cadence, power, altitude...) | `id`, `types`, `maxPoints` |
+| `get-activity-streams` | Raw time-series (HR, pace, cadence, power, altitude, corrected altitude...) | `id`, `types`, `maxPoints` |
 
 ### Route planning
 
@@ -62,9 +62,9 @@ rather than (or alongside) text.
 
 | Tool | Answers | Key params |
 | ---- | ------- | ---------- |
-| `get-hill-analysis` | How did the climbs go, and did I fade on them late? | `id` |
-| `get-split-analysis` | Did I positive-split, or was that the hills? | `id` |
-| `get-aerobic-analysis` | Did I decouple? What's my efficiency factor? | `id`, `basis` (gap, pace or power; gap corrects for hills) |
+| `get-hill-analysis` | How did the climbs go, and did I fade on them late? | `id`, `useCorrectedElevation` (default true; false reads the recorded altitude) |
+| `get-split-analysis` | Did I positive-split, or was that the hills? | `id`, `useCorrectedElevation` |
+| `get-aerobic-analysis` | Did I decouple? What's my efficiency factor? | `id`, `basis` (gap, pace or power; gap corrects for hills), `useCorrectedElevation` |
 | `get-interval-analysis` | Interval workout breakdown: pace/HR per rep, did reps fade? Am I faster than the last times I did this workout? | `id`, `findSimilar` |
 | `compare-activities` | How does this run compare to that one? Was the gap there from km 1 (conditions) or did it grow (fatigue)? Was the weather different? Am I getting faster on my usual loop? | `activityId1`, `activityId2`, or `activityId1` with `sameRoute: true` |
 

@@ -111,3 +111,27 @@ export function syntheticAllTypesStreams(seconds: number): IntervalsStream[] {
     },
   ];
 }
+
+/**
+ * `streams` plus a `fixed_altitude` stream: the recorded altitude with every
+ * change from its first sample multiplied by `scale`, so a corrected-source
+ * analysis gives numbers that differ from the recorded one.
+ */
+export function withCorrectedAltitude(
+  streams: IntervalsStream[],
+  scale = 2,
+): IntervalsStream[] {
+  const altitude = streams.find((s) => s.type === "altitude");
+  if (!altitude) throw new Error("The fixture has no altitude stream.");
+  const first = altitude.data.find((v) => v != null) ?? 0;
+  return [
+    ...streams,
+    {
+      ...altitude,
+      type: "fixed_altitude",
+      data: altitude.data.map((v) =>
+        v == null ? null : first + (v - first) * scale,
+      ),
+    },
+  ];
+}

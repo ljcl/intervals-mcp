@@ -25,6 +25,7 @@ export const INTERVALS_STREAM_TYPES = [
   "altitude",
   "cadence",
   "distance",
+  "fixed_altitude",
   "grade_smooth",
   "heartrate",
   "latlng",
@@ -48,6 +49,10 @@ export interface IntervalsStreams {
   heartrate?: (number | null)[];
   velocity_smooth?: (number | null)[];
   altitude?: (number | null)[];
+  /** intervals.icu's corrected elevation, m. Present when the activity has
+   * "Use elevation correction" on (docs/api-notes.md). Analysis callers pick
+   * between this and `altitude` with `resolveElevation` only. */
+  fixed_altitude?: (number | null)[];
   grade_smooth?: (number | null)[];
   cadence?: (number | null)[];
   watts?: (number | null)[];
@@ -165,6 +170,7 @@ export const OPTIONAL_STREAM_TYPES: readonly OptionalStreamType[] = [
   "heartrate",
   "velocity_smooth",
   "altitude",
+  "fixed_altitude",
   "grade_smooth",
   "cadence",
   "watts",

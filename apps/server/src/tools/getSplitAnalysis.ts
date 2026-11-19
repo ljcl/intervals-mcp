@@ -1,4 +1,10 @@
 import { z } from "zod";
+import {
+  type ElevationSource,
+  elevationLines,
+  recordedGainFor,
+  resolveElevation,
+} from "../elevationSource";
 import { formatDuration, formatSigned } from "../formatters";
 import { cadenceLabel, cadenceUnit } from "../intervalLaps";
 import { getActivity, type IntervalsActivity } from "../intervalsClient";
@@ -48,8 +54,14 @@ Notes:
   before the grade adjustment. A noisy elevation track
   adds a warning. With no elevation data, the grade-adjusted figures are
   null and the verdict is on the clock only.
+- The altitude is intervals.icu's corrected elevation when the activity has
+  elevation correction on, else the recorded (barometric) altitude;
+  elevation_source says which, and elevation_note says why a fallback
+  happened. useCorrectedElevation: false forces the recorded altitude.
 - Elevation gain is intervals.icu's own total (as get-activity reports it)
-  when the activity has one, else summed from the altitude samples.
+  when the activity has one, else summed from the altitude samples. That
+  total follows corrected elevation, so with useCorrectedElevation: false on
+  a corrected activity the gain is summed from the recorded altitude.
 - An activity with no recorded streams (a manual entry) returns an error.
 - Runs only (Run, TrailRun, VirtualRun): any other type returns an error
   pointing at get-activity.
@@ -57,13 +69,25 @@ Notes:
 
 const inputSchema = z.object({
   id: intervalsActivityIdInput("The intervals.icu activity id."),
+  useCorrectedElevation: z
+    .boolean()
+    .default(true)
+    .describe(
+      "Use intervals.icu's corrected elevation when the activity has elevation correction on. Set false to use the recorded (barometric) altitude, for example to compare the two sources on one run.",
+    ),
 });
 
-type GetSplitAnalysisInput = z.infer<typeof inputSchema>;
+/** `useCorrectedElevation` is optional for a direct caller; the dispatcher
+ * always sends the schema default. */
+type GetSplitAnalysisInput = Omit<
+  z.infer<typeof inputSchema>,
+  "useCorrectedElevation"
+> & { useCorrectedElevation?: boolean };
 
 const STREAM_TYPES = [
   "distance",
   "altitude",
+  "fixed_altitude",
   "grade_smooth",
   "heartrate",
   // Not read for GAP (#298); the loader derives `moving` from it.
@@ -166,32 +190,50 @@ function splitLine(s: SplitOut, columns: SplitColumns): string {
   return `  ${label.padEnd(4)} ${parts.join(", ")}`;
 }
 
+/** A split analysis plus which elevation stream it read. */
+export interface LoadedSplitAnalysis extends SplitAnalysis {
+  elevationSource: ElevationSource | null;
+  elevationNote: string | null;
+}
+
 /**
  * The split analysis of one activity: its streams through the shared
  * adapter, binned by `computeSplitAnalysis`. The one stream path for 1 km
- * splits, shared with compare-activities' per-km table. Throws
+ * splits, shared with compare-activities' per-km table. Elevation is the
+ * corrected stream when the activity has one, unless `useCorrectedElevation`
+ * is false (`resolveElevation`). Throws
  * `IntervalsStreamsUnavailableError` for an activity with no streams and
  * `SplitAnalysisError` for streams it cannot split.
  */
 export async function loadSplitAnalysis(
   apiKey: string,
   id: string,
-  activity: Pick<IntervalsActivity, "total_elevation_gain">,
-): Promise<SplitAnalysis> {
+  activity: Pick<
+    IntervalsActivity,
+    "total_elevation_gain" | "use_elevation_correction"
+  >,
+  useCorrectedElevation = true,
+): Promise<LoadedSplitAnalysis> {
   const streams = await loadIntervalsStreams(apiKey, id, [...STREAM_TYPES]);
+  const elevation = resolveElevation(activity, streams, useCorrectedElevation);
   const splitStreams: SplitStreams = {
     time: streams.time,
     distance: streams.distance ?? [],
-    altitude: streams.altitude,
+    altitude: elevation.altitude,
     grade_smooth: streams.grade_smooth,
     heartrate: streams.heartrate,
     cadence: streams.cadence,
     watts: streams.watts,
     moving: streams.moving,
   };
-  return computeSplitAnalysis(splitStreams, {
-    recordedElevationGainM: activity.total_elevation_gain ?? null,
+  const analysis = computeSplitAnalysis(splitStreams, {
+    recordedElevationGainM: recordedGainFor(activity, useCorrectedElevation),
   });
+  return {
+    ...analysis,
+    elevationSource: elevation.source,
+    elevationNote: elevation.note,
+  };
 }
 
 export const getSplitAnalysisTool = {
@@ -202,7 +244,7 @@ export const getSplitAnalysisTool = {
   annotations: READ_ONLY,
   outputSchema: SplitAnalysisOutputSchema,
   execute: async (
-    { id }: GetSplitAnalysisInput,
+    { id, useCorrectedElevation = true }: GetSplitAnalysisInput,
     apiKey: string,
     progress: ReportProgress = NO_PROGRESS,
   ) => {
@@ -224,9 +266,14 @@ export const getSplitAnalysisTool = {
       }
 
       progress(`Fetching streams for "${displayName}"`);
-      let analysis: SplitAnalysis;
+      let analysis: LoadedSplitAnalysis;
       try {
-        analysis = await loadSplitAnalysis(apiKey, id, activity);
+        analysis = await loadSplitAnalysis(
+          apiKey,
+          id,
+          activity,
+          useCorrectedElevation,
+        );
       } catch (error) {
         if (error instanceof IntervalsStreamsUnavailableError) {
           noteToolFailure(error);
@@ -250,6 +297,8 @@ export const getSplitAnalysisTool = {
         date: activity.start_date_local,
         type,
         grade_source: analysis.gradeSource,
+        elevation_source: analysis.elevationSource,
+        elevation_note: analysis.elevationNote,
         // GAP throughout this response is locally modelled from grade
         // (hillAnalysis.ts's gapFactor, imported by splitAnalysis.ts), not
         // intervals.icu's own gap field (see get-activity/compare-activities/
@@ -318,6 +367,10 @@ export const getSplitAnalysisTool = {
       const lines = [
         `Split Analysis: ${structured.name} (${structured.date})`,
         `Grade source: ${structured.grade_source}`,
+        ...elevationLines({
+          source: analysis.elevationSource,
+          note: analysis.elevationNote,
+        }),
         `${distanceLabel} km, ${analysis.splits.length} splits, average ${structured.totals.avg_pace_min_per_km ? `${structured.totals.avg_pace_min_per_km} min/km` : "n/a"}${gain != null ? `, +${Math.round(gain)} m gain (${structured.totals.elevation_gain_source})` : ""}`,
         movingTimeLine(
           structured.totals.moving_time_s,

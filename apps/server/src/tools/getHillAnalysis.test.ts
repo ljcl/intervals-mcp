@@ -9,6 +9,7 @@ import {
   handledNotFound,
   handledRateLimit,
   syntheticStreams,
+  withCorrectedAltitude,
 } from "../__fixtures__";
 import activityFixture from "../__fixtures__/intervals/activity.json";
 import activityHilly from "../__fixtures__/intervals/activity-hilly.json";
@@ -273,5 +274,75 @@ describe("get-hill-analysis", () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain("not found");
+  });
+
+  describe("elevation source", () => {
+    type Structured = {
+      elevation_source: string | null;
+      elevation_note: string | null;
+      totals: { climb_gain_m: number };
+    };
+    const run = async (
+      streams: IntervalsStream[],
+      args: { useCorrectedElevation?: boolean } = {},
+      activity: IntervalsActivity = hillyActivity,
+    ) => {
+      mockedGetActivity.mockResolvedValue(activity);
+      mockedGetActivityStreams.mockResolvedValue(streams);
+      const result = await getHillAnalysisTool.execute(
+        { id: "i189757207", ...args },
+        "test-key",
+      );
+      expect(result.isError).toBeUndefined();
+      const structured = result.structuredContent as Structured;
+      expect(HillAnalysisOutputSchema.safeParse(structured).success).toBe(true);
+      return { structured, text: result.content[0]?.text ?? "" };
+    };
+
+    it("reads the corrected stream by default and the recorded one on request", async () => {
+      const corrected = await run(withCorrectedAltitude(hillyStreams));
+      const recorded = await run(withCorrectedAltitude(hillyStreams), {
+        useCorrectedElevation: false,
+      });
+
+      expect(corrected.structured.elevation_source).toBe("corrected");
+      expect(corrected.structured.elevation_note).toBeNull();
+      expect(corrected.text).toContain("Elevation source: corrected");
+      expect(recorded.structured.elevation_source).toBe("barometric");
+      expect(recorded.structured.elevation_note).toBeNull();
+      // The corrected fixture doubles every altitude change.
+      expect(corrected.structured.totals.climb_gain_m).toBeGreaterThan(
+        recorded.structured.totals.climb_gain_m,
+      );
+    });
+
+    it("falls back to the recorded altitude, and says so, without a corrected stream", async () => {
+      const { structured, text } = await run(hillyStreams);
+
+      expect(structured.elevation_source).toBe("barometric");
+      expect(structured.elevation_note).toContain(
+        "no corrected altitude stream",
+      );
+      expect(text).toContain("Elevation source: barometric");
+      expect(text).toContain("no corrected altitude stream");
+    });
+
+    it("ignores a corrected stream when the activity has correction off", async () => {
+      const { structured } = await run(
+        withCorrectedAltitude(hillyStreams),
+        {},
+        { ...hillyActivity, use_elevation_correction: false },
+      );
+
+      expect(structured.elevation_source).toBe("barometric");
+      expect(structured.elevation_note).toContain("correction is off");
+    });
+
+    it("defaults useCorrectedElevation to true in the schema", () => {
+      expect(
+        getHillAnalysisTool.inputSchema.parse({ id: "i1" })
+          .useCorrectedElevation,
+      ).toBe(true);
+    });
   });
 });

@@ -25,7 +25,8 @@ export interface HillStreams {
   time: number[];
   /** Cumulative metres. Required. */
   distance: (number | null)[];
-  /** Elevation in metres. */
+  /** Elevation in metres: the stream `resolveElevation` chose
+   * (`elevationSource.ts`), corrected or recorded. */
   altitude?: (number | null)[];
   /** intervals.icu's smoothed grade in percent, used only without altitude. */
   grade_smooth?: (number | null)[];
@@ -269,7 +270,7 @@ export function normalizeHillStreams(
  * phantom micro-climbs) whenever altitude has real samples, else
  * intervals.icu's grade_smooth. Altitude comes first because every reported
  * grade and elevation change is read from it, and grade_smooth follows
- * `fixed_altitude` instead, which disagrees with it locally
+ * `fixed_altitude`, which disagrees locally with a recorded altitude
  * (docs/api-notes.md, #297). Reports which source it used so callers can say so.
  */
 export function computeGrades(

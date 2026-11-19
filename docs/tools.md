@@ -515,8 +515,8 @@ distance (see `get-running-dynamics` below).
 
 `get-activity-streams` returns selected streams (`types`, default time,
 distance, heartrate, cadence, velocity_smooth, altitude; also available:
-latlng, watts, stance_time, vertical_oscillation, vertical_ratio,
-step_length) as index-aligned arrays with units. Large activities are
+latlng, watts, fixed_altitude, stance_time, vertical_oscillation,
+vertical_ratio, step_length) as index-aligned arrays with units. Large activities are
 downsampled to `maxPoints` (10-2000, default 120): each bucket reports the
 mean of its non-null samples, except time, distance, and latlng, which take
 the bucket's last sample. A heart-rate dropout, which intervals.icu sends as
@@ -926,6 +926,22 @@ the ascent summed from the altitude samples with a 3 m hysteresis
 (`computed`), else null. It once added each split's net change, so a km
 that climbed 20 m and descended 20 m added 0 (136 m against
 `get-activity`'s 693 m on one marathon, #45).
+
+**Elevation source.** `get-hill-analysis`, `get-split-analysis` and
+`get-aerobic-analysis` (gap basis) pick their altitude with
+`resolveElevation` (`elevationSource.ts`). When the activity has "Use
+elevation correction" on (`use_elevation_correction`) and a `fixed_altitude`
+stream with real samples, they read that stream, as intervals.icu's own
+gain, grade and GAP do; otherwise they read the recorded `altitude`.
+`elevation_source` in the response is `corrected` or `barometric` (null
+when grade did not come from altitude), and `elevation_note` says why a
+call that wanted corrected elevation got the recorded one (correction off,
+or no corrected stream). `useCorrectedElevation: false` (default true)
+forces the recorded altitude, so two calls compare the sources on one run.
+With it, on an activity that has correction on, `get-split-analysis` sums
+`totals.elevation_gain_m` from the recorded altitude (`computed`), because
+the activity's own total follows the corrected stream. compare-activities'
+per-km table and get-running-summary's computed decoupling take the default.
 
 Every row of the split table has the same columns: a column (GAP, elevation
 change, HR, power) is printed on every row when any split has it, with

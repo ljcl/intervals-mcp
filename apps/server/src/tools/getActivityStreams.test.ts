@@ -3,6 +3,7 @@ import {
   handledNotFound,
   handledRateLimit,
   syntheticAllTypesStreams,
+  withCorrectedAltitude,
 } from "../__fixtures__";
 import activityFixture from "../__fixtures__/intervals/activity.json";
 import activityHillyFixture from "../__fixtures__/intervals/activity-hilly.json";
@@ -582,5 +583,30 @@ describe("getActivityStreamsTool.execute response budget", () => {
     );
     expect(result.structuredContent?.returned_points).toBe(100);
     expect(result.content[0]?.text).not.toContain("Reduced to");
+  });
+
+  it("returns the corrected altitude as fixed_altitude, in metres, and lists it as missing when absent", async () => {
+    mockedGetActivity.mockResolvedValue(runActivity);
+    mockedGetActivityStreams.mockResolvedValueOnce(
+      withCorrectedAltitude(rawStreams),
+    );
+    const present = await getActivityStreamsTool.execute(
+      {
+        id: "i189807578",
+        types: ["altitude", "fixed_altitude"],
+        maxPoints: 50,
+      },
+      "key",
+    );
+    expect(present.structuredContent?.missing).toEqual([]);
+    expect(present.structuredContent?.units.fixed_altitude).toBe("m");
+    expect(present.structuredContent?.streams.fixed_altitude).toHaveLength(50);
+
+    mockedGetActivityStreams.mockResolvedValueOnce(rawStreams);
+    const absent = await getActivityStreamsTool.execute(
+      { id: "i189807578", types: ["fixed_altitude"], maxPoints: 50 },
+      "key",
+    );
+    expect(absent.structuredContent?.missing).toEqual(["fixed_altitude"]);
   });
 });

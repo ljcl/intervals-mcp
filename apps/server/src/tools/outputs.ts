@@ -553,6 +553,14 @@ const AerobicHalfSchema = z.object({
   minutes: z.number(),
 });
 
+/** `elevationSource.ts`'s choice, shared by the hill, split and aerobic tools. */
+const ElevationSourceSchema = z.enum(["corrected", "barometric"]).nullable();
+const ElevationNoteSchema = z
+  .string()
+  .nullable()
+  .describe(
+    "Why corrected elevation was wanted but the recorded altitude was used (correction off, or no corrected stream); null otherwise",
+  );
 const AerobicSourceEnum = z.enum(["intervals.icu", "computed"]);
 
 export const AerobicAnalysisOutputSchema = z.object({
@@ -566,6 +574,10 @@ export const AerobicAnalysisOutputSchema = z.object({
     .describe(
       "Basis decoupling_pct and efficiency_factor were computed on; null when both are intervals.icu's own values, whose basis it does not report",
     ),
+  elevation_source: ElevationSourceSchema.describe(
+    "The altitude stream grade and elevation were read from: corrected is intervals.icu's corrected elevation (the activity has elevation correction on), barometric the recorded altitude. Null unless basis is gap with grade computed from altitude",
+  ),
+  elevation_note: ElevationNoteSchema,
   decoupling_pct: z.number(),
   decoupling_source: AerobicSourceEnum,
   interpretation: z.string(),
@@ -773,6 +785,10 @@ export const HillAnalysisOutputSchema = z.object({
     .describe(
       "grade_smooth when intervals.icu's smoothed-grade stream was used, computed when derived from altitude",
     ),
+  elevation_source: ElevationSourceSchema.describe(
+    "The altitude stream grade and elevation were read from: corrected is intervals.icu's corrected elevation (the activity has elevation correction on), barometric the recorded altitude. Null when grade_source is not computed",
+  ),
+  elevation_note: ElevationNoteSchema,
   gap_source: z
     .literal("model")
     .describe(
@@ -971,6 +987,10 @@ export const SplitAnalysisOutputSchema = z.object({
     .describe(
       "grade_smooth when intervals.icu's smoothed-grade stream was used, computed when derived from altitude, none without elevation data (every grade-adjusted field is then null)",
     ),
+  elevation_source: ElevationSourceSchema.describe(
+    "The altitude stream grade and elevation were read from: corrected is intervals.icu's corrected elevation (the activity has elevation correction on), barometric the recorded altitude. Null when grade_source is not computed",
+  ),
+  elevation_note: ElevationNoteSchema,
   gap_source: z
     .literal("model")
     .describe(

@@ -295,7 +295,7 @@ the full response shape and per-type null patterns from a live probe).
 
 **One request per activity.** Callers ask for whichever stream types their
 tool or app needs, but `loadIntervalsStreams` always requests
-`INTERVALS_STREAM_TYPES`: all 13 types any caller uses, sorted. So every
+`INTERVALS_STREAM_TYPES`: all 14 types any caller uses, sorted. So every
 tool's and app's read of one activity is the same URL. It is fetched once
 and then served from the [response cache](#response-cache) or the in-flight
 map. The loader returns only the columns the caller asked for. `moving`

@@ -129,7 +129,7 @@ describe("loadIntervalsStreams", () => {
     await loadIntervalsStreams("key", "i1", ["latlng", "time"]);
 
     const superset =
-      "/activity/i1/streams.json?types=altitude,cadence,distance,grade_smooth,heartrate,latlng,stance_time,step_length,time,velocity_smooth,vertical_oscillation,vertical_ratio,watts";
+      "/activity/i1/streams.json?types=altitude,cadence,distance,fixed_altitude,grade_smooth,heartrate,latlng,stance_time,step_length,time,velocity_smooth,vertical_oscillation,vertical_ratio,watts";
     expect(mockedGet).toHaveBeenCalledTimes(2);
     expect(mockedGet).toHaveBeenNthCalledWith(1, superset, expect.anything());
     expect(mockedGet).toHaveBeenNthCalledWith(2, superset, expect.anything());

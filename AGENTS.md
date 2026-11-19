@@ -127,6 +127,9 @@ breaking them has shipped bugs — do not work around them locally.
   stretches, covering runs, runs through a place, overlaps and a corridor via's
   direction combinations: `corridors.ts`; the line-follower index under known
   lines: `lineFollowers` in `routeScore.ts`.
+  Which altitude stream an analysis reads (corrected `fixed_altitude` or the
+  recorded `altitude`), `elevation_source` and its note: `resolveElevation`
+  in `elevationSource.ts`.
   Weather, dew point and the weather note: `activityWeather.ts` (FIT
   humidity read by `fitWeather.ts`). Two runs' per-km difference and its
   drift verdict: `compareKmSplits` in `kmComparison.ts`, on the splits of
