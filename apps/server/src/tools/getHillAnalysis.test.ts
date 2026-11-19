@@ -15,6 +15,7 @@ import activityFixture from "../__fixtures__/intervals/activity.json";
 import activityHilly from "../__fixtures__/intervals/activity-hilly.json";
 import streamsFixture from "../__fixtures__/intervals/streams.json";
 import streamsHilly from "../__fixtures__/intervals/streams-hilly.json";
+import { ELEVATION_SENSITIVITY } from "../elevationSource";
 import {
   getActivity,
   getActivityStreams,
@@ -277,14 +278,27 @@ describe("get-hill-analysis", () => {
   });
 
   describe("elevation source", () => {
+    type SourceResult = {
+      elevation_gain_m: number | null;
+      climb_gain_m: number;
+      climbs: Record<string, number>[];
+    };
     type Structured = {
       elevation_source: string | null;
       elevation_note: string | null;
       totals: { climb_gain_m: number };
+      warnings: string[];
+      elevation_comparison: {
+        corrected: SourceResult | null;
+        barometric: SourceResult | null;
+        climb_gain_difference_pct: number | null;
+        note: string | null;
+        sensitivity_warning: string | null;
+      } | null;
     };
     const run = async (
       streams: IntervalsStream[],
-      args: { useCorrectedElevation?: boolean } = {},
+      args: { elevationSource?: "corrected" | "barometric" | "both" } = {},
       activity: IntervalsActivity = hillyActivity,
     ) => {
       mockedGetActivity.mockResolvedValue(activity);
@@ -302,7 +316,7 @@ describe("get-hill-analysis", () => {
     it("reads the corrected stream by default and the recorded one on request", async () => {
       const corrected = await run(withCorrectedAltitude(hillyStreams));
       const recorded = await run(withCorrectedAltitude(hillyStreams), {
-        useCorrectedElevation: false,
+        elevationSource: "barometric",
       });
 
       expect(corrected.structured.elevation_source).toBe("corrected");
@@ -338,11 +352,93 @@ describe("get-hill-analysis", () => {
       expect(structured.elevation_note).toContain("correction is off");
     });
 
-    it("defaults useCorrectedElevation to true in the schema", () => {
-      expect(
-        getHillAnalysisTool.inputSchema.parse({ id: "i1" })
-          .useCorrectedElevation,
-      ).toBe(true);
+    it("accepts the three elevation sources and nothing else", () => {
+      const parse = (elevationSource?: string) =>
+        getHillAnalysisTool.inputSchema.safeParse({
+          id: "i1",
+          elevationSource,
+        });
+      for (const choice of ["corrected", "barometric", "both", undefined]) {
+        expect(parse(choice).success).toBe(true);
+      }
+      expect(parse("gps").success).toBe(false);
+    });
+
+    it("leaves elevation_comparison null for one source", async () => {
+      const { structured, text } = await run(
+        withCorrectedAltitude(hillyStreams),
+      );
+
+      expect(structured.elevation_comparison).toBeNull();
+      expect(text).not.toContain("Gain: corrected");
+    });
+
+    it("puts both sources' climbs side by side and warns when they disagree", async () => {
+      const { structured, text } = await run(
+        withCorrectedAltitude(hillyStreams),
+        { elevationSource: "both" },
+      );
+      const comparison = structured.elevation_comparison;
+      const corrected = comparison?.corrected;
+      const barometric = comparison?.barometric;
+
+      // The headline is the corrected source's.
+      expect(structured.elevation_source).toBe("corrected");
+      expect(corrected?.climb_gain_m).toBe(structured.totals.climb_gain_m);
+      expect(corrected?.climbs[0]).toEqual({
+        start_km: expect.any(Number),
+        end_km: expect.any(Number),
+        length_m: expect.any(Number),
+        avg_grade_pct: expect.any(Number),
+        elevation_change_m: expect.any(Number),
+      });
+      // The corrected fixture doubles every altitude change.
+      expect(barometric?.climb_gain_m).toBeLessThan(
+        corrected?.climb_gain_m ?? 0,
+      );
+      expect(corrected?.elevation_gain_m).toBeGreaterThan(
+        barometric?.elevation_gain_m ?? Infinity,
+      );
+      expect(comparison?.note).toBeNull();
+      expect(comparison?.climb_gain_difference_pct).toBeGreaterThan(
+        ELEVATION_SENSITIVITY.climbGainPct,
+      );
+      expect(comparison?.sensitivity_warning).toContain(
+        "Do not trust the climb list",
+      );
+      expect(structured.warnings).toContain(comparison?.sensitivity_warning);
+      expect(text).toMatch(/Gain: corrected \+\d+ m, barometric \+\d+ m/);
+      expect(text).toContain("Climbs by elevation source:");
+      expect(text).toContain("Warning: Climb gain differs");
+    });
+
+    it("does not warn when the two sources agree", async () => {
+      const { structured } = await run(withCorrectedAltitude(hillyStreams, 1), {
+        elevationSource: "both",
+      });
+      const comparison = structured.elevation_comparison;
+
+      expect(comparison?.climb_gain_difference_pct).toBe(0);
+      expect(comparison?.sensitivity_warning).toBeNull();
+    });
+
+    it("gives the barometric result, not an error, when both is asked without a corrected stream", async () => {
+      const { structured, text } = await run(hillyStreams, {
+        elevationSource: "both",
+      });
+      const comparison = structured.elevation_comparison;
+
+      expect(structured.elevation_source).toBe("barometric");
+      expect(comparison?.corrected).toBeNull();
+      expect(comparison?.barometric?.climb_gain_m).toBe(
+        structured.totals.climb_gain_m,
+      );
+      expect(comparison?.note).toContain(
+        "corrected elevation stream is not available",
+      );
+      expect(comparison?.sensitivity_warning).toBeNull();
+      expect(text).toContain("Gain: corrected n/a, barometric +");
+      expect(text).toContain("corrected: not available");
     });
   });
 });
