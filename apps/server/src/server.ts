@@ -5,6 +5,7 @@ import {
   type CallToolResult,
   CLIENT_CAPABILITIES_META_KEY,
   CLIENT_INFO_META_KEY,
+  type InputRequiredResult,
   type ListResourcesResult,
   type ListToolsResult,
   type ReadResourceResult,
@@ -107,6 +108,7 @@ import {
   type TraceIds,
 } from "./telemetry";
 import { READ_ONLY } from "./tools/_annotations";
+import { type WriteConfirmContext } from "./tools/_confirm";
 import {
   noteToolFailure,
   prefixedErrorText,
@@ -953,10 +955,13 @@ const READ_ONLY_TOOL_DEFS = TOOL_DEFS.filter(
 
 /**
  * What the request's client told the server about itself, handed to every
- * handler as its fourth argument. Only the view-* handlers read it, to decide
- * whether to claim a rendered chart or give the text twin's text (#77).
+ * handler as its fourth argument. The view-* handlers read
+ * `clientRendersApps`, to decide whether to claim a rendered chart or give
+ * the text twin's text (#77). The write tools read the rest
+ * ({@link WriteConfirmContext}), to confirm a replace that drops text
+ * through the host (#417).
  */
-export interface ToolCallContext {
+export interface ToolCallContext extends WriteConfirmContext {
   /** The client advertised MCP Apps, so a view-* tool's chart is on screen. */
   clientRendersApps: boolean;
 }
@@ -991,6 +996,7 @@ const TOOL_EXECUTORS = new Map<
     structuredContent?: unknown;
     isError?: boolean;
     attachments?: ToolAttachment[];
+    inputRequired?: InputRequiredResult;
   }>
 >();
 
@@ -2108,6 +2114,13 @@ interface ToolCallResult {
   isError?: boolean;
   _meta?: Record<string, unknown>;
   attachments?: ToolAttachment[];
+  /**
+   * The handler needs the athlete's answer before it writes (#417). Only
+   * the `tools/call` handler reads it: it answers with this
+   * `input_required` result in place of the rest, as it adds
+   * `attachments` to `content`.
+   */
+  inputRequired?: InputRequiredResult;
 }
 
 /**
@@ -2223,8 +2236,8 @@ export interface DispatchOptions {
     /** The client advertised the MCP Apps extension with the app MIME type. */
     rendersApps: boolean;
     /**
-     * The client advertised form-mode elicitation (#417). Only logged for
-     * now, to learn whether hosts support it.
+     * The client advertised form-mode elicitation (#417), so a write tool
+     * can ask the host to confirm a replace that drops text.
      */
     elicitation?: boolean;
     /** `clientInfo.name`, when the client sent one. */
@@ -2234,6 +2247,11 @@ export interface DispatchOptions {
   };
   /** The ids in the request's W3C `traceparent`, when it carried a valid one. */
   trace?: TraceIds;
+  /**
+   * A retried request's `inputResponses` and echoed `requestState`: the
+   * answer to an `input_required` result a write tool returned (#417).
+   */
+  input?: { responses?: Record<string, unknown>; requestState?: string };
   /**
    * The request came over the 2025-era path. That path skips the SDK's
    * `Mcp-Method`/`Mcp-Name` header check, so a proxy rule keyed on those
@@ -2276,10 +2294,13 @@ async function runToolCall(
   scope: CallScope,
   name: string,
   rawArgs: Record<string, unknown> | undefined,
-  { progress = NO_PROGRESS, client, trace, readOnly }: DispatchOptions,
+  { progress = NO_PROGRESS, client, trace, readOnly, input }: DispatchOptions,
 ): Promise<ToolCallResult> {
   const context: ToolCallContext = {
     clientRendersApps: client?.rendersApps ?? false,
+    clientElicitation: client?.elicitation ?? false,
+    inputResponses: input?.responses,
+    requestState: input?.requestState,
   };
   // The timer starts here, before token resolution, so a not-connected call is
   // recorded too — it is a real call that cost the caller a round trip, and it
@@ -2303,7 +2324,7 @@ async function runToolCall(
         http_status: failure?.http_status,
         upstream_requests: scope.upstreamRequests ?? 0,
         client_apps: context.clientRendersApps,
-        client_elicitation: client?.elicitation ?? false,
+        client_elicitation: context.clientElicitation,
         // recordToolCall bounds both before they reach the log.
         client_name: client?.name,
         client_version: client?.version,
@@ -2412,6 +2433,8 @@ async function runToolCall(
       await handler(args, token, progress, context),
       resolved,
     );
+    // Not an outcome yet: the client asks the athlete and calls again.
+    if (handled.inputRequired) return finish("input_required", handled);
     const result =
       ignored && !handled.isError
         ? {
@@ -2571,7 +2594,15 @@ export function createServer({
           TRACEPARENT_META_KEY
         ],
       ),
+      input: {
+        responses: ctx.mcpReq.inputResponses,
+        requestState: (() => {
+          const state = ctx.mcpReq.requestState();
+          return typeof state === "string" ? state : undefined;
+        })(),
+      },
     });
+    if (result.inputRequired) return result.inputRequired;
     // The era-aware projection (SEP-2106 §4.3 text auto-append; identity for
     // this server's always-text, object-structured results) lives in the SDK
     // codec — low-level tools/call handlers route through it themselves.

@@ -907,3 +907,123 @@ describe("update-activity via dispatchToolCall", () => {
     expect(structured.url).toBe("https://intervals.icu/activities/555");
   });
 });
+
+describe("updateActivityTool replace confirmation (#417)", () => {
+  const input = {
+    id: "555",
+    name: "Long Run",
+    description: "New text",
+    descriptionMode: "replace",
+  } as never;
+
+  function execute(context: Record<string, unknown>) {
+    return updateActivityTool.execute(input, "test-token", undefined, {
+      clientElicitation: true,
+      ...context,
+    });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("asks before dropping a description, quoting both texts and the other changes", async () => {
+    mockedGetActivity.mockResolvedValueOnce(
+      activity({ description: "Coach notes" }),
+    );
+
+    const result = await execute({});
+
+    expect(mockedPut).not.toHaveBeenCalled();
+    expect(result.content).toEqual([]);
+    const ask = result.inputRequired?.inputRequests?.confirm_write as {
+      params: { message: string };
+    };
+    expect(ask.params.message).toContain(
+      'Replace the description of activity 555 ("Morning Run")?',
+    );
+    expect(ask.params.message).toContain("Current description:\nCoach notes");
+    expect(ask.params.message).toContain("New description:\nNew text");
+    expect(ask.params.message).toContain('Also changes:\nName: "Long Run"');
+  });
+
+  it("writes after an accept for the same change", async () => {
+    mockedGetActivity.mockResolvedValueOnce(
+      activity({ description: "Coach notes" }),
+    );
+    const asked = await execute({});
+    const requestState = asked.inputRequired?.requestState;
+
+    mockedGetActivity.mockResolvedValueOnce(
+      activity({ description: "Coach notes" }),
+    );
+    mockedPut.mockResolvedValueOnce(activity());
+    mockedGetActivity.mockResolvedValueOnce(
+      activity({ name: "Long Run", description: "New text" }),
+    );
+    const result = await execute({
+      inputResponses: {
+        confirm_write: { action: "accept", content: { confirm: true } },
+      },
+      requestState,
+    });
+
+    expect(mockedPut).toHaveBeenCalledOnce();
+    expect(result.inputRequired).toBeUndefined();
+    expect(result.content[0]?.text).toContain("Updated activity 555");
+  });
+
+  it("asks again when the description changed between the rounds", async () => {
+    mockedGetActivity.mockResolvedValueOnce(
+      activity({ description: "Coach notes" }),
+    );
+    const asked = await execute({});
+
+    mockedGetActivity.mockResolvedValueOnce(
+      activity({ description: "Coach notes, edited" }),
+    );
+    const result = await execute({
+      inputResponses: {
+        confirm_write: { action: "accept", content: { confirm: true } },
+      },
+      requestState: asked.inputRequired?.requestState,
+    });
+
+    expect(mockedPut).not.toHaveBeenCalled();
+    expect(result.inputRequired?.resultType).toBe("input_required");
+  });
+
+  it("writes nothing on a decline and says so", async () => {
+    mockedGetActivity.mockResolvedValueOnce(
+      activity({ description: "Coach notes" }),
+    );
+
+    const result = await execute({
+      inputResponses: { confirm_write: { action: "decline" } },
+    });
+
+    expect(mockedPut).not.toHaveBeenCalled();
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0]?.text).toContain(
+      "Activity 555 was not updated: The athlete declined",
+    );
+    const structured = ActivityWriteOutputSchema.parse(
+      result.structuredContent,
+    );
+    expect(structured.changes).toEqual([]);
+    expect(structured.description).toBe("Coach notes");
+  });
+
+  it("does not ask when nothing is dropped", async () => {
+    mockedGetActivity.mockResolvedValueOnce(activity({ description: null }));
+    mockedPut.mockResolvedValueOnce(activity());
+    mockedGetActivity.mockResolvedValueOnce(
+      activity({ name: "Long Run", description: "New text" }),
+    );
+
+    const result = await execute({});
+
+    expect(result.inputRequired).toBeUndefined();
+    expect(mockedPut).toHaveBeenCalledOnce();
+  });
+});

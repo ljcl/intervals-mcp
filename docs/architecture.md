@@ -855,13 +855,12 @@ come from clients that do not advertise MCP Apps.
 
 `client_elicitation` is `clientSupportsFormElicitation(capabilities)`: the
 client advertised `elicitation` with form mode, or with no mode named, which
-the spec reads as form only (#417). It is logged only. A replace-mode
-`update-activity` or `update-wellness` could ask the host to confirm the
-before and after through `inputRequired.elicit()` in place of relying on the
-model to show it, and this field shows whether the hosts that call the
-server could answer. A 2025-era request has no envelope, so like
+the spec reads as form only (#417). The same boolean reaches the handlers
+as `ToolCallContext.clientElicitation`, which turns on the write
+confirmation below. A 2025-era request has no envelope, so like
 `client_apps` it logs `false` there; the write tools do not run on that path
-anyway.
+anyway. A call that returned `input_required` logs that outcome; it counts
+as a call and not as an error.
 
 The reverse also happens: a host can render the app for a client that did
 not advertise it. On 2026-10-10 (Sydney) the Claude iOS app showed its
@@ -1314,6 +1313,34 @@ value), `diffActivityWrite` (before/after echoes plus a warning when a
 fresh re-read does not match what was sent), `composeDescription`
 (replace/append), and `discardedDescription` (the existing text a write
 would drop, shared by that refusal and the reply).
+
+**Confirming a replace through the host (#417).** An explicit `replace`
+(`descriptionMode`, or `update-wellness`'s `commentsMode`) that would drop
+text asks the host to confirm it when the client advertised form-mode
+elicitation. `confirmWrite` (`tools/_confirm.ts`) decides the round, after
+every other check and just before the PUT, so the athlete is never asked
+about a write the server would then refuse. With no answer it returns an
+`inputRequired()` result (protocol revision 2026-07-28, multi-round-trip):
+one form-mode elicitation under `confirm_write`, whose message quotes the
+current and new text and every other field the same PUT changes, with one
+required boolean `confirm`. The handler returns it as
+`{ content: [], inputRequired }`; the dispatcher logs outcome
+`input_required` and skips the ignored-argument note, and only the
+`tools/call` handler answers with it, as it adds `attachments` to
+`content`. The client asks the athlete and calls again with the same
+arguments plus `inputResponses` and the echoed `requestState`, which
+`tools/call` hands on as `DispatchOptions.input`. The retry reads the
+record fresh and rebuilds the change; only an accept with `confirm: true`
+whose `requestState` equals the SHA-256 of that change (tool, id or date,
+the text dropped, the patch) lets the PUT go out. A decline, a cancel or an
+unticked box writes nothing and answers with `changes: []` and a warning,
+not an error. An accept for another change (the stored text moved between
+rounds, or the arguments changed) asks again. The fingerprint is not a
+security control, because the client that echoes it also answers the
+form; it binds the yes to the text the athlete saw. A client without the
+capability keeps the earlier behaviour: the model shows the change and
+the replace writes at once. The append path and the no-mode refusal never
+ask.
 
 **`update-wellness` and `update-gear` follow the same pattern.**
 `update-wellness` (`tools/updateWellness.ts`) reads the day fresh, refuses

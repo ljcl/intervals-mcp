@@ -351,3 +351,74 @@ describe("updateWellnessTool.execute", () => {
     expect(mockedPut).not.toHaveBeenCalled();
   });
 });
+
+describe("updateWellnessTool replace confirmation (#417)", () => {
+  const input = {
+    date: DATE,
+    soreness: 3,
+    comments: "Calf tight",
+    commentsMode: "replace",
+  } as never;
+
+  function execute(context: Record<string, unknown>) {
+    return updateWellnessTool.execute(input, "test-token", undefined, {
+      clientElicitation: true,
+      ...context,
+    });
+  }
+
+  it("asks before dropping comments, quoting both texts and the scores", async () => {
+    mockedRead.mockResolvedValueOnce(day({ comments: "Slept badly" }));
+
+    const result = await execute({});
+
+    expect(mockedPut).not.toHaveBeenCalled();
+    const ask = result.inputRequired?.inputRequests?.confirm_write as {
+      params: { message: string };
+    };
+    expect(ask.params.message).toContain(
+      `Replace the wellness comments for ${DATE}?`,
+    );
+    expect(ask.params.message).toContain("Current comments:\nSlept badly");
+    expect(ask.params.message).toContain("New comments:\nCalf tight");
+    expect(ask.params.message).toContain("Also changes:\nsoreness: 3 (High)");
+  });
+
+  it("writes after an accept for the same change", async () => {
+    mockedRead.mockResolvedValueOnce(day({ comments: "Slept badly" }));
+    const asked = await execute({});
+
+    mockedRead.mockResolvedValueOnce(day({ comments: "Slept badly" }));
+    mockedPut.mockResolvedValueOnce(undefined as never);
+    mockedRead.mockResolvedValueOnce(
+      day({ comments: "Calf tight", soreness: 3 }),
+    );
+    const result = await execute({
+      inputResponses: {
+        confirm_write: { action: "accept", content: { confirm: true } },
+      },
+      requestState: asked.inputRequired?.requestState,
+    });
+
+    expect(mockedPut).toHaveBeenCalledOnce();
+    expect(result.content[0]?.text).toContain(`Updated wellness for ${DATE}`);
+  });
+
+  it("writes nothing on a decline and says so", async () => {
+    mockedRead.mockResolvedValueOnce(day({ comments: "Slept badly" }));
+
+    const result = await execute({
+      inputResponses: { confirm_write: { action: "cancel" } },
+    });
+
+    expect(mockedPut).not.toHaveBeenCalled();
+    expect(result.content[0]?.text).toContain(
+      `Wellness for ${DATE} was not updated`,
+    );
+    const structured = WellnessWriteOutputSchema.parse(
+      result.structuredContent,
+    );
+    expect(structured.changes).toEqual([]);
+    expect(structured.warnings[0]).toContain("declined");
+  });
+});

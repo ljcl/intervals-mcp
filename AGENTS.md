@@ -203,7 +203,10 @@ breaking them has shipped bugs — do not work around them locally.
   `update-wellness` and `update-gear` follow the same pattern (pointing at
   `get-wellness`/`list-gear`); all three decide "never sent" with
   `isDefiniteWriteRejection` (`tools/_errors.ts`). `update-gear` makes one
-  change per call, so a call is one write.
+  change per call, so a call is one write. A replace that drops text, from
+  a client with form-mode elicitation, first returns `input_required`
+  through `confirmWrite` (`tools/_confirm.ts`) and writes only on an accept
+  bound to the same change by `requestState`; a decline sends nothing.
 - **Annotations come from the three `_annotations.ts` constants**, never inline
   objects — they decide whether hosts grant reads durably or re-prompt forever.
   `READ_ONLY` states `destructiveHint: false` explicitly (its documented

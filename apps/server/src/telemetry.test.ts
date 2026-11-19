@@ -386,6 +386,20 @@ describe("toolCallStats", () => {
     });
   });
 
+  it("counts an input_required round as a call, not as an error (#417)", () => {
+    recordToolCall({
+      tool: "update-activity",
+      duration_ms: 5,
+      outcome: "input_required",
+    });
+
+    expect(toolCallStats()["update-activity"]).toMatchObject({
+      calls: 1,
+      errors: 0,
+      cancelled: 0,
+    });
+  });
+
   it("leaves cancelled at 0 for an error", () => {
     recordToolCall({ tool: "get-activity", duration_ms: 1, outcome: "error" });
 

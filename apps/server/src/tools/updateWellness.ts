@@ -23,6 +23,11 @@ import {
 } from "../utils/wellnessWrite";
 import { WRITE_DESTRUCTIVE } from "./_annotations";
 import {
+  confirmWrite,
+  quoteForConfirmation,
+  type WriteConfirmContext,
+} from "./_confirm";
+import {
   isDefiniteWriteRejection,
   noteToolFailure,
   toolErrorText,
@@ -44,6 +49,9 @@ Notes:
 - With no date it writes today. A date after today is refused.
 - With no commentsMode, comments that would overwrite the day's comments
   fail and write nothing.
+- With commentsMode "replace", a host that supports elicitation asks the
+  athlete to confirm the old and new comments before any are dropped. A
+  decline writes nothing; do not resend unless the athlete asks.
 - It reads the day fresh, sends only the fields that differ in one PUT
   (never retried), then re-reads and echoes before and after values. Device
   fields (HRV, resting HR, sleep time, weight) are never sent.
@@ -170,6 +178,28 @@ function toOutput(
   };
 }
 
+/** The warning a declined confirmation leaves (#417). */
+const DECLINED_WARNING =
+  "The athlete declined the change when the host asked to confirm it, so nothing was sent.";
+
+/** The confirmation's text: the comments lost, their replacement, and the
+ * scores the same write changes. */
+function replaceMessage(
+  date: string,
+  current: string | null | undefined,
+  next: string | undefined,
+  scoreLines: string[],
+): string {
+  return [
+    `Replace the wellness comments for ${date}? The current comments will be removed.`,
+    `Current comments:\n${quoteForConfirmation(current)}`,
+    `New comments:\n${quoteForConfirmation(next)}`,
+    ...(scoreLines.length > 0
+      ? [`Also changes:\n${scoreLines.join("\n")}`]
+      : []),
+  ].join("\n\n");
+}
+
 export const updateWellnessTool = {
   name,
   title: "Update wellness",
@@ -177,7 +207,12 @@ export const updateWellnessTool = {
   inputSchema,
   annotations: WRITE_DESTRUCTIVE,
   outputSchema: WellnessWriteOutputSchema,
-  execute: async (input: UpdateWellnessInput, apiKey: string) => {
+  execute: async (
+    input: UpdateWellnessInput,
+    apiKey: string,
+    _progress?: unknown,
+    context?: WriteConfirmContext,
+  ) => {
     const { date: rawDate, comments, commentsMode } = input;
     const requestedScores = WELLNESS_SCORE_NAMES.filter(
       (score) => input[score] !== undefined,
@@ -260,6 +295,43 @@ export const updateWellnessTool = {
           ],
           structuredContent: structured,
         };
+      }
+
+      // An explicit replace that drops comments: a host that can show a
+      // form confirms the before and after with the athlete first (#417).
+      const replaced =
+        commentsMode === "replace" && patch.comments !== undefined
+          ? discardedDescription(beforeFields.comments, patch.comments)
+          : null;
+      if (replaced !== null) {
+        const confirmation = confirmWrite(context, {
+          message: replaceMessage(date, before.comments, patch.comments, [
+            ...requestedScores
+              .filter((score) => WELLNESS_SCORES[score].wire in patch)
+              .map(
+                (score) =>
+                  `${score}: ${formatScoreValue(score, input[score] ?? null)}`,
+              ),
+          ]),
+          label: "Replace the comments",
+          change: { tool: name, date, before: replaced, patch },
+        });
+        if (confirmation.status === "ask") {
+          return { content: [], inputRequired: confirmation.result };
+        }
+        if (confirmation.status === "declined") {
+          const structured = toOutput(date, before, [], [DECLINED_WARNING]);
+          warnOnSchemaDrift(name, WellnessWriteOutputSchema, structured);
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Wellness for ${date} was not updated: ${DECLINED_WARNING} Do not send it again unless the athlete asks.`,
+              },
+            ],
+            structuredContent: structured,
+          };
+        }
       }
 
       try {
