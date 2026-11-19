@@ -441,6 +441,31 @@ intervals.icu API has no further detail for it, so the response flags it with
 is unverified against a real Strava-sourced activity; see docs/api-notes.md's
 Strava stub spike note.
 
+**Indoor activities (#517).** `get-activity` and `get-running-summary` have
+`indoor: true` for an activity with intervals.icu's `trainer` flag (a
+treadmill run, a trainer ride), and the text adds one line that says so. An
+indoor activity has no elevation source and no grade-adjusted pace
+(`total_elevation_gain` and `gap` are null, and it has no altitude or
+`ga_velocity` stream), so `get-split-analysis` gives clock-only splits and
+`get-hill-analysis` refuses and says that the run is indoors. Its `weather`
+is null in every tool: the humidity a watch app writes in the file and
+intervals.icu's weather service give the conditions outdoors
+(`buildActivityWeather`). `get-interval-analysis` calls a short stop a
+"short stop", not a traffic light; the `kind` stays `traffic_light`, which
+is a published value. The route tools make no stream read for an indoor
+run. `isIndoor` (`utils/running.ts`) is the one test.
+
+**Ignore marks (#510).** The athlete can mark an activity's heart rate,
+pace or time, or a part of it, as data to ignore in intervals.icu. A live
+check showed that intervals.icu keeps the data in the activity's own
+numbers, zones, load, intervals and streams; only the activity's HR curve
+and pace curve leave an ignored part out (docs/api-notes.md). So
+`get-split-analysis`, `get-hill-analysis`, `get-aerobic-analysis`,
+`get-interval-analysis` and `compare-activities` keep the data too, and add
+a line to `warnings` that says what the athlete marked (`ignoreWarnings` in
+`activityIgnore.ts`). `get-best-efforts` leaves an ignored pace part out,
+as the pace curve does.
+
 `get-activity` takes the `id` from `list-activities` and returns core
 metrics, training load, HR zone time-in-zone, running dynamics (Run,
 TrailRun, VirtualRun, Walk, Hike, with device support), the WORK/RECOVERY

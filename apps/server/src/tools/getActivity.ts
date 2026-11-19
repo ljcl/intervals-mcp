@@ -13,6 +13,7 @@ import { hrZoneRangeText, resolveHrZones } from "../activityZones";
 import {
   formatDuration,
   formatFeel,
+  INDOOR_NOTE,
   round,
   STRAVA_STUB_NOTE,
 } from "../formatters";
@@ -31,6 +32,7 @@ import {
   activityCadenceSpm,
   buildRunningDynamics,
   gapPace,
+  isIndoor,
   isPaceActivity,
   isRunning,
   paceFromDistanceTime,
@@ -142,6 +144,8 @@ export interface ActivityDetail {
   start_local: string;
   source: string | null;
   is_strava_stub: boolean;
+  /** intervals.icu's `trainer` flag: a treadmill run or a trainer ride. */
+  indoor: boolean;
   device: string | null;
   distance_km: number | null;
   moving_time_s: number;
@@ -365,6 +369,7 @@ export function mapActivityDetail(
     start_local: activity.start_date_local,
     source: activity.source ?? null,
     is_strava_stub: activity.source === "STRAVA",
+    indoor: isIndoor(activity),
     device: activity.device_name ?? null,
     distance_km: distanceKm,
     moving_time_s: movingTimeS,
@@ -582,6 +587,7 @@ export function formatActivityDetailText(
 ): string {
   const lines = [`${d.date} ${d.type} ${d.name} [${d.id}]`];
   if (d.is_strava_stub) lines.push(STRAVA_STUB_NOTE);
+  if (d.indoor) lines.push(INDOOR_NOTE);
 
   lines.push(formatMetricsLine(d));
 

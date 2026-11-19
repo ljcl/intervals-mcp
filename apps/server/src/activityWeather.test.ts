@@ -20,6 +20,19 @@ describe("dewPointC", () => {
 });
 
 describe("buildActivityWeather", () => {
+  it("has no weather for an indoor activity, whatever the record and the file hold (#517)", () => {
+    expect(
+      buildActivityWeather(
+        { trainer: true, average_weather_temp: 18.4, average_temp: 21 },
+        {
+          temperatureC: 19,
+          humidityPct: 84,
+          source: "session developer field",
+        },
+      ),
+    ).toBeNull();
+  });
+
   const fit = {
     humidityPct: 87,
     temperatureC: 18,

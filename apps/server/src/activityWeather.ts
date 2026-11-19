@@ -13,6 +13,7 @@
 import { type FitWeather, readFitWeather } from "./fitWeather";
 import { formatSigned, round } from "./formatters";
 import { getActivityFile, type IntervalsActivity } from "./intervalsClient";
+import { isIndoor } from "./utils/running";
 
 export interface ActivityWeather {
   /** °C. */
@@ -50,15 +51,18 @@ export function dewPointC(temperatureC: number, humidityPct: number): number {
  * that pair gives the temperature and the dew point: a dew point from one
  * source's temperature and another's humidity would mean nothing. Otherwise
  * intervals.icu's weather service comes before the file's average. Null when
- * there is no weather at all.
+ * there is no weather at all, and for an indoor activity: the humidity a
+ * watch app writes in its file and intervals.icu's weather service give the
+ * conditions outdoors, not the conditions of the run (#517).
  */
 export function buildActivityWeather(
   activity: Pick<
     IntervalsActivity,
-    "average_weather_temp" | "average_feels_like" | "average_temp"
+    "average_weather_temp" | "average_feels_like" | "average_temp" | "trainer"
   >,
   fit: FitWeather | null,
 ): ActivityWeather | null {
+  if (isIndoor(activity)) return null;
   const fileTemperature = fit?.temperatureC ?? activity.average_temp ?? null;
   const humidity = fit?.humidityPct ?? null;
   let temperature: number | null;
@@ -109,7 +113,8 @@ export async function loadActivityWeather(
   activity: IntervalsActivity,
 ): Promise<ActivityWeather | null> {
   let fit: FitWeather | null = null;
-  if (hasFitFile(activity)) {
+  // An indoor activity has no weather to report, so its file is not read.
+  if (!isIndoor(activity) && hasFitFile(activity)) {
     try {
       fit = readFitWeather(await getActivityFile(apiKey, id));
     } catch (error) {

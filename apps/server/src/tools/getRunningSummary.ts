@@ -13,6 +13,7 @@ import {
 import {
   formatDuration,
   formatSigned,
+  INDOOR_NOTE,
   round,
   STRAVA_STUB_NOTE,
 } from "../formatters";
@@ -410,6 +411,7 @@ export function formatRunningSummaryText(
 ): string {
   const lines = [`${d.date} ${d.type} ${d.name} [${d.id}]`];
   if (d.is_strava_stub) lines.push(STRAVA_STUB_NOTE);
+  if (d.indoor) lines.push(INDOOR_NOTE);
 
   lines.push(formatMetricsLine(d));
 

@@ -1643,6 +1643,11 @@ export const ActivityDetailOutputSchema = z.object({
     .describe(
       "True when source is STRAVA: details are unavailable through the API",
     ),
+  indoor: z
+    .boolean()
+    .describe(
+      "True for an indoor activity (intervals.icu's trainer flag: a treadmill run, a trainer ride). It has no GPS, no elevation, no grade-adjusted pace and no weather",
+    ),
   device: z.string().nullable(),
   distance_km: z
     .number()

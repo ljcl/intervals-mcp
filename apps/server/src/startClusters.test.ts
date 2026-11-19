@@ -182,6 +182,21 @@ describe("loadRunStarts", () => {
     ]);
   });
 
+  it("makes no stream read for an indoor run (#517)", async () => {
+    vi.mocked(listActivities).mockResolvedValue([
+      activities[0]!,
+      { ...activities[1]!, trainer: true },
+    ] as IntervalsActivity[]);
+
+    const { runs, skipped } = await loadRunStarts("k", "2026-11-03");
+
+    expect(runs.map((r) => r.id)).toEqual(["i3"]);
+    expect(skipped).toBe(0);
+    expect(
+      vi.mocked(loadIntervalsStreams).mock.calls.map((call) => call[1]),
+    ).toEqual(["i3"]);
+  });
+
   it("carries a missing climb as null, not 0", async () => {
     vi.mocked(loadIntervalsStreams).mockResolvedValue(streams);
     const { runs } = await loadRunStarts("k", "2026-11-03");

@@ -150,6 +150,18 @@ const IntervalsActivitySchema = z
      * A plain string, so a model intervals.icu adds later does not fail the
      * read; `resolveGapModel` follows only the one it knows. */
     gap_model: z.string().nullable().optional().catch(null),
+    /** True for an indoor activity (a treadmill run, a trainer ride): no
+     * GPS, no altitude and no `gap` (docs/api-notes.md). Null on most
+     * outdoor activities. Read through `isIndoor` (`utils/running.ts`). */
+    trainer: z.boolean().nullable().optional().catch(null),
+    /** The athlete's "ignore" marks for the whole activity. intervals.icu
+     * keeps the data in the activity's own numbers and streams
+     * (docs/api-notes.md); the stream tools warn through `ignoreWarnings`
+     * (`activityIgnore.ts`). `ignore_parts` passes through untyped. */
+    icu_ignore_hr: z.boolean().nullable().optional().catch(null),
+    icu_ignore_time: z.boolean().nullable().optional().catch(null),
+    ignore_pace: z.boolean().nullable().optional().catch(null),
+    ignore_velocity: z.boolean().nullable().optional().catch(null),
     /** Detected work intervals, e.g. ["5x 4m51s 164bpm", "1x 25s 164bpm"];
      * null when none. `.catch(null)`, like `icu_achievements`: a malformed
      * value must not fail every activity read. */
