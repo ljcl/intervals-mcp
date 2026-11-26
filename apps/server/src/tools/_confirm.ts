@@ -28,6 +28,13 @@ import {
 /** The `inputRequests` key of the confirmation. */
 export const CONFIRM_INPUT_KEY = "confirm_write";
 
+/**
+ * The warning every write tool returns when the athlete declined (or
+ * dismissed) the host's confirmation. Nothing was sent.
+ */
+export const DECLINED_WARNING =
+  "The athlete declined the change when the host asked to confirm it, so nothing was sent.";
+
 /** Longest text the confirmation quotes for each side of a change. */
 const MAX_QUOTED_CHARS = 1500;
 

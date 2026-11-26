@@ -287,7 +287,12 @@ pass them, each with the km range to save. `manage-corridors` `add`
 refuses a place no run comes close to, naming how near the closest comes,
 and a pair of places given in the wrong order; a saved entry from a run
 carries `from_run`. `recut` replaces a corridor's line from a new run range
-and keeps its id, name and one-way flag. The rules live in `corridors.ts`.
+and keeps its id, name and one-way flag. `delete` reads the corridor first,
+so a missing id reports not-found; then a client with form-mode elicitation
+is asked to confirm, with the corridor's name, id and length, and a decline
+deletes nothing (`deleted: false` and a warning). The accept is bound to the
+corridor's version count, so a re-cut between the two rounds asks again
+(#530). The rules live in `corridors.ts`.
 
 ### Stored routes
 
@@ -1602,7 +1607,11 @@ distance such as `700 km`), or `resetReminderId`. It reads the gear list
 fresh (`skipCache`), so an unknown `gearId` fails with the available ids and
 an unknown reminder id with the item's reminders; a reminder with the same
 name and distance as an existing one is refused, so a repeated call adds no
-duplicate; retiring retired gear (or the reverse) reports "no change". Then
+duplicate; retiring retired gear (or the reverse) reports "no change". A retirement,
+from a client with form-mode elicitation, first asks the host to confirm it,
+naming the item, its distance and activity count and the date; a decline
+sends nothing and answers with `changes: []` and a warning (#530). Putting
+gear back in use and the reminder changes never ask. Then
 it sends one unretried write (`PUT /gear/{gearId}` with `retired`,
 `POST /gear/{gearId}/reminder`, or `PUT .../reminder/{id}?reset=true`), re-reads
 the list, and echoes `changes` with `action` and the re-read `gear` in

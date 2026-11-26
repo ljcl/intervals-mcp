@@ -244,3 +244,90 @@ describe("manage-corridors recut", () => {
     expect((await listCorridors())[0]!.versions).toHaveLength(1);
   });
 });
+
+describe("manage-corridors delete confirmation (#530)", () => {
+  const idOf = (r: unknown) =>
+    (r as { structuredContent: { corridor: { route_id: string } } })
+      .structuredContent.corridor.route_id;
+  type Result = Awaited<ReturnType<typeof manageCorridorsTool.execute>> & {
+    inputRequired?: {
+      requestState?: string;
+      inputRequests?: Record<string, { params: { message: string } }>;
+    };
+  };
+  const remove = (route_id: string, context = {}) =>
+    manageCorridorsTool.execute(
+      { action: "delete", route_id },
+      "key",
+      undefined,
+      { clientElicitation: true, ...context },
+    ) as Promise<Result>;
+  const accept = (requestState: string | undefined) => ({
+    inputResponses: {
+      confirm_write: { action: "accept", content: { confirm: true } },
+    },
+    requestState,
+  });
+
+  it("asks before deleting, naming the corridor and its length", async () => {
+    const id = idOf(await add("Bay Run"));
+
+    const result = await remove(id);
+
+    const message =
+      result.inputRequired?.inputRequests?.confirm_write?.params.message;
+    expect(message).toContain(`Delete the saved corridor Bay Run (${id}):`);
+    expect(message).toMatch(/\d+\.\d km/);
+    expect(message).toContain("This cannot be undone.");
+    expect(await listCorridors()).toHaveLength(1);
+  });
+
+  it("deletes after an accept for the same corridor", async () => {
+    const id = idOf(await add("Bay Run"));
+    const asked = await remove(id);
+
+    const result = await remove(id, accept(asked.inputRequired?.requestState));
+
+    expect(text(result as never)).toBe(`Deleted corridor ${id}.`);
+    expect(await listCorridors()).toHaveLength(0);
+  });
+
+  it("asks again when the corridor was re-cut after it was shown", async () => {
+    const id = idOf(await add("Bay Run"));
+    const asked = await remove(id);
+    await run({
+      action: "recut",
+      route_id: id,
+      activity: { id: SUNDAY_ID, from_km: 2, to_km: 4 },
+    });
+
+    const result = await remove(id, accept(asked.inputRequired?.requestState));
+
+    expect(result.inputRequired?.inputRequests?.confirm_write).toBeDefined();
+    expect(await listCorridors()).toHaveLength(1);
+  });
+
+  it("deletes nothing on a decline and says so", async () => {
+    const id = idOf(await add("Bay Run"));
+
+    const result = await remove(id, {
+      inputResponses: { confirm_write: { action: "decline" } },
+    });
+
+    expect(text(result as never)).toContain(`Corridor ${id} was not deleted`);
+    const structured = CorridorResultOutputSchema.parse(
+      (result as { structuredContent: unknown }).structuredContent,
+    );
+    expect(structured).toMatchObject({ deleted: false, created: false });
+    expect(structured.warnings[0]).toContain("declined");
+    expect(await listCorridors()).toHaveLength(1);
+  });
+
+  it("reports a missing corridor before it asks", async () => {
+    const result = await remove("cabcdefghij");
+
+    expect(result.inputRequired).toBeUndefined();
+    expect(isError(result)).toBe(true);
+    expect(text(result as never)).toMatch(/^❌.*No saved corridor/);
+  });
+});

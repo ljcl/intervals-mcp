@@ -16,6 +16,11 @@ import {
 import { todayLocal } from "../utils/localDate";
 import { WRITE_DESTRUCTIVE } from "./_annotations";
 import {
+  confirmWrite,
+  DECLINED_WARNING,
+  type WriteConfirmContext,
+} from "./_confirm";
+import {
   isDefiniteWriteRejection,
   noteToolFailure,
   toolErrorText,
@@ -34,7 +39,8 @@ put gear on an activity, use update-activity.
 Notes:
 - Give exactly one of retired, addReminderKm or resetReminderId: one call
   makes one change.
-- retired: true retires the item today, in the configured time zone.
+- retired: true retires the item today, in the configured time zone. A
+  client that can show a form asks the athlete to confirm it first.
 - The reply shows how much usage intervals.icu already counts toward a new
   reminder. Resetting a reminder restarts its count from now.
 - A reminder with the same name and distance as one the item already has is
@@ -129,6 +135,19 @@ function gearLabel(gear: IntervalsGear): string {
   return `"${gear.name ?? "Gear"}" [${gear.id}]`;
 }
 
+/** The confirmation's text for a retirement: which item, its distance, the date. */
+function retireMessage(gear: IntervalsGear, date: string): string {
+  const entry = mapGear(gear);
+  return [
+    `Retire ${entry.type.toLowerCase()} ${gearLabel(gear)} in intervals.icu?`,
+    "",
+    `Distance: ${entry.distance_km.toFixed(1)} km over ${entry.activities} ${entry.activities === 1 ? "activity" : "activities"}.`,
+    `Retired on: ${date}`,
+    "",
+    "It can be put back in use later.",
+  ].join("\n");
+}
+
 /** True when `instant` (an ISO timestamp) falls on today in the configured
  * time zone. */
 function isToday(instant: string | null | undefined): boolean {
@@ -172,7 +191,12 @@ export const updateGearTool = {
   inputSchema,
   annotations: WRITE_DESTRUCTIVE,
   outputSchema: GearWriteOutputSchema,
-  execute: async (input: UpdateGearInput, apiKey: string) => {
+  execute: async (
+    input: UpdateGearInput,
+    apiKey: string,
+    _progress?: unknown,
+    context?: WriteConfirmContext,
+  ) => {
     const { gearId, retired, addReminderKm, resetReminderId } = input;
     const action: GearAction =
       retired !== undefined
@@ -229,6 +253,36 @@ export const updateGearTool = {
           };
         }
         const value = wantRetired ? todayLocal(getTimeZone()) : "";
+        // Retiring takes the item out of use: a host that can show a form
+        // confirms which item with the athlete first (#530).
+        if (wantRetired) {
+          const confirmation = confirmWrite(context, {
+            message: retireMessage(before, value),
+            label: "Retire this gear",
+            change: { tool: name, gearId, retired: value },
+          });
+          if (confirmation.status === "ask") {
+            return { content: [], inputRequired: confirmation.result };
+          }
+          if (confirmation.status === "declined") {
+            const structured = {
+              action,
+              gear: mapGear(before),
+              changes: [],
+              warnings: [DECLINED_WARNING],
+            };
+            warnOnSchemaDrift(name, GearWriteOutputSchema, structured);
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: `Gear ${gearLabel(before)} was not retired: ${DECLINED_WARNING} Do not send it again unless the athlete asks.`,
+                },
+              ],
+              structuredContent: structured,
+            };
+          }
+        }
         send = () => putGear(apiKey, gearId, { retired: value });
       } else if (action === "add_reminder") {
         const km = addReminderKm as number;

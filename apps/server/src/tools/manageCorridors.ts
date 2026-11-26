@@ -11,9 +11,15 @@ import {
   deleteCorridor,
   isRouteId,
   listCorridors,
+  readRoute,
   updateCorridor,
 } from "../routeStore";
 import { WRITE_DESTRUCTIVE } from "./_annotations";
+import {
+  confirmWrite,
+  DECLINED_WARNING,
+  type WriteConfirmContext,
+} from "./_confirm";
 import { corridorEntry, corridorLine } from "./_corridors";
 import { prefixedErrorText } from "./_errors";
 import { intervalsActivityIdInput } from "./_ids";
@@ -45,7 +51,8 @@ Actions:
 - recut: needs route_id and one source like add. Replaces the line as a
   new version; the id, name and one-way stay.
 - delete: needs route_id. Deletes the saved corridor for good; the runs it
-  came from stay.
+  came from stay. A client that can show a form asks the athlete to confirm
+  it first.
 
 Notes:
 - route_id is a corridor id (starts with c); other stored routes are
@@ -140,6 +147,7 @@ export const manageCorridorsTool = {
     args: ManageCorridorsInput,
     apiKey: string,
     progress: ReportProgress = NO_PROGRESS,
+    context?: WriteConfirmContext,
   ) => {
     const problem = missing(args);
     if (problem) return refuse(problem);
@@ -169,6 +177,48 @@ export const manageCorridorsTool = {
         if (!isRouteId(id) || !id.startsWith("c"))
           throw new CorridorNotFoundError(id);
         if (args.action === "delete") {
+          const stored = await readRoute(id);
+          if (stored?.kind !== "corridor") throw new CorridorNotFoundError(id);
+          // A delete cannot be undone: a host that can show a form confirms
+          // which corridor with the athlete first (#530). The version count
+          // binds the accept to the line that was shown.
+          const shown = corridorEntry(stored, null, null);
+          const confirmation = confirmWrite(context, {
+            message: [
+              `Delete the saved corridor ${corridorLine(shown)}?`,
+              "",
+              "This cannot be undone. The runs it came from stay.",
+            ].join("\n"),
+            label: "Delete this corridor",
+            change: {
+              tool: name,
+              action: "delete",
+              route_id: id,
+              versions: stored.versions.length,
+            },
+          });
+          if (confirmation.status === "ask") {
+            return { content: [], inputRequired: confirmation.result };
+          }
+          if (confirmation.status === "declined") {
+            const structured = {
+              action: args.action,
+              corridor: shown,
+              created: false,
+              deleted: false,
+              warnings: [DECLINED_WARNING],
+            };
+            warnOnSchemaDrift(name, CorridorResultOutputSchema, structured);
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: `Corridor ${id} was not deleted: ${DECLINED_WARNING} Do not send it again unless the athlete asks.`,
+                },
+              ],
+              structuredContent: structured,
+            };
+          }
           await deleteCorridor(id);
           text = `Deleted corridor ${id}.`;
         } else if (args.action === "recut") {

@@ -34,9 +34,11 @@ route store, not in intervals.icu.
 
 ## When the host asks the athlete to confirm
 
-On a client with form-mode elicitation, a `replace` that would drop existing
-text first opens a confirmation in the host, which shows the current and the
-new text. Nothing is sent until the athlete accepts. If the athlete declines,
+On a client with form-mode elicitation, some writes first open a
+confirmation in the host: a `replace` that would drop existing text (it
+shows the current and the new text), and retiring gear with `update-gear`
+(it names the item and its distance). Nothing is sent until the athlete
+accepts. If the athlete declines,
 nothing changed: say so, and do not send the call again unless they ask.
 
 ## When a write may already have applied
