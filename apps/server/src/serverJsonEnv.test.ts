@@ -33,6 +33,9 @@ const EXEMPT: Record<string, string> = {
   // meaningless outside a test run.
   UPDATE_TOOL_SURFACE_LOCK: "dev-only lock regeneration flag",
   UPDATE_OUTPUT_SCHEMA_LOCK: "dev-only lock regeneration flag",
+  // Regenerates docs/Intervals_MCP_Server.md from the skills inside
+  // capabilityReference.test.ts.
+  UPDATE_CAPABILITY_REFERENCE: "dev-only doc regeneration flag",
 };
 
 function stripComments(source: string): string {

@@ -1820,7 +1820,24 @@ links to relatively.
 
 | Skill | Load it when | Files |
 | ----- | ------------ | ----- |
+| `reading-intervals-data` | The basics behind any answer: activity ids, input names, units, which view tool opens a chart and how to change an open one, gaps in charts, pacing and cache delays | `SKILL.md`, `references/units.md`, `references/caching.md` |
+| `run-analysis` | One activity or two compared: which tool first, which analysis fits the session, moving time, zone bounds, other sports, weather, similar sessions | `SKILL.md` |
+| `fitness-and-racing` | Fitness, fatigue and form, training load, totals, best efforts, race predictions, tapers, zones and thresholds, recovery; the weekly review, race readiness and injury check; whole-body versus run-only | `SKILL.md` |
+| `route-planning` | Where to run, and building, changing, saving, mapping or exporting a route | `SKILL.md` |
 | `activity-writes` | Before `update-activity`, `update-wellness` or `update-gear`: confirming a change, keeping existing text, retrying after an ambiguous write | `SKILL.md`, `references/wellness-scores.md` |
+
+The skills are the one home of the long-form guide (#528).
+docs/Intervals_MCP_Server.md, for clients without skills, is generated from
+them: `capabilityReference.test.ts` renders it and fails when the committed
+file differs. After a skill changes, run
+`UPDATE_CAPABILITY_REFERENCE=1 bunx vitest run src/capabilityReference.test.ts`
+in `apps/server` and commit the file. A new skill also needs a place in that
+test's `SKILL_ORDER`.
+
+The prompts keep their own step lists, because each one builds its steps from
+its arguments (dates, distance, number of weeks). The skills hold the general
+rules for the same workflows and name each prompt; `skills.test.ts` fails
+when a prompt is named in no skill.
 
 - Only a 2026-07-28 client sees them: `server/discover` declares the
   extension, `skills/list` and `skills/get` answer, and `resources/read`

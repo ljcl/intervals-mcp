@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { listPrompts } from "./prompts";
 import {
   buildSkillCatalog,
   loadSkillCatalog,
@@ -183,6 +184,19 @@ describe("the shipped catalog", () => {
 
     expect(loadSkillCatalog()).toBe(first);
     expect((await first).skills.length).toBeGreaterThan(0);
+  });
+
+  it("names every prompt, so a prompt's workflow has its rules in a skill", async () => {
+    const texts = [...(await loadSkillCatalog()).files.values()].map(
+      (file) => file.text,
+    );
+
+    for (const { name } of listPrompts()) {
+      expect(
+        texts.some((text) => text.includes(`\`${name}\``)),
+        `no skill names the ${name} prompt`,
+      ).toBe(true);
+    }
   });
 
   it("serves a skill file to a 2026-07-28 request only", async () => {
