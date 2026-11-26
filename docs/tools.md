@@ -1090,9 +1090,10 @@ standing start while the watch finds GPS) is not a rest: it is left out of
 `rests`, and the reasoning names it. When the activity
 carries clean structured intervals.icu laps (`icu_intervals`, WORK/RECOVERY)
 those are preferred over stream reconstruction; they also catch
-jog-recovery sessions, which never stop moving. Sliver laps (under 50 m or
-15 s, such as the 0 m lap an Apple Watch often records at the end) are
-ignored. A lap is fast at 1.08 times the median lap speed or more;
+jog-recovery sessions, which never stop moving. Sliver laps (under 50 m, or
+under 15 s with no intervals.icu label, such as the 0 m lap an Apple Watch
+often records at the end) are ignored. A WORK lap from the structured
+workout is never a sliver unless it has no speed, so a 10 s stride is a rep. A lap is fast at 1.08 times the median lap speed or more;
 consecutive fast laps merge into one rep, and it takes at least 2 reps with
 slower laps between them. The laps fall back to streams when the reps'
 speeds are not tightly clustered (rain, sweat). On an auto-lap set (most
