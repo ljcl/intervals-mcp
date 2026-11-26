@@ -1267,6 +1267,43 @@ docker-compose.yml).
   inline as text by claude.ai, so it is not used. `export-route` still
   simplifies its track until the file fits 32,000 characters.
 
+## Skills over MCP
+
+`skills.ts` serves the `io.modelcontextprotocol/skills` extension (SEP-2640,
+#527) from the folders under `apps/server/skills/`. The catalog
+([tools.md](tools.md#skills)) lists them.
+
+- **Wiring.** The SDK's `SkillsExtension.attach()` needs an `McpServer`
+  (it registers a resource template and reads `mcp.server`). `createServer`
+  builds the low-level `Server` and owns `resources/read` for the app
+  resources and route exports, so `skills.ts` builds each entry with the
+  SDK's `skillEntry` (digests, sizes, frontmatter, the folder-name rule) and
+  `registerSkills` declares the extension and sets `skills/list` and
+  `skills/get` with the 3-argument custom-method `setRequestHandler`.
+  `readSkillFile` answers `skill://` URIs inside the existing
+  `resources/read` handler.
+- **Era.** `registerSkills` runs only when `era` is `modern`, and
+  `readSkillFile` returns nothing for a legacy request: the extension needs
+  the 2026-07-28 revision, and a 2025-era `skills/list` gets `-32601`.
+- **Loading.** `loadSkillCatalog` reads the folder once and holds every file
+  in memory (the files are small and fixed per image). `index.ts` awaits it
+  before `Bun.serve`, so a broken skill stops startup, and `createServer`,
+  which runs per request, never touches the disk. `SKILLS_DIR` is
+  `../skills/` from `import.meta.url`, which is `apps/server/skills` from
+  `src/skills.ts` and from the bundled `dist/index.js` alike; the runner
+  copies that folder (`dockerRuntime.test.ts`), and `.dockerignore` keeps
+  its Markdown in the build context.
+- **Paging and cache.** Every skill fits on one page, so no cursor is ever
+  issued and any cursor sent gets `-32602`, as an unknown skill URI does.
+  `skills/list` and `skills/get` carry the static surfaces' `ttlMs` and
+  `cacheScope: "private"`; `resources/read` already has them. The spec has no
+  list-changed notification for skills: a host sees a change on its next
+  `skills/list`.
+- **Limits.** Claude Code's (100 skills, 100 KB per file, 400 KB per skill)
+  are tighter than the spec's (512 files, 16 MiB per skill), so the loader
+  enforces Claude Code's. It accepts Markdown only, refuses symbolic links,
+  and gives every file `text/markdown`.
+
 ## Input validation
 
 **Another tool's spelling of a shared input is accepted, never advertised.**

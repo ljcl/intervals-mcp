@@ -13,6 +13,7 @@
  * finished surface — the output schemas and the progress plumbing — rather
  * than being amended three times on the way.
  */
+import { createHash } from "node:crypto";
 import { CLIENT_CAPABILITIES_META_KEY } from "@modelcontextprotocol/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getTimeZone, setAthleteTimeZone } from "./config";
@@ -1281,6 +1282,154 @@ describe("resources/read", () => {
     });
 
     expect(error).toBeTruthy();
+  });
+});
+
+describe("skills over MCP (#527)", () => {
+  /** A tool name as a skill names one: any name with a known tool verb. */
+  const SKILL_TOOL_MENTION =
+    /\b(?:get|list|view|compare|update|suggest|stitch|amend|export|manage)-[a-z]+(?:-[a-z]+)*\b/g;
+
+  interface SkillEntry {
+    uri: string;
+    frontmatter: { name: string; description: string };
+    resources: Array<{ uri: string; digest: string; size: number }>;
+  }
+
+  async function listSkills(
+    client: Awaited<ReturnType<typeof connectTestClient>>,
+  ) {
+    const { result, error } = await client.send("skills/list");
+    expect(error).toBeUndefined();
+    return result as {
+      skills: SkillEntry[];
+      ttlMs: number;
+      cacheScope: string;
+      nextCursor?: string;
+    };
+  }
+
+  it("advertises the skills extension in server/discover", async () => {
+    const { discover } = await connectTestClient("skills-discover-test");
+
+    expect(discover.capabilities).toMatchObject({
+      resources: {},
+      extensions: { "io.modelcontextprotocol/skills": {} },
+    });
+  });
+
+  it("lists every shipped skill with its frontmatter, files and cache hint", async () => {
+    const client = await connectTestClient();
+    const list = await listSkills(client);
+
+    expect(list.skills.map((s) => s.frontmatter.name)).toContain(
+      "activity-writes",
+    );
+    expect(list.nextCursor).toBeUndefined();
+    expect(list.ttlMs).toBeGreaterThan(0);
+    expect(list.cacheScope).toBe("private");
+    for (const skill of list.skills) {
+      expect(skill.uri).toBe(`skill://${skill.frontmatter.name}/SKILL.md`);
+      expect(skill.frontmatter.description).toMatch(/\S/);
+      expect(skill.resources.map((r) => r.uri)).toContain(skill.uri);
+    }
+  });
+
+  it("serves every listed file through resources/read, matching its digest and size", async () => {
+    const client = await connectTestClient();
+    const list = await listSkills(client);
+
+    for (const skill of list.skills) {
+      for (const file of skill.resources) {
+        const { result, error } = await client.send("resources/read", {
+          uri: file.uri,
+        });
+        expect(error, file.uri).toBeUndefined();
+        const [content] = (result?.contents ?? []) as Array<{
+          uri: string;
+          mimeType: string;
+          text: string;
+        }>;
+        expect(content?.uri).toBe(file.uri);
+        expect(content?.mimeType).toBe("text/markdown");
+        const bytes = Buffer.from(content!.text, "utf-8");
+        const hex = createHash("sha256").update(bytes).digest("hex");
+        expect(`sha256:${hex}`, file.uri).toBe(file.digest);
+        expect(bytes.byteLength, file.uri).toBe(file.size);
+      }
+    }
+  });
+
+  it("names only tools that exist", async () => {
+    const client = await connectTestClient();
+    const tools = (await client.send("tools/list")).result?.tools as Array<{
+      name: string;
+    }>;
+    const names = new Set(tools.map((tool) => tool.name));
+    const list = await listSkills(client);
+
+    for (const skill of list.skills) {
+      for (const file of skill.resources) {
+        const read = await client.send("resources/read", { uri: file.uri });
+        const [content] = (read.result?.contents ?? []) as Array<{
+          text: string;
+        }>;
+        for (const mention of content!.text.match(SKILL_TOOL_MENTION) ?? []) {
+          expect(names, `${file.uri} names ${mention}`).toContain(mention);
+        }
+      }
+    }
+  });
+
+  it("returns one entry from skills/get and refuses an unknown uri with -32602", async () => {
+    const client = await connectTestClient();
+    const [first] = (await listSkills(client)).skills;
+
+    const got = await client.send("skills/get", { uri: first!.uri });
+    const missing = await client.send("skills/get", {
+      uri: "skill://no-such-skill/SKILL.md",
+    });
+
+    expect(got.error).toBeUndefined();
+    expect(got.result?.skill).toEqual(first);
+    expect(missing.error?.code).toBe(-32602);
+  });
+
+  it("refuses a cursor, since every skill fits on one page", async () => {
+    const client = await connectTestClient();
+
+    const { error } = await client.send("skills/list", { cursor: "2" });
+
+    expect(error?.code).toBe(-32602);
+  });
+
+  it("refuses a skill file the catalog does not hold", async () => {
+    const client = await connectTestClient();
+
+    const { error } = await client.send("resources/read", {
+      uri: "skill://activity-writes/references/missing.md",
+    });
+
+    expect(error?.code).toBe(-32602);
+  });
+
+  it("serves no skills to a 2025-era client", async () => {
+    const client = await connectTestClient();
+
+    const init = await client.sendLegacy("initialize", {
+      protocolVersion: "2025-11-25",
+      capabilities: {},
+      clientInfo: { name: "claude-ai", version: "0.1.0" },
+    });
+    const list = await client.sendLegacy("skills/list", {});
+    const read = await client.sendLegacy("resources/read", {
+      uri: "skill://activity-writes/SKILL.md",
+    });
+
+    const capabilities = init.result?.capabilities as Record<string, unknown>;
+    expect(capabilities.extensions).toBeUndefined();
+    expect(list.error?.code).toBe(-32601);
+    expect(read.error).toBeTruthy();
   });
 });
 

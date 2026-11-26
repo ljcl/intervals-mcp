@@ -99,6 +99,7 @@ import {
   RouteSuggestionError,
 } from "./routeSuggestions";
 import { SERVER_INFO } from "./serverInfo";
+import { readSkillFile, registerSkills } from "./skills";
 import { renderRoutePng, SECTION_COLOUR_NAMES } from "./staticMap";
 import {
   ERROR_RESULT_CLASS,
@@ -2531,6 +2532,15 @@ export function createServer({
     },
   });
 
+  // Skills over MCP (#527) need the 2026-07-28 revision, so a 2025-era
+  // request gets neither the extension nor its methods.
+  if (!legacy) {
+    registerSkills(server, {
+      ttlMs: STATIC_SURFACE_TTL_MS,
+      cacheScope: "private",
+    });
+  }
+
   // The SDK's result types spell out every reserved `_meta` envelope key,
   // which the Record-typed schema/meta tables here cannot satisfy
   // structurally; the wire shape these serialize to is what the integration
@@ -2630,6 +2640,10 @@ export function createServer({
 
   server.setRequestHandler("resources/read", async (request) => {
     const { uri } = request.params;
+    const skillFile = await readSkillFile(uri, legacy);
+    if (skillFile) {
+      return { contents: [skillFile] } as unknown as ReadResourceResult;
+    }
     if (isRouteExportUri(uri)) {
       const file = await readRouteExport(uri, getIntervalsApiKey());
       if (!file) throw new ResourceNotFoundError(uri);

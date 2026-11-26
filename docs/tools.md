@@ -1,7 +1,7 @@
 # Tool reference
 
-Everything the server exposes: tools, prompts, permission behaviour, and
-example requests. The single home for this catalog — README and AGENTS.md link
+Everything the server exposes: tools, prompts, skills, permission behaviour,
+and example requests. The single home for this catalog — README and AGENTS.md link
 here instead of keeping copies.
 
 Tool names and schemas are a published contract: grants are stored per tool
@@ -1799,6 +1799,38 @@ workflow the tools would then refuse. The server advertises `completions`:
 `race-readiness` and review lengths for `weekly-review`. Activity ids get no
 suggestions, because a completion is a bare value with no label and each
 keystroke would cost an intervals.icu request.
+
+## Skills
+
+Instructions the model loads only when a task needs them, served over MCP
+with the `io.modelcontextprotocol/skills` extension (SEP-2640, #527). Each
+skill is a folder under `apps/server/skills/`: a `SKILL.md` whose
+frontmatter `description` says when to load it, plus Markdown references it
+links to relatively.
+
+| Skill | Load it when | Files |
+| ----- | ------------ | ----- |
+| `activity-writes` | Before `update-activity`, `update-wellness` or `update-gear`: confirming a change, keeping existing text, retrying after an ambiguous write | `SKILL.md`, `references/wellness-scores.md` |
+
+- Only a 2026-07-28 client sees them: `server/discover` declares the
+  extension, `skills/list` and `skills/get` answer, and `resources/read`
+  serves the `skill://<name>/<file>` URIs. A 2025-era client gets none of
+  this.
+- Claude Code (v2.1.331 and later, in the terminal, VS Code and local
+  Desktop sessions) names a skill `/<server>:<skill>`, or
+  `/claude_ai_<server>:<skill>` for a claude.ai connector. It does not load
+  MCP skills in cloud sessions, `claude -p` or the Agent SDK. On claude.ai,
+  Claude loads a skill when the conversation needs it.
+- The host approves a skill by its files, so a deploy that changes a skill's
+  files asks the user to approve it again. Nothing in the frontmatter grants
+  tools (`allowed-tools` is not used): a skill uses the tools the client
+  already allows.
+- Limits, checked at startup (`skills.ts`): at most 100 skills, 100 KB per
+  file and 400 KB per skill (Claude Code's limits), Markdown files only, and
+  a folder name equal to the frontmatter `name`. A skill that breaks one
+  stops the server before it listens.
+- A skill that names a tool must name one that exists
+  (`server.integration.test.ts`).
 
 ## Tool permissions
 

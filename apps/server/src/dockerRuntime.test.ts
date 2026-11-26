@@ -56,6 +56,8 @@ const NOT_IMPORT_DERIVED: Record<string, string> = {
   "apps/server/dist": "the bundled entrypoint (CMD runs dist/index.js)",
   "apps/server/node_modules/@intervals-mcp":
     "the workspace symlinks each app.html specifier resolves through",
+  "apps/server/skills":
+    "the skill folders skills.ts reads from disk at startup (SKILLS_DIR), not an import",
   "/data":
     "the empty route-store directory (DATA_DIR), owned by the runtime user, that docker-compose.yml mounts a volume on",
 };
@@ -245,6 +247,21 @@ describe("Dockerfile runner stage", () => {
       "no `bun build apps/server/src/index.ts` in the builder",
     ).toBeDefined();
     expect(runnerStage()).toContain(`CMD ["run","${outdir}/index.js"]`);
+  });
+
+  it("copies the skills folder that skills.ts reads", () => {
+    // SKILLS_DIR is `../skills/` from src/skills.ts and from the bundled
+    // dist/index.js alike, so both resolve to apps/server/skills.
+    const fromSource = new URL("../skills/", new URL("skills.ts", SRC_DIR));
+    const fromBundle = new URL(
+      "../skills/",
+      new URL("../dist/index.js", SRC_DIR),
+    );
+    const skillsDir = new URL("apps/server/skills/", REPO_ROOT);
+
+    expect(fromSource.href).toBe(skillsDir.href);
+    expect(fromBundle.href).toBe(skillsDir.href);
+    expect(builderCopies()).toContain("apps/server/skills");
   });
 
   it("keeps the exempt list honest: every exemption is still copied", () => {
