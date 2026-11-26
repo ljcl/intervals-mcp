@@ -11,6 +11,7 @@ import { createMcpEndpoint } from "./mcpEndpoint";
 import { startOsmIndexRefresh } from "./osmIndexRefresh";
 import { routeStoreInfo } from "./routeStore";
 import { createServer } from "./server";
+import { loadSkillCatalog } from "./skills";
 import { SERVER_COMMIT, SERVER_VERSION } from "./version";
 
 // Every bad variable gets its own line, then the process stops.
@@ -38,6 +39,12 @@ if (store.onRootFs && process.platform === "linux")
   console.error(
     `WARNING: ${store.dir} is not a mounted volume, so stored routes are lost when the container is recreated. Mount a volume or a directory writable by UID 65534 there (docker-compose.yml mounts route-data).`,
   );
+
+// A broken skill stops startup here rather than failing a host's first read.
+const skills = await loadSkillCatalog();
+console.error(
+  `Skills: ${skills.skills.map((skill) => skill.frontmatter.name).join(", ") || "none"}`,
+);
 
 // Builds or refreshes the OpenStreetMap index in the background (osmIndexRefresh.ts).
 startOsmIndexRefresh();

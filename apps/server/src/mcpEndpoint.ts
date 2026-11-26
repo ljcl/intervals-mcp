@@ -235,6 +235,8 @@ const ONE_ANSWER_METHODS: ReadonlySet<string> = new Set([
   "resources/templates/list",
   "resources/read",
   "completion/complete",
+  "skills/list",
+  "skills/get",
 ]);
 
 /** True when every message in the body is a request for a {@link ONE_ANSWER_METHODS} method. */

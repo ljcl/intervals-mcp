@@ -28,6 +28,9 @@ test-results/
 docs/
 *.md
 !README.md
+# The skills the server serves over MCP (apps/server/src/skills.ts) are
+# Markdown the image needs.
+!apps/server/skills/**
 
 # IDE
 .vscode

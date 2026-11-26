@@ -11,6 +11,12 @@ instructions: the routing, the id format, units and time zone, and the
 rules for the write tools. So a chat starts oriented without this file. This
 file stays the long form, for the full detail on each area.
 
+A client that supports skills over MCP (Claude and Claude Code) also gets
+the server's skills, which load only when a task needs them. The first,
+`activity-writes`, holds the write rules from the Writes, workflows and
+Gotchas sections below. Moving the rest of this file into skills is tracked
+in ljcl/intervals-mcp#528.
+
 ## Overview
 
 intervals-mcp connects Claude to an athlete's intervals.icu account: activity

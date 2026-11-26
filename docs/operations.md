@@ -532,6 +532,12 @@ must be writable by UID 65534, e.g. `./data:/data`. At startup the server
 logs `Route store <dir>: <n> stored routes`, and on Linux warns when that
 directory is on the root filesystem, i.e. no volume is mounted there.
 
+The image also holds the skills the server serves over MCP
+(`apps/server/skills/`, [tools.md](tools.md#skills)). At startup the server
+logs `Skills: <names>`. A skill that breaks a rule (a file over 100 KB, a
+folder name that differs from its frontmatter `name`) stops startup with
+`Skill <path>: <problem>`.
+
 `docker-compose.yml` publishes port 3000 on `127.0.0.1` only, so only this
 machine (and a tunnel running on it) reaches the server. Earlier releases
 published it on every interface. To reach the server from other machines on the

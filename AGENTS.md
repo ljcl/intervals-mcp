@@ -11,7 +11,7 @@ this file holds only the invariants that apply to every change.
 | --- | ----------- |
 | [docs/architecture.md](docs/architecture.md) | Changing server internals (transport, HTTP layer, cache, errors, analysis math, tool metadata) |
 | [docs/mcp-apps.md](docs/mcp-apps.md) | Adding or changing an MCP App package, `packages/ui`, or `packages/data` |
-| [docs/tools.md](docs/tools.md) | Adding, renaming, or describing tools/prompts — it is the single catalog; keep it current |
+| [docs/tools.md](docs/tools.md) | Adding, renaming, or describing tools/prompts/skills — it is the single catalog; keep it current |
 | [docs/api-notes.md](docs/api-notes.md) | Calling the intervals.icu API; record verified behaviour here |
 | [docs/operations.md](docs/operations.md) | Configuring or debugging a deployed instance |
 | [docs/development.md](docs/development.md) | Turborepo, coverage gates, Storybook gates, Docker image build |
@@ -159,6 +159,13 @@ breaking them has shipped bugs — do not work around them locally.
   `resources/read` rebuilds), `view-route-map` draws it. An image or a
   file's link rides in the result's `attachments`, which only the
   `tools/call` handler adds to `content`.
+- **Skills have one home: `apps/server/skills/<name>/`**, served by
+  `skills.ts` (`io.modelcontextprotocol/skills`, SEP-2640) on the 2026-07-28
+  era only. The catalog is read once at startup and held in memory;
+  `createServer` never reads the disk. Markdown only, the folder name equals
+  the frontmatter `name`, Claude Code's limits (100 skills, 100 KB per file,
+  400 KB per skill) are enforced at load, and a skill names only real tools
+  (`server.integration.test.ts`). No `allowed-tools`.
 - **Telemetry:** `dispatchToolCall` emits one JSON line per call; timer starts
   before token resolution (not-connected calls count); a returned `isError`
   counts as an error unless the call was cancelled (`cancelled`);
@@ -283,6 +290,7 @@ breaking them has shipped bugs — do not work around them locally.
 ## Key Directories
 
 - `apps/server/`: MCP server (tools, HTTP transport, config)
+- `apps/server/skills/`: skills served over MCP (one folder per skill; catalog in docs/tools.md#skills)
 - `apps/storybook/` — Storybook host rendering the UI packages (co-located stories)
 - `packages/activity-chart/` — React + Recharts MCP App for interactive activity charts
 - `packages/cadence-trends/` — React + Recharts MCP App for cadence trend analysis

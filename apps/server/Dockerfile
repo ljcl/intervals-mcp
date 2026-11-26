@@ -81,6 +81,8 @@ COPY --from=builder  --chown=65534:65534 /app/packages/compare-activities/dist .
 COPY --from=builder  --chown=65534:65534 /app/packages/activity-zones/dist ./packages/activity-zones/dist
 COPY --from=builder  --chown=65534:65534 /app/packages/fitness-trend/dist ./packages/fitness-trend/dist
 COPY --from=builder  --chown=65534:65534 /app/packages/wellness-trend/dist ./packages/wellness-trend/dist
+# The skills served over MCP (skills.ts reads them from disk at startup).
+COPY --from=builder  --chown=65534:65534 /app/apps/server/skills ./apps/server/skills
 COPY --from=builder  --chown=65534:65534 /data /data
 
 USER 65534:65534
