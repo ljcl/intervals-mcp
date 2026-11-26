@@ -17,7 +17,7 @@ this file holds only the invariants that apply to every change.
 | [docs/development.md](docs/development.md) | Turborepo, coverage gates, Storybook gates, Docker image build |
 | [docs/releasing.md](docs/releasing.md) | Shipping — PR titles are Conventional Commits; release automation does the rest |
 | [docs/project.md](docs/project.md) | Filing/triaging issues, editing the project board |
-| [docs/Intervals_MCP_Server.md](docs/Intervals_MCP_Server.md) | Capability reference to upload as project knowledge in a Claude project using this server |
+| [docs/Intervals_MCP_Server.md](docs/Intervals_MCP_Server.md) | Capability reference to upload as project knowledge in a Claude project, for a client without skills over MCP. Generated from `apps/server/skills/`: edit the skills, not this file |
 
 ## Architecture invariants
 
@@ -165,7 +165,10 @@ breaking them has shipped bugs — do not work around them locally.
   `createServer` never reads the disk. Markdown only, the folder name equals
   the frontmatter `name`, Claude Code's limits (100 skills, 100 KB per file,
   400 KB per skill) are enforced at load, and a skill names only real tools
-  (`server.integration.test.ts`). No `allowed-tools`.
+  (`server.integration.test.ts`). No `allowed-tools`. The skills are the
+  long-form guide: docs/Intervals_MCP_Server.md is generated from them
+  (`capabilityReference.test.ts`, `UPDATE_CAPABILITY_REFERENCE=1`), and every
+  prompt is named in a skill (`skills.test.ts`).
 - **Telemetry:** `dispatchToolCall` emits one JSON line per call; timer starts
   before token resolution (not-connected calls count); a returned `isError`
   counts as an error unless the call was cancelled (`cancelled`);

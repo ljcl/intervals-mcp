@@ -3,7 +3,8 @@
  * gives them to the model at the start of every chat, so each chat starts
  * oriented without the athlete uploading anything.
  *
- * docs/Intervals_MCP_Server.md is the long form. This is the short form: which
+ * The skills in apps/server/skills/ are the long form (docs/Intervals_MCP_Server.md
+ * is generated from them). This is the short form: which
  * tool to call first, how to route fitness questions, and the rules that give
  * wrong answers or unsafe writes when a model does not know them. Keep it
  * under 1,800 characters with the longest time zone name (32 characters);

@@ -1497,7 +1497,9 @@ orientation that `server/discover` sends to every chat: where ids come from,
 which tool to call first for one run, how to route fitness questions, the
 whole-body versus run-only rule, units and the configured time zone, and how
 to use the write tools safely. `createServer` builds it so that it can name
-the time zone. docs/Intervals_MCP_Server.md stays the long form. The
+the time zone. The skills (`apps/server/skills/`, served by `skills.ts`)
+are the long form, and docs/Intervals_MCP_Server.md is generated from them
+for clients without skills (docs/tools.md#skills). The
 integration suite checks the 1,800-character cap and that every tool the
 text names exists.
 
