@@ -74,8 +74,9 @@ const mockedIntervalsStreams = vi.mocked(getActivityStreams);
 const mockedAthleteCurves = vi.mocked(getAthletePaceCurves);
 
 /**
- * Claude Code cuts a tool description at 2,048 characters, so the end of a
- * longer one never reaches the model (#39). The cap leaves headroom below it.
+ * Claude Code cuts a tool description at 4,096 characters when it loads the
+ * tool up front (16,384 when it defers it), so the end of a longer one never
+ * reaches the model (#39). The cap leaves room for hosts that cut shorter.
  */
 const MAX_TOOL_DESCRIPTION_CHARS = 1800;
 

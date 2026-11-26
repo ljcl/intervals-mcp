@@ -28,7 +28,9 @@ import { ActivityListOutputSchema, warnOnSchemaDrift } from "./outputs";
 const name = "list-activities";
 
 const description = `
-Lists intervals.icu activities in a local date range, newest first. Start
+Lists intervals.icu activities in a local date range, newest first, for
+"what did I do last week?", "which runs did I do this month?" or "what is
+that run's id?". Start
 here: each entry carries the activity id that every per-activity tool needs,
 plus distance, time, pace (per km for runs, per 100 m for swims) or speed
 (km/h for other sports), heart rate, training load, interval reps, and the
