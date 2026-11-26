@@ -21,6 +21,7 @@ import {
 import { WRITE_DESTRUCTIVE } from "./_annotations";
 import {
   confirmWrite,
+  DECLINED_WARNING,
   quoteForConfirmation,
   type WriteConfirmContext,
 } from "./_confirm";
@@ -219,9 +220,6 @@ async function withGearNames(
 }
 
 /** The warning a declined confirmation leaves (#417). */
-const DECLINED_WARNING =
-  "The athlete declined the change when the host asked to confirm it, so nothing was sent.";
-
 /** The other fields a confirmed replace also writes, one line each. */
 function otherChangeLines(patch: IntervalsActivityUpdate): string[] {
   const lines: string[] = [];

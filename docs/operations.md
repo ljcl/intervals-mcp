@@ -265,8 +265,9 @@ hosts that get the text alone.
 
 `client_elicitation` is true when the request's client capabilities
 advertised form-mode elicitation (#417). When it is true, a replace-mode
-`update-activity` or `update-wellness` that drops text asks the host to
-confirm it, rather than relying on the model. To count by host:
+`update-activity` or `update-wellness` that drops text, an `update-gear`
+retirement and a `manage-corridors` delete (#530) ask the host to confirm
+them, rather than relying on the model. To count by host:
 `grep '"event":"tool_call"' | jq -r '[.client_name, .client_elicitation] | @tsv' | sort | uniq -c`.
 
 `trace_id` and `parent_id` appear only when the request's `_meta.traceparent`

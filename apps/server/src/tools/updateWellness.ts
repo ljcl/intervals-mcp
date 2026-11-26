@@ -24,6 +24,7 @@ import {
 import { WRITE_DESTRUCTIVE } from "./_annotations";
 import {
   confirmWrite,
+  DECLINED_WARNING,
   quoteForConfirmation,
   type WriteConfirmContext,
 } from "./_confirm";
@@ -179,9 +180,6 @@ function toOutput(
 }
 
 /** The warning a declined confirmation leaves (#417). */
-const DECLINED_WARNING =
-  "The athlete declined the change when the host asked to confirm it, so nothing was sent.";
-
 /** The confirmation's text: the comments lost, their replacement, and the
  * scores the same write changes. */
 function replaceMessage(

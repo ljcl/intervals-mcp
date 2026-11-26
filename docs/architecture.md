@@ -1424,6 +1424,13 @@ capability keeps the earlier behaviour: the model shows the change and
 the replace writes at once. The append path and the no-mode refusal never
 ask.
 
+The same round covers two other writes the athlete cannot see before they
+happen (#530): `update-gear` with `retired: true` (bound to the gear id and
+the retirement date) and `manage-corridors` `delete` (bound to the corridor
+id and its version count, after a read that reports a missing corridor
+first). Every decline returns `DECLINED_WARNING` from `_confirm.ts`, the
+one text all four tools use.
+
 **`update-wellness` and `update-gear` follow the same pattern.**
 `update-wellness` (`tools/updateWellness.ts`) reads the day fresh, refuses
 `comments` with no `commentsMode` that would drop the day's comments (the

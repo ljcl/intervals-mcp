@@ -664,6 +664,53 @@ describe("tools/call replace confirmation (#417)", () => {
     expect(result?.resultType).toBe("complete");
     expect(updateActivity).toHaveBeenCalledOnce();
   });
+
+  it("asks before update-gear retires an item, and retires it on an accept (#530)", async () => {
+    vi.mocked(listGear).mockResolvedValue([
+      {
+        id: "71459",
+        name: "Daily Trainer B",
+        type: "Shoes",
+        distance: 62030,
+        activities: 4,
+        retired: null,
+        reminders: [],
+      },
+    ] as never);
+    vi.mocked(updateGear).mockResolvedValue(undefined as never);
+    const client = await connectTestClient();
+    const call = (extra: Record<string, unknown> = {}) => ({
+      name: "update-gear",
+      arguments: { gearId: "71459", retired: true },
+      _meta: { [CLIENT_CAPABILITIES_META_KEY]: ELICITING },
+      ...extra,
+    });
+
+    const first = await client.send("tools/call", call());
+    const request = (
+      (first.result?.inputRequests ?? {}) as Record<
+        string,
+        { method: string; params: { message: string } }
+      >
+    ).confirm_write;
+    expect(first.result?.resultType).toBe("input_required");
+    expect(request?.method).toBe("elicitation/create");
+    expect(request?.params.message).toContain('"Daily Trainer B" [71459]');
+    expect(updateGear).not.toHaveBeenCalled();
+
+    await client.send(
+      "tools/call",
+      call({
+        inputResponses: {
+          confirm_write: { action: "accept", content: { confirm: true } },
+        },
+        requestState: first.result?.requestState,
+      }),
+    );
+    expect(updateGear).toHaveBeenCalledOnce();
+    vi.mocked(listGear).mockReset();
+    vi.mocked(updateGear).mockReset();
+  });
 });
 
 describe("tools/call on a view-* tool", () => {

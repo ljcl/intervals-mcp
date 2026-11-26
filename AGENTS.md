@@ -223,7 +223,9 @@ breaking them has shipped bugs — do not work around them locally.
   change per call, so a call is one write. A replace that drops text, from
   a client with form-mode elicitation, first returns `input_required`
   through `confirmWrite` (`tools/_confirm.ts`) and writes only on an accept
-  bound to the same change by `requestState`; a decline sends nothing.
+  bound to the same change by `requestState`; a decline sends nothing. The
+  same round guards an `update-gear` retirement and a `manage-corridors`
+  delete.
 - **Annotations come from the three `_annotations.ts` constants**, never inline
   objects — they decide whether hosts grant reads durably or re-prompt forever.
   `READ_ONLY` states `destructiveHint: false` explicitly (its documented

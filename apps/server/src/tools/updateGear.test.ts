@@ -418,3 +418,121 @@ describe("updateGearTool.execute", () => {
     );
   });
 });
+
+describe("updateGearTool retire confirmation (#530)", () => {
+  function execute(input: Record<string, unknown>, context = {}) {
+    return updateGearTool.execute(input as never, "test-token", undefined, {
+      clientElicitation: true,
+      ...context,
+    });
+  }
+
+  it("asks before retiring, naming the item, its distance and the date", async () => {
+    mockedList.mockResolvedValueOnce([shoe()]);
+
+    const result = await execute({ gearId: "71459", retired: true });
+
+    expect(mockedPut).not.toHaveBeenCalled();
+    const ask = result.inputRequired?.inputRequests?.confirm_write as {
+      params: { message: string };
+    };
+    expect(ask.params.message).toContain(
+      'Retire shoes "Daily Trainer B" [71459] in intervals.icu?',
+    );
+    expect(ask.params.message).toContain("Distance: 62.0 km over 1 activity.");
+    expect(ask.params.message).toContain("Retired on: 2026-10-27");
+  });
+
+  it("retires after an accept for the same change", async () => {
+    mockedList.mockResolvedValueOnce([shoe()]);
+    const asked = await execute({ gearId: "71459", retired: true });
+
+    mockedList.mockResolvedValueOnce([shoe()]);
+    mockedPut.mockResolvedValueOnce(undefined as never);
+    mockedList.mockResolvedValueOnce([shoe({ retired: "2026-10-27" })]);
+    const result = await execute(
+      { gearId: "71459", retired: true },
+      {
+        inputResponses: {
+          confirm_write: { action: "accept", content: { confirm: true } },
+        },
+        requestState: asked.inputRequired?.requestState,
+      },
+    );
+
+    expect(mockedPut).toHaveBeenCalledWith("test-token", "71459", {
+      retired: "2026-10-27",
+    });
+    expect(result.content[0]?.text).toContain(
+      'Retired gear "Daily Trainer B" [71459] on 2026-10-27.',
+    );
+  });
+
+  it("asks again when the accept was for a different change", async () => {
+    mockedList.mockResolvedValueOnce([shoe()]);
+
+    const result = await execute(
+      { gearId: "71459", retired: true },
+      {
+        inputResponses: {
+          confirm_write: { action: "accept", content: { confirm: true } },
+        },
+        requestState: "a-fingerprint-for-another-change",
+      },
+    );
+
+    expect(mockedPut).not.toHaveBeenCalled();
+    expect(result.inputRequired?.inputRequests?.confirm_write).toBeDefined();
+  });
+
+  it("writes nothing on a decline and says so", async () => {
+    mockedList.mockResolvedValueOnce([shoe()]);
+
+    const result = await execute(
+      { gearId: "71459", retired: true },
+      { inputResponses: { confirm_write: { action: "decline" } } },
+    );
+
+    expect(mockedPut).not.toHaveBeenCalled();
+    expect(result.content[0]?.text).toContain(
+      'Gear "Daily Trainer B" [71459] was not retired',
+    );
+    const structured = GearWriteOutputSchema.parse(result.structuredContent);
+    expect(structured.changes).toEqual([]);
+    expect(structured.warnings[0]).toContain("declined");
+  });
+
+  it("does not ask to put gear back in use or to change a reminder", async () => {
+    mockedList.mockResolvedValueOnce([shoe({ retired: "2026-10-01" })]);
+    mockedPut.mockResolvedValueOnce(undefined as never);
+    mockedList.mockResolvedValueOnce([shoe()]);
+    mockedList.mockResolvedValueOnce([shoe()]);
+    mockedCreate.mockResolvedValueOnce(undefined as never);
+    mockedList.mockResolvedValueOnce([shoe({ reminders: [reminder] })]);
+
+    const unretire = await execute({ gearId: "71459", retired: false });
+    const add = await execute({ gearId: "71459", addReminderKm: 700 });
+
+    expect(unretire.inputRequired).toBeUndefined();
+    expect(add.inputRequired).toBeUndefined();
+    expect(mockedPut).toHaveBeenCalledOnce();
+    expect(mockedCreate).toHaveBeenCalledOnce();
+  });
+
+  it("does not ask an already-retired item, or a client without form elicitation", async () => {
+    mockedList.mockResolvedValueOnce([shoe({ retired: "2026-10-01" })]);
+    mockedList.mockResolvedValueOnce([shoe()]);
+    mockedPut.mockResolvedValueOnce(undefined as never);
+    mockedList.mockResolvedValueOnce([shoe({ retired: "2026-10-27" })]);
+
+    const already = await execute({ gearId: "71459", retired: true });
+    const noForm = await execute(
+      { gearId: "71459", retired: true },
+      { clientElicitation: false },
+    );
+
+    expect(already.content[0]?.text).toContain("already retired");
+    expect(noForm.inputRequired).toBeUndefined();
+    expect(mockedPut).toHaveBeenCalledOnce();
+  });
+});
