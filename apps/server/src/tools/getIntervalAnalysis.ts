@@ -68,14 +68,14 @@ For laps exactly as recorded, use get-activity-laps; for continuous pacing,
 get-split-analysis.
 
 Notes:
-- Clean intervals.icu laps (icu_intervals) are preferred, and they also catch
+- Clean intervals.icu laps (icu_intervals) are preferred; they also catch
   jog-recovery sessions. Consecutive fast laps make one rep, and it takes 2
-  reps with slower laps between them. Sliver laps (under 50 m or 15 s) are
-  ignored. A slow warm-up or cool-down lap next to the first or last rep is
-  not part of a rep; a last rep much slower than the others is dropped the same
-  way. Laps that fail a consistency check fall back to the
-  streams. On 1 km or 1 mile auto-laps a fast lap is often a downhill km, so
-  they need matching WORK/RECOVERY labels or 3 clearly faster reps.
+  reps with slower laps between. Sliver laps (under 50 m, or 15 s with no
+  label) are ignored; a WORK lap is kept. A slow warm-up or cool-down lap
+  next to the first or last rep is not part of a rep, and a last rep much
+  slower than the others is dropped. Laps that fail a consistency check use
+  the streams. On 1 km or 1 mile auto-laps a fast lap may be a
+  downhill km, so they need WORK/RECOVERY labels or 3 clearly faster reps.
 - In the streams, stops are classified before they count: under 60 s with no
   fast effort before it is a traffic light (ignored), up to 3 min after a
   fast effort is a recovery, over 5 min is a long stop (ignored). A stop

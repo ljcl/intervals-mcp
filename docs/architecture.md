@@ -702,7 +702,8 @@ standing start (a rest with no segment before it) judged every later rest by
 the segment after it (#47). The near-max HR share is measured against the
 athlete's max HR (`athlete_max_hr`, else the top `icu_hr_zones` bound), never
 the run's own peak, which made an easy run read as hard. The lap path drops
-sliver laps rather than the whole lap set, and needs 2 blocks of consecutive
+sliver laps rather than the whole lap set (the 15 s minimum only for an
+unlabelled lap; a WORK lap with any speed is never a sliver), and needs 2 blocks of consecutive
 fast laps with slower laps between; `selectCleanWorkLaps` holds the lap
 rules, including the stricter test for 1 km or 1 mile auto-laps and the cut
 of a slow warm-up or cool-down lap at the edge of the first or last block.

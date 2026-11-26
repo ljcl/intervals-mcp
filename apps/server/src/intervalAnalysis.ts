@@ -97,7 +97,9 @@ export const HR_NEAR_MAX_FRACTION = 0.88;
 /**
  * Laps shorter than this (metres or seconds) are slivers, such as the 0 m
  * lap an Apple Watch often records at the end: ignored, not a reason to
- * give up on the lap set.
+ * give up on the lap set. The seconds minimum applies only to a lap with no
+ * intervals.icu label, and a WORK lap is never short enough to be a sliver:
+ * a 10 s stride from the structured workout is a rep ({@link isSliverLap}).
  */
 export const MIN_LAP_DISTANCE_M = 50;
 export const MIN_LAP_SECONDS = 15;
@@ -387,11 +389,18 @@ export function classifyRest(
 const lapSpeed = (lap: IntervalLap) =>
   lap.avgSpeedMs ?? (lap.movingTimeS > 0 ? lap.distanceM / lap.movingTimeS : 0);
 
-/** A sliver lap (under 50 m or 15 s, or no speed): ignored, not fatal. */
-const isSliverLap = (lap: IntervalLap) =>
-  lap.distanceM < MIN_LAP_DISTANCE_M ||
-  lap.movingTimeS < MIN_LAP_SECONDS ||
-  !(lapSpeed(lap) > 0);
+/**
+ * A sliver lap: ignored, not fatal. A lap with no speed is always a sliver.
+ * A WORK lap from the structured workout is never cut for being short; a
+ * lap with another label is cut under 50 m; only an unlabelled lap is also
+ * cut under 15 s.
+ */
+function isSliverLap(lap: IntervalLap): boolean {
+  if (!(lapSpeed(lap) > 0)) return true;
+  if (lap.type === "WORK") return false;
+  if (lap.distanceM < MIN_LAP_DISTANCE_M) return true;
+  return !lap.type && lap.movingTimeS < MIN_LAP_SECONDS;
+}
 
 /** Distance over time across a run of laps (a block, or the laps between). */
 function blockSpeed(block: IntervalLap[]): number {

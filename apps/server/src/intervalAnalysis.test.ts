@@ -484,6 +484,64 @@ describe("computeIntervalAnalysis — lap path", () => {
     expect(selection!.slivers).toBe(1);
   });
 
+  describe("short laps with a structured-workout label", () => {
+    // 6 × 12 s strides: 60 m at 5 m/s, then 60 s of 2 m/s walk-jog.
+    const strideLaps = (workType: string | null, restType: string | null) => [
+      lap(1, 2000, 720, { type: workType ? "WARMUP" : null }),
+      ...Array.from({ length: 6 }, (_, i) => [
+        lap(2 + i * 2, 60, 12, { type: workType }),
+        lap(3 + i * 2, 120, 60, { type: restType }),
+      ]).flat(),
+      lap(14, 1500, 540, { type: workType ? "COOLDOWN" : null }),
+    ];
+
+    it("keeps a WORK lap under 15 s as a rep, not a sliver", () => {
+      const selection = selectCleanWorkLaps(strideLaps("WORK", "RECOVERY"));
+      expect(selection).not.toBeNull();
+      expect(selection!.slivers).toBe(0);
+      expect(selection!.blocks).toHaveLength(6);
+      expect(selection!.labels).toBe("agree");
+    });
+
+    it("keeps a WORK lap under 50 m too", () => {
+      const laps = strideLaps("WORK", "RECOVERY").map((l) =>
+        l.type === "WORK" ? { ...l, distanceM: 40, avgSpeedMs: 40 / 12 } : l,
+      );
+      const selection = selectCleanWorkLaps(laps);
+      expect(selection).not.toBeNull();
+      expect(selection!.slivers).toBe(0);
+      expect(selection!.blocks).toHaveLength(6);
+    });
+
+    it("still ignores a WORK lap with no speed", () => {
+      const laps = [
+        ...strideLaps("WORK", "RECOVERY"),
+        lap(15, 0, 4, { avgSpeedMs: null, type: "WORK" }),
+      ];
+      expect(selectCleanWorkLaps(laps)!.slivers).toBe(1);
+    });
+
+    it("keeps a labelled RECOVERY lap under 15 s", () => {
+      // 50 m in 14 s: a short jog between strides, labelled by the workout.
+      const laps = strideLaps("WORK", "RECOVERY").map((l) =>
+        l.type === "RECOVERY"
+          ? { ...l, distanceM: 50, movingTimeS: 14, avgSpeedMs: 50 / 14 }
+          : l,
+      );
+      const selection = selectCleanWorkLaps(laps);
+      expect(selection).not.toBeNull();
+      expect(selection!.slivers).toBe(0);
+      expect(selection!.blocks).toHaveLength(6);
+    });
+
+    it("ignores the same laps under 15 s when they carry no label", () => {
+      const selection = selectCleanWorkLaps(strideLaps(null, null));
+      // Every 12 s stride is a sliver; only the jogs and the easy laps stay.
+      expect(selection?.slivers).toBe(6);
+      expect(selection!.blocks).not.toHaveLength(6);
+    });
+  });
+
   it("merges consecutive fast laps into one rep", () => {
     // Rep 1 is split into 1,000 m + 600 m by the device.
     const laps = [
