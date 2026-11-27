@@ -40,7 +40,9 @@ const name = "update-wellness";
 
 const description = `
 Logs how the athlete feels on one day in intervals.icu wellness: soreness,
-fatigue, stress, mood, motivation, injury, sleep quality and comments. It
+fatigue, stress, mood, motivation, injury (a niggle), sleep quality and
+comments, for "my legs are sore today" or "log that my left calf is tight".
+It
 writes data: confirm the exact change with the athlete first. To read the
 day back, use get-wellness. For one run's RPE or feel, use update-activity.
 

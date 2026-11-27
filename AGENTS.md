@@ -242,9 +242,12 @@ breaking them has shipped bugs — do not work around them locally.
   src/toolSurface.test.ts`) and say so in the PR — users pay a round of
   re-prompting. The top-level `title` and `description` are outside it;
   never set `annotations.title`, which is inside it.
-- **Tool descriptions stay under 1,800 characters** (Claude Code cuts at
-  2,048): what and when, which sibling to use instead, then only behaviour
-  the schema does not show. No "Parameters:" section; the field `.describe()`
+- **Tool descriptions stay under 1,800 characters** (Claude Code cuts one
+  at 4,096 when it loads it up front, 16,384 when it defers it; the cap
+  leaves room for hosts that cut shorter): what and when, which sibling to
+  use instead, then only behaviour the schema does not show. Name the plain
+  questions a tool answers: a host that defers tools finds them by keyword
+  search. No "Parameters:" section; the field `.describe()`
   texts carry the inputs. Shape and rules: docs/tools.md.
 - **Server instructions have one home: `serverInstructions`
   (`instructions.ts`).** Sent in `server/discover` to every chat, so they

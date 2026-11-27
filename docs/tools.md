@@ -43,11 +43,37 @@ Never add a "Parameters:" section. Each field's `.describe()` text already
 reaches the host in the input schema, and those texts are part of
 `tool-surface.lock.json`, so they cannot be reworded casually. Leave out
 developer notes, repo paths and dated examples. Keep a description under
-1,800 characters (about 1,200 is typical): Claude Code cuts it at 2,048, and
-the model never sees the rest (#39). `server.integration.test.ts` checks the
+1,800 characters (about 1,200 is typical). Claude Code cuts a description at
+4,096 characters when it loads the tool up front and at 16,384 when it
+defers it (`CLAUDE_CODE_MAX_MCP_DESCRIPTION_LENGTH` changes both; before
+v2.1.296 the shorter limit was 2,048), and the model never sees the rest
+(#39). The 1,800 cap leaves room for hosts that cut
+shorter. `server.integration.test.ts` checks the
 cap over `tools/list`, rejects a "Parameters:" section, and checks that every
 tool a description names exists. `buildToolDefs` trims the text, so the
 template literals in the tool files can open and close on a newline.
+
+### Deferred tools and tool search (#531)
+
+Claude loads a connector's tools on demand (tool search): with this server
+connected as a claude.ai connector, a Claude Code session gets all its tools
+as names only, and loads one when a keyword search finds it. The server
+instructions still arrive in full, and they name the entry tools. So a
+description should open with the plain questions the tool answers, in the
+athlete's words ("what did I do last week?", "my legs are sore today"), as
+`get-running-summary`'s "how was my run?" does. Put them in the first
+sentence: tool search matches a query against only the part of a
+description within the shorter limit. In a check on 2026-11-26,
+"how was my run" found `get-running-summary` first, but "what runs did I do
+last week" found `list-corridors` before `list-activities`, and "log that my
+left calf is tight today" found no tool of this server. Both descriptions
+now name those questions.
+
+The server sets no `_meta["anthropic/alwaysLoad"]`, which would keep a tool
+loaded up front in Claude Code. `_meta` is inside `tool-surface.lock.json`,
+so setting it makes every user approve those tools again, and the
+description fix needs no lock change. Set it only if a check after a deploy
+still shows an entry tool missed, and say in the PR that the lock changed.
 
 ## Server instructions and titles
 
