@@ -11,6 +11,8 @@ import { CallCancelledError } from "./callScope";
 import {
   HttpError,
   type HttpErrorResponse,
+  ORS_DIRECTIONS_PATH,
+  ORS_GEOCODE_PATH,
   orsApi,
   RateLimitError,
   summarizeErrorBody,
@@ -326,7 +328,7 @@ async function geocodeOnce(
   let data: unknown;
   try {
     data = (
-      await orsApi.get<unknown>("/geocode/search", {
+      await orsApi.get<unknown>(ORS_GEOCODE_PATH, {
         headers: headers(key),
         params,
         responseType: "text",
@@ -463,7 +465,7 @@ export async function orsRoute(
   let data: unknown;
   try {
     data = (
-      await orsApi.post<unknown>("/v2/directions/foot-walking/geojson", body, {
+      await orsApi.post<unknown>(ORS_DIRECTIONS_PATH, body, {
         headers: headers(key),
         readOnly: true,
         responseType: "text",

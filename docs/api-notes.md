@@ -1118,8 +1118,24 @@ Tool results on i50548661 (tool handlers called directly with the live key):
 
 ## OpenRouteService (route suggestions, verified 2026-11-03)
 
-Base `https://api.openrouteservice.org`, key in `Authorization: <key>` (no
-`Bearer`), on both endpoints.
+Base `https://api.heigit.org` since #538, key in `Authorization: <key>` (no
+`Bearer`), on both endpoints. Each HeiGIT service has its own prefix:
+directions at `/openrouteservice/v2/...`, place search (Pelias) at
+`/pelias/v1/search`. The paths and fields below are relative to those
+prefixes; the verification of 2026-11-03 was against the old host.
+
+- **Host move (checked 2026-11-27).** HeiGIT deprecated
+  `api.openrouteservice.org` on 2026-04-28, cut it to 10% of the plan quota on
+  2026-08-27 and removed it on 2026-11-24. It now answers HTTP 410 to every
+  request, with or without a key, with an HTML page titled "Deprecated HeiGIT
+  API URL" (https://ask.openrouteservice.org/t/url-api-openrouteservice-org-removed/8189).
+  The deprecation post maps `/v2/directions` to
+  `api.heigit.org/openrouteservice/v2/directions` and `/geocode` to
+  `api.heigit.org/pelias/v1`, and says existing keys already work there with
+  their full quota. Without a key, both new paths answer 401
+  `{"error": "Authorization field missing"}` from the gateway (a wrong path
+  answers 404). Not yet checked with a key: the response bodies are taken to
+  be unchanged, as the post says "everything else stays the same".
 
 - Quota: `x-ratelimit-limit: 200` on directions, with `x-ratelimit-reset` as a
   Unix time about 24 h ahead, so this key allows 200 routes a day (and 40 a

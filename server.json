@@ -39,7 +39,7 @@
         },
         {
           "name": "ORS_API_KEY",
-          "description": "OpenRouteService API key (openrouteservice.org) for generated route suggestions; unset offers past runs only",
+          "description": "OpenRouteService API key (HeiGIT account, used at api.heigit.org) for generated route suggestions; unset offers past runs only",
           "isRequired": false,
           "isSecret": true,
           "format": "string"
