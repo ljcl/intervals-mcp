@@ -1,5 +1,26 @@
 # Changelog
 
+## [3.1.0](https://github.com/ljcl/intervals-mcp/compare/v3.0.0...v3.1.0) (2026-11-27)
+
+
+### Features
+
+* **server:** compare corrected and barometric elevation in one call ([#516](https://github.com/ljcl/intervals-mcp/issues/516)) ([8abf1c8](https://github.com/ljcl/intervals-mcp/commit/8abf1c844ddb016ac48d593f01e008cb088b309d))
+* **server:** confirm gear retirement and corridor deletion through the host ([#535](https://github.com/ljcl/intervals-mcp/issues/535)) ([da954a8](https://github.com/ljcl/intervals-mcp/commit/da954a8ac7ffe3ad2f010d54f7450daa284ed661))
+* **server:** confirm replace-mode writes through the host ([#514](https://github.com/ljcl/intervals-mcp/issues/514)) ([f461ece](https://github.com/ljcl/intervals-mcp/commit/f461ece2c25d16fc0367c2240efe697403cc405e))
+* **server:** follow the intervals.icu settings that change its own numbers ([#518](https://github.com/ljcl/intervals-mcp/issues/518)) ([fda6276](https://github.com/ljcl/intervals-mcp/commit/fda6276a3dc10bee030e32dd39b4c607d13a870b))
+* **server:** say that a run is indoors, and warn on the athlete's ignore marks ([#519](https://github.com/ljcl/intervals-mcp/issues/519)) ([1c7fc38](https://github.com/ljcl/intervals-mcp/commit/1c7fc3829ce701fed16ba325cd1371c555e3b278))
+* **server:** serve skills over MCP, starting with activity-writes ([#534](https://github.com/ljcl/intervals-mcp/issues/534)) ([d457961](https://github.com/ljcl/intervals-mcp/commit/d45796132e83626fae26257179fddd46f15d7a7a))
+* **server:** ship the capability reference as MCP skills ([#536](https://github.com/ljcl/intervals-mcp/issues/536)) ([589ed48](https://github.com/ljcl/intervals-mcp/commit/589ed489819b7c788de25a11b9f6ae6d59722fe2))
+
+
+### Bug Fixes
+
+* **deps:** bump node from 26.13.0-trixie-slim to 26.13.1-trixie-slim in /apps/server in the docker-minor-patch group ([#520](https://github.com/ljcl/intervals-mcp/issues/520)) ([3443fc4](https://github.com/ljcl/intervals-mcp/commit/3443fc48dfbe04408f6b36d75706cf3fc1ba1df8))
+* **deps:** bump the production-minor-patch group with 2 updates ([#523](https://github.com/ljcl/intervals-mcp/issues/523)) ([be6d177](https://github.com/ljcl/intervals-mcp/commit/be6d1778f19abea129bf9435c2bd9abb8f453d04))
+* **server:** keep short WORK laps in interval analysis ([#533](https://github.com/ljcl/intervals-mcp/issues/533)) ([4e86282](https://github.com/ljcl/intervals-mcp/commit/4e86282742a80870815948b2a3a4b057afab1b48))
+* **server:** name the questions list-activities and update-wellness answer, for tool search ([#537](https://github.com/ljcl/intervals-mcp/issues/537)) ([d8a68fb](https://github.com/ljcl/intervals-mcp/commit/d8a68fb738055fb254419a14b627fdcb9a43e539))
+
 ## [3.0.0](https://github.com/ljcl/intervals-mcp/compare/v2.19.0...v3.0.0) (2026-11-19)
 
 
