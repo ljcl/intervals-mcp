@@ -2570,10 +2570,15 @@ describe("FetchClient readOnly POST", () => {
 
 describe("route client cache TTL policies", () => {
   it("caches geocoding a day and directions 30 minutes", () => {
-    expect(orsCacheTtl("/geocode/search")).toBe(24 * 60 * 60_000);
-    expect(orsCacheTtl("/v2/directions/foot-walking/geojson")).toBe(
-      30 * 60_000,
-    );
-    expect(orsCacheTtl("/v2/isochrones/foot-walking")).toBeNull();
+    expect(orsCacheTtl("/pelias/v1/search")).toBe(24 * 60 * 60_000);
+    expect(
+      orsCacheTtl("/openrouteservice/v2/directions/foot-walking/geojson"),
+    ).toBe(30 * 60_000);
+    expect(
+      orsCacheTtl("/openrouteservice/v2/isochrones/foot-walking"),
+    ).toBeNull();
+    // The retired host's paths (#538) are no longer cached.
+    expect(orsCacheTtl("/geocode/search")).toBeNull();
+    expect(orsCacheTtl("/v2/directions/foot-walking/geojson")).toBeNull();
   });
 });

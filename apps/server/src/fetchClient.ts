@@ -1218,14 +1218,29 @@ export const intervalsApi = new FetchClient("https://intervals.icu/api/v1", {
 });
 
 /**
+ * OpenRouteService's host. HeiGIT retired api.openrouteservice.org on
+ * 2026-11-24, and it now answers 410 to every request (#538). The same keys
+ * and quota work on api.heigit.org, where each service has its own prefix.
+ */
+const ORS_BASE_URL = "https://api.heigit.org";
+
+/** Place search (Pelias); was /geocode/search on the retired host. */
+export const ORS_GEOCODE_PATH = "/pelias/v1/search";
+
+/** Walking directions as GeoJSON; was /v2/directions/foot-walking/geojson. */
+export const ORS_DIRECTIONS_PATH =
+  "/openrouteservice/v2/directions/foot-walking/geojson";
+
+/**
  * Cache TTL policy for OpenRouteService (route suggestions). Geocoding a
  * place name rarely changes; a routing query is deterministic for its body
  * (start, length, seed), and caching it lets a view tool and its app's data
  * tool share one upstream call.
  */
 export function orsCacheTtl(path: string): number | null {
-  if (path === "/geocode/search") return DAY_MS;
-  if (/^\/v2\/directions\/[^/]+\/geojson$/.test(path)) return 30 * MINUTE_MS;
+  if (path === ORS_GEOCODE_PATH) return DAY_MS;
+  if (/^\/openrouteservice\/v2\/directions\/[^/]+\/geojson$/.test(path))
+    return 30 * MINUTE_MS;
   return null;
 }
 
@@ -1235,7 +1250,7 @@ export function orsCacheTtl(path: string): number | null {
  * A 10 s attempt and one retry, so a hung ORS cannot hold a tool call for
  * over a minute.
  */
-export const orsApi = new FetchClient("https://api.openrouteservice.org", {
+export const orsApi = new FetchClient(ORS_BASE_URL, {
   minIntervalMs: 1500,
   timeoutMs: 10_000,
   maxRetries: 1,

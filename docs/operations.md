@@ -437,12 +437,15 @@ It is `null` today, since intervals.icu sends none.
 `amend-route` are the only tools that talk to anything but intervals.icu.
 What leaves the server:
 
-- OpenRouteService receives the start, end and via points, and the usual
+- OpenRouteService (`api.heigit.org`; the old `api.openrouteservice.org`
+  host was removed on 2026-11-24, #538) receives the start, end and via
+  points, and the usual
   start as the geocoding focus when a place name is looked up. For a
   stored route it receives the ends of each section it routes (a gap, a
   changed part, an out-and-back) and the places named. This happens
   only with `ORS_API_KEY` set; unset, nothing goes to OpenRouteService and
-  only past runs and saved corridors are offered.
+  only past runs and saved corridors are offered. A deployment that limits
+  outbound hosts must allow `api.heigit.org`.
 - The OpenStreetMap extract is downloaded from `OSM_EXTRACT_URL` when the
   index is over 7 days old (a conditional request, so an unchanged extract is
   not downloaded again); the request carries no location. Route geometry never

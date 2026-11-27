@@ -91,7 +91,7 @@ describe("orsRoute", () => {
       roundTrip: { length_m: 6000.4, seed: 7 },
     });
     const [url, body, config] = post.mock.calls[0]!;
-    expect(url).toBe("/v2/directions/foot-walking/geojson");
+    expect(url).toBe("/openrouteservice/v2/directions/foot-walking/geojson");
     expect(body).toEqual({
       coordinates: [[-122.3937, 37.7955]],
       elevation: true,
@@ -126,7 +126,7 @@ describe("orsRoute", () => {
   it("rethrows a cancellation without the request URL", async () => {
     post.mockRejectedValue(
       new CallCancelledError(
-        "Request to https://api.openrouteservice.org/v2/directions?x=37.7955,-122.3937",
+        "Request to https://api.heigit.org/openrouteservice/v2/directions?x=37.7955,-122.3937",
       ),
     );
     const error = await orsRoute("key", { waypoints: [[37.7955, -122.3937]] })
@@ -182,6 +182,8 @@ describe("geocode", () => {
       },
     });
     expect(get).toHaveBeenCalledTimes(1);
+    // HeiGIT's Pelias path; the retired host's /geocode/search answers 410 (#538).
+    expect(get.mock.calls[0]![0]).toBe("/pelias/v1/search");
     expect(get.mock.calls[0]![1]).toMatchObject({
       params: {
         text: "Embarcadero, San Francisco",
@@ -199,7 +201,7 @@ describe("geocode", () => {
   it("rethrows a cancellation without the focus point", async () => {
     get.mockRejectedValue(
       new CallCancelledError(
-        "Request to https://api.openrouteservice.org/geocode/search?focus.point.lat=37.79",
+        "Request to https://api.heigit.org/pelias/v1/search?focus.point.lat=37.79",
       ),
     );
     const error = await geocode("key", "Embarcadero", [37.79, -122.4])
